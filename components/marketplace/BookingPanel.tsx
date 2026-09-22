@@ -13,6 +13,7 @@ import BookingDialog, { type BookArgs, type DialogOpenSession } from '@/componen
 import DatePreview from '@/components/marketplace/DatePreview';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
 import { extraGuestsLine } from '@/lib/extraGuests';
+import { RequestBookingDialog, RequestDatePreview, type RequestBookArgs } from '@/components/marketplace/RequestBooking';
 
 // The one +/- stepper, at module scope so it keeps its identity across the
 // panel's renders. It used to be declared inside BookingPanel, which made React
@@ -120,10 +121,17 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     const setCartQty = (id: string, n: number) => setCart((c) => { const next = { ...c }; if (n <= 0) delete next[id]; else next[id] = Math.min(MAX_ORDER_QUANTITY, n); return next; });
 
     const declaredSessions = provider.declaredSessions || [];
-    const reqLead = provider.shape === 'made_to_order' ? Math.max(1, provider.leadTimeDays || 1) : 1;
+    // The provider's notice period is the earliest a date can be picked — for a
+    // comes-to-you chef as much as a made-to-order baker (made-to-order floors at
+    // one day). A two-day notice on the 22nd first offers the 24th.
+    const reqLead = provider.shape === 'made_to_order'
+        ? Math.max(1, provider.leadTimeDays || 1)
+        : Math.max(0, provider.leadTimeDays || 0);
     const minDate = standalone
         ? dayKeyFromNow(reqLead)
-        : maxKey(String(checkIn).slice(0, 10), dayKeyFromNow(provider.shape === 'made_to_order' ? provider.leadTimeDays : 0));
+        // Against a stay the dates come from the stay, but the provider's notice
+        // still holds — a 3-day-notice chef can't be booked for tomorrow night.
+        : maxKey(String(checkIn).slice(0, 10), dayKeyFromNow(reqLead));
     const maxDate = standalone
         ? dayKeyFromNow(Math.max(1, provider.horizonDays || 90))
         : lastNight(String(checkOut));
@@ -304,6 +312,47 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     const pickDate = (d: string) => { setDate(d); setTime(''); };
     const egLine = egItem ? extraGuestsLine(egItem, provider.minAge ?? null) : null;
 
+    // The times each available day offers, for the compact preview and the dialog.
+    // Opening hours drive it; a legacy provider with no hours but named offered
+    // times falls back to those on every bookable day.
+    const reqDialogTimes = useMemo<Record<string, string[]>>(() => {
+        if (useHours) return reqTimes.byDate;
+        const m: Record<string, string[]> = {};
+        if (isComesToYou && offered.length) for (const d of bookableDays) m[d] = offered;
+        return m;
+    }, [useHours, reqTimes.byDate, isComesToYou, offered, bookableDays]);
+
+    // Submit a comes-to-you request from the DIALOG's own state. The money fields
+    // are derived from the chosen item's kind so the request matches the total the
+    // dialog showed: extra-guests → adults/children; per-person → a head count as
+    // quantity; flat → one.
+    async function bookRequest(args: RequestBookArgs) {
+        const it = provider.items.find((i) => i.id === args.itemId);
+        if (!it) { setError('Pick one first.'); return; }
+        const eg = { unit: it.unit, price: it.price, included_guests: it.includedGuests ?? null, extra_adult_fee: it.extraAdultFee ?? null, extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null };
+        const isExtra = hasExtraGuests(eg);
+        const perPerson = unitMultiplies(it.unit);
+        const kids = childrenAllowed(provider.minAge ?? null) ? args.children : 0;
+        setBusy(true); setError(null);
+        try {
+            const res = await fetch('/api/services/order', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    itemId: it.id, bookingId, serviceDate: args.date, serviceTime: args.time,
+                    ...(isExtra
+                        ? { adults: Math.max(1, args.adults), children: kids }
+                        : { quantity: perPerson ? Math.max(1, args.adults + kids) : 1 }),
+                    serviceAddress: needsAddress ? args.address : undefined,
+                    allergy: provider.isFood ? args.allergy : '',
+                }),
+            });
+            const d = await res.json();
+            if (d && d.ok && d.url) { window.location.href = d.url; return; }
+            setError((d && d.error) || 'Could not start that.');
+        } catch { setError('Could not start that.'); }
+        setBusy(false);
+    }
+
     // Slot keeps its short, padded card (the heavy picking is in the dialog). A
     // request shape becomes a flex column capped to the viewport: a fixed header,
     // a scrolling middle, and a pinned footer — so a long form scrolls INSIDE the
@@ -369,193 +418,116 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         );
     }
 
-    const footerTotal = isMadeToOrder ? cartTotal : reqTotal;
-    const footerBusyLabel = 'Sending…';
-    const canSubmit = isMadeToOrder
-        ? (!busy && cartLines.length > 0 && !!date)
-        : (!busy && !!reqItem && !!date && !((provider.shape === 'comes_to_you' || offered.length > 0) && !time));
-
-    return (
-        <div id="booking-panel" className="flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-            {/* Header — price + what happens next */}
-            <div className="flex-none border-b border-slate-100 px-5 pt-5 pb-4">
-                {priceParts_ && (
-                    <div className="text-slate-900">
-                        <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
-                        {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
-                    </div>
-                )}
-                {!standalone && checkIn && (
-                    <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                        <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
-                        <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
-                    </p>
-                )}
-                <span className={`mt-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${isMadeToOrder
-                    ? (cartHasCustom ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900')
-                    : 'bg-amber-100 text-amber-900'}`}>
-                    {isMadeToOrder
-                        ? (cartHasCustom ? `Request — ${provider.who} has 48 hours to confirm` : 'Books instantly')
-                        : `Request — ${provider.who} has 48 hours to confirm`}
-                </span>
-            </div>
-
-            {/* Scrolling middle */}
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                {isMadeToOrder ? (
-                    <>
-                        {/* The menu as a cart — pick as many as you like, each with its
-                            own quantity, with a running total. */}
-                        <div className="space-y-2">
-                            {provider.items.map((it) => {
-                                const q = cart[it.id] || 0;
-                                return (
-                                    <div key={it.id} className="flex items-center gap-3 rounded-lg border border-slate-200 p-2.5">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="truncate text-sm font-medium text-slate-800">{it.name}{it.isCustom ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Made to order</span> : null}</div>
-                                            <div className="text-[13px] text-slate-500">£{it.price.toFixed(2)}{it.description ? ' · ' + it.description : ''}</div>
-                                        </div>
-                                        <Stepper value={q} set={(n) => setCartQty(it.id, n)} min={0} max={MAX_ORDER_QUANTITY} />
-                                    </div>
-                                );
-                            })}
+    // Made-to-order no longer reaches BookingPanel — the food-ordering layout
+    // (FoodMenu + FoodBasket) owns it. This branch is dead and is removed in its
+    // own commit; it stays here only so the component still type-checks meanwhile.
+    if (isMadeToOrder) {
+        return (
+            <div id="booking-panel" className="flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                <div className="flex-none border-b border-slate-100 px-5 pt-5 pb-4">
+                    {priceParts_ && (
+                        <div className="text-slate-900">
+                            <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
+                            {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
                         </div>
-
-                        <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a {deliverWord} date</div>
-                        <div className="mt-1 rounded-xl border border-slate-200 px-3 pb-2">
-                            <MonthCalendar availableDays={calDays} selected={date || null} onSelect={pickDate} today={today} />
-                        </div>
-                        <p className="mt-1.5 text-xs text-slate-400">The {deliverWord} time is arranged by message once your order is placed.</p>
-
-                        {cartNeedsAddress && (
-                            <label className="mt-4 block">
-                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery address</span>
-                                <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2}
-                                    className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                            </label>
-                        )}
-
-                        {provider.isFood && (
-                            <div className="mt-4">
-                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Allergies or dietary needs <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {COMMON_ALLERGENS.map((a) => (
-                                        <button key={a} type="button" onClick={() => setAllergyTags((t) => (t.includes(a) ? t.filter((x) => x !== a) : [...t, a]))}
-                                            className={`rounded-full border px-2.5 py-1 text-xs font-medium ${allergyTags.includes(a) ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>{a}</button>
-                                    ))}
-                                </div>
-                                <textarea value={allergy} onChange={(e) => setAllergy(e.target.value.slice(0, 500))} rows={2}
-                                    className="mt-2 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                            </div>
-                        )}
-                    </>
-                ) : (
-                    <>
-                        {provider.items.length > 1 && (
-                            <fieldset>
-                                <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
-                                <div className="mt-2 space-y-1.5">
-                                    {provider.items.map((it) => (
-                                        <label key={it.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 ${itemId === it.id ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
-                                            <input type="radio" name="item" checked={itemId === it.id} onChange={() => setItemId(it.id)} className="accent-emerald-600" />
-                                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{it.name}</span>
-                                            <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </fieldset>
-                        )}
-
-                        <div className={`${provider.items.length > 1 ? 'mt-4 ' : ''}text-xs font-semibold uppercase tracking-wide text-slate-500`}>Pick a date</div>
-                        <div className="mt-1 rounded-xl border border-slate-200 px-3 pb-2">
-                            <MonthCalendar availableDays={calDays} selected={date || null} onSelect={pickDate} today={today}
-                                emptyLabel={useHours ? 'No dates available just now.' : 'Pick a date.'} />
-                        </div>
-
-                        {date && timeOptions.length > 0 && (
-                            <>
-                                <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a time</div>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {timeOptions.map((t) => (
-                                        <button key={t} type="button" onClick={() => setTime(t)}
-                                            className={`rounded-lg border px-3 py-2 text-sm font-medium ${time === t ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
-                                            {prettyTime(t)}
-                                        </button>
-                                    ))}
-                                </div>
-                            </>
-                        )}
-                        {date && useHours && timeOptions.length === 0 && (
-                            <p className="mt-2 text-sm text-slate-500">No times on that day — try another date.</p>
-                        )}
-
-                        {reqItem && reqExtraGuests ? (
-                            <div className="mt-4 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm font-medium text-slate-700">Adults</span>
-                                    <Stepper value={adults} set={setAdults} min={1} max={Number.isFinite(partyCap) ? partyCap - (kidsOk ? children : 0) : 30} />
-                                </div>
-                                {kidsOk && (
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-slate-700">Children</span>
-                                        <Stepper value={children} set={setChildren} min={0} max={Number.isFinite(partyCap) ? partyCap - adults : 30} />
-                                    </div>
-                                )}
-                                {egLine && <p className="text-xs text-slate-400">{egLine}</p>}
-                            </div>
-                        ) : (reqItem && reqPerPerson && (
-                            <div className="mt-4 flex items-center justify-between">
-                                <span className="text-sm font-medium text-slate-700">Guests</span>
-                                <Stepper value={reqQty} set={setQty}
-                                    min={Math.max(1, Number(reqItem.minPeople) || 1)}
-                                    max={Number.isFinite(partyCap) ? (partyCap as number) : 30} />
-                            </div>
-                        ))}
-
-                        {needsAddress && (
-                            <label className="mt-4 block">
-                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where should {provider.who} come?</span>
-                                <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="The address for your booking"
-                                    className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                            </label>
-                        )}
-
-                        {provider.isFood && (
-                            <div className="mt-4">
-                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Allergies or dietary needs <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {COMMON_ALLERGENS.map((a) => (
-                                        <button key={a} type="button" onClick={() => setAllergyTags((t) => (t.includes(a) ? t.filter((x) => x !== a) : [...t, a]))}
-                                            className={`rounded-full border px-2.5 py-1 text-xs font-medium ${allergyTags.includes(a) ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>{a}</button>
-                                    ))}
-                                </div>
-                                <textarea value={allergy} onChange={(e) => setAllergy(e.target.value.slice(0, 500))} rows={2} placeholder="Anything else they should cook around"
-                                    className="mt-2 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                            </div>
-                        )}
-                    </>
-                )}
-            </div>
-
-            {/* Pinned footer — total + the one action, always on screen */}
-            <div className="flex-none border-t border-slate-100 px-5 py-4">
-                {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
-                <div className="mb-3 flex items-baseline justify-between">
-                    <span className="text-sm font-medium text-slate-600">Total</span>
-                    <span className="text-lg font-semibold text-slate-900">£{footerTotal.toFixed(2)}</span>
+                    )}
+                    <span className={`mt-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cartHasCustom ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'}`}>
+                        {cartHasCustom ? `Request — ${provider.who} has 48 hours to confirm` : 'Books instantly'}
+                    </span>
                 </div>
-                <button type="button" onClick={isMadeToOrder ? sendCart : sendRequest} disabled={!canSubmit}
-                    className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                    {busy ? footerBusyLabel : (isMadeToOrder
-                        ? (cartHasCustom ? 'Send request' : 'Book & pay')
-                        : 'Send request')}
-                </button>
-                <p className="mt-2 text-xs text-slate-400">{isMadeToOrder
-                    ? (cartHasCustom
-                        ? `Your card is held, not charged, until ${provider.who} accepts your made-to-order items.`
-                        : 'You pay now and your order is confirmed straight away.')
-                    : `Your card is held, not charged, until ${provider.who} confirms.`}</p>
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                    <div className="space-y-2">
+                        {provider.items.map((it) => {
+                            const q = cart[it.id] || 0;
+                            return (
+                                <div key={it.id} className="flex items-center gap-3 rounded-lg border border-slate-200 p-2.5">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate text-sm font-medium text-slate-800">{it.name}</div>
+                                        <div className="text-[13px] text-slate-500">£{it.price.toFixed(2)}</div>
+                                    </div>
+                                    <Stepper value={q} set={(n) => setCartQty(it.id, n)} min={0} max={MAX_ORDER_QUANTITY} />
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a {deliverWord} date</div>
+                    <div className="mt-1 rounded-xl border border-slate-200 px-3 pb-2">
+                        <MonthCalendar availableDays={calDays} selected={date || null} onSelect={pickDate} today={today} />
+                    </div>
+                    {cartNeedsAddress && (
+                        <label className="mt-4 block">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery address</span>
+                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2}
+                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                        </label>
+                    )}
+                </div>
+                <div className="flex-none border-t border-slate-100 px-5 py-4">
+                    {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
+                    <div className="mb-3 flex items-baseline justify-between">
+                        <span className="text-sm font-medium text-slate-600">Total</span>
+                        <span className="text-lg font-semibold text-slate-900">£{cartTotal.toFixed(2)}</span>
+                    </div>
+                    <button type="button" onClick={sendCart} disabled={busy || !cartLines.length || !date}
+                        className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                        {busy ? 'Sending…' : (cartHasCustom ? 'Send request' : 'Book & pay')}
+                    </button>
+                </div>
             </div>
+        );
+    }
+
+    // ---- comes-to-you: the compact box + dialog, like the slot experiences ----
+    // Price, the free-cancellation line, a "Show dates" button and a few suggested
+    // days; the option, guest count, calendar and time all live in the dialog.
+    return (
+        <div id="booking-panel" className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    {priceParts_ && (
+                        <div className="text-slate-900">
+                            <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
+                            {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
+                        </div>
+                    )}
+                    <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                    {!standalone && checkIn && (
+                        <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                            <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                            <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
+                        </p>
+                    )}
+                </div>
+                <button type="button" onClick={() => setOpen(true)} disabled={calDays.size === 0}
+                    className="flex-none rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
+                    {calDays.size ? 'Show dates' : 'No dates'}
+                </button>
+            </div>
+
+            <RequestDatePreview calDays={calDays} timesByDate={reqDialogTimes} busy={busy} onPickDay={(d) => openOn(d)} />
+
+            {error && !open && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+
+            {open && (
+                <RequestBookingDialog
+                    who={provider.who}
+                    items={provider.items}
+                    minAge={provider.minAge}
+                    isFood={provider.isFood}
+                    needsAddress={needsAddress}
+                    calDays={calDays}
+                    timesByDate={reqDialogTimes}
+                    cottageGuests={standalone ? undefined : cottageGuests}
+                    providerMax={provider.maxGuests}
+                    prefillAdults={cottageAdults}
+                    prefillChildren={cottageChildren}
+                    initialDate={initialDate}
+                    busy={busy}
+                    error={error}
+                    onBook={bookRequest}
+                    onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
+                />
+            )}
         </div>
     );
 }
