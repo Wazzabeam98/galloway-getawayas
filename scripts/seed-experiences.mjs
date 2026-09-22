@@ -309,10 +309,13 @@ async function main() {
         professional_title: 'Cakes & bakes to order', years: 6,
         qualifications: 'Level 3 Patisserie; registered home bakery.', recognition: null,
         what_to_expect: 'A cake or a box of bakes made to order and dropped to your cottage.',
+        // The three phases are shown under the shape's real headings (Order / Made
+        // to order / Collection for this collection-only baker), so the detail text
+        // is written to match collection, not delivery.
         itinerary: [
             { title: 'Order', detail: 'Tell me what you would like and when, at least two days ahead.' },
             { title: 'Bake', detail: 'Made fresh the day before or the morning of.' },
-            { title: 'Delivery', detail: 'Dropped to your cottage in the window we agree.' },
+            { title: 'Collection', detail: 'Ready to collect from the bakehouse in the window we agree.' },
         ],
         minAge: null, activityLevel: 'gentle', whatToBring: 'Nothing — I bring it to your door.',
         amenities: [], accessibility: null, parking: null,
