@@ -50,7 +50,7 @@ export interface EditorProvider {
     amenities: string[];
     dietary_options: string[];
     areas: string[];
-    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null }>;
+    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean }>;
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
@@ -253,7 +253,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
@@ -265,6 +265,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         extraAdultFee: (it as any).extra_adult_fee != null ? String((it as any).extra_adult_fee) : '',
         extraChildFee: (it as any).extra_child_fee != null ? String((it as any).extra_child_fee) : '',
         maxParty: (it as any).max_party != null ? String((it as any).max_party) : '',
+        // Made-to-order: standard (instant) vs custom (a request the provider agrees).
+        isCustom: !!(it as any).is_custom,
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
@@ -628,6 +630,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     capacity: r.capacity,
                                     included_guests: r.includedGuests, extra_adult_fee: r.extraAdultFee,
                                     extra_child_fee: r.extraChildFee, max_party: r.maxParty,
+                                    is_custom: r.isCustom,
                                 })),
                             })}>
                             {/* Last-priced-item guard: a listing with no active priced
@@ -748,6 +751,18 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                         <span className="block text-xs text-slate-400">Leave blank for one flat price. The price never drops below the base.</span>
                                                     </div>
                                                 )}
+                                                {/* Made-to-order: standard books and charges instantly;
+                                                    custom needs your say-so, so any order with a custom
+                                                    item is held as a request until you accept. */}
+                                                {p.shape === 'made_to_order' && (
+                                                    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3">
+                                                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">This item is</span>
+                                                        <button type="button" onClick={() => setRow(i, { isCustom: false })}
+                                                            className={`rounded-full border px-3 py-1.5 text-sm transition ${!r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Standard — books instantly</button>
+                                                        <button type="button" onClick={() => setRow(i, { isCustom: true })}
+                                                            className={`rounded-full border px-3 py-1.5 text-sm transition ${r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Custom — you approve first</button>
+                                                    </div>
+                                                )}
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
                                             </div>
                                         </div>
@@ -761,7 +776,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '' }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '', isCustom: false }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}

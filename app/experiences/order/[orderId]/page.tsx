@@ -12,6 +12,8 @@ import { firstName, getImageUrl, displayName } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
 import { experienceSteps } from '@/lib/experienceSteps';
+import { hasExtraGuests } from '@/lib/extraGuests';
+import { childrenAllowed } from '@/lib/guestAges';
 import { isFoodProvider, unitMultiplies } from '@/lib/serviceOrders';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadExperienceOrder } from '@/lib/experienceOrder';
@@ -253,6 +255,55 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // The head count that drives "Who's going" and the Guests line: the folded
     // family for a per-person order, else the private order's own attendees.
     const effectiveHeadcount = isPerPersonParent ? family.headcount : (Number(order.attendees) || 0);
+
+    // PAYMENT BREAKDOWN — booker only (the money wall). Itemised like a holiday
+    // let: the base line(s), any accepted added places, refunds, and the net. For
+    // an extra-guests flat item the base splits into the included price and the
+    // per-head fees; a per-person item is its per-place total; a plain flat is one
+    // line. Built from the family's own prices, so nothing is re-derived.
+    const breakdownLines: { label: string; amount: number }[] = [];
+    let breakdownTotal = 0;
+    let cartLineItems: any[] | null = null;
+    if (role === 'booker') {
+        // A made-to-order cart carries its lines on the order; itemise those.
+        const { data: money } = await admin.from('service_orders').select('line_items').eq('id', order.id).maybeSingle();
+        cartLineItems = money && Array.isArray(money.line_items) ? money.line_items : null;
+        const { data: item } = order.item_id
+            ? await admin.from('service_provider_items').select('price, included_guests, extra_adult_fee, extra_child_fee').eq('id', order.item_id).maybeSingle()
+            : { data: null };
+        const { data: paidKids } = await admin.from('service_orders')
+            .select('price, quantity, attendees, adults, children').eq('parent_order_id', order.id).eq('status', 'confirmed');
+        const parentPrice = Number(price) || 0;
+        const nm = order.item_name || who;
+        const rawMinAge = (prov?.guest_details as any)?.min_age;
+        const minAgeNum = rawMinAge == null || rawMinAge === '' ? null : Number(rawMinAge);
+        if (cartLineItems && cartLineItems.length) {
+            for (const l of cartLineItems) {
+                breakdownLines.push({ label: (Number(l.qty) > 1 ? Number(l.qty) + ' × ' : '') + String(l.name || 'Item') + (l.is_custom ? ' (made to order)' : ''), amount: Number(l.line_total) || 0 });
+            }
+        } else if (item && hasExtraGuests(item as any)) {
+            const included = Number(item.included_guests) || 0;
+            const a = Math.max(0, Number(order.adults) || 0), c = childrenAllowed(minAgeNum) ? Math.max(0, Number(order.children) || 0) : 0;
+            const incAdults = Math.min(a, included);
+            const incChildren = Math.min(c, included - incAdults);
+            const extraAdults = a - incAdults, extraChildren = c - incChildren;
+            breakdownLines.push({ label: nm + ' · up to ' + included, amount: Number(item.price) || 0 });
+            if (extraAdults > 0) breakdownLines.push({ label: 'Extra adults × ' + extraAdults, amount: extraAdults * (Number(item.extra_adult_fee) || 0) });
+            if (extraChildren > 0) breakdownLines.push({ label: 'Extra children × ' + extraChildren, amount: extraChildren * (Number(item.extra_child_fee) || 0) });
+        } else if (isPerPersonParent) {
+            breakdownLines.push({ label: nm + (family.headcount ? ' · ' + family.headcount + ' ' + (family.headcount === 1 ? 'place' : 'places') : ''), amount: parentPrice });
+        } else {
+            breakdownLines.push({ label: nm, amount: parentPrice });
+        }
+        breakdownTotal += parentPrice;
+        for (const kid of (paidKids as any[]) || []) {
+            const kAmt = Number(kid.price) || 0;
+            const kn = Number(kid.quantity) || Number(kid.attendees) || 1;
+            breakdownLines.push({ label: 'Added ' + kn + ' more', amount: kAmt });
+            breakdownTotal += kAmt;
+        }
+    }
+    const breakdownNet = Math.round((breakdownTotal - amountRefunded) * 100) / 100;
     // CHANGE GUEST COUNT and CHANGE DATE are offered on every shape now, not just
     // slots. For a slot they keep their existing engines (per-person top-up; the
     // session-picker move). For a request shape (made_to_order / comes_to_you)
@@ -260,8 +311,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // a quantity that moves money (or, on a per-group flat price, just a party
     // size), and a date is the delivery/collection/service day. A top-up child is
     // never changed on its own — always the original booking.
+    // Guest count is changeable for a slot (per-person top-up) and for
+    // comes-to-you (an increase request). Made-to-order no longer offers it, and
+    // reductions are gone everywhere — the sheet only ever adds.
     const canChangeCount = isBooker && order.status === 'confirmed' && !order.parent_order_id
-        && (isSlot ? isPerPersonParent : true);
+        && (isSlot ? isPerPersonParent : order.shape === 'comes_to_you');
     const canChangeDate = isBooker && order.status === 'confirmed' && !order.parent_order_id
         && (isSlot ? !!order.slot_session_id : true);
 
@@ -551,9 +605,27 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         time but no recorded length, so the start
                                         still shows — only the end is withheld. */}
                                     <div className="mt-1 text-sm font-medium text-slate-900">{longWhen(order.service_date, order.service_time || null)}</div>
+                                    {cartLineItems && cartLineItems.length > 0 && order.note && (
+                                        <div className="mt-1 text-[13px] text-slate-500">{String(order.note)}</div>
+                                    )}
                                 </div>
                             )}
                         </div>
+
+                        {/* A made-to-order cart — the items ordered, shown plainly. */}
+                        {cartLineItems && cartLineItems.length > 0 && (
+                            <section className="mt-8 border-t border-slate-200 pt-6">
+                                <h2 className="text-lg font-semibold text-slate-900">Your order</h2>
+                                <ul className="mt-3 space-y-2 text-sm">
+                                    {cartLineItems.map((l: any, i: number) => (
+                                        <li key={i} className="flex items-baseline justify-between gap-3 text-slate-700">
+                                            <span>{Number(l.qty) > 1 ? Number(l.qty) + ' × ' : ''}{String(l.name || 'Item')}{l.is_custom ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Made to order</span> : null}</span>
+                                            <span className="tabular-nums text-slate-900">£{(Number(l.line_total) || 0).toFixed(2)}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </section>
+                        )}
 
                         {/* The allergy the guest gave, shown back so they can see
                             it landed. It stays high on the page and stays loud —
@@ -868,12 +940,34 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 aren't charged yet, so the label reflects that. */}
                             <div className="mt-3">
                                 <div className="text-sm font-semibold text-slate-900">{charged ? 'Amount paid' : 'Amount held'}</div>
-                                {/* `price` is the original charge; a reduction is a
-                                    refund recorded in amountRefunded, so the net paid
-                                    is price − refunded, with the refund shown below. */}
-                                <div className="mt-1 text-base text-slate-900">£{(Number(price) - amountRefunded).toFixed(2)}</div>
+                                {/* The net across the whole family (base + any accepted
+                                    added places), less any refund. */}
+                                <div className="mt-1 text-base text-slate-900">£{(breakdownTotal > 0 ? breakdownNet : (Number(price) - amountRefunded)).toFixed(2)}</div>
                                 {amountRefunded > 0 && (
-                                    <div className="mt-0.5 text-[13px] text-slate-500">£{amountRefunded.toFixed(2)} refunded of the £{Number(price).toFixed(2)} you paid</div>
+                                    <div className="mt-0.5 text-[13px] text-slate-500">£{amountRefunded.toFixed(2)} refunded of the £{(breakdownTotal > 0 ? breakdownTotal : Number(price)).toFixed(2)} you paid</div>
+                                )}
+                                {/* The itemised breakdown, like a holiday-let booking —
+                                    a <details> so it needs no client JavaScript. */}
+                                {breakdownLines.length > 0 && (
+                                    <details className="group mt-2">
+                                        <summary className="cursor-pointer list-none text-xs font-medium text-slate-500 underline hover:text-slate-800 [&::-webkit-details-marker]:hidden">
+                                            <span className="group-open:hidden">Show breakdown</span>
+                                            <span className="hidden group-open:inline">Hide breakdown</span>
+                                        </summary>
+                                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                                            <div className="space-y-2 text-sm">
+                                                {breakdownLines.map((l, i) => (
+                                                    <div key={i} className="flex items-baseline justify-between text-slate-600">
+                                                        <span>{l.label}</span>
+                                                        <span className="tabular-nums">£{l.amount.toFixed(2)}</span>
+                                                    </div>
+                                                ))}
+                                                <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">£{breakdownTotal.toFixed(2)}</span></div>
+                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Refunded</span><span className="tabular-nums">−£{amountRefunded.toFixed(2)}</span></div>}
+                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between font-medium text-slate-900"><span>{charged ? 'Net paid' : 'Net held'}</span><span className="tabular-nums">£{breakdownNet.toFixed(2)}</span></div>}
+                                            </div>
+                                        </div>
+                                    </details>
                                 )}
                             </div>
                         </section>

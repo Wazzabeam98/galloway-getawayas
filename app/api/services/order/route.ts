@@ -78,7 +78,9 @@ export async function POST(request: Request) {
         const typedEmail: string = (body && body.guestEmail ? String(body.guestEmail) : '').slice(0, 200).trim().toLowerCase();
         const typedPhone: string = (body && body.guestPhone ? String(body.guestPhone) : '').slice(0, 40).trim();
 
-        if (!itemId || !serviceDate) {
+        // A made-to-order CART sends `items` instead of a single `itemId`.
+        const hasCart = Array.isArray(body && body.items) && body.items.length > 0;
+        if (!serviceDate || (!itemId && !hasCart)) {
             return NextResponse.json({ ok: false, error: 'Missing details' }, { status: 400 });
         }
 
@@ -118,6 +120,140 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
             }
             booking = data;
+        }
+
+        // ---- MADE-TO-ORDER CART -------------------------------------------------
+        // A food order is a CART: several items, each with a quantity, in one order
+        // and one payment. If every item is STANDARD the order books and charges
+        // instantly (auto-capture, confirmed on the webhook, no provider step);
+        // if any item is CUSTOM the whole order is a REQUEST — the card is held and
+        // the provider accepts or declines. No time picker (a free-text preferred
+        // collection/delivery time instead) and no party size.
+        const cartRaw = Array.isArray(body && body.items) ? body.items : null;
+        if (cartRaw && cartRaw.length) {
+            const wanted = cartRaw
+                .map((r: any) => ({ id: String((r && r.itemId) || ''), qty: Math.max(1, Math.min(MAX_ORDER_QUANTITY, Math.floor(Number(r && r.qty) || 0))) }))
+                .filter((r: any) => r.id && r.qty > 0);
+            if (!wanted.length) return NextResponse.json({ ok: false, error: 'Add at least one item.' }, { status: 400 });
+            if (wanted.length > 20) return NextResponse.json({ ok: false, error: 'That’s a very large order — message the provider directly.' }, { status: 400 });
+
+            const ids = Array.from(new Set(wanted.map((w: any) => w.id)));
+            const { data: cartItems } = await admin.from('service_provider_items')
+                .select('id, provider_id, name, description, price, active, unit, fulfilment, is_custom')
+                .in('id', ids);
+            if (!cartItems || !cartItems.length) return NextResponse.json({ ok: false, error: 'Those items aren’t available.' }, { status: 400 });
+            const providerId = cartItems[0].provider_id;
+            if (cartItems.some((i: any) => i.provider_id !== providerId)) return NextResponse.json({ ok: false, error: 'One provider per order.' }, { status: 400 });
+            const byId = new Map<string, any>(cartItems.map((i: any) => [i.id, i]));
+
+            const { data: prov } = await admin.from('service_providers')
+                .select('id, business_name, trade, shape, fulfilment, lead_time_days, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, guest_details')
+                .eq('id', providerId).maybeSingle();
+            if (!prov || prov.shape !== 'made_to_order' || !isLiveToGuests(prov) || !prov.stripe_account_id) {
+                return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
+            }
+
+            // The lines, priced here (qty × the provider's own price) — never trusted
+            // from the browser. Any custom item turns the whole order into a request.
+            const lines: any[] = [];
+            let total = 0, hasCustom = false;
+            for (const w of wanted) {
+                const it = byId.get(w.id);
+                if (!it || it.active !== true || !(Number(it.price) > 0)) return NextResponse.json({ ok: false, error: 'One of those items isn’t available.' }, { status: 400 });
+                const up = Number(it.price);
+                const lineTotal = Math.round(up * w.qty * 100) / 100;
+                lines.push({ item_id: it.id, name: it.name, unit: normaliseUnit(it.unit), qty: w.qty, unit_price: up, line_total: lineTotal, is_custom: !!it.is_custom });
+                total += lineTotal;
+                if (it.is_custom) hasCustom = true;
+            }
+            total = Math.round(total * 100) / 100;
+            if (total <= 0) return NextResponse.json({ ok: false, error: 'That order has no cost.' }, { status: 400 });
+
+            // The service (collection/delivery) date, same bounds as any request.
+            const whenC = dateFromKey(serviceDate);
+            if (standalone) {
+                const now = new Date();
+                const addDays = (n: number) => { const d = new Date(now); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() + n); return d; };
+                const leadDays = Math.max(1, Number(prov.lead_time_days) || 1);
+                const horizon = Math.max(1, Math.min(365, Number(prov.guest_details && (prov.guest_details as any).booking_horizon_days) || 90));
+                if (whenC < addDays(leadDays) || whenC > addDays(horizon)) return NextResponse.json({ ok: false, error: 'Pick a date within the booking window.' }, { status: 400 });
+            } else {
+                const start = dateFromKey(booking.check_in), end = dateFromKey(booking.check_out);
+                if (whenC < start || whenC >= end) return NextResponse.json({ ok: false, error: 'Pick a date during your stay.' }, { status: 400 });
+            }
+
+            // Delivery travels to an address; collection does not. The preferred
+            // collection/delivery time is FREE TEXT (no fixed slots for food).
+            const travelsC = prov.fulfilment === 'delivery' || (prov.fulfilment === 'both' && cartItems.some((i: any) => i.fulfilment === 'delivery'));
+            let addressC: string | null = null;
+            if (travelsC) {
+                if (standalone) {
+                    addressC = (body && body.serviceAddress ? String(body.serviceAddress) : '').slice(0, 300).trim() || null;
+                    if (!addressC) return NextResponse.json({ ok: false, error: 'Add the delivery address.' }, { status: 400 });
+                } else if (booking.listing_id) {
+                    const { data: stay } = await admin.from('listings').select('street_address, postcode, location').eq('id', booking.listing_id).maybeSingle();
+                    if (stay) addressC = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
+                }
+            }
+            const collectionNote = (body && body.collectionTime ? String(body.collectionTime) : '').slice(0, 200).trim();
+
+            const contactNameC = anonymous ? (typedName || null) : null;
+            const contactEmailC = anonymous ? (typedEmail || null) : (user ? user.email || null : null);
+            const contactPhoneC = anonymous ? (typedPhone || null) : null;
+
+            const pricingC = priceOrder(prov, { bandPrice: total }, []);
+            const businessC = prov.business_name || 'Your order';
+            const cartMeta = wanted.map((w: any) => w.id + ':' + w.qty).join(',');
+            const summaryName = lines.length === 1 && lines[0].qty === 1 ? lines[0].name : (businessC + ' order');
+            const mdC: Record<string, string> = {
+                kind: 'service_order',
+                provider_id: providerId,
+                booking_id: standalone ? '' : booking.id,
+                guest_id: user ? user.id : '',
+                listing_id: standalone ? '' : (booking.listing_id || ''),
+                service_date: dateKey(whenC),
+                service_time: '',
+                service_address: addressC || '',
+                fulfilment: travelsC ? 'delivery' : 'collection',
+                standalone: standalone ? '1' : '',
+                contact_name: contactNameC || '',
+                contact_email: contactEmailC || '',
+                contact_phone: contactPhoneC || '',
+                instant: hasCustom ? '' : '1',
+                cart: cartMeta,
+                collection_note: collectionNote,
+                commission_rate: String(pricingC.commissionRate),
+                note: note,
+                allergy: allergy,
+                item_name: summaryName,
+                item_unit: 'order',
+            };
+            const stripeLines = lines.map((l) => ({
+                quantity: l.qty,
+                price_data: { currency: 'gbp', unit_amount: Math.round(l.unit_price * 100),
+                    product_data: { name: l.name + (l.is_custom ? ' (made to order)' : '') } },
+            }));
+            const checkoutC = await stripeRequest('POST', '/checkout/sessions', {
+                mode: 'payment',
+                customer_email: user ? user.email : (contactEmailC || undefined),
+                payment_method_types: ['card'],
+                line_items: stripeLines,
+                custom_text: { submit: { message: 'Galloway Getaways takes this payment on behalf of ' + businessC + '. We are the booking agent, not the provider.' } },
+                payment_intent_data: {
+                    // Standard-only orders capture at once; a custom order is HELD
+                    // until the provider accepts.
+                    capture_method: hasCustom ? 'manual' : 'automatic',
+                    on_behalf_of: prov.stripe_account_id,
+                    application_fee_amount: pricingC.applicationFeePence,
+                    transfer_data: { destination: prov.stripe_account_id },
+                    description: 'Galloway food order — ' + businessC + (hasCustom ? ' (request)' : ''),
+                    metadata: mdC,
+                },
+                success_url: SITE_URL + (hasCustom ? '/experiences/requested?p=' + providerId : '/trips?experience=booked'),
+                cancel_url: SITE_URL + (standalone ? '/experiences/browse/' + providerId + '?experience=cancelled' : '/trips?experience=cancelled'),
+                metadata: mdC,
+            });
+            return NextResponse.json({ ok: true, url: checkoutC.url, instant: !hasCustom, requested: hasCustom });
         }
 
         // The item is the source of the price. Active and priced, or it is not

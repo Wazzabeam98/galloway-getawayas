@@ -5,7 +5,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { loadTripsList, type TripItem, type TripStay, type TripExperience } from '@/lib/tripsList';
 import TripsMap from '@/components/TripsMap';
-import { CalendarDays, Users, MapPin, ChevronRight, Clock } from 'lucide-react';
+import { CalendarDays, Users, MapPin, ChevronRight } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,14 +30,17 @@ function partyLabel(n: number | null): string {
     return n + (n === 1 ? ' guest' : ' guests');
 }
 
-function Photo({ src, alt }: { src: string | null; alt: string }) {
+// A compact photo inset on the left of a horizontal card — the same treatment as
+// the dashboard's upcoming-trip card (photo beside the details, not a full-width
+// banner), which keeps every trip card the same compact size.
+function Thumb({ src, alt }: { src: string | null; alt: string }) {
     return (
-        <div className="aspect-[16/10] w-full overflow-hidden rounded-xl bg-slate-100">
+        <div className="h-24 w-28 flex-none overflow-hidden rounded-xl bg-slate-100 sm:h-28 sm:w-36">
             {src ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={src} alt={alt} className="h-full w-full object-cover" />
             ) : (
-                <div className="flex h-full w-full items-center justify-center text-slate-300"><MapPin className="h-8 w-8" /></div>
+                <div className="flex h-full w-full items-center justify-center text-slate-300"><MapPin className="h-7 w-7" /></div>
             )}
         </div>
     );
@@ -68,18 +71,18 @@ function ExperienceRow({ exp }: { exp: TripExperience }) {
 function StayCard({ stay }: { stay: TripStay }) {
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-            <Link href={`/trips/${stay.id}`} className="block">
-                <Photo src={stay.photo} alt={stay.title} />
-                <div className="mt-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+            <Link href={`/trips/${stay.id}`} className="flex gap-4">
+                <Thumb src={stay.photo} alt={stay.title} />
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
                         <div className="truncate text-base font-semibold text-slate-900">{stay.title}</div>
-                        {stay.location && <div className="mt-0.5 truncate text-[13px] text-slate-500">{stay.location}</div>}
+                        <ChevronRight className="mt-0.5 h-5 w-5 flex-none text-slate-300" />
                     </div>
-                    <ChevronRight className="mt-1 h-5 w-5 flex-none text-slate-300" />
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-500">
-                    <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-slate-400" />{fmtDay(stay.checkIn)} – {fmtDay(stay.checkOut)}</span>
-                    {stay.guests ? <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-slate-400" />{partyLabel(stay.guests)}</span> : null}
+                    {stay.location && <div className="mt-0.5 truncate text-[13px] text-slate-500">{stay.location}</div>}
+                    <div className="mt-2 flex flex-col gap-1 text-[13px] text-slate-500">
+                        <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-slate-400" />{fmtDay(stay.checkIn)} – {fmtDay(stay.checkOut)}</span>
+                        {stay.guests ? <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-slate-400" />{partyLabel(stay.guests)}</span> : null}
+                    </div>
                 </div>
             </Link>
             {stay.experiences.length > 0 && (
@@ -97,20 +100,19 @@ function StayCard({ stay }: { stay: TripStay }) {
 function ExperienceCard({ exp }: { exp: TripExperience }) {
     return (
         <Link href={`/experiences/order/${exp.id}`}
-            className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)] transition hover:border-slate-300">
-            <Photo src={exp.photo} alt={exp.title} />
-            <div className="mt-3 flex items-start justify-between gap-3">
-                <div className="min-w-0">
+            className="flex gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)] transition hover:border-slate-300">
+            <Thumb src={exp.photo} alt={exp.title} />
+            <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
                     <div className="truncate text-base font-semibold text-slate-900">{exp.title}</div>
-                    {exp.providerName && <div className="mt-0.5 truncate text-[13px] text-slate-500">{exp.providerName}</div>}
+                    <ChevronRight className="mt-0.5 h-5 w-5 flex-none text-slate-300" />
                 </div>
-                <ChevronRight className="mt-1 h-5 w-5 flex-none text-slate-300" />
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-500">
-                <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-slate-400" />{fmtDay(exp.date)}</span>
-                {exp.time ? <span className="inline-flex items-center gap-1.5"><Clock className="h-4 w-4 text-slate-400" />{prettyTime(exp.time)}</span> : null}
-                {exp.party ? <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-slate-400" />{partyLabel(exp.party)}</span> : null}
-                {exp.pending && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Awaiting reply</span>}
+                {exp.providerName && <div className="mt-0.5 truncate text-[13px] text-slate-500">{exp.providerName}</div>}
+                <div className="mt-2 flex flex-col gap-1 text-[13px] text-slate-500">
+                    <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-slate-400" />{fmtDay(exp.date)}{exp.time ? ' · ' + prettyTime(exp.time) : ''}</span>
+                    {exp.party ? <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-slate-400" />{partyLabel(exp.party)}</span> : null}
+                    {exp.pending && <span className="inline-flex w-fit items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Awaiting reply</span>}
+                </div>
             </div>
         </Link>
     );
@@ -155,14 +157,14 @@ export default async function TripsPage() {
                     </div>
                 </div>
             ) : (
-                <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_minmax(320px,400px)]">
+                <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,540px)_1fr]">
                     <div>
                         <Section title="Upcoming" items={upcoming} />
                         <Section title="Past" items={past} />
                     </div>
                     {points.length > 0 && (
                         <div className="lg:sticky lg:top-6 lg:self-start">
-                            <TripsMap points={points} />
+                            <TripsMap points={points} className="h-[360px] lg:h-[80vh]" />
                         </div>
                     )}
                 </div>

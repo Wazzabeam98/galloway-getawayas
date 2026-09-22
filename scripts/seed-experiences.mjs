@@ -308,7 +308,7 @@ async function main() {
         headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-1.jpg')],
         professional_title: 'Cakes & bakes to order', years: 6,
         qualifications: 'Level 3 Patisserie; registered home bakery.', recognition: null,
-        what_to_expect: 'A cake or a box of bakes made to order and dropped to your cottage.',
+        what_to_expect: 'Cakes and boxes of bakes made fresh to order, ready to collect from the bakehouse.',
         // The three phases are shown under the shape's real headings (Order / Made
         // to order / Collection for this collection-only baker), so the detail text
         // is written to match collection, not delivery.
@@ -317,7 +317,7 @@ async function main() {
             { title: 'Bake', detail: 'Made fresh the day before or the morning of.' },
             { title: 'Collection', detail: 'Ready to collect from the bakehouse in the window we agree.' },
         ],
-        minAge: null, activityLevel: 'gentle', whatToBring: 'Nothing — I bring it to your door.',
+        minAge: null, activityLevel: 'gentle', whatToBring: 'Nothing — just come by to collect.',
         amenities: [], accessibility: null, parking: null,
         dietaryNote: 'Gluten-free and vegan on request; made in a kitchen that handles nuts.', dietaryOptions: ['vegan', 'gluten_free'],
         items: [
@@ -356,8 +356,8 @@ async function main() {
 
     // CHEF: authorised (awaiting the chef), and a confirmed upcoming.
     const cItem = chefItemRows.find(i => i.unit === 'person');
-    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(12), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'authorised', fulfilment: 'delivery' });
-    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(20), quantity: 2, attendees: 2, unit: 'person', unitPrice: 55, price: 110, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
+    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(12), time: time(19), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'authorised', fulfilment: 'delivery' });
+    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(20), time: time(18), quantity: 2, attendees: 2, unit: 'person', unitPrice: 55, price: 110, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
 
     // BAKER: a confirmed order and a refunded one.
     const bItem = bakerItemRows[0];
@@ -371,7 +371,7 @@ async function main() {
     const oToday = await makeOrder({ ...orderBase, provider: sauna, sessionId: upSauna.id, date: dayOffset(0), time: time(19), quantity: 2, adults: 2, children: 0, unit: 'person', unitPrice: 18, price: 36, itemId: sauShared.id, itemName: sauShared.name, status: 'confirmed', fulfilment: 'collection' });
     const upYoga = await makeSession(yoga.id, dayOffset(1), time(8), { seats: 2, capacity: 10, declared: true, title: 'Sunrise class' });
     const oTomorrow = await makeOrder({ ...orderBase, provider: yoga, sessionId: upYoga.id, date: dayOffset(1), time: time(8), quantity: 2, adults: 2, children: 0, unit: 'person', unitPrice: 14, price: 28, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
-    const oThisWeek = await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(3), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
+    const oThisWeek = await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(3), time: time(19, 30), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
     const oNextWeek = await makeOrder({ ...orderBase, provider: baker, date: dayOffset(8), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
 
     /* --------------- seed-sauna (Isla): an UPCOMING HOLIDAY-LET STAY with a

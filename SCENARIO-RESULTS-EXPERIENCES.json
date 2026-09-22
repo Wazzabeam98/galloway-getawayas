@@ -1,8 +1,8 @@
 {
-  "ranAt": "2026-09-22T04:34:48.265Z",
+  "ranAt": "2026-09-22T14:18:39.745Z",
   "target": "http://localhost:3190",
   "account": "acct_1U6iMxAJfMhUsIVc",
-  "passed": 17,
+  "passed": 18,
   "failed": 0,
   "lostWebhookReconciled": true,
   "lostWebhookRequestReconciled": true,
@@ -14,7 +14,7 @@
         {
           "description": "slot/book accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1nfwFQmkPExByPhIti50lgjyOCS4dxUkifGdPcVYI9UpyXAtIOfz0XQ0C#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Ryp8RH67B0OSbXLqCSiMC2wkILkQ4SSSWcFFmTmHR7yUWinYXyZzWqfO#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "a holding order exists after booking",
@@ -59,7 +59,7 @@
         {
           "description": "STRIPE: the provider was paid — £6 fee to us, £54 transferred to them",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UILJ6PTBrEa7mS70zPpHfEy"
+          "detail": "fee=600 transfer=tr_3UIUMPPTBrEa7mS71eFpbpFC"
         },
         {
           "description": "STRIPE: the provider’s connected balance rose by ~£54 net",
@@ -74,7 +74,7 @@
         {
           "description": "APP: the order now carries the PaymentIntent id",
           "ok": true,
-          "detail": "pi_3UILJ6PTBrEa7mS70yZZcBA6"
+          "detail": "pi_3UIUMPPTBrEa7mS7133SymLw"
         },
         {
           "description": "APP: the seat was KEPT (seats_taken still 1 — not resold)",
@@ -93,7 +93,7 @@
         {
           "description": "services/order accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1xkXqOkbxTSKVbdT2nGjiKRKvnbuGgl3N9fffgDVX6HNFp0zbwDULoSYS#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1gnWo0wmnrS6eLJMaxnPsouM9OKLitvYaNiJ5xGOM0YRzlIF76yPr9ysW#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "the card is HELD not charged (requires_capture)",
@@ -118,7 +118,7 @@
         {
           "description": "the order carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UILK2PTBrEa7mS71V5rJxM7"
+          "detail": "pi_3UIUNZPTBrEa7mS70qP3LF8Z"
         },
         {
           "description": "orders/respond confirm succeeded",
@@ -171,7 +171,7 @@
         {
           "description": "STRIPE: fee £6, transfer to provider",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UILK8PTBrEa7mS71ueXa1ha"
+          "detail": "fee=600 transfer=tr_3UIUNgPTBrEa7mS71kqY98XB"
         },
         {
           "description": "the webhook was accepted (200)",
@@ -389,12 +389,12 @@
         {
           "description": "APP: it carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UILMBPTBrEa7mS71obF55tm"
+          "detail": "pi_3UIUQDPTBrEa7mS71Sr8W73p"
         },
         {
           "description": "APP: it belongs to the right guest and provider",
           "ok": true,
-          "detail": "13d3bfc4-71a4-4c3b-9160-970181a3d2c7/68429f90-a972-4674-9b00-76bc9dc387a0"
+          "detail": "2217409b-b442-4bd1-95ab-f2221e7140af/0bb01db6-8939-4423-a94a-26afb4b7f11d"
         },
         {
           "description": "STRIPE: the hold is still LIVE (requires_capture — nothing captured early, nothing lost)",
@@ -649,7 +649,7 @@
     },
     {
       "number": "12",
-      "title": "Change count down: a reduction refunds the difference at once and lowers the payout",
+      "title": "Reductions are gone: a lower count is refused and nothing is refunded",
       "checks": [
         {
           "description": "a confirmed per-person order, £165 for 3",
@@ -657,23 +657,33 @@
           "detail": "confirmed £165"
         },
         {
-          "description": "change-count down is accepted",
+          "description": "a per-person reduction is REFUSED (400)",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"refunded\":55,\"count\":2}"
+          "detail": "HTTP 400 {\"ok\":false,\"error\":\"You can only add places here. To lower your count, message the provider or cancel and rebook.\"}"
         },
         {
-          "description": "STRIPE — £55 was refunded to the card",
+          "description": "STRIPE — nothing was refunded",
           "ok": true,
-          "detail": "refunded=5500"
+          "detail": "refunded=0"
         },
         {
-          "description": "price stays £165 (the original charge); £55 is recorded as refunded, count now 2",
+          "description": "the order is untouched — still £165 for 3, no refund recorded",
           "ok": true,
-          "detail": "£165 q2 refunded 55"
+          "detail": "£165 q3 refunded 0"
+        },
+        {
+          "description": "an extra-guests reduction is REFUSED (400)",
+          "ok": true,
+          "detail": "HTTP 400 {\"ok\":false,\"error\":\"You can only add guests here. To lower your party, message the provider or cancel and rebook.\"}"
+        },
+        {
+          "description": "the extra-guests order is untouched — still £300, party 6, nothing refunded",
+          "ok": true,
+          "detail": "£300 party 6 refunded 0"
         }
       ],
       "status": "passed",
-      "note": "Payout follows automatically: orderNet = (price − amount_refunded) × (1 − rate) = (165 − 55) × 0.9 = £99, down from £148.50."
+      "note": "Guest-count reductions and the reduce-and-refund path are removed everywhere. To lower a party a guest cancels or messages the provider."
     },
     {
       "number": "13",
@@ -682,7 +692,7 @@
         {
           "description": "a party of 6 on the £220-for-4 item is accepted (stay is 8)",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1GoEmkDaBRUZnAskUyG7nLZGS18xQ1Hh8an9SuUzxaExrlUqeTTMYCCLP#fidnandhYHdWcXxpYCc%2"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1YXaUyzghlbn9uWlyGjtEfL0nmdHBJRZUClYo06yVA8tog8wxW7muXlKn#fidnandhYHdWcXxpYCc%2"
         },
         {
           "description": "the order records £300 for a party of 6 (220 + 2×£40)",
@@ -705,7 +715,7 @@
         {
           "description": "the increase is a REQUEST — a Checkout hold, not an instant charge",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1OglZcHcrtDvS1asRpdMZAqA0l6hsc6I9MFXaIGPqeoRpT71Iv1KNZDfC#fidnandhYHdWcXxpYCc%2"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1guKz1yNruGU5zwzHfGxBDLcfQOzUMkt1IUzKpfIqsj7FCjGoPxrhWVO3#fidnandhYHdWcXxpYCc%2"
         },
         {
           "description": "a holding child was written for the extra place (£55)",
@@ -799,16 +809,59 @@
     },
     {
       "number": "17",
-      "title": "The provider’s payout follows every change",
+      "title": "A provider’s full refund records the full amount and reverses the payout to nothing",
       "checks": [
         {
-          "description": "after a reduce, the payable net drops (orderNet = (price − refunded) × 0.9)",
+          "description": "the provider’s full refund succeeds",
           "ok": true,
-          "detail": "before £198.00 after £99.00"
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"refunded\"}"
+        },
+        {
+          "description": "STRIPE — the full £220 was refunded to the card",
+          "ok": true,
+          "detail": "refunded=22000"
+        },
+        {
+          "description": "amount_refunded is set to the FULL amount and orderNet is £0",
+          "ok": true,
+          "detail": "refunded refunded £220 net £0.00"
         }
       ],
       "status": "passed",
-      "note": "There is no payout cron for experiences — the provider is paid by the destination charge, netting off amount_refunded; a reduce reverses the transfer, an accepted increase adds its own charge."
+      "note": "A provider refund now writes amount_refunded = price, so orderNet = (price − amount_refunded) × 0.9 reads zero — the destination transfer is reversed to nothing."
+    },
+    {
+      "number": "18",
+      "title": "A lost change-request webhook: the rebuild sweep reconciles the hold; an expired one has its PaymentIntent cancelled",
+      "checks": [
+        {
+          "description": "the increase is a request — a holding child is written",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Pp4mvBNphs5q91NunqLJobZuNRSSPVOvGRznzfccYPJE1mm5K5ZrtHEQ#f"
+        },
+        {
+          "description": "the rebuild sweep reconciled the lost hold to AUTHORISED",
+          "ok": true,
+          "detail": "authorised pi=pi_3UIUUfPTBrEa7mS70CndLefd"
+        },
+        {
+          "description": "the hold is kept — the PaymentIntent still requires capture",
+          "ok": true,
+          "detail": "requires_capture"
+        },
+        {
+          "description": "the expired hold is marked expired",
+          "ok": true,
+          "detail": "expired"
+        },
+        {
+          "description": "STRIPE — the held PaymentIntent was CANCELLED, releasing the card",
+          "ok": true,
+          "detail": "canceled"
+        }
+      ],
+      "status": "passed",
+      "note": null
     }
   ]
 }

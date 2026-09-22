@@ -79,7 +79,9 @@ export default function ExperienceListingBody({
             .map((i) => Number(i.capacity) || Number(p.slotCapacity) || 0);
         return perPersonCaps.length ? Math.max(...perPersonCaps) : (Number(p.slotCapacity) || 0);
     })();
-    const groupSize = isSlot ? capacityLabel(slotCapacity) : groupSizeLabel(p.maxGuests);
+    // Party size is meaningless for a made-to-order food order (you buy items, not
+    // seats), so it's shown only for a slot (capacity) or a comes-to-you booking.
+    const groupSize = isSlot ? capacityLabel(slotCapacity) : (p.shape === 'made_to_order' ? '' : groupSizeLabel(p.maxGuests));
     // The professional title reads as the host's "who they are" line, unless it
     // would only echo the heading (a provider whose business_name is still their
     // professional title, before a distinct listing name exists).

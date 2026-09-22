@@ -43,6 +43,8 @@ interface Quote {
     max?: number;
     free?: boolean;
     closed?: boolean;          // past the window — no changes
+    messageOnly?: boolean;     // nothing to charge/hold — point the guest at the provider
+    riseOnly?: boolean;        // increases only; reductions are gone
     providerName?: string | null;
     // flat item with extra-guests pricing: the party moves the fee.
     extraGuests?: boolean;
@@ -212,14 +214,12 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
     };
 
     // The confirm button's label + whether it's enabled, by what the change does.
-    const confirmLabel = mode === 'group'
-        ? 'Save group size'
-        // A rise on a request shape is a REQUEST the provider accepts — the card is
-        // only held. A slot rise is instant. A fall always refunds instantly.
-        : delta > 0 ? (isRequest ? 'Request & hold ' + money(money0) : 'Continue to payment · ' + money(money0))
-        : delta < 0 ? 'Reduce & refund ' + money(money0)
-        : 'Change guest count';
-    const canConfirm = !!quote && !busy && !slotFull && delta !== 0;
+    // INCREASES ONLY now. A comes-to-you rise is a REQUEST the provider accepts
+    // (card only held); a slot rise is instant. Reductions are gone.
+    const confirmLabel = delta > 0
+        ? (isRequest ? 'Request & hold ' + money(money0) : 'Continue to payment · ' + money(money0))
+        : 'Add guests';
+    const canConfirm = !!quote && !busy && !slotFull && delta > 0;
 
     const trigger = (
         <button type="button" onClick={openModal}
@@ -250,9 +250,13 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
                                 <p className="text-sm text-rose-600">{loadErr}</p>
                             ) : !quote ? (
                                 <p className="text-sm text-slate-400">Loading…</p>
-                            ) : (quote.closed || !free) ? (
+                            ) : (quote.closed || quote.messageOnly || !free) ? (
                                 <div className="space-y-3">
-                                    <p className="text-sm text-slate-600">Changes are closed now — the free-cancellation window has passed. Message {quote.providerName || 'the provider'} if you need to change anything.</p>
+                                    <p className="text-sm text-slate-600">
+                                        {quote.messageOnly
+                                            ? 'To change your party for this booking, message ' + (quote.providerName || 'the provider') + '.'
+                                            : 'Changes are closed now — the free-cancellation window has passed. Message ' + (quote.providerName || 'the provider') + ' if you need to change anything.'}
+                                    </p>
                                     <a href={'/messages?o=' + orderId} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">
                                         Message {quote.providerName || 'the provider'}
                                     </a>
@@ -303,20 +307,13 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
                                     </div>
 
                                     {/* Which rule applies — said before the guest confirms. */}
-                                    {mode === 'group' ? (
-                                        <p className="text-[13px] text-slate-500">Group size only — this doesn’t change the price.</p>
-                                    ) : isRequest ? (
-                                        free ? (
-                                            <p className="text-[13px] text-slate-500">You can change this freely right now — a lower count is refunded, a higher one is charged.</p>
-                                        ) : (
-                                            <p className="text-[13px] font-medium text-slate-600">The free-cancellation window has passed — you can add places, but removing them isn’t refundable.</p>
-                                        )
+                                    {/* Increases only. A comes-to-you rise is a request the
+                                        provider accepts; a slot rise is an instant top-up. To
+                                        lower a count, a guest messages the provider or rebooks. */}
+                                    {isRequest ? (
+                                        <p className="text-[13px] text-slate-500">Adding guests is a request — {quote.providerName || 'the provider'} has 48 hours to accept, and your card is only held until they do. To lower your party, message them or cancel and rebook.</p>
                                     ) : (
-                                        free ? (
-                                            <p className="text-[13px] text-slate-500">{quote.deadlineISO ? 'Free to cancel until ' + cutoffLabel(quote.deadlineISO) + '; after that an added place isn’t refundable.' : ''}</p>
-                                        ) : (
-                                            <p className="text-[13px] font-medium text-slate-600">Non-refundable</p>
-                                        )
+                                        <p className="text-[13px] text-slate-500">{quote.deadlineISO ? 'An added place is charged now. Free to cancel until ' + cutoffLabel(quote.deadlineISO) + '.' : 'An added place is charged now.'}</p>
                                     )}
 
                                     {error && <p className="text-[13px] text-rose-600">{error}</p>}
@@ -324,7 +321,7 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
                             )}
                         </div>
 
-                        {quote && !quote.closed && free && !slotFull && !loadErr && (
+                        {quote && !quote.closed && !quote.messageOnly && free && !slotFull && !loadErr && (
                             <div className="border-t border-slate-100 p-4">
                                 <button type="button" disabled={!canConfirm} onClick={proceed}
                                     className={

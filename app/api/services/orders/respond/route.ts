@@ -200,7 +200,10 @@ export async function POST(request: Request) {
             );
             const { data: refunded } = await admin
                 .from('service_orders')
-                .update({ status: 'refunded', cancelled_at: new Date().toISOString() })
+                // A full refund records the FULL amount in amount_refunded, so
+                // orderNet = price − amount_refunded reads zero and the payout is
+                // reversed to nothing — the same field a partial change writes to.
+                .update({ status: 'refunded', amount_refunded: Number(order.price) || 0, cancelled_at: new Date().toISOString() })
                 .eq('id', order.id)
                 .eq('status', 'confirmed')
                 .select('id');

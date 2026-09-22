@@ -309,6 +309,9 @@ export async function POST(request: Request) {
                         extra_adult_fee: includedGuests ? feeOrNull(it.extra_adult_fee) : null,
                         extra_child_fee: includedGuests && kidsOk ? feeOrNull(it.extra_child_fee) : null,
                         max_party: includedGuests ? intOrNull(it.max_party) : null,
+                        // Made-to-order standard/custom. Only meaningful for that
+                        // shape; harmless (false) elsewhere.
+                        is_custom: p.shape === 'made_to_order' ? (it.is_custom === true) : false,
                         // No per-item minimum: a shared session takes a single
                         // person by design. Cleared to null so the column falls back
                         // to its default of 1 (no floor); the control is gone.

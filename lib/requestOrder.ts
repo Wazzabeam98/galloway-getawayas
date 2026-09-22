@@ -55,7 +55,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
 
     const { data: prov } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, contact_email, exclusive_per_date')
+        .select('id, business_name, trade, shape, contact_email, exclusive_per_date')
         .eq('id', md.provider_id)
         .maybeSingle();
 
@@ -69,6 +69,30 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
 
     const guestsNum = md.guests ? parseInt(md.guests, 10) : null;
     const nowIso = new Date().toISOString();
+
+    // A MADE-TO-ORDER CART carries its lines in metadata as "itemId:qty,..." (kept
+    // compact for Stripe's 500-char limit); the frozen line detail is rebuilt here
+    // from the items. An all-standard cart is INSTANT (paid at once, confirmed);
+    // any custom item makes it a request (held, authorised, provider answers).
+    const isCart = !!md.cart;
+    const instant = md.instant === '1';
+    let lineItems: any[] | null = null;
+    if (isCart) {
+        const pairs = String(md.cart).split(',').map((s: string) => {
+            const [id, q] = s.split(':');
+            return { id: (id || '').trim(), qty: Math.max(1, parseInt(q, 10) || 1) };
+        }).filter((p: any) => p.id);
+        const ids = Array.from(new Set(pairs.map((p: any) => p.id)));
+        const { data: its } = ids.length
+            ? await admin.from('service_provider_items').select('id, name, unit, price, is_custom').in('id', ids)
+            : { data: [] };
+        const byId = new Map<string, any>((its || []).map((i: any) => [i.id, i]));
+        lineItems = pairs.map((p: any) => {
+            const it = byId.get(p.id);
+            const up = it ? Number(it.price) : 0;
+            return { item_id: p.id, name: it ? it.name : 'Item', unit: it ? it.unit : 'flat', qty: p.qty, unit_price: up, line_total: Math.round(up * p.qty * 100) / 100, is_custom: it ? !!it.is_custom : false };
+        });
+    }
 
     const { data: order, error: orderErr } = await admin
         .from('service_orders')
@@ -87,6 +111,11 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             service_address: md.service_address || null,
             fulfilment: md.fulfilment || null,
             trade: (prov && prov.trade) || null,
+            // The provider's shape (comes_to_you / made_to_order), so the order
+            // carries it rather than being inferred — shapeOf defaults an unset
+            // shape to made_to_order, which now decides whether a guest-count
+            // change is even offered. A slot never reaches this builder.
+            shape: (prov && prov.shape) || null,
             // Snapshotted so the one-per-date unique index can see it (an index
             // predicate reads only its own table's columns). A chef/masseur is
             // exclusive; a baker is not.
@@ -101,21 +130,32 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             children: md.children ? (parseInt(md.children, 10) || 0) : null,
             price: Number(cs.amount_total || 0) / 100,
             commission_rate: Number(md.commission_rate) || 0.10,
-            status: 'authorised',
+            // An all-standard cart is paid and confirmed at once; everything else is
+            // held as a request until the provider answers.
+            status: (isCart && instant) ? 'confirmed' : 'authorised',
+            confirmed_at: (isCart && instant) ? nowIso : null,
+            line_items: lineItems,
             // Profile contact when signed in; the typed/paid contact for a
             // standalone booker with no account yet (minted from this on payment).
             guest_name: displayName(guest, '') || md.contact_name || null,
             guest_phone: (guest ? guest.phone : null) || md.contact_phone || null,
             guest_email: (guest && guest.email) || md.contact_email || (cs.customer_details && cs.customer_details.email) || null,
-            note: md.note || null,
+            // A made-to-order cart's free-text preferred collection/delivery time is
+            // kept on the note (there is no fixed slot for food), labelled so the
+            // order page and the provider read it plainly.
+            note: (isCart && md.collection_note)
+                ? ('Preferred ' + (md.fulfilment === 'delivery' ? 'delivery' : 'collection') + ' time: ' + md.collection_note)
+                : (md.note || null),
             allergy: md.allergy || null,
             provider_business_name: prov ? prov.business_name : null,
-            item_id: md.item_id || null,
+            item_id: isCart ? null : (md.item_id || null),
             item_name: md.item_name || null,
             item_description: md.item_description || null,
             item_unit: md.item_unit || null,
-            unit_price: md.unit_price ? Number(md.unit_price) : null,
-            quantity: md.quantity ? parseInt(md.quantity, 10) : 1,
+            unit_price: (isCart || !md.unit_price) ? null : Number(md.unit_price),
+            // quantity is NOT NULL; a cart's real breakdown is in line_items, so the
+            // order-level quantity is just 1 (one order).
+            quantity: isCart ? 1 : (md.quantity ? parseInt(md.quantity, 10) : 1),
             stripe_payment_intent_id: piId,
             expires_at: expiryFrom(nowIso),
             created_at: nowIso,
@@ -153,6 +193,44 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
         return { created: false, reason: 'error' };
     }
 
+    // A rendered list of the cart's lines, for the emails below.
+    const linesHtml = (lineItems && lineItems.length)
+        ? '<ul style="margin:0 0 16px;padding-left:18px;font-size:15px;">' + lineItems.map((l) => '<li>' + escapeHtml(String(l.qty)) + ' × ' + escapeHtml(String(l.name)) + (l.is_custom ? ' (made to order)' : '') + ' — £' + Number(l.line_total).toFixed(2) + '</li>').join('') + '</ul>'
+        : '';
+    const guestTo = ((guest && guest.email) || md.contact_email || (cs.customer_details && cs.customer_details.email) || '').trim();
+    const totalStr = '£' + (Number(cs.amount_total || 0) / 100).toFixed(2);
+    const whereWhen = ' for <strong>' + escapeHtml(String(md.service_date)) + '</strong>'
+        + (md.collection_note ? ' (' + escapeHtml(String(md.collection_note)) + ')' : '')
+        + (md.fulfilment === 'delivery' && md.service_address ? ', delivered to ' + escapeHtml(String(md.service_address)) : ', for collection');
+
+    // AN INSTANT (all-standard) FOOD ORDER — paid and confirmed at once. The guest
+    // gets a receipt and the provider a new-order notice; there is nothing to answer.
+    if (isCart && instant && order) {
+        try {
+            if (guestTo) {
+                await sendEmail(guestTo, 'Your order with ' + (prov ? prov.business_name : 'your provider') + ' is confirmed', emailLayout(
+                    '<p style="margin:0 0 16px;font-size:16px;">Thanks — your order with <strong>' + escapeHtml((prov && prov.business_name) || 'your provider') + '</strong> is confirmed and paid' + whereWhen + '.</p>'
+                    + linesHtml
+                    + '<p style="margin:0 0 16px;font-size:16px;">Total paid: <strong>' + escapeHtml(totalStr) + '</strong>.</p>'
+                    + allergyCallout(md.allergy) + noteCallout(md.note),
+                    'You’re receiving this because you booked through Galloway Getaways.'));
+            }
+        } catch (e) { console.error('[requestOrder] instant guest receipt failed', e); }
+        try {
+            if (prov && prov.contact_email) {
+                await sendEmail(prov.contact_email, 'A new order came in', emailLayout(
+                    allergyCallout(md.allergy)
+                    + '<p style="margin:0 0 16px;font-size:16px;">A guest has ordered' + whereWhen + '. It’s paid — nothing to accept.</p>'
+                    + linesHtml
+                    + '<p style="margin:0 0 16px;font-size:16px;">Total: <strong>' + escapeHtml(totalStr) + '</strong>, less the Galloway Getaways fee.</p>'
+                    + noteCallout(md.note)
+                    + button(SITE_URL + '/services/dashboard#order-' + order.id, 'See the order'),
+                    'You’re receiving this because you offer experiences on Galloway Getaways.'));
+            }
+        } catch (e) { console.error('[requestOrder] instant provider notice failed', e); }
+        return { created: true, orderId: order.id };
+    }
+
     // Tell the provider there is something to answer. Best-effort: the hold is
     // placed whether or not the mail sends, and the dashboard shows it anyway.
     try {
@@ -172,6 +250,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     + (Number.isFinite(guestsNum as number) && (guestsNum as number) > 0
                         ? ' · ' + guestsNum + ' guest' + (guestsNum === 1 ? '' : 's') : '')
                     + '.</p>'
+                    + linesHtml
                     + (md.service_address ? '<p>Where: ' + escapeHtml(String(md.service_address)) + '</p>' : '')
                     + noteCallout(md.note)
                     + '<p>Their card is held, not charged. Confirm within 48 hours to '

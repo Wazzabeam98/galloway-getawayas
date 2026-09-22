@@ -36,6 +36,10 @@ export interface MpItem {
     extraAdultFee: number | null;
     extraChildFee: number | null;
     maxParty: number | null;
+    // Made-to-order only: a CUSTOM item needs the provider to agree, so an order
+    // containing one is held as a request; an order of only STANDARD items books
+    // and charges instantly. Default false (standard).
+    isCustom: boolean;
 }
 // A booked session's interval on the provider's day, for greying overlapping
 // starts client-side: the same rule the claim and the DB exclusion enforce. Also
@@ -332,7 +336,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label, centre_lat, centre_lng').in('provider_id', ids),
-        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party')
+        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
@@ -373,6 +377,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             extraAdultFee: it.extra_adult_fee == null ? null : Number(it.extra_adult_fee),
             extraChildFee: it.extra_child_fee == null ? null : Number(it.extra_child_fee),
             maxParty: it.max_party == null ? null : Number(it.max_party),
+            isCustom: !!it.is_custom,
         }));
         if (!items.length) continue;
         const perItemDurations = items.some((it: MpItem) => it.duration_minutes != null && it.duration_minutes > 0);

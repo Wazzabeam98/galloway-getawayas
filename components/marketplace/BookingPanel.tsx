@@ -22,6 +22,7 @@ interface PanelItem {
     extraAdultFee?: number | null;
     extraChildFee?: number | null;
     maxParty?: number | null;
+    isCustom?: boolean;
 }
 interface PanelSession {
     date: string; time: string;
@@ -78,6 +79,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     provider: PanelProvider;
 }) {
     const isSlot = provider.shape === 'slot';
+    const isMadeToOrder = provider.shape === 'made_to_order';
     const standalone = standaloneProp ?? !bookingId;
     const [open, setOpen] = useState(false);
     const [initialDate, setInitialDate] = useState<string | null>(null);
@@ -94,6 +96,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     const [address, setAddress] = useState<string>('');
     const [allergy, setAllergy] = useState<string>('');
     const [allergyTags, setAllergyTags] = useState<string[]>([]);
+    // Made-to-order cart: itemId → quantity. A free-text collection/delivery time.
+    const [cart, setCart] = useState<Record<string, number>>({});
+    const [collectionTime, setCollectionTime] = useState<string>('');
+    const setCartQty = (id: string, n: number) => setCart((c) => { const next = { ...c }; if (n <= 0) delete next[id]; else next[id] = Math.min(MAX_ORDER_QUANTITY, n); return next; });
 
     const declaredSessions = provider.declaredSessions || [];
     const reqLead = provider.shape === 'made_to_order' ? Math.max(1, provider.leadTimeDays || 1) : 1;
@@ -174,6 +180,39 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     const travels = provider.shape === 'comes_to_you' || (reqItem && String(reqItem.fulfilment) === 'delivery');
     const needsAddress = standalone && !!travels;
     const offered = provider.offeredTimes || [];
+
+    // Made-to-order cart derived values.
+    const cartLines = provider.items.map((it) => ({ it, qty: cart[it.id] || 0 })).filter((l) => l.qty > 0);
+    const cartTotal = cartLines.reduce((s, l) => s + l.it.price * l.qty, 0);
+    const cartHasCustom = cartLines.some((l) => !!l.it.isCustom);
+    const cartDelivers = provider.fulfilment === 'delivery' || (provider.fulfilment === 'both' && cartLines.some((l) => String(l.it.fulfilment) === 'delivery'));
+    const cartNeedsAddress = standalone && cartDelivers;
+    const deliverWord = cartDelivers ? 'delivery' : 'collection';
+
+    async function sendCart() {
+        setError(null);
+        if (!cartLines.length) { setError('Add at least one item.'); return; }
+        if (!date) { setError('Pick a date.'); return; }
+        if (cartNeedsAddress && !address.trim()) { setError('Add the delivery address.'); return; }
+        setBusy(true);
+        try {
+            const trimmedAllergy = [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '');
+            const res = await fetch('/api/services/order', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    items: cartLines.map((l) => ({ itemId: l.it.id, qty: l.qty })),
+                    bookingId, serviceDate: date,
+                    collectionTime: collectionTime.trim() || undefined,
+                    serviceAddress: cartNeedsAddress ? address.trim() : undefined,
+                    allergy: trimmedAllergy,
+                }),
+            });
+            const d = await res.json();
+            if (d && d.ok && d.url) { window.location.href = d.url; return; }
+            setError((d && d.error) || 'Could not start that.');
+        } catch { setError('Could not start that.'); }
+        setBusy(false);
+    }
 
     async function sendRequest() {
         setError(null);
@@ -285,6 +324,89 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                             onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
                         />
                     )}
+                </>
+            ) : isMadeToOrder ? (
+                <>
+                    <span className={`mt-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cartHasCustom ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'}`}>
+                        {cartHasCustom ? `Request — ${provider.who} has 48 hours to confirm` : 'Books instantly'}
+                    </span>
+
+                    {/* The menu as a cart — pick as many as you like, each with its
+                        own quantity, with a running total. */}
+                    <div className="mt-4 space-y-2">
+                        {provider.items.map((it) => {
+                            const q = cart[it.id] || 0;
+                            return (
+                                <div key={it.id} className="flex items-center gap-3 rounded-lg border border-slate-200 p-2.5">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate text-sm font-medium text-slate-800">{it.name}{it.isCustom ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Made to order</span> : null}</div>
+                                        <div className="text-[13px] text-slate-500">£{it.price.toFixed(2)}{it.description ? ' · ' + it.description : ''}</div>
+                                    </div>
+                                    <div className="flex flex-none items-center gap-2.5">
+                                        <button type="button" aria-label={'Fewer ' + it.name} onClick={() => setCartQty(it.id, q - 1)} disabled={q <= 0}
+                                            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40">−</button>
+                                        <span className="w-5 text-center text-sm font-semibold text-slate-900">{q}</span>
+                                        <button type="button" aria-label={'More ' + it.name} onClick={() => setCartQty(it.id, q + 1)} disabled={q >= MAX_ORDER_QUANTITY}
+                                            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40">+</button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-sm">
+                        <span className="font-medium text-slate-600">Total</span>
+                        <span className="font-semibold text-slate-900">£{cartTotal.toFixed(2)}</span>
+                    </div>
+
+                    <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a {deliverWord} date</div>
+                    <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                        {bookableDays.map((d) => (
+                            <button key={d} type="button" onClick={() => setDate(d)}
+                                className={`whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-medium ${date === d ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
+                                {dateLabel(d)}
+                            </button>
+                        ))}
+                    </div>
+
+                    <label className="mt-4 block">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Preferred {deliverWord} time <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
+                        <input type="text" value={collectionTime} onChange={(e) => setCollectionTime(e.target.value.slice(0, 200))}
+                            placeholder={cartDelivers ? 'e.g. late afternoon' : 'e.g. around 10am'}
+                            className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                    </label>
+
+                    {cartNeedsAddress && (
+                        <label className="mt-4 block">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery address</span>
+                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2}
+                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                        </label>
+                    )}
+
+                    {provider.isFood && (
+                        <div className="mt-4">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Allergies or dietary needs <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {COMMON_ALLERGENS.map((a) => (
+                                    <button key={a} type="button" onClick={() => setAllergyTags((t) => (t.includes(a) ? t.filter((x) => x !== a) : [...t, a]))}
+                                        className={`rounded-full border px-2.5 py-1 text-xs font-medium ${allergyTags.includes(a) ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>{a}</button>
+                                ))}
+                            </div>
+                            <textarea value={allergy} onChange={(e) => setAllergy(e.target.value.slice(0, 500))} rows={2}
+                                className="mt-2 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                        </div>
+                    )}
+
+                    {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+
+                    <button type="button" onClick={sendCart} disabled={busy || !cartLines.length || !date}
+                        className="mt-4 w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                        {busy ? 'Sending…' : (cartHasCustom ? `Send request · £${cartTotal.toFixed(2)}` : `Book & pay · £${cartTotal.toFixed(2)}`)}
+                    </button>
+                    <p className="mt-2 text-xs text-slate-400">{cartHasCustom
+                        ? `Your card is held, not charged, until ${provider.who} accepts your made-to-order items.`
+                        : 'You pay now and your order is confirmed straight away.'}</p>
                 </>
             ) : (
                 <>
