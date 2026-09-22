@@ -1,35 +1,16 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
+import { unitMultiplies } from '@/lib/serviceOrders';
+import { hasExtraGuests } from '@/lib/extraGuests';
 import { generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
-import { itemPriceLabel, dateLabel, priceParts, cancellationBadge } from '@/components/marketplace/present';
-import { hasExtraGuests, partyPrice, partyCeiling } from '@/lib/extraGuests';
+import { dateLabel, priceParts, cancellationBadge } from '@/components/marketplace/present';
 import { childrenAllowed } from '@/lib/guestAges';
-import { prettyTime } from '@/lib/offeredTimes';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
-import { CalendarDays, Minus, Plus } from 'lucide-react';
+import { CalendarDays } from 'lucide-react';
 import BookingDialog, { type BookArgs, type DialogOpenSession } from '@/components/marketplace/BookingDialog';
 import DatePreview from '@/components/marketplace/DatePreview';
-import MonthCalendar from '@/components/marketplace/MonthCalendar';
-import { extraGuestsLine } from '@/lib/extraGuests';
 import { RequestBookingDialog, RequestDatePreview, type RequestBookArgs } from '@/components/marketplace/RequestBooking';
-
-// The one +/- stepper, at module scope so it keeps its identity across the
-// panel's renders. It used to be declared inside BookingPanel, which made React
-// remount it on every keystroke/click — the reason a guest count could look like
-// it wasn't changing. Same look as the slot dialog's stepper.
-function Stepper({ value, set, min, max }: { value: number; set: (n: number) => void; min: number; max: number }) {
-    return (
-        <span className="inline-flex items-center gap-3">
-            <button type="button" aria-label="Fewer" onClick={() => set(Math.max(min, value - 1))} disabled={value <= min}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Minus className="h-4 w-4" /></button>
-            <span className="w-6 text-center text-sm font-semibold text-slate-900">{value}</span>
-            <button type="button" aria-label="More" onClick={() => set(Math.min(max, value + 1))} disabled={value >= max}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Plus className="h-4 w-4" /></button>
-        </span>
-    );
-}
 
 interface PanelItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -75,22 +56,21 @@ interface PanelProvider {
     maxGuests?: number | null;
 }
 
-const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
 const dayKeyFromNow = (days: number) => shiftDayKey(londonDayKey(), days);
 const lastNight = (checkOut: string) => shiftDayKey(String(checkOut).slice(0, 10), -1);
 const maxKey = (a: string, b: string) => (a > b ? a : b);
 
-// The booking box a guest sees. Two ways in:
+// The booking box a guest sees for a SLOT or a COMES-TO-YOU experience. (A
+// made-to-order listing is served by the food-ordering layout — FoodMenu +
+// FoodBasket — not this component.) Two ways in:
 //   • Against a cottage stay (bookingId + checkIn/checkOut given): the date is
 //     bounded by the stay and the party capped by who's staying.
 //   • Standalone (no booking): bookable by anyone; the date runs to the
 //     provider's horizon, the party is capped by the item's own maximum, and a
-//     travelling shape (a comes-to-you chef, a delivery order) asks for an
-//     address.
-// A SLOT provider gets the Airbnb-shaped availability dialog; a REQUEST provider
-// (chef/baker) picks a date and time and sends a request that is held, not
-// charged, until they confirm.
-export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, cottageAdults, cottageChildren, stay, standalone: standaloneProp, provider }: {
+//     comes-to-you chef asks for an address.
+// Both shapes are compact — price, cancellation, a "Show dates" button and a few
+// suggested days — with the picking (guest count, calendar, time) in the dialog.
+export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, cottageAdults, cottageChildren, standalone: standaloneProp, provider }: {
     bookingId?: string; checkIn?: string; checkOut?: string; cottageGuests?: number;
     cottageAdults?: number | null; cottageChildren?: number | null;
     stay?: { title: string | null; town: string | null };
@@ -98,39 +78,20 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     provider: PanelProvider;
 }) {
     const isSlot = provider.shape === 'slot';
-    const isMadeToOrder = provider.shape === 'made_to_order';
+    const isComesToYou = provider.shape === 'comes_to_you';
     const standalone = standaloneProp ?? !bookingId;
     const [open, setOpen] = useState(false);
     const [initialDate, setInitialDate] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Request-flow state (non-slot only).
-    const [itemId, setItemId] = useState<string>(provider.items.length === 1 ? provider.items[0].id : '');
-    const [date, setDate] = useState<string>('');
-    const [time, setTime] = useState<string>('');
-    const [qty, setQty] = useState<number>(1);
-    const [adults, setAdults] = useState<number>(cottageAdults && cottageAdults > 0 ? cottageAdults : 1);
-    const [children, setChildren] = useState<number>(cottageChildren && cottageChildren > 0 ? cottageChildren : 0);
-    const [address, setAddress] = useState<string>('');
-    const [allergy, setAllergy] = useState<string>('');
-    const [allergyTags, setAllergyTags] = useState<string[]>([]);
-    // Made-to-order cart: itemId → quantity. No time — the collection/delivery
-    // time is arranged by message after the order is placed.
-    const [cart, setCart] = useState<Record<string, number>>({});
-    const setCartQty = (id: string, n: number) => setCart((c) => { const next = { ...c }; if (n <= 0) delete next[id]; else next[id] = Math.min(MAX_ORDER_QUANTITY, n); return next; });
-
     const declaredSessions = provider.declaredSessions || [];
     // The provider's notice period is the earliest a date can be picked — for a
-    // comes-to-you chef as much as a made-to-order baker (made-to-order floors at
-    // one day). A two-day notice on the 22nd first offers the 24th.
-    const reqLead = provider.shape === 'made_to_order'
-        ? Math.max(1, provider.leadTimeDays || 1)
-        : Math.max(0, provider.leadTimeDays || 0);
+    // comes-to-you chef as much as a made-to-order baker. A two-day notice on the
+    // 22nd first offers the 24th; a stay still can't be booked inside the notice.
+    const reqLead = Math.max(0, provider.leadTimeDays || 0);
     const minDate = standalone
         ? dayKeyFromNow(reqLead)
-        // Against a stay the dates come from the stay, but the provider's notice
-        // still holds — a 3-day-notice chef can't be booked for tomorrow night.
         : maxKey(String(checkIn).slice(0, 10), dayKeyFromNow(reqLead));
     const maxDate = standalone
         ? dayKeyFromNow(Math.max(1, provider.horizonDays || 90))
@@ -141,6 +102,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     const showFrom = provider.items.length > 1;
     const cancel = cancellationBadge(provider.cancellationHours, provider.noRefund);
 
+    // ---- SLOT ---------------------------------------------------------------
     const bookedRowByKey = useMemo(() => {
         const m = new Map<string, PanelSession['row']>();
         for (const b of provider.bookedBlocks || []) m.set(b.date + ' ' + b.time, { capacity: b.capacity, seats_taken: b.seats_taken, private: b.private });
@@ -177,98 +139,14 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         } catch { setError('Could not start that.'); setBusy(false); }
     }
 
-    // Non-slot request flow.
-    const reqItem = provider.items.find((i) => i.id === itemId) || null;
-    // The extra-guests helpers read snake_case (they run against DB rows too), so
-    // adapt the camelCase panel item.
-    const egItem = reqItem ? {
-        unit: reqItem.unit, price: reqItem.price,
-        included_guests: reqItem.includedGuests ?? null,
-        extra_adult_fee: reqItem.extraAdultFee ?? null,
-        extra_child_fee: reqItem.extraChildFee ?? null,
-        max_party: reqItem.maxParty ?? null,
-    } : null;
-    const reqPerPerson = !!reqItem && unitMultiplies(reqItem.unit);
-    const reqExtraGuests = !!egItem && hasExtraGuests(egItem);
-    const kidsOk = childrenAllowed(provider.minAge ?? null);
-    const reqQty = reqPerPerson ? Math.max(1, Math.min(MAX_ORDER_QUANTITY, Math.floor(qty) || 1)) : 1;
-    // The party cap: the item's own ceiling, and — against a stay — never more
-    // than are staying.
-    const stayCap = standalone ? Infinity : (Number(cottageGuests) || Infinity);
-    const partyCap = reqExtraGuests
-        ? Math.min(partyCeiling(egItem!), stayCap)
-        : Math.min(stayCap, provider.maxGuests && provider.maxGuests > 0 ? provider.maxGuests : Infinity);
-    const reqTotal = reqItem
-        ? (reqExtraGuests ? partyPrice(egItem!, adults, kidsOk ? children : 0, provider.minAge ?? null) : orderTotal(reqItem.price, reqQty))
-        : 0;
-    // Travelling shapes (a comes-to-you chef, a delivery item) need somewhere to
-    // go; standalone the guest types it, against a stay it's the cottage.
-    const travels = provider.shape === 'comes_to_you' || (reqItem && String(reqItem.fulfilment) === 'delivery');
-    const needsAddress = standalone && !!travels;
+    const previewDefault = provider.items.filter((i) => i.price > 0).sort((a, b) => a.price - b.price).find((i) => unitMultiplies(i.unit)) || provider.items[0] || null;
+    const previewSessions = provider.perItemDurations && previewDefault ? sessionsForItem(previewDefault.id) : provider.sessions;
+    const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
+
+    // ---- COMES-TO-YOU -------------------------------------------------------
+    // A comes-to-you chef only travels, so standalone it asks for an address.
+    const needsAddress = standalone && isComesToYou;
     const offered = provider.offeredTimes || [];
-
-    // Made-to-order cart derived values.
-    const cartLines = provider.items.map((it) => ({ it, qty: cart[it.id] || 0 })).filter((l) => l.qty > 0);
-    const cartTotal = cartLines.reduce((s, l) => s + l.it.price * l.qty, 0);
-    const cartHasCustom = cartLines.some((l) => !!l.it.isCustom);
-    const cartDelivers = provider.fulfilment === 'delivery' || (provider.fulfilment === 'both' && cartLines.some((l) => String(l.it.fulfilment) === 'delivery'));
-    const cartNeedsAddress = standalone && cartDelivers;
-    const deliverWord = cartDelivers ? 'delivery' : 'collection';
-
-    async function sendCart() {
-        setError(null);
-        if (!cartLines.length) { setError('Add at least one item.'); return; }
-        if (!date) { setError('Pick a date.'); return; }
-        if (cartNeedsAddress && !address.trim()) { setError('Add the delivery address.'); return; }
-        setBusy(true);
-        try {
-            const trimmedAllergy = [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '');
-            const res = await fetch('/api/services/order', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    items: cartLines.map((l) => ({ itemId: l.it.id, qty: l.qty })),
-                    bookingId, serviceDate: date,
-                    serviceAddress: cartNeedsAddress ? address.trim() : undefined,
-                    allergy: trimmedAllergy,
-                }),
-            });
-            const d = await res.json();
-            if (d && d.ok && d.url) { window.location.href = d.url; return; }
-            setError((d && d.error) || 'Could not start that.');
-        } catch { setError('Could not start that.'); }
-        setBusy(false);
-    }
-
-    async function sendRequest() {
-        setError(null);
-        if (!reqItem) { setError('Pick one first.'); return; }
-        if (!date) { setError('Pick a date.'); return; }
-        // comes-to-you always picks a time (from opening hours); a legacy
-        // offered-times provider still must too.
-        if ((provider.shape === 'comes_to_you' || offered.length) && !time) { setError('Pick a time.'); return; }
-        if (needsAddress && !address.trim()) { setError('Add the address they should come to.'); return; }
-        const party = reqExtraGuests ? adults + (kidsOk ? children : 0) : reqQty;
-        if (Number.isFinite(partyCap) && party > partyCap) { setError('That’s more than this experience takes (up to ' + partyCap + ').'); return; }
-        setBusy(true);
-        try {
-            const trimmedAllergy = provider.isFood ? [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '') : '';
-            const res = await fetch('/api/services/order', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    itemId: reqItem.id, bookingId, serviceDate: date, serviceTime: time || undefined,
-                    quantity: reqQty,
-                    adults: reqExtraGuests ? adults : undefined,
-                    children: reqExtraGuests ? (kidsOk ? children : 0) : undefined,
-                    serviceAddress: needsAddress ? address.trim() : undefined,
-                    allergy: trimmedAllergy,
-                }),
-            });
-            const d = await res.json();
-            if (d && d.ok && d.url) { window.location.href = d.url; return; }
-            setError((d && d.error) || 'Could not start that.');
-        } catch { setError('Could not start that.'); }
-        setBusy(false);
-    }
 
     const bookableDays = useMemo(() => {
         const out: string[] = []; let d = minDate;
@@ -276,17 +154,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         return out;
     }, [minDate, maxDate]);
 
-    const previewDefault = provider.items.filter((i) => i.price > 0).sort((a, b) => a.price - b.price).find((i) => unitMultiplies(i.unit)) || provider.items[0] || null;
-    const previewSessions = provider.perItemDurations && previewDefault ? sessionsForItem(previewDefault.id) : provider.sessions;
-    const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
-
-    // ---- Request-shape calendar + times -------------------------------------
-    // The full MonthCalendar for both request shapes, replacing the old row of
-    // three date chips. comes-to-you generates its start times from the
-    // provider's weekly opening hours (the single place hours are set) via the
-    // same generateSessions the slot grid uses; made-to-order is a DATE ONLY —
-    // the collection time is arranged by message afterwards.
-    const isComesToYou = provider.shape === 'comes_to_you';
+    // The available days and their start times, generated from the provider's
+    // weekly opening hours (the single place hours are set). A legacy provider
+    // with no hours but named offered_times falls back to those on every bookable
+    // day.
     const reqTimes = useMemo(() => {
         const byDate: Record<string, string[]> = {};
         const days = new Set<string>();
@@ -297,24 +168,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         }
         return { days, byDate };
     }, [isComesToYou, provider.slotAvailability, provider.slotBlocks, provider.partialBlocks, minDate, maxDate]);
-    // A comes-to-you provider with weekly opening hours drives the calendar and
-    // the times off them. If a legacy provider set none, fall back to every day
-    // in the window plus any offered_times they'd named (backwards-compatible).
-    // Made-to-order: every day in the window is bookable (a date only).
     const useHours = isComesToYou && reqTimes.days.size > 0;
     const calDays = useMemo(
         () => (useHours ? reqTimes.days : new Set(bookableDays)),
         [useHours, reqTimes.days, bookableDays],
     );
-    const timesForDate = useHours && date ? (reqTimes.byDate[date] || []) : [];
-    const timeOptions = isComesToYou ? (useHours ? timesForDate : offered) : [];
-    const today = londonDayKey();
-    const pickDate = (d: string) => { setDate(d); setTime(''); };
-    const egLine = egItem ? extraGuestsLine(egItem, provider.minAge ?? null) : null;
-
-    // The times each available day offers, for the compact preview and the dialog.
-    // Opening hours drive it; a legacy provider with no hours but named offered
-    // times falls back to those on every bookable day.
     const reqDialogTimes = useMemo<Record<string, string[]>>(() => {
         if (useHours) return reqTimes.byDate;
         const m: Record<string, string[]> = {};
@@ -353,10 +211,6 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         setBusy(false);
     }
 
-    // Slot keeps its short, padded card (the heavy picking is in the dialog). A
-    // request shape becomes a flex column capped to the viewport: a fixed header,
-    // a scrolling middle, and a pinned footer — so a long form scrolls INSIDE the
-    // box and the Book button always stays on screen, the way the slot dialog does.
     if (isSlot) {
         return (
             <div id="booking-panel" className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
@@ -414,65 +268,6 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                         onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
                     />
                 )}
-            </div>
-        );
-    }
-
-    // Made-to-order no longer reaches BookingPanel — the food-ordering layout
-    // (FoodMenu + FoodBasket) owns it. This branch is dead and is removed in its
-    // own commit; it stays here only so the component still type-checks meanwhile.
-    if (isMadeToOrder) {
-        return (
-            <div id="booking-panel" className="flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                <div className="flex-none border-b border-slate-100 px-5 pt-5 pb-4">
-                    {priceParts_ && (
-                        <div className="text-slate-900">
-                            <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
-                            {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
-                        </div>
-                    )}
-                    <span className={`mt-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cartHasCustom ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'}`}>
-                        {cartHasCustom ? `Request — ${provider.who} has 48 hours to confirm` : 'Books instantly'}
-                    </span>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                    <div className="space-y-2">
-                        {provider.items.map((it) => {
-                            const q = cart[it.id] || 0;
-                            return (
-                                <div key={it.id} className="flex items-center gap-3 rounded-lg border border-slate-200 p-2.5">
-                                    <div className="min-w-0 flex-1">
-                                        <div className="truncate text-sm font-medium text-slate-800">{it.name}</div>
-                                        <div className="text-[13px] text-slate-500">£{it.price.toFixed(2)}</div>
-                                    </div>
-                                    <Stepper value={q} set={(n) => setCartQty(it.id, n)} min={0} max={MAX_ORDER_QUANTITY} />
-                                </div>
-                            );
-                        })}
-                    </div>
-                    <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a {deliverWord} date</div>
-                    <div className="mt-1 rounded-xl border border-slate-200 px-3 pb-2">
-                        <MonthCalendar availableDays={calDays} selected={date || null} onSelect={pickDate} today={today} />
-                    </div>
-                    {cartNeedsAddress && (
-                        <label className="mt-4 block">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery address</span>
-                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2}
-                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                        </label>
-                    )}
-                </div>
-                <div className="flex-none border-t border-slate-100 px-5 py-4">
-                    {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
-                    <div className="mb-3 flex items-baseline justify-between">
-                        <span className="text-sm font-medium text-slate-600">Total</span>
-                        <span className="text-lg font-semibold text-slate-900">£{cartTotal.toFixed(2)}</span>
-                    </div>
-                    <button type="button" onClick={sendCart} disabled={busy || !cartLines.length || !date}
-                        className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                        {busy ? 'Sending…' : (cartHasCustom ? 'Send request' : 'Book & pay')}
-                    </button>
-                </div>
             </div>
         );
     }
