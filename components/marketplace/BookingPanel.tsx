@@ -422,7 +422,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                         </div>
 
                         <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a {deliverWord} date</div>
-                        <div className="mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 px-3">
+                        <div className="mt-1 rounded-xl border border-slate-200 px-3 pb-2">
                             <MonthCalendar availableDays={calDays} selected={date || null} onSelect={pickDate} today={today} />
                         </div>
                         <p className="mt-1.5 text-xs text-slate-400">The {deliverWord} time is arranged by message once your order is placed.</p>
@@ -467,7 +467,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                         )}
 
                         <div className={`${provider.items.length > 1 ? 'mt-4 ' : ''}text-xs font-semibold uppercase tracking-wide text-slate-500`}>Pick a date</div>
-                        <div className="mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 px-3">
+                        <div className="mt-1 rounded-xl border border-slate-200 px-3 pb-2">
                             <MonthCalendar availableDays={calDays} selected={date || null} onSelect={pickDate} today={today}
                                 emptyLabel={useHours ? 'No dates available just now.' : 'Pick a date.'} />
                         </div>
