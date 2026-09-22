@@ -32,6 +32,29 @@ import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
 export const dynamic = 'force-dynamic';
 
+// The browser tab carries the provider's name — "Loch Sauna | Galloway Getaways"
+// — so a guest with several trips open can tell the tabs apart. The root layout
+// appends " | Galloway Getaways", so this returns the bare name. Private, so it
+// stays out of search. Reads the name frozen on the order, falling back to the
+// provider's live name.
+export async function generateMetadata(
+    { params }: { params: { orderId: string } }
+): Promise<import('next').Metadata> {
+    const admin = adminClient();
+    const { data: o } = await admin
+        .from('service_orders')
+        .select('provider_business_name, provider_id')
+        .eq('id', params.orderId)
+        .maybeSingle();
+    let name = (o && o.provider_business_name) || '';
+    if (!name && o && o.provider_id) {
+        const { data: p } = await admin
+            .from('service_providers').select('business_name').eq('id', o.provider_id).maybeSingle();
+        name = (p && p.business_name) || '';
+    }
+    return { title: name || 'Your experience', robots: { index: false, follow: false } };
+}
+
 // A booked experience, as a page.
 //
 // Restyled in September 2026 against Airbnb's real post-booking reservation

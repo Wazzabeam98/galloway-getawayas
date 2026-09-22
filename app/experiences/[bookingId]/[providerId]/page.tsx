@@ -10,6 +10,17 @@ import BookingPanel from '@/components/marketplace/BookingPanel';
 
 export const dynamic = 'force-dynamic';
 
+// The browser tab carries the provider's name — "Loch Sauna | Galloway Getaways"
+// (the root layout appends the suffix). Private (behind a booking), so noindex.
+export async function generateMetadata(
+    { params }: { params: { bookingId: string; providerId: string } }
+): Promise<import('next').Metadata> {
+    const admin = adminClient();
+    const { data } = await admin
+        .from('service_providers').select('business_name').eq('id', params.providerId).maybeSingle();
+    return { title: (data && data.business_name) || 'Experience', robots: { index: false, follow: false } };
+}
+
 // A provider's listing, reached from inside a cottage booking: the stay supplies
 // the guest, the dates and the address, so the booking panel is pre-filled and
 // the whole page is gated on owning the booking. The public/standalone twin lives

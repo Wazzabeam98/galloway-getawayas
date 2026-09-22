@@ -11,6 +11,17 @@ import BookingPanel from '@/components/marketplace/BookingPanel';
 
 export const dynamic = 'force-dynamic';
 
+// The browser tab carries the provider's name — "Loch Sauna | Galloway Getaways"
+// (the root layout appends the suffix, so this returns the bare name).
+export async function generateMetadata(
+    { params }: { params: { providerId: string } }
+): Promise<import('next').Metadata> {
+    const admin = adminClient();
+    const { data } = await admin
+        .from('service_providers').select('business_name').eq('id', params.providerId).maybeSingle();
+    return { title: (data && data.business_name) || 'Experience' };
+}
+
 // The PUBLIC (bookingless) listing — readable logged out. Same body as the
 // against-a-stay listing, so the two read as one page. The booking column is the
 // only difference: a slot experience gets the standalone booking box (which
