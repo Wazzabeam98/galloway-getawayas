@@ -137,11 +137,15 @@ export default async function ProviderDashboardPage() {
                             {provider.business_name}
                         </h1>
                         <p className="mt-1 text-sm text-slate-500">
-                            {tradeLabel(provider.trade)} · guest experiences
+                            {tradeLabel(provider.trade)}
                         </p>
                     </div>
+                    {/* Same route as the nav menu's "Your listing" — /services/
+                        dashboard/edit is the one edit door (it forks a guest to the
+                        sectioned listing editor, a trade to the business editor).
+                        Both "Your listing" links point here so they never diverge. */}
                     <Link
-                        href="/services/dashboard/listing"
+                        href="/services/dashboard/edit"
                         className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
                     >
                         Your listing
