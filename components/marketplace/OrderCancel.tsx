@@ -112,7 +112,7 @@ export default function OrderCancel({
                 <>
                     <div className="text-sm font-semibold text-slate-900">Cancel and get your money back?</div>
                     <p className="mt-1 text-sm text-slate-600">
-                        You’ll get your full <span className="font-semibold">£{price.toFixed(2)}</span> back to your card. Refunds usually land in five to ten days, and {providerName}’s time reopens.
+                        You’ll get your full <span className="font-semibold">£{price.toFixed(2)}</span> back to your card.
                     </p>
                     <div className="mt-3 flex items-center gap-2">
                         {/* A full refund is not a loss, so this confirm button is
