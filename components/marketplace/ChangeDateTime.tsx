@@ -32,6 +32,10 @@ interface DateFeed {
     current: { date: string; time: string | null }; minKey: string; maxKey: string; horizonDays: number;
     takenDates: string[]; exclusive: boolean;
     offeredTimes: string[];
+    // Comes-to-you: the open start times per date, from the provider's opening
+    // hours. When present, a date is offerable only if it has times, and the
+    // picked date's times are the choices.
+    timesByDate?: Record<string, string[]>;
 }
 
 function keyOf(d: Date): string {
@@ -116,6 +120,10 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
     // ---- request-only derived --------------------------------------------------
     const reqHorizon = dateFeed ? (dateFeed.horizonDays || 90) : 90;
     const takenSet = new Set(dateFeed ? dateFeed.takenDates : []);
+    // Comes-to-you: per-date opening-hours times. When present, a date is open
+    // only if it has times, and the picked date's times are the choices.
+    const timesByDate = dateFeed && dateFeed.timesByDate ? dateFeed.timesByDate : null;
+    const hasHourTimes = !!timesByDate && Object.keys(timesByDate).length > 0;
 
     const minDate = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
     const maxDate = useMemo(() => new Date(Date.now() + (isRequest ? reqHorizon : slotHorizon) * 86400000), [isRequest, reqHorizon, slotHorizon]);
@@ -127,6 +135,8 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
         if (!dateFeed) return false;
         if (key < dateFeed.minKey || key > dateFeed.maxKey) return false;
         if (takenSet.has(key)) return false;
+        // With opening hours, a date is offerable only if it has open times.
+        if (hasHourTimes) return !!timesByDate![key];
         return true;
     };
     const disabledDates: Date[] = [];
@@ -171,10 +181,16 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
         : (!!slot && !locked && openDayKeys.size > 0);
 
     const feedReady = isRequest ? !!dateFeed : !!slot;
-    const reqOffered = dateFeed?.offeredTimes || [];
     const effectiveReqDate = pickedDate || (dateFeed ? dateFeed.current.date : '');
+    // The time choices for the picked date: the opening-hours times for that day
+    // when present, else the provider's flat offered_times (legacy), else none.
+    const reqTimeOptions = hasHourTimes ? (timesByDate![effectiveReqDate] || []) : (dateFeed?.offeredTimes || []);
+    // Whether this shape lets the guest pick a time at all (comes-to-you with
+    // hours, or a legacy provider with named offered_times). A made-to-order has
+    // none, so the sheet is date-only.
+    const showsReqTime = hasHourTimes || (dateFeed?.offeredTimes || []).length > 0;
     const reqChanged = !!dateFeed && ((effectiveReqDate !== dateFeed.current.date) || ((reqTime || '') !== (dateFeed.current.time || '')));
-    const reqReady = !dateFeed || (reqOffered.length ? !!reqTime : true);
+    const reqReady = !dateFeed || (reqTimeOptions.length ? !!reqTime : true);
     const currentWhen = isRequest ? whenLabel(dateFeed?.current.date || '', dateFeed?.current.time || undefined) : whenLabel(slot?.current.date || '', slot?.current.time);
 
     return (
@@ -190,7 +206,7 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-0 sm:items-center sm:px-4" onClick={closeModal}>
                     <div className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between px-5 pt-5">
-                            <h2 className="text-lg font-bold text-slate-900">{isRequest && reqOffered.length === 0 ? 'Change date' : 'Change date or time'}</h2>
+                            <h2 className="text-lg font-bold text-slate-900">{isRequest && !showsReqTime ? 'Change date' : 'Change date or time'}</h2>
                             <button type="button" onClick={closeModal} className="text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
                         </div>
 
@@ -222,7 +238,20 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                                                     onChange={(d: Date) => {
                                                         const k = keyOf(d);
                                                         setSelectedKey(k); setError(null);
-                                                        if (isRequest) setPickedDate(k); else setPickedTime(null);
+                                                        if (isRequest) {
+                                                            setPickedDate(k);
+                                                            // With opening hours, the times depend on the
+                                                            // weekday — keep the chosen time if the new day
+                                                            // offers it, else drop back to that day's own
+                                                            // current time (if it is the booking's day) or
+                                                            // clear so the guest picks one.
+                                                            if (hasHourTimes) {
+                                                                const opts = timesByDate![k] || [];
+                                                                setReqTime((prev) => (prev && opts.includes(prev))
+                                                                    ? prev
+                                                                    : (k === dateFeed?.current.date ? (dateFeed?.current.time || null) : null));
+                                                            }
+                                                        } else setPickedTime(null);
                                                     }}
                                                     minDate={minDate}
                                                     maxDate={maxDate}
@@ -280,11 +309,11 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                                             {isRequest && selectedKey && (
                                                 <p className="text-[13px] text-slate-600">New date: <span className="font-semibold text-slate-900">{dayLabel(selectedKey)}</span></p>
                                             )}
-                                            {isRequest && reqOffered.length > 0 && (
+                                            {isRequest && reqTimeOptions.length > 0 && (
                                                 <div>
                                                     <div className="text-[13px] font-semibold text-slate-700">Time</div>
                                                     <div className="mt-2 flex flex-wrap gap-2">
-                                                        {reqOffered.map((t) => {
+                                                        {reqTimeOptions.map((t) => {
                                                             const isPicked = reqTime === t;
                                                             return (
                                                                 <button key={t} type="button" onClick={() => { setReqTime(t); setError(null); }}
@@ -310,7 +339,7 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                                     className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
                                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                                     {isRequest
-                                        ? (reqChanged ? 'Request ' + (reqOffered.length && reqTime ? whenLabel(effectiveReqDate, reqTime) : dayLabel(effectiveReqDate)) : 'Pick a new date or time')
+                                        ? (reqChanged ? 'Request ' + (reqTimeOptions.length && reqTime ? whenLabel(effectiveReqDate, reqTime) : dayLabel(effectiveReqDate)) : 'Pick a new date or time')
                                         : (pickedTime ? 'Move to ' + whenLabel(pickedTime.date, pickedTime.time) : 'Pick a new time')}
                                 </button>
                             </div>

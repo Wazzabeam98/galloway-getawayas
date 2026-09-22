@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { guestExperiencesOpen, exclusivePerDate } from '@/lib/serviceOrders';
-import { shapeOf } from '@/lib/serviceSlots';
+import { shapeOf, generateSessions } from '@/lib/serviceSlots';
 import { changeWindowState, dayKey, dayKeyFromNow, providerTakesChanges } from '@/lib/orderChange';
 import { offeredTimes as providerOfferedTimes, isOfferedTime, normaliseTime } from '@/lib/offeredTimes';
 import { logError } from '@/lib/logError';
@@ -80,6 +80,26 @@ function dateBounds(loaded: any, now: Date): { minKey: string; maxKey: string; h
 // The dates in [min,max] this provider is already committed elsewhere — the
 // exclusive-per-date clash, minus this order's own date. Empty for made_to_order
 // (a baker bakes many things for one day).
+// The per-DATE start times a COMES-TO-YOU provider is open, from its weekly
+// opening hours — the single place hours are set, and the same generator the
+// booking dialog uses — across [min,max], minus full-day blocks. A date with no
+// times is not offered. Empty for made_to_order (a date only) and for a legacy
+// provider that set no hours (they fall back to named offered_times instead).
+async function comesToYouTimesByDate(admin: any, loaded: any, minKey: string, maxKey: string): Promise<Record<string, string[]>> {
+    if (loaded.shape !== 'comes_to_you') return {};
+    const [{ data: avail }, { data: blocks }] = await Promise.all([
+        admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', loaded.provider.id),
+        admin.from('slot_blocks').select('blocked_date').eq('provider_id', loaded.provider.id).gte('blocked_date', minKey).lte('blocked_date', maxKey),
+    ]);
+    if (!avail || !avail.length) return {};
+    const blockDates = (blocks || []).map((b: any) => String(b.blocked_date).slice(0, 10));
+    const byDate: Record<string, string[]> = {};
+    for (const s of generateSessions(avail as any, blockDates, 30, minKey, maxKey, 30)) {
+        (byDate[s.date] = byDate[s.date] || []).push(s.time);
+    }
+    return byDate;
+}
+
 async function takenDates(admin: any, loaded: any, minKey: string, maxKey: string): Promise<string[]> {
     if (!exclusivePerDate(loaded.provider)) return [];
     const { data: rows } = await admin
@@ -113,6 +133,23 @@ export async function GET(request: Request) {
         const { minKey, maxKey, horizonDays } = dateBounds(loaded, now);
         const taken = win.free ? await takenDates(admin, loaded, minKey, maxKey) : [];
 
+        // A comes-to-you provider's times per date, from its opening hours. An
+        // exclusive-clash date is dropped entirely so the sheet can't offer a
+        // time on a day nobody else's booking already holds.
+        const timesByDate = win.free ? await comesToYouTimesByDate(admin, loaded, minKey, maxKey) : {};
+        for (const t of taken) delete timesByDate[t];
+        // The booking's own date and time stay offerable whatever the current
+        // hours say, so a guest can always keep or return to what they booked —
+        // even if the provider narrowed their hours after the booking was taken.
+        if (loaded.shape === 'comes_to_you' && win.free) {
+            const curDate = String(loaded.order.service_date).slice(0, 10);
+            const curTime = loaded.order.service_time ? String(loaded.order.service_time).slice(0, 5) : null;
+            if (curTime && curDate >= minKey && curDate <= maxKey && !taken.includes(curDate)) {
+                const list = timesByDate[curDate] = timesByDate[curDate] || [];
+                if (!list.includes(curTime)) { list.push(curTime); list.sort(); }
+            }
+        }
+
         return NextResponse.json({
             ok: true,
             shape: loaded.shape,
@@ -129,6 +166,9 @@ export async function GET(request: Request) {
             // The provider's offered times, so the sheet can let the guest change
             // the time as well as the date; empty when the provider names none.
             offeredTimes: providerOfferedTimes(loaded.provider.guest_details),
+            // Comes-to-you: the times each date is open (from opening hours). The
+            // sheet shows the picked date's times; empty for other shapes.
+            timesByDate,
         });
     } catch (err: any) {
         await logError('services-order-change-date-GET', { message: String(err && err.message) });
@@ -163,11 +203,37 @@ export async function POST(request: Request) {
 
         if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return NextResponse.json({ ok: false, error: 'Pick a date.' }, { status: 400 });
 
-        // The time, when the provider offers times. Required then; validated
-        // against the offered set. When they offer none, no time is carried.
+        // The time. A COMES-TO-YOU provider's times come from its weekly OPENING
+        // HOURS — the picked time must fall inside an open window for the new
+        // date's weekday, and the day must not be blocked (the same rule the
+        // booking route enforces). Every other shape keeps the offered-times rule:
+        // required and validated when any are named, otherwise none is carried.
         const offered = providerOfferedTimes(loaded.provider.guest_details);
+        const toMin = (t: string) => { const [h, m] = String(t).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
         let newTime: string | null = null;
-        if (offered.length) {
+        if (loaded.shape === 'comes_to_you') {
+            const { data: availRows } = await admin
+                .from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', loaded.provider.id);
+            const hours = availRows || [];
+            if (hours.length) {
+                if (!newTimeRaw) return NextResponse.json({ ok: false, error: 'Pick a time.' }, { status: 400 });
+                const { data: blk } = await admin
+                    .from('slot_blocks').select('blocked_date').eq('provider_id', loaded.provider.id).eq('blocked_date', newDate);
+                if (blk && blk.length) return NextResponse.json({ ok: false, error: 'They’re not available that day — try another date.' }, { status: 409 });
+                const dow = new Date(newDate + 'T00:00:00Z').getUTCDay();
+                const tMin = toMin(newTimeRaw);
+                const open = hours.some((w: any) => Number(w.day_of_week) === dow && tMin >= toMin(w.open_time) && tMin < toMin(w.close_time));
+                if (!open) return NextResponse.json({ ok: false, error: 'They’re not open then — pick another time.' }, { status: 400 });
+                newTime = newTimeRaw;
+            } else if (offered.length) {
+                if (!newTimeRaw || !isOfferedTime(loaded.provider.guest_details, newTimeRaw)) {
+                    return NextResponse.json({ ok: false, error: 'Pick a time.' }, { status: 400 });
+                }
+                newTime = newTimeRaw;
+            } else if (newTimeRaw) {
+                newTime = newTimeRaw;
+            }
+        } else if (offered.length) {
             if (!newTimeRaw || !isOfferedTime(loaded.provider.guest_details, newTimeRaw)) {
                 return NextResponse.json({ ok: false, error: 'Pick a time.' }, { status: 400 });
             }
