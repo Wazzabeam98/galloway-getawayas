@@ -5,16 +5,20 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { adminClient } from "@/lib/supabaseAdmin";
-import { checkListing } from "@/lib/access";
-import { displayName, getImageUrl, formatTime } from "@/lib/utils";
+import { checkListing, accessibleListings } from "@/lib/access";
+import { displayName, getImageUrl, capitializeFirst } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
 import { formatUk, refundDue, policyOf, freeCancelUntilKey } from "@/lib/cancellation";
 import { londonDayKey } from "@/lib/dayKey";
 import { contactNumberVisible, stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from "@/lib/hostDebt";
 import { dateFromKey } from "@/lib/pricing";
+import { confirmationNumber, partyLabel, cancellationWords } from "@/lib/bookingDisplay";
 import BookingActions from "@/components/BookingActions";
-import { ArrowLeft, MessageSquare, Phone } from "lucide-react";
+import {
+    ArrowLeft, MessageSquare, Phone, CheckCircle2, Clock3, XCircle,
+    CalendarDays, Users, ChevronRight,
+} from "lucide-react";
 
 // One booking, in full.
 //
@@ -48,21 +52,43 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
     );
 }
 
-const statusStyles: Record<string, string> = {
-    confirmed: 'bg-green-100 text-green-800',
-    pending: 'bg-amber-100 text-amber-800',
-    pending_payment: 'bg-slate-100 text-slate-600',
-    declined: 'bg-slate-100 text-slate-500',
-    cancelled: 'bg-slate-100 text-slate-500',
+// The status pill, in the reservation-page family: a label and a tone, the same
+// three tones (ok / wait / over) the guest trip page uses, so the two read as
+// one product from either side of the booking.
+const STATUS: Record<string, { label: string; tone: 'ok' | 'wait' | 'over' }> = {
+    confirmed: { label: 'Confirmed', tone: 'ok' },
+    pending: { label: 'Waiting for you', tone: 'wait' },
+    pending_payment: { label: 'Guest is paying', tone: 'wait' },
+    declined: { label: 'Declined', tone: 'over' },
+    cancelled: { label: 'Cancelled', tone: 'over' },
+};
+const PILL: Record<string, string> = {
+    ok: 'bg-emerald-100 text-emerald-800',
+    wait: 'bg-amber-100 text-amber-800',
+    over: 'bg-slate-200 text-slate-600',
 };
 
-const statusWords: Record<string, string> = {
-    confirmed: 'Confirmed',
-    pending: 'Waiting for you',
-    pending_payment: 'Guest is paying',
-    declined: 'Declined',
-    cancelled: 'Cancelled',
-};
+// One chevron-row token, shared by the reservation-action rows — the same quiet
+// row the guest trip page uses.
+const ROW = 'flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-medium text-slate-800 hover:text-slate-950';
+
+function weekday(dateStr: string): string {
+    const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
+    return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { weekday: 'long' });
+}
+function dateLong(dateStr: string): string {
+    const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
+    return isNaN(d.getTime()) ? String(dateStr) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+// "3:00pm" from a stored 'HH:MM[:SS]'. Null in, null out — no invented time.
+function timeLabel(t: string | null | undefined): string | null {
+    if (!t) return null;
+    const [h, m] = String(t).split(':').map(Number);
+    if (isNaN(h)) return null;
+    const ampm = h < 12 ? 'am' : 'pm';
+    const h12 = ((h + 11) % 12) + 1;
+    return h12 + ':' + String(m || 0).padStart(2, '0') + ampm;
+}
 
 export default async function BookingDetail({ params }: { params: { id: string } }) {
     const supabase = createServerComponentClient({ cookies });
@@ -95,7 +121,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     const { data: listing } = await admin
         .from('listings')
-        .select('id, title, images, check_in_time, check_out_time, commission_rate, cancellation_policy, damage_deposit')
+        .select('id, title, images, location, check_in_time, check_in_end_time, check_out_time, commission_rate, cancellation_policy, damage_deposit, host_id')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
@@ -107,6 +133,22 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     const guestName = displayName(guest, 'Guest');
     const firstName = guestName.split(' ')[0] || 'there';
+
+    // The owner of this listing, for the "Hosted by" line — the person the
+    // booking is really with. On the owner's own screen this is themselves; for
+    // a co-host it names whose property they are looking after. Read from
+    // profiles (the public-facing name + avatar), never profile_private.
+    const { data: owner } = listing?.host_id
+        ? await admin
+            .from('profiles')
+            .select('id, full_name, preferred_name, show_full_name, avatar_url')
+            .eq('id', listing.host_id)
+            .maybeSingle()
+        : { data: null };
+    const ownerName = capitializeFirst(displayName(owner, 'the owner'));
+    const ownerFirst = ownerName.split(' ')[0] || ownerName;
+    const ownerAvatar = owner?.avatar_url ? getImageUrl(String(owner.avatar_url)) : null;
+    const ownerIsViewer = uid === listing?.host_id;
 
     const now = new Date();
     const started = stayHasStarted(booking.check_in, now);
@@ -209,6 +251,48 @@ export default async function BookingDetail({ params }: { params: { id: string }
     if (booking.adults) partyBits.push(booking.adults + (Number(booking.adults) === 1 ? ' adult' : ' adults'));
     if (booking.children) partyBits.push(booking.children + (Number(booking.children) === 1 ? ' child' : ' children'));
     if (booking.pets) partyBits.push(booking.pets + (Number(booking.pets) === 1 ? ' pet' : ' pets'));
+    // "3 adults · 1 child · 1 pet", pets included — the same phrasing the guest
+    // trip card uses, so the two never disagree about who's on a stay.
+    const whoText = partyLabel(booking) || ((partySize || booking.guests) + ' guests');
+
+    // The confirmation code and the day the booking was made — both derived from
+    // the row already in memory (the code from the id, so there is no new
+    // column; the date from created_at).
+    const confCode = confirmationNumber(booking.id);
+    const bookedOn = booking.created_at ? formatUk(new Date(booking.created_at)) : null;
+
+    // THE UPCOMING RAIL — the host's other arrivals, shown beside this booking so
+    // the page sits inside the run of stays rather than on its own. Scoped to the
+    // listings this viewer may see bookings for (a co-host sees only theirs), the
+    // next few confirmed/pending arrivals from today on, this booking excluded.
+    const todayKey = londonDayKey(now);
+    const bookableIds = (await accessibleListings(uid)).filter((a) => a.can_bookings).map((a) => a.listingId);
+    const { data: upcomingRows } = bookableIds.length
+        ? await admin
+            .from('bookings')
+            .select('id, listing_id, guest_id, check_in, check_out, status')
+            .in('listing_id', bookableIds)
+            .in('status', ['confirmed', 'pending'])
+            .gte('check_in', todayKey)
+            .neq('id', booking.id)
+            .order('check_in', { ascending: true })
+            .limit(6)
+        : { data: [] };
+    const upcoming = upcomingRows || [];
+    const upListingIds = Array.from(new Set(upcoming.map((b: any) => b.listing_id)));
+    const upGuestIds = Array.from(new Set(upcoming.map((b: any) => b.guest_id)));
+    const { data: upListings } = upListingIds.length
+        ? await admin.from('listings').select('id, title, images').in('id', upListingIds)
+        : { data: [] };
+    const { data: upGuests } = upGuestIds.length
+        ? await admin.from('profile_private').select('id, full_name, preferred_name, show_full_name').in('id', upGuestIds)
+        : { data: [] };
+    const upListingMap: Record<string, { title: string; image: string | null }> = {};
+    (upListings || []).forEach((l: any) => {
+        upListingMap[l.id] = { title: l.title, image: Array.isArray(l.images) && l.images[0] ? getImageUrl(l.images[0]) : null };
+    });
+    const upGuestMap: Record<string, string> = {};
+    (upGuests || []).forEach((g: any) => { upGuestMap[g.id] = displayName(g, 'Guest'); });
 
     // A number is only on the page close to arrival. There is no reason to put
     // a guest's private number on a screen that opens the moment somebody
@@ -259,76 +343,140 @@ export default async function BookingDetail({ params }: { params: { id: string }
         ? (whoCancelled ? whoCancelled + ' on ' : 'on ') + formatUk(new Date(booking.cancelled_at))
         : (closed ? 'Not recorded — this predates us writing it down' : '');
 
+    const meta = STATUS[booking.status] || { label: booking.status, tone: 'over' as const };
+    const hero = listing?.images?.[0] ? getImageUrl(listing.images[0]) : null;
+    const area = listing?.location || null;
+
     return (
-        <div className="max-w-3xl mx-auto px-6 py-10">
-            <Link
-                href="/dashboard/bookings"
-                className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900"
-            >
-                <ArrowLeft className="w-4 h-4" />
-                All bookings
-            </Link>
+        <div className="min-h-[calc(100dvh-81px)] bg-slate-50">
+            <div className="mx-auto max-w-[1180px] px-4 sm:px-6 py-6">
+                <Link
+                    href="/dashboard/bookings"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
+                >
+                    <ArrowLeft className="h-4 w-4" />
+                    All bookings
+                </Link>
 
-            <div className="flex items-start gap-4 mt-4 mb-8">
-                <div className="w-20 h-20 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
-                    {listing?.images?.[0] && (
-                        <img
-                            src={getImageUrl(listing.images[0])}
-                            alt={listing.title}
-                            className="w-full h-full object-cover"
-                        />
-                    )}
-                </div>
-                <div className="min-w-0">
-                    <h1 className="text-2xl font-bold text-slate-900 truncate">
-                        {listing?.title || 'Booking'}
-                    </h1>
-                    <p className="text-slate-600 mt-0.5">
-                        {formatUk(dateFromKey(booking.check_in))} &rarr; {formatUk(dateFromKey(booking.check_out))}
-                        {' '}&middot; {nights} {nights === 1 ? 'night' : 'nights'}
-                    </p>
-                    <span className={`inline-block mt-2 text-xs font-semibold px-3 py-1 rounded-full ${statusStyles[booking.status] || 'bg-slate-100 text-slate-600'}`}>
-                        {statusWords[booking.status] || booking.status}
-                    </span>
-                </div>
-            </div>
+                <div className="mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-10 lg:items-start">
+                    {/* ---- MAIN COLUMN — the booking, in full ---- */}
+                    <div className="min-w-0 space-y-8">
+                        {/* Hero: the property photo, the title, the status pill,
+                            the nights line and — for anyone allowed the takings —
+                            the total for the stay (item 8). */}
+                        <div>
+                            {hero && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={hero} alt={listing?.title || 'Booking'} className="h-44 w-full rounded-2xl object-cover sm:h-56" />
+                            )}
+                            <div className={`${hero ? 'mt-4' : ''} flex items-start justify-between gap-3`}>
+                                <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                                    {listing?.title || 'Booking'}
+                                </h1>
+                                <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
+                                    {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
+                                    {meta.tone === 'wait' && <Clock3 className="h-3 w-3" />}
+                                    {meta.tone === 'over' && <XCircle className="h-3 w-3" />}
+                                    {meta.label}
+                                </span>
+                            </div>
+                            <p className="mt-1.5 text-sm text-slate-500">
+                                {[area, `${nights} ${nights === 1 ? 'night' : 'nights'}`].filter(Boolean).join(' · ')}
+                            </p>
+                            {showMoney && (
+                                <p className="mt-2 text-lg font-semibold text-slate-900">
+                                    {money(total)}
+                                    <span className="text-sm font-normal text-slate-500"> for {nights} {nights === 1 ? 'night' : 'nights'}</span>
+                                </p>
+                            )}
+                        </div>
 
-            <div className="space-y-5">
-                <Card title="Your guest">
-                    <Row label="Name" value={guestName} />
-                    <Row
-                        label="Party"
-                        value={partyBits.length ? partyBits.join(', ') : (partySize || booking.guests) + ' guests'}
-                    />
-                    {phone ? (
-                        <Row
-                            label="Phone"
-                            value={
-                                <a href={'tel:' + phone} className="inline-flex items-center gap-1.5 hover:underline">
-                                    <Phone className="w-3.5 h-3.5" />
-                                    {phone}
-                                </a>
-                            }
-                        />
-                    ) : (
-                        <Row
-                            label="Phone"
-                            value={closed
-                                ? 'Not shown once a booking is off'
-                                : 'Shown from the day before arrival'}
-                            muted
-                        />
-                    )}
-                    <Row
-                        label="Arriving"
-                        value={
-                            (formatTime(listing?.check_in_time) || 'any time')
-                            + ', leaving by ' + (formatTime(listing?.check_out_time) || '11am')
-                        }
-                        muted
-                    />
-                </Card>
+                        {/* Check-in / Check-out — two raised cards, the lifted-card
+                            treatment reserved for surfaces you act on (item 4). */}
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            {([
+                                { label: 'Check-in', date: booking.check_in, time: timeLabel(listing?.check_in_time), end: timeLabel(listing?.check_in_end_time) },
+                                { label: 'Check-out', date: booking.check_out, time: timeLabel(listing?.check_out_time), end: null },
+                            ] as const).map((c) => (
+                                <div key={c.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{c.label}</div>
+                                    <div className="mt-1 text-sm font-medium text-slate-900">{weekday(c.date)}</div>
+                                    <div className="text-sm text-slate-600">{dateLong(c.date)}</div>
+                                    {c.time && (
+                                        <div className="mt-1 text-sm text-slate-600">
+                                            {c.label === 'Check-in' ? 'From ' : 'By '}{c.time}{c.end ? `–${c.end}` : ''}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
 
+                        {/* Who's going — the guest, the party (pets included) and,
+                            close to arrival, their number (item 5). The number is
+                            gated by contactNumberVisible and nothing else. */}
+                        <section className="border-t border-slate-200 pt-6">
+                            <h2 className="text-lg font-semibold text-slate-900">Who’s going</h2>
+                            <div className="mt-3 flex items-start gap-3">
+                                <Users className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                                <div className="min-w-0 text-sm">
+                                    <div className="font-medium text-slate-900">{guestName}</div>
+                                    <div className="text-slate-500">{whoText}</div>
+                                </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {phone ? (
+                                    <a href={'tel:' + phone} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400">
+                                        <Phone className="h-4 w-4" /> {phone}
+                                    </a>
+                                ) : (
+                                    <span className="text-sm text-slate-500">
+                                        {closed ? 'Their number isn’t shown once a booking is off.' : 'Their number appears here from the day before arrival.'}
+                                    </span>
+                                )}
+                                <Link href={'/messages?b=' + booking.id} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                                    <MessageSquare className="h-4 w-4" /> Message {firstName}
+                                </Link>
+                            </div>
+                        </section>
+
+                        {/* Hosted by — whose property this is. On the owner's own
+                            screen it names them; for a co-host it names the person
+                            they look after it for (item 6). */}
+                        <section className="border-t border-slate-200 pt-6">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <h2 className="text-lg font-semibold text-slate-900">
+                                        Hosted by {ownerFirst}{ownerIsViewer ? ' · you' : ''}
+                                    </h2>
+                                    {area && <div className="mt-0.5 text-[13px] text-slate-500">{area}</div>}
+                                </div>
+                                {ownerAvatar ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={ownerAvatar} alt={ownerName} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                ) : (
+                                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{ownerFirst.slice(0, 1)}</span>
+                                )}
+                            </div>
+                        </section>
+
+                        {/* Cancellation policy — the standing policy on the listing,
+                            in words (item 7). */}
+                        {(() => {
+                            const words = cancellationWords(listing?.cancellation_policy);
+                            return (
+                                <section className="border-t border-slate-200 pt-6">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cancellation policy</div>
+                                    <p className="mt-1 text-sm leading-relaxed text-slate-700">
+                                        <span className="font-semibold text-slate-900">{words.tier}</span> — {words.summary}{' '}
+                                        <Link href="/cancellation-policy" className="font-medium text-slate-600 underline hover:text-slate-800">Full terms</Link>
+                                    </p>
+                                </section>
+                            );
+                        })()}
+
+                        {/* ---- The money & payment cards, kept exactly as they
+                            were: the full breakdown, gated on can_earnings. ---- */}
+                        <div className="space-y-5">
                 {showMoney ? (
                     <Card title="Money">
                         <Row label="Guest pays in total" value={money(total)} />
@@ -450,8 +598,12 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     )}
                     {closed && cancelledLine && <Row label="Cancelled" value={cancelledLine} muted />}
                 </Card>
+                        </div>
 
-                <Card title="What you can do">
+                        {/* Manage reservation — messaging, the ask-to-cancel draft
+                            and the owner-only accept/decline/cancel controls, exactly
+                            the instruments this screen always carried (item 9). */}
+                        <Card title="Manage reservation">
                     <div className="flex flex-wrap gap-3 pt-1">
                         <Link
                             href={'/messages?b=' + booking.id}
@@ -517,7 +669,71 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             Accepting, cancelling and refunding stay with the owner.
                         </p>
                     )}
-                </Card>
+                        </Card>
+
+                        {/* Booking details — the confirmation code (derived from the
+                            id, no new column) and the day the booking was made
+                            (items 10 and 11). */}
+                        <section className="border-t border-slate-200 pt-6">
+                            <h2 className="text-lg font-semibold text-slate-900">Booking details</h2>
+                            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">
+                                <div>
+                                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confirmation</div>
+                                    <div className="mt-1 font-mono text-sm tracking-wide text-slate-900">{confCode}</div>
+                                </div>
+                                {bookedOn && (
+                                    <div>
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Booked</div>
+                                        <div className="mt-1 text-sm font-medium text-slate-900">{bookedOn}</div>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    </div>
+
+                    {/* ---- UPCOMING RAIL — the host's next arrivals, beside the
+                        booking on desktop and stacked below it on a phone (item 1).
+                        A sticky aside, the slot the guest trip page gives its map. ---- */}
+                    <aside className="lg:sticky lg:top-24">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                            <div className="flex items-center gap-2 text-slate-900">
+                                <CalendarDays className="h-4 w-4 flex-none text-slate-400" />
+                                <span className="text-sm font-semibold">Upcoming reservations</span>
+                            </div>
+                            {upcoming.length === 0 ? (
+                                <p className="mt-3 text-sm text-slate-500">Nothing else is coming up just now.</p>
+                            ) : (
+                                <ul className="mt-3 divide-y divide-slate-100">
+                                    {upcoming.map((b: any) => {
+                                        const l = upListingMap[b.listing_id];
+                                        const gName = upGuestMap[b.guest_id] || 'Guest';
+                                        const daysTo = Math.round((dateFromKey(b.check_in).getTime() - dateFromKey(todayKey).getTime()) / 86400000);
+                                        const when = daysTo <= 0 ? 'Today' : daysTo === 1 ? 'Tomorrow' : `${daysTo} days`;
+                                        return (
+                                            <li key={b.id}>
+                                                <Link href={'/dashboard/bookings/' + b.id} className={ROW}>
+                                                    <span className="flex min-w-0 items-center gap-3">
+                                                        <span className="h-9 w-9 flex-none overflow-hidden rounded-lg bg-slate-100">
+                                                            {l?.image && (
+                                                                // eslint-disable-next-line @next/next/no-img-element
+                                                                <img src={l.image} alt="" className="h-full w-full object-cover" />
+                                                            )}
+                                                        </span>
+                                                        <span className="min-w-0">
+                                                            <span className="block truncate text-sm font-medium text-slate-900">{gName}</span>
+                                                            <span className="block truncate text-xs text-slate-500">{l?.title || 'Your listing'} · {when}</span>
+                                                        </span>
+                                                    </span>
+                                                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+                                                </Link>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                        </div>
+                    </aside>
+                </div>
             </div>
         </div>
     );
