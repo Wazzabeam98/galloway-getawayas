@@ -42,12 +42,16 @@ function phaseIcon(icon: StepIcon) {
 // notice). A plain server component. Rules: first name only, no ratings/counts,
 // no address before payment.
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel, reviews,
+    p, backHref, backLabel, panel, reviews, menu,
 }: {
     p: MpProvider;
     backHref: string;
     backLabel: string;
     panel: React.ReactNode;
+    // An INTERACTIVE menu (made-to-order food ordering): when passed it leads the
+    // left column and replaces the static "What you get" list, so the menu, its
+    // photos and prices are the main thing and the sidebar panel is the basket.
+    menu?: React.ReactNode;
     // Always passed by the listing pages; the section renders even at zero, with
     // an honest "No reviews yet" in place rather than dropping out.
     reviews?: ExperienceReviewsBlock;
@@ -149,6 +153,12 @@ export default function ExperienceListingBody({
                                 ))}
                             </dl>
                         )}
+
+                        {/* The interactive menu leads for a food-ordering listing —
+                            the main thing, above the host and the story. */}
+                        {menu ? (
+                            <section className="mt-8 border-t border-slate-200 pt-6">{menu}</section>
+                        ) : null}
 
                         {hasAbout && (
                             <section className="mt-8 border-t border-slate-200 pt-6">
@@ -254,7 +264,7 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
-                        {p.shape !== 'slot' && (
+                        {p.shape !== 'slot' && !menu && (
                             <section className="mt-8 border-t border-slate-200 pt-8">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">What you get</h2>
                                 <ul className="mt-4 divide-y divide-slate-100">

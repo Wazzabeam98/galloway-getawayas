@@ -8,6 +8,9 @@ import { loadExperienceReviews } from '@/lib/experienceReviews';
 import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import StandaloneBookingPanel from '@/components/marketplace/StandaloneBookingPanel';
 import BookingPanel from '@/components/marketplace/BookingPanel';
+import { FoodCartProvider } from '@/components/marketplace/FoodCart';
+import FoodMenu from '@/components/marketplace/FoodMenu';
+import FoodBasket from '@/components/marketplace/FoodBasket';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +43,23 @@ export default async function PublicListingPage({ params }: { params: { provider
     const who = p.byline || p.business_name;
     const here = `/experiences/browse/${params.providerId}`;
     const reviews = await loadExperienceReviews(admin, p.id, user?.id ?? null);
+
+    // A made-to-order listing reads like a food-ordering site: the MENU leads the
+    // page (photos, prices) and the sidebar is a BASKET, both sharing one cart.
+    if (p.shape === 'made_to_order') {
+        return (
+            <FoodCartProvider items={p.items}>
+                <ExperienceListingBody
+                    p={p}
+                    backHref="/experiences/browse"
+                    backLabel="All experiences"
+                    reviews={reviews}
+                    menu={<FoodMenu />}
+                    panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} standalone leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} />}
+                />
+            </FoodCartProvider>
+        );
+    }
 
     const panel = p.shape === 'slot' ? (
         <StandaloneBookingPanel

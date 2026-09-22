@@ -7,6 +7,9 @@ import { loadMarketplace, pickProvider } from '@/lib/experiencesData';
 import { loadExperienceReviews } from '@/lib/experienceReviews';
 import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import BookingPanel from '@/components/marketplace/BookingPanel';
+import { FoodCartProvider } from '@/components/marketplace/FoodCart';
+import FoodMenu from '@/components/marketplace/FoodMenu';
+import FoodBasket from '@/components/marketplace/FoodBasket';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +43,23 @@ export default async function ListingPage(
 
     const who = p.byline || p.business_name;
     const reviews = await loadExperienceReviews(admin, p.id, user.id);
+
+    // Made-to-order reads like a food-ordering site here too: menu + basket, one
+    // cart, with the date bounded by the guest's stay.
+    if (p.shape === 'made_to_order') {
+        return (
+            <FoodCartProvider items={p.items}>
+                <ExperienceListingBody
+                    p={p}
+                    backHref={`/experiences/${params.bookingId}`}
+                    backLabel="All experiences"
+                    reviews={reviews}
+                    menu={<FoodMenu />}
+                    panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} bookingId={params.bookingId} checkIn={mp.stay.check_in} checkOut={mp.stay.check_out} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} />}
+                />
+            </FoodCartProvider>
+        );
+    }
 
     return (
         <ExperienceListingBody
