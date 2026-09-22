@@ -10,7 +10,6 @@ import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
 import { childrenAllowed } from '@/lib/guestAges';
 import { stepHeadings } from '@/lib/experienceSteps';
-import { normaliseTime, prettyTime } from '@/lib/offeredTimes';
 import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
@@ -180,22 +179,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [cancelHours, setCancelHours] = useState(Number(p.cancellation_window_hours ?? 48));
     const [horizonDays, setHorizonDays] = useState(Math.max(1, Number(p.booking_horizon_days || 90)));
     const cancelPolicy = experienceCancellationOption(Number(cancelHours), noRefund);
-    // The times a REQUEST-shape provider offers (a chef's sittings, a baker's
-    // collection/delivery windows). A slot's times come from the weekly template;
-    // these are only for made_to_order / comes_to_you. Stored HH:MM, sorted.
-    const [offeredTimesList, setOfferedTimesList] = useState<string[]>(() => {
-        const set = new Set<string>();
-        for (const t of (p.offered_times || [])) { const n = normaliseTime(t); if (n) set.add(n); }
-        return Array.from(set).sort((a, b) => a.localeCompare(b));
-    });
-    const [newTime, setNewTime] = useState('');
-    const addOfferedTime = () => {
-        const n = normaliseTime(newTime);
-        if (!n) { toast.error('Enter a time like 18:30.'); return; }
-        setOfferedTimesList((prev) => prev.includes(n) ? prev : [...prev, n].sort((a, b) => a.localeCompare(b)));
-        setNewTime('');
-    };
-    const removeOfferedTime = (t: string) => setOfferedTimesList((prev) => prev.filter((x) => x !== t));
+    // A request shape's booking times used to be a free "offered times" list;
+    // comes-to-you now generates them from its weekly opening hours (the
+    // Availability/Opening-hours section) and made-to-order is a date only, so
+    // there is no offered-times control here any more.
 
     // Max group size — the largest booking. A slot's is slot_capacity (it sizes
     // sellable seats); every other shape keeps it in guest_details.max_guests. One
@@ -362,9 +349,12 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         // Food & dietary is only meaningful for a food business (chef, baker,
         // hamper) — a sauna or a guide never caters, so it doesn't see this.
         ...(p.isFood ? [{ key: 'dietary' as SectionKey, label: 'Food & dietary', icon: Salad }] : []),
-        // Booking rules reach every shape; the weekly template is slot-only.
+        // Booking rules reach every shape. Weekly opening hours reach a slot AND a
+        // comes-to-you provider — the one place a chef sets the hours they work,
+        // which their booking times are generated from. A made-to-order baker is a
+        // date only, so it has no hours section.
         { key: 'booking', label: 'Booking', icon: CalendarClock },
-        ...(p.isSlot ? [{ key: 'availability' as SectionKey, label: 'Availability', icon: CalendarRange }] : []),
+        ...((p.isSlot || p.shape === 'comes_to_you') ? [{ key: 'availability' as SectionKey, label: p.isSlot ? 'Availability' : 'Opening hours', icon: CalendarRange }] : []),
         { key: 'cancellation', label: 'Cancellation policy', icon: RotateCcw },
         { key: 'status', label: 'Listing status', icon: paused ? EyeOff : Eye },
     ];
@@ -406,11 +396,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 </div>
             )}
 
-            {/* Go-live gate for a slot provider with no weekly hours: a slot with
-                no availability generates no sessions and is dropped from the
-                marketplace, so it's the one thing that keeps a new provider
-                invisible. Said loudly, with a jump to fix it — never a hard block. */}
-            {p.isSlot && p.availability.length === 0 && !paused && (
+            {/* Go-live gate for a slot OR comes-to-you provider with no weekly
+                hours: both generate their booking times from the weekly hours, so
+                with none set a guest sees no times to pick. Said loudly, with a
+                jump to fix it — never a hard block. */}
+            {(p.isSlot || p.shape === 'comes_to_you') && p.availability.length === 0 && !paused && (
                 <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4">
                     <div className="font-semibold text-amber-900">You’re not bookable yet — add your weekly hours</div>
                     <p className="mt-1 text-sm text-amber-900/80">
@@ -848,7 +838,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {active === 'booking' && (
                         <SectionCard title="Booking" hint="How guests book with you — the rules that apply however your listing is booked." saving={savingKey === 'booking'}
-                            onSave={() => run('booking', { max_guests: maxGuests, lead_time_days: leadDays, booking_horizon_days: horizonDays, ...(p.isSlot ? {} : { offered_times: offeredTimesList }) })}>
+                            onSave={() => run('booking', { max_guests: maxGuests, lead_time_days: leadDays, booking_horizon_days: horizonDays })}>
                             <Field label="Maximum capacity" hint={p.isSlot ? 'The most people a session can take, as a default — a per-person item can set its own in “What you offer”.' : 'The most people you’ll take for one booking.'}>
                                 <Stepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} />
                             </Field>
@@ -866,30 +856,16 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     onChange={(v) => setHorizonDays(Number(v))}
                                 />
                             </Field>
-                            {!p.isSlot && (
-                                <Field label="Times you offer" hint={p.shape === 'made_to_order' ? 'The collection or delivery times a guest can pick.' : 'The times you can come — a guest picks one when they book.'}>
-                                    <div className="flex flex-wrap gap-2">
-                                        {offeredTimesList.length === 0 && (
-                                            <p className="text-sm text-slate-500">No times yet — add the times you offer, e.g. 18:00.</p>
-                                        )}
-                                        {offeredTimesList.map((t) => (
-                                            <span key={t} className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800">
-                                                {prettyTime(t)}
-                                                <button type="button" onClick={() => removeOfferedTime(t)} className="text-slate-400 hover:text-rose-600" aria-label={'Remove ' + t}>×</button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <div className="mt-3 flex gap-2">
-                                        <input type="time" value={newTime} onChange={(e) => setNewTime(e.target.value)} className="rounded-xl border border-slate-300 p-2.5 text-sm" />
-                                        <button type="button" onClick={addOfferedTime} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:border-slate-400">Add time</button>
-                                    </div>
-                                </Field>
+                            {p.shape === 'comes_to_you' && (
+                                <p className="text-xs text-slate-500">
+                                    Your booking times come from your weekly opening hours — set them under “Opening hours”.
+                                </p>
                             )}
                         </SectionCard>
                     )}
 
                     {active === 'availability' && (
-                        <SectionCard title="Availability" hint="Your weekly hours and session shape. A specific day off, or part of a day, is set in your diary." saving={savingKey === 'availability'}
+                        <SectionCard title={p.isSlot ? 'Availability' : 'Opening hours'} hint={p.isSlot ? 'Your weekly hours and session shape. A specific day off, or part of a day, is set in your diary.' : 'The hours you work each week — a guest picks a time within them. A specific day off is set in your diary.'} saving={savingKey === 'availability'}
                             onSave={() => run('availability', {
                                 slot_length_minutes: slotLength, slot_turnaround_minutes: turnaround,
                                 availability: hours
@@ -917,20 +893,24 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     ))}
                                 </div>
                             </div>
-                            <Field label="Session length" hint="How long one session runs.">
-                                <OptionPills
-                                    options={SESSION_LENGTH_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) }))}
-                                    value={String(slotLength)}
-                                    onChange={(v) => setSlotLength(Number(v))}
-                                />
-                            </Field>
-                            <Field label="Gap between sessions" hint="Time to reset or clean up before the next one can start.">
-                                <OptionPills
-                                    options={TURNAROUND_OPTIONS.map((m) => ({ value: String(m), label: m === 0 ? 'None' : `${m} min` }))}
-                                    value={String(turnaround)}
-                                    onChange={(v) => setTurnaround(Number(v))}
-                                />
-                            </Field>
+                            {p.isSlot && (
+                                <>
+                                    <Field label="Session length" hint="How long one session runs.">
+                                        <OptionPills
+                                            options={SESSION_LENGTH_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) }))}
+                                            value={String(slotLength)}
+                                            onChange={(v) => setSlotLength(Number(v))}
+                                        />
+                                    </Field>
+                                    <Field label="Gap between sessions" hint="Time to reset or clean up before the next one can start.">
+                                        <OptionPills
+                                            options={TURNAROUND_OPTIONS.map((m) => ({ value: String(m), label: m === 0 ? 'None' : `${m} min` }))}
+                                            value={String(turnaround)}
+                                            onChange={(v) => setTurnaround(Number(v))}
+                                        />
+                                    </Field>
+                                </>
+                            )}
                             {/* The minimum-per-booking now lives on each per-person
                                 item in "What you offer" (a whole-session provider has
                                 no per-person minimum at all), so it's gone from here. */}
