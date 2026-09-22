@@ -15,6 +15,7 @@ import { itemTravels } from '@/lib/serviceProviders';
 import { offeredTimes as providerOfferedTimes, isOfferedTime, normaliseTime } from '@/lib/offeredTimes';
 import { displayName } from '@/lib/utils';
 import { withinLimits, callerAddress } from '@/lib/rateLimit';
+import { hasUkPostcode } from '@/lib/postcode';
 
 export const dynamic = 'force-dynamic';
 
@@ -189,7 +190,7 @@ export async function POST(request: Request) {
             if (travelsC) {
                 if (standalone) {
                     addressC = (body && body.serviceAddress ? String(body.serviceAddress) : '').slice(0, 300).trim() || null;
-                    if (!addressC) return NextResponse.json({ ok: false, error: 'Add the delivery address.' }, { status: 400 });
+                    if (!addressC || !hasUkPostcode(addressC)) return NextResponse.json({ ok: false, error: 'Add a full delivery address, including a postcode.' }, { status: 400 });
                 } else if (booking.listing_id) {
                     const { data: stay } = await admin.from('listings').select('street_address, postcode, location').eq('id', booking.listing_id).maybeSingle();
                     if (stay) addressC = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
@@ -422,8 +423,8 @@ export async function POST(request: Request) {
         if (travels) {
             if (standalone) {
                 serviceAddress = (body && body.serviceAddress ? String(body.serviceAddress) : '').slice(0, 300).trim() || null;
-                if (!serviceAddress) {
-                    return NextResponse.json({ ok: false, error: 'Add the address the provider should come to.' }, { status: 400 });
+                if (!serviceAddress || !hasUkPostcode(serviceAddress)) {
+                    return NextResponse.json({ ok: false, error: 'Add a full address, including a postcode, for the provider to come to.' }, { status: 400 });
                 }
             } else if (booking.listing_id) {
                 const { data: stay } = await admin.from('listings')

@@ -8,6 +8,7 @@ import { childrenAllowed } from '@/lib/guestAges';
 import { prettyTime } from '@/lib/offeredTimes';
 import { itemPriceLabel, dateLabel, dayHeadingLabel, monthYearLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import { hasUkPostcode } from '@/lib/postcode';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
 
 export interface RequestItem {
@@ -214,7 +215,8 @@ export function RequestBookingDialog({
         return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
     }, [onClose, calOpen]);
 
-    const canBook = !!item && !!date && !!time && (!needsAddress || !!address.trim());
+    const addressOk = !needsAddress || hasUkPostcode(address);
+    const canBook = !!item && !!date && !!time && addressOk;
     const submit = () => {
         if (!canBook || !item) return;
         onBook({ itemId: item.id, date, time, adults, children: kidsOk ? children : 0, address: address.trim(), allergy: allergy.trim() });
@@ -344,8 +346,11 @@ export function RequestBookingDialog({
                                     {needsAddress && (
                                         <label className="block">
                                             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where should {who} come?</span>
-                                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="The address for your booking"
+                                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="Full address, including postcode"
                                                 className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                                            {address.trim() && !hasUkPostcode(address) && (
+                                                <span className="mt-1 block text-xs text-rose-600">Please give a full address, including a postcode.</span>
+                                            )}
                                         </label>
                                     )}
                                     {isFood && (

@@ -5,6 +5,7 @@ import { ShoppingBag } from 'lucide-react';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { dateLabel } from '@/components/marketplace/present';
 import { DateOnlyDialog } from '@/components/marketplace/RequestBooking';
+import { hasUkPostcode } from '@/lib/postcode';
 import { useFoodCart } from '@/components/marketplace/FoodCart';
 
 const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
@@ -52,7 +53,7 @@ export default function FoodBasket({
         setError(null);
         if (!lines.length) { setError('Add something from the menu first.'); return; }
         if (!date) { setError('Pick a ' + deliverWord + ' date.'); return; }
-        if (needsAddress && !address.trim()) { setError('Add the delivery address.'); return; }
+        if (needsAddress && !hasUkPostcode(address)) { setError('Add a full delivery address, including a postcode.'); return; }
         setBusy(true);
         try {
             const trimmedAllergy = [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '');
@@ -124,8 +125,11 @@ export default function FoodBasket({
                         {needsAddress && (
                             <label className="mt-4 block">
                                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery address</span>
-                                <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2}
+                                <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="Full address, including postcode"
                                     className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                                {address.trim() && !hasUkPostcode(address) && (
+                                    <span className="mt-1 block text-xs text-rose-600">Please give a full address, including a postcode.</span>
+                                )}
                             </label>
                         )}
 
@@ -152,7 +156,7 @@ export default function FoodBasket({
                     <span className="text-sm font-medium text-slate-600">Total{count > 0 ? ` · ${count} item${count === 1 ? '' : 's'}` : ''}</span>
                     <span className="text-lg font-semibold text-slate-900">£{total.toFixed(2)}</span>
                 </div>
-                <button type="button" onClick={send} disabled={busy || !lines.length || !date}
+                <button type="button" onClick={send} disabled={busy || !lines.length || !date || (needsAddress && !hasUkPostcode(address))}
                     className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
                     {busy ? 'Sending…' : (hasCustom ? 'Send request' : 'Book & pay')}
                 </button>
