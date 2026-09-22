@@ -939,7 +939,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         free={free}
                                         price={Number(price)}
                                         providerName={shortWho}
-                                        className={`${ROW} text-slate-600 hover:text-rose-700`}
+                                        // The cancel row is a neutral action row like
+                                        // its siblings — red lives only on the confirm
+                                        // button inside the panel, and only when a
+                                        // cancel would forfeit money.
+                                        className={ROW}
                                         panelClassName="pb-3"
                                     />
                                 )}
