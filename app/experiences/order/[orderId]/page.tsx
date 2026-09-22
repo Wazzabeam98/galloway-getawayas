@@ -269,7 +269,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
         const { data: money } = await admin.from('service_orders').select('line_items').eq('id', order.id).maybeSingle();
         cartLineItems = money && Array.isArray(money.line_items) ? money.line_items : null;
         const { data: item } = order.item_id
-            ? await admin.from('service_provider_items').select('price, included_guests, extra_adult_fee, extra_child_fee').eq('id', order.item_id).maybeSingle()
+            ? await admin.from('service_provider_items').select('unit, price, included_guests, extra_adult_fee, extra_child_fee').eq('id', order.item_id).maybeSingle()
             : { data: null };
         const { data: paidKids } = await admin.from('service_orders')
             .select('price, quantity, attendees, adults, children').eq('parent_order_id', order.id).eq('status', 'confirmed');

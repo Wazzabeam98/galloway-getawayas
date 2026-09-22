@@ -148,6 +148,7 @@ async function makeProvider(spec) {
             capacity: it.capacity ?? null, min_people: it.min ?? null, image: it.image ?? null,
             included_guests: it.includedGuests ?? null, extra_adult_fee: it.extraAdultFee ?? null,
             extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null,
+            is_custom: it.isCustom ?? false,
         });
     }
     if (spec.availability) {
@@ -321,7 +322,9 @@ async function main() {
         amenities: [], accessibility: null, parking: null,
         dietaryNote: 'Gluten-free and vegan on request; made in a kitchen that handles nuts.', dietaryOptions: ['vegan', 'gluten_free'],
         items: [
-            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message.', price: 42, unit: 'flat', sort: 0, image: IMG('seed-assets/baker-1.jpg') },
+            // Custom — made to the guest's design, so it turns the order into a
+            // request the baker approves. The other two are off-the-shelf (standard).
+            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message.', price: 42, unit: 'flat', sort: 0, image: IMG('seed-assets/baker-1.jpg'), isCustom: true },
             { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones.', price: 24, unit: 'flat', sort: 1 },
             // A per-item line, so a made-to-order order can carry a real quantity
             // (three boxes) — the "guests means quantity" case for change-count.
