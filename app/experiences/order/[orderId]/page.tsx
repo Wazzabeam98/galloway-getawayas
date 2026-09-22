@@ -14,7 +14,7 @@ import { orderLocation } from '@/lib/orderLocation';
 import { experienceSteps } from '@/lib/experienceSteps';
 import { hasExtraGuests } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
-import { isFoodProvider, unitMultiplies } from '@/lib/serviceOrders';
+import { isFoodProvider, unitMultiplies, orderReference } from '@/lib/serviceOrders';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadExperienceOrder } from '@/lib/experienceOrder';
 import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
@@ -690,7 +690,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         <>
                                             <div>{who}</div>
                                             <div className="mt-0.5 text-slate-500">
-                                                {prov.based_line}{charged ? '' : ' — the full address once your place is confirmed'}
+                                                {prov.based_line}{charged ? '' : ' — the full address once your place is paid for'}
                                             </div>
                                         </>
                                     ) : (
@@ -835,6 +835,16 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             admin follows, rather than the reverse. */}
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Booking details</h2>
+
+                            {/* The confirmation reference — the short, stable code
+                                the guest quotes to the provider or to us, derived
+                                from the order id (orderReference), the same one the
+                                provider sees on their dashboard. Mirrors the stay's
+                                "Confirmation" line. */}
+                            <div className="mt-4">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Confirmation</div>
+                                <div className="mt-0.5 font-mono text-sm tracking-wide text-slate-900">{orderReference(order.id)}</div>
+                            </div>
 
                             {isSlot && (() => {
                                 // Guests, with the adults/children split beneath when
