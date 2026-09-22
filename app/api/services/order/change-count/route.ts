@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
-import { SITE_URL } from '@/lib/email';
+import { SITE_URL, sendEmail, emailLayout, escapeHtml, button } from '@/lib/email';
 import {
     guestExperiencesOpen, normaliseUnit,
     orderQuantity, orderTotal, priceOrder, MAX_ORDER_QUANTITY,
@@ -139,6 +139,57 @@ export async function GET(request: Request) {
         await logError('services-order-change-count-GET', { message: String(err && err.message) });
         return NextResponse.json({ ok: false, error: 'Could not load that.' }, { status: 500 });
     }
+}
+
+// A reduction is instant (inside the free-cancellation window) and moves money,
+// so — exactly like a provider accept/decline or a date change — it emails both
+// sides: the provider is told places came off their booking, and the guest gets
+// a receipt for the refund. Fire-and-forget: a failed email never fails the
+// change, which has already settled on Stripe and in the row.
+async function notifyReduction(
+    admin: any, order: any, provider: any,
+    fromCount: number, toCount: number, refunded: number,
+): Promise<void> {
+    const item = order.item_name || provider.business_name || 'your experience';
+    const date = String(order.service_date || '').slice(0, 10);
+    const removed = fromCount - toCount;
+    const places = removed === 1 ? '1 place' : removed + ' places';
+    const refundStr = '£' + refunded.toFixed(2);
+
+    // Guest — a receipt for the refund.
+    const to = String(order.guest_email || '').trim();
+    if (to) {
+        try {
+            await sendEmail(to,
+                'Your refund for ' + item,
+                emailLayout(
+                    '<p style="margin:0 0 16px;font-size:16px;">You’ve taken ' + escapeHtml(places)
+                    + ' off your <strong>' + escapeHtml(item) + '</strong> booking'
+                    + (date ? ' for <strong>' + escapeHtml(date) + '</strong>' : '') + '.</p>'
+                    + '<p style="margin:0 0 16px;font-size:16px;">We’ve refunded <strong>' + escapeHtml(refundStr)
+                    + '</strong> to your card — it usually lands within a few days. Your booking is now for '
+                    + escapeHtml(toCount === 1 ? '1 place' : toCount + ' places') + '.</p>',
+                    'You’re receiving this because you booked an experience through Galloway Getaways.'));
+        } catch (e) { await logError('change-count-guest-receipt', { order: order.id, message: String((e as any) && (e as any).message) }); }
+    }
+
+    // Provider — told the booking got smaller.
+    try {
+        const { data: prov } = await admin.from('service_providers').select('contact_email, business_name').eq('id', provider.id).maybeSingle();
+        if (prov && prov.contact_email) {
+            await sendEmail(prov.contact_email,
+                'A guest reduced their booking',
+                emailLayout(
+                    '<p style="margin:0 0 16px;font-size:16px;">A guest has taken ' + escapeHtml(places)
+                    + ' off their <strong>' + escapeHtml(item) + '</strong> booking'
+                    + (date ? ' for <strong>' + escapeHtml(date) + '</strong>' : '') + '.</p>'
+                    + '<p style="margin:0 0 16px;font-size:16px;">It’s now for '
+                    + escapeHtml(toCount === 1 ? '1 place' : toCount + ' places') + '. They were refunded '
+                    + escapeHtml(refundStr) + ', and your payout has been adjusted to match.</p>'
+                    + button(SITE_URL + '/services/dashboard', 'See your bookings'),
+                    'You’re receiving this because you offer experiences on Galloway Getaways.'));
+        }
+    } catch (e) { await logError('change-count-provider-notice', { order: order.id, message: String((e as any) && (e as any).message) }); }
 }
 
 export async function POST(request: Request) {
@@ -314,7 +365,9 @@ export async function POST(request: Request) {
             refunded += refundAmt;
         }
 
-        return NextResponse.json({ ok: true, refunded: Math.round(refunded * 100) / 100, count: wantCount });
+        const refundedTotal = Math.round(refunded * 100) / 100;
+        if (refundedTotal > 0) await notifyReduction(admin, order, provider, current, wantCount, refundedTotal);
+        return NextResponse.json({ ok: true, refunded: refundedTotal, count: wantCount });
     } catch (err: any) {
         await logError('services-order-change-count-POST', { message: String(err && err.message) });
         return NextResponse.json({ ok: false, error: 'Could not change that.' }, { status: 500 });

@@ -28,6 +28,7 @@ const SEED_DOMAIN = 'gallowayexp.test';        // reserved TLD → no mail is se
 const PASSWORD = 'experience-seed-2026';
 const LIAM_EMAIL = 'liamworrall18@hotmail.com';
 const ACCT = 'acct_seed_experiences';           // a stand-in connected account
+const ISLA_STAY_PI = 'pi_seed_isla_stay';       // marks seed-sauna's holiday-let stay, so a re-run clears it
 const IMG = (k) => k;                            // storage keys, resolved by getImageUrl
 
 const time = (h, m = 0) => String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':00';
@@ -54,6 +55,10 @@ async function wipeExperiences() {
         }
         await db.remove('service_providers', '?id=eq.' + p.id).catch(() => {});
     }
+    // seed-sauna's holiday-let stay (its experience orders were removed with
+    // their providers above; the booking itself is tagged and cleared here so a
+    // re-run leaves no orphaned stay behind).
+    await db.remove('bookings', '?stripe_payment_intent_id=eq.' + ISLA_STAY_PI).catch(() => {});
     // This seed's own owner accounts (so a re-run is clean). Never Liam, never
     // other domains' accounts.
     const users = await db.auth('GET', '/admin/users?per_page=200');
@@ -361,20 +366,47 @@ async function main() {
     const oThisWeek = await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(3), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
     const oNextWeek = await makeOrder({ ...orderBase, provider: baker, date: dayOffset(8), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
 
-    /* --------------- orders on seed-sauna (Isla): ONE in each category, confirmed
-       and comfortably inside the cancellation window, so BOTH change-count and
-       change-date can be walked as that account. The slot has two more open
-       classes to move to; the two request orders are standalone (no stay) with a
-       real quantity, so change-count is a genuine money change (proven in the
-       scenarios — the seed's placeholder PIs only carry the display). */
+    /* --------------- seed-sauna (Isla): an UPCOMING HOLIDAY-LET STAY with a
+       confirmed experience booking in each category attached to it — one made to
+       order, one comes to you (the chef's flat extra-guests dinner, so its
+       pricing layout can be checked), one slot — all comfortably inside their
+       free-cancellation windows so change-count and change-date can be walked;
+       plus one PAST its window, to walk the closed-changes sheet.
+
+       The stay is a real booking on an existing cottage that has coordinates, so
+       the come-to-you order's map has somewhere to point, and /trips shows the
+       stay with its experiences the way a guest sees it. */
     const islaBase = { guestId: saunaOwner.id, guestName: 'Isla', guestEmail: saunaOwner.email };
     const bBox = bakerItemRows.find((i) => i.unit === 'item') || bItem;
+    const chefFlat = chefItemRows.find((i) => i.unit === 'flat') || cItem;
+
+    // The cottage to book: a listing with a coordinate (id order → stable pick).
+    const islaCottage = (await db.select('listings', '?select=id,host_id,title&latitude=not.is.null&order=id.asc&limit=1'))[0];
+    let islaStay = null;
+    if (islaCottage) {
+        const nowIso = new Date().toISOString();
+        [islaStay] = await db.insert('bookings', {
+            listing_id: islaCottage.id, guest_id: saunaOwner.id, host_id: islaCottage.host_id,
+            check_in: dayOffset(11), check_out: dayOffset(16),
+            guests: 2, adults: 2, children: 0, pets: 0,
+            total_price: 520, status: 'confirmed', payment_status: 'paid', amount_paid: 520,
+            confirmed_at: nowIso, paid_at: nowIso, stripe_payment_intent_id: ISLA_STAY_PI,
+        });
+    }
+    const islaCottageRef = islaStay ? { bookingId: islaStay.id, listingId: islaCottage.id } : {};
+
     const islaYogaS = await makeSession(yoga.id, dayOffset(15), time(8), { seats: 1, capacity: 10, declared: true, title: 'Sunrise class' });
     await makeSession(yoga.id, dayOffset(16), time(8), { seats: 0, capacity: 10, declared: true, title: 'Sunrise class' });
     await makeSession(yoga.id, dayOffset(17), time(9), { seats: 0, capacity: 10, declared: true, title: 'Sunrise class' });
-    const oIslaSlot = await makeOrder({ ...islaBase, provider: yoga, sessionId: islaYogaS.id, date: dayOffset(15), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
-    const oIslaMto = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(12), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
-    const oIslaCty = await makeOrder({ ...islaBase, provider: chef, date: dayOffset(12), quantity: 2, attendees: 2, unit: 'person', unitPrice: 55, price: 110, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
+    // INSIDE the window — all attached to the stay, dated within it.
+    const oIslaSlot = await makeOrder({ ...islaBase, ...islaCottageRef, provider: yoga, sessionId: islaYogaS.id, date: dayOffset(15), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaMto = await makeOrder({ ...islaBase, ...islaCottageRef, provider: baker, date: dayOffset(12), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+    // Comes-to-you: the chef's FLAT extra-guests dinner — £220 for up to 4, a
+    // party of 6 (2 extra adults) → £220 + 2×£40 = £300.
+    const oIslaCty = await makeOrder({ ...islaBase, ...islaCottageRef, provider: chef, date: dayOffset(13), quantity: 1, attendees: 6, adults: 6, children: 0, unit: 'flat', unitPrice: 220, price: 300, itemId: chefFlat.id, itemName: chefFlat.name, status: 'confirmed', fulfilment: 'delivery' });
+    // PAST its window — a made-to-order due tomorrow (24h < the baker's 48h), to
+    // walk the "changes are closed" sheet.
+    const oIslaClosed = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(1), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
 
     const walkable = [
         ['Today',           'Loch Sauna (sauna)',      oToday],
@@ -401,10 +433,13 @@ async function main() {
     for (const [when, biz, o] of walkable) {
         console.log('    ' + when.padEnd(16) + biz.padEnd(28) + '/experiences/order/' + o.id);
     }
-    console.log('\n  Orders on seed-sauna@' + SEED_DOMAIN + ' — one per category, to walk change-count + change-date:');
-    console.log('    slot (yoga)          /experiences/order/' + oIslaSlot.id);
-    console.log('    made_to_order (baker) /experiences/order/' + oIslaMto.id);
-    console.log('    comes_to_you (chef)   /experiences/order/' + oIslaCty.id);
+    console.log('\n  seed-sauna@' + SEED_DOMAIN + ' — an upcoming holiday-let stay with experiences attached:');
+    console.log('    stay: ' + (islaStay ? ('"' + islaCottage.title + '"  ' + dayOffset(11) + ' → ' + dayOffset(16) + '  (booking ' + islaStay.id + ')') : '— no coordinate listing found, orders left standalone'));
+    console.log('    slot (yoga)           /experiences/order/' + oIslaSlot.id + '   (inside window)');
+    console.log('    made_to_order (baker) /experiences/order/' + oIslaMto.id + '   (inside window)');
+    console.log('    comes_to_you (chef)   /experiences/order/' + oIslaCty.id + '   (inside window · flat extra-guests £300)');
+    console.log('    closed window (baker) /experiences/order/' + oIslaClosed.id + '   (due tomorrow — changes closed)');
+    console.log('    chef public listing   /experiences/browse/' + chef.id);
     console.log('\n  done.');
     process.exit(0);
 }
