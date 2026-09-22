@@ -289,12 +289,12 @@ const SignupModel = () => {
                                 </div>
                                 <div className='mt-5'>
                                     <Label htmlFor='email'>Email</Label>
-                                    <Input id='email' type='email' placeholder='Enter your e-mail' {...register('email')} />
+                                    <Input id='email' type='email' placeholder='you@example.com' {...register('email')} />
                                     <span className='text-red-400'>{errors.email?.message}</span>
                                 </div>
                                 <div className='mt-5'>
                                     <Label htmlFor='password'>Password</Label>
-                                    <Input id='password' type='password' placeholder='Enter strong password' {...register('password')} />
+                                    <Input id='password' type='password' placeholder='At least 6 characters' {...register('password')} />
                                     <span className='text-red-400'>{errors.password?.message}</span>
                                 </div>
                                 <div className='mt-5'>
