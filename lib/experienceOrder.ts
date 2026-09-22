@@ -17,7 +17,7 @@
 // Every column the order page reads that is NOT money — safe for anyone allowed
 // to see the reservation (the booker or an accepted companion).
 export const ORDER_SAFE_COLUMNS =
-    'id, guest_id, provider_id, listing_id, booking_id, parent_order_id, status, shape, service_date, service_time, item_unit, ' +
+    'id, guest_id, provider_id, listing_id, booking_id, parent_order_id, status, shape, service_date, service_time, item_id, item_unit, ' +
     'item_name, item_description, provider_business_name, allergy, note, attendees, quantity, adults, children, ' +
     'duration_minutes, fulfilment, service_address, slot_session_id';
 
