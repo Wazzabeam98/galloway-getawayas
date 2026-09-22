@@ -168,7 +168,7 @@ export function RequestBookingDialog({
 
                 <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                     {ordered.length > 1 && (
-                        <fieldset>
+                        <fieldset className="min-w-0">
                             <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
                             <div className="mt-2 space-y-1.5">
                                 {ordered.map((it) => (
