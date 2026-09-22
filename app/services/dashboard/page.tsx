@@ -16,6 +16,7 @@ import ProviderExperienceDashboard from '@/components/services/ProviderExperienc
 import ProviderSlotDashboard from '@/components/services/ProviderSlotDashboard';
 import ExperienceIcalFeeds from '@/components/services/ExperienceIcalFeeds';
 import { shapeOf } from '@/lib/serviceSlots';
+import { isLiveToGuests } from '@/lib/serviceOrders';
 
 export const metadata = {
     title: 'Your business',
@@ -76,7 +77,7 @@ export default async function ProviderDashboardPage() {
     // half-finished draft for a second trade.
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, trial_ends_at, shape')
+        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, owner_paused, trial_ends_at, shape')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -153,11 +154,11 @@ export default async function ProviderDashboardPage() {
                 {isSlotHome
                     ? (
                         <div className="space-y-6">
-                            <ProviderSlotDashboard providerId={provider.id} editHref="/services/dashboard/listing" />
+                            <ProviderSlotDashboard providerId={provider.id} editHref="/services/dashboard/listing" live={isLiveToGuests(provider)} />
                             <ExperienceIcalFeeds providerId={provider.id} icalToken={icalToken} />
                         </div>
                     )
-                    : <ProviderExperienceDashboard providerId={provider.id} />}
+                    : <ProviderExperienceDashboard providerId={provider.id} live={isLiveToGuests(provider)} />}
             </div>
         );
     }

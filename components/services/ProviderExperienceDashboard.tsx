@@ -93,8 +93,8 @@ const STATUS_WORD: Record<string, string> = {
     refunded: 'Refunded',
 };
 
-export default function ProviderExperienceDashboard(props: { providerId: string }) {
-    const { providerId } = props;
+export default function ProviderExperienceDashboard(props: { providerId: string; live?: boolean }) {
+    const { providerId, live: liveToGuests = false } = props;
 
     const [payouts, setPayouts] = useState<null | { connected: boolean; payouts_enabled: boolean }>(null);
     const [orders, setOrders] = useState<Order[]>([]);
@@ -165,7 +165,10 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
         setBusy(null);
     }
 
-    const live = payouts && payouts.payouts_enabled;
+    // The same truth the marketplace filters on (isLiveToGuests, passed from the
+    // server), not a live Stripe fetch — so the dashboard and browse agree. The
+    // payouts fetch stays only for the connect button's wording.
+    const live = liveToGuests;
     const waiting = orders.filter((o) => o.status === 'authorised');
     const confirmed = orders.filter((o) => o.status === 'confirmed');
     const other = orders.filter((o) => o.status !== 'authorised' && o.status !== 'confirmed');
