@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { guestExperiencesOpen, exclusivePerDate } from '@/lib/serviceOrders';
 import { shapeOf } from '@/lib/serviceSlots';
 import { changeWindowState, dayKey, dayKeyFromNow, providerTakesChanges } from '@/lib/orderChange';
+import { offeredTimes as providerOfferedTimes, isOfferedTime, normaliseTime } from '@/lib/offeredTimes';
 import { logError } from '@/lib/logError';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 
@@ -118,10 +119,16 @@ export async function GET(request: Request) {
             itemName: undefined,
             locked: !win.free,                 // past the window — the date is fixed
             deadlineISO: win.deadlineISO,
-            current: { date: String(loaded.order.service_date).slice(0, 10) },
+            current: {
+                date: String(loaded.order.service_date).slice(0, 10),
+                time: loaded.order.service_time ? String(loaded.order.service_time).slice(0, 5) : null,
+            },
             minKey, maxKey, horizonDays,
             takenDates: taken,
             exclusive: exclusivePerDate(loaded.provider),
+            // The provider's offered times, so the sheet can let the guest change
+            // the time as well as the date; empty when the provider names none.
+            offeredTimes: providerOfferedTimes(loaded.provider.guest_details),
         });
     } catch (err: any) {
         await logError('services-order-change-date-GET', { message: String(err && err.message) });
@@ -139,6 +146,7 @@ export async function POST(request: Request) {
         const body = await request.json().catch(() => ({}));
         const orderId: string = body && body.orderId;
         const newDate: string = String((body && body.date) || '').slice(0, 10);
+        const newTimeRaw: string = normaliseTime(body && body.time) || '';
 
         const admin = adminClient();
         const loaded = await loadForDate(admin, orderId, user.id);
@@ -154,34 +162,55 @@ export async function POST(request: Request) {
         }
 
         if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return NextResponse.json({ ok: false, error: 'Pick a date.' }, { status: 400 });
-        if (newDate === String(loaded.order.service_date).slice(0, 10)) {
-            return NextResponse.json({ ok: false, error: 'That’s already your date.' }, { status: 400 });
+
+        // The time, when the provider offers times. Required then; validated
+        // against the offered set. When they offer none, no time is carried.
+        const offered = providerOfferedTimes(loaded.provider.guest_details);
+        let newTime: string | null = null;
+        if (offered.length) {
+            if (!newTimeRaw || !isOfferedTime(loaded.provider.guest_details, newTimeRaw)) {
+                return NextResponse.json({ ok: false, error: 'Pick a time.' }, { status: 400 });
+            }
+            newTime = newTimeRaw;
+        } else if (newTimeRaw) {
+            newTime = newTimeRaw;
         }
-        const { minKey, maxKey } = dateBounds(loaded, now);
-        if (newDate < minKey || newDate > maxKey) {
-            return NextResponse.json({ ok: false, error: 'That date isn’t open — pick one in the range shown.' }, { status: 400 });
+
+        const curDate = String(loaded.order.service_date).slice(0, 10);
+        const curTime = loaded.order.service_time ? String(loaded.order.service_time).slice(0, 5) : null;
+        const dateChanged = newDate !== curDate;
+        const timeChanged = (newTime || '') !== (curTime || '');
+        if (!dateChanged && !timeChanged) {
+            return NextResponse.json({ ok: false, error: 'That’s already your date and time.' }, { status: 400 });
         }
-        // Re-check the exclusive clash under the write (the partial unique index is
-        // the hard backstop; this is the friendly message).
-        if (exclusivePerDate(loaded.provider)) {
-            const { data: clash } = await admin
-                .from('service_orders').select('id')
-                .eq('provider_id', loaded.provider.id).eq('service_date', newDate)
-                .in('status', ['authorised', 'confirmed']).neq('id', loaded.order.id).limit(1);
-            if (clash && clash.length) {
-                return NextResponse.json({ ok: false, error: 'Someone’s already booked them for that date — try another.' }, { status: 409 });
+
+        // A date change must land in the open window and clear the exclusive clash;
+        // a time-only change keeps the date, so those checks don't apply.
+        if (dateChanged) {
+            const { minKey, maxKey } = dateBounds(loaded, now);
+            if (newDate < minKey || newDate > maxKey) {
+                return NextResponse.json({ ok: false, error: 'That date isn’t open — pick one in the range shown.' }, { status: 400 });
+            }
+            if (exclusivePerDate(loaded.provider)) {
+                const { data: clash } = await admin
+                    .from('service_orders').select('id')
+                    .eq('provider_id', loaded.provider.id).eq('service_date', newDate)
+                    .in('status', ['authorised', 'confirmed']).neq('id', loaded.order.id).limit(1);
+                if (clash && clash.length) {
+                    return NextResponse.json({ ok: false, error: 'Someone’s already booked them for that date — try another.' }, { status: 409 });
+                }
             }
         }
 
-        // A REQUEST, not an instant move. A date change moves no money, so it can't
-        // ride a hold — instead the requested date is parked on the still-confirmed
-        // order and the provider accepts (service_date := pending) or declines it
-        // within 48 hours (the service-orders cron clears an unanswered one). Only
-        // one pending request at a time.
+        // A REQUEST, not an instant move. A date/time change moves no money, so it
+        // can't ride a hold — instead the requested date (and time) are parked on
+        // the still-confirmed order and the provider accepts (service_date/time :=
+        // pending) or declines within 48 hours (the service-orders cron clears an
+        // unanswered one). Only one pending request at a time.
         const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
         const { data: saved, error: saveErr } = await admin
             .from('service_orders')
-            .update({ pending_service_date: newDate, pending_change_expires_at: expiresAt })
+            .update({ pending_service_date: newDate, pending_service_time: newTime, pending_change_expires_at: expiresAt })
             .eq('id', loaded.order.id).eq('status', 'confirmed')
             .select('id');
         if (saveErr) return NextResponse.json({ ok: false, error: 'Could not request the change. Try again.' }, { status: 500 });
@@ -191,15 +220,16 @@ export async function POST(request: Request) {
         try {
             const { data: prov } = await admin.from('service_providers').select('business_name, contact_email').eq('id', loaded.provider.id).maybeSingle();
             if (prov && prov.contact_email) {
-                await sendEmail(prov.contact_email, 'A guest wants to change a booking date', emailLayout(
+                await sendEmail(prov.contact_email, 'A guest wants to change a booking', emailLayout(
                     '<p>A guest has asked to move their ' + escapeHtml(loaded.order.item_name || 'booking') + ' to <strong>' + escapeHtml(newDate)
-                    + '</strong>. Nothing is charged either way — accept the new date within 48 hours, or decline to keep the original.</p>'
+                    + (newTime ? ' at ' + escapeHtml(newTime) : '')
+                    + '</strong>. Nothing is charged either way — accept within 48 hours, or decline to keep the original.</p>'
                     + button(SITE_URL + '/services/dashboard', 'Answer the request'),
                     'You’re receiving this because you offer experiences on Galloway Getaways.'));
             }
         } catch (e) { console.error('[change-date] notify', e); }
 
-        return NextResponse.json({ ok: true, requested: true, date: newDate });
+        return NextResponse.json({ ok: true, requested: true, date: newDate, time: newTime });
     } catch (err: any) {
         await logError('services-order-change-date-POST', { message: String(err && err.message) });
         return NextResponse.json({ ok: false, error: 'Could not change the date.' }, { status: 500 });

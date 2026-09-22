@@ -115,7 +115,7 @@ export async function POST(request: Request) {
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, provider_id, status, shape, slot_session_id, quantity, stripe_payment_intent_id, guest_email, guest_name, service_date, price, provider_business_name, pending_service_date, pending_change_expires_at, exclusive_per_date')
+            .select('id, provider_id, status, shape, slot_session_id, quantity, stripe_payment_intent_id, guest_email, guest_name, service_date, service_time, price, provider_business_name, pending_service_date, pending_service_time, pending_change_expires_at, exclusive_per_date')
             .eq('id', orderId)
             .maybeSingle();
 
@@ -150,11 +150,14 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'That date request has expired.' }, { status: 409 });
             }
             if (decision === 'decline_date') {
-                await admin.from('service_orders').update({ pending_service_date: null, pending_change_expires_at: null }).eq('id', order.id).eq('status', 'confirmed');
+                await admin.from('service_orders').update({ pending_service_date: null, pending_service_time: null, pending_change_expires_at: null }).eq('id', order.id).eq('status', 'confirmed');
                 await notifyGuest(order, 'date_declined', providerName);
                 return NextResponse.json({ ok: true, status: 'date_declined' });
             }
             const newDate = String(order.pending_service_date).slice(0, 10);
+            // The requested time rides with the date (both parked together); apply
+            // it too, keeping the current time when none was requested.
+            const newTime = order.pending_service_time ? String(order.pending_service_time).slice(0, 8) : order.service_time;
             if (order.exclusive_per_date) {
                 const { data: clash } = await admin.from('service_orders').select('id')
                     .eq('provider_id', order.provider_id).eq('service_date', newDate)
@@ -162,13 +165,13 @@ export async function POST(request: Request) {
                 if (clash && clash.length) return NextResponse.json({ ok: false, error: 'You already have a booking on that date.' }, { status: 409 });
             }
             const { error: mvErr } = await admin.from('service_orders')
-                .update({ service_date: newDate, pending_service_date: null, pending_change_expires_at: null })
+                .update({ service_date: newDate, service_time: newTime, pending_service_date: null, pending_service_time: null, pending_change_expires_at: null })
                 .eq('id', order.id).eq('status', 'confirmed');
             if (mvErr) {
                 if (String((mvErr as any).code) === '23505') return NextResponse.json({ ok: false, error: 'You already have a booking on that date.' }, { status: 409 });
                 return NextResponse.json({ ok: false, error: 'Could not move the booking.' }, { status: 500 });
             }
-            await notifyGuest({ ...order, service_date: newDate }, 'date_accepted', providerName);
+            await notifyGuest({ ...order, service_date: newDate, service_time: newTime }, 'date_accepted', providerName);
             return NextResponse.json({ ok: true, status: 'date_accepted', date: newDate });
         }
 

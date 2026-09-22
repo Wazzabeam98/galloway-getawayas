@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { collectionFieldsForWrite } from '@/lib/serviceProviders';
 import { audienceForTrade, knownExperienceAmenities } from '@/lib/serviceProviders';
 import { childrenAllowed } from '@/lib/guestAges';
+import { normaliseTime } from '@/lib/offeredTimes';
 
 export const dynamic = 'force-dynamic';
 
@@ -170,6 +171,15 @@ export async function POST(request: Request) {
                     patch.slot_capacity = maxGroup;
                 } else {
                     gd.max_guests = maxGroup;
+                    // The times a request-shape provider offers (a chef's sittings,
+                    // a baker's collection/delivery windows). Normalised to HH:MM,
+                    // de-duplicated and sorted; an empty set clears the field.
+                    if (Array.isArray(data.offered_times)) {
+                        const times = Array.from(new Set(
+                            data.offered_times.map((t: any) => normaliseTime(t)).filter(Boolean) as string[]
+                        )).sort((a, b) => a.localeCompare(b));
+                        gd.offered_times = times;
+                    }
                 }
                 break;
             }

@@ -68,6 +68,9 @@ export default async function ListingPage(
                         cancellationHours: p.cancellation_window_hours,
                         noRefund: p.noRefund,
                         minAge: p.minAge,
+                        offeredTimes: p.offeredTimes,
+                        horizonDays: p.horizonDays,
+                        maxGuests: p.maxGuests,
                     }}
                 />
             }

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Users, Minus, Plus, Loader2, ChevronRight, X } from 'lucide-react';
 import { childrenAllowed } from '@/lib/guestAges';
+import { partyPrice } from '@/lib/extraGuests';
 
 // "Change guest count" — a reservation ACTION row that opens a MODAL over the
 // page. ONE sheet for every shape; it adapts to the booking's engine:
@@ -43,6 +44,12 @@ interface Quote {
     free?: boolean;
     closed?: boolean;          // past the window — no changes
     providerName?: string | null;
+    // flat item with extra-guests pricing: the party moves the fee.
+    extraGuests?: boolean;
+    includedGuests?: number;
+    extraAdultFee?: number;
+    extraChildFee?: number;
+    currentPrice?: number;
 }
 
 function money(n: number): string {
@@ -104,7 +111,11 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
             if (!r.ok || !d.ok) { setLoadErr(d && d.error ? d.error : 'Could not load this.'); return; }
             const q = d as Quote;
             setQuote(q);
-            if (q.perGroup || q.mode === 'quantity') {
+            if (q.extraGuests) {
+                // A flat extra-guests item: an adults/children split that moves the fee.
+                setAdults(Math.max(1, q.adults != null ? q.adults : 1));
+                setChildren(q.children != null ? q.children : 0);
+            } else if (q.perGroup || q.mode === 'quantity') {
                 setGroup(Math.max(1, q.current || 1));
             } else {
                 const seedAdults = q.adults != null ? q.adults : Math.max(1, (isRequest ? q.current : q.headcount) || 1);
@@ -119,11 +130,13 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
     function openModal() { setOpen(true); setChildrenShown(false); loadQuote(); }
     function closeModal() { setOpen(false); }
 
-    const perGroup = !!(quote && quote.perGroup);
+    const extra = !!(quote && quote.extraGuests);
+    const perGroup = !!(quote && quote.perGroup) && !extra;
     // How the count is shown: a people split (adults/children), a single quantity
     // stepper (made_to_order), or a single group-size stepper (a flat price, no
-    // money). Slots always split people.
-    const mode: 'people' | 'quantity' | 'group' = perGroup ? 'group' : (isRequest ? (quote?.mode || 'people') : 'people');
+    // money). A flat item WITH extra-guests pricing splits people and moves the
+    // fee. Slots always split people.
+    const mode: 'people' | 'quantity' | 'group' = extra ? 'people' : (perGroup ? 'group' : (isRequest ? (quote?.mode || 'people') : 'people'));
     const single = mode === 'group' || mode === 'quantity';
     const unitPrice = quote ? quote.unitPrice : 0;
     const kidsOk = childrenAllowed(quote ? quote.minAge : null);
@@ -147,7 +160,17 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
 
     const newCount = single ? group : (adults + children);
     const delta = newCount - oldCount;                 // +rise, −fall
-    const money0 = mode === 'group' ? 0 : unitPrice * delta;
+    // Extra-guests money follows the party price, not a flat per-head unit.
+    const egItem = extra && quote ? {
+        unit: 'flat', price: quote.unitPrice,
+        included_guests: quote.includedGuests ?? null,
+        extra_adult_fee: quote.extraAdultFee ?? null,
+        extra_child_fee: quote.extraChildFee ?? null,
+        max_party: quote.max ?? null,
+    } : null;
+    const money0 = extra && egItem
+        ? partyPrice(egItem as any, adults, kidsOk ? children : 0, quote!.minAge) - partyPrice(egItem as any, oldAdults, oldChildren, quote!.minAge)
+        : (mode === 'group' ? 0 : unitPrice * delta);
     const free = quote ? (isRequest ? !!quote.free : !quote.insideWindow) : true;
 
     const slotFull = !isRequest && quote ? (quote.seatsLeft || 0) < 1 : false;
@@ -158,9 +181,11 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
         try {
             let body: any;
             if (isRequest) {
-                body = single
-                    ? { orderId, count: group }
-                    : { orderId, count: newCount, children: Math.max(0, children - oldChildren) };
+                body = extra
+                    ? { orderId, count: newCount, adults, children }
+                    : single
+                        ? { orderId, count: group }
+                        : { orderId, count: newCount, children: Math.max(0, children - oldChildren) };
             } else {
                 body = { orderId, quantity: delta, children: Math.max(0, children - oldChildren) };
             }

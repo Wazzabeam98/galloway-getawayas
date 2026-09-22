@@ -29,8 +29,9 @@ interface SlotFeed {
 }
 interface DateFeed {
     shape: string; locked: boolean; deadlineISO: string | null;
-    current: { date: string }; minKey: string; maxKey: string; horizonDays: number;
+    current: { date: string; time: string | null }; minKey: string; maxKey: string; horizonDays: number;
     takenDates: string[]; exclusive: boolean;
+    offeredTimes: string[];
 }
 
 function keyOf(d: Date): string {
@@ -76,17 +77,18 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [pickedTime, setPickedTime] = useState<{ date: string; time: string } | null>(null);
     const [pickedDate, setPickedDate] = useState<string | null>(null);
+    const [reqTime, setReqTime] = useState<string | null>(null);   // request-shape chosen time
     const [shownDate, setShownDate] = useState<Date | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     async function load() {
-        setLoadErr(null); setSlot(null); setDateFeed(null); setSelectedKey(null); setPickedTime(null); setPickedDate(null); setShownDate(null); setError(null);
+        setLoadErr(null); setSlot(null); setDateFeed(null); setSelectedKey(null); setPickedTime(null); setPickedDate(null); setReqTime(null); setShownDate(null); setError(null);
         try {
             const r = await fetch(endpoint + '?orderId=' + encodeURIComponent(orderId));
             const d = await r.json();
             if (!r.ok || !d.ok) { setLoadErr(d && d.error ? d.error : 'Could not load this.'); return; }
-            if (isRequest) setDateFeed(d as DateFeed); else setSlot(d as SlotFeed);
+            if (isRequest) { setDateFeed(d as DateFeed); setReqTime((d as DateFeed).current?.time || null); } else setSlot(d as SlotFeed);
         } catch { setLoadErr('Could not load this.'); }
     }
     function openModal() { setOpen(true); load(); }
@@ -95,7 +97,9 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
     async function proceed() {
         setBusy(true); setError(null);
         try {
-            const body = isRequest ? { orderId, date: pickedDate } : { orderId, sessionDate: pickedTime?.date, sessionTime: pickedTime?.time };
+            const body = isRequest
+                ? { orderId, date: pickedDate || (dateFeed ? dateFeed.current.date : undefined), time: reqTime || undefined }
+                : { orderId, sessionDate: pickedTime?.date, sessionTime: pickedTime?.time };
             const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const d = await r.json();
             if (r.ok && d && d.ok) { window.location.reload(); return; }
@@ -167,7 +171,11 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
         : (!!slot && !locked && openDayKeys.size > 0);
 
     const feedReady = isRequest ? !!dateFeed : !!slot;
-    const currentWhen = isRequest ? whenLabel(dateFeed?.current.date || '') : whenLabel(slot?.current.date || '', slot?.current.time);
+    const reqOffered = dateFeed?.offeredTimes || [];
+    const effectiveReqDate = pickedDate || (dateFeed ? dateFeed.current.date : '');
+    const reqChanged = !!dateFeed && ((effectiveReqDate !== dateFeed.current.date) || ((reqTime || '') !== (dateFeed.current.time || '')));
+    const reqReady = !dateFeed || (reqOffered.length ? !!reqTime : true);
+    const currentWhen = isRequest ? whenLabel(dateFeed?.current.date || '', dateFeed?.current.time || undefined) : whenLabel(slot?.current.date || '', slot?.current.time);
 
     return (
         <>
@@ -182,7 +190,7 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-0 sm:items-center sm:px-4" onClick={closeModal}>
                     <div className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between px-5 pt-5">
-                            <h2 className="text-lg font-bold text-slate-900">{isRequest ? 'Change date' : 'Change date or time'}</h2>
+                            <h2 className="text-lg font-bold text-slate-900">{isRequest && reqOffered.length === 0 ? 'Change date' : 'Change date or time'}</h2>
                             <button type="button" onClick={closeModal} className="text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
                         </div>
 
@@ -272,6 +280,22 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                                             {isRequest && selectedKey && (
                                                 <p className="text-[13px] text-slate-600">New date: <span className="font-semibold text-slate-900">{dayLabel(selectedKey)}</span></p>
                                             )}
+                                            {isRequest && reqOffered.length > 0 && (
+                                                <div>
+                                                    <div className="text-[13px] font-semibold text-slate-700">Time</div>
+                                                    <div className="mt-2 flex flex-wrap gap-2">
+                                                        {reqOffered.map((t) => {
+                                                            const isPicked = reqTime === t;
+                                                            return (
+                                                                <button key={t} type="button" onClick={() => { setReqTime(t); setError(null); }}
+                                                                    className={'inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition ' + (isPicked ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-300 text-slate-700 hover:border-slate-400')}>
+                                                                    {isPicked ? <Check className="h-4 w-4" /> : null}{t}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             {error && <p className="text-[13px] text-rose-600">{error}</p>}
                                         </>
@@ -282,11 +306,11 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
 
                         {feedReady && !locked && anyOpen && !loadErr && (
                             <div className="border-t border-slate-100 p-4">
-                                <button type="button" disabled={busy || (isRequest ? !pickedDate : !pickedTime)} onClick={proceed}
+                                <button type="button" disabled={busy || (isRequest ? (!reqChanged || !reqReady) : !pickedTime)} onClick={proceed}
                                     className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
                                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                                     {isRequest
-                                        ? (pickedDate ? 'Request ' + dayLabel(pickedDate) : 'Pick a new date')
+                                        ? (reqChanged ? 'Request ' + (reqOffered.length && reqTime ? whenLabel(effectiveReqDate, reqTime) : dayLabel(effectiveReqDate)) : 'Pick a new date or time')
                                         : (pickedTime ? 'Move to ' + whenLabel(pickedTime.date, pickedTime.time) : 'Pick a new time')}
                                 </button>
                             </div>

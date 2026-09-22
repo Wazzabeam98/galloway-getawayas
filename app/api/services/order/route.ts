@@ -11,6 +11,10 @@ import {
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { hasExtraGuests, partyPrice, partyCeiling } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
+import { itemTravels } from '@/lib/serviceProviders';
+import { offeredTimes as providerOfferedTimes, isOfferedTime, normaliseTime } from '@/lib/offeredTimes';
+import { displayName } from '@/lib/utils';
+import { withinLimits, callerAddress } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,10 +39,11 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
+        // May be null: a brand-new guest booking a STANDALONE experience (no stay)
+        // need not sign in first — Stripe collects the email and the account is
+        // minted from the payer email on the webhook, exactly as the slot path
+        // does. An against-a-stay booking still requires the signed-in owner.
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-            return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
-        }
 
         // The lock. Closed until launch, and enforced here rather than only in
         // the UI, so a direct POST is refused the same as a hidden button —
@@ -60,38 +65,66 @@ export async function POST(request: Request) {
         const requestedQuantity: unknown = body && body.quantity;
         const bookingId: string = body && body.bookingId;
         const serviceDate: string = body && body.serviceDate;
+        // The chosen time (HH:MM) — validated against the provider's offered times
+        // below. Optional for a provider who has named none (backwards-compatible).
+        const requestedTime: string = normaliseTime(body && body.serviceTime) || '';
         const note: string = (body && body.note ? String(body.note) : '').slice(0, 500);
         // A food order's stated allergy/dietary need. Its own field, not folded
         // into note, so it can be routed on its own — flagged in the email and
         // shown as its own badge — and so "no allergy" reads as a real answer.
         const allergy: string = (body && body.allergy ? String(body.allergy) : '').slice(0, 500);
+        // Typed contact for an anonymous standalone booker; ignored when signed in.
+        const typedName: string = (body && body.guestName ? String(body.guestName) : '').slice(0, 120).trim();
+        const typedEmail: string = (body && body.guestEmail ? String(body.guestEmail) : '').slice(0, 200).trim().toLowerCase();
+        const typedPhone: string = (body && body.guestPhone ? String(body.guestPhone) : '').slice(0, 40).trim();
 
-        if (!itemId || !bookingId || !serviceDate) {
+        if (!itemId || !serviceDate) {
             return NextResponse.json({ ok: false, error: 'Missing details' }, { status: 400 });
+        }
+
+        // STANDALONE (no stay) vs against-a-stay. Standalone needs no booking: the
+        // party is capped by the item's own maximum, the date by the provider's
+        // horizon, and a travelling shape asks for an address. An against-a-stay
+        // booking is validated and owned exactly as before.
+        const standalone = !bookingId;
+        const anonymous = standalone && !user;
+        if (!standalone && !user) {
+            return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
+        }
+        if (anonymous) {
+            const verdict = await withinLimits([
+                { bucket: 'guest-order:ip', key: callerAddress(request.headers), max: 20, windowMinutes: 60 },
+            ]);
+            if (!verdict.ok) {
+                return NextResponse.json({ ok: false, error: 'That’s a lot of attempts in a short time. Try again shortly.' }, { status: 429 });
+            }
         }
 
         const admin = adminClient();
 
-        // The booking is the guest's own, and it is where the dates, the place
-        // and the guest count come from — never the browser.
-        const { data: booking } = await admin
-            .from('bookings')
-            .select('id, guest_id, listing_id, check_in, check_out, guests, status')
-            .eq('id', bookingId)
-            .maybeSingle();
-
-        if (!booking) {
-            return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
-        }
-        if (booking.guest_id !== user.id) {
-            return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+        // The booking (against-a-stay only) is the guest's own, and it is where the
+        // dates, the place and the guest count come from — never the browser.
+        let booking: any = null;
+        if (!standalone) {
+            const { data } = await admin
+                .from('bookings')
+                .select('id, guest_id, listing_id, check_in, check_out, guests, status')
+                .eq('id', bookingId)
+                .maybeSingle();
+            if (!data) {
+                return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
+            }
+            if (data.guest_id !== user!.id) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+            booking = data;
         }
 
         // The item is the source of the price. Active and priced, or it is not
         // for sale — the same gate the menu applies, enforced here too.
         const { data: item } = await admin
             .from('service_provider_items')
-            .select('id, provider_id, name, description, price, active, unit, included_guests, extra_adult_fee, extra_child_fee, max_party')
+            .select('id, provider_id, name, description, price, active, unit, fulfilment, included_guests, extra_adult_fee, extra_child_fee, max_party')
             .eq('id', itemId)
             .maybeSingle();
 
@@ -120,7 +153,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, exclusive_per_date, guest_details')
+            .select('id, business_name, trade, shape, fulfilment, lead_time_days, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, exclusive_per_date, guest_details')
             .eq('id', item.provider_id)
             .maybeSingle();
 
@@ -133,20 +166,26 @@ export async function POST(request: Request) {
             ? Number((provider.guest_details as any).min_age) : null;
         const reqAdults = Math.max(0, Math.floor(Number(body && body.adults) || 0));
         const reqChildrenRaw = Math.max(0, Math.floor(Number(body && body.children) || 0));
+        // The party ceiling: the item's own maximum, and — when the booking sits on
+        // a stay — never more than are staying. A standalone booking has no stay, so
+        // it is bounded only by the item's / provider's own maximum.
+        const providerMax = provider && provider.guest_details && (provider.guest_details as any).max_guests != null
+            ? Number((provider.guest_details as any).max_guests) : Infinity;
+        const stayCap = standalone ? Infinity : (Number(booking.guests) || Infinity);
         let total: number;
         if (hasExtraGuests(item)) {
             const adults = Math.max(1, reqAdults || 1);
             const children = childrenAllowed(minAge) ? reqChildrenRaw : 0;
             const party = adults + children;
-            const cap = Math.min(partyCeiling(item), Number(booking.guests) || Infinity);
+            const cap = Math.min(partyCeiling(item), stayCap);
             if (party > cap) {
                 return NextResponse.json({ ok: false, error: 'That’s more guests than this experience takes (up to ' + cap + ').' }, { status: 400 });
             }
             total = partyPrice(item as any, adults, children, minAge);
         } else {
-            const cap = Number(booking.guests) || Infinity;
+            const cap = Math.min(stayCap, providerMax || Infinity);
             if (unitMultiplies(unit) && quantity > cap) {
-                return NextResponse.json({ ok: false, error: 'That’s more than the ' + cap + ' staying — book for your party size.' }, { status: 400 });
+                return NextResponse.json({ ok: false, error: standalone ? ('That’s more than this experience takes (up to ' + cap + ').') : ('That’s more than the ' + cap + ' staying — book for your party size.') }, { status: 400 });
             }
             total = orderTotal(unitPrice, quantity);
         }
@@ -157,17 +196,63 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
         }
 
-        // The service date has to fall inside the stay: check_out is the morning
-        // the guest leaves, so the last night they are here is the day before.
-        const start = dateFromKey(booking.check_in);
-        const end = dateFromKey(booking.check_out);
+        // The service date. Against a stay it must fall inside it (check_out is the
+        // morning the guest leaves, so the last night is the day before). Standalone
+        // it must sit within the provider's booking horizon and honour its lead time
+        // (a cake needs notice; a chef can be as soon as tomorrow).
         const when = dateFromKey(serviceDate);
-        if (when < start || when >= end) {
-            return NextResponse.json(
-                { ok: false, error: 'Pick a date during your stay.' },
-                { status: 400 }
-            );
+        if (standalone) {
+            const now = new Date();
+            const addDays = (n: number) => { const d = new Date(now); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() + n); return d; };
+            const leadDays = provider.shape === 'made_to_order' ? Math.max(1, Number(provider.lead_time_days) || 1) : 1;
+            const horizon = Math.max(1, Math.min(365, Number(provider.guest_details && (provider.guest_details as any).booking_horizon_days) || 90));
+            if (when < addDays(leadDays) || when > addDays(horizon)) {
+                return NextResponse.json({ ok: false, error: 'Pick a date within the booking window.' }, { status: 400 });
+            }
+        } else {
+            const start = dateFromKey(booking.check_in);
+            const end = dateFromKey(booking.check_out);
+            if (when < start || when >= end) {
+                return NextResponse.json({ ok: false, error: 'Pick a date during your stay.' }, { status: 400 });
+            }
         }
+
+        // The TIME. When the provider offers times, the guest must pick one of them;
+        // when they offer none, a request carries no time (as before).
+        const offered = providerOfferedTimes(provider.guest_details);
+        let serviceTime: string | null = null;
+        if (offered.length) {
+            if (!requestedTime || !isOfferedTime(provider.guest_details, requestedTime)) {
+                return NextResponse.json({ ok: false, error: 'Pick a time.' }, { status: 400 });
+            }
+            serviceTime = requestedTime;
+        } else if (requestedTime) {
+            serviceTime = requestedTime;
+        }
+
+        // The address, for a shape that TRAVELS to the guest: a comes-to-you chef,
+        // or a made-to-order delivery. Standalone the guest types it; against a stay
+        // it is the cottage, composed server-side from the owned booking's listing.
+        const travels = provider.shape === 'comes_to_you' || itemTravels(item as any, provider.fulfilment);
+        let serviceAddress: string | null = null;
+        if (travels) {
+            if (standalone) {
+                serviceAddress = (body && body.serviceAddress ? String(body.serviceAddress) : '').slice(0, 300).trim() || null;
+                if (!serviceAddress) {
+                    return NextResponse.json({ ok: false, error: 'Add the address the provider should come to.' }, { status: 400 });
+                }
+            } else if (booking.listing_id) {
+                const { data: stay } = await admin.from('listings')
+                    .select('street_address, postcode, location').eq('id', booking.listing_id).maybeSingle();
+                if (stay) serviceAddress = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
+            }
+        }
+
+        // The buyer's contact for an anonymous standalone booker (no profile yet).
+        // Ignored when signed in — the profile / minted account is the source then.
+        const contactName = anonymous ? (typedName || null) : null;
+        const contactEmail = anonymous ? (typedEmail || null) : (user ? user.email || null : null);
+        const contactPhone = anonymous ? (typedPhone || null) : null;
 
         // One booking per date — but ONLY for a provider the owner has marked
         // exclusive (a chef, a masseur). They cannot be in two cottages at once,
@@ -216,14 +301,21 @@ export async function POST(request: Request) {
         const orderMetadata: Record<string, string> = {
             kind: 'service_order',
             provider_id: provider.id,
-            booking_id: booking.id,
-            guest_id: user.id,
-            listing_id: booking.listing_id || '',
+            booking_id: standalone ? '' : booking.id,
+            guest_id: user ? user.id : '',
+            listing_id: standalone ? '' : (booking.listing_id || ''),
             service_date: dateKey(when),
+            service_time: serviceTime || '',
+            service_address: serviceAddress || '',
+            fulfilment: travels ? 'delivery' : 'collection',
+            standalone: standalone ? '1' : '',
+            contact_name: contactName || '',
+            contact_email: contactEmail || '',
+            contact_phone: contactPhone || '',
             // For an extra-guests item the party IS the priced head count; record
             // it (and its split) so the webhook writes the real party, not the
             // whole-stay number.
-            guests: String(hasExtraGuests(item) ? (Math.max(1, reqAdults || 1) + (childrenAllowed(minAge) ? reqChildrenRaw : 0)) : (booking.guests ?? '')),
+            guests: String(hasExtraGuests(item) ? (Math.max(1, reqAdults || 1) + (childrenAllowed(minAge) ? reqChildrenRaw : 0)) : (standalone ? (unitMultiplies(unit) ? quantity : '') : (booking.guests ?? ''))),
             adults: hasExtraGuests(item) ? String(Math.max(1, reqAdults || 1)) : '',
             children: hasExtraGuests(item) ? String(childrenAllowed(minAge) ? reqChildrenRaw : 0) : '',
             commission_rate: String(pricing.commissionRate),
@@ -239,7 +331,7 @@ export async function POST(request: Request) {
 
         const checkout = await stripeRequest('POST', '/checkout/sessions', {
             mode: 'payment',
-            customer_email: user.email,
+            customer_email: user ? user.email : (contactEmail || undefined),
             payment_method_types: ['card'],
             line_items: [
                 {
@@ -281,7 +373,7 @@ export async function POST(request: Request) {
             // — instead of a banner on /trips. The order row is written by the
             // webhook, so this page confirms the act and needs only the provider.
             success_url: SITE_URL + '/experiences/requested?p=' + provider.id,
-            cancel_url: SITE_URL + '/trips?experience=cancelled',
+            cancel_url: SITE_URL + (standalone ? '/experiences/browse/' + provider.id + '?experience=cancelled' : '/trips?experience=cancelled'),
             metadata: orderMetadata,
         });
 

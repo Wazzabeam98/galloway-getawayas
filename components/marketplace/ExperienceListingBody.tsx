@@ -7,7 +7,8 @@ import {
 } from '@/components/marketplace/present';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
-import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check, ShoppingBag, Utensils, Package, Truck } from 'lucide-react';
+import { experienceSteps, type StepIcon } from '@/lib/experienceSteps';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
 import ReviewStars from '@/components/ReviewStars';
@@ -19,13 +20,19 @@ import { MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
 import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
 
-// Icon for an itinerary phase, by its title (the editor writes Arrival / During /
-// Finish; anything else falls to the neutral "during" glyph).
-function phaseIcon(title: string) {
-    const t = title.toLowerCase();
-    if (t.includes('arriv')) return MapPin;
-    if (t.includes('finish') || t.includes('end')) return Flag;
-    return Compass;
+// Icon for an itinerary phase, by its generic/real step key (see
+// lib/experienceSteps). Titles are decided there — never per-category — so this
+// maps only the fixed keys.
+function phaseIcon(icon: StepIcon) {
+    switch (icon) {
+        case 'arrival': return MapPin;
+        case 'finish': return Flag;
+        case 'order': return ShoppingBag;
+        case 'prep': return Utensils;
+        case 'collect': return Package;
+        case 'deliver': return Truck;
+        default: return Compass;
+    }
 }
 
 // The listing body, in the cottage-page craft (photo mosaic, facts icon-list,
@@ -172,16 +179,16 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
-                        {(p.what_happens || p.itinerary.length > 0) ? (
+                        {(() => { const steps = experienceSteps(p.shape, p.fulfilment, p.itinerary); return (p.what_happens || steps.length > 0) ? (
                             <section className="mt-8 border-t border-slate-200 pt-8">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">What happens</h2>
                                 {p.what_happens ? (
                                     <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
                                 ) : null}
-                                {p.itinerary.length > 0 ? (
+                                {steps.length > 0 ? (
                                     <ol className="mt-5 space-y-5">
-                                        {p.itinerary.map((step, i) => {
-                                            const Icon = phaseIcon(step.title);
+                                        {steps.map((step, i) => {
+                                            const Icon = phaseIcon(step.icon);
                                             return (
                                                 <li key={i} className="flex gap-3.5">
                                                     <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
@@ -197,7 +204,7 @@ export default function ExperienceListingBody({
                                     </ol>
                                 ) : null}
                             </section>
-                        ) : null}
+                        ) : null; })()}
 
                         {(p.minAge != null || p.activityLevel || p.whatToBring) ? (
                             <section className="mt-8 border-t border-slate-200 pt-8">

@@ -113,7 +113,7 @@ export async function GET(request: Request) {
     for (const o of staleDate || []) {
         const { data: cleared } = await admin
             .from('service_orders')
-            .update({ pending_service_date: null, pending_change_expires_at: null })
+            .update({ pending_service_date: null, pending_service_time: null, pending_change_expires_at: null })
             .eq('id', o.id)
             .lt('pending_change_expires_at', nowIso)   // a provider who answered in the same minute wins
             .select('id');

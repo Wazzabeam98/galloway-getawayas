@@ -9,6 +9,8 @@ import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
 import { childrenAllowed } from '@/lib/guestAges';
+import { stepHeadings } from '@/lib/experienceSteps';
+import { normaliseTime, prettyTime } from '@/lib/offeredTimes';
 import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
@@ -40,6 +42,7 @@ export interface EditorProvider {
     slot_length_minutes: number | null; slot_turnaround_minutes: number;
     slot_capacity: number | null; slot_min_people: number; max_guests: number | null;
     lead_time_days: number; cancellation_window_hours: number; booking_horizon_days: number;
+    offered_times: string[];
     professional_title: string; years_experience: string; qualifications: string; recognition: string;
     what_to_expect: string; itinerary: Array<{ title?: string | null; detail?: string | null }>;
     min_age: number | null; activity_level: string; what_to_bring: string;
@@ -139,10 +142,14 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // What happens is an ordered arrival → during → finish flow (Airbnb's "What
     // you'll do"), not a bare paragraph or empty step rows. Stored as the itinerary
     // array, keyed by phase title; a phase with no detail simply isn't saved.
-    const phaseDetail = (title: string) => (p.itinerary.find((s) => (s.title || '').toLowerCase() === title.toLowerCase())?.detail) || '';
-    const [arrival, setArrival] = useState(phaseDetail('Arrival'));
-    const [during, setDuring] = useState(phaseDetail('During'));
-    const [finish, setFinish] = useState(phaseDetail('Finish'));
+    // Read by POSITION, not title: the three phases are the generic Arrival /
+    // During / Finish (or, for made-to-order, the real Order / Made / Collection-
+    // or-Delivery steps), so what the phase is called is decided by the shape, not
+    // stored per-category. The provider writes only the detail under each.
+    const phaseDetail = (i: number) => (p.itinerary[i]?.detail) || '';
+    const [arrival, setArrival] = useState(phaseDetail(0));
+    const [during, setDuring] = useState(phaseDetail(1));
+    const [finish, setFinish] = useState(phaseDetail(2));
     const [minAge, setMinAge] = useState(p.min_age != null ? String(p.min_age) : '');
     const [activity, setActivity] = useState(p.activity_level);
     const [whatToBring, setWhatToBring] = useState(p.what_to_bring);
@@ -173,6 +180,22 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [cancelHours, setCancelHours] = useState(Number(p.cancellation_window_hours ?? 48));
     const [horizonDays, setHorizonDays] = useState(Math.max(1, Number(p.booking_horizon_days || 90)));
     const cancelPolicy = experienceCancellationOption(Number(cancelHours), noRefund);
+    // The times a REQUEST-shape provider offers (a chef's sittings, a baker's
+    // collection/delivery windows). A slot's times come from the weekly template;
+    // these are only for made_to_order / comes_to_you. Stored HH:MM, sorted.
+    const [offeredTimesList, setOfferedTimesList] = useState<string[]>(() => {
+        const set = new Set<string>();
+        for (const t of (p.offered_times || [])) { const n = normaliseTime(t); if (n) set.add(n); }
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    });
+    const [newTime, setNewTime] = useState('');
+    const addOfferedTime = () => {
+        const n = normaliseTime(newTime);
+        if (!n) { toast.error('Enter a time like 18:30.'); return; }
+        setOfferedTimesList((prev) => prev.includes(n) ? prev : [...prev, n].sort((a, b) => a.localeCompare(b)));
+        setNewTime('');
+    };
+    const removeOfferedTime = (t: string) => setOfferedTimesList((prev) => prev.filter((x) => x !== t));
 
     // Max group size — the largest booking. A slot's is slot_capacity (it sizes
     // sellable seats); every other shape keeps it in guest_details.max_guests. One
@@ -464,11 +487,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         <SectionCard title="What happens" hint="A line on what it is, then walk a guest through it start to finish." saving={savingKey === 'happens'}
                             onSave={() => run('happens', {
                                 what_to_expect: whatToExpect,
-                                itinerary: [
-                                    { title: 'Arrival', detail: arrival },
-                                    { title: 'During', detail: during },
-                                    { title: 'Finish', detail: finish },
-                                ],
+                                itinerary: stepHeadings(p.shape, fulfilment).map((h, i) => ({ title: h.title, detail: [arrival, during, finish][i] })),
                             })}>
                             <Field label="In a sentence, what is it?">
                                 <textarea className={inputCls} rows={3} value={whatToExpect} onChange={(e) => setWhatToExpect(e.target.value)} placeholder="A wood-fired lakeside sauna with cold-water dips between rounds." />
@@ -477,11 +496,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">The flow</span>
                                 <p className="mt-0.5 text-xs text-slate-400">Take a guest through it, start to finish. Leave a step blank to skip it.</p>
                                 <div className="mt-3 space-y-3">
-                                    {[
-                                        { n: 1, label: 'Arrival', value: arrival, set: setArrival, ph: 'Where to meet, how to find you, what to expect first.' },
-                                        { n: 2, label: 'During', value: during, set: setDuring, ph: 'The heart of it — what you’ll actually do together.' },
-                                        { n: 3, label: 'Finish', value: finish, set: setFinish, ph: 'How it wraps up — and anything to do after.' },
-                                    ].map((s) => (
+                                    {stepHeadings(p.shape, fulfilment).map((h, idx) => ([
+                                        { n: 1, label: h.title, value: arrival, set: setArrival, ph: 'Where to meet, how to find you, what to expect first.' },
+                                        { n: 2, label: h.title, value: during, set: setDuring, ph: 'The heart of it — what you’ll actually do together.' },
+                                        { n: 3, label: h.title, value: finish, set: setFinish, ph: 'How it wraps up — and anything to do after.' },
+                                    ][idx])).map((s) => (
                                         <div key={s.label} className="flex gap-3">
                                             <div className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-emerald-700 text-xs font-bold text-white">{s.n}</div>
                                             <div className="flex-1">
@@ -814,7 +833,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {active === 'booking' && (
                         <SectionCard title="Booking" hint="How guests book with you — the rules that apply however your listing is booked." saving={savingKey === 'booking'}
-                            onSave={() => run('booking', { max_guests: maxGuests, lead_time_days: leadDays, booking_horizon_days: horizonDays })}>
+                            onSave={() => run('booking', { max_guests: maxGuests, lead_time_days: leadDays, booking_horizon_days: horizonDays, ...(p.isSlot ? {} : { offered_times: offeredTimesList }) })}>
                             <Field label="Maximum capacity" hint={p.isSlot ? 'The most people a session can take, as a default — a per-person item can set its own in “What you offer”.' : 'The most people you’ll take for one booking.'}>
                                 <Stepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} />
                             </Field>
@@ -832,6 +851,25 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     onChange={(v) => setHorizonDays(Number(v))}
                                 />
                             </Field>
+                            {!p.isSlot && (
+                                <Field label="Times you offer" hint={p.shape === 'made_to_order' ? 'The collection or delivery times a guest can pick.' : 'The times you can come — a guest picks one when they book.'}>
+                                    <div className="flex flex-wrap gap-2">
+                                        {offeredTimesList.length === 0 && (
+                                            <p className="text-sm text-slate-500">No times yet — add the times you offer, e.g. 18:00.</p>
+                                        )}
+                                        {offeredTimesList.map((t) => (
+                                            <span key={t} className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800">
+                                                {prettyTime(t)}
+                                                <button type="button" onClick={() => removeOfferedTime(t)} className="text-slate-400 hover:text-rose-600" aria-label={'Remove ' + t}>×</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div className="mt-3 flex gap-2">
+                                        <input type="time" value={newTime} onChange={(e) => setNewTime(e.target.value)} className="rounded-xl border border-slate-300 p-2.5 text-sm" />
+                                        <button type="button" onClick={addOfferedTime} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:border-slate-400">Add time</button>
+                                    </div>
+                                </Field>
+                            )}
                         </SectionCard>
                     )}
 

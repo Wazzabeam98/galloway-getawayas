@@ -97,6 +97,7 @@ export default async function ProviderListingPage() {
                 lead_time_days: provider.lead_time_days ?? 0,
                 cancellation_window_hours: provider.cancellation_window_hours ?? 48,
                 booking_horizon_days: gd.booking_horizon_days ?? 90,
+                offered_times: Array.isArray(gd.offered_times) ? gd.offered_times.map((t: unknown) => String(t)) : [],
                 professional_title: gd.professional_title || '',
                 years_experience: gd.years_experience || '',
                 qualifications: gd.qualifications || '',

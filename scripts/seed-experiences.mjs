@@ -28,7 +28,8 @@ const SEED_DOMAIN = 'gallowayexp.test';        // reserved TLD → no mail is se
 const PASSWORD = 'experience-seed-2026';
 const LIAM_EMAIL = 'liamworrall18@hotmail.com';
 const ACCT = 'acct_seed_experiences';           // a stand-in connected account
-const ISLA_STAY_PI = 'pi_seed_isla_stay';       // marks seed-sauna's holiday-let stay, so a re-run clears it
+const ISLA_STAY_PI = 'pi_seed_isla_stay';       // marks seed-sauna's upcoming holiday-let stay, so a re-run clears it
+const ISLA_PAST_STAY_PI = 'pi_seed_isla_past';  // marks seed-sauna's PAST stay (own PI — bookings.stripe_payment_intent_id is unique)
 const IMG = (k) => k;                            // storage keys, resolved by getImageUrl
 
 const time = (h, m = 0) => String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':00';
@@ -59,6 +60,7 @@ async function wipeExperiences() {
     // their providers above; the booking itself is tagged and cleared here so a
     // re-run leaves no orphaned stay behind).
     await db.remove('bookings', '?stripe_payment_intent_id=eq.' + ISLA_STAY_PI).catch(() => {});
+    await db.remove('bookings', '?stripe_payment_intent_id=eq.' + ISLA_PAST_STAY_PI).catch(() => {});
     // This seed's own owner accounts (so a re-run is clean). Never Liam, never
     // other domains' accounts.
     const users = await db.auth('GET', '/admin/users?per_page=200');
@@ -134,6 +136,9 @@ async function makeProvider(spec) {
             booking_horizon_days: spec.horizonDays ?? 90,
             max_guests: spec.shape === 'slot' ? undefined : (spec.maxGuests ?? null),
             dietary_options: spec.dietaryOptions ?? [],
+            // The times a request-shape provider offers (comes_to_you / made_to_order),
+            // the guest picks one at booking. Slots have their own session times.
+            offered_times: spec.offeredTimes ?? undefined,
         },
     });
     for (const it of spec.items) {
@@ -184,7 +189,7 @@ async function makeOrder(o) {
         slot_session_id: o.sessionId ?? null,
         service_date: o.date, service_time: o.time ?? null,
         duration_minutes: o.provider.shape === 'slot' ? 60 : null,
-        fulfilment: o.fulfilment ?? null, service_address: null,
+        fulfilment: o.fulfilment ?? null, service_address: o.serviceAddress ?? null,
         guests: o.attendees ?? null, attendees: o.attendees ?? null,
         quantity: o.quantity ?? 1, adults: o.adults ?? null, children: o.children ?? null,
         unit_price: o.unitPrice, item_unit: o.unit, price: o.price, commission_rate: 0.10,
@@ -270,7 +275,7 @@ async function main() {
     const chefOwner = await ownerFor('chef', 'Rory (Solway Table)');
     const chef = await makeProvider({
         owner: chefOwner, business_name: 'Solway Table', provider_name: 'Rory', trade: 'chef', category: 'chef', mcc: '5811', shape: 'comes_to_you',
-        leadTimeDays: 3, cancelHours: 72, horizonDays: 120, maxGuests: 10,
+        leadTimeDays: 3, cancelHours: 72, horizonDays: 120, maxGuests: 10, offeredTimes: ['18:00', '19:00', '19:30'],
         headshot: IMG('seed-assets/chef-face.png'), photos: [IMG('seed-assets/chef-1.jpg')],
         professional_title: 'Private chef, cooked in your cottage', years: 12,
         qualifications: 'Professional Cookery SVQ; 15 years in Scottish kitchens.', recognition: 'Ex-head chef, a Galloway harbour restaurant.',
@@ -298,7 +303,7 @@ async function main() {
     const bakerOwner = await ownerFor('baker', 'Nora (Galloway Bakehouse)');
     const baker = await makeProvider({
         owner: bakerOwner, business_name: 'Galloway Bakehouse', provider_name: 'Nora', trade: 'baker', category: 'food_order', mcc: '5462', shape: 'made_to_order',
-        leadTimeDays: 2, cancelHours: 48, horizonDays: 120, maxGuests: 1,
+        leadTimeDays: 2, cancelHours: 48, horizonDays: 120, maxGuests: 1, offeredTimes: ['10:00', '13:00', '16:00'],
         fulfilment: 'collection', street: '12 King Street', town: 'Castle Douglas', postcode: 'DG7 1AA', mapLat: 54.9372, mapLng: -3.9210,
         headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-1.jpg')],
         professional_title: 'Cakes & bakes to order', years: 6,
@@ -380,8 +385,12 @@ async function main() {
     const bBox = bakerItemRows.find((i) => i.unit === 'item') || bItem;
     const chefFlat = chefItemRows.find((i) => i.unit === 'flat') || cItem;
 
-    // The cottage to book: a listing with a coordinate (id order → stable pick).
-    const islaCottage = (await db.select('listings', '?select=id,host_id,title&latitude=not.is.null&order=id.asc&limit=1'))[0];
+    // The cottage(s) to book: listings with a coordinate (id order → stable pick).
+    // The past stay uses a DIFFERENT listing from the upcoming one so the two can
+    // never collide with each other or the same cottage's other seeded bookings.
+    const islaCottages = await db.select('listings', '?select=id,host_id,title&latitude=not.is.null&order=id.asc&limit=6');
+    const islaCottage = islaCottages[0];
+    const islaPastCottage = islaCottages[1] || islaCottages[0];
     let islaStay = null;
     if (islaCottage) {
         const nowIso = new Date().toISOString();
@@ -400,13 +409,35 @@ async function main() {
     await makeSession(yoga.id, dayOffset(17), time(9), { seats: 0, capacity: 10, declared: true, title: 'Sunrise class' });
     // INSIDE the window — all attached to the stay, dated within it.
     const oIslaSlot = await makeOrder({ ...islaBase, ...islaCottageRef, provider: yoga, sessionId: islaYogaS.id, date: dayOffset(15), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
-    const oIslaMto = await makeOrder({ ...islaBase, ...islaCottageRef, provider: baker, date: dayOffset(12), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaMto = await makeOrder({ ...islaBase, ...islaCottageRef, provider: baker, date: dayOffset(12), time: time(13), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
     // Comes-to-you: the chef's FLAT extra-guests dinner — £220 for up to 4, a
     // party of 6 (2 extra adults) → £220 + 2×£40 = £300.
-    const oIslaCty = await makeOrder({ ...islaBase, ...islaCottageRef, provider: chef, date: dayOffset(13), quantity: 1, attendees: 6, adults: 6, children: 0, unit: 'flat', unitPrice: 220, price: 300, itemId: chefFlat.id, itemName: chefFlat.name, status: 'confirmed', fulfilment: 'delivery' });
+    const oIslaCty = await makeOrder({ ...islaBase, ...islaCottageRef, provider: chef, date: dayOffset(13), time: time(19), quantity: 1, attendees: 6, adults: 6, children: 0, unit: 'flat', unitPrice: 220, price: 300, itemId: chefFlat.id, itemName: chefFlat.name, status: 'confirmed', fulfilment: 'delivery' });
     // PAST its window — a made-to-order due tomorrow (24h < the baker's 48h), to
     // walk the "changes are closed" sheet.
-    const oIslaClosed = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(1), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaClosed = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(1), time: time(10), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+
+    // A STANDALONE experience — booked with no stay at all (bookingless). A
+    // made-to-order collection box, so no address is needed; it carries a picked
+    // time. Proves the "bookable by anyone, no holiday-let needed" path and gives
+    // /trips an experience with its own card (not under a stay).
+    const oIslaNoStay = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(9), time: time(16), quantity: 2, unit: 'item', unitPrice: 8, price: 16, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+
+    // A PAST STAY with a PAST EXPERIENCE on it, so the /trips "Past" section has
+    // something in it. The stay finished last week; the chef cooked during it.
+    let islaPastStay = null;
+    if (islaPastCottage) {
+        const nowIso = new Date().toISOString();
+        [islaPastStay] = await db.insert('bookings', {
+            listing_id: islaPastCottage.id, guest_id: saunaOwner.id, host_id: islaPastCottage.host_id,
+            check_in: dayOffset(-45), check_out: dayOffset(-41),
+            guests: 2, adults: 2, children: 0, pets: 0,
+            total_price: 460, status: 'confirmed', payment_status: 'paid', amount_paid: 460,
+            confirmed_at: nowIso, paid_at: nowIso, stripe_payment_intent_id: ISLA_PAST_STAY_PI,
+        });
+    }
+    const islaPastRef = islaPastStay ? { bookingId: islaPastStay.id, listingId: islaPastCottage.id } : {};
+    const oIslaPast = await makeOrder({ ...islaBase, ...islaPastRef, provider: baker, date: dayOffset(-43), time: time(13), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
 
     const walkable = [
         ['Today',           'Loch Sauna (sauna)',      oToday],
@@ -439,7 +470,11 @@ async function main() {
     console.log('    made_to_order (baker) /experiences/order/' + oIslaMto.id + '   (inside window)');
     console.log('    comes_to_you (chef)   /experiences/order/' + oIslaCty.id + '   (inside window · flat extra-guests £300)');
     console.log('    closed window (baker) /experiences/order/' + oIslaClosed.id + '   (due tomorrow — changes closed)');
-    console.log('    chef public listing   /experiences/browse/' + chef.id);
+    console.log('    no-stay experience    /experiences/order/' + oIslaNoStay.id + '   (booked standalone, its own /trips card)');
+    console.log('    PAST stay             ' + (islaPastStay ? ('booking ' + islaPastStay.id + '  ' + dayOffset(-45) + ' → ' + dayOffset(-41)) : '—'));
+    console.log('    PAST experience       /experiences/order/' + oIslaPast.id + '   (on the past stay)');
+    console.log('    chef public listing   /experiences/browse/' + chef.id + '   (standalone bookable)');
+    console.log('    Your trips page       /trips');
     console.log('\n  done.');
     process.exit(0);
 }

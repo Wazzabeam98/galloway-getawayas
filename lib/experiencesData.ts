@@ -10,6 +10,7 @@ import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@
 import { guestCategory, knownDietaryOptions, knownExperienceAmenities } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionClosedToAll, minutesOfDay, type PartialBlock } from '@/lib/serviceSlots';
 import { getImageUrl, firstName } from '@/lib/utils';
+import { offeredTimes } from '@/lib/offeredTimes';
 import { shiftDayKey, londonDayKey } from '@/lib/dayKey';
 
 export interface MpItem {
@@ -182,6 +183,13 @@ export interface MpProvider {
     cancellation_window_hours: number;
     // Made-to-order only: notice needed, in days — gates the earliest bookable date.
     lead_time_days: number;
+    // How far ahead a standalone (bookingless) booking may reach, in days.
+    horizonDays: number;
+    // The times a request-shape provider offers (comes_to_you / made_to_order),
+    // HH:MM, so the booking panel and the change-date sheet can present them and
+    // the guest picks one. Empty for a slot (its times come from sessions) or a
+    // provider who has named none.
+    offeredTimes: string[];
     hero: string | null;
     // The regions this provider covers, in their own words — a line on the card.
     // Informational since coverage stopped filtering; empty for a provider who
@@ -480,10 +488,12 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                 ...(itemsBy[p.id] || []).map((it: any) => it.image).filter(Boolean),
             ])) as string[],
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
+            // Kept by POSITION (first three, empties preserved) so the generic /
+            // real step headings map to the right slot; the renderer drops empties.
             itinerary: (p.guest_details && Array.isArray(p.guest_details.itinerary))
                 ? p.guest_details.itinerary
+                    .slice(0, 3)
                     .map((s: any) => ({ title: String(s?.title || '').trim(), detail: String(s?.detail || '').trim() }))
-                    .filter((s: any) => s.detail)
                 : [],
             minAge: intOrNull(p.guest_details && p.guest_details.min_age),
             activityLevel: (p.guest_details && strOrNull(p.guest_details.activity_level)) || null,
@@ -529,6 +539,8 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             slotLength: shape === 'slot' ? Math.max(0, Number(p.slot_length_minutes) || 0) : 0,
             cancellation_window_hours: Number(p.cancellation_window_hours) || 48,
             lead_time_days: Number(p.lead_time_days) || 0,
+            horizonDays: Math.max(1, Math.min(365, Number(p.guest_details && p.guest_details.booking_horizon_days) || 90)),
+            offeredTimes: offeredTimes(p.guest_details),
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,
             areas: (areasBy[p.id] || []).map((a: any) => a.label).filter(Boolean),
             mapLat: (() => { const c = (areasBy[p.id] || []).find((a: any) => a.centre_lat != null); return c ? Number(c.centre_lat) : null; })(),

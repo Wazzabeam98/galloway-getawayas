@@ -80,6 +80,12 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             guest_id: md.guest_id || null,
             listing_id: md.listing_id || null,
             booking_id: md.booking_id || null,
+            // The chosen time (comes_to_you / made_to_order now carry one) and, for
+            // a travelling shape, the address the provider goes to. Frozen here so
+            // they never drift if the provider edits their offering later.
+            service_time: md.service_time || null,
+            service_address: md.service_address || null,
+            fulfilment: md.fulfilment || null,
             trade: (prov && prov.trade) || null,
             // Snapshotted so the one-per-date unique index can see it (an index
             // predicate reads only its own table's columns). A chef/masseur is
@@ -96,9 +102,11 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             price: Number(cs.amount_total || 0) / 100,
             commission_rate: Number(md.commission_rate) || 0.10,
             status: 'authorised',
-            guest_name: displayName(guest, '') || null,
-            guest_phone: guest ? guest.phone : null,
-            guest_email: (guest && guest.email) || (cs.customer_details && cs.customer_details.email) || null,
+            // Profile contact when signed in; the typed/paid contact for a
+            // standalone booker with no account yet (minted from this on payment).
+            guest_name: displayName(guest, '') || md.contact_name || null,
+            guest_phone: (guest ? guest.phone : null) || md.contact_phone || null,
+            guest_email: (guest && guest.email) || md.contact_email || (cs.customer_details && cs.customer_details.email) || null,
             note: md.note || null,
             allergy: md.allergy || null,
             provider_business_name: prov ? prov.business_name : null,
@@ -156,13 +164,15 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     : (md.note ? 'A guest would like to book you — please read their note' : 'A guest would like to book you'),
                 emailLayout(
                     allergyCallout(md.allergy)
-                    + '<p>A guest staying nearby has asked to book '
+                    + '<p>' + (md.booking_id ? 'A guest staying nearby' : 'A guest') + ' has asked to book '
                     + escapeHtml(prov.business_name || 'your experience')
                     + (md.item_name ? ' — ' + escapeHtml(String(md.item_name)) : '')
                     + ' for ' + escapeHtml(String(md.service_date))
+                    + (md.service_time ? ' at ' + escapeHtml(String(md.service_time)) : '')
                     + (Number.isFinite(guestsNum as number) && (guestsNum as number) > 0
                         ? ' · ' + guestsNum + ' guest' + (guestsNum === 1 ? '' : 's') : '')
                     + '.</p>'
+                    + (md.service_address ? '<p>Where: ' + escapeHtml(String(md.service_address)) + '</p>' : '')
                     + noteCallout(md.note)
                     + '<p>Their card is held, not charged. Confirm within 48 hours to '
                     + 'take the booking; if you can’t make it, decline and the hold is '

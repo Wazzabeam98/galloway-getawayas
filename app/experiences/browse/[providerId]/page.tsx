@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
@@ -8,6 +7,7 @@ import { loadPublicMarketplace, pickProvider } from '@/lib/experiencesData';
 import { loadExperienceReviews } from '@/lib/experienceReviews';
 import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import StandaloneBookingPanel from '@/components/marketplace/StandaloneBookingPanel';
+import BookingPanel from '@/components/marketplace/BookingPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,17 +43,33 @@ export default async function PublicListingPage({ params }: { params: { provider
             }}
         />
     ) : (
-        <div className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-            <div className="text-lg font-semibold text-slate-900">Book {who}</div>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                {who} takes bookings as part of a cottage stay. Standalone booking for this kind of
-                experience is coming soon.
-            </p>
-            <Link href="/"
-                className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800">
-                Find a cottage
-            </Link>
-        </div>
+        // A request shape (chef / made-to-order baker), booked standalone — no stay
+        // needed. The guest picks a date and, if the provider offers them, a time;
+        // a travelling shape asks for an address. The card is held, not charged,
+        // until the provider confirms.
+        <BookingPanel
+            standalone
+            provider={{
+                id: p.id,
+                business_name: p.business_name,
+                who,
+                shape: p.shape,
+                fulfilment: p.fulfilment,
+                isFood: p.isFood,
+                items: p.items,
+                sessions: p.sessions,
+                declaredSessions: p.declaredSessions,
+                leadTimeDays: p.lead_time_days,
+                minPeople: p.minPeople,
+                slotCapacity: p.slotCapacity,
+                cancellationHours: p.cancellation_window_hours,
+                noRefund: p.noRefund,
+                minAge: p.minAge,
+                offeredTimes: p.offeredTimes,
+                horizonDays: p.horizonDays,
+                maxGuests: p.maxGuests,
+            }}
+        />
     );
 
     return (

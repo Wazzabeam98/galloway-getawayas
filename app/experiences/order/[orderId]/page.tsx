@@ -11,6 +11,7 @@ import { logError } from '@/lib/logError';
 import { firstName, getImageUrl, displayName } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
+import { experienceSteps } from '@/lib/experienceSteps';
 import { isFoodProvider, unitMultiplies } from '@/lib/serviceOrders';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadExperienceOrder } from '@/lib/experienceOrder';
@@ -360,17 +361,18 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // guest's page, which is the behaviour the bio already sets.
     const gd = (prov?.guest_details || {}) as Record<string, unknown>;
     const whatToExpect = typeof gd.what_to_expect === 'string' ? gd.what_to_expect.trim() : '';
-    const itinerary = Array.isArray(gd.itinerary)
-        ? (gd.itinerary as unknown[])
-            .map((s) => ({ title: String((s as any)?.title || '').trim(), detail: String((s as any)?.detail || '').trim() }))
-            .filter((s) => s.detail)
+    // Raw phases by position (empties kept) so the generic/real headings map to
+    // the right slot; experienceSteps drops empties itself and titles by position.
+    const rawItinerary = Array.isArray(gd.itinerary)
+        ? (gd.itinerary as unknown[]).map((s) => ({ title: String((s as any)?.title || '').trim(), detail: String((s as any)?.detail || '').trim() }))
         : [];
+    const steps = experienceSteps(order.shape, prov?.fulfilment ?? null, rawItinerary);
     // The experience blurb prefers the provider's live "what to expect"; a
     // provider who wrote none (a made-to-order baker, whose guest_details is bare)
     // falls back to the item line frozen on the order — what this page showed
     // before — so the section is never emptier than it was.
     const experienceBlurb = whatToExpect || (order.item_description || '').trim();
-    const hasWhat = Boolean(experienceBlurb || itinerary.length);
+    const hasWhat = Boolean(experienceBlurb || steps.length);
     // The fuller host bio: a professional title (unless it just echoes the
     // business name), the free-text description, and the credentials the listing
     // shows under "About your host".
@@ -548,7 +550,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     {/* A slot that reached this branch has a start
                                         time but no recorded length, so the start
                                         still shows — only the end is withheld. */}
-                                    <div className="mt-1 text-sm font-medium text-slate-900">{longWhen(order.service_date, isSlot ? order.service_time : null)}</div>
+                                    <div className="mt-1 text-sm font-medium text-slate-900">{longWhen(order.service_date, order.service_time || null)}</div>
                                 </div>
                             )}
                         </div>
@@ -658,15 +660,15 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 {experienceBlurb && (
                                     <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{experienceBlurb}</p>
                                 )}
-                                {itinerary.length > 0 && (
+                                {steps.length > 0 && (
                                     <ol className="mt-4 space-y-4">
-                                        {itinerary.map((step, i) => (
+                                        {steps.map((step, i) => (
                                             <li key={i} className="flex gap-3">
                                                 <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-emerald-50 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
                                                     {i + 1}
                                                 </span>
                                                 <div className="min-w-0">
-                                                    {step.title && <div className="text-sm font-semibold text-slate-900">{step.title}</div>}
+                                                    <div className="text-sm font-semibold text-slate-900">{step.title}</div>
                                                     <p className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{step.detail}</p>
                                                 </div>
                                             </li>
