@@ -296,11 +296,16 @@ async function main() {
         minAge: null, activityLevel: null, whatToBring: null,
         amenities: [], accessibility: null, parking: null,
         dietaryNote: 'Vegetarian and gluten-free by arrangement; not a nut-free kitchen.', dietaryOptions: ['vegetarian', 'gluten_free'],
+        // A proper menu, several options to walk — a mix of per-guest dinners and
+        // one whole-evening group price, the way the bakery has a menu.
         items: [
             { name: 'Three-course Galloway dinner', description: 'A seasonal three courses, cooked in your cottage.', price: 55, unit: 'person', sort: 0, image: IMG('seed-assets/chef-1.jpg'), min: 2 },
+            { name: 'Seafood tasting menu', description: 'Five small courses built around the day’s landings.', price: 75, unit: 'person', sort: 1, min: 2 },
+            { name: 'Sunday roast, cooked in', description: 'A proper roast with all the trimmings, carved at your table.', price: 40, unit: 'person', sort: 2, min: 2 },
+            { name: 'Grazing table & canapés', description: 'A spread of Galloway cheeses, charcuterie and warm canapés.', price: 35, unit: 'person', sort: 3, min: 4 },
             // A flat group price with extra-guests pricing: £220 for up to 4, then
             // +£40 per extra adult and +£15 per extra child, up to a party of 8.
-            { name: 'Whole private dinner', description: 'The evening booked outright for your group.', price: 220, unit: 'flat', sort: 1,
+            { name: 'Whole private dinner', description: 'The evening booked outright for your group.', price: 220, unit: 'flat', sort: 4,
                 includedGuests: 4, extraAdultFee: 40, extraChildFee: 15, maxParty: 8 },
         ],
     });
