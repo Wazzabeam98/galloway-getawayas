@@ -191,79 +191,11 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
-                        {(() => { const steps = experienceSteps(p.shape, p.fulfilment, p.itinerary); return (p.what_happens || steps.length > 0) ? (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
-                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What happens</h2>
-                                {p.what_happens ? (
-                                    <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
-                                ) : null}
-                                {steps.length > 0 ? (
-                                    <ol className="mt-5 space-y-5">
-                                        {steps.map((step, i) => {
-                                            const Icon = phaseIcon(step.icon);
-                                            return (
-                                                <li key={i} className="flex gap-3.5">
-                                                    <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
-                                                        <Icon className="h-4 w-4" aria-hidden />
-                                                    </span>
-                                                    <div className="min-w-0">
-                                                        <div className="font-semibold text-slate-900">{step.title}</div>
-                                                        <p className="mt-0.5 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{step.detail}</p>
-                                                    </div>
-                                                </li>
-                                            );
-                                        })}
-                                    </ol>
-                                ) : null}
-                            </section>
-                        ) : null; })()}
-
-                        {(p.minAge != null || p.activityLevel || p.whatToBring) ? (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
-                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">Things to know</h2>
-                                <div className="mt-4 space-y-4">
-                                    {p.minAge != null ? (
-                                        <div className="flex items-start gap-3">
-                                            <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
-                                            <div><div className="font-semibold text-slate-900">Minimum age</div><p className="text-sm text-slate-600">{p.minAge} and over</p></div>
-                                        </div>
-                                    ) : null}
-                                    {p.activityLevel ? (
-                                        <div className="flex items-start gap-3">
-                                            <Activity className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
-                                            <div><div className="font-semibold text-slate-900">Activity level</div><p className="text-sm capitalize text-slate-600">{p.activityLevel}</p></div>
-                                        </div>
-                                    ) : null}
-                                    {p.whatToBring ? (
-                                        <div className="flex items-start gap-3">
-                                            <Backpack className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
-                                            <div><div className="font-semibold text-slate-900">What to bring</div><p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.whatToBring}</p></div>
-                                        </div>
-                                    ) : null}
-                                </div>
-                            </section>
-                        ) : null}
-
-                        {/* What's included — the provider's ticked amenities, as a
-                            scannable list (no prose). Shown for every shape when they
-                            ticked anything. */}
-                        {p.amenities.length > 0 && (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
-                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What’s included</h2>
-                                <ul className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-                                    {p.amenities.map((k) => {
-                                        const label = experienceAmenityLabel(k);
-                                        return label ? (
-                                            <li key={k} className="flex items-center gap-3">
-                                                <Check className="h-5 w-5 flex-none text-emerald-700" aria-hidden />
-                                                <span className="text-[15px] text-slate-700">{label}</span>
-                                            </li>
-                                        ) : null;
-                                    })}
-                                </ul>
-                            </section>
-                        )}
-
+                        {/* What you get — directly under the host, above the story:
+                            the items and prices are what the guest is deciding on, so
+                            they lead. Omitted for a slot (its options live in the
+                            booking panel) and for a food-ordering menu (the interactive
+                            menu already leads the column). */}
                         {p.shape !== 'slot' && !menu && (
                             <section className="mt-8 border-t border-slate-200 pt-8">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">What you get</h2>
@@ -293,6 +225,79 @@ export default function ExperienceListingBody({
                                                 </div>
                                             </li>
                                         );
+                                    })}
+                                </ul>
+                            </section>
+                        )}
+
+                        {(p.minAge != null || p.activityLevel || p.whatToBring) ? (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">Things to know</h2>
+                                <div className="mt-4 space-y-4">
+                                    {p.minAge != null ? (
+                                        <div className="flex items-start gap-3">
+                                            <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                            <div><div className="font-semibold text-slate-900">Minimum age</div><p className="text-sm text-slate-600">{p.minAge} and over</p></div>
+                                        </div>
+                                    ) : null}
+                                    {p.activityLevel ? (
+                                        <div className="flex items-start gap-3">
+                                            <Activity className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                            <div><div className="font-semibold text-slate-900">Activity level</div><p className="text-sm capitalize text-slate-600">{p.activityLevel}</p></div>
+                                        </div>
+                                    ) : null}
+                                    {p.whatToBring ? (
+                                        <div className="flex items-start gap-3">
+                                            <Backpack className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                            <div><div className="font-semibold text-slate-900">What to bring</div><p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.whatToBring}</p></div>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            </section>
+                        ) : null}
+
+                        {(() => { const steps = experienceSteps(p.shape, p.fulfilment, p.itinerary); return (p.what_happens || steps.length > 0) ? (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What happens</h2>
+                                {p.what_happens ? (
+                                    <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
+                                ) : null}
+                                {steps.length > 0 ? (
+                                    <ol className="mt-5 space-y-5">
+                                        {steps.map((step, i) => {
+                                            const Icon = phaseIcon(step.icon);
+                                            return (
+                                                <li key={i} className="flex gap-3.5">
+                                                    <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                                                        <Icon className="h-4 w-4" aria-hidden />
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <div className="font-semibold text-slate-900">{step.title}</div>
+                                                        <p className="mt-0.5 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{step.detail}</p>
+                                                    </div>
+                                                </li>
+                                            );
+                                        })}
+                                    </ol>
+                                ) : null}
+                            </section>
+                        ) : null; })()}
+
+                        {/* What's included — the provider's ticked amenities, as a
+                            scannable list (no prose). Shown for every shape when they
+                            ticked anything. */}
+                        {p.amenities.length > 0 && (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What’s included</h2>
+                                <ul className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+                                    {p.amenities.map((k) => {
+                                        const label = experienceAmenityLabel(k);
+                                        return label ? (
+                                            <li key={k} className="flex items-center gap-3">
+                                                <Check className="h-5 w-5 flex-none text-emerald-700" aria-hidden />
+                                                <span className="text-[15px] text-slate-700">{label}</span>
+                                            </li>
+                                        ) : null;
                                     })}
                                 </ul>
                             </section>

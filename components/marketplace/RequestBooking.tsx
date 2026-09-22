@@ -110,7 +110,10 @@ export function RequestBookingDialog({
 }) {
     const ordered = useMemo(() => [...items].sort((a, b) => a.price - b.price), [items]);
     const [itemId, setItemId] = useState<string>(ordered[0]?.id || '');
-    const [adults, setAdults] = useState<number>(Math.max(1, Number(prefillAdults) || 1));
+    // Start at the selected item's own minimum so the total reads the item's floor
+    // from the first paint (the per-guest dinner opens at its minimum of 2, £110),
+    // never a stale £55-for-one or the group item's price, before it's topped up.
+    const [adults, setAdults] = useState<number>(Math.max(itemMinPeople(ordered[0] || null), Number(prefillAdults) || 1));
     const [children, setChildren] = useState<number>(Math.max(0, Number(prefillChildren) || 0));
     const [childrenShown, setChildrenShown] = useState<boolean>(!!(prefillChildren && prefillChildren > 0));
     const [date, setDate] = useState<string>('');
@@ -159,13 +162,13 @@ export function RequestBookingDialog({
         .filter((d) => (timesByDate[d] || []).length > 0)
         .sort()
         .map((d) => ({ date: d, times: timesByDate[d] })), [calDays, timesByDate]);
-    // Only the next few are listed; the calendar icon (or "More dates") opens the
-    // full month for anything further out — exactly the slot dialog's shape. If a
-    // date further out is picked from the calendar, the list grows to reach it so
+    // Only the next FOUR are listed; the calendar icon by the month heading opens
+    // the full month for anything further out — exactly the slot dialog's shape. If
+    // a date further out is picked from the calendar, the list grows to reach it so
     // the picked day (and its times) is shown.
     const listDays = useMemo(() => {
         const idx = date ? days.findIndex((d) => d.date === date) : -1;
-        return days.slice(0, Math.max(10, idx + 1));
+        return days.slice(0, Math.max(4, idx + 1));
     }, [days, date]);
 
     // Keep a selected time valid as the item (and so its cap) changes; a day with
@@ -332,12 +335,6 @@ export function RequestBookingDialog({
                                         </div>
                                     );
                                 })}
-                                {days.length > listDays.length && (
-                                    <button type="button" onClick={() => { setCalSel(null); setCalOpen(true); }}
-                                        className="mt-3 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-400">
-                                        More dates
-                                    </button>
-                                )}
                             </div>
 
                             {/* Address + allergy, shown only when they apply */}
@@ -388,7 +385,7 @@ export function RequestBookingDialog({
 // the next few available days listed, a calendar icon by the month heading that
 // opens the full month grid. Picking a day (in the list or the grid) sets it and
 // closes.
-export function DateOnlyDialog({ title, availableDays, selected, onSelect, onClose, listLimit = 14 }: {
+export function DateOnlyDialog({ title, availableDays, selected, onSelect, onClose, listLimit = 4 }: {
     title: string;
     availableDays: Set<string>;
     selected: string | null;
@@ -463,12 +460,6 @@ export function DateOnlyDialog({ title, availableDays, selected, onSelect, onClo
                                     </button>
                                 </div>
                             ))}
-                            {allDays.length > listDays.length && (
-                                <button type="button" onClick={() => { setCalSel(null); setCalOpen(true); }}
-                                    className="mt-3 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-400">
-                                    More dates
-                                </button>
-                            )}
                         </div>
                     </>
                 )}
