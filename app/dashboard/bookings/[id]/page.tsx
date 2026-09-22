@@ -15,9 +15,10 @@ import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 }
 import { dateFromKey } from "@/lib/pricing";
 import { confirmationNumber, partyLabel, cancellationWords } from "@/lib/bookingDisplay";
 import BookingActions from "@/components/BookingActions";
+import DoorCode from "@/components/dashboard/DoorCode";
 import {
     ArrowLeft, MessageSquare, Phone, CheckCircle2, Clock3, XCircle,
-    CalendarDays, Users, ChevronRight,
+    CalendarDays, Users, ChevronRight, KeyRound,
 } from "lucide-react";
 
 // One booking, in full.
@@ -149,6 +150,16 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const ownerFirst = ownerName.split(' ')[0] || ownerName;
     const ownerAvatar = owner?.avatar_url ? getImageUrl(String(owner.avatar_url)) : null;
     const ownerIsViewer = uid === listing?.host_id;
+
+    // The door code — read ONLY when the viewer holds can_listing. This is the
+    // server-side wall: a co-host without the listing permission never has the
+    // code pulled from listing_access_codes, so it cannot reach their page at
+    // all (the value, not just its display, is withheld). Same table and same
+    // permission as /api/listings/access-code, the code's own secure route.
+    const { data: codeRow } = access.can_listing
+        ? await admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle()
+        : { data: null };
+    const doorCode = access.can_listing ? (codeRow?.code || null) : null;
 
     const now = new Date();
     const started = stayHasStarted(booking.check_in, now);
@@ -390,6 +401,26 @@ export default async function BookingDetail({ params }: { params: { id: string }
                                 </p>
                             )}
                         </div>
+
+                        {/* Door code — for anyone with the listing permission
+                            (item 2). Read server-side only when can_listing, so a
+                            co-host without it never receives the code. */}
+                        {access.can_listing && (
+                            doorCode
+                                ? <DoorCode code={doorCode} />
+                                : (
+                                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                                        <div className="flex items-center gap-2 text-slate-900">
+                                            <KeyRound className="h-4 w-4 flex-none text-slate-400" />
+                                            <span className="text-sm font-semibold">Door code</span>
+                                        </div>
+                                        <p className="mt-2 text-sm text-slate-500">
+                                            No door code saved for this property yet. Add one in the{' '}
+                                            <Link href={'/edit-listing/' + booking.listing_id} className="font-medium text-slate-700 underline hover:text-slate-900">listing editor</Link>.
+                                        </p>
+                                    </div>
+                                )
+                        )}
 
                         {/* Check-in / Check-out — two raised cards, the lifted-card
                             treatment reserved for surfaces you act on (item 4). */}
