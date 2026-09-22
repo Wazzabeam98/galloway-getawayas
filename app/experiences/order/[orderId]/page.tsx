@@ -870,6 +870,18 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 <div className="mt-0.5 font-mono text-sm tracking-wide text-slate-900">{orderReference(order.id)}</div>
                             </div>
 
+                            {/* Which item was ordered, stated plainly. The title
+                                links through to the listing and reads as the
+                                experience, so the ordered item is named here as its
+                                own fact too. A made-to-order cart names its lines in
+                                "Your order" above, so it's skipped there. */}
+                            {order.item_name && !(cartLineItems && cartLineItems.length) && (
+                                <div className="mt-4">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Item</div>
+                                    <div className="mt-0.5 text-sm font-medium text-slate-900">{order.item_name}</div>
+                                </div>
+                            )}
+
                             {isSlot && (() => {
                                 // Guests, with the adults/children split beneath when
                                 // it's recorded — "2 adults, 1 child". A null split
