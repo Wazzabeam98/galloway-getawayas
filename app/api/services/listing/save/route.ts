@@ -320,10 +320,13 @@ export async function POST(request: Request) {
                         // text, capped; null when blank.
                         ingredients: (it.ingredients ? String(it.ingredients) : '').slice(0, 1000).trim() || null,
                         allergens: (it.allergens ? String(it.allergens) : '').slice(0, 1000).trim() || null,
-                        // No per-item minimum: a shared session takes a single
-                        // person by design. Cleared to null so the column falls back
-                        // to its default of 1 (no floor); the control is gone.
-                        min_people: null,
+                        // Smallest party this item takes. A SLOT stays null — a shared
+                        // session takes a single person by design. A per-person REQUEST
+                        // item (a private chef per guest) can set a floor, and the
+                        // booking dialog and the order route both enforce it.
+                        min_people: (p.shape !== 'slot' && unit === 'person' && intOrNull(it.min_people) != null)
+                            ? Math.max(1, Math.min(60, Math.floor(Number(it.min_people))))
+                            : null,
                         sort_order: i, updated_at: nowIso,
                     };
                     if (it.id && existingIds.has(it.id)) {

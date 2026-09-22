@@ -260,7 +260,7 @@ export async function POST(request: Request) {
         // for sale — the same gate the menu applies, enforced here too.
         const { data: item } = await admin
             .from('service_provider_items')
-            .select('id, provider_id, name, description, price, active, unit, fulfilment, included_guests, extra_adult_fee, extra_child_fee, max_party')
+            .select('id, provider_id, name, description, price, active, unit, fulfilment, included_guests, extra_adult_fee, extra_child_fee, max_party, min_people')
             .eq('id', itemId)
             .maybeSingle();
 
@@ -320,6 +320,13 @@ export async function POST(request: Request) {
             total = partyPrice(item as any, adults, children, minAge);
         } else {
             const cap = Math.min(stayCap, providerMax || Infinity);
+            // The item's smallest party (min_people). A private chef set to a
+            // minimum of two can't be booked for one — refused here, not only held
+            // out of the stepper.
+            const floor = unitMultiplies(unit) ? Math.max(1, Number((item as any).min_people) || 1) : 1;
+            if (unitMultiplies(unit) && quantity < floor) {
+                return NextResponse.json({ ok: false, error: 'This experience takes a minimum of ' + floor + ' guests.' }, { status: 400 });
+            }
             if (unitMultiplies(unit) && quantity > cap) {
                 return NextResponse.json({ ok: false, error: standalone ? ('That’s more than this experience takes (up to ' + cap + ').') : ('That’s more than the ' + cap + ' staying — book for your party size.') }, { status: 400 });
             }

@@ -295,7 +295,7 @@ async function main() {
         amenities: [], accessibility: null, parking: null,
         dietaryNote: 'Vegetarian and gluten-free by arrangement; not a nut-free kitchen.', dietaryOptions: ['vegetarian', 'gluten_free'],
         items: [
-            { name: 'Three-course Galloway dinner', description: 'A seasonal three courses, cooked in your cottage.', price: 55, unit: 'person', sort: 0, image: IMG('seed-assets/chef-1.jpg') },
+            { name: 'Three-course Galloway dinner', description: 'A seasonal three courses, cooked in your cottage.', price: 55, unit: 'person', sort: 0, image: IMG('seed-assets/chef-1.jpg'), min: 2 },
             // A flat group price with extra-guests pricing: £220 for up to 4, then
             // +£40 per extra adult and +£15 per extra child, up to a party of 8.
             { name: 'Whole private dinner', description: 'The evening booked outright for your group.', price: 220, unit: 'flat', sort: 1,

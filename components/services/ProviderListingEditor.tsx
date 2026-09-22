@@ -240,13 +240,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
         fulfilment: it.fulfilment, active: it.active,
         // Blank = inherit the provider default; a number here overrides it for this item.
         capacity: it.capacity != null ? String(it.capacity) : '',
+        // Smallest party for a per-person request item (a private chef per guest).
+        minPeople: (it as any).min_people != null ? String((it as any).min_people) : '',
         // Extra-guests pricing (flat items). Blank = a plain flat price.
         includedGuests: (it as any).included_guests != null ? String((it as any).included_guests) : '',
         extraAdultFee: (it as any).extra_adult_fee != null ? String((it as any).extra_adult_fee) : '',
@@ -620,7 +622,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     id: r.id, name: r.name, description: r.description, price: r.price,
                                     unit: r.unit, image: r.image, duration_minutes: r.duration,
                                     fulfilment: r.fulfilment, active: r.active,
-                                    capacity: r.capacity,
+                                    capacity: r.capacity, min_people: r.minPeople,
                                     included_guests: r.includedGuests, extra_adult_fee: r.extraAdultFee,
                                     extra_child_fee: r.extraChildFee, max_party: r.maxParty,
                                     is_custom: r.isCustom,
@@ -722,6 +724,20 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                         <span className="w-full text-xs text-slate-400">Blank uses your default of {maxGuests}.</span>
                                                     </div>
                                                 )}
+                                                {/* Smallest party for a per-person REQUEST item (a
+                                                    private chef per guest). Guests can't book below it
+                                                    and the order route refuses a smaller party. Blank =
+                                                    one is fine. */}
+                                                {!p.isSlot && r.unit === 'person' && (
+                                                    <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3">
+                                                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Smallest party</span>
+                                                        <span className="flex items-center gap-1">
+                                                            <input className="w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder="1" value={r.minPeople} onChange={(e) => setRow(i, { minPeople: e.target.value })} />
+                                                            <span className="text-slate-500 text-sm">guests</span>
+                                                        </span>
+                                                        <span className="w-full text-xs text-slate-400">The fewest you’ll take for this. Blank means one is fine.</span>
+                                                    </div>
+                                                )}
                                                 {/* Extra guests — a group price that grows with the
                                                     party. Only for a flat (whole-session) item; blank
                                                     leaves a plain flat price. The child fee only shows
@@ -780,7 +796,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '', isCustom: false, ingredients: '', allergens: '' }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '', isCustom: false, ingredients: '', allergens: '' }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}

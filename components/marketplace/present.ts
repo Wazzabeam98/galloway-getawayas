@@ -4,6 +4,7 @@
 
 import type { MpProvider, MpItem } from '@/lib/experiencesData';
 import { extraGuestsLine } from '@/lib/extraGuests';
+import { unitMultiplies } from '@/lib/serviceOrders';
 
 const UNIT_SUFFIX: Record<string, string> = {
     person: ' / guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
@@ -126,6 +127,12 @@ export function itemPriceLineFor(item: MpItem, minAge: number | null | undefined
  *  shows separately): "for up to 4, +£40 per extra adult". Null when the item has
  *  no extra-guests pricing. Child fee only shows where children are allowed. */
 export function itemExtrasSubline(item: MpItem, minAge: number | null | undefined): string | null {
+    // A per-person item's smallest party — a private chef per guest set to a
+    // minimum of two reads "Minimum 2 guests" here and holds the booking dialog.
+    if (unitMultiplies(item.unit)) {
+        const min = Math.max(1, Number(item.minPeople) || 1);
+        return min > 1 ? `Minimum ${min} guests` : null;
+    }
     const line = extraGuestsLine({
         unit: item.unit, price: item.price,
         included_guests: item.includedGuests, extra_adult_fee: item.extraAdultFee,
