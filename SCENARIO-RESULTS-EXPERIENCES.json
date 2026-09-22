@@ -1,8 +1,8 @@
 {
-  "ranAt": "2026-09-22T14:18:39.745Z",
+  "ranAt": "2026-09-22T15:11:35.335Z",
   "target": "http://localhost:3190",
   "account": "acct_1U6iMxAJfMhUsIVc",
-  "passed": 18,
+  "passed": 20,
   "failed": 0,
   "lostWebhookReconciled": true,
   "lostWebhookRequestReconciled": true,
@@ -14,7 +14,7 @@
         {
           "description": "slot/book accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Ryp8RH67B0OSbXLqCSiMC2wkILkQ4SSSWcFFmTmHR7yUWinYXyZzWqfO#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Io1zKJgONdXPEVVqbiLrnt4HzHSprwTmUt8QjZuXA3TXsQfIguq99qNH#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "a holding order exists after booking",
@@ -59,7 +59,7 @@
         {
           "description": "STRIPE: the provider was paid — £6 fee to us, £54 transferred to them",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UIUMPPTBrEa7mS71eFpbpFC"
+          "detail": "fee=600 transfer=tr_3UIV9jPTBrEa7mS70F3huxFa"
         },
         {
           "description": "STRIPE: the provider’s connected balance rose by ~£54 net",
@@ -74,7 +74,7 @@
         {
           "description": "APP: the order now carries the PaymentIntent id",
           "ok": true,
-          "detail": "pi_3UIUMPPTBrEa7mS7133SymLw"
+          "detail": "pi_3UIV9jPTBrEa7mS70dpxlgwE"
         },
         {
           "description": "APP: the seat was KEPT (seats_taken still 1 — not resold)",
@@ -93,7 +93,7 @@
         {
           "description": "services/order accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1gnWo0wmnrS6eLJMaxnPsouM9OKLitvYaNiJ5xGOM0YRzlIF76yPr9ysW#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a19FwHS5vB21KW4p8tjoKYWcb725WrJlTV3TVsrFthFm19z4DopvRycIV9#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "the card is HELD not charged (requires_capture)",
@@ -118,7 +118,7 @@
         {
           "description": "the order carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UIUNZPTBrEa7mS70qP3LF8Z"
+          "detail": "pi_3UIVB8PTBrEa7mS718y1qhyz"
         },
         {
           "description": "orders/respond confirm succeeded",
@@ -171,7 +171,7 @@
         {
           "description": "STRIPE: fee £6, transfer to provider",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UIUNgPTBrEa7mS71kqY98XB"
+          "detail": "fee=600 transfer=tr_3UIVBFPTBrEa7mS70xX3XxWK"
         },
         {
           "description": "the webhook was accepted (200)",
@@ -389,12 +389,12 @@
         {
           "description": "APP: it carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UIUQDPTBrEa7mS71Sr8W73p"
+          "detail": "pi_3UIVEAPTBrEa7mS71TJyYhg2"
         },
         {
           "description": "APP: it belongs to the right guest and provider",
           "ok": true,
-          "detail": "2217409b-b442-4bd1-95ab-f2221e7140af/0bb01db6-8939-4423-a94a-26afb4b7f11d"
+          "detail": "473a0c9f-b08b-41c9-ad0d-aee16aa888c1/343e8f53-8ae4-40c0-8009-432c9971f33c"
         },
         {
           "description": "STRIPE: the hold is still LIVE (requires_capture — nothing captured early, nothing lost)",
@@ -692,7 +692,7 @@
         {
           "description": "a party of 6 on the £220-for-4 item is accepted (stay is 8)",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1YXaUyzghlbn9uWlyGjtEfL0nmdHBJRZUClYo06yVA8tog8wxW7muXlKn#fidnandhYHdWcXxpYCc%2"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1ocssBeWQZg2aP9Ti5wtU1N2ZK0NoD1C5mgeNGlxTk2b7CGPxFLdTeYUe#fidnandhYHdWcXxpYCc%2"
         },
         {
           "description": "the order records £300 for a party of 6 (220 + 2×£40)",
@@ -715,7 +715,7 @@
         {
           "description": "the increase is a REQUEST — a Checkout hold, not an instant charge",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1guKz1yNruGU5zwzHfGxBDLcfQOzUMkt1IUzKpfIqsj7FCjGoPxrhWVO3#fidnandhYHdWcXxpYCc%2"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a11GE1xMDuEpdtGkiYUHezwyTewunUBc4k80aY57jqeQsW5vfxg9MHRGJl#fidnandhYHdWcXxpYCc%2"
         },
         {
           "description": "a holding child was written for the extra place (£55)",
@@ -837,12 +837,12 @@
         {
           "description": "the increase is a request — a holding child is written",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Pp4mvBNphs5q91NunqLJobZuNRSSPVOvGRznzfccYPJE1mm5K5ZrtHEQ#f"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a187vELIX2tthLSI1Usn36Ww3ovggy7pVvqht7JxDIG6rQT2FCEbHV38ER#f"
         },
         {
           "description": "the rebuild sweep reconciled the lost hold to AUTHORISED",
           "ok": true,
-          "detail": "authorised pi=pi_3UIUUfPTBrEa7mS70CndLefd"
+          "detail": "authorised pi=pi_3UIVJHPTBrEa7mS70BqbOggg"
         },
         {
           "description": "the hold is kept — the PaymentIntent still requires capture",
@@ -862,6 +862,67 @@
       ],
       "status": "passed",
       "note": null
+    },
+    {
+      "number": "19",
+      "title": "A made-to-order cart of standard items books and charges instantly",
+      "checks": [
+        {
+          "description": "the order is INSTANT (books straight away, not a request)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_b1G6nwMA6vzMQFcRGb7jzvNjBg0lElU7BbdZR2bfPSSfThAHGPBI7wj72V#fidnandhYHdWcXxpYCc%2"
+        },
+        {
+          "description": "the order is CONFIRMED at once — no provider step",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "description": "it records the cart lines and the £72 total",
+          "ok": true,
+          "detail": "£72 · 2 lines"
+        },
+        {
+          "description": "STRIPE — the £72 was captured immediately",
+          "ok": true,
+          "detail": "captured=true amt=7200"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "20",
+      "title": "A made-to-order cart with a custom item is a request the provider accepts",
+      "checks": [
+        {
+          "description": "the order is a REQUEST (held, not instant)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_b1sjuFoUPFRZQhfe2H0doldj27GqKtVO77uLUkTSUQajcSVBnS1Q0ZvQE2#fidnandhYHdWcXxpYCc%2"
+        },
+        {
+          "description": "the held order is AUTHORISED — a request to answer",
+          "ok": true,
+          "detail": "authorised"
+        },
+        {
+          "description": "it carries both cart lines and the £66 total",
+          "ok": true,
+          "detail": "£66"
+        },
+        {
+          "description": "the provider accepts and it is captured",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "STRIPE — the £66 hold was captured on accept",
+          "ok": true,
+          "detail": "captured=true amt=6600"
+        }
+      ],
+      "status": "passed",
+      "note": "Any custom item turns the whole order into a request; an all-standard cart is instant."
     }
   ]
 }
