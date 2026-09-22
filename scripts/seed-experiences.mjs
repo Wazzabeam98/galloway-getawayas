@@ -429,9 +429,20 @@ async function main() {
     // INSIDE the window — all attached to the stay, dated within it.
     const oIslaSlot = await makeOrder({ ...islaBase, ...islaCottageRef, provider: yoga, sessionId: islaYogaS.id, date: dayOffset(15), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
     const oIslaMto = await makeOrder({ ...islaBase, ...islaCottageRef, provider: baker, date: dayOffset(12), time: time(13), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+    // The chef works Wed–Sun (days 3,4,5,6,0). Snap the dinner to a working day
+    // inside the stay [dayOffset(11), dayOffset(15)] so the change-date sheet's
+    // own opening hours never strike the booking's own date. Offset 12 is skipped
+    // — a chef order on the other cottage already holds that date, and the chef
+    // is exclusive per date. A 5-night stay always yields a Wed–Sun day here.
+    const CHEF_WORK_DAYS = new Set([3, 4, 5, 6, 0]);
+    const dowOfKey = (key) => new Date(key + 'T12:00:00Z').getUTCDay();
+    const chefDinnerDate = (() => {
+        for (const n of [13, 14, 15, 11]) { const key = dayOffset(n); if (CHEF_WORK_DAYS.has(dowOfKey(key))) return key; }
+        return dayOffset(13);
+    })();
     // Comes-to-you: the chef's FLAT extra-guests dinner — £220 for up to 4, a
     // party of 6 (2 extra adults) → £220 + 2×£40 = £300.
-    const oIslaCty = await makeOrder({ ...islaBase, ...islaCottageRef, provider: chef, date: dayOffset(13), time: time(19), quantity: 1, attendees: 6, adults: 6, children: 0, unit: 'flat', unitPrice: 220, price: 300, itemId: chefFlat.id, itemName: chefFlat.name, status: 'confirmed', fulfilment: 'delivery' });
+    const oIslaCty = await makeOrder({ ...islaBase, ...islaCottageRef, provider: chef, date: chefDinnerDate, time: time(19), quantity: 1, attendees: 6, adults: 6, children: 0, unit: 'flat', unitPrice: 220, price: 300, itemId: chefFlat.id, itemName: chefFlat.name, status: 'confirmed', fulfilment: 'delivery' });
     // PAST its window — a made-to-order due tomorrow (24h < the baker's 48h), to
     // walk the "changes are closed" sheet.
     const oIslaClosed = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(1), time: time(10), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
