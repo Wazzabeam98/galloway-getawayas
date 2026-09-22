@@ -521,10 +521,14 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             slotCapacity: shape === 'slot' ? Math.max(0, Number(p.slot_capacity) || 0) : 0,
             perItemDurations: shape === 'slot' ? perItemDurations : false,
             turnaround: shape === 'slot' ? turnaround : 0,
-            slotAvailability: shape === 'slot'
+            // Opening hours + day-off blocks are carried for a slot AND for a
+            // comes-to-you provider: the chef's booking box generates its start
+            // times from these same weekly hours (the one place a provider sets the
+            // hours they work), so a request shape gets the full calendar too.
+            slotAvailability: (shape === 'slot' || shape === 'comes_to_you')
                 ? (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time }))
                 : [],
-            slotBlocks: shape === 'slot' ? (blocksBy[p.id] || []).map((b: any) => b.blocked_date) : [],
+            slotBlocks: (shape === 'slot' || shape === 'comes_to_you') ? (blocksBy[p.id] || []).map((b: any) => b.blocked_date) : [],
             partialBlocks: providerPartialBlocks,
             bookedBlocks: shape === 'slot'
                 ? (sessBy[p.id] || [])

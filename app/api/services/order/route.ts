@@ -353,11 +353,47 @@ export async function POST(request: Request) {
             }
         }
 
-        // The TIME. When the provider offers times, the guest must pick one of them;
-        // when they offer none, a request carries no time (as before).
+        // The TIME.
+        //
+        // A COMES-TO-YOU provider's times come from its weekly OPENING HOURS — the
+        // single place a provider sets the hours they work (the offered-times field
+        // is gone). The picked time must fall inside an open window for that weekday,
+        // and the day must not be blocked off. A provider who set no hours yet falls
+        // back to any named offered_times (legacy), or to no time at all.
+        //
+        // Every other shape keeps the offered-times rule: pick one if any are named.
         const offered = providerOfferedTimes(provider.guest_details);
         let serviceTime: string | null = null;
-        if (offered.length) {
+        const toMin = (t: string) => { const [h, m] = String(t).split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+        if (provider.shape === 'comes_to_you') {
+            const [{ data: availRows }, { data: dayBlocks }] = await Promise.all([
+                admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id),
+                admin.from('slot_blocks').select('blocked_date').eq('provider_id', provider.id).eq('blocked_date', dateKey(when)),
+            ]);
+            const hours = availRows || [];
+            if (hours.length) {
+                if (dayBlocks && dayBlocks.length) {
+                    return NextResponse.json({ ok: false, error: 'They’re not available that day — try another date.' }, { status: 409 });
+                }
+                if (!requestedTime) {
+                    return NextResponse.json({ ok: false, error: 'Pick a time.' }, { status: 400 });
+                }
+                const dow = new Date(dateKey(when) + 'T00:00:00Z').getUTCDay();
+                const tMin = toMin(requestedTime);
+                const open = hours.some((w: any) => Number(w.day_of_week) === dow && tMin >= toMin(w.open_time) && tMin < toMin(w.close_time));
+                if (!open) {
+                    return NextResponse.json({ ok: false, error: 'They’re not open at that time — pick another.' }, { status: 400 });
+                }
+                serviceTime = requestedTime;
+            } else if (offered.length) {
+                if (!requestedTime || !isOfferedTime(provider.guest_details, requestedTime)) {
+                    return NextResponse.json({ ok: false, error: 'Pick a time.' }, { status: 400 });
+                }
+                serviceTime = requestedTime;
+            } else if (requestedTime) {
+                serviceTime = requestedTime;
+            }
+        } else if (offered.length) {
             if (!requestedTime || !isOfferedTime(provider.guest_details, requestedTime)) {
                 return NextResponse.json({ ok: false, error: 'Pick a time.' }, { status: 400 });
             }
