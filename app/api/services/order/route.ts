@@ -340,7 +340,12 @@ export async function POST(request: Request) {
         if (standalone) {
             const now = new Date();
             const addDays = (n: number) => { const d = new Date(now); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() + n); return d; };
-            const leadDays = provider.shape === 'made_to_order' ? Math.max(1, Number(provider.lead_time_days) || 1) : 1;
+            // The provider's notice period is the earliest a date can be picked, for a
+            // comes-to-you chef as much as a made-to-order baker (a made-to-order has a
+            // floor of one day; a chef can be same-notice-as-set, down to zero).
+            const leadDays = provider.shape === 'made_to_order'
+                ? Math.max(1, Number(provider.lead_time_days) || 1)
+                : Math.max(0, Number(provider.lead_time_days) || 0);
             const horizon = Math.max(1, Math.min(365, Number(provider.guest_details && (provider.guest_details as any).booking_horizon_days) || 90));
             if (when < addDays(leadDays) || when > addDays(horizon)) {
                 return NextResponse.json({ ok: false, error: 'Pick a date within the booking window.' }, { status: 400 });

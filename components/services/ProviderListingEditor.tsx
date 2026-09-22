@@ -842,13 +842,18 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             <Field label="Maximum capacity" hint={p.isSlot ? 'The most people a session can take, as a default — a per-person item can set its own in “What you offer”.' : 'The most people you’ll take for one booking.'}>
                                 <Stepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} />
                             </Field>
-                            <Field label="Notice needed" hint="How far ahead a guest has to book.">
-                                <OptionPills
-                                    options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
-                                    value={String(leadDays)}
-                                    onChange={(v) => setLeadDays(Number(v))}
-                                />
-                            </Field>
+                            {/* A slot or comes-to-you provider sets its notice period
+                                beside the opening hours; made-to-order has no hours
+                                section, so it keeps it here. */}
+                            {!p.isSlot && p.shape !== 'comes_to_you' && (
+                                <Field label="Notice needed" hint="How far ahead a guest has to book. The calendar won't offer a date sooner than this.">
+                                    <OptionPills
+                                        options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
+                                        value={String(leadDays)}
+                                        onChange={(v) => setLeadDays(Number(v))}
+                                    />
+                                </Field>
+                            )}
                             <Field label="How far ahead guests can book" hint="Beyond this, dates aren’t open yet — they come into range as time passes.">
                                 <OptionPills
                                     options={BOOKING_HORIZON_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
@@ -868,6 +873,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         <SectionCard title={p.isSlot ? 'Availability' : 'Opening hours'} hint={p.isSlot ? 'Your weekly hours and session shape. A specific day off, or part of a day, is set in your diary.' : 'The hours you work each week — a guest picks a time within them. A specific day off is set in your diary.'} saving={savingKey === 'availability'}
                             onSave={() => run('availability', {
                                 slot_length_minutes: slotLength, slot_turnaround_minutes: turnaround,
+                                lead_time_days: leadDays,
                                 availability: hours
                                     .map((h, d) => ({ ...h, day_of_week: d }))
                                     .filter((h) => h.on && h.open && h.close && h.open < h.close)
@@ -893,6 +899,16 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     ))}
                                 </div>
                             </div>
+                            {/* The notice period sits beside the opening hours — it's
+                                how soon a guest can book, and the earliest date the
+                                calendar offers is today plus this. */}
+                            <Field label="Notice needed" hint="How far ahead a guest has to book. The calendar won't offer a date sooner than this.">
+                                <OptionPills
+                                    options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
+                                    value={String(leadDays)}
+                                    onChange={(v) => setLeadDays(Number(v))}
+                                />
+                            </Field>
                             {p.isSlot && (
                                 <>
                                     <Field label="Session length" hint="How long one session runs.">

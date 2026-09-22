@@ -234,6 +234,10 @@ export async function POST(request: Request) {
                 patch = {
                     slot_length_minutes: intOrNull(data.slot_length_minutes),
                     slot_turnaround_minutes: Math.max(0, Math.floor(Number(data.slot_turnaround_minutes) || 0)),
+                    // The notice period sits beside the opening hours in the editor for
+                    // a slot / comes-to-you provider, so it saves here too. Clamped the
+                    // same way the Booking section clamps it.
+                    ...(data.lead_time_days != null ? { lead_time_days: Math.max(0, Math.min(365, Math.floor(Number(data.lead_time_days) || 0))) } : {}),
                     // slot_min_people is NOT written here any more — the minimum-per-
                     // booking moved onto each per-person item (the menu section). The
                     // provider-level column stays as the fallback for an item that
