@@ -434,8 +434,16 @@ export default function BookingDialog({
                                                 <button key={o.key} type="button" disabled={!ok} onClick={() => setSelKey(o.key)}
                                                     className={`flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition ${on ? (declared ? 'border-violet-600 ring-1 ring-violet-600' : 'border-slate-900 ring-1 ring-slate-900') : declared ? 'border-violet-200 hover:border-violet-400' : 'border-slate-200 hover:border-slate-400'} ${!ok ? 'cursor-not-allowed opacity-45' : ''}`}>
                                                     <span className="min-w-0 flex-1">
-                                                        {declared && o.title && <span className="block truncate text-[15px] font-semibold text-slate-900">{o.title}</span>}
-                                                        <span className={`block ${declared && o.title ? 'text-sm text-slate-500' : 'text-[15px] font-semibold text-slate-900'}`}>{timeLabel(o.time + ':00')}</span>
+                                                        {/* The TIME leads every row — it is what a
+                                                            guest picks a session by — with the
+                                                            session's title after it when a declared
+                                                            session carries one. Title first read as a
+                                                            heading and pushed the time into small grey
+                                                            secondary text. */}
+                                                        <span className="flex min-w-0 items-baseline gap-2">
+                                                            <span className="flex-none text-[15px] font-semibold text-slate-900">{timeLabel(o.time + ':00')}</span>
+                                                            {declared && o.title && <span className="truncate text-sm text-slate-500">{o.title}</span>}
+                                                        </span>
                                                         {item && <span className="mt-0.5 block text-xs text-slate-500">{priceEach}</span>}
                                                     </span>
                                                     <span className="flex-none text-right text-xs font-semibold">
