@@ -50,7 +50,7 @@ function capacityFor(provider: any): number {
 }
 
 type LoadErr = { error: { status: number; message: string } };
-interface LoadedCount { order: any; provider: any; item: any; children: any[]; unit: string; windowHours: number; shape: string; stayGuests: number | null }
+interface LoadedCount { order: any; provider: any; item: any; children: any[]; unit: string; windowHours: number; shape: string }
 
 async function loadForCount(admin: any, orderId: string, userId: string): Promise<LoadedCount | LoadErr> {
     if (!orderId) return { error: { status: 400, message: 'Missing order' } };
@@ -80,17 +80,9 @@ async function loadForCount(admin: any, orderId: string, userId: string): Promis
         .select('id, quantity, attendees, adults, children, item_unit, price, status, stripe_payment_intent_id, created_at')
         .eq('parent_order_id', order.id).eq('status', 'confirmed').order('created_at', { ascending: false });
 
-    // The stay's guest count, when this booking sits on a cottage stay — the party
-    // can never exceed who is staying.
-    let stayGuests: number | null = null;
-    if (order.booking_id) {
-        const { data: b } = await admin.from('bookings').select('guests').eq('id', order.booking_id).maybeSingle();
-        if (b && Number(b.guests) > 0) stayGuests = Number(b.guests);
-    }
-
     const unit = normaliseUnit(order.item_unit);
     const windowHours = Number(provider.cancellation_window_hours) || 48;
-    return { order, provider, item, children: children || [], unit, windowHours, shape, stayGuests };
+    return { order, provider, item, children: children || [], unit, windowHours, shape };
 }
 
 // Start the authorise-then-capture Checkout for an increase REQUEST: a child
@@ -157,7 +149,7 @@ export async function GET(request: Request) {
         const admin = adminClient();
         const loaded = await loadForCount(admin, orderId, user.id);
         if ('error' in loaded) return NextResponse.json({ ok: false, error: loaded.error.message }, { status: loaded.error.status });
-        const { order, provider, item, children, unit, stayGuests } = loaded;
+        const { order, provider, item, children, unit } = loaded;
 
         const now = new Date();
         const win = changeWindowState(order, loaded.windowHours, now);
@@ -181,7 +173,12 @@ export async function GET(request: Request) {
             // gone, so the floor is the current party.
             const curAdults = Math.max(1, Number(order.adults) || Math.max(1, Number(order.attendees) || 1));
             const curChildren = Math.max(0, Number(order.children) || 0);
-            const ceiling = Math.min(partyCeiling(item), stayGuests || Infinity);
+            // The party is capped by what the ITEM takes (its max_party), not by how
+            // many are staying: a comes-to-you dinner can be for visitors as well as
+            // the guests sleeping at the cottage, so the "up to N" the listing shows
+            // is the real limit. (Was min(partyCeiling, stayGuests), which pinned a
+            // 6-person dinner on a 2-guest stay below its own party and blocked 6→7.)
+            const ceiling = partyCeiling(item);
             const currentPrice = partyPrice(item, curAdults, curChildren, minAge);
             return NextResponse.json({
                 ok: true, shape: loaded.shape, perGroup: true, extraGuests: true, riseOnly: true,
@@ -209,7 +206,9 @@ export async function GET(request: Request) {
         // order, held and captured on accept. The floor is the current count.
         const family = foldOrderFamily(order, children);
         const current = family.headcount;
-        const capMax = Math.min(capacityFor(provider), stayGuests || Infinity);
+        // Capped by what the provider takes, not the stay's guest count — a
+        // comes-to-you session can host visitors beyond those staying.
+        const capMax = capacityFor(provider);
         return NextResponse.json({
             ok: true, shape: loaded.shape, perGroup: false, mode: 'people', riseOnly: true,
             current,
@@ -242,7 +241,7 @@ export async function POST(request: Request) {
         const admin = adminClient();
         const loaded = await loadForCount(admin, orderId, user.id);
         if ('error' in loaded) return NextResponse.json({ ok: false, error: loaded.error.message }, { status: loaded.error.status });
-        const { order, provider, item, children, unit, stayGuests } = loaded;
+        const { order, provider, item, children, unit } = loaded;
         const now = new Date();
         const win = changeWindowState(order, loaded.windowHours, now);
         const perGroup = perGroupPricing(unit);
@@ -266,7 +265,7 @@ export async function POST(request: Request) {
             const newChildren = kidsOk ? Math.max(0, Math.floor(Number(body && body.children)) || 0) : 0;
             const newParty = newAdults + newChildren;
             const curParty = curAdults + curChildren;
-            const ceiling = Math.min(partyCeiling(item), stayGuests || Infinity);
+            const ceiling = partyCeiling(item);
             if (newParty <= curParty) {
                 return NextResponse.json({ ok: false, error: 'You can only add guests here. To lower your party, message the provider or cancel and rebook.' }, { status: 400 });
             }
@@ -298,7 +297,7 @@ export async function POST(request: Request) {
         }
         const added = orderQuantity(unit, delta);
         if (added === null) return NextResponse.json({ ok: false, error: 'You can add up to ' + MAX_ORDER_QUANTITY + '.' }, { status: 400 });
-        const capMax = Math.min(capacityFor(provider), stayGuests || Infinity);
+        const capMax = capacityFor(provider);
         if (wantCount > Math.max(current, capMax)) {
             return NextResponse.json({ ok: false, error: 'That’s more than this experience can take.' }, { status: 400 });
         }
