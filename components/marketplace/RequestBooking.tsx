@@ -166,6 +166,31 @@ export function RequestBookingDialog({
     const egText = eg ? extraGuestsLine(eg as any, minAge ?? null) : null;
     const priceEach = item ? itemPriceLabel(item.price, item.unit) : '';
 
+    // The itemised total under "Show breakdown", the same lines the booking page
+    // shows once the request is confirmed: the item (with the heads it covers) and
+    // any extra-adult / extra-child fees. Built from the same numbers as `total`,
+    // so the lines always add up to it.
+    const breakdownLines = useMemo(() => {
+        if (!item) return [] as { label: string; amount: number }[];
+        const kids = kidsOk ? children : 0;
+        const lines: { label: string; amount: number }[] = [];
+        if (isExtra) {
+            const included = Number(item.includedGuests) || 0;
+            const incAdults = Math.min(adults, included);
+            const incChildren = Math.min(kids, included - incAdults);
+            const extraAdults = adults - incAdults, extraChildren = kids - incChildren;
+            lines.push({ label: item.name + ' · up to ' + included, amount: Number(item.price) || 0 });
+            if (extraAdults > 0) lines.push({ label: 'Extra adults × ' + extraAdults, amount: extraAdults * (Number(item.extraAdultFee) || 0) });
+            if (extraChildren > 0) lines.push({ label: 'Extra children × ' + extraChildren, amount: extraChildren * (Number(item.extraChildFee) || 0) });
+        } else if (perPerson) {
+            const heads = Math.max(1, people);
+            lines.push({ label: item.name + ' · ' + heads + ' ' + (heads === 1 ? 'place' : 'places'), amount: total });
+        } else {
+            lines.push({ label: item.name, amount: total });
+        }
+        return lines;
+    }, [item, isExtra, perPerson, adults, children, kidsOk, people, total]);
+
     const today = londonDayKey();
     const tomorrow = shiftDayKey(today, 1);
     // The available days, each with its start times, oldest first.
@@ -424,10 +449,31 @@ export function RequestBookingDialog({
                         {/* Step 2 footer: total + Send request. */}
                         <div className="flex-none border-t border-slate-100 px-5 py-4">
                             {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
-                            <div className="mb-3 flex items-baseline justify-between">
+                            <div className="flex items-baseline justify-between">
                                 <span className="text-sm font-medium text-slate-600">Total</span>
                                 <span className="text-lg font-semibold text-slate-900">£{total.toFixed(2)}</span>
                             </div>
+                            {/* The itemised breakdown, the same shape (and lines) as the
+                                confirmed booking page — a <details> so it needs no state. */}
+                            {breakdownLines.length > 0 && (
+                                <details className="group mb-3 mt-1">
+                                    <summary className="cursor-pointer list-none text-xs font-medium text-slate-500 underline hover:text-slate-800 [&::-webkit-details-marker]:hidden">
+                                        <span className="group-open:hidden">Show breakdown</span>
+                                        <span className="hidden group-open:inline">Hide breakdown</span>
+                                    </summary>
+                                    <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                                        <div className="space-y-1.5 text-sm">
+                                            {breakdownLines.map((l, i) => (
+                                                <div key={i} className="flex items-baseline justify-between text-slate-600">
+                                                    <span>{l.label}</span>
+                                                    <span className="tabular-nums">£{l.amount.toFixed(2)}</span>
+                                                </div>
+                                            ))}
+                                            <div className="flex items-baseline justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">£{total.toFixed(2)}</span></div>
+                                        </div>
+                                    </div>
+                                </details>
+                            )}
                             <button type="button" onClick={submit} disabled={busy || !canBook}
                                 className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
                                 {busy ? 'Sending…' : 'Send request'}
