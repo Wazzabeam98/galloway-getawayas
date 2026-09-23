@@ -212,6 +212,9 @@ export async function POST(request: Request) {
                 // clamped to a sane range, and forced to 0 for a collection-only one.
                 const travels = fulfilment === 'delivery' || fulfilment === 'both';
                 patch.delivery_fee = travels ? Math.max(0, Math.min(1000, Math.round((Number(data.delivery_fee) || 0) * 100) / 100)) : 0;
+                // The enforced delivery radius in miles (0 = no limit). Clamped to a
+                // sane range and forced to 0 for a collection-only provider.
+                patch.delivery_radius_miles = travels ? Math.max(0, Math.min(500, Math.round((Number(data.delivery_radius_miles) || 0) * 10) / 10)) : 0;
                 const cols = collectionFieldsForWrite({
                     collects, loaded: true,
                     street: data.collection_street || '', town: data.collection_town || '', postcode: data.collection_postcode || '',

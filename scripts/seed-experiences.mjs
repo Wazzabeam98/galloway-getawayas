@@ -108,6 +108,7 @@ async function makeProvider(spec) {
         contact_email: spec.owner.email,
         fulfilment: spec.fulfilment ?? null,
         delivery_fee: spec.deliveryFee ?? 0,
+        delivery_radius_miles: spec.deliveryRadius ?? 0,
         collection_street: spec.street ?? null,
         collection_town: spec.town ?? null,
         collection_postcode: spec.postcode ?? null,
@@ -321,7 +322,8 @@ async function main() {
         // Made-to-order is a DATE ONLY — the collection time is arranged by
         // message afterwards, so no offered-times list.
         leadTimeDays: 2, cancelHours: 48, horizonDays: 120, maxGuests: 1,
-        fulfilment: 'collection', street: '12 King Street', town: 'Castle Douglas', postcode: 'DG7 1AA', mapLat: 54.9372, mapLng: -3.9210,
+        // Collection-only, so the radius never bites — set for completeness.
+        fulfilment: 'collection', deliveryRadius: 5, street: '12 King Street', town: 'Castle Douglas', postcode: 'DG7 1AA', mapLat: 54.9372, mapLng: -3.9210,
         headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-1.jpg')],
         professional_title: 'Cakes & bakes to order', years: 6,
         qualifications: 'Level 3 Patisserie; registered home bakery.', recognition: null,
@@ -376,7 +378,9 @@ async function main() {
         owner: deliOwner, business_name: 'Solway Loaf & Larder', provider_name: 'Rowan', trade: 'baker', category: 'food_order', mcc: '5462', shape: 'made_to_order',
         leadTimeDays: 1, cancelHours: 48, horizonDays: 120, maxGuests: 1,
         // Offers BOTH: collect from the bakery, or have it delivered for a flat fee.
-        fulfilment: 'both', deliveryFee: 4.5,
+        // Delivers within 12 miles of Kirkcudbright — a Kirkcudbright or Castle
+        // Douglas cottage is in range; a Dumfries or Stranraer one falls outside.
+        fulfilment: 'both', deliveryFee: 4.5, deliveryRadius: 12,
         street: '3 Harbour Row', town: 'Kirkcudbright', postcode: 'DG6 4HY', mapLat: 54.8361, mapLng: -4.0530,
         headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-2.jpg')],
         professional_title: 'Bakes & larder boxes, collected or delivered', years: 4,

@@ -60,6 +60,7 @@ const TABLES: TableDecision[] = [
             settlement: 'payout-settlement mode; commercial and unread anywhere in the app. Revoked from the browser roles 20260914091719',
             cancellation_window_hours: 'booking rule read only via the service role in the order/booking routes',
             delivery_fee: 'pricing rule (a made-to-order delivery fee) read only via the service role — the marketplace load, the order route and the provider editor page all read it through the admin client; never browser-read',
+            delivery_radius_miles: 'coverage rule (the enforced delivery radius) read only via the service role in the order route and the provider editor page; never browser-read',
             exclusive_per_date: 'booking rule read only via the service role in the order/booking routes',
             experience_price: 'legacy price column; unread anywhere',
             collection_street: 'the provider’s collection/pickup street line; private, released only server-side on a confirmed (paid) order — never anon/authenticated; the owner reads their own back via the provider_private view',

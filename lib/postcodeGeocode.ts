@@ -137,8 +137,9 @@ export const DG_ADMIN_DISTRICT = 'Dumfries and Galloway';
  *   'out'     it's a real UK postcode, but somewhere else
  *   'unknown' no postcode in the text, or the lookup couldn't place it
  *
- * Never throws. The caller refuses on anything but 'in' — the same "refuse rather
- * than guess an address into the region" rule the region gate already follows.
+ * Never throws. Used as the FALLBACK when a provider hasn't set a delivery radius
+ * (or its own base can't be placed) — the same "refuse rather than guess an
+ * address into the region" rule the region gate already follows.
  */
 export async function deliveryAreaForAddress(
     address: string | null | undefined
@@ -148,6 +149,67 @@ export async function deliveryAreaForAddress(
     const district = await adminDistrictForPostcode(postcode);
     if (!district) return 'unknown';
     return district.toLowerCase() === DG_ADMIN_DISTRICT.toLowerCase() ? 'in' : 'out';
+}
+
+/** Great-circle distance between two points, in miles. */
+export function milesBetween(a: Coordinates, b: Coordinates): number {
+    const R = 3958.7613; // Earth's mean radius in miles
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(b.latitude - a.latitude);
+    const dLng = toRad(b.longitude - a.longitude);
+    const lat1 = toRad(a.latitude);
+    const lat2 = toRad(b.latitude);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+export type ReachDecision =
+    | { ok: true; miles: number | null }
+    | { ok: false; reason: 'unplaceable' | 'out_of_region' | 'too_far'; miles: number | null };
+
+/**
+ * Whether a delivery/travelling order can reach the guest, from the PROVIDER'S
+ * OWN coverage — a delivery radius in miles from their base.
+ *
+ *   1. Place the guest. For a stay it's the cottage's coordinates (passed in); for
+ *      a standalone order it's the typed postcode, geocoded here. A postcode we
+ *      can't place is refused ('unplaceable'), never guessed into range.
+ *   2. If the provider set a radius, place their base (their collection postcode)
+ *      and refuse anything beyond it ('too_far', with the miles for the message).
+ *   3. If they set no radius — or their own base can't be placed — fall back to the
+ *      Dumfries & Galloway council-area gate, so delivery is never wide open.
+ *
+ * Never throws; a lookup failure is a refusal, not a 500. Best-effort but closed.
+ */
+export async function deliveryReach(opts: {
+    radiusMiles: number;
+    basePostcode: string | null | undefined;
+    guestPoint: Coordinates | null;
+    guestPostcode: string | null | undefined;
+}): Promise<ReachDecision> {
+    const guest = opts.guestPoint || (await coordinatesForPostcode(opts.guestPostcode));
+    if (!guest) return { ok: false, reason: 'unplaceable', miles: null };
+
+    const radius = Math.max(0, Number(opts.radiusMiles) || 0);
+    if (radius > 0) {
+        const base = await coordinatesForPostcode(opts.basePostcode);
+        if (base) {
+            const miles = milesBetween(base, guest);
+            // A touch of slack (0.3 mi) so a rooftop just over the line, or a
+            // centroid's rounding, doesn't refuse an address that's really at the edge.
+            if (miles > radius + 0.3) return { ok: false, reason: 'too_far', miles };
+            return { ok: true, miles };
+        }
+        // Base unplaceable: can't measure — fall through to the region gate.
+    }
+
+    // No radius, or an unplaceable base: keep delivery inside D&G at least — the
+    // same council-area gate. A cottage (a guestPoint with no postcode to check) is
+    // one of our own listings, always in region, so it passes.
+    if (!opts.guestPostcode) return { ok: true, miles: null };
+    const area = await deliveryAreaForAddress(opts.guestPostcode);
+    if (area === 'in') return { ok: true, miles: null };
+    return { ok: false, reason: area === 'out' ? 'out_of_region' : 'unplaceable', miles: null };
 }
 
 /**

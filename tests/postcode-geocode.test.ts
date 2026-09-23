@@ -247,3 +247,71 @@ test('deliveryAreaForAddress: a postcode the lookup can’t place is unknown (re
     const { deliveryAreaForAddress } = load(async () => ({ ok: false, json: async () => ({}) }));
     assert.equal(await deliveryAreaForAddress('12 King Street, DG7 1AA'), 'unknown');
 });
+
+/* ---------------------------------- distance + the delivery-radius reach gate */
+
+import { milesBetween } from '../lib/postcodeGeocode';
+
+test('milesBetween: Kirkcudbright → Castle Douglas is about nine miles', () => {
+    const kirk = { latitude: 54.8361, longitude: -4.0530 };
+    const cd = { latitude: 54.9372, longitude: -3.9210 };
+    const d = milesBetween(kirk, cd);
+    assert.ok(d > 7 && d < 10, `expected ~8.7, got ${d}`);
+    assert.equal(milesBetween(kirk, kirk), 0);
+});
+
+// A fetch stub keyed by the postcode in the URL, returning postcodes.io-shaped
+// coordinates and admin_district for the ones we name.
+const PLACES: Record<string, { lat: number; lng: number; district: string }> = {
+    DG64HY: { lat: 54.8361, lng: -4.0530, district: 'Dumfries and Galloway' }, // Kirkcudbright (base)
+    DG71AA: { lat: 54.9372, lng: -3.9210, district: 'Dumfries and Galloway' }, // Castle Douglas (~8.7mi)
+    DG11AA: { lat: 55.0709, lng: -3.6032, district: 'Dumfries and Galloway' }, // Dumfries (~24mi)
+    CA11AA: { lat: 54.8951, lng: -2.9382, district: 'Cumberland' },            // Carlisle
+};
+const geo = () => async (url: any) => {
+    const key = decodeURIComponent(String(url).split('/postcodes/')[1] || '').toUpperCase().replace(/\s+/g, '');
+    const p = PLACES[key];
+    if (!p) return { ok: false, json: async () => ({}) };
+    return { ok: true, json: async () => ({ result: { latitude: p.lat, longitude: p.lng, admin_district: p.district } }) };
+};
+
+test('deliveryReach: a standalone address within the radius is ok', async () => {
+    const { deliveryReach } = load(geo());
+    const r = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'DG7 1AA' });
+    assert.equal(r.ok, true);
+});
+
+test('deliveryReach: a standalone address beyond the radius is too far', async () => {
+    const { deliveryReach } = load(geo());
+    const r = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'DG1 1AA' });
+    assert.equal(r.ok, false);
+    assert.equal((r as any).reason, 'too_far');
+    assert.ok((r as any).miles > 20);
+});
+
+test('deliveryReach: a cottage point (against a stay) is measured directly', async () => {
+    const { deliveryReach } = load(geo());
+    const cd = { latitude: 54.9372, longitude: -3.9210 }; // ~8.7mi from base — inside 12
+    const inRange = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: cd, guestPostcode: 'DG7 1AA' });
+    assert.equal(inRange.ok, true);
+    const dumfries = { latitude: 55.0709, longitude: -3.6032 }; // ~24mi — outside 12
+    const tooFar = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: dumfries, guestPostcode: 'DG1 1AA' });
+    assert.equal(tooFar.ok, false);
+    assert.equal((tooFar as any).reason, 'too_far');
+});
+
+test('deliveryReach: an unplaceable postcode is refused, not guessed into range', async () => {
+    const { deliveryReach } = load(geo());
+    const r = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'ZZ99 9ZZ' });
+    assert.equal(r.ok, false);
+    assert.equal((r as any).reason, 'unplaceable');
+});
+
+test('deliveryReach: no radius falls back to the Dumfries & Galloway gate', async () => {
+    const { deliveryReach } = load(geo());
+    const inDG = await deliveryReach({ radiusMiles: 0, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'DG7 1AA' });
+    assert.equal(inDG.ok, true);
+    const outDG = await deliveryReach({ radiusMiles: 0, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'CA1 1AA' });
+    assert.equal(outDG.ok, false);
+    assert.equal((outDG as any).reason, 'out_of_region');
+});

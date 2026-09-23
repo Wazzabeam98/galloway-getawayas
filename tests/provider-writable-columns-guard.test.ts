@@ -73,6 +73,7 @@ const PLATFORM_ONLY: Record<string, string> = {
     // Service-role booking rule and server bookkeeping.
     cancellation_window_hours: 'booking rule read/written only via the service role',
     delivery_fee: 'made-to-order delivery fee — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write',
+    delivery_radius_miles: 'enforced delivery radius — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write',
     owner_paused: 'owner take-down flag — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write, so it is not in the write allow-list',
     reminders_sent: 'server-side reminder bookkeeping',
     notify_user_ids: 'server-managed notify list',

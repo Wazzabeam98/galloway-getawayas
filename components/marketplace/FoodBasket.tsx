@@ -159,7 +159,7 @@ export default function FoodBasket({
                             {(['collection', 'delivery'] as const).map((m) => (
                                 <button key={m} type="button" onClick={() => setMode(m)}
                                     className={`rounded-lg px-3 py-2 text-sm font-semibold capitalize transition ${mode === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                                    {m}{m === 'delivery' && Number(deliveryFee) > 0 ? ` · £${Number(deliveryFee).toFixed(2)}` : ''}
+                                    {m}
                                 </button>
                             ))}
                         </div>

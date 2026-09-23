@@ -9,16 +9,30 @@ import {
     normaliseUnit, unitMultiplies, unitNoun, orderQuantity, orderTotal, MAX_ORDER_QUANTITY,
 } from '@/lib/serviceOrders';
 import { dateFromKey, dateKey } from '@/lib/pricing';
+import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { hasExtraGuests, partyPrice, partyCeiling } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
 import { itemTravels } from '@/lib/serviceProviders';
 import { offeredTimes as providerOfferedTimes, isOfferedTime, normaliseTime } from '@/lib/offeredTimes';
 import { displayName } from '@/lib/utils';
 import { withinLimits, callerAddress } from '@/lib/rateLimit';
-import { hasUkPostcode } from '@/lib/postcode';
-import { deliveryAreaForAddress } from '@/lib/postcodeGeocode';
+import { hasUkPostcode, extractUkPostcode } from '@/lib/postcode';
+import { deliveryReach, type ReachDecision } from '@/lib/postcodeGeocode';
 
 export const dynamic = 'force-dynamic';
+
+// The guest-facing reason a delivery/travelling order was refused for being out of
+// the provider's reach — shown in the basket BEFORE payment, never a failed
+// checkout. `verb` is "deliver" or "travel" so the message fits either shape.
+function outOfReachMessage(d: Extract<ReachDecision, { ok: false }>, who: string, radiusMiles: number, verb: 'deliver' | 'travel'): string {
+    if (d.reason === 'unplaceable') return 'We couldn’t place that postcode. Please check it, or arrange collection instead.';
+    if (d.reason === 'out_of_region') return `Sorry — ${who} only ${verb}s within Dumfries & Galloway.`;
+    const r = Math.round(Number(radiusMiles) || 0);
+    const m = d.miles != null ? Math.round(d.miles) : null;
+    return `Sorry — ${who} only ${verb}s within ${r} mile${r === 1 ? '' : 's'}`
+        + (m != null ? `, and that address is about ${m} miles away` : '')
+        + `. You could collect instead.`;
+}
 
 // A guest asking a provider for an experience during their stay.
 //
@@ -149,7 +163,7 @@ export async function POST(request: Request) {
             const byId = new Map<string, any>(cartItems.map((i: any) => [i.id, i]));
 
             const { data: prov } = await admin.from('service_providers')
-                .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_fee, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, guest_details')
+                .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_fee, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, guest_details')
                 .eq('id', providerId).maybeSingle();
             if (!prov || prov.shape !== 'made_to_order' || !isLiveToGuests(prov) || !prov.stripe_account_id) {
                 return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
@@ -176,16 +190,20 @@ export async function POST(request: Request) {
             // order cake needs its notice whether it's booked standalone or against a
             // stay, so the earliest date is today+notice, not merely "during the stay".
             const whenC = dateFromKey(serviceDate);
-            const nowC = new Date();
-            const addDaysC = (n: number) => { const d = new Date(nowC); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() + n); return d; };
+            // Bounds are compared as London day-keys (yyyy-mm-dd strings), the SAME
+            // basis the basket's picker uses — comparing Date objects mixed a
+            // local midnight (dateFromKey) with a UTC one and refused the earliest
+            // offered date on a BST server.
+            const serviceKey = String(serviceDate).slice(0, 10);
             const leadDaysC = Math.max(0, Number(prov.lead_time_days) || 0);
-            if (whenC < addDaysC(leadDaysC)) return NextResponse.json({ ok: false, error: 'That date is inside the notice period — please pick a later one.' }, { status: 400 });
+            const earliestKey = shiftDayKey(londonDayKey(), leadDaysC);
+            if (serviceKey < earliestKey) return NextResponse.json({ ok: false, error: 'That date is inside the notice period — please pick a later one.' }, { status: 400 });
             if (standalone) {
                 const horizon = Math.max(1, Math.min(365, Number(prov.guest_details && (prov.guest_details as any).booking_horizon_days) || 90));
-                if (whenC > addDaysC(horizon)) return NextResponse.json({ ok: false, error: 'Pick a date within the booking window.' }, { status: 400 });
+                if (serviceKey > shiftDayKey(londonDayKey(), horizon)) return NextResponse.json({ ok: false, error: 'Pick a date within the booking window.' }, { status: 400 });
             } else {
-                const start = dateFromKey(booking.check_in), end = dateFromKey(booking.check_out);
-                if (whenC < start || whenC >= end) return NextResponse.json({ ok: false, error: 'Pick a date during your stay.' }, { status: 400 });
+                const startKey = String(booking.check_in).slice(0, 10), endKey = String(booking.check_out).slice(0, 10);
+                if (serviceKey < startKey || serviceKey >= endKey) return NextResponse.json({ ok: false, error: 'Pick a date during your stay.' }, { status: 400 });
             }
 
             // Delivery travels to an address; collection does not. A provider fixed to
@@ -195,20 +213,26 @@ export async function POST(request: Request) {
             const travelsC = prov.fulfilment === 'delivery' || (prov.fulfilment === 'both' && chosenDelivery);
             let addressC: string | null = null;
             if (travelsC) {
+                // Delivery only goes where the provider reaches: within their own
+                // delivery radius of their base (a fixed council-area gate when they
+                // set no radius). Refused here on the server, not just greyed out on
+                // the page — a stay measures from the cottage, standalone from the
+                // typed postcode.
+                const radiusC = Number(prov.delivery_radius_miles) || 0;
+                let reachC: ReachDecision | null = null;
                 if (standalone) {
                     addressC = (body && body.serviceAddress ? String(body.serviceAddress) : '').slice(0, 300).trim() || null;
                     if (!addressC || !hasUkPostcode(addressC)) return NextResponse.json({ ok: false, error: 'Add a full delivery address, including a postcode.' }, { status: 400 });
-                    // Delivery only goes where the provider delivers: within Dumfries
-                    // & Galloway. A typed address outside it — or one we can't place —
-                    // is refused here on the server, not just greyed out on the page.
-                    const area = await deliveryAreaForAddress(addressC);
-                    if (area !== 'in') return NextResponse.json({ ok: false, error: area === 'out'
-                        ? `Sorry — ${prov.business_name || 'this provider'} only delivers within Dumfries & Galloway.`
-                        : 'We couldn’t place that postcode. Check it, or arrange collection instead.' }, { status: 400 });
+                    reachC = await deliveryReach({ radiusMiles: radiusC, basePostcode: prov.collection_postcode, guestPoint: null, guestPostcode: extractUkPostcode(addressC) });
                 } else if (booking.listing_id) {
-                    const { data: stay } = await admin.from('listings').select('street_address, postcode, location').eq('id', booking.listing_id).maybeSingle();
-                    if (stay) addressC = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
+                    const { data: stay } = await admin.from('listings').select('street_address, postcode, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle();
+                    if (stay) {
+                        addressC = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
+                        const guestPoint = (typeof stay.latitude === 'number' && typeof stay.longitude === 'number') ? { latitude: stay.latitude, longitude: stay.longitude } : null;
+                        reachC = await deliveryReach({ radiusMiles: radiusC, basePostcode: prov.collection_postcode, guestPoint, guestPostcode: stay.postcode || null });
+                    }
                 }
+                if (reachC && !reachC.ok) return NextResponse.json({ ok: false, error: outOfReachMessage(reachC, prov.business_name || 'this provider', radiusC, 'deliver') }, { status: 400 });
             }
             const collectionNote = (body && body.collectionTime ? String(body.collectionTime) : '').slice(0, 200).trim();
 
@@ -313,7 +337,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, fulfilment, lead_time_days, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, exclusive_per_date, guest_details')
+            .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, exclusive_per_date, guest_details')
             .eq('id', item.provider_id)
             .maybeSingle();
 
@@ -370,9 +394,10 @@ export async function POST(request: Request) {
         // it must sit within the provider's booking horizon and honour its lead time
         // (a cake needs notice; a chef can be as soon as tomorrow).
         const when = dateFromKey(serviceDate);
+        // Bounds compared as London day-keys, matching the picker (a Date-object
+        // compare mixed local and UTC midnights and refused the earliest date).
+        const serviceKeyS = String(serviceDate).slice(0, 10);
         if (standalone) {
-            const now = new Date();
-            const addDays = (n: number) => { const d = new Date(now); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() + n); return d; };
             // The provider's notice period is the earliest a date can be picked, for a
             // comes-to-you chef as much as a made-to-order baker (a made-to-order has a
             // floor of one day; a chef can be same-notice-as-set, down to zero).
@@ -380,13 +405,13 @@ export async function POST(request: Request) {
                 ? Math.max(1, Number(provider.lead_time_days) || 1)
                 : Math.max(0, Number(provider.lead_time_days) || 0);
             const horizon = Math.max(1, Math.min(365, Number(provider.guest_details && (provider.guest_details as any).booking_horizon_days) || 90));
-            if (when < addDays(leadDays) || when > addDays(horizon)) {
+            if (serviceKeyS < shiftDayKey(londonDayKey(), leadDays) || serviceKeyS > shiftDayKey(londonDayKey(), horizon)) {
                 return NextResponse.json({ ok: false, error: 'Pick a date within the booking window.' }, { status: 400 });
             }
         } else {
-            const start = dateFromKey(booking.check_in);
-            const end = dateFromKey(booking.check_out);
-            if (when < start || when >= end) {
+            const startKey = String(booking.check_in).slice(0, 10);
+            const endKey = String(booking.check_out).slice(0, 10);
+            if (serviceKeyS < startKey || serviceKeyS >= endKey) {
                 return NextResponse.json({ ok: false, error: 'Pick a date during your stay.' }, { status: 400 });
             }
         }
@@ -446,22 +471,27 @@ export async function POST(request: Request) {
         const travels = provider.shape === 'comes_to_you' || itemTravels(item as any, provider.fulfilment);
         let serviceAddress: string | null = null;
         if (travels) {
+            // A travelling provider only comes within their own radius of their base
+            // (a D&G gate when no radius is set) — measured from the cottage against a
+            // stay, or the typed postcode standalone. Refused before payment.
+            const radiusT = Number(provider.delivery_radius_miles) || 0;
+            let reachT: ReachDecision | null = null;
             if (standalone) {
                 serviceAddress = (body && body.serviceAddress ? String(body.serviceAddress) : '').slice(0, 300).trim() || null;
                 if (!serviceAddress || !hasUkPostcode(serviceAddress)) {
                     return NextResponse.json({ ok: false, error: 'Add a full address, including a postcode, for the provider to come to.' }, { status: 400 });
                 }
-                // A travelling provider only comes to Dumfries & Galloway — the same
-                // council-area gate, enforced server-side on the typed address.
-                const area = await deliveryAreaForAddress(serviceAddress);
-                if (area !== 'in') return NextResponse.json({ ok: false, error: area === 'out'
-                    ? `Sorry — ${provider.business_name || 'this provider'} only travels within Dumfries & Galloway.`
-                    : 'We couldn’t place that postcode. Check it and try again.' }, { status: 400 });
+                reachT = await deliveryReach({ radiusMiles: radiusT, basePostcode: provider.collection_postcode, guestPoint: null, guestPostcode: extractUkPostcode(serviceAddress) });
             } else if (booking.listing_id) {
                 const { data: stay } = await admin.from('listings')
-                    .select('street_address, postcode, location').eq('id', booking.listing_id).maybeSingle();
-                if (stay) serviceAddress = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
+                    .select('street_address, postcode, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle();
+                if (stay) {
+                    serviceAddress = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
+                    const guestPoint = (typeof stay.latitude === 'number' && typeof stay.longitude === 'number') ? { latitude: stay.latitude, longitude: stay.longitude } : null;
+                    reachT = await deliveryReach({ radiusMiles: radiusT, basePostcode: provider.collection_postcode, guestPoint, guestPostcode: stay.postcode || null });
+                }
             }
+            if (reachT && !reachT.ok) return NextResponse.json({ ok: false, error: outOfReachMessage(reachT, provider.business_name || 'this provider', radiusT, 'travel') }, { status: 400 });
         }
 
         // The buyer's contact for an anonymous standalone booker (no profile yet).

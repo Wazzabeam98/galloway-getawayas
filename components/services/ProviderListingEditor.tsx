@@ -36,7 +36,7 @@ export interface EditorProvider {
     business_name: string; category_label: string; category: string; description: string;
     status: string; owner_paused: boolean;
     photos: string[]; headshot: string | null; logo: string | null;
-    dietary_note: string; fulfilment: string; delivery_fee: number;
+    dietary_note: string; fulfilment: string; delivery_fee: number; delivery_radius_miles: number;
     collection_street: string; collection_town: string; collection_postcode: string;
     slot_length_minutes: number | null; slot_turnaround_minutes: number;
     slot_capacity: number | null; slot_min_people: number; max_guests: number | null;
@@ -299,6 +299,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [town, setTown] = useState(p.collection_town);
     const [postcode, setPostcode] = useState(p.collection_postcode);
     const [deliveryFee, setDeliveryFee] = useState(p.delivery_fee != null ? String(p.delivery_fee) : '');
+    const [deliveryRadius, setDeliveryRadius] = useState(p.delivery_radius_miles ? String(p.delivery_radius_miles) : '');
     const [areas, setAreas] = useState<string[]>(p.areas);
     const collects = fulfilment === 'collection' || fulfilment === 'both';
     const travels = fulfilment === 'delivery' || fulfilment === 'both';
@@ -820,6 +821,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 fulfilment,
                                 collection_street: street, collection_town: town, collection_postcode: postcode,
                                 delivery_fee: travels ? deliveryFee : 0,
+                                delivery_radius_miles: travels ? deliveryRadius : 0,
                                 areas: travels ? areas : [],
                             })}>
                             {canTravel ? (
@@ -884,6 +886,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                         <span className="text-slate-500">£</span>
                                         <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="0.00"
                                             value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'))} />
+                                    </div>
+                                </Field>
+                            )}
+                            {travels && (
+                                <Field label="Delivery distance" hint="How far you'll travel from your base. An order further than this is turned away before payment. Leave blank for no distance limit.">
+                                    <div className="flex items-center gap-2">
+                                        <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="e.g. 10"
+                                            value={deliveryRadius} onChange={(e) => setDeliveryRadius(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'))} />
+                                        <span className="text-slate-500">miles</span>
                                     </div>
                                 </Field>
                             )}
