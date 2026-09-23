@@ -5,7 +5,8 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { loadTripsList, type TripItem, type TripStay, type TripExperience } from '@/lib/tripsList';
 import TripsMap from '@/components/TripsMap';
-import { CalendarDays, Users, MapPin, ChevronRight } from 'lucide-react';
+import { CalendarDays, Users, MapPin, ChevronRight, ShoppingBag } from 'lucide-react';
+import { whenLabel } from '@/components/marketplace/present';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,16 +19,18 @@ function fmtDay(key: string): string {
     try { return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' }).format(new Date(key + 'T12:00:00Z')); }
     catch { return key; }
 }
-function prettyTime(t: string | null): string {
-    if (!t) return '';
-    const [h, m] = t.split(':').map(Number);
-    const ampm = h < 12 ? 'am' : 'pm';
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    return h12 + (m ? ':' + String(m).padStart(2, '0') : '') + ampm;
-}
 function partyLabel(n: number | null): string {
     if (!n || n < 1) return '';
     return n + (n === 1 ? ' guest' : ' guests');
+}
+// A made-to-order food order reads by what was ordered and how it arrives, not a
+// guest count: "1 item · Collection", "2 items · Delivery".
+function foodSummary(exp: TripExperience): string | null {
+    if (exp.shape !== 'made_to_order') return null;
+    const n = exp.foodItems || 0;
+    if (n < 1) return null;
+    const items = n + (n === 1 ? ' item' : ' items');
+    return items + ' · ' + (exp.fulfilment === 'delivery' ? 'Delivery' : 'Collection');
 }
 
 // A compact photo inset on the left of a horizontal card — the same treatment as
@@ -59,7 +62,7 @@ function ExperienceRow({ exp }: { exp: TripExperience }) {
             <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-slate-900">{exp.title}</div>
                 <div className="mt-0.5 flex items-center gap-2 text-[13px] text-slate-500">
-                    <span>{fmtDay(exp.date)}{exp.time ? ' · ' + prettyTime(exp.time) : ''}</span>
+                    <span>{whenLabel(exp.shape, exp.date, exp.time)}</span>
                     {exp.pending && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Awaiting reply</span>}
                 </div>
             </div>
@@ -109,8 +112,12 @@ function ExperienceCard({ exp }: { exp: TripExperience }) {
                 </div>
                 {exp.providerName && <div className="mt-0.5 truncate text-[13px] text-slate-500">{exp.providerName}</div>}
                 <div className="mt-2 flex flex-col gap-1 text-[13px] text-slate-500">
-                    <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-slate-400" />{fmtDay(exp.date)}{exp.time ? ' · ' + prettyTime(exp.time) : ''}</span>
-                    {exp.party ? <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-slate-400" />{partyLabel(exp.party)}</span> : null}
+                    <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-slate-400" />{whenLabel(exp.shape, exp.date, exp.time)}</span>
+                    {(() => {
+                        const food = foodSummary(exp);
+                        if (food) return <span className="inline-flex items-center gap-1.5"><ShoppingBag className="h-4 w-4 text-slate-400" />{food}</span>;
+                        return exp.party ? <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-slate-400" />{partyLabel(exp.party)}</span> : null;
+                    })()}
                     {exp.pending && <span className="inline-flex w-fit items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Awaiting reply</span>}
                 </div>
             </div>
@@ -163,8 +170,13 @@ export default async function TripsPage() {
                         <Section title="Past" items={past} />
                     </div>
                     {points.length > 0 && (
-                        <div className="lg:sticky lg:top-6 lg:self-start">
-                            <TripsMap points={points} className="h-[360px] lg:h-[80vh]" />
+                        // Desktop: the map starts level with the first card (a top
+                        // margin clears the "Upcoming" heading), then sticks just
+                        // below the sticky nav (h-20) and fills the viewport as the
+                        // list scrolls past. All lg-only, so the phone keeps its
+                        // single-column map below the list.
+                        <div className="lg:sticky lg:top-[5.5rem] lg:mt-[3.5rem] lg:self-start">
+                            <TripsMap points={points} className="h-[360px] lg:h-[calc(100dvh-6.5rem)]" />
                         </div>
                     )}
                 </div>

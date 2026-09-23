@@ -17,6 +17,11 @@ export interface TripExperience {
     photo: string | null;
     party: number | null;
     pending: boolean;      // an authorised request awaiting the provider
+    // A made-to-order food order describes itself by WHAT and HOW, not a guest
+    // count: how many items, and whether it's collection or delivery.
+    shape: string;
+    foodItems: number | null;       // total item quantity, made-to-order only
+    fulfilment: string | null;      // 'collection' | 'delivery' | null
 }
 export interface TripStay {
     kind: 'stay';
@@ -53,6 +58,21 @@ function partyOf(o: any): number | null {
     return null;
 }
 
+// The number of items in a made-to-order food order — the total quantity across
+// its lines, ignoring the delivery-fee line (which has no item_id). Falls back to
+// the order-level quantity if the frozen breakdown is somehow missing.
+function foodItemsOf(o: any): number | null {
+    const lines = Array.isArray(o.line_items) ? o.line_items : null;
+    if (lines) {
+        const n = lines
+            .filter((l: any) => l && l.item_id)
+            .reduce((s: number, l: any) => s + (Number(l.qty) || 0), 0);
+        if (n > 0) return n;
+    }
+    const q = Number(o.quantity);
+    return Number.isFinite(q) && q > 0 ? q : null;
+}
+
 export async function loadTripsList(admin: { from: (t: string) => any }, userId: string): Promise<TripsList> {
     const today = londonDayKey();
 
@@ -74,7 +94,7 @@ export async function loadTripsList(admin: { from: (t: string) => any }, userId:
     // authorised request awaiting the provider). Refunded / declined drop out.
     const { data: orders } = await admin
         .from('service_orders')
-        .select('id, item_id, item_name, provider_id, provider_business_name, shape, service_date, service_time, booking_id, parent_order_id, status, attendees, quantity')
+        .select('id, item_id, item_name, provider_id, provider_business_name, shape, service_date, service_time, booking_id, parent_order_id, status, attendees, quantity, fulfilment, line_items')
         .eq('guest_id', userId)
         .in('status', ['confirmed', 'authorised'])
         .is('parent_order_id', null);
@@ -114,6 +134,9 @@ export async function loadTripsList(admin: { from: (t: string) => any }, userId:
             photo: expPhoto(o),
             party: partyOf(o),
             pending: o.status === 'authorised',
+            shape: o.shape || '',
+            foodItems: o.shape === 'made_to_order' ? foodItemsOf(o) : null,
+            fulfilment: o.fulfilment || null,
         };
     }
 

@@ -163,6 +163,8 @@ test('publishing fills the coordinates from the postcode', async () => {
         // so a publishable fixture carries one alongside the postcode it geocodes.
         street_address: '1 Harbour Row, Garlieston',
         postcode: 'DG6 4JS',
+        // And at least five photos to go live (NEW_LISTING_MIN_PHOTOS).
+        images: ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'],
         latitude: null,
         longitude: null,
     };
@@ -209,4 +211,154 @@ test('publishing fills the coordinates from the postcode', async () => {
     assert.equal(updates[0].status, 'published');
     assert.equal(updates[0].latitude, 54.834305, 'the postcode was actually used');
     assert.equal(updates[0].longitude, -4.055713);
+});
+
+/* --------------------------------------- the delivery-area gate (D&G only) */
+
+import { extractUkPostcode } from '../lib/postcode';
+
+test('extractUkPostcode pulls a postcode out of a free-text address', () => {
+    assert.equal(extractUkPostcode('12 King Street, Castle Douglas, DG7 1AA'), 'DG7 1AA');
+    assert.equal(extractUkPostcode('Flat 2, 8 Shore Rd, Kirkcudbright DG6 4JZ'), 'DG6 4JZ');
+    assert.equal(extractUkPostcode('somewhere with no postcode'), null);
+});
+
+const district = (d: string | null) => async () => ({
+    ok: true,
+    json: async () => ({ result: { admin_district: d } }),
+});
+
+test('deliveryAreaForAddress: a Dumfries & Galloway address is in area', async () => {
+    const { deliveryAreaForAddress } = load(district('Dumfries and Galloway'));
+    assert.equal(await deliveryAreaForAddress('12 King Street, Castle Douglas, DG7 1AA'), 'in');
+});
+
+test('deliveryAreaForAddress: a real postcode elsewhere is out of area', async () => {
+    const { deliveryAreaForAddress } = load(district('Cumberland'));
+    assert.equal(await deliveryAreaForAddress('1 The Green, Carlisle, CA1 1AA'), 'out');
+});
+
+test('deliveryAreaForAddress: an address with no postcode is unknown (no lookup)', async () => {
+    let called = false;
+    const { deliveryAreaForAddress } = load(async () => { called = true; return { ok: true, json: async () => ({}) }; });
+    assert.equal(await deliveryAreaForAddress('just a street name'), 'unknown');
+    assert.equal(called, false, 'no lookup when there is no postcode to place');
+});
+
+test('deliveryAreaForAddress: a postcode the lookup can’t place is unknown (refused, not guessed)', async () => {
+    const { deliveryAreaForAddress } = load(async () => ({ ok: false, json: async () => ({}) }));
+    assert.equal(await deliveryAreaForAddress('12 King Street, DG7 1AA'), 'unknown');
+});
+
+/* ---------------------------------- distance + the delivery-radius reach gate */
+
+import { milesBetween } from '../lib/postcodeGeocode';
+
+test('milesBetween: Kirkcudbright → Castle Douglas is about nine miles', () => {
+    const kirk = { latitude: 54.8361, longitude: -4.0530 };
+    const cd = { latitude: 54.9372, longitude: -3.9210 };
+    const d = milesBetween(kirk, cd);
+    assert.ok(d > 7 && d < 10, `expected ~8.7, got ${d}`);
+    assert.equal(milesBetween(kirk, kirk), 0);
+});
+
+// A fetch stub keyed by the postcode in the URL, returning postcodes.io-shaped
+// coordinates and admin_district for the ones we name.
+const PLACES: Record<string, { lat: number; lng: number; district: string }> = {
+    DG64HY: { lat: 54.8361, lng: -4.0530, district: 'Dumfries and Galloway' }, // Kirkcudbright (base)
+    DG71AA: { lat: 54.9372, lng: -3.9210, district: 'Dumfries and Galloway' }, // Castle Douglas (~8.7mi)
+    DG11AA: { lat: 55.0709, lng: -3.6032, district: 'Dumfries and Galloway' }, // Dumfries (~24mi)
+    CA11AA: { lat: 54.8951, lng: -2.9382, district: 'Cumberland' },            // Carlisle
+};
+const geo = () => async (url: any) => {
+    const key = decodeURIComponent(String(url).split('/postcodes/')[1] || '').toUpperCase().replace(/\s+/g, '');
+    const p = PLACES[key];
+    if (!p) return { ok: false, json: async () => ({}) };
+    return { ok: true, json: async () => ({ result: { latitude: p.lat, longitude: p.lng, admin_district: p.district } }) };
+};
+
+test('deliveryReach: a standalone address within the radius is ok', async () => {
+    const { deliveryReach } = load(geo());
+    const r = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'DG7 1AA' });
+    assert.equal(r.ok, true);
+});
+
+test('deliveryReach: a standalone address beyond the radius is too far', async () => {
+    const { deliveryReach } = load(geo());
+    const r = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'DG1 1AA' });
+    assert.equal(r.ok, false);
+    assert.equal((r as any).reason, 'too_far');
+    assert.ok((r as any).miles > 20);
+});
+
+test('deliveryReach: a cottage point (against a stay) is measured directly', async () => {
+    const { deliveryReach } = load(geo());
+    const cd = { latitude: 54.9372, longitude: -3.9210 }; // ~8.7mi from base — inside 12
+    const inRange = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: cd, guestPostcode: 'DG7 1AA' });
+    assert.equal(inRange.ok, true);
+    const dumfries = { latitude: 55.0709, longitude: -3.6032 }; // ~24mi — outside 12
+    const tooFar = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: dumfries, guestPostcode: 'DG1 1AA' });
+    assert.equal(tooFar.ok, false);
+    assert.equal((tooFar as any).reason, 'too_far');
+});
+
+test('deliveryReach: an unplaceable postcode is refused, not guessed into range', async () => {
+    const { deliveryReach } = load(geo());
+    const r = await deliveryReach({ radiusMiles: 12, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'ZZ99 9ZZ' });
+    assert.equal(r.ok, false);
+    assert.equal((r as any).reason, 'unplaceable');
+});
+
+test('deliveryReach: no radius falls back to the Dumfries & Galloway gate', async () => {
+    const { deliveryReach } = load(geo());
+    const inDG = await deliveryReach({ radiusMiles: 0, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'DG7 1AA' });
+    assert.equal(inDG.ok, true);
+    const outDG = await deliveryReach({ radiusMiles: 0, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'CA1 1AA' });
+    assert.equal(outDG.ok, false);
+    assert.equal((outDG as any).reason, 'out_of_region');
+});
+
+/* ------------------------------------ the ≥5-photo publish gate (new listings) */
+
+async function runPublish(listing: any) {
+    const updates: any[] = [];
+    stubModule('@/lib/supabaseAdmin', { adminClient: () => ({ from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: listing, error: null }) }) }),
+        update: (patch: any) => { updates.push(patch); return { eq: async () => ({ data: null, error: null }) }; },
+    }) }) });
+    stubModule('@supabase/auth-helpers-nextjs', { createRouteHandlerClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: 'host-1' } } }) } }) });
+    stubModule('next/headers', { cookies: () => ({}) });
+    stubModule('@/lib/logError', { logError: async () => {} });
+    stubModule('next/server', { NextResponse: { json: (body: any, init?: any) => ({ body, status: (init && init.status) || 200 }) } });
+    (global as any).fetch = async () => ({ ok: true, json: async () => ({ result: { latitude: 54.8, longitude: -4.0 } }) });
+    clearModule('@/lib/postcodeGeocode');
+    clearModule('@/app/api/listings/publish/route');
+    const route = require('../app/api/listings/publish/route');
+    const res: any = await route.POST(new Request('http://x/api/listings/publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ listingId: 'l-1' }) }));
+    return { res, updates };
+}
+
+const baseListing = { id: 'l-1', host_id: 'host-1', title: 'Cottage', price_per_night: 120, street_address: '1 Harbour Row', postcode: 'DG6 4JS', latitude: null, longitude: null };
+
+test('a new listing with fewer than five photos is refused publication', async () => {
+    const { res, updates } = await runPublish({ ...baseListing, status: 'draft', images: ['a.jpg', 'b.jpg', 'c.jpg'] });
+    assert.equal(res.body.ok, false);
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /at least 5 photos/i);
+    assert.equal(updates.length, 0, 'nothing was published');
+});
+
+test('a new listing with five photos publishes', async () => {
+    const { res } = await runPublish({ ...baseListing, status: 'draft', images: ['a', 'b', 'c', 'd', 'e'] });
+    assert.equal(res.body.ok, true);
+});
+
+test('an already-published listing with fewer than five photos is grandfathered, not blocked', async () => {
+    const { res } = await runPublish({ ...baseListing, status: 'published', images: ['a', 'b'] });
+    assert.equal(res.body.ok, true, 'a live listing with few photos is never unpublished by the new rule');
+});
+
+test('a hidden (paused/unlisted) listing with fewer than five photos can go live again', async () => {
+    const { res } = await runPublish({ ...baseListing, status: 'hidden', images: ['a', 'b'] });
+    assert.equal(res.body.ok, true, 'a listing that has been live before is not held to the five-photo bar');
 });

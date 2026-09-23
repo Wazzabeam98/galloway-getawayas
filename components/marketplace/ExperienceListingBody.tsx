@@ -127,7 +127,7 @@ export default function ExperienceListingBody({
                 </Link>
 
                 {p.galleryKeys.length ? (
-                    <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} mobileStrip />
+                    <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} />
                 ) : (
                     <div className="my-4 flex h-[300px] w-full items-center justify-center rounded-2xl bg-slate-100 text-5xl font-semibold text-slate-300 md:h-[460px]">
                         {who.slice(0, 1)}
@@ -254,6 +254,9 @@ export default function ExperienceListingBody({
                             // whitespace-only value counts as empty — and the whole
                             // section drops when none are set, so a chef (no activity
                             // level, nothing to bring) shows no "Things to know" at all.
+                            // A made-to-order listing is a shop, not an experience you
+                            // attend, so it never carries this section.
+                            if (p.shape === 'made_to_order') return null;
                             const activity = (p.activityLevel || '').trim();
                             const bring = (p.whatToBring || '').trim();
                             if (p.minAge == null && !activity && !bring) return null;

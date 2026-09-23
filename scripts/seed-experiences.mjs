@@ -107,6 +107,8 @@ async function makeProvider(spec) {
         cancellation_window_hours: spec.cancelHours ?? 48,
         contact_email: spec.owner.email,
         fulfilment: spec.fulfilment ?? null,
+        delivery_fee: spec.deliveryFee ?? 0,
+        delivery_radius_miles: spec.deliveryRadius ?? 0,
         collection_street: spec.street ?? null,
         collection_town: spec.town ?? null,
         collection_postcode: spec.postcode ?? null,
@@ -150,6 +152,7 @@ async function makeProvider(spec) {
             extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null,
             is_custom: it.isCustom ?? false,
             ingredients: it.ingredients ?? null, allergens: it.allergens ?? null,
+            category: it.category ?? null,
         });
     }
     if (spec.availability) {
@@ -319,7 +322,8 @@ async function main() {
         // Made-to-order is a DATE ONLY — the collection time is arranged by
         // message afterwards, so no offered-times list.
         leadTimeDays: 2, cancelHours: 48, horizonDays: 120, maxGuests: 1,
-        fulfilment: 'collection', street: '12 King Street', town: 'Castle Douglas', postcode: 'DG7 1AA', mapLat: 54.9372, mapLng: -3.9210,
+        // Collection-only, so the radius never bites — set for completeness.
+        fulfilment: 'collection', deliveryRadius: 5, street: '12 King Street', town: 'Castle Douglas', postcode: 'DG7 1AA', mapLat: 54.9372, mapLng: -3.9210,
         headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-1.jpg')],
         professional_title: 'Cakes & bakes to order', years: 6,
         qualifications: 'Level 3 Patisserie; registered home bakery.', recognition: null,
@@ -336,23 +340,73 @@ async function main() {
         amenities: [], accessibility: null, parking: null,
         dietaryNote: 'Gluten-free and vegan on request; made in a kitchen that handles nuts.', dietaryOptions: ['vegan', 'gluten_free'],
         items: [
-            // Custom — made to the guest's design, so it turns the order into a
-            // request the baker approves. The other two are off-the-shelf (standard).
-            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message.', price: 42, unit: 'flat', sort: 0, image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
+            // A categorised menu — the sections ("Cakes", "Boxes & bakes", "Breads
+            // & buns") drive the guest page's sticky tabs, which show only because
+            // there's more than one. Custom items (made to the guest's design) turn
+            // the order into a request the baker approves; the rest are standard.
+            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message, iced and finished the way you ask. Tell me the occasion and I’ll make it the centrepiece of the table.', price: 42, unit: 'flat', sort: 0, category: 'Cakes', image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
                 ingredients: 'Wheat flour, butter, free-range eggs, sugar, Galloway raspberries, vanilla, double cream.',
                 allergens: 'Contains wheat (gluten), egg, milk. Made in a kitchen that also handles nuts and soya.' },
-            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones.', price: 24, unit: 'flat', sort: 1, image: IMG('seed-assets/baker-2.jpg'),
+            { name: 'Coffee & walnut loaf cake', description: 'A moist loaf cake with a proper coffee kick and toasted walnuts. Serves six to eight, ready sliced or whole.', price: 18, unit: 'flat', sort: 1, category: 'Cakes', image: IMG('seed-assets/baker-2.jpg'),
+                ingredients: 'Wheat flour, butter, eggs, sugar, walnuts, espresso.',
+                allergens: 'Contains wheat (gluten), egg, milk, walnuts (nuts).' },
+            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones — a bit of everything from the week’s baking.', price: 24, unit: 'flat', sort: 2, category: 'Boxes & bakes', image: IMG('seed-assets/baker-2.jpg'),
                 ingredients: 'Wheat flour, butter, oats, sugar, sultanas, free-range eggs, milk.',
                 allergens: 'Contains wheat (gluten), oats, egg, milk. May contain nuts.' },
             // A per-item line, so a made-to-order order can carry a real quantity
             // (three boxes) — the "guests means quantity" case for change-count.
-            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 2, image: IMG('seed-assets/baker-3.jpg'),
+            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 3, category: 'Boxes & bakes', image: IMG('seed-assets/baker-3.jpg'),
                 ingredients: 'Wheat flour, butter, sugar, cocoa, oats, golden syrup.',
                 allergens: 'Contains wheat (gluten), oats, milk. May contain nuts.' },
+            { name: 'Galloway sourdough loaf', description: 'A slow-proved sourdough with a dark, blistered crust and an open crumb. Baked the morning of your collection.', price: 6, unit: 'item', sort: 4, category: 'Breads & buns', image: IMG('seed-assets/baker-3.jpg'),
+                ingredients: 'Wheat flour, water, salt, sourdough starter.',
+                allergens: 'Contains wheat (gluten). Made in a kitchen that handles nuts, egg and milk.' },
+            { name: 'Cinnamon buns (four)', description: 'Soft, laminated cinnamon buns with a cream-cheese glaze. Four to a box, best warmed through.', price: 12, unit: 'item', sort: 5, category: 'Breads & buns', image: IMG('seed-assets/baker-1.jpg'),
+                ingredients: 'Wheat flour, butter, milk, eggs, sugar, cinnamon, cream cheese.',
+                allergens: 'Contains wheat (gluten), egg, milk. May contain nuts.' },
         ],
     });
     const bakerItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + baker.id + '&order=sort_order');
     created.push({ label: 'Galloway Bakehouse (baker · made to order)', ...bakerOwner, providerId: baker.id });
+
+    /* 4b. BAKER THAT DELIVERS (made_to_order, fulfilment 'both' + a delivery fee).
+       So the Collection / Delivery switch, the fee and the address/cottage paths
+       all have something real to exercise. One day's notice, so its picker floor
+       differs from the collection-only bakehouse's two days. */
+    const deliOwner = await ownerFor('baker2', 'Rowan (Solway Loaf & Larder)');
+    const deli = await makeProvider({
+        owner: deliOwner, business_name: 'Solway Loaf & Larder', provider_name: 'Rowan', trade: 'baker', category: 'food_order', mcc: '5462', shape: 'made_to_order',
+        leadTimeDays: 1, cancelHours: 48, horizonDays: 120, maxGuests: 1,
+        // Offers BOTH: collect from the bakery, or have it delivered for a flat fee.
+        // Delivers within 12 miles of Kirkcudbright — a Kirkcudbright or Castle
+        // Douglas cottage is in range; a Dumfries or Stranraer one falls outside.
+        fulfilment: 'both', deliveryFee: 4.5, deliveryRadius: 12,
+        street: '3 Harbour Row', town: 'Kirkcudbright', postcode: 'DG6 4HY', mapLat: 54.8361, mapLng: -4.0530,
+        headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-2.jpg')],
+        professional_title: 'Bakes & larder boxes, collected or delivered', years: 4,
+        qualifications: 'Environmental Health registered home bakery.', recognition: null,
+        what_to_expect: 'Fresh bakes and larder boxes to order — collect from the harbour, or have them dropped to your cottage.',
+        itinerary: [
+            { title: 'Order', detail: 'Tell me what you would like and when, at least a day ahead.' },
+            { title: 'Bake', detail: 'Made fresh the morning of your date.' },
+            { title: 'Collection or delivery', detail: 'Collect from the harbour, or I’ll drop it to your cottage in the window we agree.' },
+        ],
+        minAge: null, activityLevel: null, whatToBring: null,
+        amenities: [], accessibility: null, parking: null,
+        dietaryNote: 'Vegan and gluten-free on request; baked in a kitchen that handles nuts.', dietaryOptions: ['vegan', 'gluten_free'],
+        items: [
+            { name: 'Focaccia (large)', description: 'A rosemary and sea-salt focaccia, big enough to share. Baked the morning of your date.', price: 9, unit: 'item', sort: 0, category: 'Breads', image: IMG('seed-assets/baker-3.jpg'),
+                ingredients: 'Wheat flour, olive oil, rosemary, sea salt, yeast.',
+                allergens: 'Contains wheat (gluten). Made in a kitchen that handles nuts, egg and milk.' },
+            { name: 'Cheese & chutney larder box', description: 'A box of local cheese, oatcakes, chutney and a loaf — everything for a cottage lunch.', price: 32, unit: 'flat', sort: 1, category: 'Larder boxes', image: IMG('seed-assets/baker-2.jpg'),
+                ingredients: 'Galloway cheeses, oatcakes (oats, wheat), chutney, sourdough.',
+                allergens: 'Contains wheat (gluten), oats, milk. May contain nuts.' },
+            { name: 'Celebration traybake box', description: 'A dozen traybakes finished for an occasion — your message piped on top.', price: 26, unit: 'flat', sort: 2, category: 'Larder boxes', image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
+                ingredients: 'Wheat flour, butter, eggs, sugar, chocolate, oats.',
+                allergens: 'Contains wheat (gluten), oats, egg, milk. May contain nuts.' },
+        ],
+    });
+    created.push({ label: 'Solway Loaf & Larder (baker · delivers)', ...deliOwner, providerId: deli.id });
 
     /* --------------------------------------------- orders on Liam, each state */
     const gEmail = liam.email;
@@ -435,7 +489,7 @@ async function main() {
     await makeSession(yoga.id, dayOffset(17), time(9), { seats: 0, capacity: 10, declared: true, title: 'Sunrise class' });
     // INSIDE the window — all attached to the stay, dated within it.
     const oIslaSlot = await makeOrder({ ...islaBase, ...islaCottageRef, provider: yoga, sessionId: islaYogaS.id, date: dayOffset(15), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
-    const oIslaMto = await makeOrder({ ...islaBase, ...islaCottageRef, provider: baker, date: dayOffset(12), time: time(13), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaMto = await makeOrder({ ...islaBase, ...islaCottageRef, provider: baker, date: dayOffset(12), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
     // The chef works Wed–Sun (days 3,4,5,6,0). Snap the dinner to a working day
     // inside the stay [dayOffset(11), dayOffset(15)] so the change-date sheet's
     // own opening hours never strike the booking's own date. Offset 12 is skipped
@@ -452,13 +506,13 @@ async function main() {
     const oIslaCty = await makeOrder({ ...islaBase, ...islaCottageRef, provider: chef, date: chefDinnerDate, time: time(19), quantity: 1, attendees: 6, adults: 6, children: 0, unit: 'flat', unitPrice: 220, price: 300, itemId: chefFlat.id, itemName: chefFlat.name, status: 'confirmed', fulfilment: 'delivery' });
     // PAST its window — a made-to-order due tomorrow (24h < the baker's 48h), to
     // walk the "changes are closed" sheet.
-    const oIslaClosed = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(1), time: time(10), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaClosed = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(1), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
 
     // A STANDALONE experience — booked with no stay at all (bookingless). A
     // made-to-order collection box, so no address is needed; it carries a picked
     // time. Proves the "bookable by anyone, no holiday-let needed" path and gives
     // /trips an experience with its own card (not under a stay).
-    const oIslaNoStay = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(9), time: time(16), quantity: 2, unit: 'item', unitPrice: 8, price: 16, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaNoStay = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(9), quantity: 2, unit: 'item', unitPrice: 8, price: 16, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
 
     // A PAST STAY with a PAST EXPERIENCE on it, so the /trips "Past" section has
     // something in it. The stay finished last week; the chef cooked during it.
@@ -474,7 +528,7 @@ async function main() {
         });
     }
     const islaPastRef = islaPastStay ? { bookingId: islaPastStay.id, listingId: islaPastCottage.id } : {};
-    const oIslaPast = await makeOrder({ ...islaBase, ...islaPastRef, provider: baker, date: dayOffset(-43), time: time(13), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaPast = await makeOrder({ ...islaBase, ...islaPastRef, provider: baker, date: dayOffset(-43), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
 
     const walkable = [
         ['Today',           'Loch Sauna (sauna)',      oToday],

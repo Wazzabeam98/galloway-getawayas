@@ -36,7 +36,7 @@ export interface EditorProvider {
     business_name: string; category_label: string; category: string; description: string;
     status: string; owner_paused: boolean;
     photos: string[]; headshot: string | null; logo: string | null;
-    dietary_note: string; fulfilment: string;
+    dietary_note: string; fulfilment: string; delivery_fee: number; delivery_radius_miles: number;
     collection_street: string; collection_town: string; collection_postcode: string;
     slot_length_minutes: number | null; slot_turnaround_minutes: number;
     slot_capacity: number | null; slot_min_people: number; max_guests: number | null;
@@ -49,7 +49,7 @@ export interface EditorProvider {
     amenities: string[];
     dietary_options: string[];
     areas: string[];
-    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean }>;
+    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null }>;
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
@@ -240,7 +240,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
@@ -259,6 +259,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         // Per-item ingredient + allergen detail, shown behind the menu's info icon.
         ingredients: (it as any).ingredients || '',
         allergens: (it as any).allergens || '',
+        // Made-to-order menu section, so a long menu groups under sticky tabs.
+        category: (it as any).category || '',
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
@@ -296,6 +298,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [street, setStreet] = useState(p.collection_street);
     const [town, setTown] = useState(p.collection_town);
     const [postcode, setPostcode] = useState(p.collection_postcode);
+    const [deliveryFee, setDeliveryFee] = useState(p.delivery_fee != null ? String(p.delivery_fee) : '');
+    const [deliveryRadius, setDeliveryRadius] = useState(p.delivery_radius_miles ? String(p.delivery_radius_miles) : '');
     const [areas, setAreas] = useState<string[]>(p.areas);
     const collects = fulfilment === 'collection' || fulfilment === 'both';
     const travels = fulfilment === 'delivery' || fulfilment === 'both';
@@ -627,6 +631,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     extra_child_fee: r.extraChildFee, max_party: r.maxParty,
                                     is_custom: r.isCustom,
                                     ingredients: r.ingredients, allergens: r.allergens,
+                                    category: r.category,
                                 })),
                             })}>
                             {/* Last-priced-item guard: a listing with no active priced
@@ -773,6 +778,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                             className={`rounded-full border px-3 py-1.5 text-sm transition ${r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Custom — you approve first</button>
                                                     </div>
                                                 )}
+                                                {/* Menu section — groups a long menu under sticky
+                                                    tabs on the guest page, once there's more than
+                                                    one. Optional; blank items sit in one group. */}
+                                                {p.shape === 'made_to_order' && (
+                                                    <label className="block">
+                                                        <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Menu section <span className="font-normal normal-case tracking-normal text-slate-400">(optional, e.g. Cakes, Traybakes)</span></span>
+                                                        <input className={inputCls} maxLength={60} placeholder="e.g. Cakes" value={r.category} onChange={(e) => setRow(i, { category: e.target.value })} />
+                                                    </label>
+                                                )}
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
                                                 {/* Ingredients + allergens — shown behind the menu's
                                                     info icon on a food listing. Free text, written the
@@ -796,16 +810,20 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '', isCustom: false, ingredients: '', allergens: '' }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '', isCustom: false, ingredients: '', allergens: '', category: '' }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}
 
                     {active === 'where' && (
                         <SectionCard title={fixedInPlace ? 'Address' : 'Where it happens'} hint="How guests reach you. They only ever see the town — the street and postcode stay private until a booking is confirmed." saving={savingKey === 'where'}
+                            disabled={travels && Number(deliveryRadius) > 0 && !postcode.trim()}
+                            disabledLabel="Add your base postcode — a delivery distance is measured from it."
                             onSave={() => run('where', {
                                 fulfilment,
                                 collection_street: street, collection_town: town, collection_postcode: postcode,
+                                delivery_fee: travels ? deliveryFee : 0,
+                                delivery_radius_miles: travels ? deliveryRadius : 0,
                                 areas: travels ? areas : [],
                             })}>
                             {canTravel ? (
@@ -841,6 +859,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 </div>
                             )}
 
+                            {/* A delivery-only provider has no public collection address, but a
+                                delivery distance still needs a base to measure from. Their
+                                postcode is private and never shown to guests. */}
+                            {travels && !collects && (
+                                <Field label="Base postcode (private)" hint="Where you deliver from — a delivery distance is measured from here. Never shown to guests.">
+                                    <input className={inputCls} value={postcode} onChange={(e) => setPostcode(e.target.value)} placeholder="DG6 4JS" />
+                                </Field>
+                            )}
+
                             {travels && (
                                 <div>
                                     <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Regions you travel to</span>
@@ -862,6 +889,25 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                         })}
                                     </div>
                                 </div>
+                            )}
+
+                            {travels && (
+                                <Field label="Delivery fee" hint="A flat fee added once to a delivery order. Leave blank for free delivery. Collection is always free.">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-500">£</span>
+                                        <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="0.00"
+                                            value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'))} />
+                                    </div>
+                                </Field>
+                            )}
+                            {travels && (
+                                <Field label="Delivery distance" hint="How far you'll travel from your base. An order further than this is turned away before payment. Leave blank for no distance limit.">
+                                    <div className="flex items-center gap-2">
+                                        <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="e.g. 10"
+                                            value={deliveryRadius} onChange={(e) => setDeliveryRadius(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'))} />
+                                        <span className="text-slate-500">miles</span>
+                                    </div>
+                                </Field>
                             )}
                         </SectionCard>
                     )}

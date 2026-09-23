@@ -208,11 +208,27 @@ export async function POST(request: Request) {
                 const fulfilment = strOrNull(data.fulfilment);
                 patch = { fulfilment };
                 const collects = fulfilment === 'collection' || fulfilment === 'both';
+                // A flat delivery fee, only meaningful when the provider travels;
+                // clamped to a sane range, and forced to 0 for a collection-only one.
+                const travels = fulfilment === 'delivery' || fulfilment === 'both';
+                patch.delivery_fee = travels ? Math.max(0, Math.min(1000, Math.round((Number(data.delivery_fee) || 0) * 100) / 100)) : 0;
+                // The enforced delivery radius in miles (0 = no limit). Clamped to a
+                // sane range and forced to 0 for a collection-only provider.
+                patch.delivery_radius_miles = travels ? Math.max(0, Math.min(500, Math.round((Number(data.delivery_radius_miles) || 0) * 10) / 10)) : 0;
                 const cols = collectionFieldsForWrite({
                     collects, loaded: true,
                     street: data.collection_street || '', town: data.collection_town || '', postcode: data.collection_postcode || '',
                 });
                 if (cols) patch = { ...patch, ...cols };
+                // A delivery radius is measured from the provider's base postcode, so
+                // require one whenever a distance is set — and keep it (privately)
+                // even for a delivery-only provider, who has no public collection
+                // address. Without this the radius has nothing to measure from.
+                const basePostcode = String(data.collection_postcode || '').trim();
+                if (travels && Number(patch.delivery_radius_miles) > 0 && !basePostcode) {
+                    return NextResponse.json({ ok: false, error: 'Add your base postcode — a delivery distance is measured from it.' }, { status: 400 });
+                }
+                if (travels && basePostcode) patch.collection_postcode = basePostcode;
                 // Coverage regions: replace the set.
                 if (Array.isArray(data.areas)) {
                     await admin.from('service_areas').delete().eq('provider_id', providerId);
@@ -320,6 +336,10 @@ export async function POST(request: Request) {
                         // text, capped; null when blank.
                         ingredients: (it.ingredients ? String(it.ingredients) : '').slice(0, 1000).trim() || null,
                         allergens: (it.allergens ? String(it.allergens) : '').slice(0, 1000).trim() || null,
+                        // A menu section for a made-to-order listing (the guest page
+                        // groups items under sticky tabs when there's more than one).
+                        // Free text, short, null when blank; meaningless elsewhere.
+                        category: p.shape === 'made_to_order' ? ((it.category ? String(it.category) : '').slice(0, 60).trim() || null) : null,
                         // Smallest party this item takes. A SLOT stays null — a shared
                         // session takes a single person by design. A per-person REQUEST
                         // item (a private chef per guest) can set a floor, and the

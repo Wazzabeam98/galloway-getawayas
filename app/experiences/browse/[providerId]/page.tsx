@@ -56,8 +56,8 @@ export default async function PublicListingPage({ params }: { params: { provider
                     backHref="/experiences/browse"
                     backLabel="All experiences"
                     reviews={reviews}
-                    menu={<FoodMenu />}
-                    panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} standalone leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} />}
+                    menu={<FoodMenu leadTimeDays={p.lead_time_days} />}
+                    panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} standalone leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} />}
                 />
             </FoodCartProvider>
         );

@@ -43,6 +43,10 @@ export interface MpItem {
     // Per-item ingredient and allergen text, shown behind the menu's info icon.
     ingredients: string | null;
     allergens: string | null;
+    // Made-to-order only: a free-text menu section ("Cakes", "Traybakes"), so a
+    // long menu groups under sticky tabs. Null when the provider left it blank —
+    // the item sits in an unnamed group and, if it's the only group, no tabs show.
+    category: string | null;
 }
 // A booked session's interval on the provider's day, for greying overlapping
 // starts client-side: the same rule the claim and the DB exclusion enforce. Also
@@ -152,6 +156,9 @@ export interface MpProvider {
     // 'collection'/null = come-to-me. Lets the panel ask a travelling session for
     // the stay it should come to.
     fulfilment: string | null;
+    // Made-to-order (and any delivering provider): a flat delivery fee added once
+    // to a delivery order. 0/null when they charge nothing or don't deliver.
+    deliveryFee: number;
     priceFrom: number;
     // A slot provider's per-person vs whole-slot reading comes off the item unit.
     items: MpItem[];
@@ -325,7 +332,7 @@ export async function loadPublicMarketplace(
 async function shapeProviders(admin: any, fromKey: string, toKey: string): Promise<MpProvider[]> {
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true).eq('owner_paused', false);
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -342,7 +349,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label, centre_lat, centre_lng').in('provider_id', ids),
-        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens')
+        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
@@ -397,6 +404,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             isCustom: !!it.is_custom,
             ingredients: it.ingredients || null,
             allergens: it.allergens || null,
+            category: (it.category ? String(it.category) : '').trim() || null,
         }));
         if (!items.length) continue;
         const perItemDurations = items.some((it: MpItem) => it.duration_minutes != null && it.duration_minutes > 0);
@@ -529,6 +537,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             description: p.description,
             shape,
             fulfilment: p.fulfilment || null,
+            deliveryFee: Number(p.delivery_fee) || 0,
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),
             items,
             sessions,

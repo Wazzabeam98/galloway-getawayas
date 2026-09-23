@@ -92,6 +92,10 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             const up = it ? Number(it.price) : 0;
             return { item_id: p.id, name: it ? it.name : 'Item', unit: it ? it.unit : 'flat', qty: p.qty, unit_price: up, line_total: Math.round(up * p.qty * 100) / 100, is_custom: it ? !!it.is_custom : false };
         });
+        // A delivery order's flat fee is its own line, so the frozen breakdown sums
+        // to the amount charged (the item lines alone would fall short).
+        const deliveryFee = Math.round((Number(md.delivery_fee) || 0) * 100) / 100;
+        if (deliveryFee > 0) lineItems.push({ item_id: null, name: 'Delivery', unit: 'flat', qty: 1, unit_price: deliveryFee, line_total: deliveryFee, is_custom: false });
     }
 
     const { data: order, error: orderErr } = await admin
