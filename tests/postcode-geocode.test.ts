@@ -163,6 +163,8 @@ test('publishing fills the coordinates from the postcode', async () => {
         // so a publishable fixture carries one alongside the postcode it geocodes.
         street_address: '1 Harbour Row, Garlieston',
         postcode: 'DG6 4JS',
+        // And at least five photos to go live (NEW_LISTING_MIN_PHOTOS).
+        images: ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'],
         latitude: null,
         longitude: null,
     };
@@ -314,4 +316,44 @@ test('deliveryReach: no radius falls back to the Dumfries & Galloway gate', asyn
     const outDG = await deliveryReach({ radiusMiles: 0, basePostcode: 'DG6 4HY', guestPoint: null, guestPostcode: 'CA1 1AA' });
     assert.equal(outDG.ok, false);
     assert.equal((outDG as any).reason, 'out_of_region');
+});
+
+/* ------------------------------------ the ≥5-photo publish gate (new listings) */
+
+async function runPublish(listing: any) {
+    const updates: any[] = [];
+    stubModule('@/lib/supabaseAdmin', { adminClient: () => ({ from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: listing, error: null }) }) }),
+        update: (patch: any) => { updates.push(patch); return { eq: async () => ({ data: null, error: null }) }; },
+    }) }) });
+    stubModule('@supabase/auth-helpers-nextjs', { createRouteHandlerClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: 'host-1' } } }) } }) });
+    stubModule('next/headers', { cookies: () => ({}) });
+    stubModule('@/lib/logError', { logError: async () => {} });
+    stubModule('next/server', { NextResponse: { json: (body: any, init?: any) => ({ body, status: (init && init.status) || 200 }) } });
+    (global as any).fetch = async () => ({ ok: true, json: async () => ({ result: { latitude: 54.8, longitude: -4.0 } }) });
+    clearModule('@/lib/postcodeGeocode');
+    clearModule('@/app/api/listings/publish/route');
+    const route = require('../app/api/listings/publish/route');
+    const res: any = await route.POST(new Request('http://x/api/listings/publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ listingId: 'l-1' }) }));
+    return { res, updates };
+}
+
+const baseListing = { id: 'l-1', host_id: 'host-1', title: 'Cottage', price_per_night: 120, street_address: '1 Harbour Row', postcode: 'DG6 4JS', latitude: null, longitude: null };
+
+test('a new listing with fewer than five photos is refused publication', async () => {
+    const { res, updates } = await runPublish({ ...baseListing, status: 'draft', images: ['a.jpg', 'b.jpg', 'c.jpg'] });
+    assert.equal(res.body.ok, false);
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /at least 5 photos/i);
+    assert.equal(updates.length, 0, 'nothing was published');
+});
+
+test('a new listing with five photos publishes', async () => {
+    const { res } = await runPublish({ ...baseListing, status: 'draft', images: ['a', 'b', 'c', 'd', 'e'] });
+    assert.equal(res.body.ok, true);
+});
+
+test('an already-published listing with fewer than five photos is grandfathered, not blocked', async () => {
+    const { res } = await runPublish({ ...baseListing, status: 'published', images: ['a', 'b'] });
+    assert.equal(res.body.ok, true, 'a live listing with few photos is never unpublished by the new rule');
 });

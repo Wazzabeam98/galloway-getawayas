@@ -127,7 +127,7 @@ export default function ExperienceListingBody({
                 </Link>
 
                 {p.galleryKeys.length ? (
-                    <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} mobileStrip />
+                    <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} />
                 ) : (
                     <div className="my-4 flex h-[300px] w-full items-center justify-center rounded-2xl bg-slate-100 text-5xl font-semibold text-slate-300 md:h-[460px]">
                         {who.slice(0, 1)}

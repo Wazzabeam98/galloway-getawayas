@@ -4,7 +4,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { coordinatePatchFor } from '@/lib/postcodeGeocode';
-import { addressBlockerForPublish } from '@/lib/listingRules';
+import { addressBlockerForPublish, NEW_LISTING_MIN_PHOTOS } from '@/lib/listingRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('id, host_id, title, price_per_night, status, street_address, postcode, latitude, longitude')
+            .select('id, host_id, title, price_per_night, status, images, street_address, postcode, latitude, longitude')
             .eq('id', listingId)
             .maybeSingle();
 
@@ -79,6 +79,18 @@ export async function POST(request: Request) {
         const addressProblem = addressBlockerForPublish(listing);
         if (addressProblem) {
             return NextResponse.json({ ok: false, error: addressProblem }, { status: 400 });
+        }
+
+        // At least five photos to go live for the first time — the Airbnb bar for a
+        // listing worth booking. Only gates a listing that ISN'T already published:
+        // an existing live listing with fewer keeps its place and is never
+        // unpublished by this rule.
+        const photoCount = Array.isArray(listing.images) ? listing.images.filter(Boolean).length : 0;
+        if (listing.status !== 'published' && photoCount < NEW_LISTING_MIN_PHOTOS) {
+            return NextResponse.json(
+                { ok: false, error: `Add at least ${NEW_LISTING_MIN_PHOTOS} photos before your listing can go live — you have ${photoCount}.` },
+                { status: 400 }
+            );
         }
 
         const { error } = await admin
