@@ -47,6 +47,9 @@ interface PanelProvider {
     slotBlocks?: string[];
     partialBlocks?: PartialBlock[];
     bookedBlocks?: PanelBookedBlock[];
+    // Comes-to-you: the dates the provider is already booked on — greyed and
+    // unpickable in the dialog (one booking a day blocks the whole day).
+    bookedDates?: string[];
     cancellationHours?: number | null;
     noRefund?: boolean | null;
     minAge?: number | null;
@@ -186,12 +189,17 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
         const byDate: Record<string, string[]> = {};
         const days = new Set<string>();
         if (!isComesToYou) return { days, byDate };
+        // A date the provider is already booked on is dropped entirely — one
+        // booking a day blocks the whole day, so it never enters the day list and
+        // (being absent from calDays) shows greyed and disabled in the calendar.
+        const booked = new Set(provider.bookedDates || []);
         for (const s of generateSessions(provider.slotAvailability || [], provider.slotBlocks || [], 30, minDate, maxDate, 30, provider.partialBlocks || [])) {
+            if (booked.has(s.date)) continue;
             (byDate[s.date] = byDate[s.date] || []).push(s.time);
             days.add(s.date);
         }
         return { days, byDate };
-    }, [isComesToYou, provider.slotAvailability, provider.slotBlocks, provider.partialBlocks, minDate, maxDate]);
+    }, [isComesToYou, provider.slotAvailability, provider.slotBlocks, provider.partialBlocks, provider.bookedDates, minDate, maxDate]);
     const useHours = isComesToYou && reqTimes.days.size > 0;
     const calDays = useMemo(
         () => (useHours ? reqTimes.days : new Set(bookableDays)),

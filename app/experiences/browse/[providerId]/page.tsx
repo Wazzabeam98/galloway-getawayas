@@ -98,6 +98,7 @@ export default async function PublicListingPage({ params }: { params: { provider
                 slotAvailability: p.slotAvailability,
                 slotBlocks: p.slotBlocks,
                 partialBlocks: p.partialBlocks,
+                bookedDates: p.bookedDates,
                 cancellationHours: p.cancellation_window_hours,
                 noRefund: p.noRefund,
                 minAge: p.minAge,

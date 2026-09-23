@@ -184,6 +184,9 @@ export interface MpProvider {
     // Every booked session's interval, so the panel greys any start that would
     // overlap one — the guest never sees, or picks, a time the claim would refuse.
     bookedBlocks: MpBookedBlock[];
+    // Comes-to-you only: the dates the provider is already booked on. One booking
+    // a day blocks the whole day, so the dialog greys and disables these dates.
+    bookedDates: string[];
     // The provider's single session length (minutes), the fallback for an untimed
     // item. 0 when unset (a pure one-at-a-time provider) or not a slot.
     slotLength: number;
@@ -345,10 +348,13 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
         admin.from('slot_blocks').select('provider_id, blocked_date').in('provider_id', ids),
         admin.from('slot_sessions').select('id, provider_id, session_date, session_time, capacity, seats_taken, private, duration_minutes, turnaround_minutes, blocked, declared, title').in('provider_id', ids),
-        // Confirmed bookings taken, for the trust count. Only 'confirmed' counts:
-        // a held request that was never answered, or one that was cancelled or
-        // refunded, is not a booking someone completed with this provider.
-        admin.from('service_orders').select('provider_id, status').in('provider_id', ids).eq('status', 'confirmed'),
+        // Bookings taken. 'confirmed' feeds the trust count (a held request that
+        // was never answered, or one cancelled or refunded, is not a completed
+        // booking). Both 'authorised' and 'confirmed' feed the booked-DATES set: a
+        // comes-to-you provider takes one booking a day, so a live request or a
+        // confirmed order on a date blocks that whole day in the booking dialog —
+        // greyed and unpickable, not a clash reported only after Send.
+        admin.from('service_orders').select('provider_id, status, service_date').in('provider_id', ids).in('status', ['authorised', 'confirmed']),
     ]);
 
     const by = <T,>(list: any[], key: string) => {
@@ -359,7 +365,15 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
     const areasBy = by<any>(areas, 'provider_id');
     const itemsBy = by<any>(itemRows, 'provider_id');
     const bookingsCountBy: Record<string, number> = {};
-    for (const o of orderRows || []) bookingsCountBy[o.provider_id] = (bookingsCountBy[o.provider_id] || 0) + 1;
+    // The dates a provider is already booked on (any live/confirmed order), so a
+    // comes-to-you provider's whole day is blocked. Past dates are harmless — the
+    // panel only ever intersects this with future days.
+    const bookedDatesBy: Record<string, Set<string>> = {};
+    for (const o of orderRows || []) {
+        if (o.status === 'confirmed') bookingsCountBy[o.provider_id] = (bookingsCountBy[o.provider_id] || 0) + 1;
+        const d = String(o.service_date || '').slice(0, 10);
+        if (d) (bookedDatesBy[o.provider_id] = bookedDatesBy[o.provider_id] || new Set<string>()).add(d);
+    }
     const availBy = by<any>(avail, 'provider_id');
     const blocksBy = by<any>(blocks, 'provider_id');
     const sessBy = by<any>(sessRows, 'provider_id');
@@ -534,6 +548,10 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                 ? (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time }))
                 : [],
             slotBlocks: (shape === 'slot' || shape === 'comes_to_you') ? (blocksBy[p.id] || []).map((b: any) => b.blocked_date) : [],
+            // Dates a comes-to-you provider is already booked on (one booking a day),
+            // so the booking dialog greys and disables them. Slots handle a booked
+            // TIME through bookedBlocks instead, so this stays empty for them.
+            bookedDates: shape === 'comes_to_you' ? Array.from(bookedDatesBy[p.id] || []) : [],
             partialBlocks: providerPartialBlocks,
             bookedBlocks: shape === 'slot'
                 ? (sessBy[p.id] || [])

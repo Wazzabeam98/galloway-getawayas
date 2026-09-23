@@ -104,6 +104,7 @@ export default async function ListingPage(
                         slotBlocks: p.slotBlocks,
                         partialBlocks: p.partialBlocks,
                         bookedBlocks: p.bookedBlocks,
+                        bookedDates: p.bookedDates,
                         cancellationHours: p.cancellation_window_hours,
                         noRefund: p.noRefund,
                         minAge: p.minAge,
