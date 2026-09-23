@@ -817,6 +817,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {active === 'where' && (
                         <SectionCard title={fixedInPlace ? 'Address' : 'Where it happens'} hint="How guests reach you. They only ever see the town — the street and postcode stay private until a booking is confirmed." saving={savingKey === 'where'}
+                            disabled={travels && Number(deliveryRadius) > 0 && !postcode.trim()}
+                            disabledLabel="Add your base postcode — a delivery distance is measured from it."
                             onSave={() => run('where', {
                                 fulfilment,
                                 collection_street: street, collection_town: town, collection_postcode: postcode,
@@ -855,6 +857,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                     <p className="text-xs text-slate-500">Guests see <span className="font-medium text-slate-700">{town.trim() || 'your town'}</span>. The street and postcode are released only when a booking is confirmed.</p>
                                 </div>
+                            )}
+
+                            {/* A delivery-only provider has no public collection address, but a
+                                delivery distance still needs a base to measure from. Their
+                                postcode is private and never shown to guests. */}
+                            {travels && !collects && (
+                                <Field label="Base postcode (private)" hint="Where you deliver from — a delivery distance is measured from here. Never shown to guests.">
+                                    <input className={inputCls} value={postcode} onChange={(e) => setPostcode(e.target.value)} placeholder="DG6 4JS" />
+                                </Field>
                             )}
 
                             {travels && (

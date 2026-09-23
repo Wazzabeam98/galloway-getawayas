@@ -243,8 +243,12 @@ export async function POST(request: Request) {
             // A delivery order carries the provider's flat delivery fee, charged
             // once on top of the lines and passed to the provider like the rest.
             const deliveryFeeC = travelsC ? Math.round((Math.max(0, Number(prov.delivery_fee) || 0)) * 100) / 100 : 0;
-            const grandTotalC = Math.round((total + deliveryFeeC) * 100) / 100;
-            const pricingC = priceOrder(prov, { bandPrice: grandTotalC }, []);
+            // Commission is charged on the ITEMS only, never on the delivery fee —
+            // the provider receives the delivery in full. The card is still charged
+            // items + delivery (the stripe line below), so the application fee stays
+            // on `total` while the charge total and the frozen breakdown both include
+            // the delivery line.
+            const pricingC = priceOrder(prov, { bandPrice: total }, []);
             const businessC = prov.business_name || 'Your order';
             const cartMeta = wanted.map((w: any) => w.id + ':' + w.qty).join(',');
             const summaryName = lines.length === 1 && lines[0].qty === 1 ? lines[0].name : (businessC + ' order');
@@ -397,15 +401,20 @@ export async function POST(request: Request) {
         // Bounds compared as London day-keys, matching the picker (a Date-object
         // compare mixed local and UTC midnights and refused the earliest date).
         const serviceKeyS = String(serviceDate).slice(0, 10);
+        // The provider's notice period is the earliest a date can be picked — a
+        // comes-to-you chef as much as a made-to-order baker (a made-to-order has a
+        // floor of one day; a chef can be same-notice-as-set, down to zero). Enforced
+        // for BOTH shapes it reaches: standalone, AND against a stay — a stay's dates
+        // don't waive the notice the provider needs.
+        const leadDays = provider.shape === 'made_to_order'
+            ? Math.max(1, Number(provider.lead_time_days) || 1)
+            : Math.max(0, Number(provider.lead_time_days) || 0);
+        if (serviceKeyS < shiftDayKey(londonDayKey(), leadDays)) {
+            return NextResponse.json({ ok: false, error: 'That date is inside the notice period — please pick a later one.' }, { status: 400 });
+        }
         if (standalone) {
-            // The provider's notice period is the earliest a date can be picked, for a
-            // comes-to-you chef as much as a made-to-order baker (a made-to-order has a
-            // floor of one day; a chef can be same-notice-as-set, down to zero).
-            const leadDays = provider.shape === 'made_to_order'
-                ? Math.max(1, Number(provider.lead_time_days) || 1)
-                : Math.max(0, Number(provider.lead_time_days) || 0);
             const horizon = Math.max(1, Math.min(365, Number(provider.guest_details && (provider.guest_details as any).booking_horizon_days) || 90));
-            if (serviceKeyS < shiftDayKey(londonDayKey(), leadDays) || serviceKeyS > shiftDayKey(londonDayKey(), horizon)) {
+            if (serviceKeyS > shiftDayKey(londonDayKey(), horizon)) {
                 return NextResponse.json({ ok: false, error: 'Pick a date within the booking window.' }, { status: 400 });
             }
         } else {

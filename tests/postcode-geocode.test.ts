@@ -357,3 +357,8 @@ test('an already-published listing with fewer than five photos is grandfathered,
     const { res } = await runPublish({ ...baseListing, status: 'published', images: ['a', 'b'] });
     assert.equal(res.body.ok, true, 'a live listing with few photos is never unpublished by the new rule');
 });
+
+test('a hidden (paused/unlisted) listing with fewer than five photos can go live again', async () => {
+    const { res } = await runPublish({ ...baseListing, status: 'hidden', images: ['a', 'b'] });
+    assert.equal(res.body.ok, true, 'a listing that has been live before is not held to the five-photo bar');
+});

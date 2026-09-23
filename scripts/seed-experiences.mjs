@@ -489,7 +489,7 @@ async function main() {
     await makeSession(yoga.id, dayOffset(17), time(9), { seats: 0, capacity: 10, declared: true, title: 'Sunrise class' });
     // INSIDE the window — all attached to the stay, dated within it.
     const oIslaSlot = await makeOrder({ ...islaBase, ...islaCottageRef, provider: yoga, sessionId: islaYogaS.id, date: dayOffset(15), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
-    const oIslaMto = await makeOrder({ ...islaBase, ...islaCottageRef, provider: baker, date: dayOffset(12), time: time(13), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaMto = await makeOrder({ ...islaBase, ...islaCottageRef, provider: baker, date: dayOffset(12), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
     // The chef works Wed–Sun (days 3,4,5,6,0). Snap the dinner to a working day
     // inside the stay [dayOffset(11), dayOffset(15)] so the change-date sheet's
     // own opening hours never strike the booking's own date. Offset 12 is skipped
@@ -506,13 +506,13 @@ async function main() {
     const oIslaCty = await makeOrder({ ...islaBase, ...islaCottageRef, provider: chef, date: chefDinnerDate, time: time(19), quantity: 1, attendees: 6, adults: 6, children: 0, unit: 'flat', unitPrice: 220, price: 300, itemId: chefFlat.id, itemName: chefFlat.name, status: 'confirmed', fulfilment: 'delivery' });
     // PAST its window — a made-to-order due tomorrow (24h < the baker's 48h), to
     // walk the "changes are closed" sheet.
-    const oIslaClosed = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(1), time: time(10), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaClosed = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(1), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
 
     // A STANDALONE experience — booked with no stay at all (bookingless). A
     // made-to-order collection box, so no address is needed; it carries a picked
     // time. Proves the "bookable by anyone, no holiday-let needed" path and gives
     // /trips an experience with its own card (not under a stay).
-    const oIslaNoStay = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(9), time: time(16), quantity: 2, unit: 'item', unitPrice: 8, price: 16, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaNoStay = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(9), quantity: 2, unit: 'item', unitPrice: 8, price: 16, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
 
     // A PAST STAY with a PAST EXPERIENCE on it, so the /trips "Past" section has
     // something in it. The stay finished last week; the chef cooked during it.
@@ -528,7 +528,7 @@ async function main() {
         });
     }
     const islaPastRef = islaPastStay ? { bookingId: islaPastStay.id, listingId: islaPastCottage.id } : {};
-    const oIslaPast = await makeOrder({ ...islaBase, ...islaPastRef, provider: baker, date: dayOffset(-43), time: time(13), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaPast = await makeOrder({ ...islaBase, ...islaPastRef, provider: baker, date: dayOffset(-43), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
 
     const walkable = [
         ['Today',           'Loch Sauna (sauna)',      oToday],

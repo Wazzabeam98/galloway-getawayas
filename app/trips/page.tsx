@@ -6,6 +6,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { loadTripsList, type TripItem, type TripStay, type TripExperience } from '@/lib/tripsList';
 import TripsMap from '@/components/TripsMap';
 import { CalendarDays, Users, MapPin, ChevronRight, ShoppingBag } from 'lucide-react';
+import { whenLabel } from '@/components/marketplace/present';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,13 +18,6 @@ export const dynamic = 'force-dynamic';
 function fmtDay(key: string): string {
     try { return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' }).format(new Date(key + 'T12:00:00Z')); }
     catch { return key; }
-}
-function prettyTime(t: string | null): string {
-    if (!t) return '';
-    const [h, m] = t.split(':').map(Number);
-    const ampm = h < 12 ? 'am' : 'pm';
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    return h12 + (m ? ':' + String(m).padStart(2, '0') : '') + ampm;
 }
 function partyLabel(n: number | null): string {
     if (!n || n < 1) return '';
@@ -68,7 +62,7 @@ function ExperienceRow({ exp }: { exp: TripExperience }) {
             <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-slate-900">{exp.title}</div>
                 <div className="mt-0.5 flex items-center gap-2 text-[13px] text-slate-500">
-                    <span>{fmtDay(exp.date)}{exp.time ? ' · ' + prettyTime(exp.time) : ''}</span>
+                    <span>{whenLabel(exp.shape, exp.date, exp.time)}</span>
                     {exp.pending && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Awaiting reply</span>}
                 </div>
             </div>
@@ -118,7 +112,7 @@ function ExperienceCard({ exp }: { exp: TripExperience }) {
                 </div>
                 {exp.providerName && <div className="mt-0.5 truncate text-[13px] text-slate-500">{exp.providerName}</div>}
                 <div className="mt-2 flex flex-col gap-1 text-[13px] text-slate-500">
-                    <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-slate-400" />{fmtDay(exp.date)}{exp.time ? ' · ' + prettyTime(exp.time) : ''}</span>
+                    <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4 text-slate-400" />{whenLabel(exp.shape, exp.date, exp.time)}</span>
                     {(() => {
                         const food = foodSummary(exp);
                         if (food) return <span className="inline-flex items-center gap-1.5"><ShoppingBag className="h-4 w-4 text-slate-400" />{food}</span>;

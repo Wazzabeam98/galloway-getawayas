@@ -220,6 +220,15 @@ export async function POST(request: Request) {
                     street: data.collection_street || '', town: data.collection_town || '', postcode: data.collection_postcode || '',
                 });
                 if (cols) patch = { ...patch, ...cols };
+                // A delivery radius is measured from the provider's base postcode, so
+                // require one whenever a distance is set — and keep it (privately)
+                // even for a delivery-only provider, who has no public collection
+                // address. Without this the radius has nothing to measure from.
+                const basePostcode = String(data.collection_postcode || '').trim();
+                if (travels && Number(patch.delivery_radius_miles) > 0 && !basePostcode) {
+                    return NextResponse.json({ ok: false, error: 'Add your base postcode — a delivery distance is measured from it.' }, { status: 400 });
+                }
+                if (travels && basePostcode) patch.collection_postcode = basePostcode;
                 // Coverage regions: replace the set.
                 if (Array.isArray(data.areas)) {
                     await admin.from('service_areas').delete().eq('provider_id', providerId);
