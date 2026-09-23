@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Minus, Plus, Info, X, Utensils, Clock } from 'lucide-react';
 import { useFoodCart, type FoodMenuItem } from '@/components/marketplace/FoodCart';
 import { noticeLabel } from '@/components/marketplace/present';
@@ -89,7 +90,7 @@ export default function FoodMenu({ leadTimeDays = 0 }: { leadTimeDays?: number }
                         ) : null}
                         <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
                             {g.items.map((it) => (
-                                <MenuCard key={it.id} it={it} qty={cart[it.id] || 0} notice={notice}
+                                <MenuCard key={it.id} it={it} qty={cart[it.id] || 0}
                                     onOpen={() => setSheet(it)} onSet={(n) => setQty(it.id, n)} />
                             ))}
                         </ul>
@@ -97,9 +98,10 @@ export default function FoodMenu({ leadTimeDays = 0 }: { leadTimeDays?: number }
                 ))}
             </div>
 
-            {sheet && (
+            {sheet && typeof document !== 'undefined' && createPortal(
                 <ItemSheet it={sheet} qty={cart[sheet.id] || 0} notice={notice}
-                    onSet={(n) => setQty(sheet.id, n)} onClose={() => setSheet(null)} />
+                    onSet={(n) => setQty(sheet.id, n)} onClose={() => setSheet(null)} />,
+                document.body,
             )}
         </section>
     );
@@ -110,8 +112,8 @@ export default function FoodMenu({ leadTimeDays = 0 }: { leadTimeDays?: number }
 // never nudges the photo or changes the card's height — the reflow the old row
 // suffered. The card body opens the item sheet; the +/- controls stop the click
 // so they don't also open it.
-function MenuCard({ it, qty, notice, onOpen, onSet }: {
-    it: FoodMenuItem; qty: number; notice: string | null;
+function MenuCard({ it, qty, onOpen, onSet }: {
+    it: FoodMenuItem; qty: number;
     onOpen: () => void; onSet: (n: number) => void;
 }) {
     const hasDetail = !!(it.ingredients || it.allergens);
@@ -130,11 +132,6 @@ function MenuCard({ it, qty, notice, onOpen, onSet }: {
                     <div className="mt-0.5 font-semibold text-slate-900">£{it.price.toFixed(2)}</div>
                     {it.description ? (
                         <p className="mt-1 text-sm leading-relaxed text-slate-600 line-clamp-2">{it.description}</p>
-                    ) : null}
-                    {notice ? (
-                        <span className="mt-auto pt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500">
-                            <Clock className="h-3.5 w-3.5 flex-none" aria-hidden />{notice}
-                        </span>
                     ) : null}
                 </div>
 

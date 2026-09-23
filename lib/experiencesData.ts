@@ -156,6 +156,9 @@ export interface MpProvider {
     // 'collection'/null = come-to-me. Lets the panel ask a travelling session for
     // the stay it should come to.
     fulfilment: string | null;
+    // Made-to-order (and any delivering provider): a flat delivery fee added once
+    // to a delivery order. 0/null when they charge nothing or don't deliver.
+    deliveryFee: number;
     priceFrom: number;
     // A slot provider's per-person vs whole-slot reading comes off the item unit.
     items: MpItem[];
@@ -329,7 +332,7 @@ export async function loadPublicMarketplace(
 async function shapeProviders(admin: any, fromKey: string, toKey: string): Promise<MpProvider[]> {
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true).eq('owner_paused', false);
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -534,6 +537,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             description: p.description,
             shape,
             fulfilment: p.fulfilment || null,
+            deliveryFee: Number(p.delivery_fee) || 0,
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),
             items,
             sessions,

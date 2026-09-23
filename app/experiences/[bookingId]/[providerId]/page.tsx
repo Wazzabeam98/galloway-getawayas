@@ -57,7 +57,7 @@ export default async function ListingPage(
                     backLabel="All experiences"
                     reviews={reviews}
                     menu={<FoodMenu leadTimeDays={p.lead_time_days} />}
-                    panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} bookingId={params.bookingId} checkIn={mp.stay.check_in} checkOut={mp.stay.check_out} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} />}
+                    panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} bookingId={params.bookingId} checkIn={mp.stay.check_in} checkOut={mp.stay.check_out} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} />}
                 />
             </FoodCartProvider>
         );

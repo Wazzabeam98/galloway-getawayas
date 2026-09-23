@@ -1,9 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ShoppingBag, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ShoppingBag, X, ChevronDown } from 'lucide-react';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
-import { dateLabel } from '@/components/marketplace/present';
+import { dateLabel, cancellationBadge } from '@/components/marketplace/present';
 import { DateOnlyDialog } from '@/components/marketplace/RequestBooking';
 import { hasUkPostcode } from '@/lib/postcode';
 import { useFoodCart } from '@/components/marketplace/FoodCart';
@@ -13,38 +14,51 @@ const dayKeyFromNow = (days: number) => shiftDayKey(londonDayKey(), days);
 const lastNight = (checkOut: string) => shiftDayKey(String(checkOut).slice(0, 10), -1);
 const maxKey = (a: string, b: string) => (a > b ? a : b);
 
-// THE BASKET for a made-to-order (food-ordering) listing. On desktop it's the
-// sidebar beside the menu; on mobile the sidebar would be a wall of form below the
-// menu, so instead a sticky bottom bar shows the item count and total, and tapping
-// it opens the same basket as a bottom sheet. Both surfaces are the one component
-// instance, so they share every field (date, address, allergy) — only one is ever
-// visible.
+// THE BASKET for a made-to-order (food-ordering) listing, in the same Airbnb-style
+// booking card as the slot and comes-to-you panels (present.cancellationBadge, the
+// lifted card token). On desktop it's the sidebar beside the menu; on mobile a
+// sticky bottom bar shows the count and total, and tapping it opens the same basket
+// as a bottom sheet. Both surfaces are the one instance, so they share every field.
 //
-// It reads the shared cart, takes a collection/delivery DATE ONLY (the time is
-// arranged by message afterwards), a delivery address when the order delivers, and
-// any allergy, then places the order. A cart of only standard items orders and
-// pays instantly; a custom item makes the whole order a held request.
+// It reads the shared cart and takes a collection/delivery DATE ONLY (the time is
+// arranged by message afterwards). A "both" provider gets a Collection / Delivery
+// switch; delivery adds the provider's delivery fee and, standalone, asks for an
+// address (against a stay it goes to the cottage). A cart of only standard items
+// orders and pays instantly; a custom item makes the whole order a held request.
 export default function FoodBasket({
-    who, isFood, fulfilment, bookingId, standalone: standaloneProp, checkIn, checkOut, leadTimeDays = 1, horizonDays = 90,
+    who, isFood, fulfilment, deliveryFee = 0, bookingId, standalone: standaloneProp,
+    checkIn, checkOut, leadTimeDays = 0, horizonDays = 90, cancellationHours, noRefund,
 }: {
-    who: string; isFood: boolean; fulfilment?: string | null;
+    who: string; isFood: boolean; fulfilment?: string | null; deliveryFee?: number;
     bookingId?: string; standalone?: boolean; checkIn?: string; checkOut?: string;
     leadTimeDays?: number; horizonDays?: number;
+    cancellationHours?: number | null; noRefund?: boolean | null;
 }) {
-    const { lines, total, count, hasCustom } = useFoodCart();
+    const { lines, total: itemsTotal, count, hasCustom } = useFoodCart();
     const standalone = standaloneProp ?? !bookingId;
+
+    // How this provider fulfils: fixed to collection, fixed to delivery, or a
+    // choice ("both") the guest makes with a switch at the top of the basket.
+    const offersBoth = fulfilment === 'both';
+    const fixedDelivery = fulfilment === 'delivery';
+    const [mode, setMode] = useState<'collection' | 'delivery'>(fixedDelivery ? 'delivery' : 'collection');
+    const delivers = fixedDelivery || (offersBoth && mode === 'delivery');
+    const deliverWord = delivers ? 'delivery' : 'collection';
+
     const [date, setDate] = useState('');
     const [dateOpen, setDateOpen] = useState(false);
     const [address, setAddress] = useState('');
     const [allergy, setAllergy] = useState('');
     const [allergyTags, setAllergyTags] = useState<string[]>([]);
+    const [allergyOpen, setAllergyOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    // Mobile only: is the basket sheet open. Desktop ignores this (the sidebar is
-    // always in view).
     const [mobileOpen, setMobileOpen] = useState(false);
 
-    const lead = Math.max(1, leadTimeDays || 1);
+    // The earliest date is today plus the provider's notice period. It's one
+    // provider-level setting, so every item in the basket shares it; when items can
+    // one day differ, the longest notice would win — which this max already is.
+    const lead = Math.max(0, Math.floor(Number(leadTimeDays) || 0));
     const minDate = standalone ? dayKeyFromNow(lead) : maxKey(String(checkIn).slice(0, 10), dayKeyFromNow(lead));
     const maxDate = standalone ? dayKeyFromNow(Math.max(1, horizonDays || 90)) : lastNight(String(checkOut));
     const availableDays = useMemo(() => {
@@ -53,11 +67,14 @@ export default function FoodBasket({
         return set;
     }, [minDate, maxDate]);
 
-    const delivers = fulfilment === 'delivery' || (fulfilment === 'both' && lines.some((l) => String(l.it.fulfilment) === 'delivery'));
+    const fee = delivers ? Math.max(0, Number(deliveryFee) || 0) : 0;
+    const total = itemsTotal + fee;
     const needsAddress = standalone && delivers;
-    const deliverWord = delivers ? 'delivery' : 'collection';
-    const suggested = useMemo(() => Array.from(availableDays).sort().slice(0, 4), [availableDays]);
-    const canSend = !busy && lines.length > 0 && !!date && !(needsAddress && !hasUkPostcode(address));
+    const cancel = cancellationBadge(cancellationHours, noRefund);
+
+    // The closed allergy toggle's summary — the tags picked, plus a hint that a
+    // free-text note was added, so a guest sees what's set without opening it.
+    const allergySummary = [allergyTags.join(', '), allergy.trim() ? 'a note' : ''].filter(Boolean).join(' · ');
 
     async function send() {
         setError(null);
@@ -72,6 +89,7 @@ export default function FoodBasket({
                 body: JSON.stringify({
                     items: lines.map((l) => ({ itemId: l.it.id, qty: l.qty })),
                     bookingId, serviceDate: date,
+                    fulfilment: delivers ? 'delivery' : 'collection',
                     serviceAddress: needsAddress ? address.trim() : undefined,
                     allergy: trimmedAllergy,
                 }),
@@ -83,102 +101,130 @@ export default function FoodBasket({
         setBusy(false);
     }
 
-    // The card content — the same header, body and footer whether it sits in the
-    // desktop sidebar or the mobile sheet.
+    const canSend = !busy && lines.length > 0 && !!date && !(needsAddress && !hasUkPostcode(address));
+
+    // The card content — the same whether it sits in the desktop sidebar or the
+    // mobile sheet.
     const content = (
         <>
-            <div className="flex-none border-b border-slate-100 px-5 pt-5 pb-4">
-                <div className="flex items-center gap-2 text-slate-900">
-                    <ShoppingBag className="h-5 w-5 flex-none text-slate-500" aria-hidden />
-                    <span className="text-lg font-semibold">Your order</span>
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <div className="text-lg font-semibold text-slate-900">Your order</div>
+                    <p className={`mt-0.5 text-sm font-medium ${noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
                 </div>
-                {lines.length > 0 && (
-                    <span className={`mt-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${hasCustom ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'}`}>
-                        {hasCustom ? `Request — ${who} has 48 hours to confirm` : 'Orders instantly'}
-                    </span>
+                {count > 0 && (
+                    <div className="text-right">
+                        <div className="text-xl font-semibold text-slate-900">£{total.toFixed(2)}</div>
+                        <div className="text-xs text-slate-500">{count} item{count === 1 ? '' : 's'}</div>
+                    </div>
                 )}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                {lines.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-10 text-center">
-                        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-                            <ShoppingBag className="h-7 w-7" aria-hidden />
-                        </span>
-                        <p className="mt-4 font-semibold text-slate-900">Your basket is empty</p>
-                        <p className="mt-1 text-sm text-slate-500">Add something from the menu and it’ll show up here, ready to order.</p>
-                    </div>
-                ) : (
-                    <ul className="space-y-2">
+            {/* The held-request note sits on its own row, clear of the lines. */}
+            {lines.length > 0 && hasCustom && (
+                <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                    A held request — {who} has 48 hours to confirm before your card is charged.
+                </div>
+            )}
+
+            {lines.length === 0 ? (
+                <div className="mt-4 flex flex-col items-center justify-center rounded-xl bg-slate-50 py-10 text-center">
+                    <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-slate-400 ring-1 ring-slate-200">
+                        <ShoppingBag className="h-7 w-7" aria-hidden />
+                    </span>
+                    <p className="mt-4 font-semibold text-slate-900">Your basket is empty</p>
+                    <p className="mt-1 text-sm text-slate-500">Add something from the menu and it’ll show up here, ready to order.</p>
+                </div>
+            ) : (
+                <>
+                    <ul className="mt-4 space-y-2 border-t border-slate-100 pt-4">
                         {lines.map((l) => (
                             <li key={l.it.id} className="flex items-baseline justify-between gap-3 text-sm">
                                 <span className="min-w-0 text-slate-800"><span className="font-medium">{l.qty} ×</span> {l.it.name}</span>
                                 <span className="tabular-nums font-medium text-slate-900">£{(l.it.price * l.qty).toFixed(2)}</span>
                             </li>
                         ))}
+                        {fee > 0 && (
+                            <li className="flex items-baseline justify-between gap-3 text-sm text-slate-600">
+                                <span>Delivery</span>
+                                <span className="tabular-nums">£{fee.toFixed(2)}</span>
+                            </li>
+                        )}
                     </ul>
-                )}
 
-                {lines.length > 0 && (
-                    <>
-                        {/* Compact date, like the slots: a "Show dates" button and a
-                            few suggested days; the full calendar opens in a dialog. */}
-                        <div className="mt-4 flex items-center justify-between gap-3">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{deliverWord === 'delivery' ? 'Delivery' : 'Collection'} date</span>
-                            <button type="button" onClick={() => setDateOpen(true)}
-                                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-emerald-800">
-                                {date ? dateLabel(date) : 'Show dates'}
-                            </button>
+                    {/* Collection / Delivery switch — only when the provider offers
+                        both. A fixed provider shows nothing to switch. */}
+                    {offersBoth && (
+                        <div className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+                            {(['collection', 'delivery'] as const).map((m) => (
+                                <button key={m} type="button" onClick={() => setMode(m)}
+                                    className={`rounded-lg px-3 py-2 text-sm font-semibold capitalize transition ${mode === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                                    {m}{m === 'delivery' && Number(deliveryFee) > 0 ? ` · £${Number(deliveryFee).toFixed(2)}` : ''}
+                                </button>
+                            ))}
                         </div>
-                        {!date && suggested.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                                {suggested.map((d) => (
-                                    <button key={d} type="button" onClick={() => setDate(d)}
-                                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-400">
-                                        {dateLabel(d)}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                    )}
+
+                    {/* One date control — the button opens the calendar; the label
+                        carries the choice. */}
+                    <div className="mt-4">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{delivers ? 'Delivery' : 'Collection'} date</span>
+                        <button type="button" onClick={() => setDateOpen(true)}
+                            className="mt-1.5 flex w-full items-center justify-between rounded-xl border border-slate-300 px-4 py-3 text-left text-sm font-semibold text-slate-900 hover:border-slate-400">
+                            {date ? dateLabel(date) : <span className="text-slate-500">Choose a date</span>}
+                            <ChevronDown className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                        </button>
                         <p className="mt-1.5 text-xs text-slate-400">The {deliverWord} time is arranged by message once your order is placed.</p>
+                    </div>
 
-                        {needsAddress && (
-                            <label className="mt-4 block">
-                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery address</span>
-                                <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="Full address, including postcode"
-                                    className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                                {address.trim() && !hasUkPostcode(address) && (
-                                    <span className="mt-1 block text-xs text-rose-600">Please give a full address, including a postcode.</span>
-                                )}
-                            </label>
-                        )}
+                    {needsAddress && (
+                        <label className="mt-4 block">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery address</span>
+                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="Full address, including postcode"
+                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                            {address.trim() && !hasUkPostcode(address) && (
+                                <span className="mt-1 block text-xs text-rose-600">Please give a full address, including a postcode.</span>
+                            )}
+                        </label>
+                    )}
+                    {delivers && !standalone && (
+                        <p className="mt-3 text-xs text-slate-500">Delivered to your cottage — nothing for you to arrange.</p>
+                    )}
 
-                        {isFood && (
-                            <div className="mt-4">
-                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Allergies or dietary needs <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {COMMON_ALLERGENS.map((a) => (
-                                        <button key={a} type="button" onClick={() => setAllergyTags((t) => (t.includes(a) ? t.filter((x) => x !== a) : [...t, a]))}
-                                            className={`rounded-full border px-2.5 py-1 text-xs font-medium ${allergyTags.includes(a) ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>{a}</button>
-                                    ))}
+                    {/* Allergies — collapsed by default behind a single toggle; the
+                        closed state shows a short summary once anything is picked. */}
+                    {isFood && (
+                        <div className="mt-4 border-t border-slate-100 pt-4">
+                            <button type="button" onClick={() => setAllergyOpen((o) => !o)}
+                                className="flex w-full items-center justify-between gap-3 text-left">
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-slate-800">Any allergies or dietary needs?</span>
+                                    {!allergyOpen && allergySummary && <span className="block truncate text-xs text-slate-500">{allergySummary}</span>}
+                                </span>
+                                <ChevronDown className={`h-4 w-4 flex-none text-slate-400 transition ${allergyOpen ? 'rotate-180' : ''}`} aria-hidden />
+                            </button>
+                            {allergyOpen && (
+                                <div className="mt-3">
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {COMMON_ALLERGENS.map((a) => (
+                                            <button key={a} type="button" onClick={() => setAllergyTags((t) => (t.includes(a) ? t.filter((x) => x !== a) : [...t, a]))}
+                                                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${allergyTags.includes(a) ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>{a}</button>
+                                        ))}
+                                    </div>
+                                    <textarea value={allergy} onChange={(e) => setAllergy(e.target.value.slice(0, 500))} rows={2} placeholder="Anything else they should know"
+                                        className="mt-2 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
                                 </div>
-                                <textarea value={allergy} onChange={(e) => setAllergy(e.target.value.slice(0, 500))} rows={2}
-                                    className="mt-2 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                            </div>
-                        )}
-                    </>
-                )}
-            </div>
+                            )}
+                        </div>
+                    )}
+                </>
+            )}
 
-            <div className="flex-none border-t border-slate-100 px-5 py-4">
+            <div className="mt-5 border-t border-slate-100 pt-4">
                 {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
-                <div className="mb-3 flex items-baseline justify-between">
-                    <span className="text-sm font-medium text-slate-600">Total{count > 0 ? ` · ${count} item${count === 1 ? '' : 's'}` : ''}</span>
-                    <span className="text-lg font-semibold text-slate-900">£{total.toFixed(2)}</span>
-                </div>
                 <button type="button" onClick={send} disabled={!canSend}
                     className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                    {busy ? 'Sending…' : (hasCustom ? 'Send order request' : 'Place order & pay')}
+                    {busy ? 'Sending…' : (hasCustom ? `Send order request · £${total.toFixed(2)}` : `Place order & pay · £${total.toFixed(2)}`)}
                 </button>
                 <p className="mt-2 text-xs text-slate-400">{hasCustom
                     ? `Your card is held, not charged, until ${who} accepts your made-to-order items.`
@@ -187,10 +233,20 @@ export default function FoodBasket({
         </>
     );
 
+    const dialog = dateOpen && typeof document !== 'undefined' ? createPortal(
+        <DateOnlyDialog
+            title={`Choose a ${deliverWord} date`}
+            availableDays={availableDays}
+            selected={date || null}
+            onSelect={(d) => { setDate(d); setDateOpen(false); }}
+            onClose={() => setDateOpen(false)}
+        />, document.body,
+    ) : null;
+
     return (
         <>
             {/* Desktop: the sidebar basket, always in view. */}
-            <div className="hidden lg:flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+            <div className="hidden lg:block rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
                 {content}
             </div>
 
@@ -209,27 +265,20 @@ export default function FoodBasket({
                 </div>
             )}
 
-            {/* Mobile: the basket sheet. */}
-            {mobileOpen && (
+            {/* Mobile: the basket sheet, portalled to the body so it sits above the
+                sticky category tabs. */}
+            {mobileOpen && typeof document !== 'undefined' && createPortal(
                 <div className="lg:hidden fixed inset-0 z-[60] flex items-end justify-center bg-black/40" role="dialog" aria-modal="true" aria-label="Your order"
                     onMouseDown={(e) => { if (e.target === e.currentTarget) setMobileOpen(false); }}>
-                    <div className="relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white">
+                    <div className="relative max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 pt-6">
                         <button type="button" onClick={() => setMobileOpen(false)} aria-label="Close"
                             className="absolute right-3 top-4 z-10 rounded-full p-1.5 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
                         {content}
                     </div>
-                </div>
+                </div>, document.body,
             )}
 
-            {dateOpen && (
-                <DateOnlyDialog
-                    title={`Choose a ${deliverWord} date`}
-                    availableDays={availableDays}
-                    selected={date || null}
-                    onSelect={(d) => { setDate(d); setDateOpen(false); }}
-                    onClose={() => setDateOpen(false)}
-                />
-            )}
+            {dialog}
         </>
     );
 }

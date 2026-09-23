@@ -107,6 +107,7 @@ async function makeProvider(spec) {
         cancellation_window_hours: spec.cancelHours ?? 48,
         contact_email: spec.owner.email,
         fulfilment: spec.fulfilment ?? null,
+        delivery_fee: spec.deliveryFee ?? 0,
         collection_street: spec.street ?? null,
         collection_town: spec.town ?? null,
         collection_postcode: spec.postcode ?? null,
@@ -365,6 +366,43 @@ async function main() {
     });
     const bakerItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + baker.id + '&order=sort_order');
     created.push({ label: 'Galloway Bakehouse (baker · made to order)', ...bakerOwner, providerId: baker.id });
+
+    /* 4b. BAKER THAT DELIVERS (made_to_order, fulfilment 'both' + a delivery fee).
+       So the Collection / Delivery switch, the fee and the address/cottage paths
+       all have something real to exercise. One day's notice, so its picker floor
+       differs from the collection-only bakehouse's two days. */
+    const deliOwner = await ownerFor('baker2', 'Rowan (Solway Loaf & Larder)');
+    const deli = await makeProvider({
+        owner: deliOwner, business_name: 'Solway Loaf & Larder', provider_name: 'Rowan', trade: 'baker', category: 'food_order', mcc: '5462', shape: 'made_to_order',
+        leadTimeDays: 1, cancelHours: 48, horizonDays: 120, maxGuests: 1,
+        // Offers BOTH: collect from the bakery, or have it delivered for a flat fee.
+        fulfilment: 'both', deliveryFee: 4.5,
+        street: '3 Harbour Row', town: 'Kirkcudbright', postcode: 'DG6 4HY', mapLat: 54.8361, mapLng: -4.0530,
+        headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-2.jpg')],
+        professional_title: 'Bakes & larder boxes, collected or delivered', years: 4,
+        qualifications: 'Environmental Health registered home bakery.', recognition: null,
+        what_to_expect: 'Fresh bakes and larder boxes to order — collect from the harbour, or have them dropped to your cottage.',
+        itinerary: [
+            { title: 'Order', detail: 'Tell me what you would like and when, at least a day ahead.' },
+            { title: 'Bake', detail: 'Made fresh the morning of your date.' },
+            { title: 'Collection or delivery', detail: 'Collect from the harbour, or I’ll drop it to your cottage in the window we agree.' },
+        ],
+        minAge: null, activityLevel: null, whatToBring: null,
+        amenities: [], accessibility: null, parking: null,
+        dietaryNote: 'Vegan and gluten-free on request; baked in a kitchen that handles nuts.', dietaryOptions: ['vegan', 'gluten_free'],
+        items: [
+            { name: 'Focaccia (large)', description: 'A rosemary and sea-salt focaccia, big enough to share. Baked the morning of your date.', price: 9, unit: 'item', sort: 0, category: 'Breads', image: IMG('seed-assets/baker-3.jpg'),
+                ingredients: 'Wheat flour, olive oil, rosemary, sea salt, yeast.',
+                allergens: 'Contains wheat (gluten). Made in a kitchen that handles nuts, egg and milk.' },
+            { name: 'Cheese & chutney larder box', description: 'A box of local cheese, oatcakes, chutney and a loaf — everything for a cottage lunch.', price: 32, unit: 'flat', sort: 1, category: 'Larder boxes', image: IMG('seed-assets/baker-2.jpg'),
+                ingredients: 'Galloway cheeses, oatcakes (oats, wheat), chutney, sourdough.',
+                allergens: 'Contains wheat (gluten), oats, milk. May contain nuts.' },
+            { name: 'Celebration traybake box', description: 'A dozen traybakes finished for an occasion — your message piped on top.', price: 26, unit: 'flat', sort: 2, category: 'Larder boxes', image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
+                ingredients: 'Wheat flour, butter, eggs, sugar, chocolate, oats.',
+                allergens: 'Contains wheat (gluten), oats, egg, milk. May contain nuts.' },
+        ],
+    });
+    created.push({ label: 'Solway Loaf & Larder (baker · delivers)', ...deliOwner, providerId: deli.id });
 
     /* --------------------------------------------- orders on Liam, each state */
     const gEmail = liam.email;

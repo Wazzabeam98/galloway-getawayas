@@ -208,6 +208,10 @@ export async function POST(request: Request) {
                 const fulfilment = strOrNull(data.fulfilment);
                 patch = { fulfilment };
                 const collects = fulfilment === 'collection' || fulfilment === 'both';
+                // A flat delivery fee, only meaningful when the provider travels;
+                // clamped to a sane range, and forced to 0 for a collection-only one.
+                const travels = fulfilment === 'delivery' || fulfilment === 'both';
+                patch.delivery_fee = travels ? Math.max(0, Math.min(1000, Math.round((Number(data.delivery_fee) || 0) * 100) / 100)) : 0;
                 const cols = collectionFieldsForWrite({
                     collects, loaded: true,
                     street: data.collection_street || '', town: data.collection_town || '', postcode: data.collection_postcode || '',

@@ -254,6 +254,9 @@ export default function ExperienceListingBody({
                             // whitespace-only value counts as empty — and the whole
                             // section drops when none are set, so a chef (no activity
                             // level, nothing to bring) shows no "Things to know" at all.
+                            // A made-to-order listing is a shop, not an experience you
+                            // attend, so it never carries this section.
+                            if (p.shape === 'made_to_order') return null;
                             const activity = (p.activityLevel || '').trim();
                             const bring = (p.whatToBring || '').trim();
                             if (p.minAge == null && !activity && !bring) return null;

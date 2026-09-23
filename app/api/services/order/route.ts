@@ -148,7 +148,7 @@ export async function POST(request: Request) {
             const byId = new Map<string, any>(cartItems.map((i: any) => [i.id, i]));
 
             const { data: prov } = await admin.from('service_providers')
-                .select('id, business_name, trade, shape, fulfilment, lead_time_days, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, guest_details')
+                .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_fee, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, guest_details')
                 .eq('id', providerId).maybeSingle();
             if (!prov || prov.shape !== 'made_to_order' || !isLiveToGuests(prov) || !prov.stripe_account_id) {
                 return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
@@ -171,21 +171,27 @@ export async function POST(request: Request) {
             if (total <= 0) return NextResponse.json({ ok: false, error: 'That order has no cost.' }, { status: 400 });
 
             // The service (collection/delivery) date, same bounds as any request.
+            // The provider's notice period is the floor for BOTH shapes — a made-to-
+            // order cake needs its notice whether it's booked standalone or against a
+            // stay, so the earliest date is today+notice, not merely "during the stay".
             const whenC = dateFromKey(serviceDate);
+            const nowC = new Date();
+            const addDaysC = (n: number) => { const d = new Date(nowC); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() + n); return d; };
+            const leadDaysC = Math.max(0, Number(prov.lead_time_days) || 0);
+            if (whenC < addDaysC(leadDaysC)) return NextResponse.json({ ok: false, error: 'That date is inside the notice period — please pick a later one.' }, { status: 400 });
             if (standalone) {
-                const now = new Date();
-                const addDays = (n: number) => { const d = new Date(now); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() + n); return d; };
-                const leadDays = Math.max(1, Number(prov.lead_time_days) || 1);
                 const horizon = Math.max(1, Math.min(365, Number(prov.guest_details && (prov.guest_details as any).booking_horizon_days) || 90));
-                if (whenC < addDays(leadDays) || whenC > addDays(horizon)) return NextResponse.json({ ok: false, error: 'Pick a date within the booking window.' }, { status: 400 });
+                if (whenC > addDaysC(horizon)) return NextResponse.json({ ok: false, error: 'Pick a date within the booking window.' }, { status: 400 });
             } else {
                 const start = dateFromKey(booking.check_in), end = dateFromKey(booking.check_out);
                 if (whenC < start || whenC >= end) return NextResponse.json({ ok: false, error: 'Pick a date during your stay.' }, { status: 400 });
             }
 
-            // Delivery travels to an address; collection does not. The preferred
-            // collection/delivery time is FREE TEXT (no fixed slots for food).
-            const travelsC = prov.fulfilment === 'delivery' || (prov.fulfilment === 'both' && cartItems.some((i: any) => i.fulfilment === 'delivery'));
+            // Delivery travels to an address; collection does not. A provider fixed to
+            // one honours that; a "both" provider takes the guest's choice from the
+            // basket. The preferred time is FREE TEXT (no fixed slots for food).
+            const chosenDelivery = String(body && body.fulfilment) === 'delivery';
+            const travelsC = prov.fulfilment === 'delivery' || (prov.fulfilment === 'both' && chosenDelivery);
             let addressC: string | null = null;
             if (travelsC) {
                 if (standalone) {
@@ -202,7 +208,11 @@ export async function POST(request: Request) {
             const contactEmailC = anonymous ? (typedEmail || null) : (user ? user.email || null : null);
             const contactPhoneC = anonymous ? (typedPhone || null) : null;
 
-            const pricingC = priceOrder(prov, { bandPrice: total }, []);
+            // A delivery order carries the provider's flat delivery fee, charged
+            // once on top of the lines and passed to the provider like the rest.
+            const deliveryFeeC = travelsC ? Math.round((Math.max(0, Number(prov.delivery_fee) || 0)) * 100) / 100 : 0;
+            const grandTotalC = Math.round((total + deliveryFeeC) * 100) / 100;
+            const pricingC = priceOrder(prov, { bandPrice: grandTotalC }, []);
             const businessC = prov.business_name || 'Your order';
             const cartMeta = wanted.map((w: any) => w.id + ':' + w.qty).join(',');
             const summaryName = lines.length === 1 && lines[0].qty === 1 ? lines[0].name : (businessC + ' order');
@@ -222,6 +232,7 @@ export async function POST(request: Request) {
                 contact_phone: contactPhoneC || '',
                 instant: hasCustom ? '' : '1',
                 cart: cartMeta,
+                delivery_fee: deliveryFeeC > 0 ? String(deliveryFeeC) : '',
                 collection_note: collectionNote,
                 commission_rate: String(pricingC.commissionRate),
                 note: note,
@@ -234,6 +245,10 @@ export async function POST(request: Request) {
                 price_data: { currency: 'gbp', unit_amount: Math.round(l.unit_price * 100),
                     product_data: { name: l.name + (l.is_custom ? ' (made to order)' : '') } },
             }));
+            if (deliveryFeeC > 0) stripeLines.push({
+                quantity: 1,
+                price_data: { currency: 'gbp', unit_amount: Math.round(deliveryFeeC * 100), product_data: { name: 'Delivery' } },
+            });
             const checkoutC = await stripeRequest('POST', '/checkout/sessions', {
                 mode: 'payment',
                 customer_email: user ? user.email : (contactEmailC || undefined),

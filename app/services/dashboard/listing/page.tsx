@@ -31,7 +31,7 @@ export default async function ProviderListingPage() {
     const { data: providers } = await admin
         .from('service_providers')
         .select('id, owner_id, business_name, trade, custom_label, stripe_mcc, audience, status, shape, description, '
-            + 'photos, headshot, logo, dietary_note, guest_details, fulfilment, '
+            + 'photos, headshot, logo, dietary_note, guest_details, fulfilment, delivery_fee, '
             + 'collection_street, collection_town, collection_postcode, '
             + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, '
             + 'lead_time_days, cancellation_window_hours, owner_paused')
@@ -83,6 +83,7 @@ export default async function ProviderListingPage() {
                 logo: provider.logo || null,
                 dietary_note: provider.dietary_note || '',
                 fulfilment: provider.fulfilment || '',
+                delivery_fee: Number(provider.delivery_fee) || 0,
                 collection_street: provider.collection_street || '',
                 collection_town: provider.collection_town || '',
                 collection_postcode: provider.collection_postcode || '',
