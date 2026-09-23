@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { formatUk } from '@/lib/cancellation';
 import { foldOrderFamily } from '@/lib/orderFamily';
+import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
 import { loadBookingSeats } from '@/lib/groupSeats';
 
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,7 @@ async function bookedBy(admin: any, bookingId: string, userId: string) {
 async function orderedBy(admin: any, orderId: string, userId: string) {
     const { data } = await admin
         .from('service_orders')
-        .select('id, guest_id, status, attendees, quantity, item_unit, item_name, service_date, service_time, provider_business_name')
+        .select('id, guest_id, status, attendees, quantity, item_unit, item_name, shape, service_date, service_time, provider_business_name')
         .eq('id', orderId)
         .maybeSingle();
 
@@ -439,6 +440,9 @@ export async function POST(request: Request) {
             // existing wording.
             if ((parent as any).order) {
                 const o = (parent as any).order;
+                // Comes-to-you leads with the listing name and carries its item as
+                // a detail; every other shape keeps the item name as the title.
+                const { title: invTitle, detail: invDetail } = experienceBookingTitle(o);
                 await sendEmail(
                     row.email,
                     bookerName + ' has invited you to an experience',
@@ -446,8 +450,9 @@ export async function POST(request: Request) {
                         '<p style="margin:0 0 16px;font-size:16px;"><strong>'
                             + escapeHtml(bookerName)
                             + '</strong> has invited you to <strong>'
-                            + escapeHtml(o.item_name || 'an experience')
+                            + escapeHtml(invTitle || 'an experience')
                             + '</strong>'
+                            + (invDetail ? ' — ' + escapeHtml(invDetail) : '')
                             + (o.service_date ? ' on ' + formatUk(new Date(String(o.service_date))) : '')
                             + '.</p>'
                             + '<p style="margin:0 0 16px;font-size:16px;">Accept and you\u2019ll see where to go and when, and can message the host. You won\u2019t be able to change or cancel the booking, and you won\u2019t see what was paid.</p>'

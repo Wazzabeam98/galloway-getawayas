@@ -54,7 +54,7 @@ export default async function ProviderListingPage() {
     const isSlot = shapeOf(provider) === 'slot';
     const [{ data: areas }, { data: items }, { data: avail }] = await Promise.all([
         admin.from('service_areas').select('label').eq('provider_id', provider.id).order('created_at', { ascending: true }),
-        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order')
+        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens')
             .eq('provider_id', provider.id).order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         isSlot
             ? admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id).order('day_of_week', { ascending: true })
@@ -97,6 +97,7 @@ export default async function ProviderListingPage() {
                 lead_time_days: provider.lead_time_days ?? 0,
                 cancellation_window_hours: provider.cancellation_window_hours ?? 48,
                 booking_horizon_days: gd.booking_horizon_days ?? 90,
+                offered_times: Array.isArray(gd.offered_times) ? gd.offered_times.map((t: unknown) => String(t)) : [],
                 professional_title: gd.professional_title || '',
                 years_experience: gd.years_experience || '',
                 qualifications: gd.qualifications || '',
@@ -123,6 +124,13 @@ export default async function ProviderListingPage() {
                     // inherit the Booking-section default. Only meaningful per-person.
                     capacity: it.capacity ?? null,
                     min_people: it.min_people ?? null,
+                    // Extra-guests pricing (flat items) and the made-to-order
+                    // standard/custom flag, so the editor prefills them.
+                    included_guests: it.included_guests ?? null,
+                    extra_adult_fee: it.extra_adult_fee ?? null,
+                    extra_child_fee: it.extra_child_fee ?? null,
+                    max_party: it.max_party ?? null,
+                    is_custom: it.is_custom === true,
                 })),
                 availability: (avail || []).map((a: any) => ({
                     day_of_week: Number(a.day_of_week), open_time: String(a.open_time).slice(0, 5), close_time: String(a.close_time).slice(0, 5),

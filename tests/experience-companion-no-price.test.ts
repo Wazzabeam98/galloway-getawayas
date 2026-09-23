@@ -24,16 +24,18 @@ import {
 
 const PRICE = 40;
 
-// service_orders answers the SAFE query with a money-free row, and the price
-// query (select('price')) with the amount — exactly as PostgREST would, so the
-// only way a companion sees the price is if the loader wrongly issues the second
-// query for them.
+const REFUNDED = 10;
+
+// service_orders answers the SAFE query with a money-free row, and the money
+// query (which names price and amount_refunded) with the amounts — exactly as
+// PostgREST would, so the only way a companion sees the price is if the loader
+// wrongly issues the second query for them.
 function orderHandlers(bookerId: string, seatRow: any) {
     return {
         service_orders: (state: any) => {
             const sel = state.ops.find((o: any) => o.op === 'select');
             const cols = (sel && sel.args && sel.args[0]) || '';
-            if (cols === 'price') return { data: { price: PRICE }, error: null };
+            if (cols.includes('price')) return { data: { price: PRICE, amount_refunded: REFUNDED }, error: null };
             return { data: { id: 'o1', guest_id: bookerId, shape: 'slot', attendees: 2, item_name: 'Private sauna hour' }, error: null };
         },
         booking_guests: { data: seatRow, error: null },
@@ -65,6 +67,7 @@ test('the booker DOES get the price — the wall is role-based, not a blanket re
 
     assert.equal(loaded.role, 'booker');
     assert.equal(loaded.price, PRICE, 'the booker sees what they paid');
+    assert.equal(loaded.amountRefunded, REFUNDED, 'the booker also sees what was refunded (net paid = price − refunded)');
 });
 
 test('someone who is neither booker nor accepted companion is refused (order null)', async () => {

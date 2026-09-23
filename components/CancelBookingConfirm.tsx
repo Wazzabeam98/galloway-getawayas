@@ -112,7 +112,14 @@ export default function CancelBookingConfirm({
                     type="button"
                     onClick={doCancel}
                     disabled={cancelling}
-                    className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                    // Red signals a money loss, nothing else: the confirm button is
+                    // neutral on a full refund (or when nothing was paid) and red
+                    // only when cancelling forfeits money — the same rule the
+                    // experience-side cancel uses.
+                    className={
+                        'px-4 py-2 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50 '
+                        + (costs ? 'bg-red-700 hover:bg-red-800' : 'bg-slate-800 hover:bg-slate-900')
+                    }
                 >
                     {cancelling ? 'Cancelling…' : 'Yes, cancel it'}
                 </button>

@@ -433,12 +433,13 @@ export default async function StayReservationPage({ params }: { params: { bookin
                             </div>
                         </section>
 
-                        {/* ---- Who's coming ---- The invite, over the same machine
+                        {/* ---- Who's going ---- The invite, over the same machine
                             the cottage card uses. Booker-only (a companion can't
-                            invite), matching the trips card. */}
+                            invite), matching the trips card. "Who's going" is the
+                            one wording across stays and experiences alike. */}
                         {isBooker && booking.status !== 'cancelled' && booking.status !== 'declined' && (
                             <section className="mt-8 border-t border-slate-200 pt-6">
-                                <h2 className="text-lg font-semibold text-slate-900">Who’s coming</h2>
+                                <h2 className="text-lg font-semibold text-slate-900">Who’s going</h2>
                                 <div className="mt-3">
                                     <TripGroup
                                         bookingId={booking.id}
@@ -466,7 +467,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                     </div>
                                     {partyLabel(booking) && (
                                         <div>
-                                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Who’s coming</div>
+                                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Who’s going</div>
                                             <div className="mt-1 text-sm font-medium text-slate-900">{partyLabel(booking)}</div>
                                         </div>
                                     )}

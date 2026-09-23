@@ -130,6 +130,11 @@ const NavMenu = ({
                                     <li className={itemClass}>
                                         <MessagesLink />
                                     </li>
+                                    {/* A host travels too — their own stays and
+                                        experiences live here, same as any guest. */}
+                                    <li className={itemClass}>
+                                        <Link href='/trips'>Your trips</Link>
+                                    </li>
                                 </>
                             ) : isProvider ? (
                                 /* A provider's menu is their business, not a
@@ -172,6 +177,11 @@ const NavMenu = ({
                                         thread is never a lost email. */}
                                     <li className={itemClass}>
                                         <Link href='/services/messages'>Messages</Link>
+                                    </li>
+                                    {/* A provider is a traveller too: their own
+                                        stays and booked experiences, one place. */}
+                                    <li className={itemClass}>
+                                        <Link href='/trips'>Your trips</Link>
                                     </li>
                                 </>
                             ) : (

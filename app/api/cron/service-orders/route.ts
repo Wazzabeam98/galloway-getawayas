@@ -3,6 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { stripeRequest } from '@/lib/stripe';
 import { resolveGuestForPaidOrder, supabaseGuestStore } from '@/lib/guestAccount';
 import { createRequestOrderFromSession } from '@/lib/requestOrder';
+import { authoriseChangeRequest } from '@/lib/changeRequest';
 import { notifyTopUpConfirmed } from '@/lib/slotNotify';
 
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,29 @@ async function findPaidPaymentIntent(orderId: string, sinceIso: string): Promise
         const data = (list && list.data) || [];
         for (const pi of data) {
             if (pi.status === 'succeeded' && pi.metadata && pi.metadata.order_id === orderId) {
+                return pi;
+            }
+        }
+        if (!list || !list.has_more || !data.length) break;
+        startingAfter = data[data.length - 1].id;
+    }
+    return null;
+}
+
+// Find a HELD (manual-capture, requires_capture) change-request PaymentIntent for
+// an order id — the guest authorised extra places but the confirming webhook was
+// lost, so the child order is stuck 'holding'. Same List-not-Search reasoning as
+// findPaidPaymentIntent: the List API is read-after-write consistent.
+async function findHeldChangeRequestPI(orderId: string, sinceIso: string): Promise<any | null> {
+    const createdGte = Math.floor(new Date(sinceIso).getTime() / 1000) - 300;
+    let startingAfter: string | null = null;
+    for (let page = 0; page < 5; page++) {
+        const query: Record<string, any> = { created: { gte: createdGte }, limit: 100 };
+        if (startingAfter) query.starting_after = startingAfter;
+        const list = await stripeRequest('GET', '/payment_intents', query);
+        const data = (list && list.data) || [];
+        for (const pi of data) {
+            if (pi.status === 'requires_capture' && pi.metadata && pi.metadata.kind === 'change_request' && pi.metadata.order_id === orderId) {
                 return pi;
             }
         }
@@ -99,6 +123,25 @@ export async function GET(request: Request) {
         } catch (err: any) {
             failures.push(order.id + ': ' + (err && err.message));
         }
+    }
+
+    // PENDING DATE-CHANGE REQUESTS PAST 48 HOURS — cleared, no money involved.
+    // A date change parks the requested date on the still-confirmed order; an
+    // unanswered one is dropped so the booking stays on its original date.
+    let dateRequestsCleared = 0;
+    const { data: staleDate } = await admin
+        .from('service_orders')
+        .select('id')
+        .not('pending_service_date', 'is', null)
+        .lt('pending_change_expires_at', nowIso);
+    for (const o of staleDate || []) {
+        const { data: cleared } = await admin
+            .from('service_orders')
+            .update({ pending_service_date: null, pending_service_time: null, pending_change_expires_at: null })
+            .eq('id', o.id)
+            .lt('pending_change_expires_at', nowIso)   // a provider who answered in the same minute wins
+            .select('id');
+        if (cleared && cleared.length) dateRequestsCleared++;
     }
 
     // SLOT HOLDS PAST THEIR WINDOW — reconcile against Stripe before releasing.
@@ -190,6 +233,25 @@ export async function GET(request: Request) {
                 continue;   // the seat stays taken — it was paid for
             }
 
+            // A CHANGE-REQUEST hold expiring without its webhook. The extra places
+            // were AUTHORISED (a manual-capture hold, requires_capture — so the
+            // paid check above, which reads 'succeeded', never saw it) but the
+            // webhook that turns it 'authorised' was lost. The card is still held,
+            // so the PaymentIntent must be CANCELLED before the row is expired —
+            // otherwise the guest's money stays frozen ~7 days. (When the cron
+            // catches it earlier, the rebuild sweep below reconciles it to
+            // 'authorised' instead; this is the backstop at expiry.)
+            if (hold.parent_order_id) {
+                const held = await findHeldChangeRequestPI(hold.id, hold.created_at);
+                if (held) {
+                    try {
+                        await stripeRequest('POST', '/payment_intents/' + held.id + '/cancel', undefined, 'cancel-' + hold.id);
+                    } catch (cancelErr: any) {
+                        failures.push('change-request hold ' + hold.id + ' expiry cancel failed: ' + (cancelErr && cancelErr.message));
+                    }
+                }
+            }
+
             // Genuinely unpaid — release the hold and give the seat back.
             const { data: expired } = await admin
                 .from('service_orders')
@@ -254,9 +316,27 @@ export async function GET(request: Request) {
             const data = (list && list.data) || [];
             for (const pi of data) {
                 const md = (pi && pi.metadata) || {};
-                if (md.kind !== 'service_order') continue;           // only the request shape
+                // Two request-shape kinds ride this rebuild: a whole booking
+                // ('service_order', no row until the webhook) and a CHANGE REQUEST
+                // ('change_request', a 'holding' child the webhook turns
+                // 'authorised'). Both are lost the same way and reconciled here.
+                if (md.kind !== 'service_order' && md.kind !== 'change_request') continue;
                 // Held (or captured) — never a lapsed, cancelled or abandoned PI.
                 if (pi.status !== 'requires_capture' && pi.status !== 'succeeded') continue;
+
+                // A lost CHANGE-REQUEST webhook: the child row already exists as
+                // 'holding'; authorise it (the webhook's job), guarded on 'holding'
+                // so a race or redelivery is a no-op. Skip when it's already been
+                // answered/authorised (the PI carries the child's id).
+                if (md.kind === 'change_request') {
+                    const { data: child } = await admin
+                        .from('service_orders').select('id, status').eq('id', md.order_id || '').maybeSingle();
+                    if (child && child.status === 'holding') {
+                        const res = await authoriseChangeRequest(admin, md.order_id, pi.id);
+                        if (res.authorised) rebuilt++;
+                    }
+                    continue;
+                }
 
                 // Already recorded? Then the webhook (or an earlier pass) made it.
                 const { data: existing } = await admin
@@ -286,5 +366,5 @@ export async function GET(request: Request) {
         failures.push('request rebuild: ' + (err && err.message));
     }
 
-    return NextResponse.json({ ok: true, released, seatsReleased, reconciled, rebuilt, failures });
+    return NextResponse.json({ ok: true, released, seatsReleased, reconciled, rebuilt, dateRequestsCleared, failures });
 }

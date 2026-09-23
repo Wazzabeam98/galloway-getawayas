@@ -7,8 +7,24 @@ import { loadMarketplace, pickProvider } from '@/lib/experiencesData';
 import { loadExperienceReviews } from '@/lib/experienceReviews';
 import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import BookingPanel from '@/components/marketplace/BookingPanel';
+import { FoodCartProvider } from '@/components/marketplace/FoodCart';
+import FoodMenu from '@/components/marketplace/FoodMenu';
+import FoodBasket from '@/components/marketplace/FoodBasket';
+import { RequestBookingProvider } from '@/components/marketplace/RequestBookingContext';
+import ChooseMenu from '@/components/marketplace/ChooseMenu';
 
 export const dynamic = 'force-dynamic';
+
+// The browser tab carries the provider's name — "Loch Sauna | Galloway Getaways"
+// (the root layout appends the suffix). Private (behind a booking), so noindex.
+export async function generateMetadata(
+    { params }: { params: { bookingId: string; providerId: string } }
+): Promise<import('next').Metadata> {
+    const admin = adminClient();
+    const { data } = await admin
+        .from('service_providers').select('business_name').eq('id', params.providerId).maybeSingle();
+    return { title: (data && data.business_name) || 'Experience', robots: { index: false, follow: false } };
+}
 
 // A provider's listing, reached from inside a cottage booking: the stay supplies
 // the guest, the dates and the address, so the booking panel is pre-filled and
@@ -30,12 +46,35 @@ export default async function ListingPage(
     const who = p.byline || p.business_name;
     const reviews = await loadExperienceReviews(admin, p.id, user.id);
 
-    return (
+    // Made-to-order reads like a food-ordering site here too: menu + basket, one
+    // cart, with the date bounded by the guest's stay.
+    if (p.shape === 'made_to_order') {
+        return (
+            <FoodCartProvider items={p.items}>
+                <ExperienceListingBody
+                    p={p}
+                    backHref={`/experiences/${params.bookingId}`}
+                    backLabel="All experiences"
+                    reviews={reviews}
+                    menu={<FoodMenu />}
+                    panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} bookingId={params.bookingId} checkIn={mp.stay.check_in} checkOut={mp.stay.check_out} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} />}
+                />
+            </FoodCartProvider>
+        );
+    }
+
+    // A comes-to-you experience: the guest chooses the option on the listing
+    // (ChooseMenu), which opens the panel's dialog on it — so the whole page is
+    // wrapped in the provider that connects the two.
+    const isComesToYou = p.shape === 'comes_to_you';
+
+    const body = (
         <ExperienceListingBody
             p={p}
             backHref={`/experiences/${params.bookingId}`}
             backLabel="All experiences"
             reviews={reviews}
+            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
             panel={
                 <BookingPanel
                     bookingId={params.bookingId}
@@ -65,12 +104,18 @@ export default async function ListingPage(
                         slotBlocks: p.slotBlocks,
                         partialBlocks: p.partialBlocks,
                         bookedBlocks: p.bookedBlocks,
+                        bookedDates: p.bookedDates,
                         cancellationHours: p.cancellation_window_hours,
                         noRefund: p.noRefund,
                         minAge: p.minAge,
+                        offeredTimes: p.offeredTimes,
+                        horizonDays: p.horizonDays,
+                        maxGuests: p.maxGuests,
                     }}
                 />
             }
         />
     );
+
+    return isComesToYou ? <RequestBookingProvider>{body}</RequestBookingProvider> : body;
 }

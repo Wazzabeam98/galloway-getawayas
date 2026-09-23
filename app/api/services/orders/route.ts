@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 
         const { data: orders } = await admin
             .from('service_orders')
-            .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, guests, adults, children, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, guest_name, guest_phone, guest_email, note, allergy, listing_id, expires_at, created_at')
+            .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, guests, adults, children, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, guest_name, guest_phone, guest_email, note, allergy, listing_id, expires_at, created_at, pending_service_date, pending_change_expires_at')
             .eq('provider_id', providerId)
             .order('created_at', { ascending: false })
             .limit(50);
@@ -113,7 +113,16 @@ export async function GET(request: Request) {
             return aWaiting - bWaiting;
         });
 
-        return NextResponse.json({ ok: true, orders: rows });
+        // CHANGE REQUESTS — an authorised CHILD is a held request to add places to
+        // an existing booking (a made_to_order / comes_to_you increase). It is not
+        // folded (only confirmed children fold); it is surfaced as its own waiting
+        // request the provider accepts (captures the hold) or declines (releases
+        // it). Marked so the dashboard reads "extra places", not a new booking.
+        const changeRequests = (orders || [])
+            .filter((o) => o.parent_order_id && o.status === 'authorised')
+            .map((o) => ({ ...o, guest_phone: null, guest_email: null, service_address: null, listing: null, isChangeRequest: true }));
+
+        return NextResponse.json({ ok: true, orders: rows.concat(changeRequests as any[]) });
     } catch (err: any) {
         console.error('[services/orders GET]', err && err.message);
         return NextResponse.json({ ok: false, error: 'Could not load orders' }, { status: 500 });

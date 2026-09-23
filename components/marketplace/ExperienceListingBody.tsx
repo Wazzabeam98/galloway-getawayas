@@ -2,12 +2,13 @@ import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
 import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
 import {
-    itemPriceLabel, cancellationSentence, whereLine, locationTag, travelCoverageLine,
-    durationLabel, durationSummary, yearsLabel, groupSizeLabel, capacityLabel,
+    itemPriceLabel, itemExtrasSubline, itemGuestRange, cancellationSentence, whereLine, locationTag, travelCoverageLine,
+    durationLabel, durationSummary, yearsLabel, capacityLabel,
 } from '@/components/marketplace/present';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
-import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check, ShoppingBag, Utensils, Package, Truck } from 'lucide-react';
+import { experienceSteps, type StepIcon } from '@/lib/experienceSteps';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
 import ReviewStars from '@/components/ReviewStars';
@@ -19,13 +20,19 @@ import { MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
 import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
 
-// Icon for an itinerary phase, by its title (the editor writes Arrival / During /
-// Finish; anything else falls to the neutral "during" glyph).
-function phaseIcon(title: string) {
-    const t = title.toLowerCase();
-    if (t.includes('arriv')) return MapPin;
-    if (t.includes('finish') || t.includes('end')) return Flag;
-    return Compass;
+// Icon for an itinerary phase, by its generic/real step key (see
+// lib/experienceSteps). Titles are decided there — never per-category — so this
+// maps only the fixed keys.
+function phaseIcon(icon: StepIcon) {
+    switch (icon) {
+        case 'arrival': return MapPin;
+        case 'finish': return Flag;
+        case 'order': return ShoppingBag;
+        case 'prep': return Utensils;
+        case 'collect': return Package;
+        case 'deliver': return Truck;
+        default: return Compass;
+    }
 }
 
 // The listing body, in the cottage-page craft (photo mosaic, facts icon-list,
@@ -35,12 +42,20 @@ function phaseIcon(title: string) {
 // notice). A plain server component. Rules: first name only, no ratings/counts,
 // no address before payment.
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel, reviews,
+    p, backHref, backLabel, panel, reviews, menu, itemsMenu,
 }: {
     p: MpProvider;
     backHref: string;
     backLabel: string;
     panel: React.ReactNode;
+    // An INTERACTIVE menu (made-to-order food ordering): when passed it leads the
+    // left column and replaces the static "What you get" list, so the menu, its
+    // photos and prices are the main thing and the sidebar panel is the basket.
+    menu?: React.ReactNode;
+    // An interactive "What you get" for a comes-to-you experience — the same
+    // items in the same slot, but each with a Choose button that opens the
+    // booking dialog on that option. Replaces the static list in place.
+    itemsMenu?: React.ReactNode;
     // Always passed by the listing pages; the section renders even at zero, with
     // an honest "No reviews yet" in place rather than dropping out.
     reviews?: ExperienceReviewsBlock;
@@ -51,7 +66,7 @@ export default function ExperienceListingBody({
     // One definition, shared with the order page (lib/orderLocation). This used
     // to be its own expression here, and the two disagreed about a null
     // fulfilment: this page promised "the exact address is shared once your
-    // booking is paid" and the order page then showed nothing.
+    // booking is confirmed" and the order page then showed nothing.
     const comesToYou = locationFromDirection(p.shape, p.fulfilment).comesToCottage;
     const where = whereLine(p);
     const tag = locationTag(p);
@@ -72,7 +87,11 @@ export default function ExperienceListingBody({
             .map((i) => Number(i.capacity) || Number(p.slotCapacity) || 0);
         return perPersonCaps.length ? Math.max(...perPersonCaps) : (Number(p.slotCapacity) || 0);
     })();
-    const groupSize = isSlot ? capacityLabel(slotCapacity) : groupSizeLabel(p.maxGuests);
+    // Group size as a single provider-wide fact is shown only for a SLOT (the
+    // session capacity). For a comes-to-you or made-to-order experience each item
+    // states its OWN limit beside its price in "What you get" — a single "Up to N
+    // guests" fact there would disagree with an item whose own maximum is lower.
+    const groupSize = isSlot ? capacityLabel(slotCapacity) : '';
     // The professional title reads as the host's "who they are" line, unless it
     // would only echo the heading (a provider whose business_name is still their
     // professional title, before a distinct listing name exists).
@@ -141,6 +160,12 @@ export default function ExperienceListingBody({
                             </dl>
                         )}
 
+                        {/* The interactive menu leads for a food-ordering listing —
+                            the main thing, above the host and the story. */}
+                        {menu ? (
+                            <section className="mt-8 border-t border-slate-200 pt-6">{menu}</section>
+                        ) : null}
+
                         {hasAbout && (
                             <section className="mt-8 border-t border-slate-200 pt-6">
                                 <div className="flex items-center gap-3">
@@ -172,16 +197,103 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
-                        {(p.what_happens || p.itinerary.length > 0) ? (
+                        {/* What you get — directly under the host, above the story:
+                            the items and prices are what the guest is deciding on, so
+                            they lead. Omitted for a slot (its options live in the
+                            booking panel) and for a food-ordering menu (the interactive
+                            menu already leads the column). */}
+                        {/* The interactive "What you get" (comes-to-you: each item
+                            has a Choose button) replaces the static list in place. */}
+                        {p.shape !== 'slot' && !menu && itemsMenu ? itemsMenu : null}
+
+                        {p.shape !== 'slot' && !menu && !itemsMenu && (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What you get</h2>
+                                <ul className="mt-4 divide-y divide-slate-100">
+                                    {p.items.map((it) => {
+                                        const dur = durationLabel(it.duration_minutes);
+                                        return (
+                                            <li key={it.id} className="flex gap-4 py-4 first:pt-0">
+                                                {it.image ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img src={it.image} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-xl object-cover" />
+                                                ) : (
+                                                    <span className="flex h-16 w-16 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                                                        <Utensils className="h-6 w-6" aria-hidden />
+                                                    </span>
+                                                )}
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-baseline justify-between gap-3">
+                                                        <span className="font-semibold text-slate-900">{it.name}</span>
+                                                        <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
+                                                    </div>
+                                                    {itemGuestRange(it, p.maxGuests) ? (
+                                                        <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-slate-500">
+                                                            <Users className="h-3.5 w-3.5 flex-none" aria-hidden />{itemGuestRange(it, p.maxGuests)}
+                                                        </p>
+                                                    ) : null}
+                                                    {itemExtrasSubline(it, p.minAge) ? (
+                                                        <p className="mt-0.5 text-xs text-slate-500">{itemExtrasSubline(it, p.minAge)}</p>
+                                                    ) : null}
+                                                    {dur ? (
+                                                        <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+                                                            <Clock className="h-3.5 w-3.5 flex-none" aria-hidden />{dur}
+                                                        </p>
+                                                    ) : null}
+                                                    {it.description ? <p className="mt-1 text-sm leading-relaxed text-slate-600">{it.description}</p> : null}
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </section>
+                        )}
+
+                        {(() => {
+                            // Only the fields the provider actually filled in — a
+                            // whitespace-only value counts as empty — and the whole
+                            // section drops when none are set, so a chef (no activity
+                            // level, nothing to bring) shows no "Things to know" at all.
+                            const activity = (p.activityLevel || '').trim();
+                            const bring = (p.whatToBring || '').trim();
+                            if (p.minAge == null && !activity && !bring) return null;
+                            return (
+                                <section className="mt-8 border-t border-slate-200 pt-8">
+                                    <h2 className="text-xl md:text-2xl font-bold text-slate-900">Things to know</h2>
+                                    <div className="mt-4 space-y-4">
+                                        {p.minAge != null ? (
+                                            <div className="flex items-start gap-3">
+                                                <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                                <div><div className="font-semibold text-slate-900">Minimum age</div><p className="text-sm text-slate-600">{p.minAge} and over</p></div>
+                                            </div>
+                                        ) : null}
+                                        {activity ? (
+                                            <div className="flex items-start gap-3">
+                                                <Activity className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                                <div><div className="font-semibold text-slate-900">Activity level</div><p className="text-sm capitalize text-slate-600">{activity}</p></div>
+                                            </div>
+                                        ) : null}
+                                        {bring ? (
+                                            <div className="flex items-start gap-3">
+                                                <Backpack className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                                <div><div className="font-semibold text-slate-900">What to bring</div><p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{bring}</p></div>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                </section>
+                            );
+                        })()}
+
+                        {(() => { const steps = experienceSteps(p.shape, p.fulfilment, p.itinerary); return (p.what_happens || steps.length > 0) ? (
                             <section className="mt-8 border-t border-slate-200 pt-8">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">What happens</h2>
                                 {p.what_happens ? (
                                     <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
                                 ) : null}
-                                {p.itinerary.length > 0 ? (
+                                {steps.length > 0 ? (
                                     <ol className="mt-5 space-y-5">
-                                        {p.itinerary.map((step, i) => {
-                                            const Icon = phaseIcon(step.title);
+                                        {steps.map((step, i) => {
+                                            const Icon = phaseIcon(step.icon);
                                             return (
                                                 <li key={i} className="flex gap-3.5">
                                                     <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
@@ -197,33 +309,7 @@ export default function ExperienceListingBody({
                                     </ol>
                                 ) : null}
                             </section>
-                        ) : null}
-
-                        {(p.minAge != null || p.activityLevel || p.whatToBring) ? (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
-                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">Things to know</h2>
-                                <div className="mt-4 space-y-4">
-                                    {p.minAge != null ? (
-                                        <div className="flex items-start gap-3">
-                                            <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
-                                            <div><div className="font-semibold text-slate-900">Minimum age</div><p className="text-sm text-slate-600">{p.minAge} and over</p></div>
-                                        </div>
-                                    ) : null}
-                                    {p.activityLevel ? (
-                                        <div className="flex items-start gap-3">
-                                            <Activity className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
-                                            <div><div className="font-semibold text-slate-900">Activity level</div><p className="text-sm capitalize text-slate-600">{p.activityLevel}</p></div>
-                                        </div>
-                                    ) : null}
-                                    {p.whatToBring ? (
-                                        <div className="flex items-start gap-3">
-                                            <Backpack className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
-                                            <div><div className="font-semibold text-slate-900">What to bring</div><p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.whatToBring}</p></div>
-                                        </div>
-                                    ) : null}
-                                </div>
-                            </section>
-                        ) : null}
+                        ) : null; })()}
 
                         {/* What's included — the provider's ticked amenities, as a
                             scannable list (no prose). Shown for every shape when they
@@ -240,37 +326,6 @@ export default function ExperienceListingBody({
                                                 <span className="text-[15px] text-slate-700">{label}</span>
                                             </li>
                                         ) : null;
-                                    })}
-                                </ul>
-                            </section>
-                        )}
-
-                        {p.shape !== 'slot' && (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
-                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What you get</h2>
-                                <ul className="mt-4 divide-y divide-slate-100">
-                                    {p.items.map((it) => {
-                                        const dur = durationLabel(it.duration_minutes);
-                                        return (
-                                            <li key={it.id} className="flex gap-4 py-4 first:pt-0">
-                                                {it.image ? (
-                                                    // eslint-disable-next-line @next/next/no-img-element
-                                                    <img src={it.image} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-xl object-cover" />
-                                                ) : null}
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="flex items-baseline justify-between gap-3">
-                                                        <span className="font-semibold text-slate-900">{it.name}</span>
-                                                        <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
-                                                    </div>
-                                                    {dur ? (
-                                                        <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
-                                                            <Clock className="h-3.5 w-3.5 flex-none" aria-hidden />{dur}
-                                                        </p>
-                                                    ) : null}
-                                                    {it.description ? <p className="mt-1 text-sm leading-relaxed text-slate-600">{it.description}</p> : null}
-                                                </div>
-                                            </li>
-                                        );
                                     })}
                                 </ul>
                             </section>
@@ -399,7 +454,7 @@ export default function ExperienceListingBody({
                                         ? (travelCoverage
                                             ? travelCoverage + ' — they come to your cottage, so there’s nothing for you to travel to.'
                                             : 'They come to your cottage — nothing for you to travel to.')
-                                        : 'The exact address is shared once your booking is paid.'}
+                                        : 'The exact address is shared once your booking is confirmed.'}
                                 </span>
                             </p>
                         ) : null}

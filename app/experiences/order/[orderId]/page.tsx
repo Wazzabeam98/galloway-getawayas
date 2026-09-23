@@ -11,9 +11,13 @@ import { logError } from '@/lib/logError';
 import { firstName, getImageUrl, displayName } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
-import { isFoodProvider, unitMultiplies } from '@/lib/serviceOrders';
+import { experienceSteps } from '@/lib/experienceSteps';
+import { hasExtraGuests } from '@/lib/extraGuests';
+import { childrenAllowed } from '@/lib/guestAges';
+import { isFoodProvider, unitMultiplies, orderReference } from '@/lib/serviceOrders';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadExperienceOrder } from '@/lib/experienceOrder';
+import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
 import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
 import OrderCancel from '@/components/marketplace/OrderCancel';
 import HostCredentials from '@/components/marketplace/HostCredentials';
@@ -28,6 +32,29 @@ import { foldOrderFamily } from '@/lib/orderFamily';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
 export const dynamic = 'force-dynamic';
+
+// The browser tab carries the provider's name — "Loch Sauna | Galloway Getaways"
+// — so a guest with several trips open can tell the tabs apart. The root layout
+// appends " | Galloway Getaways", so this returns the bare name. Private, so it
+// stays out of search. Reads the name frozen on the order, falling back to the
+// provider's live name.
+export async function generateMetadata(
+    { params }: { params: { orderId: string } }
+): Promise<import('next').Metadata> {
+    const admin = adminClient();
+    const { data: o } = await admin
+        .from('service_orders')
+        .select('provider_business_name, provider_id')
+        .eq('id', params.orderId)
+        .maybeSingle();
+    let name = (o && o.provider_business_name) || '';
+    if (!name && o && o.provider_id) {
+        const { data: p } = await admin
+            .from('service_providers').select('business_name').eq('id', o.provider_id).maybeSingle();
+        name = (p && p.business_name) || '';
+    }
+    return { title: name || 'Your experience', robots: { index: false, follow: false } };
+}
 
 // A booked experience, as a page.
 //
@@ -102,11 +129,12 @@ function partySplitLabel(adults: number | null | undefined, children: number | n
     return parts.length ? parts.join(', ') : null;
 }
 
-// An .ics the guest can drop into their calendar. A slot has a real time, so it
-// is a timed event; a made-to-order/comes-to-you booking is a date, so it is an
-// all-day event. Floating local time (no Z) is what a guest expects — 2pm is 2pm
-// wherever their phone is. Returned as a data: URL so a plain <a download> saves
-// it with no round trip.
+// An .ics the guest can drop into their calendar. Any booking with a real time —
+// a slot, or a comes-to-you dinner — is a TIMED event; a booking with only a
+// date (a made-to-order collection) is an all-day event. The caller decides by
+// passing the time or null. Floating local time (no Z) is what a guest expects —
+// 2pm is 2pm wherever their phone is. Returned as a data: URL so a plain
+// <a download> saves it with no round trip.
 //
 // Airbnb has no add-to-calendar anywhere on this screen. Kept deliberately: a
 // 90-minute appointment in someone else's diary is worth more to a guest than
@@ -147,7 +175,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // companion's order is read without any money column, and the price is
     // fetched in a second query that runs for the booker alone. Anyone else is
     // redirected.
-    const { order, role, price } = await loadExperienceOrder(admin, params.orderId, user.id);
+    const { order, role, price, amountRefunded } = await loadExperienceOrder(admin, params.orderId, user.id);
     if (!order || !role) redirect('/trips');
     const isBooker = role === 'booker';
     const isCompanion = role === 'companion';
@@ -233,6 +261,9 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // never rewrites what this guest booked. The ADDRESS below still comes live
     // from the provider — only the direction is the frozen deal.
     const isSlot = order.shape === 'slot';
+    // The heading and the line beneath it — a comes-to-you booking leads with the
+    // listing name and carries its chosen item as the detail; see the helper.
+    const { title: bookingTitle, detail: bookingDetail } = experienceBookingTitle(order);
 
     // ADDED PLACES. A per-person slot booking can grow by buying more seats: each
     // is a confirmed CHILD order on the same session (parent_order_id). Fold them
@@ -242,7 +273,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // Per-person = the ITEM's unit multiplies (person/ticket/hour/item — a shared
     // table), NOT the literal string 'person', and NOT the session's frozen
     // capacity (a private hire can seat a whole party). Matches the top-up route.
-    const isPerPersonParent = isSlot && unitMultiplies(order.item_unit) && !order.parent_order_id;
+    const isPerPersonParent = unitMultiplies(order.item_unit) && !order.parent_order_id;
     const { data: topUpChildren } = isPerPersonParent
         ? await admin.from('service_orders')
             .select('quantity, attendees, adults, children, item_unit')
@@ -252,12 +283,69 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // The head count that drives "Who's going" and the Guests line: the folded
     // family for a per-person order, else the private order's own attendees.
     const effectiveHeadcount = isPerPersonParent ? family.headcount : (Number(order.attendees) || 0);
-    const canTopUp = isBooker && isPerPersonParent && order.status === 'confirmed';
-    // A move is offered to the booker of any confirmed slot PARENT (per-person or
-    // private hire — the engine handles both); a top-up child is moved with its
-    // parent, never on its own. The picker itself may still come back empty.
-    const canMove = isBooker && isSlot && !order.parent_order_id
-        && order.status === 'confirmed' && !!order.slot_session_id;
+
+    // PAYMENT BREAKDOWN — booker only (the money wall). Itemised like a holiday
+    // let: the base line(s), any accepted added places, refunds, and the net. For
+    // an extra-guests flat item the base splits into the included price and the
+    // per-head fees; a per-person item is its per-place total; a plain flat is one
+    // line. Built from the family's own prices, so nothing is re-derived.
+    const breakdownLines: { label: string; amount: number }[] = [];
+    let breakdownTotal = 0;
+    let cartLineItems: any[] | null = null;
+    if (role === 'booker') {
+        // A made-to-order cart carries its lines on the order; itemise those.
+        const { data: money } = await admin.from('service_orders').select('line_items').eq('id', order.id).maybeSingle();
+        cartLineItems = money && Array.isArray(money.line_items) ? money.line_items : null;
+        const { data: item } = order.item_id
+            ? await admin.from('service_provider_items').select('unit, price, included_guests, extra_adult_fee, extra_child_fee').eq('id', order.item_id).maybeSingle()
+            : { data: null };
+        const { data: paidKids } = await admin.from('service_orders')
+            .select('price, quantity, attendees, adults, children').eq('parent_order_id', order.id).eq('status', 'confirmed');
+        const parentPrice = Number(price) || 0;
+        const nm = order.item_name || who;
+        const rawMinAge = (prov?.guest_details as any)?.min_age;
+        const minAgeNum = rawMinAge == null || rawMinAge === '' ? null : Number(rawMinAge);
+        if (cartLineItems && cartLineItems.length) {
+            for (const l of cartLineItems) {
+                breakdownLines.push({ label: (Number(l.qty) > 1 ? Number(l.qty) + ' × ' : '') + String(l.name || 'Item') + (l.is_custom ? ' (made to order)' : ''), amount: Number(l.line_total) || 0 });
+            }
+        } else if (item && hasExtraGuests(item as any)) {
+            const included = Number(item.included_guests) || 0;
+            const a = Math.max(0, Number(order.adults) || 0), c = childrenAllowed(minAgeNum) ? Math.max(0, Number(order.children) || 0) : 0;
+            const incAdults = Math.min(a, included);
+            const incChildren = Math.min(c, included - incAdults);
+            const extraAdults = a - incAdults, extraChildren = c - incChildren;
+            breakdownLines.push({ label: nm + ' · up to ' + included, amount: Number(item.price) || 0 });
+            if (extraAdults > 0) breakdownLines.push({ label: 'Extra adults × ' + extraAdults, amount: extraAdults * (Number(item.extra_adult_fee) || 0) });
+            if (extraChildren > 0) breakdownLines.push({ label: 'Extra children × ' + extraChildren, amount: extraChildren * (Number(item.extra_child_fee) || 0) });
+        } else if (isPerPersonParent) {
+            breakdownLines.push({ label: nm + (family.headcount ? ' · ' + family.headcount + ' ' + (family.headcount === 1 ? 'place' : 'places') : ''), amount: parentPrice });
+        } else {
+            breakdownLines.push({ label: nm, amount: parentPrice });
+        }
+        breakdownTotal += parentPrice;
+        for (const kid of (paidKids as any[]) || []) {
+            const kAmt = Number(kid.price) || 0;
+            const kn = Number(kid.quantity) || Number(kid.attendees) || 1;
+            breakdownLines.push({ label: 'Added ' + kn + ' more', amount: kAmt });
+            breakdownTotal += kAmt;
+        }
+    }
+    const breakdownNet = Math.round((breakdownTotal - amountRefunded) * 100) / 100;
+    // CHANGE GUEST COUNT and CHANGE DATE are offered on every shape now, not just
+    // slots. For a slot they keep their existing engines (per-person top-up; the
+    // session-picker move). For a request shape (made_to_order / comes_to_you)
+    // they use the new /api/services/order/change-{count,date} routes: a count is
+    // a quantity that moves money (or, on a per-group flat price, just a party
+    // size), and a date is the delivery/collection/service day. A top-up child is
+    // never changed on its own — always the original booking.
+    // Guest count is changeable for a slot (per-person top-up) and for
+    // comes-to-you (an increase request). Made-to-order no longer offers it, and
+    // reductions are gone everywhere — the sheet only ever adds.
+    const canChangeCount = isBooker && order.status === 'confirmed' && !order.parent_order_id
+        && (isSlot ? isPerPersonParent : order.shape === 'comes_to_you');
+    const canChangeDate = isBooker && order.status === 'confirmed' && !order.parent_order_id
+        && (isSlot ? !!order.slot_session_id : true);
 
     const { comesToCottage, collects } = orderLocation(order, prov?.fulfilment);
     // Assembled from the three private fields, same order the cottage address
@@ -355,17 +443,18 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // guest's page, which is the behaviour the bio already sets.
     const gd = (prov?.guest_details || {}) as Record<string, unknown>;
     const whatToExpect = typeof gd.what_to_expect === 'string' ? gd.what_to_expect.trim() : '';
-    const itinerary = Array.isArray(gd.itinerary)
-        ? (gd.itinerary as unknown[])
-            .map((s) => ({ title: String((s as any)?.title || '').trim(), detail: String((s as any)?.detail || '').trim() }))
-            .filter((s) => s.detail)
+    // Raw phases by position (empties kept) so the generic/real headings map to
+    // the right slot; experienceSteps drops empties itself and titles by position.
+    const rawItinerary = Array.isArray(gd.itinerary)
+        ? (gd.itinerary as unknown[]).map((s) => ({ title: String((s as any)?.title || '').trim(), detail: String((s as any)?.detail || '').trim() }))
         : [];
+    const steps = experienceSteps(order.shape, prov?.fulfilment ?? null, rawItinerary);
     // The experience blurb prefers the provider's live "what to expect"; a
     // provider who wrote none (a made-to-order baker, whose guest_details is bare)
     // falls back to the item line frozen on the order — what this page showed
     // before — so the section is never emptier than it was.
     const experienceBlurb = whatToExpect || (order.item_description || '').trim();
-    const hasWhat = Boolean(experienceBlurb || itinerary.length);
+    const hasWhat = Boolean(experienceBlurb || steps.length);
     // The fuller host bio: a professional title (unless it just echoes the
     // business name), the free-text description, and the credentials the listing
     // shows under "About your host".
@@ -479,14 +568,14 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         {hero && (
                             <Link href={listingHref} className="group relative block overflow-hidden rounded-2xl">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={hero} alt={order.item_name || 'Experience'} className="h-44 w-full object-cover transition group-hover:brightness-95 sm:h-56" />
+                                <img src={hero} alt={bookingTitle} className="h-44 w-full object-cover transition group-hover:brightness-95 sm:h-56" />
                                 {live && <WhenBadge date={String(order.service_date)} />}
                             </Link>
                         )}
 
                         <div className={`${hero ? 'mt-4' : ''} flex items-start justify-between gap-3`}>
                             <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                                <Link href={listingHref} className="hover:underline">{order.item_name || 'Experience'}</Link>
+                                <Link href={listingHref} className="hover:underline">{bookingTitle}</Link>
                             </h1>
                             <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
                                 {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
@@ -500,6 +589,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             has it: time, how long, who. */}
                         <p className="mt-1.5 text-sm text-slate-500">
                             {[
+                                bookingDetail,
                                 isSlot && order.service_time ? clock(order.service_time) : null,
                                 isSlot && knownDuration ? `${knownDuration} minutes` : null,
                                 hostFirst ? `Hosted by ${hostFirst}` : null,
@@ -543,10 +633,28 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     {/* A slot that reached this branch has a start
                                         time but no recorded length, so the start
                                         still shows — only the end is withheld. */}
-                                    <div className="mt-1 text-sm font-medium text-slate-900">{longWhen(order.service_date, isSlot ? order.service_time : null)}</div>
+                                    <div className="mt-1 text-sm font-medium text-slate-900">{longWhen(order.service_date, order.service_time || null)}</div>
+                                    {cartLineItems && cartLineItems.length > 0 && order.note && (
+                                        <div className="mt-1 text-[13px] text-slate-500">{String(order.note)}</div>
+                                    )}
                                 </div>
                             )}
                         </div>
+
+                        {/* A made-to-order cart — the items ordered, shown plainly. */}
+                        {cartLineItems && cartLineItems.length > 0 && (
+                            <section className="mt-8 border-t border-slate-200 pt-6">
+                                <h2 className="text-lg font-semibold text-slate-900">Your order</h2>
+                                <ul className="mt-3 space-y-2 text-sm">
+                                    {cartLineItems.map((l: any, i: number) => (
+                                        <li key={i} className="flex items-baseline justify-between gap-3 text-slate-700">
+                                            <span>{Number(l.qty) > 1 ? Number(l.qty) + ' × ' : ''}{String(l.name || 'Item')}{l.is_custom ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Made to order</span> : null}</span>
+                                            <span className="tabular-nums text-slate-900">£{(Number(l.line_total) || 0).toFixed(2)}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </section>
+                        )}
 
                         {/* The allergy the guest gave, shown back so they can see
                             it landed. It stays high on the page and stays loud —
@@ -653,15 +761,15 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 {experienceBlurb && (
                                     <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{experienceBlurb}</p>
                                 )}
-                                {itinerary.length > 0 && (
+                                {steps.length > 0 && (
                                     <ol className="mt-4 space-y-4">
-                                        {itinerary.map((step, i) => (
+                                        {steps.map((step, i) => (
                                             <li key={i} className="flex gap-3">
                                                 <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-emerald-50 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
                                                     {i + 1}
                                                 </span>
                                                 <div className="min-w-0">
-                                                    {step.title && <div className="text-sm font-semibold text-slate-900">{step.title}</div>}
+                                                    <div className="text-sm font-semibold text-slate-900">{step.title}</div>
                                                     <p className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{step.detail}</p>
                                                 </div>
                                             </li>
@@ -757,6 +865,28 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Booking details</h2>
 
+                            {/* The confirmation reference — the short, stable code
+                                the guest quotes to the provider or to us, derived
+                                from the order id (orderReference), the same one the
+                                provider sees on their dashboard. Mirrors the stay's
+                                "Confirmation" line. */}
+                            <div className="mt-4">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Confirmation</div>
+                                <div className="mt-0.5 font-mono text-sm tracking-wide text-slate-900">{orderReference(order.id)}</div>
+                            </div>
+
+                            {/* Which item was ordered, stated plainly. The title
+                                links through to the listing and reads as the
+                                experience, so the ordered item is named here as its
+                                own fact too. A made-to-order cart names its lines in
+                                "Your order" above, so it's skipped there. */}
+                            {order.item_name && !(cartLineItems && cartLineItems.length) && (
+                                <div className="mt-4">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Item</div>
+                                    <div className="mt-0.5 text-sm font-medium text-slate-900">{order.item_name}</div>
+                                </div>
+                            )}
+
                             {isSlot && (() => {
                                 // Guests, with the adults/children split beneath when
                                 // it's recorded — "2 adults, 1 child". A null split
@@ -785,20 +915,21 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
                                 {/* The reservation actions first, in one order on
                                     every shape: Change guest count, Change date or
-                                    time, Cancel reservation. The first two open a
-                                    modal and are slot-only; Cancel shows on every
-                                    shape. All are the booker's alone. The utility
-                                    rows (Add to calendar, Print details) sit BELOW
-                                    them. */}
-                                {canTopUp && (
+                                    time, Cancel reservation. All three now show on
+                                    every shape (a modal each for the first two);
+                                    all are the booker's alone. The utility rows
+                                    (Add to calendar, Print details) sit BELOW them. */}
+                                {canChangeCount && (
                                     <ChangeGuestCount
                                         orderId={order.id}
+                                        shape={order.shape}
                                         className={ROW}
                                     />
                                 )}
-                                {canMove && (
+                                {canChangeDate && (
                                     <ChangeDateTime
                                         orderId={order.id}
+                                        shape={order.shape}
                                         className={ROW}
                                     />
                                 )}
@@ -813,7 +944,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         free={free}
                                         price={Number(price)}
                                         providerName={shortWho}
-                                        className={`${ROW} text-slate-600 hover:text-rose-700`}
+                                        // The cancel row is a neutral action row like
+                                        // its siblings — red lives only on the confirm
+                                        // button inside the panel, and only when a
+                                        // cancel would forfeit money.
+                                        className={ROW}
                                         panelClassName="pb-3"
                                     />
                                 )}
@@ -821,7 +956,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     href={calendarHref({
                                         title: (order.item_name || 'Experience') + ' — ' + who,
                                         date: String(order.service_date).slice(0, 10),
-                                        time: isSlot ? (order.service_time || null) : null,
+                                        // Any shape with a real time is a timed event — a
+                                        // comes-to-you dinner at 7pm went in the diary as an
+                                        // all-day block. Only a shape with no time (a
+                                        // made-to-order collection date) stays all-day.
+                                        time: order.service_time || null,
                                         where,
                                         details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
                                         durationMin,
@@ -860,7 +999,35 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 aren't charged yet, so the label reflects that. */}
                             <div className="mt-3">
                                 <div className="text-sm font-semibold text-slate-900">{charged ? 'Amount paid' : 'Amount held'}</div>
-                                <div className="mt-1 text-base text-slate-900">£{Number(price).toFixed(2)}</div>
+                                {/* The net across the whole family (base + any accepted
+                                    added places), less any refund. */}
+                                <div className="mt-1 text-base text-slate-900">£{(breakdownTotal > 0 ? breakdownNet : (Number(price) - amountRefunded)).toFixed(2)}</div>
+                                {amountRefunded > 0 && (
+                                    <div className="mt-0.5 text-[13px] text-slate-500">£{amountRefunded.toFixed(2)} refunded of the £{(breakdownTotal > 0 ? breakdownTotal : Number(price)).toFixed(2)} you paid</div>
+                                )}
+                                {/* The itemised breakdown, like a holiday-let booking —
+                                    a <details> so it needs no client JavaScript. */}
+                                {breakdownLines.length > 0 && (
+                                    <details className="group mt-2">
+                                        <summary className="cursor-pointer list-none text-xs font-medium text-slate-500 underline hover:text-slate-800 [&::-webkit-details-marker]:hidden">
+                                            <span className="group-open:hidden">Show breakdown</span>
+                                            <span className="hidden group-open:inline">Hide breakdown</span>
+                                        </summary>
+                                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                                            <div className="space-y-2 text-sm">
+                                                {breakdownLines.map((l, i) => (
+                                                    <div key={i} className="flex items-baseline justify-between text-slate-600">
+                                                        <span>{l.label}</span>
+                                                        <span className="tabular-nums">£{l.amount.toFixed(2)}</span>
+                                                    </div>
+                                                ))}
+                                                <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">£{breakdownTotal.toFixed(2)}</span></div>
+                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Refunded</span><span className="tabular-nums">−£{amountRefunded.toFixed(2)}</span></div>}
+                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between font-medium text-slate-900"><span>{charged ? 'Net paid' : 'Net held'}</span><span className="tabular-nums">£{breakdownNet.toFixed(2)}</span></div>}
+                                            </div>
+                                        </div>
+                                    </details>
+                                )}
                             </div>
                         </section>
                         )}

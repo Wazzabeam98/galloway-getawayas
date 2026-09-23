@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
 import { displayName } from '@/lib/utils';
 import { createRequestOrderFromSession } from '@/lib/requestOrder';
+import { authoriseChangeRequest } from '@/lib/changeRequest';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 import { guestBookedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
@@ -254,6 +255,21 @@ export async function POST(request: Request) {
             const cs = event.data.object;
             const bookingId = (cs.metadata && cs.metadata.booking_id) || cs.client_reference_id;
             const kind = (cs.metadata && cs.metadata.kind) || 'full';
+
+            // A CHANGE REQUEST (extra places on a made_to_order / comes_to_you
+            // booking) was AUTHORISED at Checkout — a manual-capture hold. Turn the
+            // 'holding' child into an 'authorised' request the provider answers
+            // within 48 hours: respond captures (accept) or cancels (decline), and
+            // the service-orders cron releases an unanswered hold. No money has
+            // moved yet. Guarded on 'holding' so a redelivery/late sweep is a no-op.
+            if (kind === 'change_request') {
+                const orderId = cs.metadata && cs.metadata.order_id;
+                const pi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
+                // The ONE transition, shared with the reconcile sweep so a lost
+                // webhook is rebuilt identically (see lib/changeRequest).
+                if (orderId && pi) await authoriseChangeRequest(admin, orderId, pi);
+                return NextResponse.json({ ok: true });
+            }
 
             // A SLOT BOOKING WAS PAID.
             //
