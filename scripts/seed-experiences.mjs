@@ -282,7 +282,7 @@ async function main() {
         // provider sets the hours they work), not a separate offered-times list —
         // dinner sittings Wed–Sun, 5pm to 9pm.
         availability: { days: [3, 4, 5, 6, 0], open: '17:00', close: '21:00' },
-        headshot: IMG('seed-assets/chef-face.png'), photos: [IMG('seed-assets/chef-1.jpg')],
+        headshot: IMG('seed-assets/chef-face.png'), photos: [IMG('seed-assets/chef-hero.jpg')],
         professional_title: 'Private chef, cooked in your cottage', years: 12,
         qualifications: 'Professional Cookery SVQ; 15 years in Scottish kitchens.', recognition: 'Ex-head chef, a Galloway harbour restaurant.',
         what_to_expect: 'A relaxed dinner cooked in your cottage kitchen, built around what has landed and grown that week.',
@@ -299,7 +299,7 @@ async function main() {
         // A proper menu, several options to walk — a mix of per-guest dinners and
         // one whole-evening group price, the way the bakery has a menu.
         items: [
-            { name: 'Three-course Galloway dinner', description: 'A seasonal three courses, cooked in your cottage.', price: 55, unit: 'person', sort: 0, image: IMG('seed-assets/chef-1.jpg'), min: 2 },
+            { name: 'Three-course Galloway dinner', description: 'A seasonal three courses, cooked in your cottage.', price: 55, unit: 'person', sort: 0, image: IMG('seed-assets/chef-hero.jpg'), min: 2 },
             { name: 'Seafood tasting menu', description: 'Five small courses built around the day’s landings.', price: 75, unit: 'person', sort: 1, image: IMG('seed-assets/chef-2.jpg'), min: 2 },
             { name: 'Sunday roast, cooked in', description: 'A proper roast with all the trimmings, carved at your table.', price: 40, unit: 'person', sort: 2, image: IMG('seed-assets/chef-3.jpg'), min: 2 },
             { name: 'Grazing table & canapés', description: 'A spread of Galloway cheeses, charcuterie and warm canapés.', price: 35, unit: 'person', sort: 3, image: IMG('seed-assets/chef-4.jpg'), min: 4 },
