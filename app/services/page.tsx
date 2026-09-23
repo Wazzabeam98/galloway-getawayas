@@ -26,7 +26,7 @@ export default function ServicesHub() {
             </h1>
             <p className="text-slate-600 mt-3 mb-10">
                 Local businesses around a Galloway stay — the people an owner hires for their
-                cottage, and the experiences a guest books while they’re here. Whichever you are:
+                place, and the experiences a guest books while they’re here. Whichever you are:
             </p>
 
             <div className="space-y-4">
@@ -38,7 +38,7 @@ export default function ServicesHub() {
                     <Home className="w-8 h-8 text-emerald-700 mb-4" strokeWidth={1.5} />
                     <h2 className="font-bold text-slate-900 text-lg">For your property</h2>
                     <p className="text-sm text-slate-600 mt-2">
-                        Own a cottage? Hire local tradespeople for it — cleaning, gardening, window
+                        Own a place you let? Hire local tradespeople for it — cleaning, gardening, window
                         cleaning, maintenance and repairs. See who covers you and ask one of them.
                     </p>
                     <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 mt-4">
@@ -57,7 +57,7 @@ export default function ServicesHub() {
                     <p className="text-sm text-slate-600 mt-2">
                         Staying with us? Local experiences you can book while you’re here — a private
                         chef, a welcome hamper, a cake. They appear on your trip page once you’ve
-                        booked a cottage, matched to where you’re staying and your dates.
+                        booked a place, matched to where you’re staying and your dates.
                     </p>
                     <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 mt-4">
                         Go to your trips

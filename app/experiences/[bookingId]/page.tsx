@@ -48,9 +48,9 @@ export default async function ExperiencesPage({ params }: { params: { bookingId:
 
                 {mp.open === false ? (
                     <Empty title="Coming soon to your stay"
-                        body="We’re lining up chefs, bakers, saunas and guides near your cottage. Check back before you travel." />
+                        body="We’re lining up chefs, bakers, saunas and guides near where you’re staying. Check back before you travel." />
                 ) : mp.providers.length === 0 ? (
-                    <Empty title="Nothing near this cottage yet"
+                    <Empty title="Nothing near your stay yet"
                         body="No providers cover this spot for your dates just now. It’s a new part of the site and filling in fast." />
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">

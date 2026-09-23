@@ -1,13 +1,17 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
-import { seatConfig, generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
-import { itemPriceLabel, dateLabel, priceParts, cancellationBadge } from '@/components/marketplace/present';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { unitMultiplies } from '@/lib/serviceOrders';
+import { hasExtraGuests } from '@/lib/extraGuests';
+import { generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
+import { dateLabel, priceParts, cancellationBadge } from '@/components/marketplace/present';
+import { childrenAllowed } from '@/lib/guestAges';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { CalendarDays } from 'lucide-react';
 import BookingDialog, { type BookArgs, type DialogOpenSession } from '@/components/marketplace/BookingDialog';
 import DatePreview from '@/components/marketplace/DatePreview';
+import { RequestBookingDialog, RequestDatePreview, type RequestBookArgs } from '@/components/marketplace/RequestBooking';
+import { useRequestBooking } from '@/components/marketplace/RequestBookingContext';
 
 interface PanelItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -15,6 +19,11 @@ interface PanelItem {
     fulfilment?: string | null;
     capacity: number | null;
     minPeople: number | null;
+    includedGuests?: number | null;
+    extraAdultFee?: number | null;
+    extraChildFee?: number | null;
+    maxParty?: number | null;
+    isCustom?: boolean;
 }
 interface PanelSession {
     date: string; time: string;
@@ -38,53 +47,70 @@ interface PanelProvider {
     slotBlocks?: string[];
     partialBlocks?: PartialBlock[];
     bookedBlocks?: PanelBookedBlock[];
+    // Comes-to-you: the dates the provider is already booked on — greyed and
+    // unpickable in the dialog (one booking a day blocks the whole day).
+    bookedDates?: string[];
     cancellationHours?: number | null;
     noRefund?: boolean | null;
     minAge?: number | null;
+    // Request shapes: the times the provider offers, and how far ahead a
+    // standalone booking may reach. Empty / unset when not applicable.
+    offeredTimes?: string[];
+    horizonDays?: number;
+    maxGuests?: number | null;
 }
 
-const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
 const dayKeyFromNow = (days: number) => shiftDayKey(londonDayKey(), days);
 const lastNight = (checkOut: string) => shiftDayKey(String(checkOut).slice(0, 10), -1);
 const maxKey = (a: string, b: string) => (a > b ? a : b);
 
-// The booking box a guest sees from inside a cottage stay. A SLOT provider gets
-// the Airbnb-shaped flow — a price and one "Show dates" button that opens the
-// shared availability dialog (stay-bounded) and goes straight to Stripe Checkout.
-// A REQUEST provider (chef/baker) instead picks a date during the stay and sends
-// a request that's held, not charged, until they confirm.
-export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, cottageAdults, cottageChildren, stay, provider }: {
-    bookingId: string; checkIn: string; checkOut: string; cottageGuests: number;
-    // The cottage booking's own party split, to prefill the picker.
+// The booking box a guest sees for a SLOT or a COMES-TO-YOU experience. (A
+// made-to-order listing is served by the food-ordering layout — FoodMenu +
+// FoodBasket — not this component.) Two ways in:
+//   • Against a cottage stay (bookingId + checkIn/checkOut given): the date is
+//     bounded by the stay and the party capped by who's staying.
+//   • Standalone (no booking): bookable by anyone; the date runs to the
+//     provider's horizon, the party is capped by the item's own maximum, and a
+//     comes-to-you chef asks for an address.
+// Both shapes are compact — price, cancellation, a "Show dates" button and a few
+// suggested days — with the picking (guest count, calendar, time) in the dialog.
+export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdults, cottageChildren, standalone: standaloneProp, provider }: {
+    bookingId?: string; checkIn?: string; checkOut?: string; cottageGuests?: number;
     cottageAdults?: number | null; cottageChildren?: number | null;
     stay?: { title: string | null; town: string | null };
+    standalone?: boolean;
     provider: PanelProvider;
 }) {
     const isSlot = provider.shape === 'slot';
+    const isComesToYou = provider.shape === 'comes_to_you';
+    const standalone = standaloneProp ?? !bookingId;
     const [open, setOpen] = useState(false);
     const [initialDate, setInitialDate] = useState<string | null>(null);
+    // The option chosen on the listing (via ChooseMenu) — locks the dialog to it
+    // and removes the option list. Null on a plain "Show dates" open, which then
+    // defaults to the cheapest option below.
+    const [lockedItemId, setLockedItemId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Request-flow state (non-slot only).
-    const [itemId, setItemId] = useState<string>(provider.items.length === 1 ? provider.items[0].id : '');
-    const [date, setDate] = useState<string>('');
-    const [qty, setQty] = useState<number>(1);
-    const [allergy, setAllergy] = useState<string>('');
-    const [allergyTags, setAllergyTags] = useState<string[]>([]);
-
     const declaredSessions = provider.declaredSessions || [];
-    const minDate = maxKey(checkIn.slice(0, 10), dayKeyFromNow(provider.shape === 'made_to_order' ? provider.leadTimeDays : 0));
-    const maxDate = lastNight(checkOut);
+    // The provider's notice period is the earliest a date can be picked — for a
+    // comes-to-you chef as much as a made-to-order baker. A two-day notice on the
+    // 22nd first offers the 24th; a stay still can't be booked inside the notice.
+    const reqLead = Math.max(0, provider.leadTimeDays || 0);
+    const minDate = standalone
+        ? dayKeyFromNow(reqLead)
+        : maxKey(String(checkIn).slice(0, 10), dayKeyFromNow(reqLead));
+    const maxDate = standalone
+        ? dayKeyFromNow(Math.max(1, provider.horizonDays || 90))
+        : lastNight(String(checkOut));
 
     const cheapest = provider.items.length ? provider.items.reduce((a, b) => (a.price <= b.price ? a : b)) : null;
     const priceParts_ = cheapest ? priceParts(cheapest.price, cheapest.unit) : null;
     const showFrom = provider.items.length > 1;
     const cancel = cancellationBadge(provider.cancellationHours, provider.noRefund);
 
-    // Per-treatment (massage): the open-hours grid depends on the chosen item's
-    // own length, so the dialog is handed a generator; a fixed-grid provider gets
-    // its static server grid. Both bound to the stay window.
+    // ---- SLOT ---------------------------------------------------------------
     const bookedRowByKey = useMemo(() => {
         const m = new Map<string, PanelSession['row']>();
         for (const b of provider.bookedBlocks || []) m.set(b.date + ' ' + b.time, { capacity: b.capacity, seats_taken: b.seats_taken, private: b.private });
@@ -121,21 +147,94 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         } catch { setError('Could not start that.'); setBusy(false); }
     }
 
-    // Non-slot request flow.
-    const reqItem = provider.items.find((i) => i.id === itemId) || null;
-    const reqPerPerson = !!reqItem && unitMultiplies(reqItem.unit);
-    const reqQty = reqPerPerson ? Math.max(1, Math.min(MAX_ORDER_QUANTITY, Math.floor(qty) || 1)) : 1;
-    const reqTotal = reqItem ? orderTotal(reqItem.price, reqQty) : 0;
-    async function sendRequest() {
-        setError(null);
-        if (!reqItem) { setError('Pick one first.'); return; }
-        if (!date) { setError('Pick a date during your stay.'); return; }
-        setBusy(true);
+    const previewDefault = provider.items.filter((i) => i.price > 0).sort((a, b) => a.price - b.price).find((i) => unitMultiplies(i.unit)) || provider.items[0] || null;
+    const previewSessions = provider.perItemDurations && previewDefault ? sessionsForItem(previewDefault.id) : provider.sessions;
+    const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
+
+    // Open the comes-to-you dialog on a specific OPTION (chosen on the listing)
+    // and optionally a date. A null option falls back to the cheapest — that's
+    // what a plain "Show dates" or a suggested day does.
+    const requestBooking = useRequestBooking();
+    const openRequest = useCallback((itemId: string | null, d: string | null) => {
+        setLockedItemId(itemId || cheapest?.id || null);
+        setInitialDate(d);
+        setOpen(true);
+    }, [cheapest]);
+    // A Choose press on the listing menu (ChooseMenu) parks a request in the
+    // context; open the dialog on that option.
+    useEffect(() => {
+        const p = requestBooking?.pending;
+        if (!p) return;
+        openRequest(p.itemId, p.date);
+        requestBooking?.consume();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestBooking?.pending?.nonce]);
+
+    // ---- COMES-TO-YOU -------------------------------------------------------
+    // A comes-to-you chef only travels, so standalone it asks for an address.
+    const needsAddress = standalone && isComesToYou;
+    const offered = provider.offeredTimes || [];
+
+    const bookableDays = useMemo(() => {
+        const out: string[] = []; let d = minDate;
+        for (let i = 0; i < 92 && d <= maxDate; i++) { out.push(d); d = shiftDayKey(d, 1); }
+        return out;
+    }, [minDate, maxDate]);
+
+    // The available days and their start times, generated from the provider's
+    // weekly opening hours (the single place hours are set). A legacy provider
+    // with no hours but named offered_times falls back to those on every bookable
+    // day.
+    const reqTimes = useMemo(() => {
+        const byDate: Record<string, string[]> = {};
+        const days = new Set<string>();
+        if (!isComesToYou) return { days, byDate };
+        // A date the provider is already booked on is dropped entirely — one
+        // booking a day blocks the whole day, so it never enters the day list and
+        // (being absent from calDays) shows greyed and disabled in the calendar.
+        const booked = new Set(provider.bookedDates || []);
+        for (const s of generateSessions(provider.slotAvailability || [], provider.slotBlocks || [], 30, minDate, maxDate, 30, provider.partialBlocks || [])) {
+            if (booked.has(s.date)) continue;
+            (byDate[s.date] = byDate[s.date] || []).push(s.time);
+            days.add(s.date);
+        }
+        return { days, byDate };
+    }, [isComesToYou, provider.slotAvailability, provider.slotBlocks, provider.partialBlocks, provider.bookedDates, minDate, maxDate]);
+    const useHours = isComesToYou && reqTimes.days.size > 0;
+    const calDays = useMemo(
+        () => (useHours ? reqTimes.days : new Set(bookableDays)),
+        [useHours, reqTimes.days, bookableDays],
+    );
+    const reqDialogTimes = useMemo<Record<string, string[]>>(() => {
+        if (useHours) return reqTimes.byDate;
+        const m: Record<string, string[]> = {};
+        if (isComesToYou && offered.length) for (const d of bookableDays) m[d] = offered;
+        return m;
+    }, [useHours, reqTimes.byDate, isComesToYou, offered, bookableDays]);
+
+    // Submit a comes-to-you request from the DIALOG's own state. The money fields
+    // are derived from the chosen item's kind so the request matches the total the
+    // dialog showed: extra-guests → adults/children; per-person → a head count as
+    // quantity; flat → one.
+    async function bookRequest(args: RequestBookArgs) {
+        const it = provider.items.find((i) => i.id === args.itemId);
+        if (!it) { setError('Pick one first.'); return; }
+        const eg = { unit: it.unit, price: it.price, included_guests: it.includedGuests ?? null, extra_adult_fee: it.extraAdultFee ?? null, extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null };
+        const isExtra = hasExtraGuests(eg);
+        const perPerson = unitMultiplies(it.unit);
+        const kids = childrenAllowed(provider.minAge ?? null) ? args.children : 0;
+        setBusy(true); setError(null);
         try {
-            const trimmedAllergy = provider.isFood ? [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '') : '';
             const res = await fetch('/api/services/order', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ itemId: reqItem.id, bookingId, serviceDate: date, quantity: reqQty, allergy: trimmedAllergy }),
+                body: JSON.stringify({
+                    itemId: it.id, bookingId, serviceDate: args.date, serviceTime: args.time,
+                    ...(isExtra
+                        ? { adults: Math.max(1, args.adults), children: kids }
+                        : { quantity: perPerson ? Math.max(1, args.adults + kids) : 1 }),
+                    serviceAddress: needsAddress ? args.address : undefined,
+                    allergy: provider.isFood ? args.allergy : '',
+                }),
             });
             const d = await res.json();
             if (d && d.ok && d.url) { window.location.href = d.url; return; }
@@ -144,19 +243,70 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         setBusy(false);
     }
 
-    const stayDays = useMemo(() => {
-        const out: string[] = []; let d = minDate;
-        for (let i = 0; i < 62 && d <= maxDate; i++) { out.push(d); d = shiftDayKey(d, 1); }
-        return out;
-    }, [minDate, maxDate]);
+    if (isSlot) {
+        return (
+            <div id="booking-panel" className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        {priceParts_ && (
+                            <div className="text-slate-900">
+                                <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
+                                {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
+                            </div>
+                        )}
+                        <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                        {!standalone && checkIn && (
+                            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                                <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                                <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
+                            </p>
+                        )}
+                    </div>
+                    <button type="button" onClick={() => setOpen(true)} disabled={!hasSlotAvailability}
+                        className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+                        {hasSlotAvailability ? 'Show dates' : 'No times'}
+                    </button>
+                </div>
+                <DatePreview
+                    items={provider.items}
+                    sessions={previewSessions}
+                    declaredSessions={declaredSessions}
+                    providerCapacity={provider.slotCapacity}
+                    providerMinPeople={provider.minPeople}
+                    slotLength={provider.slotLength}
+                    busy={busy}
+                    onPickDay={(d) => openOn(d)}
+                    onShowAll={() => openOn(null)}
+                />
+                {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+                {open && (
+                    <BookingDialog
+                        who={provider.who}
+                        items={provider.items}
+                        sessions={provider.sessions}
+                        sessionsForItem={provider.perItemDurations ? sessionsForItem : undefined}
+                        declaredSessions={declaredSessions}
+                        providerCapacity={provider.slotCapacity}
+                        providerMinPeople={provider.minPeople}
+                        providerFulfilment={provider.fulfilment}
+                        isFood={provider.isFood}
+                        minAge={provider.minAge}
+                        initialDate={initialDate}
+                        prefillAdults={cottageAdults}
+                        prefillChildren={cottageChildren}
+                        busy={busy}
+                        error={error}
+                        onBook={bookSlot}
+                        onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
+                    />
+                )}
+            </div>
+        );
+    }
 
-    // Preview cards use the cheapest option; for the per-treatment shape the grid
-    // is that option's own, so generate it.
-    const previewDefault = provider.items.filter((i) => i.price > 0).sort((a, b) => a.price - b.price).find((i) => unitMultiplies(i.unit)) || provider.items[0] || null;
-    const previewSessions = provider.perItemDurations && previewDefault ? sessionsForItem(previewDefault.id) : provider.sessions;
-    // Tapping a day in the panel opens the dialog on that day's times.
-    const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
-
+    // ---- comes-to-you: the compact box + dialog, like the slot experiences ----
+    // Price, the free-cancellation line, a "Show dates" button and a few suggested
+    // days; the option, guest count, calendar and time all live in the dialog.
     return (
         <div id="booking-panel" className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="flex items-start justify-between gap-3">
@@ -167,115 +317,43 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                             {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
                         </div>
                     )}
-                    {isSlot && <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>}
-                    <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                        <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
-                        <span>For your stay · {dateLabel(checkIn.slice(0, 10))} – {dateLabel(maxDate)}</span>
-                    </p>
+                    <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                    {!standalone && checkIn && (
+                        <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                            <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                            <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
+                        </p>
+                    )}
                 </div>
-                {isSlot && (
-                    <button type="button" onClick={() => setOpen(true)} disabled={!hasSlotAvailability}
-                        className="flex-none rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
-                        {hasSlotAvailability ? 'Show dates' : 'No times'}
-                    </button>
-                )}
+                <button type="button" onClick={() => openRequest(null, null)} disabled={calDays.size === 0}
+                    className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+                    {calDays.size ? 'Show dates' : 'No dates'}
+                </button>
             </div>
 
-            {isSlot ? (
-                <>
-                    <DatePreview
-                        items={provider.items}
-                        sessions={previewSessions}
-                        declaredSessions={declaredSessions}
-                        providerCapacity={provider.slotCapacity}
-                        providerMinPeople={provider.minPeople}
-                        slotLength={provider.slotLength}
-                        busy={busy}
-                        onPickDay={(d) => openOn(d)}
-                        onShowAll={() => openOn(null)}
-                    />
-                    {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
-                    {open && (
-                        <BookingDialog
-                            who={provider.who}
-                            items={provider.items}
-                            sessions={provider.sessions}
-                            sessionsForItem={provider.perItemDurations ? sessionsForItem : undefined}
-                            declaredSessions={declaredSessions}
-                            providerCapacity={provider.slotCapacity}
-                            providerMinPeople={provider.minPeople}
-                            providerFulfilment={provider.fulfilment}
-                            isFood={provider.isFood}
-                            minAge={provider.minAge}
-                            initialDate={initialDate}
-                            prefillAdults={cottageAdults}
-                            prefillChildren={cottageChildren}
-                            busy={busy}
-                            error={error}
-                            onBook={bookSlot}
-                            onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
-                        />
-                    )}
-                </>
-            ) : (
-                <>
-                    <span className="mt-3 inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900">Request — {provider.who} has 48 hours to confirm</span>
+            <RequestDatePreview calDays={calDays} timesByDate={reqDialogTimes} busy={busy} onPickDay={(d) => openRequest(null, d)} />
 
-                    {provider.items.length > 1 && (
-                        <fieldset className="mt-4">
-                            <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
-                            <div className="mt-2 space-y-1.5">
-                                {provider.items.map((it) => (
-                                    <label key={it.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 ${itemId === it.id ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
-                                        <input type="radio" name="item" checked={itemId === it.id} onChange={() => setItemId(it.id)} className="accent-emerald-600" />
-                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{it.name}</span>
-                                        <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </fieldset>
-                    )}
+            {error && !open && <p className="mt-3 text-sm text-rose-700">{error}</p>}
 
-                    <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a date</div>
-                    <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
-                        {stayDays.map((d) => (
-                            <button key={d} type="button" onClick={() => setDate(d)}
-                                className={`whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-medium ${date === d ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
-                                {dateLabel(d)}
-                            </button>
-                        ))}
-                    </div>
-
-                    {reqItem && reqPerPerson && (
-                        <label className="mt-4 block">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">How many</span>
-                            <input type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                        </label>
-                    )}
-
-                    {provider.isFood && (
-                        <div className="mt-4">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Allergies or dietary needs <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                                {COMMON_ALLERGENS.map((a) => (
-                                    <button key={a} type="button" onClick={() => setAllergyTags((t) => (t.includes(a) ? t.filter((x) => x !== a) : [...t, a]))}
-                                        className={`rounded-full border px-2.5 py-1 text-xs font-medium ${allergyTags.includes(a) ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>{a}</button>
-                                ))}
-                            </div>
-                            <textarea value={allergy} onChange={(e) => setAllergy(e.target.value.slice(0, 500))} rows={2} placeholder="Anything else they should cook around"
-                                className="mt-2 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                        </div>
-                    )}
-
-                    {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
-
-                    <button type="button" onClick={sendRequest} disabled={busy || !reqItem || !date}
-                        className="mt-4 w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                        {busy ? 'Sending…' : (reqTotal ? `Send request · £${reqTotal.toFixed(2)}` : 'Send request')}
-                    </button>
-                    <p className="mt-2 text-xs text-slate-400">Your card is held, not charged, until {provider.who} confirms.</p>
-                </>
+            {open && (
+                <RequestBookingDialog
+                    who={provider.who}
+                    items={provider.items}
+                    minAge={provider.minAge}
+                    isFood={provider.isFood}
+                    needsAddress={needsAddress}
+                    calDays={calDays}
+                    timesByDate={reqDialogTimes}
+                    providerMax={provider.maxGuests}
+                    prefillAdults={cottageAdults}
+                    prefillChildren={cottageChildren}
+                    initialDate={initialDate}
+                    lockedItemId={lockedItemId}
+                    busy={busy}
+                    error={error}
+                    onBook={bookRequest}
+                    onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setLockedItemId(null); setError(null); } }}
+                />
             )}
         </div>
     );

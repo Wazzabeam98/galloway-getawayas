@@ -8,6 +8,8 @@ import Env from '@/config/Env';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
+import { childrenAllowed } from '@/lib/guestAges';
+import { stepHeadings } from '@/lib/experienceSteps';
 import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
@@ -34,11 +36,12 @@ export interface EditorProvider {
     business_name: string; category_label: string; category: string; description: string;
     status: string; owner_paused: boolean;
     photos: string[]; headshot: string | null; logo: string | null;
-    dietary_note: string; fulfilment: string;
+    dietary_note: string; fulfilment: string; delivery_fee: number; delivery_radius_miles: number;
     collection_street: string; collection_town: string; collection_postcode: string;
     slot_length_minutes: number | null; slot_turnaround_minutes: number;
     slot_capacity: number | null; slot_min_people: number; max_guests: number | null;
     lead_time_days: number; cancellation_window_hours: number; booking_horizon_days: number;
+    offered_times: string[];
     professional_title: string; years_experience: string; qualifications: string; recognition: string;
     what_to_expect: string; itinerary: Array<{ title?: string | null; detail?: string | null }>;
     min_age: number | null; activity_level: string; what_to_bring: string;
@@ -46,7 +49,7 @@ export interface EditorProvider {
     amenities: string[];
     dietary_options: string[];
     areas: string[];
-    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null }>;
+    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null }>;
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
@@ -138,10 +141,14 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // What happens is an ordered arrival → during → finish flow (Airbnb's "What
     // you'll do"), not a bare paragraph or empty step rows. Stored as the itinerary
     // array, keyed by phase title; a phase with no detail simply isn't saved.
-    const phaseDetail = (title: string) => (p.itinerary.find((s) => (s.title || '').toLowerCase() === title.toLowerCase())?.detail) || '';
-    const [arrival, setArrival] = useState(phaseDetail('Arrival'));
-    const [during, setDuring] = useState(phaseDetail('During'));
-    const [finish, setFinish] = useState(phaseDetail('Finish'));
+    // Read by POSITION, not title: the three phases are the generic Arrival /
+    // During / Finish (or, for made-to-order, the real Order / Made / Collection-
+    // or-Delivery steps), so what the phase is called is decided by the shape, not
+    // stored per-category. The provider writes only the detail under each.
+    const phaseDetail = (i: number) => (p.itinerary[i]?.detail) || '';
+    const [arrival, setArrival] = useState(phaseDetail(0));
+    const [during, setDuring] = useState(phaseDetail(1));
+    const [finish, setFinish] = useState(phaseDetail(2));
     const [minAge, setMinAge] = useState(p.min_age != null ? String(p.min_age) : '');
     const [activity, setActivity] = useState(p.activity_level);
     const [whatToBring, setWhatToBring] = useState(p.what_to_bring);
@@ -172,6 +179,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [cancelHours, setCancelHours] = useState(Number(p.cancellation_window_hours ?? 48));
     const [horizonDays, setHorizonDays] = useState(Math.max(1, Number(p.booking_horizon_days || 90)));
     const cancelPolicy = experienceCancellationOption(Number(cancelHours), noRefund);
+    // A request shape's booking times used to be a free "offered times" list;
+    // comes-to-you now generates them from its weekly opening hours (the
+    // Availability/Opening-hours section) and made-to-order is a date only, so
+    // there is no offered-times control here any more.
 
     // Max group size — the largest booking. A slot's is slot_capacity (it sizes
     // sellable seats); every other shape keeps it in guest_details.max_guests. One
@@ -229,13 +240,27 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
         fulfilment: it.fulfilment, active: it.active,
         // Blank = inherit the provider default; a number here overrides it for this item.
         capacity: it.capacity != null ? String(it.capacity) : '',
+        // Smallest party for a per-person request item (a private chef per guest).
+        minPeople: (it as any).min_people != null ? String((it as any).min_people) : '',
+        // Extra-guests pricing (flat items). Blank = a plain flat price.
+        includedGuests: (it as any).included_guests != null ? String((it as any).included_guests) : '',
+        extraAdultFee: (it as any).extra_adult_fee != null ? String((it as any).extra_adult_fee) : '',
+        extraChildFee: (it as any).extra_child_fee != null ? String((it as any).extra_child_fee) : '',
+        maxParty: (it as any).max_party != null ? String((it as any).max_party) : '',
+        // Made-to-order: standard (instant) vs custom (a request the provider agrees).
+        isCustom: !!(it as any).is_custom,
+        // Per-item ingredient + allergen detail, shown behind the menu's info icon.
+        ingredients: (it as any).ingredients || '',
+        allergens: (it as any).allergens || '',
+        // Made-to-order menu section, so a long menu groups under sticky tabs.
+        category: (it as any).category || '',
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
@@ -273,6 +298,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [street, setStreet] = useState(p.collection_street);
     const [town, setTown] = useState(p.collection_town);
     const [postcode, setPostcode] = useState(p.collection_postcode);
+    const [deliveryFee, setDeliveryFee] = useState(p.delivery_fee != null ? String(p.delivery_fee) : '');
+    const [deliveryRadius, setDeliveryRadius] = useState(p.delivery_radius_miles ? String(p.delivery_radius_miles) : '');
     const [areas, setAreas] = useState<string[]>(p.areas);
     const collects = fulfilment === 'collection' || fulfilment === 'both';
     const travels = fulfilment === 'delivery' || fulfilment === 'both';
@@ -331,9 +358,12 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         // Food & dietary is only meaningful for a food business (chef, baker,
         // hamper) — a sauna or a guide never caters, so it doesn't see this.
         ...(p.isFood ? [{ key: 'dietary' as SectionKey, label: 'Food & dietary', icon: Salad }] : []),
-        // Booking rules reach every shape; the weekly template is slot-only.
+        // Booking rules reach every shape. Weekly opening hours reach a slot AND a
+        // comes-to-you provider — the one place a chef sets the hours they work,
+        // which their booking times are generated from. A made-to-order baker is a
+        // date only, so it has no hours section.
         { key: 'booking', label: 'Booking', icon: CalendarClock },
-        ...(p.isSlot ? [{ key: 'availability' as SectionKey, label: 'Availability', icon: CalendarRange }] : []),
+        ...((p.isSlot || p.shape === 'comes_to_you') ? [{ key: 'availability' as SectionKey, label: p.isSlot ? 'Availability' : 'Opening hours', icon: CalendarRange }] : []),
         { key: 'cancellation', label: 'Cancellation policy', icon: RotateCcw },
         { key: 'status', label: 'Listing status', icon: paused ? EyeOff : Eye },
     ];
@@ -375,11 +405,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 </div>
             )}
 
-            {/* Go-live gate for a slot provider with no weekly hours: a slot with
-                no availability generates no sessions and is dropped from the
-                marketplace, so it's the one thing that keeps a new provider
-                invisible. Said loudly, with a jump to fix it — never a hard block. */}
-            {p.isSlot && p.availability.length === 0 && !paused && (
+            {/* Go-live gate for a slot OR comes-to-you provider with no weekly
+                hours: both generate their booking times from the weekly hours, so
+                with none set a guest sees no times to pick. Said loudly, with a
+                jump to fix it — never a hard block. */}
+            {(p.isSlot || p.shape === 'comes_to_you') && p.availability.length === 0 && !paused && (
                 <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4">
                     <div className="font-semibold text-amber-900">You’re not bookable yet — add your weekly hours</div>
                     <p className="mt-1 text-sm text-amber-900/80">
@@ -458,11 +488,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         <SectionCard title="What happens" hint="A line on what it is, then walk a guest through it start to finish." saving={savingKey === 'happens'}
                             onSave={() => run('happens', {
                                 what_to_expect: whatToExpect,
-                                itinerary: [
-                                    { title: 'Arrival', detail: arrival },
-                                    { title: 'During', detail: during },
-                                    { title: 'Finish', detail: finish },
-                                ],
+                                itinerary: stepHeadings(p.shape, fulfilment).map((h, i) => ({ title: h.title, detail: [arrival, during, finish][i] })),
                             })}>
                             <Field label="In a sentence, what is it?">
                                 <textarea className={inputCls} rows={3} value={whatToExpect} onChange={(e) => setWhatToExpect(e.target.value)} placeholder="A wood-fired lakeside sauna with cold-water dips between rounds." />
@@ -471,11 +497,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">The flow</span>
                                 <p className="mt-0.5 text-xs text-slate-400">Take a guest through it, start to finish. Leave a step blank to skip it.</p>
                                 <div className="mt-3 space-y-3">
-                                    {[
-                                        { n: 1, label: 'Arrival', value: arrival, set: setArrival, ph: 'Where to meet, how to find you, what to expect first.' },
-                                        { n: 2, label: 'During', value: during, set: setDuring, ph: 'The heart of it — what you’ll actually do together.' },
-                                        { n: 3, label: 'Finish', value: finish, set: setFinish, ph: 'How it wraps up — and anything to do after.' },
-                                    ].map((s) => (
+                                    {stepHeadings(p.shape, fulfilment).map((h, idx) => ([
+                                        { n: 1, label: h.title, value: arrival, set: setArrival, ph: 'Where to meet, how to find you, what to expect first.' },
+                                        { n: 2, label: h.title, value: during, set: setDuring, ph: 'The heart of it — what you’ll actually do together.' },
+                                        { n: 3, label: h.title, value: finish, set: setFinish, ph: 'How it wraps up — and anything to do after.' },
+                                    ][idx])).map((s) => (
                                         <div key={s.label} className="flex gap-3">
                                             <div className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-emerald-700 text-xs font-bold text-white">{s.n}</div>
                                             <div className="flex-1">
@@ -600,7 +626,12 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     id: r.id, name: r.name, description: r.description, price: r.price,
                                     unit: r.unit, image: r.image, duration_minutes: r.duration,
                                     fulfilment: r.fulfilment, active: r.active,
-                                    capacity: r.capacity,
+                                    capacity: r.capacity, min_people: r.minPeople,
+                                    included_guests: r.includedGuests, extra_adult_fee: r.extraAdultFee,
+                                    extra_child_fee: r.extraChildFee, max_party: r.maxParty,
+                                    is_custom: r.isCustom,
+                                    ingredients: r.ingredients, allergens: r.allergens,
+                                    category: r.category,
                                 })),
                             })}>
                             {/* Last-priced-item guard: a listing with no active priced
@@ -698,7 +729,75 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                         <span className="w-full text-xs text-slate-400">Blank uses your default of {maxGuests}.</span>
                                                     </div>
                                                 )}
+                                                {/* Smallest party for a per-person REQUEST item (a
+                                                    private chef per guest). Guests can't book below it
+                                                    and the order route refuses a smaller party. Blank =
+                                                    one is fine. */}
+                                                {!p.isSlot && r.unit === 'person' && (
+                                                    <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3">
+                                                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Smallest party</span>
+                                                        <span className="flex items-center gap-1">
+                                                            <input className="w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder="1" value={r.minPeople} onChange={(e) => setRow(i, { minPeople: e.target.value })} />
+                                                            <span className="text-slate-500 text-sm">guests</span>
+                                                        </span>
+                                                        <span className="w-full text-xs text-slate-400">The fewest you’ll take for this. Blank means one is fine.</span>
+                                                    </div>
+                                                )}
+                                                {/* Extra guests — a group price that grows with the
+                                                    party. Only for a flat (whole-session) item; blank
+                                                    leaves a plain flat price. The child fee only shows
+                                                    where the minimum age admits children, and the price
+                                                    never drops below the base. */}
+                                                {r.unit === 'flat' && (
+                                                    <div className="space-y-2 rounded-xl bg-slate-50 p-3">
+                                                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Extra guests (optional)</span>
+                                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-600">
+                                                            <label className="flex items-center gap-1">Includes
+                                                                <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder="—" value={r.includedGuests} onChange={(e) => setRow(i, { includedGuests: e.target.value })} /> guests</label>
+                                                            <label className="flex items-center gap-1">+£
+                                                                <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraAdultFee} onChange={(e) => setRow(i, { extraAdultFee: e.target.value.replace(/[^0-9.]/g, '') })} /> per extra adult</label>
+                                                            {childrenAllowed(Number(minAge) || null) && (
+                                                                <label className="flex items-center gap-1">+£
+                                                                    <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraChildFee} onChange={(e) => setRow(i, { extraChildFee: e.target.value.replace(/[^0-9.]/g, '') })} /> per extra child</label>
+                                                            )}
+                                                            <label className="flex items-center gap-1">Max party
+                                                                <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder="—" value={r.maxParty} onChange={(e) => setRow(i, { maxParty: e.target.value })} /></label>
+                                                        </div>
+                                                        <span className="block text-xs text-slate-400">Leave blank for one flat price. The price never drops below the base.</span>
+                                                    </div>
+                                                )}
+                                                {/* Made-to-order: standard books and charges instantly;
+                                                    custom needs your say-so, so any order with a custom
+                                                    item is held as a request until you accept. */}
+                                                {p.shape === 'made_to_order' && (
+                                                    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3">
+                                                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">This item is</span>
+                                                        <button type="button" onClick={() => setRow(i, { isCustom: false })}
+                                                            className={`rounded-full border px-3 py-1.5 text-sm transition ${!r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Standard — books instantly</button>
+                                                        <button type="button" onClick={() => setRow(i, { isCustom: true })}
+                                                            className={`rounded-full border px-3 py-1.5 text-sm transition ${r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Custom — you approve first</button>
+                                                    </div>
+                                                )}
+                                                {/* Menu section — groups a long menu under sticky
+                                                    tabs on the guest page, once there's more than
+                                                    one. Optional; blank items sit in one group. */}
+                                                {p.shape === 'made_to_order' && (
+                                                    <label className="block">
+                                                        <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Menu section <span className="font-normal normal-case tracking-normal text-slate-400">(optional, e.g. Cakes, Traybakes)</span></span>
+                                                        <input className={inputCls} maxLength={60} placeholder="e.g. Cakes" value={r.category} onChange={(e) => setRow(i, { category: e.target.value })} />
+                                                    </label>
+                                                )}
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
+                                                {/* Ingredients + allergens — shown behind the menu's
+                                                    info icon on a food listing. Free text, written the
+                                                    way a home baker would on a label. */}
+                                                {p.shape === 'made_to_order' && (
+                                                    <div className="space-y-2 rounded-xl bg-slate-50 p-3">
+                                                        <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Ingredients &amp; allergens <span className="font-normal normal-case tracking-normal text-slate-400">(optional — shown on the menu’s info icon)</span></span>
+                                                        <textarea className={inputCls} rows={2} placeholder="Ingredients, e.g. Wheat flour, butter, eggs, sugar, Galloway raspberries" value={r.ingredients} onChange={(e) => setRow(i, { ingredients: e.target.value })} />
+                                                        <textarea className={inputCls} rows={2} placeholder="Allergens, e.g. Contains wheat, egg, milk. Made in a kitchen that handles nuts." value={r.allergens} onChange={(e) => setRow(i, { allergens: e.target.value })} />
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="mt-3 flex items-center justify-between">
@@ -711,16 +810,20 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '' }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '', isCustom: false, ingredients: '', allergens: '', category: '' }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}
 
                     {active === 'where' && (
                         <SectionCard title={fixedInPlace ? 'Address' : 'Where it happens'} hint="How guests reach you. They only ever see the town — the street and postcode stay private until a booking is confirmed." saving={savingKey === 'where'}
+                            disabled={travels && Number(deliveryRadius) > 0 && !postcode.trim()}
+                            disabledLabel="Add your base postcode — a delivery distance is measured from it."
                             onSave={() => run('where', {
                                 fulfilment,
                                 collection_street: street, collection_town: town, collection_postcode: postcode,
+                                delivery_fee: travels ? deliveryFee : 0,
+                                delivery_radius_miles: travels ? deliveryRadius : 0,
                                 areas: travels ? areas : [],
                             })}>
                             {canTravel ? (
@@ -728,7 +831,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     <div className="space-y-2">
                                         {[
                                             { key: 'collection', label: 'Guests come to me', note: 'At your studio, sauna, kitchen — one place.' },
-                                            { key: 'delivery', label: 'I travel to the guest', note: 'You go to their cottage.' },
+                                            { key: 'delivery', label: 'I travel to the guest', note: 'You go to where they’re staying.' },
                                             { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
                                         ].map((o) => (
                                             <button key={o.key} type="button" onClick={() => setFulfilment(o.key)}
@@ -756,6 +859,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 </div>
                             )}
 
+                            {/* A delivery-only provider has no public collection address, but a
+                                delivery distance still needs a base to measure from. Their
+                                postcode is private and never shown to guests. */}
+                            {travels && !collects && (
+                                <Field label="Base postcode (private)" hint="Where you deliver from — a delivery distance is measured from here. Never shown to guests.">
+                                    <input className={inputCls} value={postcode} onChange={(e) => setPostcode(e.target.value)} placeholder="DG6 4JS" />
+                                </Field>
+                            )}
+
                             {travels && (
                                 <div>
                                     <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Regions you travel to</span>
@@ -778,6 +890,25 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 </div>
                             )}
+
+                            {travels && (
+                                <Field label="Delivery fee" hint="A flat fee added once to a delivery order. Leave blank for free delivery. Collection is always free.">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-500">£</span>
+                                        <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="0.00"
+                                            value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'))} />
+                                    </div>
+                                </Field>
+                            )}
+                            {travels && (
+                                <Field label="Delivery distance" hint="How far you'll travel from your base. An order further than this is turned away before payment. Leave blank for no distance limit.">
+                                    <div className="flex items-center gap-2">
+                                        <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="e.g. 10"
+                                            value={deliveryRadius} onChange={(e) => setDeliveryRadius(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'))} />
+                                        <span className="text-slate-500">miles</span>
+                                    </div>
+                                </Field>
+                            )}
                         </SectionCard>
                     )}
 
@@ -787,13 +918,18 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             <Field label="Maximum capacity" hint={p.isSlot ? 'The most people a session can take, as a default — a per-person item can set its own in “What you offer”.' : 'The most people you’ll take for one booking.'}>
                                 <Stepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} />
                             </Field>
-                            <Field label="Notice needed" hint="How far ahead a guest has to book.">
-                                <OptionPills
-                                    options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
-                                    value={String(leadDays)}
-                                    onChange={(v) => setLeadDays(Number(v))}
-                                />
-                            </Field>
+                            {/* A slot or comes-to-you provider sets its notice period
+                                beside the opening hours; made-to-order has no hours
+                                section, so it keeps it here. */}
+                            {!p.isSlot && p.shape !== 'comes_to_you' && (
+                                <Field label="Notice needed" hint="How far ahead a guest has to book. The calendar won't offer a date sooner than this.">
+                                    <OptionPills
+                                        options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
+                                        value={String(leadDays)}
+                                        onChange={(v) => setLeadDays(Number(v))}
+                                    />
+                                </Field>
+                            )}
                             <Field label="How far ahead guests can book" hint="Beyond this, dates aren’t open yet — they come into range as time passes.">
                                 <OptionPills
                                     options={BOOKING_HORIZON_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
@@ -801,13 +937,19 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     onChange={(v) => setHorizonDays(Number(v))}
                                 />
                             </Field>
+                            {p.shape === 'comes_to_you' && (
+                                <p className="text-xs text-slate-500">
+                                    Your booking times come from your weekly opening hours — set them under “Opening hours”.
+                                </p>
+                            )}
                         </SectionCard>
                     )}
 
                     {active === 'availability' && (
-                        <SectionCard title="Availability" hint="Your weekly hours and session shape. A specific day off, or part of a day, is set in your diary." saving={savingKey === 'availability'}
+                        <SectionCard title={p.isSlot ? 'Availability' : 'Opening hours'} hint={p.isSlot ? 'Your weekly hours and session shape. A specific day off, or part of a day, is set in your diary.' : 'The hours you work each week — a guest picks a time within them. A specific day off is set in your diary.'} saving={savingKey === 'availability'}
                             onSave={() => run('availability', {
                                 slot_length_minutes: slotLength, slot_turnaround_minutes: turnaround,
+                                lead_time_days: leadDays,
                                 availability: hours
                                     .map((h, d) => ({ ...h, day_of_week: d }))
                                     .filter((h) => h.on && h.open && h.close && h.open < h.close)
@@ -833,20 +975,34 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     ))}
                                 </div>
                             </div>
-                            <Field label="Session length" hint="How long one session runs.">
+                            {/* The notice period sits beside the opening hours — it's
+                                how soon a guest can book, and the earliest date the
+                                calendar offers is today plus this. */}
+                            <Field label="Notice needed" hint="How far ahead a guest has to book. The calendar won't offer a date sooner than this.">
                                 <OptionPills
-                                    options={SESSION_LENGTH_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) }))}
-                                    value={String(slotLength)}
-                                    onChange={(v) => setSlotLength(Number(v))}
+                                    options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
+                                    value={String(leadDays)}
+                                    onChange={(v) => setLeadDays(Number(v))}
                                 />
                             </Field>
-                            <Field label="Gap between sessions" hint="Time to reset or clean up before the next one can start.">
-                                <OptionPills
-                                    options={TURNAROUND_OPTIONS.map((m) => ({ value: String(m), label: m === 0 ? 'None' : `${m} min` }))}
-                                    value={String(turnaround)}
-                                    onChange={(v) => setTurnaround(Number(v))}
-                                />
-                            </Field>
+                            {p.isSlot && (
+                                <>
+                                    <Field label="Session length" hint="How long one session runs.">
+                                        <OptionPills
+                                            options={SESSION_LENGTH_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) }))}
+                                            value={String(slotLength)}
+                                            onChange={(v) => setSlotLength(Number(v))}
+                                        />
+                                    </Field>
+                                    <Field label="Gap between sessions" hint="Time to reset or clean up before the next one can start.">
+                                        <OptionPills
+                                            options={TURNAROUND_OPTIONS.map((m) => ({ value: String(m), label: m === 0 ? 'None' : `${m} min` }))}
+                                            value={String(turnaround)}
+                                            onChange={(v) => setTurnaround(Number(v))}
+                                        />
+                                    </Field>
+                                </>
+                            )}
                             {/* The minimum-per-booking now lives on each per-person
                                 item in "What you offer" (a whole-session provider has
                                 no per-person minimum at all), so it's gone from here. */}

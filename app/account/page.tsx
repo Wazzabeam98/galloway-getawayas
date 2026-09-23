@@ -774,7 +774,7 @@ export default function AccountSettings() {
                                     onChange={(e) => setHostBio(e.target.value)}
                                     maxLength={500}
                                     rows={4}
-                                    placeholder="e.g. We live just up the road in Kirkcudbright and have let this cottage for years. Message any time — we usually reply within the hour."
+                                    placeholder="e.g. We live just up the road in Kirkcudbright and have let this place for years. Message any time — we usually reply within the hour."
                                     className="w-full p-3 border rounded-xl text-sm"
                                 />
                                 <div className="flex items-center justify-between mt-2">

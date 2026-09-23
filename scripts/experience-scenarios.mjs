@@ -311,7 +311,7 @@ async function main() {
     // A stay that spans every service date the scenarios use.
     const [booking] = await db.insert('bookings', {
         listing_id: listing.id, guest_id: guest.id, host_id: host.id,
-        check_in: dayOffset(1), check_out: dayOffset(12), guests: 2, adults: 2,
+        check_in: dayOffset(1), check_out: dayOffset(25), guests: 8, adults: 8,
         total_price: 500, status: 'confirmed', payment_status: 'paid', amount_paid: 500,
         commission_rate: 10, paid_at: new Date().toISOString(),
     });
@@ -328,6 +328,41 @@ async function main() {
     const [chefItem] = await db.insert('service_provider_items', {
         provider_id: chef.id, name: 'Private dinner', description: 'Three courses',
         price: 180, unit: 'flat', active: true, sort_order: 0,
+    });
+    // A per-person chef item — used for the change-count (down = refund, up =
+    // request) scenarios, which price by head.
+    const [chefPerson] = await db.insert('service_provider_items', {
+        provider_id: chef.id, name: 'Chef per head', description: 'Per person',
+        price: 55, unit: 'person', active: true, sort_order: 1,
+    });
+    // A flat item with EXTRA-GUESTS pricing — £220 for up to 4, +£40/adult.
+    const [chefEG] = await db.insert('service_provider_items', {
+        provider_id: chef.id, name: 'Whole dinner', description: 'Group price',
+        price: 220, unit: 'flat', active: true, sort_order: 2,
+        included_guests: 4, extra_adult_fee: 40, extra_child_fee: 15, max_party: 8,
+    });
+
+    // The made-to-order provider (a baker — a cart of items; standard books
+    // instantly, custom is a request).
+    const [baker] = await db.insert('service_providers', {
+        owner_id: owner.id, business_name: 'EXP Bakehouse', trade: 'baker', audience: 'guest',
+        status: 'approved', plan: 'commission', commission_rate: 0.10,
+        shape: 'made_to_order', exclusive_per_date: false, fulfilment: 'collection',
+        cancellation_window_hours: 48, lead_time_days: 1, contact_email: 'owner@' + EXP_DOMAIN,
+        stripe_account_id: account, stripe_payouts_enabled: true,
+        stripe_charges_enabled: true, stripe_details_submitted: true,
+    });
+    const [bakerStd] = await db.insert('service_provider_items', {
+        provider_id: baker.id, name: 'Box of bakes', description: 'Off the shelf',
+        price: 24, unit: 'flat', active: true, sort_order: 0, is_custom: false,
+    });
+    const [bakerStd2] = await db.insert('service_provider_items', {
+        provider_id: baker.id, name: 'Traybake', description: 'Each',
+        price: 8, unit: 'item', active: true, sort_order: 1, is_custom: false,
+    });
+    const [bakerCustom] = await db.insert('service_provider_items', {
+        provider_id: baker.id, name: 'Celebration cake', description: 'Made to your design',
+        price: 42, unit: 'flat', active: true, sort_order: 2, is_custom: true,
     });
 
     // The slot-shape provider (a sauna — instant, timed, capacity 1 flat slot).
@@ -1053,6 +1088,211 @@ async function main() {
             }
         }
         note('The move is one atomic RPC: it locks the family and both sessions, re-checks capacity and the cutoff under lock, then claims the target and releases the source — or raises and rolls the whole thing back, leaving the source exactly as it was.');
+    }
+
+    // A confirmed per-person chef order for `qty` on `serviceDate`, £55/head.
+    async function confirmedChefOrder(serviceDate, qty) {
+        const total = 55 * qty;
+        const pi = await destinationPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+        const base = sessionForServiceOrder({ pi: pi.id, total, provider: chef, guest, booking, serviceDate, item: chefPerson });
+        await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'person', unit_price: '55', quantity: String(qty), adults: String(qty), children: '0' } });
+        const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + serviceDate + '&order=created_at.desc&limit=1'))[0];
+        await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'confirm' });
+        return { order, pi };
+    }
+
+    // A CONFIRMED extra-guests flat order (the chef's £220-for-4 dinner). A party
+    // above the included four pays the per-adult fee (party 6 → £300).
+    async function confirmedChefEGOrder(serviceDate, adults) {
+        const total = 220 + Math.max(0, adults - 4) * 40;
+        const pi = await destinationPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+        const base = sessionForServiceOrder({ pi: pi.id, total, provider: chef, guest, booking, serviceDate, item: chefEG });
+        await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'flat', unit_price: String(total), quantity: '1', guests: String(adults), adults: String(adults), children: '0' } });
+        const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + serviceDate + '&order=created_at.desc&limit=1'))[0];
+        await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'confirm' });
+        return { order, pi };
+    }
+
+    /* ================================================ 12. CHANGE COUNT — DOWN */
+    scenario('12', 'Reductions are gone: a lower count is refused and nothing is refunded');
+    {
+        // Per-person comes-to-you.
+        const { order, pi } = await confirmedChefOrder(dayOffset(13), 3);
+        const conf = await orderRow(order.id);
+        check('a confirmed per-person order, £165 for 3', conf.status === 'confirmed' && Number(conf.price) === 165, conf.status + ' £' + conf.price);
+        const red = await postRoute('/api/services/order/change-count', guestCookie, { orderId: order.id, count: 2 });
+        check('a per-person reduction is REFUSED (400)', red.status === 400 && !red.body.ok, 'HTTP ' + red.status + ' ' + JSON.stringify(red.body).slice(0, 120));
+        const ch = await chargeOf(pi.id);
+        check('STRIPE — nothing was refunded', ch && ch.amount_refunded === 0, 'refunded=' + (ch && ch.amount_refunded));
+        const after = await orderRow(order.id);
+        check('the order is untouched — still £165 for 3, no refund recorded', Number(after.price) === 165 && Number(after.quantity) === 3 && Number(after.amount_refunded) === 0, '£' + after.price + ' q' + after.quantity + ' refunded ' + after.amount_refunded);
+
+        // Extra-guests flat: a smaller party is refused too, and the deleted
+        // reduce-and-refund path takes no money.
+        const eg = await confirmedChefEGOrder(dayOffset(12), 6);   // £300 for a party of 6
+        const egRed = await postRoute('/api/services/order/change-count', guestCookie, { orderId: eg.order.id, count: 4, adults: 4, children: 0 });
+        check('an extra-guests reduction is REFUSED (400)', egRed.status === 400 && !egRed.body.ok, 'HTTP ' + egRed.status + ' ' + JSON.stringify(egRed.body).slice(0, 120));
+        const egAfter = await orderRow(eg.order.id);
+        check('the extra-guests order is untouched — still £300, party 6, nothing refunded', Number(egAfter.price) === 300 && Number(egAfter.attendees) === 6 && Number(egAfter.amount_refunded) === 0, '£' + egAfter.price + ' party ' + egAfter.attendees + ' refunded ' + egAfter.amount_refunded);
+        note('Guest-count reductions and the reduce-and-refund path are removed everywhere. To lower a party a guest cancels or messages the provider.');
+    }
+
+    /* =========================================== 13. EXTRA GUESTS + PARTY CAP */
+    scenario('13', 'Extra-guest fees are charged at booking, and the party is capped at the stay');
+    {
+        const book6 = await postRoute('/api/services/order', guestCookie, { itemId: chefEG.id, bookingId: booking.id, serviceDate: dayOffset(14), adults: 6, children: 0 });
+        check('a party of 6 on the £220-for-4 item is accepted (stay is 8)', book6.status === 200 && book6.body.ok && !!book6.body.url, 'HTTP ' + book6.status + ' ' + JSON.stringify(book6.body).slice(0, 140));
+        const pi = await destinationPI({ total: 300, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+        const base = sessionForServiceOrder({ pi: pi.id, total: 300, provider: chef, guest, booking, serviceDate: dayOffset(15), item: chefEG });
+        await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'flat', unit_price: '300', quantity: '1', guests: '6', adults: '6', children: '0' } });
+        const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + dayOffset(15) + '&order=created_at.desc&limit=1'))[0];
+        check('the order records £300 for a party of 6 (220 + 2×£40)', order && Number(order.price) === 300 && Number(order.attendees) === 6, order && ('£' + order.price + ' party ' + order.attendees));
+        const book9 = await postRoute('/api/services/order', guestCookie, { itemId: chefEG.id, bookingId: booking.id, serviceDate: dayOffset(16), adults: 9, children: 0 });
+        check('a party of 9 is REFUSED — over the stay of 8 / the item max', book9.status === 400 && !book9.body.ok, 'HTTP ' + book9.status);
+    }
+
+    /* ============================================ 14. INCREASE = REQUEST, ACCEPTED */
+    scenario('14', 'An increase holds the extra on the card; the provider accepts and it is captured');
+    {
+        const { order } = await confirmedChefOrder(dayOffset(17), 2);
+        const up = await postRoute('/api/services/order/change-count', guestCookie, { orderId: order.id, count: 3 });
+        check('the increase is a REQUEST — a Checkout hold, not an instant charge', up.status === 200 && up.body.ok && !!up.body.url && up.body.requested === true, 'HTTP ' + up.status + ' ' + JSON.stringify(up.body).slice(0, 140));
+        const child = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + order.id + '&order=created_at.desc&limit=1'))[0];
+        check('a holding child was written for the extra place (£55)', child && child.status === 'holding' && Number(child.price) === 55, child && (child.status + ' £' + child.price));
+        const childPi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child.id } });
+        await postWebhook({ object: 'checkout_session', payment_status: 'no_payment_required', payment_intent: childPi.id, amount_total: 5500, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'change_request', order_id: child.id, parent_order_id: order.id, provider_id: chef.id, guest_id: guest.id } });
+        const held = await orderRow(child.id);
+        check('the completed hold is now AUTHORISED — a request to answer', held.status === 'authorised' && held.stripe_payment_intent_id === childPi.id, held.status);
+        const acc = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: child.id, decision: 'confirm' });
+        check('accept succeeds', acc.status === 200 && acc.body.ok, 'HTTP ' + acc.status + ' ' + JSON.stringify(acc.body).slice(0, 140));
+        const ch = await settledCharge(childPi.id, { needTransfer: true });
+        check('STRIPE — the £55 hold was CAPTURED on accept', ch && ch.captured === true && ch.amount_captured === 5500, 'captured=' + (ch && ch.captured) + ' amt=' + (ch && ch.amount_captured));
+        note('The accepted extra is its own destination charge, so the provider payout is the sum across the order family.');
+    }
+
+    /* ============================= 15. INCREASE = REQUEST, DECLINED / EXPIRED */
+    scenario('15', 'A declined increase releases the hold; an unanswered one is released by the 48h sweep');
+    {
+        const { order } = await confirmedChefOrder(dayOffset(18), 2);
+        // Declined.
+        await postRoute('/api/services/order/change-count', guestCookie, { orderId: order.id, count: 3 });
+        const child = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + order.id + '&order=created_at.desc&limit=1'))[0];
+        const childPi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child.id } });
+        await postWebhook({ object: 'checkout_session', payment_status: 'no_payment_required', payment_intent: childPi.id, amount_total: 5500, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'change_request', order_id: child.id, parent_order_id: order.id, provider_id: chef.id, guest_id: guest.id } });
+        const dec = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: child.id, decision: 'decline' });
+        check('decline succeeds and the child is declined', dec.status === 200 && dec.body.ok && (await orderRow(child.id)).status === 'declined', 'HTTP ' + dec.status);
+        const ch = await chargeOf(childPi.id);
+        check('STRIPE — the hold was released, nothing captured', ch && ch.captured === false, 'captured=' + (ch && ch.captured));
+        // Expired by the sweep.
+        await postRoute('/api/services/order/change-count', guestCookie, { orderId: order.id, count: 3 });
+        const child2 = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + order.id + '&status=eq.holding&order=created_at.desc&limit=1'))[0];
+        const child2Pi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child2.id } });
+        await postWebhook({ object: 'checkout_session', payment_status: 'no_payment_required', payment_intent: child2Pi.id, amount_total: 5500, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'change_request', order_id: child2.id, parent_order_id: order.id, provider_id: chef.id, guest_id: guest.id } });
+        await db.update('service_orders', '?id=eq.' + child2.id, { expires_at: dayOffset(-1) + 'T00:00:00Z' });
+        await runOrderSweep();
+        const swept = await orderRow(child2.id);
+        check('the unanswered hold is EXPIRED by the sweep', swept.status === 'expired', swept.status);
+        const ch2 = await chargeOf(child2Pi.id);
+        check('STRIPE — the expired hold was released, nothing captured', ch2 && ch2.captured === false, 'captured=' + (ch2 && ch2.captured));
+    }
+
+    /* ================================================ 16. CLOSED WINDOW + DATE REQUEST */
+    scenario('16', 'Past the window every change is closed; inside it a date change is a provider request');
+    {
+        const { order: closedOrder } = await confirmedChefOrder(dayOffset(0), 2);   // today → past the window
+        const red = await postRoute('/api/services/order/change-count', guestCookie, { orderId: closedOrder.id, count: 1 });
+        check('change-count is CLOSED past the window (409)', red.status === 409 && !red.body.ok, 'HTTP ' + red.status);
+        const dtClosed = await postRoute('/api/services/order/change-date', guestCookie, { orderId: closedOrder.id, date: dayOffset(22) });
+        check('change-date is CLOSED past the window (409)', dtClosed.status === 409 && !dtClosed.body.ok, 'HTTP ' + dtClosed.status);
+        // Inside the window: a date change is a REQUEST the provider accepts.
+        const { order: liveOrder } = await confirmedChefOrder(dayOffset(19), 2);
+        const dtReq = await postRoute('/api/services/order/change-date', guestCookie, { orderId: liveOrder.id, date: dayOffset(20) });
+        check('a date change is a REQUEST, not an instant move', dtReq.status === 200 && dtReq.body.ok && dtReq.body.requested === true, 'HTTP ' + dtReq.status + ' ' + JSON.stringify(dtReq.body).slice(0, 140));
+        const parked = await orderRow(liveOrder.id);
+        check('the requested date is parked and the order stays on its date', parked.status === 'confirmed' && String(parked.pending_service_date).slice(0, 10) === dayOffset(20) && String(parked.service_date).slice(0, 10) === dayOffset(19), 'pending=' + parked.pending_service_date + ' date=' + parked.service_date);
+        const acc = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: liveOrder.id, decision: 'accept_date' });
+        check('the provider accepts the date and it applies', acc.status === 200 && acc.body.ok, 'HTTP ' + acc.status);
+        const moved = await orderRow(liveOrder.id);
+        check('the booking is now on the new date, the request cleared', String(moved.service_date).slice(0, 10) === dayOffset(20) && !moved.pending_service_date, 'date=' + moved.service_date);
+    }
+
+    /* ======================================= 17. PROVIDER FULL REFUND */
+    scenario('17', 'A provider’s full refund records the full amount and reverses the payout to nothing');
+    {
+        const { order, pi } = await confirmedChefOrder(dayOffset(21), 4);   // £220
+        const before = (Number((await orderRow(order.id)).price) - Number((await orderRow(order.id)).amount_refunded)) * 0.9;
+        const ref = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'refund' });
+        check('the provider’s full refund succeeds', ref.status === 200 && ref.body.ok, 'HTTP ' + ref.status + ' ' + JSON.stringify(ref.body).slice(0, 120));
+        const ch = await settledCharge(pi.id, { needTransfer: false });
+        check('STRIPE — the full £220 was refunded to the card', ch && ch.amount_refunded === 22000, 'refunded=' + (ch && ch.amount_refunded));
+        const r = await orderRow(order.id);
+        const net = (Number(r.price) - Number(r.amount_refunded)) * 0.9;
+        check('amount_refunded is set to the FULL amount and orderNet is £0', r.status === 'refunded' && Number(r.amount_refunded) === 220 && Math.round(before) === 198 && Math.round(net) === 0, r.status + ' refunded £' + r.amount_refunded + ' net £' + net.toFixed(2));
+        note('A provider refund now writes amount_refunded = price, so orderNet = (price − amount_refunded) × 0.9 reads zero — the destination transfer is reversed to nothing.');
+    }
+
+    /* ================================ 18. LOST CHANGE-REQUEST WEBHOOK */
+    scenario('18', 'A lost change-request webhook: the rebuild sweep reconciles the hold; an expired one has its PaymentIntent cancelled');
+    {
+        // (a) The webhook that would authorise the increase never lands. The child
+        // is stuck 'holding'; the rebuild sweep must reconcile it to 'authorised',
+        // keeping the manual-capture hold.
+        const { order } = await confirmedChefOrder(dayOffset(23), 2);
+        const up = await postRoute('/api/services/order/change-count', guestCookie, { orderId: order.id, count: 3 });
+        check('the increase is a request — a holding child is written', up.status === 200 && up.body.requested === true, 'HTTP ' + up.status + ' ' + JSON.stringify(up.body).slice(0, 120));
+        const child = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + order.id + '&status=eq.holding&order=created_at.desc&limit=1'))[0];
+        const childPi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child.id } });
+        // NO webhook is delivered — the lost case. The rebuild sweep asks Stripe.
+        await runOrderSweep();
+        const rebuilt = await orderRow(child.id);
+        check('the rebuild sweep reconciled the lost hold to AUTHORISED', rebuilt.status === 'authorised' && rebuilt.stripe_payment_intent_id === childPi.id, rebuilt.status + ' pi=' + rebuilt.stripe_payment_intent_id);
+        const heldPi = await getPI(childPi.id);
+        check('the hold is kept — the PaymentIntent still requires capture', heldPi.status === 'requires_capture', heldPi.status);
+
+        // (b) A change-request hold that reaches its expiry with the webhook still
+        // lost: the sweep must CANCEL the held PaymentIntent so the card is freed.
+        const { order: o2 } = await confirmedChefOrder(dayOffset(24), 2);
+        await postRoute('/api/services/order/change-count', guestCookie, { orderId: o2.id, count: 3 });
+        const child2 = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + o2.id + '&status=eq.holding&order=created_at.desc&limit=1'))[0];
+        const child2Pi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child2.id } });
+        await db.update('service_orders', '?id=eq.' + child2.id, { expires_at: dayOffset(-1) + 'T00:00:00Z' });
+        await runOrderSweep();
+        const exp2 = await orderRow(child2.id);
+        check('the expired hold is marked expired', exp2.status === 'expired', exp2.status);
+        const cancelledPi = await getPI(child2Pi.id);
+        check('STRIPE — the held PaymentIntent was CANCELLED, releasing the card', cancelledPi.status === 'canceled', cancelledPi.status);
+    }
+
+    /* ============================ 19. MADE-TO-ORDER CART — INSTANT (all standard) */
+    scenario('19', 'A made-to-order cart of standard items books and charges instantly');
+    {
+        const bookRes = await postRoute('/api/services/order', guestCookie, { items: [{ itemId: bakerStd.id, qty: 2 }, { itemId: bakerStd2.id, qty: 3 }], bookingId: booking.id, serviceDate: dayOffset(6), collectionTime: 'around 10am' });
+        check('the order is INSTANT (books straight away, not a request)', bookRes.status === 200 && bookRes.body.ok && bookRes.body.instant === true && !!bookRes.body.url, 'HTTP ' + bookRes.status + ' ' + JSON.stringify(bookRes.body).slice(0, 140));
+        // Auto-capture (no capture_method) — the money moves at once, like a slot.
+        const pi = await destinationPI({ total: 72, account, metadata: { kind: 'service_order', provider_id: baker.id } });
+        await postWebhook({ object: 'checkout_session', payment_status: 'paid', payment_intent: pi.id, amount_total: 7200, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'service_order', provider_id: baker.id, booking_id: booking.id, guest_id: guest.id, listing_id: listing.id, service_date: dayOffset(6), service_time: '', fulfilment: 'collection', instant: '1', cart: bakerStd.id + ':2,' + bakerStd2.id + ':3', collection_note: 'around 10am', commission_rate: '0.1', item_name: 'EXP Bakehouse order', item_unit: 'order' } });
+        const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + baker.id + '&service_date=eq.' + dayOffset(6) + '&order=created_at.desc&limit=1'))[0];
+        check('the order is CONFIRMED at once — no provider step', order && order.status === 'confirmed', order && order.status);
+        check('it records the cart lines and the £72 total', order && Array.isArray(order.line_items) && order.line_items.length === 2 && Number(order.price) === 72, order && ('£' + order.price + ' · ' + (order.line_items || []).length + ' lines'));
+        const ch = await settledCharge(pi.id, { needTransfer: false });
+        check('STRIPE — the £72 was captured immediately', ch && ch.captured === true && ch.amount_captured === 7200, 'captured=' + (ch && ch.captured) + ' amt=' + (ch && ch.amount_captured));
+    }
+
+    /* ============================ 20. MADE-TO-ORDER CART — CUSTOM = REQUEST */
+    scenario('20', 'A made-to-order cart with a custom item is a request the provider accepts');
+    {
+        const bookRes = await postRoute('/api/services/order', guestCookie, { items: [{ itemId: bakerStd.id, qty: 1 }, { itemId: bakerCustom.id, qty: 1 }], bookingId: booking.id, serviceDate: dayOffset(7), collectionTime: 'afternoon' });
+        check('the order is a REQUEST (held, not instant)', bookRes.status === 200 && bookRes.body.ok && bookRes.body.requested === true && !bookRes.body.instant, 'HTTP ' + bookRes.status + ' ' + JSON.stringify(bookRes.body).slice(0, 140));
+        const pi = await destinationPI({ total: 66, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: baker.id } });
+        await postWebhook({ object: 'checkout_session', payment_status: 'no_payment_required', payment_intent: pi.id, amount_total: 6600, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'service_order', provider_id: baker.id, booking_id: booking.id, guest_id: guest.id, listing_id: listing.id, service_date: dayOffset(7), service_time: '', fulfilment: 'collection', instant: '', cart: bakerStd.id + ':1,' + bakerCustom.id + ':1', collection_note: 'afternoon', commission_rate: '0.1', item_name: 'EXP Bakehouse order', item_unit: 'order' } });
+        const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + baker.id + '&service_date=eq.' + dayOffset(7) + '&order=created_at.desc&limit=1'))[0];
+        check('the held order is AUTHORISED — a request to answer', order && order.status === 'authorised', order && order.status);
+        check('it carries both cart lines and the £66 total', order && Array.isArray(order.line_items) && order.line_items.length === 2 && Number(order.price) === 66, order && ('£' + order.price));
+        const acc = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'confirm' });
+        check('the provider accepts and it is captured', acc.status === 200 && acc.body.ok, 'HTTP ' + acc.status);
+        const ch = await settledCharge(pi.id, { needTransfer: true });
+        check('STRIPE — the £66 hold was captured on accept', ch && ch.captured === true && ch.amount_captured === 6600, 'captured=' + (ch && ch.captured) + ' amt=' + (ch && ch.amount_captured));
+        note('Any custom item turns the whole order into a request; an all-standard cart is instant.');
     }
 
     /* ----------------------------------------------------------------- write + sum */

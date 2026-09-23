@@ -1755,7 +1755,7 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     },
     {
         key: 'elec_eicr_fee', trade: 'electrician', type: 'priced', group: 'priced',
-        label: 'EICR for a typical cottage',
+        label: 'EICR for a typical property',
         hint: 'Leave blank if it depends too much to say.',
     },
 
@@ -2056,7 +2056,7 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     },
     {
         key: 'paint_out_of_season', trade: 'painter', type: 'toggle', group: 'planned',
-        label: 'I can work out of season, when the cottage is empty',
+        label: 'I can work out of season, when the property is empty',
     },
 
     {

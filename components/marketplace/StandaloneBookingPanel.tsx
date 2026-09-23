@@ -76,7 +76,7 @@ export default function StandaloneBookingPanel({ provider }: {
                     <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
                 </div>
                 <button type="button" onClick={() => setOpen(true)} disabled={!hasAnything}
-                    className="flex-none rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
+                    className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
                     {hasAnything ? 'Show dates' : 'No times'}
                 </button>
             </div>

@@ -10,6 +10,7 @@ import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@
 import { guestCategory, knownDietaryOptions, knownExperienceAmenities } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionClosedToAll, minutesOfDay, type PartialBlock } from '@/lib/serviceSlots';
 import { getImageUrl, firstName } from '@/lib/utils';
+import { offeredTimes } from '@/lib/offeredTimes';
 import { shiftDayKey, londonDayKey } from '@/lib/dayKey';
 
 export interface MpItem {
@@ -28,6 +29,24 @@ export interface MpItem {
     // so the display and the enforcement never read a different number.
     capacity: number | null;
     minPeople: number | null;
+    // Extra-guests pricing for a flat item: the base includes `includedGuests`
+    // heads, and a larger party pays extraAdultFee / extraChildFee per extra head
+    // up to maxParty. All null on an item without it (a plain flat price).
+    includedGuests: number | null;
+    extraAdultFee: number | null;
+    extraChildFee: number | null;
+    maxParty: number | null;
+    // Made-to-order only: a CUSTOM item needs the provider to agree, so an order
+    // containing one is held as a request; an order of only STANDARD items books
+    // and charges instantly. Default false (standard).
+    isCustom: boolean;
+    // Per-item ingredient and allergen text, shown behind the menu's info icon.
+    ingredients: string | null;
+    allergens: string | null;
+    // Made-to-order only: a free-text menu section ("Cakes", "Traybakes"), so a
+    // long menu groups under sticky tabs. Null when the provider left it blank —
+    // the item sits in an unnamed group and, if it's the only group, no tabs show.
+    category: string | null;
 }
 // A booked session's interval on the provider's day, for greying overlapping
 // starts client-side: the same rule the claim and the DB exclusion enforce. Also
@@ -137,6 +156,9 @@ export interface MpProvider {
     // 'collection'/null = come-to-me. Lets the panel ask a travelling session for
     // the stay it should come to.
     fulfilment: string | null;
+    // Made-to-order (and any delivering provider): a flat delivery fee added once
+    // to a delivery order. 0/null when they charge nothing or don't deliver.
+    deliveryFee: number;
     priceFrom: number;
     // A slot provider's per-person vs whole-slot reading comes off the item unit.
     items: MpItem[];
@@ -169,12 +191,22 @@ export interface MpProvider {
     // Every booked session's interval, so the panel greys any start that would
     // overlap one — the guest never sees, or picks, a time the claim would refuse.
     bookedBlocks: MpBookedBlock[];
+    // Comes-to-you only: the dates the provider is already booked on. One booking
+    // a day blocks the whole day, so the dialog greys and disables these dates.
+    bookedDates: string[];
     // The provider's single session length (minutes), the fallback for an untimed
     // item. 0 when unset (a pure one-at-a-time provider) or not a slot.
     slotLength: number;
     cancellation_window_hours: number;
     // Made-to-order only: notice needed, in days — gates the earliest bookable date.
     lead_time_days: number;
+    // How far ahead a standalone (bookingless) booking may reach, in days.
+    horizonDays: number;
+    // The times a request-shape provider offers (comes_to_you / made_to_order),
+    // HH:MM, so the booking panel and the change-date sheet can present them and
+    // the guest picks one. Empty for a slot (its times come from sessions) or a
+    // provider who has named none.
+    offeredTimes: string[];
     hero: string | null;
     // The regions this provider covers, in their own words — a line on the card.
     // Informational since coverage stopped filtering; empty for a provider who
@@ -300,7 +332,7 @@ export async function loadPublicMarketplace(
 async function shapeProviders(admin: any, fromKey: string, toKey: string): Promise<MpProvider[]> {
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true).eq('owner_paused', false);
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -317,16 +349,19 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label, centre_lat, centre_lng').in('provider_id', ids),
-        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people')
+        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
         admin.from('slot_blocks').select('provider_id, blocked_date').in('provider_id', ids),
         admin.from('slot_sessions').select('id, provider_id, session_date, session_time, capacity, seats_taken, private, duration_minutes, turnaround_minutes, blocked, declared, title').in('provider_id', ids),
-        // Confirmed bookings taken, for the trust count. Only 'confirmed' counts:
-        // a held request that was never answered, or one that was cancelled or
-        // refunded, is not a booking someone completed with this provider.
-        admin.from('service_orders').select('provider_id, status').in('provider_id', ids).eq('status', 'confirmed'),
+        // Bookings taken. 'confirmed' feeds the trust count (a held request that
+        // was never answered, or one cancelled or refunded, is not a completed
+        // booking). Both 'authorised' and 'confirmed' feed the booked-DATES set: a
+        // comes-to-you provider takes one booking a day, so a live request or a
+        // confirmed order on a date blocks that whole day in the booking dialog —
+        // greyed and unpickable, not a clash reported only after Send.
+        admin.from('service_orders').select('provider_id, status, service_date').in('provider_id', ids).in('status', ['authorised', 'confirmed']),
     ]);
 
     const by = <T,>(list: any[], key: string) => {
@@ -337,7 +372,15 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
     const areasBy = by<any>(areas, 'provider_id');
     const itemsBy = by<any>(itemRows, 'provider_id');
     const bookingsCountBy: Record<string, number> = {};
-    for (const o of orderRows || []) bookingsCountBy[o.provider_id] = (bookingsCountBy[o.provider_id] || 0) + 1;
+    // The dates a provider is already booked on (any live/confirmed order), so a
+    // comes-to-you provider's whole day is blocked. Past dates are harmless — the
+    // panel only ever intersects this with future days.
+    const bookedDatesBy: Record<string, Set<string>> = {};
+    for (const o of orderRows || []) {
+        if (o.status === 'confirmed') bookingsCountBy[o.provider_id] = (bookingsCountBy[o.provider_id] || 0) + 1;
+        const d = String(o.service_date || '').slice(0, 10);
+        if (d) (bookedDatesBy[o.provider_id] = bookedDatesBy[o.provider_id] || new Set<string>()).add(d);
+    }
     const availBy = by<any>(avail, 'provider_id');
     const blocksBy = by<any>(blocks, 'provider_id');
     const sessBy = by<any>(sessRows, 'provider_id');
@@ -354,6 +397,14 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             fulfilment: it.fulfilment || null,
             capacity: it.capacity == null ? null : Number(it.capacity),
             minPeople: it.min_people == null ? null : Number(it.min_people),
+            includedGuests: it.included_guests == null ? null : Number(it.included_guests),
+            extraAdultFee: it.extra_adult_fee == null ? null : Number(it.extra_adult_fee),
+            extraChildFee: it.extra_child_fee == null ? null : Number(it.extra_child_fee),
+            maxParty: it.max_party == null ? null : Number(it.max_party),
+            isCustom: !!it.is_custom,
+            ingredients: it.ingredients || null,
+            allergens: it.allergens || null,
+            category: (it.category ? String(it.category) : '').trim() || null,
         }));
         if (!items.length) continue;
         const perItemDurations = items.some((it: MpItem) => it.duration_minutes != null && it.duration_minutes > 0);
@@ -469,10 +520,12 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                 ...(itemsBy[p.id] || []).map((it: any) => it.image).filter(Boolean),
             ])) as string[],
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
+            // Kept by POSITION (first three, empties preserved) so the generic /
+            // real step headings map to the right slot; the renderer drops empties.
             itinerary: (p.guest_details && Array.isArray(p.guest_details.itinerary))
                 ? p.guest_details.itinerary
+                    .slice(0, 3)
                     .map((s: any) => ({ title: String(s?.title || '').trim(), detail: String(s?.detail || '').trim() }))
-                    .filter((s: any) => s.detail)
                 : [],
             minAge: intOrNull(p.guest_details && p.guest_details.min_age),
             activityLevel: (p.guest_details && strOrNull(p.guest_details.activity_level)) || null,
@@ -484,6 +537,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             description: p.description,
             shape,
             fulfilment: p.fulfilment || null,
+            deliveryFee: Number(p.delivery_fee) || 0,
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),
             items,
             sessions,
@@ -495,10 +549,18 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             slotCapacity: shape === 'slot' ? Math.max(0, Number(p.slot_capacity) || 0) : 0,
             perItemDurations: shape === 'slot' ? perItemDurations : false,
             turnaround: shape === 'slot' ? turnaround : 0,
-            slotAvailability: shape === 'slot'
+            // Opening hours + day-off blocks are carried for a slot AND for a
+            // comes-to-you provider: the chef's booking box generates its start
+            // times from these same weekly hours (the one place a provider sets the
+            // hours they work), so a request shape gets the full calendar too.
+            slotAvailability: (shape === 'slot' || shape === 'comes_to_you')
                 ? (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time }))
                 : [],
-            slotBlocks: shape === 'slot' ? (blocksBy[p.id] || []).map((b: any) => b.blocked_date) : [],
+            slotBlocks: (shape === 'slot' || shape === 'comes_to_you') ? (blocksBy[p.id] || []).map((b: any) => b.blocked_date) : [],
+            // Dates a comes-to-you provider is already booked on (one booking a day),
+            // so the booking dialog greys and disables them. Slots handle a booked
+            // TIME through bookedBlocks instead, so this stays empty for them.
+            bookedDates: shape === 'comes_to_you' ? Array.from(bookedDatesBy[p.id] || []) : [],
             partialBlocks: providerPartialBlocks,
             bookedBlocks: shape === 'slot'
                 ? (sessBy[p.id] || [])
@@ -518,6 +580,8 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             slotLength: shape === 'slot' ? Math.max(0, Number(p.slot_length_minutes) || 0) : 0,
             cancellation_window_hours: Number(p.cancellation_window_hours) || 48,
             lead_time_days: Number(p.lead_time_days) || 0,
+            horizonDays: Math.max(1, Math.min(365, Number(p.guest_details && p.guest_details.booking_horizon_days) || 90)),
+            offeredTimes: offeredTimes(p.guest_details),
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,
             areas: (areasBy[p.id] || []).map((a: any) => a.label).filter(Boolean),
             mapLat: (() => { const c = (areasBy[p.id] || []).find((a: any) => a.centre_lat != null); return c ? Number(c.centre_lat) : null; })(),

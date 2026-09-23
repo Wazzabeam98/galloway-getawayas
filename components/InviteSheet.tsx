@@ -115,7 +115,7 @@ export default function InviteSheet({
     };
     const linkFor = (p: Seat) => (typeof window !== 'undefined' ? window.location.origin : '') + '/trip-invite/' + (p.invite_token || '');
     const shareText = (p: Seat) => {
-        const dest = context.place || (context.noun === 'trip' ? 'the cottage' : 'the experience');
+        const dest = context.place || (context.noun === 'trip' ? 'your place' : 'the experience');
         const bit = context.when ? ', ' + context.when : '';
         const what = context.noun === 'trip' ? 'the trip' : 'this experience';
         return `Come to ${dest}${bit} — I've added you to ${what}. Join here: ${linkFor(p)}`;

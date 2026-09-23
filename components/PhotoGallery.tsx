@@ -4,51 +4,44 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { getImageUrl } from '@/lib/utils';
 
-// Airbnb-style photo mosaic: one large image on the left, four smaller
-// ones filling a 2x2 block on the right, and a button to open the rest.
+// The listing photo gallery — the same on every cottage and experience page.
 //
-// `area` is only used for the alt text, and it is there because the title on
-// its own is a name rather than a description — "Rowan Cottage — photo 3" says
-// nothing a search engine or a screen reader can use. The photos are uploaded
-// by hosts, so nothing here knows which room any one of them shows; naming the
-// property, what it is and the town it is in is the most that can be said
-// truthfully, and it is what guests search for.
+// DESKTOP is an Airbnb-style mosaic, never an equal grid: one large photo on the
+// left, and beside it either four smaller (5+), two stacked (3–4), a single
+// full-height photo across the remaining third (2), or nothing (1, full width at
+// the normal height). Anything past what the mosaic shows lives behind "Show all".
+//
+// MOBILE is one swipeable photo at a time with a "1 / N" counter; tapping any
+// photo opens the full gallery.
+//
+// `area` is only used for the alt text, and it is there because the title on its
+// own is a name rather than a description — naming the property, what it is and the
+// town it is in is the most that can be said truthfully, and it is what guests
+// search for.
 export default function PhotoGallery({
     images,
     title,
     area,
-    mobileStrip = false,
 }: {
     images: string[];
     title: string;
     area?: string;
-    // Opt-in (experience pages): on a phone, show a swipeable strip of every
-    // photo rather than the hero alone. Off by default, so cottage listings keep
-    // their hero-only phone view untouched.
-    mobileStrip?: boolean;
 }) {
     const place = (area || '').trim() || 'Dumfries & Galloway';
-    // Photo 1 carries the plain description; the rest are numbered off it so a
-    // page of ten photos does not repeat one sentence ten times.
     const describe = (n: number) =>
         n === 1
-            ? `${title}, a self-catering holiday cottage in ${place}`
+            ? `${title}, self-catering accommodation in ${place}`
             : `${title} in ${place} — photo ${n}`;
     const [open, setOpen] = useState(false);
+    const [current, setCurrent] = useState(0);   // mobile carousel index, for the counter
 
-    // Stop the page behind scrolling while the overlay is up, and let
-    // Escape close it.
+    // Stop the page behind scrolling while the overlay is up, and let Escape close it.
     useEffect(() => {
         if (!open) return;
-
         const previous = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
-
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') setOpen(false);
-        };
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
         window.addEventListener('keydown', onKey);
-
         return () => {
             document.body.style.overflow = previous;
             window.removeEventListener('keydown', onKey);
@@ -63,15 +56,60 @@ export default function PhotoGallery({
         );
     }
 
+    const n = images.length;
     const hero = images[0];
-    const side = images.slice(1, 5);
+    // How many small photos sit beside the hero on desktop: 5+ → four, 3–4 → two,
+    // 2 → one. The rest are only reachable through "Show all".
+    const sideCount = n >= 5 ? 4 : n >= 3 ? 2 : n === 2 ? 1 : 0;
+    const side = images.slice(1, 1 + sideCount);
+    // The grid, chosen so the hero is never one of several equal cells:
+    //   2   → 3 cols, 1 row  (hero spans 2 = two-thirds, one photo the last third)
+    //   3–4 → 3 cols, 2 rows (hero spans 2×2, two stacked in the last column)
+    //   5+  → 4 cols, 2 rows (hero spans 2×2, four in the right half)
+    const desktopGrid = n === 2 ? 'md:grid-cols-3 md:grid-rows-1'
+        : n <= 4 ? 'md:grid-cols-3 md:grid-rows-2'
+        : 'md:grid-cols-4 md:grid-rows-2';
+    const heroSpan = n === 2 ? 'md:col-span-2' : 'md:col-span-2 md:row-span-2';
 
     return (
         <>
             <div className="relative my-4">
-                {/* One photo only — let it run full width */}
-                {images.length === 1 ? (
-                    <div className="relative w-full h-[300px] md:h-[460px]">
+                {/* MOBILE — one photo at a time, full bleed, with a counter. Tapping
+                    a photo opens the full gallery. Same on every page. */}
+                <div className="md:hidden relative -mx-4">
+                    <div
+                        onScroll={(e) => setCurrent(Math.round(e.currentTarget.scrollLeft / Math.max(1, e.currentTarget.clientWidth)))}
+                        className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    >
+                        {images.map((img, i) => (
+                            <button
+                                key={i}
+                                type="button"
+                                onClick={() => setOpen(true)}
+                                className="relative h-[300px] w-screen flex-none snap-center"
+                            >
+                                <Image
+                                    src={getImageUrl(img)}
+                                    alt={describe(i + 1)}
+                                    fill
+                                    priority={i === 0}
+                                    sizes="100vw"
+                                    className="object-cover"
+                                />
+                            </button>
+                        ))}
+                    </div>
+                    {n > 1 && (
+                        <div className="pointer-events-none absolute right-6 top-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-semibold text-white tabular-nums">
+                            {current + 1} / {n}
+                        </div>
+                    )}
+                </div>
+
+                {/* DESKTOP — the mosaic (hidden below md). One photo runs full width
+                    at the normal height; everything else is the hero + its side. */}
+                {n === 1 ? (
+                    <div className="hidden md:block relative w-full h-[460px]">
                         <Image
                             src={getImageUrl(hero)}
                             alt={describe(1)}
@@ -82,36 +120,11 @@ export default function PhotoGallery({
                         />
                     </div>
                 ) : (
-                <>
-                    {/* Phone (opt-in): a swipeable strip of every photo, the peek of
-                        the next one cueing the swipe. The desktop mosaic below is
-                        hidden here. */}
-                    {mobileStrip && (
-                        <div className="md:hidden -mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                            {images.map((img, i) => (
-                                <button
-                                    key={i}
-                                    type="button"
-                                    onClick={() => setOpen(true)}
-                                    className="relative h-[280px] w-[86%] flex-none snap-center overflow-hidden rounded-2xl"
-                                >
-                                    <Image
-                                        src={getImageUrl(img)}
-                                        alt={describe(i + 1)}
-                                        fill
-                                        priority={i === 0}
-                                        sizes="86vw"
-                                        className="object-cover"
-                                    />
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    <div className={`${mobileStrip ? 'hidden md:grid' : 'grid'} grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-2 h-[300px] md:h-[460px] rounded-2xl overflow-hidden`}>
+                    <div className={`hidden md:grid ${desktopGrid} gap-2 h-[460px] rounded-2xl overflow-hidden`}>
                         <button
                             type="button"
                             onClick={() => setOpen(true)}
-                            className="md:col-span-2 md:row-span-2 relative group h-full w-full"
+                            className={`${heroSpan} relative group h-full w-full`}
                         >
                             <Image
                                 src={getImageUrl(hero)}
@@ -129,43 +142,34 @@ export default function PhotoGallery({
                                 key={i}
                                 type="button"
                                 onClick={() => setOpen(true)}
-                                className="hidden md:block relative group h-full w-full"
+                                className="relative group h-full w-full"
                             >
                                 <Image
                                     src={getImageUrl(img)}
                                     alt={describe(i + 2)}
                                     fill
-                                    // Hidden below md, and a quarter of the
-                                    // gallery above it — so these never need
-                                    // to be more than about 300px wide.
                                     sizes="(max-width: 768px) 1px, 304px"
                                     className="object-cover"
                                 />
                                 <span className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition" />
                             </button>
                         ))}
-
-                        {/* Fill any empty cells so the grid never looks broken
-                            when a host has uploaded fewer than five photos */}
-                        {Array.from({ length: Math.max(0, 4 - side.length) }).map((_, i) => (
-                            <div key={`blank-${i}`} className="hidden md:block bg-slate-100" />
-                        ))}
                     </div>
-                </>
                 )}
 
-                {images.length > 1 && (
+                {/* Show all — desktop only; on mobile a tap on the photo opens it. */}
+                {n > 1 && (
                     <button
                         type="button"
                         onClick={() => setOpen(true)}
-                        className="absolute bottom-4 right-4 bg-white hover:bg-slate-50 border border-slate-900/10 shadow-sm rounded-lg px-4 py-2 text-sm font-semibold text-slate-900 flex items-center gap-2"
+                        className="hidden md:flex absolute bottom-4 right-4 bg-white hover:bg-slate-50 border border-slate-900/10 shadow-sm rounded-lg px-4 py-2 text-sm font-semibold text-slate-900 items-center gap-2"
                     >
                         <span className="grid grid-cols-3 gap-[2px]">
                             {Array.from({ length: 9 }).map((_, i) => (
                                 <span key={i} className="w-[3px] h-[3px] bg-slate-900 rounded-[1px]" />
                             ))}
                         </span>
-                        Show all {images.length} photos
+                        Show all {n} photos
                     </button>
                 )}
             </div>
@@ -181,7 +185,7 @@ export default function PhotoGallery({
                             &larr; Back to listing
                         </button>
                         <span className="text-sm text-slate-500">
-                            {images.length} photo{images.length === 1 ? '' : 's'}
+                            {n} photo{n === 1 ? '' : 's'}
                         </span>
                     </div>
 
@@ -191,11 +195,6 @@ export default function PhotoGallery({
                                 key={i}
                                 src={getImageUrl(img)}
                                 alt={describe(i + 1)}
-                                // The lightbox column is 768px at most, so
-                                // there is no reason to send the original.
-                                // width/height only set the ratio Next
-                                // reserves space with — h-auto lets each
-                                // photo keep its own shape.
                                 width={1536}
                                 height={1024}
                                 sizes="(max-width: 768px) 100vw, 768px"

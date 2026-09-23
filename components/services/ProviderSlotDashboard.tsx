@@ -78,7 +78,7 @@ const minutesOf = (t: string) => { const [h, m] = String(t).split(':'); return (
 const isNarrow = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches;
 function daysBetween(a: string, b: string): string[] { const [lo, hi] = a <= b ? [a, b] : [b, a]; const out: string[] = []; let d = new Date(lo + 'T00:00:00Z'); const end = new Date(hi + 'T00:00:00Z'); for (let g = 0; g < 400 && d <= end; g++) { out.push(d.toISOString().slice(0, 10)); d = new Date(d.getTime() + 86400000); } return out; }
 
-export default function ProviderSlotDashboard({ providerId, editHref }: { providerId: string; editHref?: string }) {
+export default function ProviderSlotDashboard({ providerId, editHref, live: liveToGuests = false }: { providerId: string; editHref?: string; live?: boolean }) {
     const [payouts, setPayouts] = useState<null | { connected: boolean; payouts_enabled: boolean }>(null);
     const [orders, setOrders] = useState<Order[]>([]);
     const [sessions, setSessions] = useState<SlotSession[]>([]);
@@ -204,7 +204,14 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     const activeRow = activeKey ? dayData.rows.find((r) => keyOf(dayDate, r.time) === activeKey) || null : null;
     const activeOrders = activeKey ? (ordersByKey[activeKey] || []) : [];
 
-    const live = payouts && payouts.payouts_enabled;
+    // "Live to guests" is the SAME truth the marketplace filters on
+    // (lib/serviceOrders.isLiveToGuests: approved + payouts-ready + not paused),
+    // passed down from the server. It used to be read from a live Stripe fetch
+    // here, which disagreed with browse — a seeded/paid-ready provider showed on
+    // the marketplace yet their own dashboard still said "set up payouts". The
+    // payouts fetch stays only for the connect button's connected/unconnected
+    // wording below.
+    const live = liveToGuests;
     const nowMin = (() => { try { const s = new Date().toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour12: false }); return minutesOf(s); } catch { return -1; } })();
 
     // ---- builder helpers ------------------------------------------------------

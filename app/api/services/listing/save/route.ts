@@ -4,6 +4,8 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { collectionFieldsForWrite } from '@/lib/serviceProviders';
 import { audienceForTrade, knownExperienceAmenities } from '@/lib/serviceProviders';
+import { childrenAllowed } from '@/lib/guestAges';
+import { normaliseTime } from '@/lib/offeredTimes';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +45,11 @@ function strOrNull(v: any): string | null {
 }
 function intOrNull(v: any): number | null {
     const n = Math.floor(Number(v));
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+// A non-negative money value (extra-guest fee), to 2dp, or null when blank/zero.
+function feeOrNull(v: any): number | null {
+    const n = Math.round(Number(v) * 100) / 100;
     return Number.isFinite(n) && n > 0 ? n : null;
 }
 
@@ -164,6 +171,15 @@ export async function POST(request: Request) {
                     patch.slot_capacity = maxGroup;
                 } else {
                     gd.max_guests = maxGroup;
+                    // The times a request-shape provider offers (a chef's sittings,
+                    // a baker's collection/delivery windows). Normalised to HH:MM,
+                    // de-duplicated and sorted; an empty set clears the field.
+                    if (Array.isArray(data.offered_times)) {
+                        const times = Array.from(new Set(
+                            data.offered_times.map((t: any) => normaliseTime(t)).filter(Boolean) as string[]
+                        )).sort((a, b) => a.localeCompare(b));
+                        gd.offered_times = times;
+                    }
                 }
                 break;
             }
@@ -192,11 +208,27 @@ export async function POST(request: Request) {
                 const fulfilment = strOrNull(data.fulfilment);
                 patch = { fulfilment };
                 const collects = fulfilment === 'collection' || fulfilment === 'both';
+                // A flat delivery fee, only meaningful when the provider travels;
+                // clamped to a sane range, and forced to 0 for a collection-only one.
+                const travels = fulfilment === 'delivery' || fulfilment === 'both';
+                patch.delivery_fee = travels ? Math.max(0, Math.min(1000, Math.round((Number(data.delivery_fee) || 0) * 100) / 100)) : 0;
+                // The enforced delivery radius in miles (0 = no limit). Clamped to a
+                // sane range and forced to 0 for a collection-only provider.
+                patch.delivery_radius_miles = travels ? Math.max(0, Math.min(500, Math.round((Number(data.delivery_radius_miles) || 0) * 10) / 10)) : 0;
                 const cols = collectionFieldsForWrite({
                     collects, loaded: true,
                     street: data.collection_street || '', town: data.collection_town || '', postcode: data.collection_postcode || '',
                 });
                 if (cols) patch = { ...patch, ...cols };
+                // A delivery radius is measured from the provider's base postcode, so
+                // require one whenever a distance is set — and keep it (privately)
+                // even for a delivery-only provider, who has no public collection
+                // address. Without this the radius has nothing to measure from.
+                const basePostcode = String(data.collection_postcode || '').trim();
+                if (travels && Number(patch.delivery_radius_miles) > 0 && !basePostcode) {
+                    return NextResponse.json({ ok: false, error: 'Add your base postcode — a delivery distance is measured from it.' }, { status: 400 });
+                }
+                if (travels && basePostcode) patch.collection_postcode = basePostcode;
                 // Coverage regions: replace the set.
                 if (Array.isArray(data.areas)) {
                     await admin.from('service_areas').delete().eq('provider_id', providerId);
@@ -218,6 +250,10 @@ export async function POST(request: Request) {
                 patch = {
                     slot_length_minutes: intOrNull(data.slot_length_minutes),
                     slot_turnaround_minutes: Math.max(0, Math.floor(Number(data.slot_turnaround_minutes) || 0)),
+                    // The notice period sits beside the opening hours in the editor for
+                    // a slot / comes-to-you provider, so it saves here too. Clamped the
+                    // same way the Booking section clamps it.
+                    ...(data.lead_time_days != null ? { lead_time_days: Math.max(0, Math.min(365, Math.floor(Number(data.lead_time_days) || 0))) } : {}),
                     // slot_min_people is NOT written here any more — the minimum-per-
                     // booking moved onto each per-person item (the menu section). The
                     // provider-level column stays as the fallback for an item that
@@ -273,6 +309,13 @@ export async function POST(request: Request) {
                     // item-wins-else-provider rule seatConfig resolves everywhere.
                     const perPerson = unit === 'person';
                     const itemCapacity = perPerson ? intOrNull(it.capacity) : null;
+                    // Extra-guests pricing — a flat item only. Kept solely when a
+                    // base allowance (included_guests) is set; the child fee is
+                    // dropped unless the provider's minimum age admits children (the
+                    // same rule the editor hides it by, enforced server-side). Fees
+                    // are non-negative money; the price never drops below the base.
+                    const includedGuests = unit === 'flat' ? intOrNull(it.included_guests) : null;
+                    const kidsOk = childrenAllowed(p.guest_details && (p.guest_details as any).min_age != null ? Number((p.guest_details as any).min_age) : null);
                     const row: any = {
                         name, description: strOrNull(it.description), price,
                         unit,
@@ -282,10 +325,28 @@ export async function POST(request: Request) {
                         fulfilment: itemFulfilment,
                         active: it.active !== false,
                         capacity: itemCapacity,
-                        // No per-item minimum: a shared session takes a single
-                        // person by design. Cleared to null so the column falls back
-                        // to its default of 1 (no floor); the control is gone.
-                        min_people: null,
+                        included_guests: includedGuests,
+                        extra_adult_fee: includedGuests ? feeOrNull(it.extra_adult_fee) : null,
+                        extra_child_fee: includedGuests && kidsOk ? feeOrNull(it.extra_child_fee) : null,
+                        max_party: includedGuests ? intOrNull(it.max_party) : null,
+                        // Made-to-order standard/custom. Only meaningful for that
+                        // shape; harmless (false) elsewhere.
+                        is_custom: p.shape === 'made_to_order' ? (it.is_custom === true) : false,
+                        // Per-item ingredient + allergen text (food listings). Free
+                        // text, capped; null when blank.
+                        ingredients: (it.ingredients ? String(it.ingredients) : '').slice(0, 1000).trim() || null,
+                        allergens: (it.allergens ? String(it.allergens) : '').slice(0, 1000).trim() || null,
+                        // A menu section for a made-to-order listing (the guest page
+                        // groups items under sticky tabs when there's more than one).
+                        // Free text, short, null when blank; meaningless elsewhere.
+                        category: p.shape === 'made_to_order' ? ((it.category ? String(it.category) : '').slice(0, 60).trim() || null) : null,
+                        // Smallest party this item takes. A SLOT stays null — a shared
+                        // session takes a single person by design. A per-person REQUEST
+                        // item (a private chef per guest) can set a floor, and the
+                        // booking dialog and the order route both enforce it.
+                        min_people: (p.shape !== 'slot' && unit === 'person' && intOrNull(it.min_people) != null)
+                            ? Math.max(1, Math.min(60, Math.floor(Number(it.min_people))))
+                            : null,
                         sort_order: i, updated_at: nowIso,
                     };
                     if (it.id && existingIds.has(it.id)) {
