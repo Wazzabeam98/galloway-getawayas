@@ -134,6 +134,17 @@
 .rdr-move .rdrDayNumber { font-weight: 500; }
 .rdr-move .rdrDayNumber span { font-size: 15px; }
 .rdr-move .rdrWeekDay { font-size: 12px; color: #64748b; }
+/* Same single-date fix as the booking panel below: the "Change date or time"
+   sheet uses react-date-range's Calendar, which marks the pick with .rdrSelected.
+   The range rules above only paint startEdge/endEdge/inRange, so on its own the
+   chosen day renders white-on-white and the number vanishes — the guest can't see
+   what they picked. Fill it emerald with a white number. Every experience shape
+   uses this one sheet, so this covers slot, made-to-order and comes-to-you. */
+.rdr-move .rdrSelected {
+  background: #047857 !important;
+  border-radius: 1.35em !important;
+}
+.rdr-move .rdrSelected ~ .rdrDayNumber span { color: #fff !important; }
 
 
 /* 7. Toast styling
