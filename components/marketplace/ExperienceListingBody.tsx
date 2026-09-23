@@ -2,8 +2,8 @@ import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
 import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
 import {
-    itemPriceLabel, itemExtrasSubline, cancellationSentence, whereLine, locationTag, travelCoverageLine,
-    durationLabel, durationSummary, yearsLabel, groupSizeLabel, capacityLabel,
+    itemPriceLabel, itemExtrasSubline, itemGuestRange, cancellationSentence, whereLine, locationTag, travelCoverageLine,
+    durationLabel, durationSummary, yearsLabel, capacityLabel,
 } from '@/components/marketplace/present';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
@@ -83,9 +83,11 @@ export default function ExperienceListingBody({
             .map((i) => Number(i.capacity) || Number(p.slotCapacity) || 0);
         return perPersonCaps.length ? Math.max(...perPersonCaps) : (Number(p.slotCapacity) || 0);
     })();
-    // Party size is meaningless for a made-to-order food order (you buy items, not
-    // seats), so it's shown only for a slot (capacity) or a comes-to-you booking.
-    const groupSize = isSlot ? capacityLabel(slotCapacity) : (p.shape === 'made_to_order' ? '' : groupSizeLabel(p.maxGuests));
+    // Group size as a single provider-wide fact is shown only for a SLOT (the
+    // session capacity). For a comes-to-you or made-to-order experience each item
+    // states its OWN limit beside its price in "What you get" — a single "Up to N
+    // guests" fact there would disagree with an item whose own maximum is lower.
+    const groupSize = isSlot ? capacityLabel(slotCapacity) : '';
     // The professional title reads as the host's "who they are" line, unless it
     // would only echo the heading (a provider whose business_name is still their
     // professional title, before a distinct listing name exists).
@@ -213,8 +215,13 @@ export default function ExperienceListingBody({
                                                         <span className="font-semibold text-slate-900">{it.name}</span>
                                                         <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
                                                     </div>
+                                                    {itemGuestRange(it, p.maxGuests) ? (
+                                                        <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-slate-500">
+                                                            <Users className="h-3.5 w-3.5 flex-none" aria-hidden />{itemGuestRange(it, p.maxGuests)}
+                                                        </p>
+                                                    ) : null}
                                                     {itemExtrasSubline(it, p.minAge) ? (
-                                                        <p className="mt-0.5 text-xs font-medium text-slate-500">{itemExtrasSubline(it, p.minAge)}</p>
+                                                        <p className="mt-0.5 text-xs text-slate-500">{itemExtrasSubline(it, p.minAge)}</p>
                                                     ) : null}
                                                     {dur ? (
                                                         <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">

@@ -283,8 +283,16 @@ export function RequestBookingDialog({
                                             <button type="button" onClick={() => setChildrenShown(true)}
                                                 className="mt-1.5 text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">Add children</button>
                                         )}
-                                        {minPeople > 1 && (
+                                        {minPeople > 1 && !incDisabled && (
                                             <div className="mt-1 text-xs text-slate-400">Minimum {minPeople} guests.</div>
+                                        )}
+                                        {/* Plainly, when the party has hit this item's own
+                                            limit — so the greyed-out plus button doesn't read
+                                            as a bug. */}
+                                        {incDisabled && Number.isFinite(partyCap) && (
+                                            <div className="mt-1 text-xs font-medium text-amber-700">
+                                                That’s the most this option takes — up to {partyCap} {partyCap === 1 ? 'guest' : 'guests'}.
+                                            </div>
                                         )}
                                         {egText && <p className="mt-1 text-xs text-slate-400">{egText}</p>}
                                     </div>

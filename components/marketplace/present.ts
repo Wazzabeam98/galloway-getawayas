@@ -3,7 +3,7 @@
 // everywhere. No JSX, no 'use client'.
 
 import type { MpProvider, MpItem } from '@/lib/experiencesData';
-import { extraGuestsLine } from '@/lib/extraGuests';
+import { extraGuestsLine, hasExtraGuests } from '@/lib/extraGuests';
 import { unitMultiplies } from '@/lib/serviceOrders';
 
 const UNIT_SUFFIX: Record<string, string> = {
@@ -126,21 +126,46 @@ export function itemPriceLineFor(item: MpItem, minAge: number | null | undefined
 /** The extra-guests detail as a subline beneath an item name (the base price
  *  shows separately): "for up to 4, +£40 per extra adult". Null when the item has
  *  no extra-guests pricing. Child fee only shows where children are allowed. */
+// The extra-guests FEE line for a flat item — "for up to 4, +£40 per extra
+// adult, +£15 per extra child" — the pricing shape, not the guest limit. Null
+// for a per-person item (its count reads off the guest RANGE below) and for a
+// plain flat price. The leading base price is dropped; it's shown on the right.
 export function itemExtrasSubline(item: MpItem, minAge: number | null | undefined): string | null {
-    // A per-person item's smallest party — a private chef per guest set to a
-    // minimum of two reads "Minimum 2 guests" here and holds the booking dialog.
-    if (unitMultiplies(item.unit)) {
-        const min = Math.max(1, Number(item.minPeople) || 1);
-        return min > 1 ? `Minimum ${min} guests` : null;
-    }
+    if (unitMultiplies(item.unit)) return null;
     const line = extraGuestsLine({
         unit: item.unit, price: item.price,
         included_guests: item.includedGuests, extra_adult_fee: item.extraAdultFee,
         extra_child_fee: item.extraChildFee, max_party: item.maxParty,
     }, minAge);
     if (!line) return null;
-    // Drop the leading "£base " — the base price is shown on the right.
     return line.replace(/^£[0-9.]+\s/, '');
+}
+
+// Each item's OWN guest range, so a guest reads the limit for the option they're
+// choosing — "2 to 8 guests", "Up to 8 guests" or "Minimum 2 guests" — rather
+// than one provider-wide line that can disagree with the item they pick. The
+// maximum is the item's own where it sets one (a flat item's max_party, a
+// per-person item's capacity); otherwise the provider's overall maximum stands
+// in, so every option still shows an upper limit. Null for a plain flat price
+// with no per-head notion of a party.
+export function itemGuestRange(item: MpItem, providerMax?: number | null): string | null {
+    const perPerson = unitMultiplies(item.unit);
+    const extra = hasExtraGuests({
+        unit: item.unit, price: item.price,
+        included_guests: item.includedGuests, extra_adult_fee: item.extraAdultFee,
+        extra_child_fee: item.extraChildFee, max_party: item.maxParty,
+    });
+    if (!perPerson && !extra) return null;
+    const min = Math.max(1, Number(item.minPeople) || 1);
+    let max: number | null = null;
+    if (extra && Number(item.maxParty) > 0) max = Number(item.maxParty);
+    else if (perPerson && Number(item.capacity) > 0) max = Number(item.capacity);
+    if (max == null && Number(providerMax) > 0) max = Number(providerMax);
+    if (max != null && max < min) max = min;
+    if (min > 1 && max != null && max > min) return `${min} to ${max} guests`;
+    if (min > 1) return `Minimum ${min} guests`;
+    if (max != null) return `Up to ${max} guests`;
+    return null;
 }
 
 /** A length in minutes as a guest reads it: "45 min", "1 hr", "1 hr 30 min",
