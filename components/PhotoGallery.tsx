@@ -30,7 +30,7 @@ export default function PhotoGallery({
     const place = (area || '').trim() || 'Dumfries & Galloway';
     const describe = (n: number) =>
         n === 1
-            ? `${title}, a self-catering holiday cottage in ${place}`
+            ? `${title}, self-catering accommodation in ${place}`
             : `${title} in ${place} — photo ${n}`;
     const [open, setOpen] = useState(false);
     const [current, setCurrent] = useState(0);   // mobile carousel index, for the counter

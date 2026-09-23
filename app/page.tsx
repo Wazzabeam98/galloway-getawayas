@@ -324,7 +324,7 @@ export default async function HomePage({
                                 Book direct, and the money stays here
                             </h2>
                             <p className="text-stone-600 leading-relaxed mt-3">
-                                Every cottage on Galloway Getaways is let by the person who owns it.
+                                Every place on Galloway Getaways is let by the person who owns it.
                                 When you book, you are dealing with them — not an agency, and not a
                                 call centre in another country. If you want to know whether the wood
                                 burner is easy to light or where to park a van, you are asking
@@ -346,7 +346,7 @@ export default async function HomePage({
                                 Why we started this
                             </h3>
                             <p className="text-stone-600 leading-relaxed mt-3">
-                                We were born and raised in Dumfries and Galloway, and we let cottages
+                                We were born and raised in Dumfries and Galloway, and we let places
                                 here ourselves. The big platforms take a large share of every
                                 booking, and the guest never finds out who owns the place they stayed
                                 in. Our fees are about half, so more of it stays with the host and
@@ -374,7 +374,7 @@ export default async function HomePage({
                                 and it does not feel like either.
                             </p>
                             <p className="text-stone-600 leading-relaxed mt-4">
-                                Our cottages sit in and around Kirkcudbright, the harbour town on the
+                                The places we list sit in and around Kirkcudbright, the harbour town on the
                                 Dee. Some take dogs. One has a hot tub. All of them are places we
                                 would stay ourselves.
                             </p>
@@ -386,7 +386,7 @@ export default async function HomePage({
                             </h2>
                             <p className="text-stone-600 leading-relaxed mt-3">
                                 Once you have booked, you can arrange the rest through us. A local
-                                chef to cook dinner in the cottage on your first night. A cake for
+                                chef to cook dinner where you’re staying on your first night. A cake for
                                 the birthday you are down for. The fridge filled before you arrive.
                                 Someone to walk the dog while you are out for the day.
                             </p>
@@ -399,7 +399,7 @@ export default async function HomePage({
 
                         <div>
                             <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
-                                Own a cottage in the region?
+                                Own a place to let in the region?
                             </h2>
                             <p className="text-stone-600 leading-relaxed mt-3">
                                 If you let a property in Dumfries &amp; Galloway, you can list it

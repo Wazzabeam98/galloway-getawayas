@@ -831,7 +831,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     <div className="space-y-2">
                                         {[
                                             { key: 'collection', label: 'Guests come to me', note: 'At your studio, sauna, kitchen — one place.' },
-                                            { key: 'delivery', label: 'I travel to the guest', note: 'You go to their cottage.' },
+                                            { key: 'delivery', label: 'I travel to the guest', note: 'You go to where they’re staying.' },
                                             { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
                                         ].map((o) => (
                                             <button key={o.key} type="button" onClick={() => setFulfilment(o.key)}

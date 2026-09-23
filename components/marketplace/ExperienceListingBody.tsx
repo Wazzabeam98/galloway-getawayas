@@ -455,8 +455,8 @@ export default function ExperienceListingBody({
                                 <span>
                                     {comesToYou
                                         ? (travelCoverage
-                                            ? travelCoverage + ' — they come to your cottage, so there’s nothing for you to travel to.'
-                                            : 'They come to your cottage — nothing for you to travel to.')
+                                            ? travelCoverage + ' — they come to where you’re staying, so there’s nothing for you to travel to.'
+                                            : 'They come to where you’re staying — nothing for you to travel to.')
                                         : 'The exact address is shared once your booking is confirmed.'}
                                 </span>
                             </p>
