@@ -265,7 +265,7 @@ export default function BookingDialog({
                         {/* Footer: confirm the picked date */}
                         <div className="border-t border-slate-100 px-5 py-4">
                             <button type="button" onClick={applyCalPick} disabled={!calSel}
-                                className="w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-40">
+                                className="w-full rounded-xl bg-emerald-700 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
                                 Next
                             </button>
                         </div>
@@ -280,7 +280,7 @@ export default function BookingDialog({
                                     <div className="flex flex-wrap gap-1.5">
                                         {orderedItems.map((it) => (
                                             <button key={it.id} type="button" onClick={() => { setItemId(it.id); setSelKey(null); }}
-                                                className={`rounded-full border px-3 py-1.5 text-sm font-medium ${itemId === it.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                className={`rounded-full border px-3 py-1.5 text-sm font-medium ${itemId === it.id ? 'border-emerald-600 bg-emerald-700 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
                                                 {it.name} · {itemPriceLabel(it.price, it.unit)}
                                             </button>
                                         ))}
@@ -380,7 +380,7 @@ export default function BookingDialog({
                                             const left = a.seatsLeft;
                                             return (
                                                 <button key={o.key} type="button" disabled={!ok} onClick={() => setSelKey(o.key)}
-                                                    className={`flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition ${on ? (declared ? 'border-violet-600 ring-1 ring-violet-600' : 'border-slate-900 ring-1 ring-slate-900') : declared ? 'border-violet-200 hover:border-violet-400' : 'border-slate-200 hover:border-slate-400'} ${!ok ? 'cursor-not-allowed opacity-45' : ''}`}>
+                                                    className={`flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition ${on ? (declared ? 'border-violet-600 ring-1 ring-violet-600' : 'border-emerald-600 ring-1 ring-emerald-600') : declared ? 'border-violet-200 hover:border-violet-400' : 'border-slate-200 hover:border-slate-400'} ${!ok ? 'cursor-not-allowed opacity-45' : ''}`}>
                                                     <span className="min-w-0 flex-1">
                                                         {/* The TIME leads every row — it is what a
                                                             guest picks a session by — with the
@@ -441,7 +441,7 @@ export default function BookingDialog({
                                         : <span className="text-slate-400">Pick a time</span>}
                                 </div>
                                 <button type="button" onClick={submit} disabled={!canBook || busy}
-                                    className="rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-40">
+                                    className="rounded-xl bg-emerald-700 px-6 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
                                     {busy ? 'Starting…' : 'Book'}
                                 </button>
                             </div>

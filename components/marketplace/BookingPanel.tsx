@@ -263,7 +263,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                         )}
                     </div>
                     <button type="button" onClick={() => setOpen(true)} disabled={!hasSlotAvailability}
-                        className="flex-none rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
+                        className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
                         {hasSlotAvailability ? 'Show dates' : 'No times'}
                     </button>
                 </div>
@@ -326,7 +326,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                     )}
                 </div>
                 <button type="button" onClick={() => openRequest(null, null)} disabled={calDays.size === 0}
-                    className="flex-none rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
+                    className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
                     {calDays.size ? 'Show dates' : 'No dates'}
                 </button>
             </div>

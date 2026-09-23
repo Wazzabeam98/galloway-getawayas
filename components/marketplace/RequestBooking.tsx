@@ -285,7 +285,7 @@ export function RequestBookingDialog({
                         </div>
                         <div className="border-t border-slate-100 px-5 py-4">
                             <button type="button" onClick={applyCalPick} disabled={!calSel}
-                                className="w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-40">
+                                className="w-full rounded-xl bg-emerald-700 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
                                 Next
                             </button>
                         </div>
@@ -313,7 +313,7 @@ export function RequestBookingDialog({
                                         <div className="flex flex-wrap gap-1.5">
                                             {ordered.map((it) => (
                                                 <button key={it.id} type="button" onClick={() => setItemId(it.id)}
-                                                    className={`rounded-full border px-3 py-1.5 text-sm font-medium ${itemId === it.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                    className={`rounded-full border px-3 py-1.5 text-sm font-medium ${itemId === it.id ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
                                                     {it.name} · {itemPriceLabel(it.price, it.unit)}
                                                 </button>
                                             ))}
@@ -380,7 +380,7 @@ export function RequestBookingDialog({
                                                         const on = date === d.date && time === t;
                                                         return (
                                                             <button key={t} type="button" onClick={() => { setDate(d.date); setTime(t); }}
-                                                                className={`flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition ${on ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-400'}`}>
+                                                                className={`flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition ${on ? 'border-emerald-600 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-slate-400'}`}>
                                                                 <span className="min-w-0 flex-1">
                                                                     <span className="block text-[15px] font-semibold text-slate-900">{prettyTime(t)}</span>
                                                                     {item && <span className="mt-0.5 block text-xs text-slate-500">{priceEach}</span>}
@@ -402,7 +402,7 @@ export function RequestBookingDialog({
                             are chosen. */}
                         <div className="flex-none border-t border-slate-100 px-5 py-4">
                             <button type="button" onClick={() => setStep(2)} disabled={!step1Done}
-                                className="w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-40">
+                                className="w-full rounded-xl bg-emerald-700 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
                                 Continue
                             </button>
                             <p className="mt-2 text-center text-xs text-slate-400">
@@ -540,7 +540,7 @@ export function DateOnlyDialog({ title, availableDays, selected, onSelect, onClo
                         </div>
                         <div className="border-t border-slate-100 px-5 py-4">
                             <button type="button" onClick={() => { if (calSel) { onSelect(calSel); } }} disabled={!calSel}
-                                className="w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-40">
+                                className="w-full rounded-xl bg-emerald-700 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
                                 Next
                             </button>
                         </div>

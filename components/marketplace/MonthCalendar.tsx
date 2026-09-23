@@ -73,9 +73,9 @@ export default function MonthCalendar({
                                     <div key={key} className="flex justify-center py-0.5">
                                         <button type="button" disabled={!avail} onClick={() => onSelect(key)}
                                             className={`flex h-10 w-10 items-center justify-center rounded-full text-sm transition sm:h-11 sm:w-11 ${
-                                                isSel ? 'bg-slate-900 font-bold text-white'
+                                                isSel ? 'bg-emerald-700 font-bold text-white'
                                                 : !avail ? 'cursor-default text-slate-300'
-                                                : isToday ? 'font-semibold text-slate-900 ring-1 ring-slate-900 hover:bg-slate-100'
+                                                : isToday ? 'font-semibold text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100'
                                                 : 'font-semibold text-slate-900 hover:bg-slate-100'}`}>
                                             {day}
                                         </button>

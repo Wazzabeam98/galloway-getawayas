@@ -106,7 +106,7 @@ export default function FoodBasket({
                         <div className="mt-4 flex items-center justify-between gap-3">
                             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{deliverWord === 'delivery' ? 'Delivery' : 'Collection'} date</span>
                             <button type="button" onClick={() => setDateOpen(true)}
-                                className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-bold text-white hover:bg-black">
+                                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-emerald-800">
                                 {date ? dateLabel(date) : 'Show dates'}
                             </button>
                         </div>
