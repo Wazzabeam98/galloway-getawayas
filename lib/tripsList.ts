@@ -6,6 +6,7 @@
 
 import { getImageUrl } from '@/lib/utils';
 import { londonDayKey } from '@/lib/dayKey';
+import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
 
 export interface TripExperience {
     id: string;
@@ -73,7 +74,7 @@ export async function loadTripsList(admin: { from: (t: string) => any }, userId:
     // authorised request awaiting the provider). Refunded / declined drop out.
     const { data: orders } = await admin
         .from('service_orders')
-        .select('id, item_id, item_name, provider_id, provider_business_name, service_date, service_time, booking_id, parent_order_id, status, attendees, quantity')
+        .select('id, item_id, item_name, provider_id, provider_business_name, shape, service_date, service_time, booking_id, parent_order_id, status, attendees, quantity')
         .eq('guest_id', userId)
         .in('status', ['confirmed', 'authorised'])
         .is('parent_order_id', null);
@@ -100,10 +101,14 @@ export async function loadTripsList(admin: { from: (t: string) => any }, userId:
         return null;
     }
     function toExp(o: any): TripExperience {
+        // Comes-to-you leads with the listing name and shows its chosen item on
+        // the line beneath; every other shape keeps the item name as the title
+        // with the provider beneath, as before.
+        const { title, detail } = experienceBookingTitle(o);
         return {
             id: o.id,
-            title: o.item_name || o.provider_business_name || 'Experience',
-            providerName: o.provider_business_name || null,
+            title,
+            providerName: detail ?? (o.provider_business_name || null),
             date: String(o.service_date).slice(0, 10),
             time: o.service_time ? String(o.service_time).slice(0, 5) : null,
             photo: expPhoto(o),

@@ -17,6 +17,7 @@ import { childrenAllowed } from '@/lib/guestAges';
 import { isFoodProvider, unitMultiplies, orderReference } from '@/lib/serviceOrders';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadExperienceOrder } from '@/lib/experienceOrder';
+import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
 import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
 import OrderCancel from '@/components/marketplace/OrderCancel';
 import HostCredentials from '@/components/marketplace/HostCredentials';
@@ -260,6 +261,9 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // never rewrites what this guest booked. The ADDRESS below still comes live
     // from the provider — only the direction is the frozen deal.
     const isSlot = order.shape === 'slot';
+    // The heading and the line beneath it — a comes-to-you booking leads with the
+    // listing name and carries its chosen item as the detail; see the helper.
+    const { title: bookingTitle, detail: bookingDetail } = experienceBookingTitle(order);
 
     // ADDED PLACES. A per-person slot booking can grow by buying more seats: each
     // is a confirmed CHILD order on the same session (parent_order_id). Fold them
@@ -564,14 +568,14 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         {hero && (
                             <Link href={listingHref} className="group relative block overflow-hidden rounded-2xl">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={hero} alt={order.item_name || 'Experience'} className="h-44 w-full object-cover transition group-hover:brightness-95 sm:h-56" />
+                                <img src={hero} alt={bookingTitle} className="h-44 w-full object-cover transition group-hover:brightness-95 sm:h-56" />
                                 {live && <WhenBadge date={String(order.service_date)} />}
                             </Link>
                         )}
 
                         <div className={`${hero ? 'mt-4' : ''} flex items-start justify-between gap-3`}>
                             <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                                <Link href={listingHref} className="hover:underline">{order.item_name || 'Experience'}</Link>
+                                <Link href={listingHref} className="hover:underline">{bookingTitle}</Link>
                             </h1>
                             <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
                                 {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
@@ -585,6 +589,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             has it: time, how long, who. */}
                         <p className="mt-1.5 text-sm text-slate-500">
                             {[
+                                bookingDetail,
                                 isSlot && order.service_time ? clock(order.service_time) : null,
                                 isSlot && knownDuration ? `${knownDuration} minutes` : null,
                                 hostFirst ? `Hosted by ${hostFirst}` : null,
