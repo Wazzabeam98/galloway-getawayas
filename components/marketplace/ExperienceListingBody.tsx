@@ -217,7 +217,11 @@ export default function ExperienceListingBody({
                                                 {it.image ? (
                                                     // eslint-disable-next-line @next/next/no-img-element
                                                     <img src={it.image} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-xl object-cover" />
-                                                ) : null}
+                                                ) : (
+                                                    <span className="flex h-16 w-16 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                                                        <Utensils className="h-6 w-6" aria-hidden />
+                                                    </span>
+                                                )}
                                                 <div className="min-w-0 flex-1">
                                                     <div className="flex items-baseline justify-between gap-3">
                                                         <span className="font-semibold text-slate-900">{it.name}</span>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Minus, Plus, Info, X } from 'lucide-react';
+import { Minus, Plus, Info, X, Utensils } from 'lucide-react';
 import { useFoodCart, type FoodMenuItem } from '@/components/marketplace/FoodCart';
 
 // The MENU — the main thing on a made-to-order listing, read like a food-ordering
@@ -36,7 +36,11 @@ export default function FoodMenu() {
                             {it.image ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={it.image} alt="" loading="lazy" className="h-24 w-24 flex-none rounded-xl object-cover" />
-                            ) : null}
+                            ) : (
+                                <span className="flex h-24 w-24 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                                    <Utensils className="h-8 w-8" aria-hidden />
+                                </span>
+                            )}
                             <div className="flex-none">
                                 {q > 0 ? (
                                     <span className="inline-flex items-center gap-3">

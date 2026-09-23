@@ -300,12 +300,12 @@ async function main() {
         // one whole-evening group price, the way the bakery has a menu.
         items: [
             { name: 'Three-course Galloway dinner', description: 'A seasonal three courses, cooked in your cottage.', price: 55, unit: 'person', sort: 0, image: IMG('seed-assets/chef-1.jpg'), min: 2 },
-            { name: 'Seafood tasting menu', description: 'Five small courses built around the day’s landings.', price: 75, unit: 'person', sort: 1, min: 2 },
-            { name: 'Sunday roast, cooked in', description: 'A proper roast with all the trimmings, carved at your table.', price: 40, unit: 'person', sort: 2, min: 2 },
-            { name: 'Grazing table & canapés', description: 'A spread of Galloway cheeses, charcuterie and warm canapés.', price: 35, unit: 'person', sort: 3, min: 4 },
+            { name: 'Seafood tasting menu', description: 'Five small courses built around the day’s landings.', price: 75, unit: 'person', sort: 1, image: IMG('seed-assets/chef-2.jpg'), min: 2 },
+            { name: 'Sunday roast, cooked in', description: 'A proper roast with all the trimmings, carved at your table.', price: 40, unit: 'person', sort: 2, image: IMG('seed-assets/chef-3.jpg'), min: 2 },
+            { name: 'Grazing table & canapés', description: 'A spread of Galloway cheeses, charcuterie and warm canapés.', price: 35, unit: 'person', sort: 3, image: IMG('seed-assets/chef-4.jpg'), min: 4 },
             // A flat group price with extra-guests pricing: £220 for up to 4, then
             // +£40 per extra adult and +£15 per extra child, up to a party of 8.
-            { name: 'Whole private dinner', description: 'The evening booked outright for your group.', price: 220, unit: 'flat', sort: 4,
+            { name: 'Whole private dinner', description: 'The evening booked outright for your group.', price: 220, unit: 'flat', sort: 4, image: IMG('seed-assets/chef-5.jpg'),
                 includedGuests: 4, extraAdultFee: 40, extraChildFee: 15, maxParty: 8 },
         ],
     });
@@ -341,12 +341,12 @@ async function main() {
             { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message.', price: 42, unit: 'flat', sort: 0, image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
                 ingredients: 'Wheat flour, butter, free-range eggs, sugar, Galloway raspberries, vanilla, double cream.',
                 allergens: 'Contains wheat (gluten), egg, milk. Made in a kitchen that also handles nuts and soya.' },
-            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones.', price: 24, unit: 'flat', sort: 1,
+            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones.', price: 24, unit: 'flat', sort: 1, image: IMG('seed-assets/baker-2.jpg'),
                 ingredients: 'Wheat flour, butter, oats, sugar, sultanas, free-range eggs, milk.',
                 allergens: 'Contains wheat (gluten), oats, egg, milk. May contain nuts.' },
             // A per-item line, so a made-to-order order can carry a real quantity
             // (three boxes) — the "guests means quantity" case for change-count.
-            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 2,
+            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 2, image: IMG('seed-assets/baker-3.jpg'),
                 ingredients: 'Wheat flour, butter, sugar, cocoa, oats, golden syrup.',
                 allergens: 'Contains wheat (gluten), oats, milk. May contain nuts.' },
         ],
