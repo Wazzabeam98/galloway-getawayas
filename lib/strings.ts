@@ -288,7 +288,7 @@ export const GUEST_SCREEN_COPY = {
     // menuNameExamples. Fallback for "other"/unknown reads as guidance.
     expectExamples: {
         chef: 'I arrive at 6, cook three courses while you relax, serve at the table and clear everything away by 9.',
-        food_order: 'Order two days ahead and collect from Gatehouse, or I’ll drop it to your cottage on the morning.',
+        food_order: 'Order two days ahead and collect from Gatehouse, or I’ll drop it to where you’re staying on the morning.',
         tastings: 'We sit down for six drams over about ninety minutes; I talk you through each, with water and oatcakes between.',
         cooking: 'Over two hours we make a sourdough loaf from scratch — mix, shape and bake — and you take yours home.',
         outdoors: 'We meet at the car park at 10, walk about four miles over easy ground, stop for a flask halfway, back by 1.',
@@ -340,7 +340,7 @@ export const GUEST_SCREEN_COPY = {
     shapeMadeLabel: 'You make something they collect or you deliver',
     shapeMadeHint: 'A thing you prepare — they pick it up, or you drop it off',
     shapeTravelLabel: 'You come to them and do it',
-    shapeTravelHint: 'At the guest’s cottage — you travel to them',
+    shapeTravelHint: 'At the guest’s place — you travel to them',
     shapeGate: 'Choose how it works to carry on.',
     // Made-to-order's two logistics screens, split so each asks one thing.
     // First the notice (a big stepper, like the other single-number screens); then
@@ -384,7 +384,7 @@ export const GUEST_SCREEN_COPY = {
     slotWhereAtPlace: 'At my place',
     slotWhereAtPlaceHint: 'Guests come to you',
     slotWhereTravel: 'I come to the guest',
-    slotWhereTravelHint: 'You go to their cottage',
+    slotWhereTravelHint: 'You go to where they’re staying',
     // The third option — some sessions at the provider's place, some travelled to
     // the guest. Picking it moves the location question into each item's sub-flow.
     slotWhereBoth: 'Both',
@@ -500,7 +500,7 @@ export const HOST_LOCATION_COPY = {
 export const GUEST_CATEGORY_COPY: Record<string, CategoryCopy> = {
     chef: {
         label: 'Dining & private chef',
-        hint: 'A chef cooks at the cottage — dinners, grazing tables',
+        hint: 'A chef cooks where you’re staying — dinners, grazing tables',
     },
     food_order: {
         label: 'Food to order',

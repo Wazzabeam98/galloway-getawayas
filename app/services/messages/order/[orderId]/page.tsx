@@ -6,6 +6,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { orderThreadContext } from '@/lib/orderThreads';
 import OrderThread from '@/components/marketplace/OrderThread';
+import { dateLabel } from '@/components/marketplace/present';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Booking messages', robots: { index: false, follow: false } };
@@ -30,7 +31,7 @@ export default async function ProviderOrderThreadPage({ params }: { params: { or
             <div className="mt-3">
                 <h1 className="text-xl font-extrabold tracking-tight text-slate-900">{ctx.otherName}</h1>
                 <p className="text-sm text-slate-500 mt-0.5">
-                    {ctx.order.item_name || 'Experience'}{ctx.order.service_date ? ' · ' + String(ctx.order.service_date) : ''}
+                    {ctx.order.item_name || 'Experience'}{ctx.order.service_date ? ' · ' + dateLabel(String(ctx.order.service_date)) : ''}
                 </p>
             </div>
             <OrderThread orderId={params.orderId} />

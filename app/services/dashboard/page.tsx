@@ -16,6 +16,7 @@ import ProviderExperienceDashboard from '@/components/services/ProviderExperienc
 import ProviderSlotDashboard from '@/components/services/ProviderSlotDashboard';
 import ExperienceIcalFeeds from '@/components/services/ExperienceIcalFeeds';
 import { shapeOf } from '@/lib/serviceSlots';
+import { isLiveToGuests } from '@/lib/serviceOrders';
 
 export const metadata = {
     title: 'Your business',
@@ -76,7 +77,7 @@ export default async function ProviderDashboardPage() {
     // half-finished draft for a second trade.
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, trial_ends_at, shape')
+        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, owner_paused, trial_ends_at, shape')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -136,11 +137,15 @@ export default async function ProviderDashboardPage() {
                             {provider.business_name}
                         </h1>
                         <p className="mt-1 text-sm text-slate-500">
-                            {tradeLabel(provider.trade)} · guest experiences
+                            {tradeLabel(provider.trade)}
                         </p>
                     </div>
+                    {/* Same route as the nav menu's "Your listing" — /services/
+                        dashboard/edit is the one edit door (it forks a guest to the
+                        sectioned listing editor, a trade to the business editor).
+                        Both "Your listing" links point here so they never diverge. */}
                     <Link
-                        href="/services/dashboard/listing"
+                        href="/services/dashboard/edit"
                         className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
                     >
                         Your listing
@@ -153,11 +158,11 @@ export default async function ProviderDashboardPage() {
                 {isSlotHome
                     ? (
                         <div className="space-y-6">
-                            <ProviderSlotDashboard providerId={provider.id} editHref="/services/dashboard/listing" />
+                            <ProviderSlotDashboard providerId={provider.id} editHref="/services/dashboard/listing" live={isLiveToGuests(provider)} />
                             <ExperienceIcalFeeds providerId={provider.id} icalToken={icalToken} />
                         </div>
                     )
-                    : <ProviderExperienceDashboard providerId={provider.id} />}
+                    : <ProviderExperienceDashboard providerId={provider.id} live={isLiveToGuests(provider)} />}
             </div>
         );
     }

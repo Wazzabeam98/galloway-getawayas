@@ -244,7 +244,12 @@ test('the name stored on an experience order is the masked one', () => {
     // lost-webhook reconcile sweep), so the masking guard follows it there.
     const src = read('lib/requestOrder.ts');
     assert.ok(
-        src.indexOf("guest_name: displayName(guest, '') || null") !== -1,
+        // A signed-in booker's name is still the MASKED one (displayName) — the
+        // primary source. A standalone booker with no profile falls back to the
+        // contact they typed at checkout (their own name), the same as the slot
+        // standalone path; the masking guarantee is that a PROFILE name is never
+        // written raw, which displayName-first preserves.
+        src.indexOf("guest_name: displayName(guest, '')") !== -1,
         'service_orders.guest_name is no longer written through displayName'
     );
     assert.ok(

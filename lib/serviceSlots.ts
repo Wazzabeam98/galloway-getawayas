@@ -32,7 +32,7 @@ export function isExclusiveShape(provider: any): boolean {
 export function shapeCue(shape: string): string {
     const map: Record<Shape, string> = {
         made_to_order: 'Made for your dates',
-        comes_to_you: 'Comes to your cottage',
+        comes_to_you: 'Comes to where you’re staying',
         slot: 'Book a time',
     };
     return map[shapeOf({ shape })];

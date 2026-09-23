@@ -16,7 +16,9 @@
 // TEST ONLY. Refuses to run unless the Supabase URL is the test project.
 //
 // Images come from listings/seed-assets/* (copied there so they survive a wipe
-// and never live in the repo). The sauna uses the real sauna photos.
+// and never live in the repo). The sauna uses the real sauna photos, and the
+// yoga class uses a real, free-licence yoga photo (Unsplash) at seed-assets/
+// yoga-1.jpg — uploaded to the test bucket only, never committed to the repo.
 
 import { loadEnv, assertTestEnvironment, supabaseClient, dayOffset } from './seed-lib.mjs';
 
@@ -28,6 +30,8 @@ const SEED_DOMAIN = 'gallowayexp.test';        // reserved TLD → no mail is se
 const PASSWORD = 'experience-seed-2026';
 const LIAM_EMAIL = 'liamworrall18@hotmail.com';
 const ACCT = 'acct_seed_experiences';           // a stand-in connected account
+const ISLA_STAY_PI = 'pi_seed_isla_stay';       // marks seed-sauna's upcoming holiday-let stay, so a re-run clears it
+const ISLA_PAST_STAY_PI = 'pi_seed_isla_past';  // marks seed-sauna's PAST stay (own PI — bookings.stripe_payment_intent_id is unique)
 const IMG = (k) => k;                            // storage keys, resolved by getImageUrl
 
 const time = (h, m = 0) => String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':00';
@@ -54,6 +58,11 @@ async function wipeExperiences() {
         }
         await db.remove('service_providers', '?id=eq.' + p.id).catch(() => {});
     }
+    // seed-sauna's holiday-let stay (its experience orders were removed with
+    // their providers above; the booking itself is tagged and cleared here so a
+    // re-run leaves no orphaned stay behind).
+    await db.remove('bookings', '?stripe_payment_intent_id=eq.' + ISLA_STAY_PI).catch(() => {});
+    await db.remove('bookings', '?stripe_payment_intent_id=eq.' + ISLA_PAST_STAY_PI).catch(() => {});
     // This seed's own owner accounts (so a re-run is clean). Never Liam, never
     // other domains' accounts.
     const users = await db.auth('GET', '/admin/users?per_page=200');
@@ -100,6 +109,8 @@ async function makeProvider(spec) {
         cancellation_window_hours: spec.cancelHours ?? 48,
         contact_email: spec.owner.email,
         fulfilment: spec.fulfilment ?? null,
+        delivery_fee: spec.deliveryFee ?? 0,
+        delivery_radius_miles: spec.deliveryRadius ?? 0,
         collection_street: spec.street ?? null,
         collection_town: spec.town ?? null,
         collection_postcode: spec.postcode ?? null,
@@ -129,6 +140,9 @@ async function makeProvider(spec) {
             booking_horizon_days: spec.horizonDays ?? 90,
             max_guests: spec.shape === 'slot' ? undefined : (spec.maxGuests ?? null),
             dietary_options: spec.dietaryOptions ?? [],
+            // The times a request-shape provider offers (comes_to_you / made_to_order),
+            // the guest picks one at booking. Slots have their own session times.
+            offered_times: spec.offeredTimes ?? undefined,
         },
     });
     for (const it of spec.items) {
@@ -136,6 +150,11 @@ async function makeProvider(spec) {
             provider_id: p.id, name: it.name, description: it.description, price: it.price,
             unit: it.unit, active: true, sort_order: it.sort ?? 0,
             capacity: it.capacity ?? null, min_people: it.min ?? null, image: it.image ?? null,
+            included_guests: it.includedGuests ?? null, extra_adult_fee: it.extraAdultFee ?? null,
+            extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null,
+            is_custom: it.isCustom ?? false,
+            ingredients: it.ingredients ?? null, allergens: it.allergens ?? null,
+            category: it.category ?? null,
         });
     }
     if (spec.availability) {
@@ -177,7 +196,7 @@ async function makeOrder(o) {
         slot_session_id: o.sessionId ?? null,
         service_date: o.date, service_time: o.time ?? null,
         duration_minutes: o.provider.shape === 'slot' ? 60 : null,
-        fulfilment: o.fulfilment ?? null, service_address: null,
+        fulfilment: o.fulfilment ?? null, service_address: o.serviceAddress ?? null,
         guests: o.attendees ?? null, attendees: o.attendees ?? null,
         quantity: o.quantity ?? 1, adults: o.adults ?? null, children: o.children ?? null,
         unit_price: o.unitPrice, item_unit: o.unit, price: o.price, commission_rate: 0.10,
@@ -242,7 +261,7 @@ async function main() {
         owner: yogaOwner, business_name: 'Harbour Yoga', provider_name: 'Mara', trade: 'yoga', category: 'yoga', mcc: '7911', shape: 'slot',
         slotLength: 60, turnaround: 15, slotCapacity: 10, slotMin: 1, cancelHours: 12, horizonDays: 60,
         fulfilment: 'collection', street: 'The Old Sail Loft', town: 'Kirkcudbright', postcode: 'DG6 4JA', mapLat: 54.8358, mapLng: -4.0512,
-        headshot: IMG('seed-assets/class-face.png'), photos: [IMG('seed-assets/class-1.jpg'), IMG('seed-assets/class-2.jpg')],
+        headshot: IMG('seed-assets/class-face.png'), photos: [IMG('seed-assets/yoga-1.jpg'), IMG('seed-assets/class-2.jpg')],
         professional_title: 'Sunrise yoga above the harbour', years: 7,
         qualifications: '500-hour registered yoga teacher (Yoga Alliance).', recognition: null,
         what_to_expect: 'A gentle hour of movement and breath as the light comes up over the water.',
@@ -254,7 +273,7 @@ async function main() {
         minAge: 12, activityLevel: 'gentle', whatToBring: 'Comfortable layers; everything else is here.',
         amenities: ['mats_provided', 'toilets', 'step_free'], accessibility: 'step_free', parking: 'street',
         availability: { days: [1,2,3,4,5,6,0], open: '07:00', close: '11:00' },
-        items: [{ name: 'Sunrise yoga class', description: 'Per person, all levels, up to 10.', price: 14, unit: 'person', capacity: 10, min: 1, sort: 0, image: IMG('seed-assets/class-1.jpg') }],
+        items: [{ name: 'Sunrise yoga class', description: 'Per person, all levels, up to 10.', price: 14, unit: 'person', capacity: 10, min: 1, sort: 0, image: IMG('seed-assets/yoga-1.jpg') }],
     });
     const yogaItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + yoga.id);
     created.push({ label: 'Harbour Yoga (yoga · slot, per-person class)', ...yogaOwner, providerId: yoga.id });
@@ -264,7 +283,11 @@ async function main() {
     const chef = await makeProvider({
         owner: chefOwner, business_name: 'Solway Table', provider_name: 'Rory', trade: 'chef', category: 'chef', mcc: '5811', shape: 'comes_to_you',
         leadTimeDays: 3, cancelHours: 72, horizonDays: 120, maxGuests: 10,
-        headshot: IMG('seed-assets/chef-face.png'), photos: [IMG('seed-assets/chef-1.jpg')],
+        // Booking times come from the weekly OPENING HOURS now (the one place a
+        // provider sets the hours they work), not a separate offered-times list —
+        // dinner sittings Wed–Sun, 5pm to 9pm.
+        availability: { days: [3, 4, 5, 6, 0], open: '17:00', close: '21:00' },
+        headshot: IMG('seed-assets/chef-face.png'), photos: [IMG('seed-assets/chef-hero.jpg')],
         professional_title: 'Private chef, cooked in your cottage', years: 12,
         qualifications: 'Professional Cookery SVQ; 15 years in Scottish kitchens.', recognition: 'Ex-head chef, a Galloway harbour restaurant.',
         what_to_expect: 'A relaxed dinner cooked in your cottage kitchen, built around what has landed and grown that week.',
@@ -273,12 +296,22 @@ async function main() {
             { title: 'On the night', detail: 'I arrive, cook, serve and clear — you just sit down.' },
             { title: 'After', detail: 'Kitchen left as I found it.' },
         ],
-        minAge: null, activityLevel: 'gentle', whatToBring: 'Just an appetite — everything else is provided.',
+        // A chef dinner has no "activity level" and nothing for the guest to bring,
+        // so both are left unset — the listing then shows no "Things to know".
+        minAge: null, activityLevel: null, whatToBring: null,
         amenities: [], accessibility: null, parking: null,
         dietaryNote: 'Vegetarian and gluten-free by arrangement; not a nut-free kitchen.', dietaryOptions: ['vegetarian', 'gluten_free'],
+        // A proper menu, several options to walk — a mix of per-guest dinners and
+        // one whole-evening group price, the way the bakery has a menu.
         items: [
-            { name: 'Three-course Galloway dinner', description: 'A seasonal three courses, cooked in your cottage.', price: 55, unit: 'person', sort: 0, image: IMG('seed-assets/chef-1.jpg') },
-            { name: 'Whole private dinner (up to 8)', description: 'The evening booked outright for your group.', price: 380, unit: 'flat', sort: 1 },
+            { name: 'Three-course Galloway dinner', description: 'A seasonal three courses, cooked in your cottage.', price: 55, unit: 'person', sort: 0, image: IMG('seed-assets/chef-hero.jpg'), min: 2 },
+            { name: 'Seafood tasting menu', description: 'Five small courses built around the day’s landings.', price: 75, unit: 'person', sort: 1, image: IMG('seed-assets/chef-2.jpg'), min: 2 },
+            { name: 'Sunday roast, cooked in', description: 'A proper roast with all the trimmings, carved at your table.', price: 40, unit: 'person', sort: 2, image: IMG('seed-assets/chef-3.jpg'), min: 2 },
+            { name: 'Grazing table & canapés', description: 'A spread of Galloway cheeses, charcuterie and warm canapés.', price: 35, unit: 'person', sort: 3, image: IMG('seed-assets/chef-4.jpg'), min: 4 },
+            // A flat group price with extra-guests pricing: £220 for up to 4, then
+            // +£40 per extra adult and +£15 per extra child, up to a party of 8.
+            { name: 'Whole private dinner', description: 'The evening booked outright for your group.', price: 220, unit: 'flat', sort: 4, image: IMG('seed-assets/chef-5.jpg'),
+                includedGuests: 4, extraAdultFee: 40, extraChildFee: 15, maxParty: 8 },
         ],
     });
     const chefItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + chef.id + '&order=sort_order');
@@ -288,27 +321,94 @@ async function main() {
     const bakerOwner = await ownerFor('baker', 'Nora (Galloway Bakehouse)');
     const baker = await makeProvider({
         owner: bakerOwner, business_name: 'Galloway Bakehouse', provider_name: 'Nora', trade: 'baker', category: 'food_order', mcc: '5462', shape: 'made_to_order',
+        // Made-to-order is a DATE ONLY — the collection time is arranged by
+        // message afterwards, so no offered-times list.
         leadTimeDays: 2, cancelHours: 48, horizonDays: 120, maxGuests: 1,
-        fulfilment: 'collection', street: '12 King Street', town: 'Castle Douglas', postcode: 'DG7 1AA', mapLat: 54.9372, mapLng: -3.9210,
+        // Collection-only, so the radius never bites — set for completeness.
+        fulfilment: 'collection', deliveryRadius: 5, street: '12 King Street', town: 'Castle Douglas', postcode: 'DG7 1AA', mapLat: 54.9372, mapLng: -3.9210,
         headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-1.jpg')],
         professional_title: 'Cakes & bakes to order', years: 6,
         qualifications: 'Level 3 Patisserie; registered home bakery.', recognition: null,
-        what_to_expect: 'A cake or a box of bakes made to order and dropped to your cottage.',
+        what_to_expect: 'Cakes and boxes of bakes made fresh to order, ready to collect from the bakehouse.',
+        // The three phases are shown under the shape's real headings (Order / Made
+        // to order / Collection for this collection-only baker), so the detail text
+        // is written to match collection, not delivery.
         itinerary: [
             { title: 'Order', detail: 'Tell me what you would like and when, at least two days ahead.' },
             { title: 'Bake', detail: 'Made fresh the day before or the morning of.' },
-            { title: 'Delivery', detail: 'Dropped to your cottage in the window we agree.' },
+            { title: 'Collection', detail: 'Ready to collect from the bakehouse in the window we agree.' },
         ],
-        minAge: null, activityLevel: 'gentle', whatToBring: 'Nothing — I bring it to your door.',
+        minAge: null, activityLevel: 'gentle', whatToBring: 'Nothing — just come by to collect.',
         amenities: [], accessibility: null, parking: null,
         dietaryNote: 'Gluten-free and vegan on request; made in a kitchen that handles nuts.', dietaryOptions: ['vegan', 'gluten_free'],
         items: [
-            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message.', price: 42, unit: 'flat', sort: 0, image: IMG('seed-assets/baker-1.jpg') },
-            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones.', price: 24, unit: 'flat', sort: 1 },
+            // A categorised menu — the sections ("Cakes", "Boxes & bakes", "Breads
+            // & buns") drive the guest page's sticky tabs, which show only because
+            // there's more than one. Custom items (made to the guest's design) turn
+            // the order into a request the baker approves; the rest are standard.
+            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message, iced and finished the way you ask. Tell me the occasion and I’ll make it the centrepiece of the table.', price: 42, unit: 'flat', sort: 0, category: 'Cakes', image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
+                ingredients: 'Wheat flour, butter, free-range eggs, sugar, Galloway raspberries, vanilla, double cream.',
+                allergens: 'Contains wheat (gluten), egg, milk. Made in a kitchen that also handles nuts and soya.' },
+            { name: 'Coffee & walnut loaf cake', description: 'A moist loaf cake with a proper coffee kick and toasted walnuts. Serves six to eight, ready sliced or whole.', price: 18, unit: 'flat', sort: 1, category: 'Cakes', image: IMG('seed-assets/baker-2.jpg'),
+                ingredients: 'Wheat flour, butter, eggs, sugar, walnuts, espresso.',
+                allergens: 'Contains wheat (gluten), egg, milk, walnuts (nuts).' },
+            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones — a bit of everything from the week’s baking.', price: 24, unit: 'flat', sort: 2, category: 'Boxes & bakes', image: IMG('seed-assets/baker-2.jpg'),
+                ingredients: 'Wheat flour, butter, oats, sugar, sultanas, free-range eggs, milk.',
+                allergens: 'Contains wheat (gluten), oats, egg, milk. May contain nuts.' },
+            // A per-item line, so a made-to-order order can carry a real quantity
+            // (three boxes) — the "guests means quantity" case for change-count.
+            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 3, category: 'Boxes & bakes', image: IMG('seed-assets/baker-3.jpg'),
+                ingredients: 'Wheat flour, butter, sugar, cocoa, oats, golden syrup.',
+                allergens: 'Contains wheat (gluten), oats, milk. May contain nuts.' },
+            { name: 'Galloway sourdough loaf', description: 'A slow-proved sourdough with a dark, blistered crust and an open crumb. Baked the morning of your collection.', price: 6, unit: 'item', sort: 4, category: 'Breads & buns', image: IMG('seed-assets/baker-3.jpg'),
+                ingredients: 'Wheat flour, water, salt, sourdough starter.',
+                allergens: 'Contains wheat (gluten). Made in a kitchen that handles nuts, egg and milk.' },
+            { name: 'Cinnamon buns (four)', description: 'Soft, laminated cinnamon buns with a cream-cheese glaze. Four to a box, best warmed through.', price: 12, unit: 'item', sort: 5, category: 'Breads & buns', image: IMG('seed-assets/baker-1.jpg'),
+                ingredients: 'Wheat flour, butter, milk, eggs, sugar, cinnamon, cream cheese.',
+                allergens: 'Contains wheat (gluten), egg, milk. May contain nuts.' },
         ],
     });
     const bakerItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + baker.id + '&order=sort_order');
     created.push({ label: 'Galloway Bakehouse (baker · made to order)', ...bakerOwner, providerId: baker.id });
+
+    /* 4b. BAKER THAT DELIVERS (made_to_order, fulfilment 'both' + a delivery fee).
+       So the Collection / Delivery switch, the fee and the address/cottage paths
+       all have something real to exercise. One day's notice, so its picker floor
+       differs from the collection-only bakehouse's two days. */
+    const deliOwner = await ownerFor('baker2', 'Rowan (Solway Loaf & Larder)');
+    const deli = await makeProvider({
+        owner: deliOwner, business_name: 'Solway Loaf & Larder', provider_name: 'Rowan', trade: 'baker', category: 'food_order', mcc: '5462', shape: 'made_to_order',
+        leadTimeDays: 1, cancelHours: 48, horizonDays: 120, maxGuests: 1,
+        // Offers BOTH: collect from the bakery, or have it delivered for a flat fee.
+        // Delivers within 12 miles of Kirkcudbright — a Kirkcudbright or Castle
+        // Douglas cottage is in range; a Dumfries or Stranraer one falls outside.
+        fulfilment: 'both', deliveryFee: 4.5, deliveryRadius: 12,
+        street: '3 Harbour Row', town: 'Kirkcudbright', postcode: 'DG6 4HY', mapLat: 54.8361, mapLng: -4.0530,
+        headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-2.jpg')],
+        professional_title: 'Bakes & larder boxes, collected or delivered', years: 4,
+        qualifications: 'Environmental Health registered home bakery.', recognition: null,
+        what_to_expect: 'Fresh bakes and larder boxes to order — collect from the harbour, or have them dropped to your cottage.',
+        itinerary: [
+            { title: 'Order', detail: 'Tell me what you would like and when, at least a day ahead.' },
+            { title: 'Bake', detail: 'Made fresh the morning of your date.' },
+            { title: 'Collection or delivery', detail: 'Collect from the harbour, or I’ll drop it to your cottage in the window we agree.' },
+        ],
+        minAge: null, activityLevel: null, whatToBring: null,
+        amenities: [], accessibility: null, parking: null,
+        dietaryNote: 'Vegan and gluten-free on request; baked in a kitchen that handles nuts.', dietaryOptions: ['vegan', 'gluten_free'],
+        items: [
+            { name: 'Focaccia (large)', description: 'A rosemary and sea-salt focaccia, big enough to share. Baked the morning of your date.', price: 9, unit: 'item', sort: 0, category: 'Breads', image: IMG('seed-assets/baker-3.jpg'),
+                ingredients: 'Wheat flour, olive oil, rosemary, sea salt, yeast.',
+                allergens: 'Contains wheat (gluten). Made in a kitchen that handles nuts, egg and milk.' },
+            { name: 'Cheese & chutney larder box', description: 'A box of local cheese, oatcakes, chutney and a loaf — everything for a cottage lunch.', price: 32, unit: 'flat', sort: 1, category: 'Larder boxes', image: IMG('seed-assets/baker-2.jpg'),
+                ingredients: 'Galloway cheeses, oatcakes (oats, wheat), chutney, sourdough.',
+                allergens: 'Contains wheat (gluten), oats, milk. May contain nuts.' },
+            { name: 'Celebration traybake box', description: 'A dozen traybakes finished for an occasion — your message piped on top.', price: 26, unit: 'flat', sort: 2, category: 'Larder boxes', image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
+                ingredients: 'Wheat flour, butter, eggs, sugar, chocolate, oats.',
+                allergens: 'Contains wheat (gluten), oats, egg, milk. May contain nuts.' },
+        ],
+    });
+    created.push({ label: 'Solway Loaf & Larder (baker · delivers)', ...deliOwner, providerId: deli.id });
 
     /* --------------------------------------------- orders on Liam, each state */
     const gEmail = liam.email;
@@ -335,8 +435,8 @@ async function main() {
 
     // CHEF: authorised (awaiting the chef), and a confirmed upcoming.
     const cItem = chefItemRows.find(i => i.unit === 'person');
-    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(12), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'authorised', fulfilment: 'delivery' });
-    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(20), quantity: 2, attendees: 2, unit: 'person', unitPrice: 55, price: 110, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
+    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(12), time: time(19), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'authorised', fulfilment: 'delivery' });
+    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(20), time: time(18), quantity: 2, attendees: 2, unit: 'person', unitPrice: 55, price: 110, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
 
     // BAKER: a confirmed order and a refunded one.
     const bItem = bakerItemRows[0];
@@ -350,8 +450,99 @@ async function main() {
     const oToday = await makeOrder({ ...orderBase, provider: sauna, sessionId: upSauna.id, date: dayOffset(0), time: time(19), quantity: 2, adults: 2, children: 0, unit: 'person', unitPrice: 18, price: 36, itemId: sauShared.id, itemName: sauShared.name, status: 'confirmed', fulfilment: 'collection' });
     const upYoga = await makeSession(yoga.id, dayOffset(1), time(8), { seats: 2, capacity: 10, declared: true, title: 'Sunrise class' });
     const oTomorrow = await makeOrder({ ...orderBase, provider: yoga, sessionId: upYoga.id, date: dayOffset(1), time: time(8), quantity: 2, adults: 2, children: 0, unit: 'person', unitPrice: 14, price: 28, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
-    const oThisWeek = await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(3), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
+    const oThisWeek = await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(3), time: time(19, 30), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
     const oNextWeek = await makeOrder({ ...orderBase, provider: baker, date: dayOffset(8), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+
+    /* --------------- seed-sauna (Isla): an UPCOMING HOLIDAY-LET STAY with a
+       confirmed experience booking in each category attached to it — one made to
+       order, one comes to you (the chef's flat extra-guests dinner, so its
+       pricing layout can be checked), one slot — all comfortably inside their
+       free-cancellation windows so change-count and change-date can be walked;
+       plus one PAST its window, to walk the closed-changes sheet.
+
+       The stay is a real booking on an existing cottage that has coordinates, so
+       the come-to-you order's map has somewhere to point, and /trips shows the
+       stay with its experiences the way a guest sees it. */
+    const islaBase = { guestId: saunaOwner.id, guestName: 'Isla', guestEmail: saunaOwner.email };
+    const bBox = bakerItemRows.find((i) => i.unit === 'item') || bItem;
+    const chefFlat = chefItemRows.find((i) => i.unit === 'flat') || cItem;
+
+    // The cottage(s) to book: listings with a coordinate (id order → stable pick).
+    // The past stay uses a DIFFERENT listing from the upcoming one so the two can
+    // never collide with each other or the same cottage's other seeded bookings.
+    const islaCottages = await db.select('listings', '?select=id,host_id,title&latitude=not.is.null&order=id.asc&limit=6');
+    const islaCottage = islaCottages[0];
+    const islaPastCottage = islaCottages[1] || islaCottages[0];
+    let islaStay = null;
+    if (islaCottage) {
+        const nowIso = new Date().toISOString();
+        [islaStay] = await db.insert('bookings', {
+            listing_id: islaCottage.id, guest_id: saunaOwner.id, host_id: islaCottage.host_id,
+            check_in: dayOffset(11), check_out: dayOffset(16),
+            guests: 2, adults: 2, children: 0, pets: 0,
+            total_price: 520, status: 'confirmed', payment_status: 'paid', amount_paid: 520,
+            confirmed_at: nowIso, paid_at: nowIso, stripe_payment_intent_id: ISLA_STAY_PI,
+        });
+    }
+    const islaCottageRef = islaStay ? { bookingId: islaStay.id, listingId: islaCottage.id } : {};
+
+    const islaYogaS = await makeSession(yoga.id, dayOffset(15), time(8), { seats: 1, capacity: 10, declared: true, title: 'Sunrise class' });
+    await makeSession(yoga.id, dayOffset(16), time(8), { seats: 0, capacity: 10, declared: true, title: 'Sunrise class' });
+    await makeSession(yoga.id, dayOffset(17), time(9), { seats: 0, capacity: 10, declared: true, title: 'Sunrise class' });
+    // INSIDE the window — all attached to the stay, dated within it.
+    const oIslaSlot = await makeOrder({ ...islaBase, ...islaCottageRef, provider: yoga, sessionId: islaYogaS.id, date: dayOffset(15), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaMto = await makeOrder({ ...islaBase, ...islaCottageRef, provider: baker, date: dayOffset(12), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+    // The chef works Wed–Sun (days 3,4,5,6,0). Snap the dinner to a working day
+    // inside the stay [dayOffset(11), dayOffset(15)] so the change-date sheet's
+    // own opening hours never strike the booking's own date. Offset 12 is skipped
+    // — a chef order on the other cottage already holds that date, and the chef
+    // is exclusive per date. A 5-night stay always yields a Wed–Sun day here.
+    const CHEF_WORK_DAYS = new Set([3, 4, 5, 6, 0]);
+    const dowOfKey = (key) => new Date(key + 'T12:00:00Z').getUTCDay();
+    const chefDinnerDate = (() => {
+        for (const n of [13, 14, 15, 11]) { const key = dayOffset(n); if (CHEF_WORK_DAYS.has(dowOfKey(key))) return key; }
+        return dayOffset(13);
+    })();
+    // Comes-to-you: the chef's FLAT extra-guests dinner — £220 for up to 4, a
+    // party of 6 (2 extra adults) → £220 + 2×£40 = £300.
+    const oIslaCty = await makeOrder({ ...islaBase, ...islaCottageRef, provider: chef, date: chefDinnerDate, time: time(19), quantity: 1, attendees: 6, adults: 6, children: 0, unit: 'flat', unitPrice: 220, price: 300, itemId: chefFlat.id, itemName: chefFlat.name, status: 'confirmed', fulfilment: 'delivery' });
+    // PAST its window — a made-to-order due tomorrow (24h < the baker's 48h), to
+    // walk the "changes are closed" sheet.
+    const oIslaClosed = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(1), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+
+    // A STANDALONE experience — booked with no stay at all (bookingless). A
+    // made-to-order collection box, so no address is needed; it carries a picked
+    // time. Proves the "bookable by anyone, no holiday-let needed" path and gives
+    // /trips an experience with its own card (not under a stay).
+    const oIslaNoStay = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(9), quantity: 2, unit: 'item', unitPrice: 8, price: 16, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+
+    // A PAST STAY with a PAST EXPERIENCE on it, so the /trips "Past" section has
+    // something in it. The stay finished last week; the chef cooked during it.
+    let islaPastStay = null;
+    if (islaPastCottage) {
+        const nowIso = new Date().toISOString();
+        [islaPastStay] = await db.insert('bookings', {
+            listing_id: islaPastCottage.id, guest_id: saunaOwner.id, host_id: islaPastCottage.host_id,
+            check_in: dayOffset(-45), check_out: dayOffset(-41),
+            guests: 2, adults: 2, children: 0, pets: 0,
+            total_price: 460, status: 'confirmed', payment_status: 'paid', amount_paid: 460,
+            confirmed_at: nowIso, paid_at: nowIso, stripe_payment_intent_id: ISLA_PAST_STAY_PI,
+        });
+    }
+    const islaPastRef = islaPastStay ? { bookingId: islaPastStay.id, listingId: islaPastCottage.id } : {};
+    const oIslaPast = await makeOrder({ ...islaBase, ...islaPastRef, provider: baker, date: dayOffset(-43), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+
+    // #172: two yoga slots on Isla's own account (standalone, not on the stay) to
+    // walk the cancel-button COLOURS — one comfortably inside its free-cancel
+    // window (a full refund → NEUTRAL button), one this-morning and past it (a
+    // forfeit → RED button). Per-person yoga, so the amend sheet and its minAge-12
+    // "Add children" link can be walked from the same account. Renamed off #175's
+    // oIslaPast (the past-stay experience) so both survive.
+    const islaFreeSession = await makeSession(yoga.id, dayOffset(20), time(8), { seats: 1, capacity: 10, declared: true, title: 'Sunrise class' });
+    const oIslaFree = await makeOrder({ ...islaBase, provider: yoga, sessionId: islaFreeSession.id, date: dayOffset(20), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const islaPastYogaSession = await makeSession(yoga.id, dayOffset(0), time(7), { seats: 1, capacity: 10, declared: true, title: 'Sunrise class' });
+    const oIslaPastYoga = await makeOrder({ ...islaBase, provider: yoga, sessionId: islaPastYogaSession.id, date: dayOffset(0), time: time(7), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+
     const walkable = [
         ['Today',           'Loch Sauna (sauna)',      oToday],
         ['Tomorrow',        'Harbour Yoga (class)',    oTomorrow],
@@ -377,6 +568,20 @@ async function main() {
     for (const [when, biz, o] of walkable) {
         console.log('    ' + when.padEnd(16) + biz.padEnd(28) + '/experiences/order/' + o.id);
     }
+    console.log('\n  Cancel-button colours + Add children (signed in as seed-sauna, standalone yoga):');
+    console.log('    NEUTRAL (full refund)  yoga, 20 days out   /experiences/order/' + oIslaFree.id);
+    console.log('    RED (past window)      yoga, this morning   /experiences/order/' + oIslaPastYoga.id);
+    console.log('\n  seed-sauna@' + SEED_DOMAIN + ' — an upcoming holiday-let stay with experiences attached:');
+    console.log('    stay: ' + (islaStay ? ('"' + islaCottage.title + '"  ' + dayOffset(11) + ' → ' + dayOffset(16) + '  (booking ' + islaStay.id + ')') : '— no coordinate listing found, orders left standalone'));
+    console.log('    slot (yoga)           /experiences/order/' + oIslaSlot.id + '   (inside window)');
+    console.log('    made_to_order (baker) /experiences/order/' + oIslaMto.id + '   (inside window)');
+    console.log('    comes_to_you (chef)   /experiences/order/' + oIslaCty.id + '   (inside window · flat extra-guests £300)');
+    console.log('    closed window (baker) /experiences/order/' + oIslaClosed.id + '   (due tomorrow — changes closed)');
+    console.log('    no-stay experience    /experiences/order/' + oIslaNoStay.id + '   (booked standalone, its own /trips card)');
+    console.log('    PAST stay             ' + (islaPastStay ? ('booking ' + islaPastStay.id + '  ' + dayOffset(-45) + ' → ' + dayOffset(-41)) : '—'));
+    console.log('    PAST experience       /experiences/order/' + oIslaPast.id + '   (on the past stay)');
+    console.log('    chef public listing   /experiences/browse/' + chef.id + '   (standalone bookable)');
+    console.log('    Your trips page       /trips');
     console.log('\n  done.');
     process.exit(0);
 }

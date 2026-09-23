@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { guestExperiencesOpen, normaliseUnit, unitMultiplies, isLiveToGuests } from '@/lib/serviceOrders';
-import { isSlot, shapeOf } from '@/lib/serviceSlots';
+import { isSlot, shapeOf, guestMayCancelFree } from '@/lib/serviceSlots';
 import { moveOrderFamily, moveTargetEligibility } from '@/lib/experienceMove';
 import { fetchSlotSessionRows } from '@/lib/providerSessions';
 import { londonDayKey } from '@/lib/dayKey';
@@ -120,7 +120,10 @@ export async function GET(request: Request) {
         const rows = await fetchSlotSessionRows(admin, provider.id, today, horizon);
 
         const now = new Date();
-        const sessions = (rows || [])
+        // PAST THE BOOKING'S OWN FREE-CANCELLATION WINDOW the date is fixed — the
+        // same cutoff the refund uses. Offer nothing and tell the sheet why.
+        const locked = !guestMayCancelFree('slot', String(order.service_date), order.service_time || null, windowHours, now);
+        const sessions = locked ? [] : (rows || [])
             // A block is not a bookable session; never show it as an option.
             .filter((s: any) => !s.blocked)
             .map((s: any) => {
@@ -150,6 +153,7 @@ export async function GET(request: Request) {
                 time: String(current.session_time).slice(0, 5),
             },
             horizonDays: HORIZON_DAYS,
+            locked,
             sessions,
         });
     } catch (e: any) {
@@ -195,6 +199,12 @@ export async function POST(request: Request) {
         const admin = adminClient();
         const loaded = await loadForMove(admin, orderId, user.id);
         if ('error' in loaded) return NextResponse.json({ ok: false, error: loaded.error.message }, { status: loaded.error.status });
+
+        // PAST THE BOOKING'S OWN FREE-CANCELLATION WINDOW the date is fixed. This
+        // matches the request-shape change-date rule and the picker's `locked`.
+        if (!guestMayCancelFree('slot', String(loaded.order.service_date), loaded.order.service_time || null, loaded.windowHours, new Date())) {
+            return NextResponse.json({ ok: false, error: 'The free-cancellation window has passed, so the date can’t be changed now.' }, { status: 409 });
+        }
 
         // Resolve the named target session row. v1: it must already exist.
         const { data: target } = await admin

@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { getImageUrl } from '@/lib/utils';
 import { directionsUrl, appleDirectionsUrl } from '@/lib/directions';
+import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,14 +41,14 @@ export async function GET() {
         const [{ data: pastOrders }, { data: futureOrders }] = await Promise.all([
             admin
                 .from('service_orders')
-                .select('id, item_id, item_name, provider_id, provider_business_name, service_date, service_time')
+                .select('id, item_id, item_name, provider_id, provider_business_name, shape, service_date, service_time')
                 .eq('guest_id', user.id)
                 .eq('status', 'confirmed')
                 .lt('service_date', today)
                 .order('service_date', { ascending: false }),
             admin
                 .from('service_orders')
-                .select('id, item_id, item_name, provider_id, provider_business_name, service_date, service_time')
+                .select('id, item_id, item_name, provider_id, provider_business_name, shape, service_date, service_time')
                 .eq('guest_id', user.id)
                 .eq('status', 'confirmed')
                 .gte('service_date', today)
@@ -103,13 +104,19 @@ export async function GET() {
             return raw ? getImageUrl(raw) : null;
         };
 
-        const reviewShape = (o: any) => ({
-            orderId: o.id,
-            title: o.item_name || o.provider_business_name || 'Your experience',
-            providerName: o.provider_business_name || null,
-            serviceDate: o.service_date,
-            photo: photoFor(o),
-        });
+        // Comes-to-you leads with the listing name and shows its chosen item on
+        // the line beneath; every other shape keeps the item name as the title
+        // with the provider beneath (unchanged).
+        const reviewShape = (o: any) => {
+            const { title, detail } = experienceBookingTitle(o);
+            return {
+                orderId: o.id,
+                title,
+                providerName: detail ?? (o.provider_business_name || null),
+                serviceDate: o.service_date,
+                photo: photoFor(o),
+            };
+        };
         // Directions to the experience's venue — Google + Apple, built the same
         // way (and by the same lib) as the cottage trip card. There's no
         // what3words for an experience (that's a cottage field), so the picker
@@ -134,15 +141,18 @@ export async function GET() {
             return (google || apple) ? { google, apple } : null;
         };
 
-        const upcomingShape = (o: any) => ({
-            orderId: o.id,
-            title: o.item_name || o.provider_business_name || 'Your experience',
-            providerName: o.provider_business_name || null,
-            serviceDate: o.service_date,
-            serviceTime: o.service_time || null,
-            photo: photoFor(o),
-            directions: directionsFor(o),
-        });
+        const upcomingShape = (o: any) => {
+            const { title, detail } = experienceBookingTitle(o);
+            return {
+                orderId: o.id,
+                title,
+                providerName: detail ?? (o.provider_business_name || null),
+                serviceDate: o.service_date,
+                serviceTime: o.service_time || null,
+                photo: photoFor(o),
+                directions: directionsFor(o),
+            };
+        };
 
         return NextResponse.json({
             ok: true,

@@ -4,7 +4,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { coordinatePatchFor } from '@/lib/postcodeGeocode';
-import { addressBlockerForPublish } from '@/lib/listingRules';
+import { addressBlockerForPublish, NEW_LISTING_MIN_PHOTOS } from '@/lib/listingRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('id, host_id, title, price_per_night, status, street_address, postcode, latitude, longitude')
+            .select('id, host_id, title, price_per_night, status, images, street_address, postcode, latitude, longitude')
             .eq('id', listingId)
             .maybeSingle();
 
@@ -79,6 +79,20 @@ export async function POST(request: Request) {
         const addressProblem = addressBlockerForPublish(listing);
         if (addressProblem) {
             return NextResponse.json({ ok: false, error: addressProblem }, { status: 400 });
+        }
+
+        // At least five photos to go live for the FIRST time — the Airbnb bar for a
+        // listing worth booking. Only gates a listing that has never been live: a
+        // 'hidden' (paused/unlisted) or already-'published' listing has been through
+        // this once, so it can go live again with the photos it has. A brand-new
+        // 'draft' (or a not-yet-approved 'pending_review') is what the bar is for.
+        const everPublished = listing.status === 'published' || listing.status === 'hidden';
+        const photoCount = Array.isArray(listing.images) ? listing.images.filter(Boolean).length : 0;
+        if (!everPublished && photoCount < NEW_LISTING_MIN_PHOTOS) {
+            return NextResponse.json(
+                { ok: false, error: `Add at least ${NEW_LISTING_MIN_PHOTOS} photos before your listing can go live — you have ${photoCount}.` },
+                { status: 400 }
+            );
         }
 
         const { error } = await admin

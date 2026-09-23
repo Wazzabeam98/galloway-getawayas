@@ -19,6 +19,7 @@ import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import {
     problemAtStep as ruleAtStep,
     firstPublishProblem as firstProblemIn,
+    NEW_LISTING_MIN_PHOTOS,
 } from '@/lib/listingRules';
 
 export default function AddHome() {
@@ -378,6 +379,15 @@ export default function AddHome() {
         if (problem) {
             setFormError(problem.message);
             setStep(problem.step);
+            return;
+        }
+
+        // A new listing needs at least five photos to go live (the Airbnb bar).
+        // The server enforces it too; this is the friendlier, in-flow version so a
+        // host isn't bounced by the API. Step 6 is the photos step.
+        if (photos.length < NEW_LISTING_MIN_PHOTOS) {
+            setFormError(`Please add at least ${NEW_LISTING_MIN_PHOTOS} photos of your place before publishing — you have ${photos.length}.`);
+            setStep(6);
             return;
         }
 
@@ -817,7 +827,7 @@ export default function AddHome() {
                 {step === 6 && (
                     <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Add photos of your place</h2>
-                        <p className="text-slate-600 mb-2">Upload as many as you like, then click the star on your favourite to make it the cover photo guests see first.</p>
+                        <p className="text-slate-600 mb-2">Add at least {NEW_LISTING_MIN_PHOTOS} to go live, then click the star on your favourite to make it the cover photo guests see first.</p>
                         <p className="text-xs text-slate-400 mb-8">Drag photos to reorder them — the order here is the order guests see them in.</p>
 
                         {photos.length > 0 && (
@@ -903,7 +913,7 @@ export default function AddHome() {
                                 type="text"
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
-                                placeholder="e.g. Cosy stone cottage near the coast"
+                                placeholder="e.g. Cosy coastal retreat near the harbour"
                                 // A title is a headline, not a paragraph. Left
                                 // uncapped it becomes a wall of text in the page
                                 // <h1> and browser tab; 80 is roomy for a real one.

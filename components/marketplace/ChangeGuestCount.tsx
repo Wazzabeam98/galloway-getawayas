@@ -4,39 +4,58 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Users, Minus, Plus, Loader2, ChevronRight, X } from 'lucide-react';
 import { childrenAllowed } from '@/lib/guestAges';
+import { partyPrice } from '@/lib/extraGuests';
 
 // "Change guest count" — a reservation ACTION row that opens a MODAL over the
-// page, the way Airbnb's reservation actions do (not an inline expander). The
-// modal holds the guest-count stepper (adults + children) seeded at the current
-// party, and as the count changes shows a Confirm-and-pay-shaped summary: the new
-// count with the old struck through, a price-adjustment line and a total — the
-// delta for the added places, charged as a separate payment. Past the
-// session-anchored cancellation deadline a single quiet "Non-refundable" line
-// sits by the price — no amber panel, no tickbox.
+// page. ONE sheet for every shape; it adapts to the booking's engine:
 //
-// Per-person slot bookings only; the page decides whether to render the row.
-// Payer-only and price-bearing — the page renders it for the booker alone, and
-// the route is the real wall (a companion is refused and never handed the quote).
+//   - SLOT (per-person): the original flow — the stepper only rises, and an added
+//     place is a separate charge (a child order) through Checkout. Past the
+//     session cutoff the added place is non-refundable, stated plainly.
+//   - REQUEST, per-person (made_to_order / comes_to_you with a multiplying unit):
+//     the count moves money BOTH ways under the cancellation policy. Inside the
+//     free-cancellation window a lower count refunds the difference at once and a
+//     higher one tops up through Checkout; past the window it can only rise.
+//   - REQUEST, per-group (a flat price): the count is the party size — it changes
+//     no money, only respects capacity, and saves in place.
+//
+// The sheet says which rule applies before the guest confirms. Payer-only: the
+// page renders it for the booker alone and the route is the real wall.
 
 interface Quote {
+    // shared
     unitPrice: number;
-    seatsLeft: number;
-    headcount: number;
     adults: number | null;
     children: number | null;
-    maxAddable: number;
-    serviceDate: string;
-    serviceTime: string | null;
-    deadlineISO: string;
-    insideWindow: boolean;
     itemName: string | null;
-    // The provider's minimum age (null / 12 / 16 / 18 / 21). 16+ rules out the
-    // whole 4–12 children band, so no children stepper is shown at all.
     minAge: number | null;
+    // slot
+    seatsLeft?: number;
+    headcount?: number;
+    maxAddable?: number;
+    deadlineISO?: string;
+    insideWindow?: boolean;
+    // request
+    perGroup?: boolean;
+    mode?: 'people' | 'quantity' | 'group';
+    current?: number;
+    min?: number;
+    max?: number;
+    free?: boolean;
+    closed?: boolean;          // past the window — no changes
+    messageOnly?: boolean;     // nothing to charge/hold — point the guest at the provider
+    riseOnly?: boolean;        // increases only; reductions are gone
+    providerName?: string | null;
+    // flat item with extra-guests pricing: the party moves the fee.
+    extraGuests?: boolean;
+    includedGuests?: number;
+    extraAdultFee?: number;
+    extraChildFee?: number;
+    currentPrice?: number;
 }
 
 function money(n: number): string {
-    return '£' + (Math.round(n * 100) / 100).toFixed(2);
+    return '£' + (Math.round(Math.abs(n) * 100) / 100).toFixed(2);
 }
 function people(n: number, kind: 'adult' | 'child'): string {
     if (kind === 'adult') return n + (n === 1 ? ' adult' : ' adults');
@@ -72,70 +91,119 @@ function Stepper({ label, value, set, min, max, disabled }: { label: string; val
     );
 }
 
-export default function ChangeGuestCount({ orderId, className }: { orderId: string; className?: string }) {
+export default function ChangeGuestCount({ orderId, shape, className }: { orderId: string; shape?: string | null; className?: string }) {
+    const isRequest = shape === 'made_to_order' || shape === 'comes_to_you';
+    const base = isRequest ? '/api/services/order/change-count' : '/api/services/slots/top-up';
+
     const [open, setOpen] = useState(false);
     const [quote, setQuote] = useState<Quote | null>(null);
     const [loadErr, setLoadErr] = useState<string | null>(null);
-    // The CURRENT party (seeded from the quote); the stepper only moves up.
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
+    // Children start collapsed behind an "Add children" link, exactly as the
+    // booking dialog does it, so an adults-only amend never shows a 0 stepper.
+    // Once the booking already has children (oldChildren > 0) the stepper is
+    // always shown — there is nothing to reveal.
+    const [group, setGroup] = useState(1);              // per-group party size
+    const [childrenShown, setChildrenShown] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     async function loadQuote() {
         setLoadErr(null);
         try {
-            const r = await fetch('/api/services/slots/top-up?orderId=' + encodeURIComponent(orderId));
+            const r = await fetch(base + '?orderId=' + encodeURIComponent(orderId));
             const d = await r.json();
             if (!r.ok || !d.ok) { setLoadErr(d && d.error ? d.error : 'Could not load this.'); return; }
             const q = d as Quote;
             setQuote(q);
-            setAdults(q.adults != null ? q.adults : Math.max(1, q.headcount));
-            setChildren(q.children != null ? q.children : 0);
+            if (q.extraGuests) {
+                // A flat extra-guests item: an adults/children split that moves the fee.
+                setAdults(Math.max(1, q.adults != null ? q.adults : 1));
+                setChildren(q.children != null ? q.children : 0);
+            } else if (q.perGroup || q.mode === 'quantity') {
+                setGroup(Math.max(1, q.current || 1));
+            } else {
+                const seedAdults = q.adults != null ? q.adults : Math.max(1, (isRequest ? q.current : q.headcount) || 1);
+                setAdults(seedAdults);
+                setChildren(q.children != null ? q.children : 0);
+            }
+            setChildrenShown((q.children || 0) > 0);
             setError(null);
         } catch { setLoadErr('Could not load this.'); }
     }
 
-    function openModal() {
-        setOpen(true);
-        loadQuote();
-    }
+    function openModal() { setOpen(true); setChildrenShown(false); loadQuote(); }
     function closeModal() { setOpen(false); }
 
-    const oldAdults = quote ? (quote.adults != null ? quote.adults : Math.max(1, quote.headcount)) : 1;
-    const oldChildren = quote ? (quote.children != null ? quote.children : 0) : 0;
-    const seatsLeft = quote ? quote.seatsLeft : 0;
-    const added = (adults - oldAdults) + (children - oldChildren);
-    const addedChildren = children - oldChildren;
-    const delta = quote ? quote.unitPrice * added : 0;
-    // Past the free-cancellation deadline an added place is non-refundable; we
-    // state it plainly by the price rather than gating on a tickbox.
-    const pastCutoff = quote ? quote.insideWindow : false;
-    const canPay = !!quote && added >= 1 && !busy;
-
-    const adultsMax = oldAdults + Math.max(0, seatsLeft - (children - oldChildren));
-    const childrenMax = oldChildren + Math.max(0, seatsLeft - (adults - oldAdults));
-    // 16+/18+/21+ experiences take no children — no stepper, not a disabled one.
+    const extra = !!(quote && quote.extraGuests);
+    const perGroup = !!(quote && quote.perGroup) && !extra;
+    // How the count is shown: a people split (adults/children), a single quantity
+    // stepper (made_to_order), or a single group-size stepper (a flat price, no
+    // money). A flat item WITH extra-guests pricing splits people and moves the
+    // fee. Slots always split people.
+    const mode: 'people' | 'quantity' | 'group' = extra ? 'people' : (perGroup ? 'group' : (isRequest ? (quote?.mode || 'people') : 'people'));
+    const single = mode === 'group' || mode === 'quantity';
+    const unitPrice = quote ? quote.unitPrice : 0;
     const kidsOk = childrenAllowed(quote ? quote.minAge : null);
+
+    // --- SLOT bounds (rise only, seats-limited) ---------------------------------
+    const oldAdults = quote ? (quote.adults != null ? quote.adults : Math.max(1, (isRequest ? quote.current : quote.headcount) || 1)) : 1;
+    const oldChildren = quote ? (quote.children != null ? quote.children : 0) : 0;
+    const oldCount = single ? (quote!.current || 1) : (oldAdults + oldChildren);
+
+    // Bounds differ by engine. Slot: rises only, limited by seats left. Request:
+    // moves within [min, max] the route returned (min already collapses to the
+    // current count once past the window, so a reduction is simply not offered).
+    const seatsLeft = quote && !isRequest ? (quote.seatsLeft || 0) : 0;
+    const reqMin = quote && isRequest ? (quote.min || 1) : oldCount;
+    const reqMax = quote && isRequest ? (quote.max || oldCount) : (oldCount + Math.max(0, seatsLeft));
+
+    const adultsMin = isRequest ? Math.max(1, reqMin - children) : oldAdults;
+    const adultsMax = isRequest ? (reqMax - children) : oldAdults + Math.max(0, seatsLeft - (children - oldChildren));
+    const childrenMin = isRequest ? 0 : oldChildren;
+    const childrenMax = isRequest ? (reqMax - adults) : oldChildren + Math.max(0, seatsLeft - (adults - oldAdults));
+
+    const newCount = single ? group : (adults + children);
+    const delta = newCount - oldCount;                 // +rise, −fall
+    // Extra-guests money follows the party price, not a flat per-head unit.
+    const egItem = extra && quote ? {
+        unit: 'flat', price: quote.unitPrice,
+        included_guests: quote.includedGuests ?? null,
+        extra_adult_fee: quote.extraAdultFee ?? null,
+        extra_child_fee: quote.extraChildFee ?? null,
+        max_party: quote.max ?? null,
+    } : null;
+    const money0 = extra && egItem
+        ? partyPrice(egItem as any, adults, kidsOk ? children : 0, quote!.minAge) - partyPrice(egItem as any, oldAdults, oldChildren, quote!.minAge)
+        : (mode === 'group' ? 0 : unitPrice * delta);
+    const free = quote ? (isRequest ? !!quote.free : !quote.insideWindow) : true;
+
+    const slotFull = !isRequest && quote ? (quote.seatsLeft || 0) < 1 : false;
 
     async function proceed() {
         if (!quote) return;
         setBusy(true); setError(null);
         try {
-            const r = await fetch('/api/services/slots/top-up', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ orderId, quantity: added, children: addedChildren }),
-            });
+            let body: any;
+            if (isRequest) {
+                body = extra
+                    ? { orderId, count: newCount, adults, children }
+                    : single
+                        ? { orderId, count: group }
+                        : { orderId, count: newCount, children: Math.max(0, children - oldChildren) };
+            } else {
+                body = { orderId, quantity: delta, children: Math.max(0, children - oldChildren) };
+            }
+            const r = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const d = await r.json();
-            if (d && d.ok && d.url) { window.location.href = d.url; return; }
-            setError((d && d.error) || 'Could not start that.');
-        } catch { setError('Could not start that.'); }
+            if (d && d.ok && d.url) { window.location.href = d.url; return; }   // a rise → pay
+            if (d && d.ok) { window.location.reload(); return; }                 // a fall / group / saved
+            setError((d && d.error) || 'Could not do that.');
+        } catch { setError('Could not do that.'); }
         setBusy(false);
     }
 
-    // Strike through only a value that was ACTUALLY there before. 0 → N shows just
-    // the new value (nothing to strike); N → 0 strikes the old value with nothing
-    // after it; N → M (both non-zero) shows the struck old beside the new.
     const Diff = ({ oldN, newN, kind }: { oldN: number; newN: number; kind: 'adult' | 'child' }) => {
         const changed = newN !== oldN;
         const showOld = changed && oldN > 0;
@@ -149,8 +217,14 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
         );
     };
 
-    // The row that opens the modal. A chevron marks it as opening a screen, like
-    // the other navigating rows (and unlike Cancel, which expands in place).
+    // The confirm button's label + whether it's enabled, by what the change does.
+    // INCREASES ONLY now. A comes-to-you rise is a REQUEST the provider accepts
+    // (card only held); a slot rise is instant. Reductions are gone.
+    const confirmLabel = delta > 0
+        ? (isRequest ? 'Request & hold ' + money(money0) : 'Continue to payment · ' + money(money0))
+        : 'Add guests';
+    const canConfirm = !!quote && !busy && !slotFull && delta > 0;
+
     const trigger = (
         <button type="button" onClick={openModal}
             className={className || 'text-sm font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800'}>
@@ -180,37 +254,80 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
                                 <p className="text-sm text-rose-600">{loadErr}</p>
                             ) : !quote ? (
                                 <p className="text-sm text-slate-400">Loading…</p>
-                            ) : quote.seatsLeft < 1 ? (
+                            ) : (quote.closed || quote.messageOnly || !free) ? (
+                                <div className="space-y-3">
+                                    <p className="text-sm text-slate-600">
+                                        {quote.messageOnly
+                                            ? 'To change your party for this booking, message ' + (quote.providerName || 'the provider') + '.'
+                                            : 'Changes are closed now — the free-cancellation window has passed. Message ' + (quote.providerName || 'the provider') + ' if you need to change anything.'}
+                                    </p>
+                                    <a href={'/messages?o=' + orderId} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">
+                                        Message {quote.providerName || 'the provider'}
+                                    </a>
+                                </div>
+                            ) : slotFull ? (
                                 <p className="text-sm text-slate-600">This session is full — there are no more places to add.</p>
                             ) : (
                                 <div className="space-y-3">
-                                    <Stepper label="Adults" value={adults} set={setAdults} min={oldAdults} max={adultsMax} />
-                                    {kidsOk && (
-                                        <Stepper label="Children (4–12)" value={children} set={setChildren} min={oldChildren} max={childrenMax} />
+                                    {single ? (
+                                        <Stepper label={mode === 'group' ? 'Group size' : 'Quantity'} value={group} set={setGroup} min={reqMin} max={reqMax} />
+                                    ) : (
+                                        <>
+                                            <Stepper label="Adults" value={adults} set={setAdults} min={adultsMin} max={adultsMax} />
+                                            {kidsOk && (childrenShown || oldChildren > 0) && (
+                                                <Stepper label="Children (4–12)" value={children} set={setChildren} min={childrenMin} max={childrenMax} />
+                                            )}
+                                            {kidsOk && !childrenShown && oldChildren === 0 && (
+                                                <button type="button" onClick={() => setChildrenShown(true)}
+                                                    className="text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                                                    Add children
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
+                                    {/* Adults-only until asked, and only where the
+                                        provider's minimum age admits children at all
+                                        (16+/18+/21+ show nothing) — the same rule and
+                                        link as the booking dialog. */}
+                                    {kidsOk && !childrenShown && oldChildren === 0 && (
+                                        <button type="button" onClick={() => setChildrenShown(true)}
+                                            className="text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                                            Add children
+                                        </button>
                                     )}
 
                                     <div className="rounded-lg bg-slate-50 p-3">
                                         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{quote.itemName || 'Your booking'}</div>
-                                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                                            <Diff oldN={oldAdults} newN={adults} kind="adult" />
-                                            {(children > 0 || oldChildren > 0) && <Diff oldN={oldChildren} newN={children} kind="child" />}
-                                        </div>
-                                        <div className="mt-2 space-y-1 border-t border-slate-200 pt-2 text-sm">
-                                            <div className="flex items-center justify-between text-slate-600">
-                                                <span>Price adjustment{added > 0 ? ' · ' + added + (added === 1 ? ' place' : ' places') : ''}</span>
-                                                <span>{money(delta)}</span>
+                                        {single ? (
+                                            <div className="mt-1 text-sm text-slate-700">
+                                                {group === oldCount ? group + (mode === 'quantity' ? '' : (group === 1 ? ' person' : ' people')) : (
+                                                    <><span className="text-slate-400 line-through">{oldCount}</span> <span className="font-semibold text-slate-900">{group}</span>{mode === 'quantity' ? '' : (group === 1 ? ' person' : ' people')}</>
+                                                )}
                                             </div>
-                                            <div className="flex items-center justify-between font-semibold text-slate-900">
-                                                <span>Total</span>
-                                                <span>{money(delta)}</span>
+                                        ) : (
+                                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                                <Diff oldN={oldAdults} newN={adults} kind="adult" />
+                                                {(children > 0 || oldChildren > 0) && <Diff oldN={oldChildren} newN={children} kind="child" />}
                                             </div>
-                                        </div>
+                                        )}
+                                        {mode !== 'group' && (
+                                            <div className="mt-2 space-y-1 border-t border-slate-200 pt-2 text-sm">
+                                                <div className="flex items-center justify-between text-slate-600">
+                                                    <span>{delta > 0 ? 'To pay' : delta < 0 ? 'Refund' : 'Price change'}{delta !== 0 ? ' · ' + Math.abs(delta) + (Math.abs(delta) === 1 ? ' place' : ' places') : ''}</span>
+                                                    <span>{delta < 0 ? '−' : ''}{money(money0)}</span>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {pastCutoff ? (
-                                        <p className="text-[13px] font-medium text-slate-600">Non-refundable</p>
+                                    {/* Which rule applies — said before the guest confirms. */}
+                                    {/* Increases only. A comes-to-you rise is a request the
+                                        provider accepts; a slot rise is an instant top-up. To
+                                        lower a count, a guest messages the provider or rebooks. */}
+                                    {isRequest ? (
+                                        <p className="text-[13px] text-slate-500">Adding guests is a request — {quote.providerName || 'the provider'} has 48 hours to accept, and your card is only held until they do. To lower your party, message them or cancel and rebook.</p>
                                     ) : (
-                                        <p className="text-[13px] text-slate-500">Free to cancel until {cutoffLabel(quote.deadlineISO)}; after that an added place isn’t refundable.</p>
+                                        <p className="text-[13px] text-slate-500">{quote.deadlineISO ? 'An added place is charged now. Free to cancel until ' + cutoffLabel(quote.deadlineISO) + '.' : 'An added place is charged now.'}</p>
                                     )}
 
                                     {error && <p className="text-[13px] text-rose-600">{error}</p>}
@@ -218,12 +335,15 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
                             )}
                         </div>
 
-                        {quote && quote.seatsLeft >= 1 && !loadErr && (
+                        {quote && !quote.closed && !quote.messageOnly && free && !slotFull && !loadErr && (
                             <div className="border-t border-slate-100 p-4">
-                                <button type="button" disabled={!canPay} onClick={proceed}
-                                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                                <button type="button" disabled={!canConfirm} onClick={proceed}
+                                    className={
+                                        'inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-3 text-sm font-semibold text-white transition disabled:opacity-50 '
+                                        + (delta < 0 ? 'bg-slate-800 hover:bg-slate-900' : 'bg-emerald-700 hover:bg-emerald-800')
+                                    }>
                                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                                    {added >= 1 ? 'Continue to payment · ' + money(delta) : 'Continue to payment'}
+                                    {confirmLabel}
                                 </button>
                             </div>
                         )}

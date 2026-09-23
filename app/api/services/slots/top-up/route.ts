@@ -171,7 +171,13 @@ export async function POST(request: Request) {
         const admin = adminClient();
         const loaded = await loadForTopUp(admin, orderId, user.id);
         if ('error' in loaded) return NextResponse.json({ ok: false, error: loaded.error.message }, { status: loaded.error.status });
-        const { order, provider, session, unitPrice } = loaded;
+        const { order, provider, session, unitPrice, windowHours } = loaded;
+
+        // CLOSED WINDOW — once the free-cancellation window passes, a slot takes no
+        // more places either (changes are only allowed inside the window).
+        if (!guestMayCancelFree('slot', String(order.service_date), order.service_time || null, windowHours, new Date())) {
+            return NextResponse.json({ ok: false, error: 'Changes are closed now — the free-cancellation window has passed. Message the provider if you need to change anything.' }, { status: 409 });
+        }
 
         const unit = normaliseUnit(order.item_unit);
 
