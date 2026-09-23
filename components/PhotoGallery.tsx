@@ -32,7 +32,7 @@ export default function PhotoGallery({
     // page of ten photos does not repeat one sentence ten times.
     const describe = (n: number) =>
         n === 1
-            ? `${title}, a self-catering holiday cottage in ${place}`
+            ? `${title}, self-catering accommodation in ${place}`
             : `${title} in ${place} — photo ${n}`;
     const [open, setOpen] = useState(false);
 

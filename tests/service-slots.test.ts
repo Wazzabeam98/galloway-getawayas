@@ -53,7 +53,7 @@ test('exclusivePerDate now reads shape as the source of truth', () => {
 
 test('each shape has its own guest-facing cue', () => {
     assert.equal(shapeCue('made_to_order'), 'Made for your dates');
-    assert.equal(shapeCue('comes_to_you'), 'Comes to your cottage');
+    assert.equal(shapeCue('comes_to_you'), 'Comes to where you’re staying');
     assert.equal(shapeCue('slot'), 'Book a time');
 });
 

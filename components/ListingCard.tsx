@@ -51,7 +51,7 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
             <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
                 <ListingImage
                     images={listing.images}
-                    alt={`${listing.title}, a self-catering holiday cottage in ${publicArea(listing.location)}`}
+                    alt={`${listing.title}, self-catering accommodation in ${publicArea(listing.location)}`}
                     // One card per row on a phone, two on a tablet, four on
                     // a laptop — so the browser asks for a photo the size of
                     // the card rather than whatever was uploaded.

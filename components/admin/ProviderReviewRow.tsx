@@ -355,7 +355,7 @@ export default function ProviderReviewRow({
                     <div className="mb-3 space-y-1.5">
                         {[
                             { key: 'made_to_order', label: 'Makes something for a date', hint: 'A cake, a hamper — several a day, guest picks a date, provider confirms.' },
-                            { key: 'comes_to_you', label: 'Comes to the cottage', hint: 'A chef, a masseur — one a date (holds it), provider confirms.' },
+                            { key: 'comes_to_you', label: 'Comes to the guest’s place', hint: 'A chef, a masseur — one a date (holds it), provider confirms.' },
                             { key: 'slot', label: 'Runs set times a guest books into', hint: 'A sauna, a class, a tasting — a date and a time with capacity, paid on the spot.' },
                         ].map((s) => (
                             <label key={s.key} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm ${shape === s.key ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>

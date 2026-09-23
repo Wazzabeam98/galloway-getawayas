@@ -391,7 +391,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const showMap = mapLat != null && mapLng != null && !!process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
     const where = comesToCottage
-        ? (cottageAddress || 'Your cottage')
+        ? (cottageAddress || 'Where you’re staying')
         : (collectionAddress || prov?.based_line || who);
     // Get directions uses the SHARED picker (components/arrival/DirectionsPicker),
     // the same one the trips card carries — one behaviour across the site instead
