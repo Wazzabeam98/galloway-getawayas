@@ -24,7 +24,7 @@ const Footer = () => {
                             </div>
                         </div>
                         <p className="text-xs text-slate-500">
-                            Self catering holiday cottages and apartments across Dumfries &amp; Galloway.
+                            Self catering holiday accommodation across Dumfries &amp; Galloway.
                             Book direct with local hosts.
                         </p>
                     </div>

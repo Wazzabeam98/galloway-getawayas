@@ -101,7 +101,7 @@ export function cardLocationLine(p: MpProvider): string | null {
  *  — never the old trades radius. Null with no town stored, so the row is dropped
  *  rather than showing a misleading circle. */
 export function whereLine(p: MpProvider): string | null {
-    if (travels(p)) return 'Comes to your cottage';
+    if (travels(p)) return 'Comes to where you’re staying';
     return locationTag(p);
 }
 
