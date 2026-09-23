@@ -340,14 +340,12 @@ export function RequestBookingDialog({
                                     <p className="py-8 text-center text-sm text-slate-500">No dates available just now — check back soon.</p>
                                 ) : listDays.map((d) => {
                                     const isOpen = d.date === expandedDate;
-                                    const n = d.times.length;
                                     return (
                                         <div key={d.date} ref={(el) => { if (el) dayEls.current.set(d.date, el); else dayEls.current.delete(d.date); }} className="border-b border-slate-100 last:border-b-0">
                                             <button type="button" onClick={() => { setExpandedDate(isOpen ? null : d.date); if (!isOpen) setDate(d.date); }}
                                                 className="flex w-full items-center justify-between gap-3 py-3.5 text-left">
                                                 <span className="text-[15px] font-semibold text-slate-900">{dayHeadingLabel(d.date, today, tomorrow)}</span>
                                                 <span className="flex flex-none items-center gap-2 text-sm text-slate-500">
-                                                    <span>{n} time{n === 1 ? '' : 's'}</span>
                                                     <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} aria-hidden />
                                                 </span>
                                             </button>
@@ -544,12 +542,12 @@ export function RequestDatePreview({ calDays, timesByDate, limit = 4, busy, onPi
                 const hint = times.length === 1 ? prettyTime(times[0]) : 'from ' + prettyTime(times[0]);
                 return (
                     <button key={d} type="button" disabled={busy} onClick={() => onPickDay(d)}
-                        className="flex w-full items-end justify-between gap-3 rounded-2xl border border-slate-200 p-4 text-left transition hover:border-slate-400 disabled:opacity-60">
+                        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 p-4 text-left transition hover:border-slate-400 disabled:opacity-60">
                         <span className="min-w-0">
                             <span className="block whitespace-nowrap text-[15px] font-semibold text-slate-900">{dateLabel(d)}</span>
                             <span className="mt-0.5 block truncate text-sm text-slate-500">{hint}</span>
                         </span>
-                        <span className="flex-none whitespace-nowrap text-right text-sm text-slate-500">{times.length} time{times.length === 1 ? '' : 's'}</span>
+                        <ChevronRight className="h-4 w-4 flex-none text-slate-400" aria-hidden />
                     </button>
                 );
             })}
