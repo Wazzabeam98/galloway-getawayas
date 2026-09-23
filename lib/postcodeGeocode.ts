@@ -38,6 +38,7 @@
 // having a bad minute, and the town fallback means null is survivable.
 
 import { tidyPostcode } from '@/lib/address';
+import { extractUkPostcode } from '@/lib/postcode';
 
 export interface Coordinates {
     latitude: number;
@@ -124,6 +125,30 @@ export async function adminDistrictForPostcode(
 
 /** The one council area this site covers, as postcodes.io spells it. */
 export const DG_ADMIN_DISTRICT = 'Dumfries and Galloway';
+
+/**
+ * Whether a typed delivery address sits inside the delivery area — the same real
+ * council-area test the address lookup uses (adminDistrictForPostcode), applied to
+ * the postcode found in the free-text address. A made-to-order (or any travelling)
+ * provider only delivers within Dumfries & Galloway, so a standalone typed address
+ * outside it — or one whose postcode can't be placed at all — is not deliverable.
+ *
+ *   'in'      the postcode is in Dumfries & Galloway
+ *   'out'     it's a real UK postcode, but somewhere else
+ *   'unknown' no postcode in the text, or the lookup couldn't place it
+ *
+ * Never throws. The caller refuses on anything but 'in' — the same "refuse rather
+ * than guess an address into the region" rule the region gate already follows.
+ */
+export async function deliveryAreaForAddress(
+    address: string | null | undefined
+): Promise<'in' | 'out' | 'unknown'> {
+    const postcode = extractUkPostcode(address);
+    if (!postcode) return 'unknown';
+    const district = await adminDistrictForPostcode(postcode);
+    if (!district) return 'unknown';
+    return district.toLowerCase() === DG_ADMIN_DISTRICT.toLowerCase() ? 'in' : 'out';
+}
 
 /**
  * What to add to a listing patch so its coordinates match its postcode.

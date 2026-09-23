@@ -210,3 +210,40 @@ test('publishing fills the coordinates from the postcode', async () => {
     assert.equal(updates[0].latitude, 54.834305, 'the postcode was actually used');
     assert.equal(updates[0].longitude, -4.055713);
 });
+
+/* --------------------------------------- the delivery-area gate (D&G only) */
+
+import { extractUkPostcode } from '../lib/postcode';
+
+test('extractUkPostcode pulls a postcode out of a free-text address', () => {
+    assert.equal(extractUkPostcode('12 King Street, Castle Douglas, DG7 1AA'), 'DG7 1AA');
+    assert.equal(extractUkPostcode('Flat 2, 8 Shore Rd, Kirkcudbright DG6 4JZ'), 'DG6 4JZ');
+    assert.equal(extractUkPostcode('somewhere with no postcode'), null);
+});
+
+const district = (d: string | null) => async () => ({
+    ok: true,
+    json: async () => ({ result: { admin_district: d } }),
+});
+
+test('deliveryAreaForAddress: a Dumfries & Galloway address is in area', async () => {
+    const { deliveryAreaForAddress } = load(district('Dumfries and Galloway'));
+    assert.equal(await deliveryAreaForAddress('12 King Street, Castle Douglas, DG7 1AA'), 'in');
+});
+
+test('deliveryAreaForAddress: a real postcode elsewhere is out of area', async () => {
+    const { deliveryAreaForAddress } = load(district('Cumberland'));
+    assert.equal(await deliveryAreaForAddress('1 The Green, Carlisle, CA1 1AA'), 'out');
+});
+
+test('deliveryAreaForAddress: an address with no postcode is unknown (no lookup)', async () => {
+    let called = false;
+    const { deliveryAreaForAddress } = load(async () => { called = true; return { ok: true, json: async () => ({}) }; });
+    assert.equal(await deliveryAreaForAddress('just a street name'), 'unknown');
+    assert.equal(called, false, 'no lookup when there is no postcode to place');
+});
+
+test('deliveryAreaForAddress: a postcode the lookup can’t place is unknown (refused, not guessed)', async () => {
+    const { deliveryAreaForAddress } = load(async () => ({ ok: false, json: async () => ({}) }));
+    assert.equal(await deliveryAreaForAddress('12 King Street, DG7 1AA'), 'unknown');
+});

@@ -11,3 +11,11 @@ const UK_POSTCODE = /\b[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}\b/;
 export function hasUkPostcode(value: string | null | undefined): boolean {
     return UK_POSTCODE.test(String(value || ''));
 }
+
+// The postcode found in a free-text address, or null. Used server-side to place a
+// typed delivery address by its real council area (the D&G gate), so a match
+// anywhere in the string is enough — the same forgiving rule hasUkPostcode uses.
+export function extractUkPostcode(value: string | null | undefined): string | null {
+    const m = String(value || '').match(UK_POSTCODE);
+    return m ? m[0].replace(/\s+/g, ' ').trim() : null;
+}

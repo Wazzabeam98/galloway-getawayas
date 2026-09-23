@@ -16,6 +16,7 @@ import { offeredTimes as providerOfferedTimes, isOfferedTime, normaliseTime } fr
 import { displayName } from '@/lib/utils';
 import { withinLimits, callerAddress } from '@/lib/rateLimit';
 import { hasUkPostcode } from '@/lib/postcode';
+import { deliveryAreaForAddress } from '@/lib/postcodeGeocode';
 
 export const dynamic = 'force-dynamic';
 
@@ -197,6 +198,13 @@ export async function POST(request: Request) {
                 if (standalone) {
                     addressC = (body && body.serviceAddress ? String(body.serviceAddress) : '').slice(0, 300).trim() || null;
                     if (!addressC || !hasUkPostcode(addressC)) return NextResponse.json({ ok: false, error: 'Add a full delivery address, including a postcode.' }, { status: 400 });
+                    // Delivery only goes where the provider delivers: within Dumfries
+                    // & Galloway. A typed address outside it — or one we can't place —
+                    // is refused here on the server, not just greyed out on the page.
+                    const area = await deliveryAreaForAddress(addressC);
+                    if (area !== 'in') return NextResponse.json({ ok: false, error: area === 'out'
+                        ? `Sorry — ${prov.business_name || 'this provider'} only delivers within Dumfries & Galloway.`
+                        : 'We couldn’t place that postcode. Check it, or arrange collection instead.' }, { status: 400 });
                 } else if (booking.listing_id) {
                     const { data: stay } = await admin.from('listings').select('street_address, postcode, location').eq('id', booking.listing_id).maybeSingle();
                     if (stay) addressC = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
@@ -443,6 +451,12 @@ export async function POST(request: Request) {
                 if (!serviceAddress || !hasUkPostcode(serviceAddress)) {
                     return NextResponse.json({ ok: false, error: 'Add a full address, including a postcode, for the provider to come to.' }, { status: 400 });
                 }
+                // A travelling provider only comes to Dumfries & Galloway — the same
+                // council-area gate, enforced server-side on the typed address.
+                const area = await deliveryAreaForAddress(serviceAddress);
+                if (area !== 'in') return NextResponse.json({ ok: false, error: area === 'out'
+                    ? `Sorry — ${provider.business_name || 'this provider'} only travels within Dumfries & Galloway.`
+                    : 'We couldn’t place that postcode. Check it and try again.' }, { status: 400 });
             } else if (booking.listing_id) {
                 const { data: stay } = await admin.from('listings')
                     .select('street_address, postcode, location').eq('id', booking.listing_id).maybeSingle();
