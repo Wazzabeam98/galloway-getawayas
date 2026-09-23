@@ -104,17 +104,35 @@
   padding: 0 0.5em 0.5em 0.5em !important;
 }
 
-/* 5. Emerald selection colors */
-.rdrStartEdge, 
-.rdrEndEdge, 
-.rdrInRange {
+/* 5. Emerald selection colors.
+   The range picker paints its edges with .rdrStartEdge/.rdrEndEdge/.rdrInRange;
+   a SINGLE-date Calendar (the change-date sheet, the booking panel) marks its
+   pick with .rdrSelected instead. react-date-range fills all of these with
+   `background: currentColor`, and rule 6 below forces their colour white — so
+   .rdrSelected MUST be given the emerald fill here alongside the range classes.
+   Leaving it out (the original bug) left the single-date pick white-on-white: an
+   empty ring with an invisible number. This one rule is the whole selection
+   colour for every react-date-range calendar in the app — no per-calendar
+   overrides. */
+.rdrStartEdge,
+.rdrEndEdge,
+.rdrInRange,
+.rdrSelected {
   background: #047857 !important;
 }
 
-/* 6. Text color fixes inside selected ranges */
-.rdrSelected, 
+/* 6. White number on the selected / in-range day, and white text on the fill
+   elements themselves. The `~ .rdrDayNumber span` rule is what actually colours
+   the day's digit (the number is a sibling of the fill, not a child). */
+.rdrSelected,
 .rdrInRange {
   color: white !important;
+}
+.rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span,
+.rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span,
+.rdrDay:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span,
+.rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span {
+  color: #fff !important;
 }
 
 .rdrDayDisabled {
@@ -134,17 +152,10 @@
 .rdr-move .rdrDayNumber { font-weight: 500; }
 .rdr-move .rdrDayNumber span { font-size: 15px; }
 .rdr-move .rdrWeekDay { font-size: 12px; color: #64748b; }
-/* Same single-date fix as the booking panel below: the "Change date or time"
-   sheet uses react-date-range's Calendar, which marks the pick with .rdrSelected.
-   The range rules above only paint startEdge/endEdge/inRange, so on its own the
-   chosen day renders white-on-white and the number vanishes — the guest can't see
-   what they picked. Fill it emerald with a white number. Every experience shape
-   uses this one sheet, so this covers slot, made-to-order and comes-to-you. */
-.rdr-move .rdrSelected {
-  background: #047857 !important;
-  border-radius: 1.35em !important;
-}
-.rdr-move .rdrSelected ~ .rdrDayNumber span { color: #fff !important; }
+/* The selected day's emerald fill + white number come from the global rule 5/6
+   above, so this sheet needs no selection override of its own — only its larger
+   cells (above). A rounder circle to suit those taller cells: */
+.rdr-move .rdrSelected { border-radius: 1.35em !important; }
 
 
 /* 7. Toast styling
@@ -287,19 +298,10 @@
   background: #047857;
 }
 
-/* Single-date picker (the experiences booking panel). react-date-range's
-   Calendar marks the chosen day with .rdrSelected, which the range rules above
-   never touch — so on its own it renders white-on-white and reads as unselected.
-   Fill it emerald with a white number, matching the cottage range edges. Scoped
-   to the compact calendar so the cottage's range picker is unaffected. */
-.airbnb-compact-calendar .rdrSelected {
-  background: #047857 !important;
-  border-radius: 1.042em !important;
-}
-
-.airbnb-compact-calendar .rdrSelected ~ .rdrDayNumber span {
-  color: #fff !important;
-}
+/* The single-date pick's emerald fill + white number now come from the global
+   rule 5/6 above (the booking panel uses react-date-range's Calendar); this
+   compact calendar only keeps its own rounding. */
+.airbnb-compact-calendar .rdrSelected { border-radius: 1.042em !important; }
 
 /* One month on narrower screens, so the popover never overflows. */
 @media (max-width: 860px) {
