@@ -320,6 +320,10 @@ export async function POST(request: Request) {
                         // text, capped; null when blank.
                         ingredients: (it.ingredients ? String(it.ingredients) : '').slice(0, 1000).trim() || null,
                         allergens: (it.allergens ? String(it.allergens) : '').slice(0, 1000).trim() || null,
+                        // A menu section for a made-to-order listing (the guest page
+                        // groups items under sticky tabs when there's more than one).
+                        // Free text, short, null when blank; meaningless elsewhere.
+                        category: p.shape === 'made_to_order' ? ((it.category ? String(it.category) : '').slice(0, 60).trim() || null) : null,
                         // Smallest party this item takes. A SLOT stays null — a shared
                         // session takes a single person by design. A per-person REQUEST
                         // item (a private chef per guest) can set a floor, and the

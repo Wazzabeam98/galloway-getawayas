@@ -150,6 +150,7 @@ async function makeProvider(spec) {
             extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null,
             is_custom: it.isCustom ?? false,
             ingredients: it.ingredients ?? null, allergens: it.allergens ?? null,
+            category: it.category ?? null,
         });
     }
     if (spec.availability) {
@@ -336,19 +337,30 @@ async function main() {
         amenities: [], accessibility: null, parking: null,
         dietaryNote: 'Gluten-free and vegan on request; made in a kitchen that handles nuts.', dietaryOptions: ['vegan', 'gluten_free'],
         items: [
-            // Custom — made to the guest's design, so it turns the order into a
-            // request the baker approves. The other two are off-the-shelf (standard).
-            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message.', price: 42, unit: 'flat', sort: 0, image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
+            // A categorised menu — the sections ("Cakes", "Boxes & bakes", "Breads
+            // & buns") drive the guest page's sticky tabs, which show only because
+            // there's more than one. Custom items (made to the guest's design) turn
+            // the order into a request the baker approves; the rest are standard.
+            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message, iced and finished the way you ask. Tell me the occasion and I’ll make it the centrepiece of the table.', price: 42, unit: 'flat', sort: 0, category: 'Cakes', image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
                 ingredients: 'Wheat flour, butter, free-range eggs, sugar, Galloway raspberries, vanilla, double cream.',
                 allergens: 'Contains wheat (gluten), egg, milk. Made in a kitchen that also handles nuts and soya.' },
-            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones.', price: 24, unit: 'flat', sort: 1, image: IMG('seed-assets/baker-2.jpg'),
+            { name: 'Coffee & walnut loaf cake', description: 'A moist loaf cake with a proper coffee kick and toasted walnuts. Serves six to eight, ready sliced or whole.', price: 18, unit: 'flat', sort: 1, category: 'Cakes', image: IMG('seed-assets/baker-2.jpg'),
+                ingredients: 'Wheat flour, butter, eggs, sugar, walnuts, espresso.',
+                allergens: 'Contains wheat (gluten), egg, milk, walnuts (nuts).' },
+            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones — a bit of everything from the week’s baking.', price: 24, unit: 'flat', sort: 2, category: 'Boxes & bakes', image: IMG('seed-assets/baker-2.jpg'),
                 ingredients: 'Wheat flour, butter, oats, sugar, sultanas, free-range eggs, milk.',
                 allergens: 'Contains wheat (gluten), oats, egg, milk. May contain nuts.' },
             // A per-item line, so a made-to-order order can carry a real quantity
             // (three boxes) — the "guests means quantity" case for change-count.
-            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 2, image: IMG('seed-assets/baker-3.jpg'),
+            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 3, category: 'Boxes & bakes', image: IMG('seed-assets/baker-3.jpg'),
                 ingredients: 'Wheat flour, butter, sugar, cocoa, oats, golden syrup.',
                 allergens: 'Contains wheat (gluten), oats, milk. May contain nuts.' },
+            { name: 'Galloway sourdough loaf', description: 'A slow-proved sourdough with a dark, blistered crust and an open crumb. Baked the morning of your collection.', price: 6, unit: 'item', sort: 4, category: 'Breads & buns', image: IMG('seed-assets/baker-3.jpg'),
+                ingredients: 'Wheat flour, water, salt, sourdough starter.',
+                allergens: 'Contains wheat (gluten). Made in a kitchen that handles nuts, egg and milk.' },
+            { name: 'Cinnamon buns (four)', description: 'Soft, laminated cinnamon buns with a cream-cheese glaze. Four to a box, best warmed through.', price: 12, unit: 'item', sort: 5, category: 'Breads & buns', image: IMG('seed-assets/baker-1.jpg'),
+                ingredients: 'Wheat flour, butter, milk, eggs, sugar, cinnamon, cream cheese.',
+                allergens: 'Contains wheat (gluten), egg, milk. May contain nuts.' },
         ],
     });
     const bakerItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + baker.id + '&order=sort_order');

@@ -197,6 +197,16 @@ export function durationSummary(p: MpProvider): string | null {
     return lo === hi ? durationLabel(lo) : durationLabel(lo) + ' – ' + durationLabel(hi);
 }
 
+/** How much notice a made-to-order item needs, as the guest reads it on the menu:
+ *  "A day's notice", "2 days' notice". This is the provider's lead time — the
+ *  concrete fact that replaces the vague "Made to order" badge. Null for zero/blank
+ *  so a same-day item shows no notice pill at all. */
+export function noticeLabel(days: number | null | undefined): string | null {
+    const n = Math.floor(Number(days) || 0);
+    if (n <= 0) return null;
+    return n === 1 ? "A day's notice" : n + " days' notice";
+}
+
 /** "30 years' experience" from the bare years a provider typed. Tolerant of a
  *  non-numeric answer ("since 2010") — that is shown as-is with no suffix. Null
  *  when blank. */

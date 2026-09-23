@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ShoppingBag } from 'lucide-react';
+import { ShoppingBag, X } from 'lucide-react';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { dateLabel } from '@/components/marketplace/present';
 import { DateOnlyDialog } from '@/components/marketplace/RequestBooking';
@@ -13,10 +13,16 @@ const dayKeyFromNow = (days: number) => shiftDayKey(londonDayKey(), days);
 const lastNight = (checkOut: string) => shiftDayKey(String(checkOut).slice(0, 10), -1);
 const maxKey = (a: string, b: string) => (a > b ? a : b);
 
-// THE BASKET for a made-to-order (food-ordering) listing — the sidebar beside the
-// menu. It reads the shared cart, takes a collection/delivery DATE ONLY (the time
-// is arranged by message afterwards), a delivery address when the order delivers,
-// and any allergy, then sends the order. A cart of only standard items books and
+// THE BASKET for a made-to-order (food-ordering) listing. On desktop it's the
+// sidebar beside the menu; on mobile the sidebar would be a wall of form below the
+// menu, so instead a sticky bottom bar shows the item count and total, and tapping
+// it opens the same basket as a bottom sheet. Both surfaces are the one component
+// instance, so they share every field (date, address, allergy) — only one is ever
+// visible.
+//
+// It reads the shared cart, takes a collection/delivery DATE ONLY (the time is
+// arranged by message afterwards), a delivery address when the order delivers, and
+// any allergy, then places the order. A cart of only standard items orders and
 // pays instantly; a custom item makes the whole order a held request.
 export default function FoodBasket({
     who, isFood, fulfilment, bookingId, standalone: standaloneProp, checkIn, checkOut, leadTimeDays = 1, horizonDays = 90,
@@ -34,6 +40,9 @@ export default function FoodBasket({
     const [allergyTags, setAllergyTags] = useState<string[]>([]);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Mobile only: is the basket sheet open. Desktop ignores this (the sidebar is
+    // always in view).
+    const [mobileOpen, setMobileOpen] = useState(false);
 
     const lead = Math.max(1, leadTimeDays || 1);
     const minDate = standalone ? dayKeyFromNow(lead) : maxKey(String(checkIn).slice(0, 10), dayKeyFromNow(lead));
@@ -48,6 +57,7 @@ export default function FoodBasket({
     const needsAddress = standalone && delivers;
     const deliverWord = delivers ? 'delivery' : 'collection';
     const suggested = useMemo(() => Array.from(availableDays).sort().slice(0, 4), [availableDays]);
+    const canSend = !busy && lines.length > 0 && !!date && !(needsAddress && !hasUkPostcode(address));
 
     async function send() {
         setError(null);
@@ -73,21 +83,31 @@ export default function FoodBasket({
         setBusy(false);
     }
 
-    return (
-        <div className="flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+    // The card content — the same header, body and footer whether it sits in the
+    // desktop sidebar or the mobile sheet.
+    const content = (
+        <>
             <div className="flex-none border-b border-slate-100 px-5 pt-5 pb-4">
                 <div className="flex items-center gap-2 text-slate-900">
                     <ShoppingBag className="h-5 w-5 flex-none text-slate-500" aria-hidden />
-                    <span className="text-lg font-semibold">Your basket</span>
+                    <span className="text-lg font-semibold">Your order</span>
                 </div>
-                <span className={`mt-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${hasCustom ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'}`}>
-                    {hasCustom ? `Request — ${who} has 48 hours to confirm` : 'Books instantly'}
-                </span>
+                {lines.length > 0 && (
+                    <span className={`mt-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${hasCustom ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'}`}>
+                        {hasCustom ? `Request — ${who} has 48 hours to confirm` : 'Orders instantly'}
+                    </span>
+                )}
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 {lines.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-slate-500">Your basket is empty — add something from the menu.</p>
+                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                            <ShoppingBag className="h-7 w-7" aria-hidden />
+                        </span>
+                        <p className="mt-4 font-semibold text-slate-900">Your basket is empty</p>
+                        <p className="mt-1 text-sm text-slate-500">Add something from the menu and it’ll show up here, ready to order.</p>
+                    </div>
                 ) : (
                     <ul className="space-y-2">
                         {lines.map((l) => (
@@ -156,14 +176,50 @@ export default function FoodBasket({
                     <span className="text-sm font-medium text-slate-600">Total{count > 0 ? ` · ${count} item${count === 1 ? '' : 's'}` : ''}</span>
                     <span className="text-lg font-semibold text-slate-900">£{total.toFixed(2)}</span>
                 </div>
-                <button type="button" onClick={send} disabled={busy || !lines.length || !date || (needsAddress && !hasUkPostcode(address))}
+                <button type="button" onClick={send} disabled={!canSend}
                     className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                    {busy ? 'Sending…' : (hasCustom ? 'Send request' : 'Book & pay')}
+                    {busy ? 'Sending…' : (hasCustom ? 'Send order request' : 'Place order & pay')}
                 </button>
                 <p className="mt-2 text-xs text-slate-400">{hasCustom
                     ? `Your card is held, not charged, until ${who} accepts your made-to-order items.`
                     : 'You pay now and your order is confirmed straight away.'}</p>
             </div>
+        </>
+    );
+
+    return (
+        <>
+            {/* Desktop: the sidebar basket, always in view. */}
+            <div className="hidden lg:flex max-h-[calc(100dvh-7rem)] flex-col overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                {content}
+            </div>
+
+            {/* Mobile: a sticky bottom bar with the count and total; tapping opens
+                the full basket as a sheet. Shown only once something's in it. */}
+            {count > 0 && !mobileOpen && (
+                <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur">
+                    <button type="button" onClick={() => setMobileOpen(true)}
+                        className="flex w-full items-center justify-between gap-3 rounded-xl bg-emerald-700 px-4 py-3 text-white transition hover:bg-emerald-800">
+                        <span className="flex items-center gap-2 text-sm font-semibold">
+                            <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-white/20 px-1.5 text-xs font-bold tabular-nums">{count}</span>
+                            View basket
+                        </span>
+                        <span className="text-sm font-bold tabular-nums">£{total.toFixed(2)}</span>
+                    </button>
+                </div>
+            )}
+
+            {/* Mobile: the basket sheet. */}
+            {mobileOpen && (
+                <div className="lg:hidden fixed inset-0 z-[60] flex items-end justify-center bg-black/40" role="dialog" aria-modal="true" aria-label="Your order"
+                    onMouseDown={(e) => { if (e.target === e.currentTarget) setMobileOpen(false); }}>
+                    <div className="relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white">
+                        <button type="button" onClick={() => setMobileOpen(false)} aria-label="Close"
+                            className="absolute right-3 top-4 z-10 rounded-full p-1.5 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+                        {content}
+                    </div>
+                </div>
+            )}
 
             {dateOpen && (
                 <DateOnlyDialog
@@ -174,6 +230,6 @@ export default function FoodBasket({
                     onClose={() => setDateOpen(false)}
                 />
             )}
-        </div>
+        </>
     );
 }

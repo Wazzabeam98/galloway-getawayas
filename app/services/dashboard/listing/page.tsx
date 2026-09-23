@@ -54,7 +54,7 @@ export default async function ProviderListingPage() {
     const isSlot = shapeOf(provider) === 'slot';
     const [{ data: areas }, { data: items }, { data: avail }] = await Promise.all([
         admin.from('service_areas').select('label').eq('provider_id', provider.id).order('created_at', { ascending: true }),
-        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens')
+        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category')
             .eq('provider_id', provider.id).order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         isSlot
             ? admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id).order('day_of_week', { ascending: true })
@@ -131,6 +131,12 @@ export default async function ProviderListingPage() {
                     extra_child_fee: it.extra_child_fee ?? null,
                     max_party: it.max_party ?? null,
                     is_custom: it.is_custom === true,
+                    // Per-item detail (shown behind the menu's info icon) and the
+                    // menu section, so the editor prefills them rather than wiping
+                    // them on the next save.
+                    ingredients: it.ingredients ?? null,
+                    allergens: it.allergens ?? null,
+                    category: it.category ?? null,
                 })),
                 availability: (avail || []).map((a: any) => ({
                     day_of_week: Number(a.day_of_week), open_time: String(a.open_time).slice(0, 5), close_time: String(a.close_time).slice(0, 5),
