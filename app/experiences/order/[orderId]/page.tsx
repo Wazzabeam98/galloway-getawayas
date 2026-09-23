@@ -86,7 +86,9 @@ const PILL: Record<string, string> = {
 
 // One definition of a chevron row, shared by the server-rendered link rows here
 // and the two browser-action rows in OrderUtilityRows, so the quiet-row pattern
-// cannot grow a second variant.
+// cannot grow a second variant. Every action row is neutral — including Cancel:
+// the destructive red lives only on the confirm button inside the cancel box,
+// and only when the cancel forfeits money.
 const ROW = 'flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-medium text-slate-800 hover:text-slate-950';
 
 function longWhen(dateStr: string, timeStr: string | null): string {
@@ -585,13 +587,16 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             </span>
                         </div>
 
-                        {/* The one-line summary under the title, as the reference
-                            has it: time, how long, who. */}
+                        {/* The one-line summary under the title. #175 leads with the
+                            booking detail (the chosen item / shape line) and the host.
+                            The time and length used to sit here too but they already
+                            read below in the Starts / Ends box — the start time in the
+                            Starts column and the length as the span to Ends — so #172's
+                            fix drops them here to avoid the second copy. Kept off #175's
+                            bookingDetail; only the redundant time/length are removed. */}
                         <p className="mt-1.5 text-sm text-slate-500">
                             {[
                                 bookingDetail,
-                                isSlot && order.service_time ? clock(order.service_time) : null,
-                                isSlot && knownDuration ? `${knownDuration} minutes` : null,
                                 hostFirst ? `Hosted by ${hostFirst}` : null,
                             ].filter(Boolean).join(' · ')}
                         </p>

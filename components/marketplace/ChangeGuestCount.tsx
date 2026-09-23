@@ -100,6 +100,10 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
     const [loadErr, setLoadErr] = useState<string | null>(null);
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
+    // Children start collapsed behind an "Add children" link, exactly as the
+    // booking dialog does it, so an adults-only amend never shows a 0 stepper.
+    // Once the booking already has children (oldChildren > 0) the stepper is
+    // always shown — there is nothing to reveal.
     const [group, setGroup] = useState(1);              // per-group party size
     const [childrenShown, setChildrenShown] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -280,6 +284,16 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
                                                 </button>
                                             )}
                                         </>
+                                    )}
+                                    {/* Adults-only until asked, and only where the
+                                        provider's minimum age admits children at all
+                                        (16+/18+/21+ show nothing) — the same rule and
+                                        link as the booking dialog. */}
+                                    {kidsOk && !childrenShown && oldChildren === 0 && (
+                                        <button type="button" onClick={() => setChildrenShown(true)}
+                                            className="text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                                            Add children
+                                        </button>
                                     )}
 
                                     <div className="rounded-lg bg-slate-50 p-3">

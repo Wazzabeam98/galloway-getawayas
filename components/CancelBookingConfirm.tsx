@@ -82,7 +82,7 @@ export default function CancelBookingConfirm({
                 {paidSoFar <= 0
                     ? 'You haven’t paid anything for this stay, so there’s nothing to refund.'
                     : refund >= paidSoFar
-                        ? 'You’ll get your full £' + paidSoFar.toFixed(2) + ' back to your card, usually within five to ten days.'
+                        ? 'You’ll get your full £' + paidSoFar.toFixed(2) + ' back to your card.'
                     : refund > 0
                         ? 'You’ll get £' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid back to your card, usually within five to ten days.'
                         : 'These dates are inside the non-refundable period for this place, so no refund is due on the £' + paidSoFar.toFixed(2) + ' you’ve paid.'}
@@ -108,6 +108,10 @@ export default function CancelBookingConfirm({
             {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
 
             <div className="mt-3 flex items-center gap-2">
+                {/* Neutral unless cancelling actually costs the guest money — the
+                    same rule the experience cancel box uses, so red only ever
+                    signals a shortfall. The label is a plain "Cancel reservation"
+                    in every case, never the pounds figure. */}
                 <button
                     type="button"
                     onClick={doCancel}
@@ -121,7 +125,7 @@ export default function CancelBookingConfirm({
                         + (costs ? 'bg-red-700 hover:bg-red-800' : 'bg-slate-800 hover:bg-slate-900')
                     }
                 >
-                    {cancelling ? 'Cancelling…' : 'Yes, cancel it'}
+                    {cancelling ? 'Cancelling…' : 'Cancel reservation'}
                 </button>
                 <button
                     type="button"

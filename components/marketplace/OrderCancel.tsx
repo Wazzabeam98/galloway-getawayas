@@ -103,7 +103,7 @@ export default function OrderCancel({
                     <div className="mt-3 flex items-center gap-2">
                         <button type="button" disabled={busy} onClick={() => act('refund')}
                             className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50">
-                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Yes, withdraw it
+                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Cancel reservation
                         </button>
                         <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Keep it</button>
                     </div>
@@ -131,7 +131,7 @@ export default function OrderCancel({
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button type="button" onClick={() => setView('forfeit')}
                             className="inline-flex items-center gap-1.5 rounded-lg bg-red-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-800">
-                            Cancel anyway
+                            Cancel reservation
                         </button>
                         <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Keep booking</button>
                     </div>

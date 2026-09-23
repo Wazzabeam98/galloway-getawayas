@@ -16,7 +16,9 @@
 // TEST ONLY. Refuses to run unless the Supabase URL is the test project.
 //
 // Images come from listings/seed-assets/* (copied there so they survive a wipe
-// and never live in the repo). The sauna uses the real sauna photos.
+// and never live in the repo). The sauna uses the real sauna photos, and the
+// yoga class uses a real, free-licence yoga photo (Unsplash) at seed-assets/
+// yoga-1.jpg — uploaded to the test bucket only, never committed to the repo.
 
 import { loadEnv, assertTestEnvironment, supabaseClient, dayOffset } from './seed-lib.mjs';
 
@@ -259,7 +261,7 @@ async function main() {
         owner: yogaOwner, business_name: 'Harbour Yoga', provider_name: 'Mara', trade: 'yoga', category: 'yoga', mcc: '7911', shape: 'slot',
         slotLength: 60, turnaround: 15, slotCapacity: 10, slotMin: 1, cancelHours: 12, horizonDays: 60,
         fulfilment: 'collection', street: 'The Old Sail Loft', town: 'Kirkcudbright', postcode: 'DG6 4JA', mapLat: 54.8358, mapLng: -4.0512,
-        headshot: IMG('seed-assets/class-face.png'), photos: [IMG('seed-assets/class-1.jpg'), IMG('seed-assets/class-2.jpg')],
+        headshot: IMG('seed-assets/class-face.png'), photos: [IMG('seed-assets/yoga-1.jpg'), IMG('seed-assets/class-2.jpg')],
         professional_title: 'Sunrise yoga above the harbour', years: 7,
         qualifications: '500-hour registered yoga teacher (Yoga Alliance).', recognition: null,
         what_to_expect: 'A gentle hour of movement and breath as the light comes up over the water.',
@@ -271,7 +273,7 @@ async function main() {
         minAge: 12, activityLevel: 'gentle', whatToBring: 'Comfortable layers; everything else is here.',
         amenities: ['mats_provided', 'toilets', 'step_free'], accessibility: 'step_free', parking: 'street',
         availability: { days: [1,2,3,4,5,6,0], open: '07:00', close: '11:00' },
-        items: [{ name: 'Sunrise yoga class', description: 'Per person, all levels, up to 10.', price: 14, unit: 'person', capacity: 10, min: 1, sort: 0, image: IMG('seed-assets/class-1.jpg') }],
+        items: [{ name: 'Sunrise yoga class', description: 'Per person, all levels, up to 10.', price: 14, unit: 'person', capacity: 10, min: 1, sort: 0, image: IMG('seed-assets/yoga-1.jpg') }],
     });
     const yogaItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + yoga.id);
     created.push({ label: 'Harbour Yoga (yoga · slot, per-person class)', ...yogaOwner, providerId: yoga.id });
@@ -530,6 +532,17 @@ async function main() {
     const islaPastRef = islaPastStay ? { bookingId: islaPastStay.id, listingId: islaPastCottage.id } : {};
     const oIslaPast = await makeOrder({ ...islaBase, ...islaPastRef, provider: baker, date: dayOffset(-43), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
 
+    // #172: two yoga slots on Isla's own account (standalone, not on the stay) to
+    // walk the cancel-button COLOURS — one comfortably inside its free-cancel
+    // window (a full refund → NEUTRAL button), one this-morning and past it (a
+    // forfeit → RED button). Per-person yoga, so the amend sheet and its minAge-12
+    // "Add children" link can be walked from the same account. Renamed off #175's
+    // oIslaPast (the past-stay experience) so both survive.
+    const islaFreeSession = await makeSession(yoga.id, dayOffset(20), time(8), { seats: 1, capacity: 10, declared: true, title: 'Sunrise class' });
+    const oIslaFree = await makeOrder({ ...islaBase, provider: yoga, sessionId: islaFreeSession.id, date: dayOffset(20), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const islaPastYogaSession = await makeSession(yoga.id, dayOffset(0), time(7), { seats: 1, capacity: 10, declared: true, title: 'Sunrise class' });
+    const oIslaPastYoga = await makeOrder({ ...islaBase, provider: yoga, sessionId: islaPastYogaSession.id, date: dayOffset(0), time: time(7), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+
     const walkable = [
         ['Today',           'Loch Sauna (sauna)',      oToday],
         ['Tomorrow',        'Harbour Yoga (class)',    oTomorrow],
@@ -555,6 +568,9 @@ async function main() {
     for (const [when, biz, o] of walkable) {
         console.log('    ' + when.padEnd(16) + biz.padEnd(28) + '/experiences/order/' + o.id);
     }
+    console.log('\n  Cancel-button colours + Add children (signed in as seed-sauna, standalone yoga):');
+    console.log('    NEUTRAL (full refund)  yoga, 20 days out   /experiences/order/' + oIslaFree.id);
+    console.log('    RED (past window)      yoga, this morning   /experiences/order/' + oIslaPastYoga.id);
     console.log('\n  seed-sauna@' + SEED_DOMAIN + ' — an upcoming holiday-let stay with experiences attached:');
     console.log('    stay: ' + (islaStay ? ('"' + islaCottage.title + '"  ' + dayOffset(11) + ' → ' + dayOffset(16) + '  (booking ' + islaStay.id + ')') : '— no coordinate listing found, orders left standalone'));
     console.log('    slot (yoga)           /experiences/order/' + oIslaSlot.id + '   (inside window)');
