@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { X, Minus, Plus, Calendar, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Minus, Plus, Calendar, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { hasExtraGuests, partyPrice, partyCeiling, extraGuestsLine } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
@@ -124,6 +124,10 @@ export function RequestBookingDialog({
     const [time, setTime] = useState<string>('');
     const [address, setAddress] = useState('');
     const [allergy, setAllergy] = useState('');
+    // Two steps: (1) the option, guests, date and time; (2) the address, notes
+    // and total. Splitting keeps the address/notes fields off the bottom of a
+    // long scrolling first step.
+    const [step, setStep] = useState<1 | 2>(1);
 
     // The month-jump calendar behind the calendar icon, and the one day expanded
     // in the list at a time — exactly as the slot dialog does it.
@@ -219,14 +223,17 @@ export function RequestBookingDialog({
 
     // Esc + background scroll lock.
     useEffect(() => {
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (calOpen) setCalOpen(false); else onClose(); } };
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (calOpen) setCalOpen(false); else if (step === 2) setStep(1); else onClose(); } };
         document.addEventListener('keydown', onKey);
         const prev = document.body.style.overflow; document.body.style.overflow = 'hidden';
         return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-    }, [onClose, calOpen]);
+    }, [onClose, calOpen, step]);
 
     const addressOk = !needsAddress || hasUkPostcode(address);
     const canBook = !!item && !!date && !!time && addressOk;
+    // Step 1 is complete once a date and time are chosen; the address/notes and
+    // final Send live on step 2.
+    const step1Done = !!item && !!date && !!time;
     const submit = () => {
         if (!canBook || !item) return;
         onBook({ itemId: item.id, date, time, adults, children: kidsOk ? children : 0, address: address.trim(), allergy: allergy.trim() });
@@ -237,7 +244,12 @@ export function RequestBookingDialog({
             onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
             <div className="my-auto flex max-h-[calc(100dvh-7rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
                 <div className="flex flex-none items-center justify-between border-b border-slate-100 px-5 py-4">
-                    <h2 className="text-lg font-bold text-slate-900">{calOpen ? 'Choose a date' : 'Choose a time'}</h2>
+                    <div className="flex items-center gap-1.5">
+                        {step === 2 && !calOpen && (
+                            <button type="button" onClick={() => setStep(1)} aria-label="Back" className="-ml-1 rounded-full p-1 text-slate-500 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
+                        )}
+                        <h2 className="text-lg font-bold text-slate-900">{calOpen ? 'Choose a date' : step === 1 ? 'Choose a time' : 'Address & notes'}</h2>
+                    </div>
                     <button type="button" onClick={() => (calOpen ? setCalOpen(false) : (!busy && onClose()))} aria-label="Close" className="rounded-full p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
                 </div>
 
@@ -253,12 +265,11 @@ export function RequestBookingDialog({
                             </button>
                         </div>
                     </>
-                ) : (
+                ) : step === 1 ? (
                     <>
-                        {/* One scrolling body — option, guests, the day list (with a
-                            sticky month header + calendar-jump icon) and, when they
-                            apply, the address and allergy — so the list has room and
-                            the month heading stays in view as it scrolls. */}
+                        {/* STEP 1 — option, guests and the day list (with a sticky
+                            month header + calendar-jump icon). The address and notes
+                            move to step 2, so this step stays about when. */}
                         <div ref={listRef} onScroll={onListScroll} className="min-h-0 flex-1 overflow-y-auto">
                             <div className="border-b border-slate-100 px-5 py-4">
                                 {/* The chosen option, named but not re-pickable — the
@@ -362,9 +373,35 @@ export function RequestBookingDialog({
                                 })}
                             </div>
 
-                            {/* Address + allergy, shown only when they apply */}
+                        </div>
+
+                        {/* Step 1 footer: on to the details once a date and time
+                            are chosen. */}
+                        <div className="flex-none border-t border-slate-100 px-5 py-4">
+                            <button type="button" onClick={() => setStep(2)} disabled={!step1Done}
+                                className="w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-40">
+                                Continue
+                            </button>
+                            <p className="mt-2 text-center text-xs text-slate-400">
+                                {needsAddress ? 'Next: your address and any notes.' : isFood ? 'Next: any allergies, then send.' : 'Next: review and send.'}
+                            </p>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        {/* STEP 2 — a short recap of the choice, the address and any
+                            notes, the total and Send request. Back returns to step 1. */}
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                            <div className="rounded-xl bg-slate-50 p-3 text-sm">
+                                {item && <div className="font-semibold text-slate-900">{item.name} · {itemPriceLabel(item.price, item.unit)}</div>}
+                                <div className="mt-0.5 text-slate-600">
+                                    {date ? dateLabel(date) : ''}{time ? ' at ' + prettyTime(time) : ''}
+                                    {showGuests ? ' · ' + people + ' ' + (people === 1 ? 'guest' : 'guests') : ''}
+                                </div>
+                            </div>
+
                             {(needsAddress || isFood) && (
-                                <div className="space-y-3 border-t border-slate-100 px-5 py-4">
+                                <div className="mt-4 space-y-3">
                                     {needsAddress && (
                                         <label className="block">
                                             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where should {who} come?</span>
@@ -386,7 +423,7 @@ export function RequestBookingDialog({
                             )}
                         </div>
 
-                        {/* Footer: total + Send request */}
+                        {/* Step 2 footer: total + Send request. */}
                         <div className="flex-none border-t border-slate-100 px-5 py-4">
                             {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
                             <div className="mb-3 flex items-baseline justify-between">
