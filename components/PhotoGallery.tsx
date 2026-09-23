@@ -66,6 +66,21 @@ export default function PhotoGallery({
     const hero = images[0];
     const side = images.slice(1, 5);
 
+    // The desktop mosaic adapts to how many photos there are, so a host with
+    // fewer than five never gets empty grey tiles. Mobile is always the hero
+    // alone (or, opt-in, the swipeable strip); these only shape md and up:
+    //   2 → two side by side   3 → one large + two stacked
+    //   4 → a 2×2 grid         5+ → the hero + four (as before)
+    const n = images.length;
+    const desktopGrid = n === 2 ? 'md:grid-cols-2 md:grid-rows-1'
+        : n === 3 ? 'md:grid-cols-3 md:grid-rows-2'
+        : n === 4 ? 'md:grid-cols-2 md:grid-rows-2'
+        : 'md:grid-cols-4 md:grid-rows-2';
+    // The hero only spans a 2×2 block where the layout has room for it beside
+    // the rest — a lone big tile with two or four alongside. At two or four it's
+    // an equal cell.
+    const heroSpan = (n === 3 || n >= 5) ? 'md:col-span-2 md:row-span-2' : '';
+
     return (
         <>
             <div className="relative my-4">
@@ -107,11 +122,11 @@ export default function PhotoGallery({
                             ))}
                         </div>
                     )}
-                    <div className={`${mobileStrip ? 'hidden md:grid' : 'grid'} grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-2 h-[300px] md:h-[460px] rounded-2xl overflow-hidden`}>
+                    <div className={`${mobileStrip ? 'hidden md:grid' : 'grid'} grid-cols-1 ${desktopGrid} gap-2 h-[300px] md:h-[460px] rounded-2xl overflow-hidden`}>
                         <button
                             type="button"
                             onClick={() => setOpen(true)}
-                            className="md:col-span-2 md:row-span-2 relative group h-full w-full"
+                            className={`${heroSpan} relative group h-full w-full`}
                         >
                             <Image
                                 src={getImageUrl(hero)}
@@ -143,12 +158,6 @@ export default function PhotoGallery({
                                 />
                                 <span className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition" />
                             </button>
-                        ))}
-
-                        {/* Fill any empty cells so the grid never looks broken
-                            when a host has uploaded fewer than five photos */}
-                        {Array.from({ length: Math.max(0, 4 - side.length) }).map((_, i) => (
-                            <div key={`blank-${i}`} className="hidden md:block bg-slate-100" />
                         ))}
                     </div>
                 </>
