@@ -42,7 +42,7 @@ function phaseIcon(icon: StepIcon) {
 // notice). A plain server component. Rules: first name only, no ratings/counts,
 // no address before payment.
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel, reviews, menu,
+    p, backHref, backLabel, panel, reviews, menu, itemsMenu,
 }: {
     p: MpProvider;
     backHref: string;
@@ -52,6 +52,10 @@ export default function ExperienceListingBody({
     // left column and replaces the static "What you get" list, so the menu, its
     // photos and prices are the main thing and the sidebar panel is the basket.
     menu?: React.ReactNode;
+    // An interactive "What you get" for a comes-to-you experience — the same
+    // items in the same slot, but each with a Choose button that opens the
+    // booking dialog on that option. Replaces the static list in place.
+    itemsMenu?: React.ReactNode;
     // Always passed by the listing pages; the section renders even at zero, with
     // an honest "No reviews yet" in place rather than dropping out.
     reviews?: ExperienceReviewsBlock;
@@ -198,7 +202,11 @@ export default function ExperienceListingBody({
                             they lead. Omitted for a slot (its options live in the
                             booking panel) and for a food-ordering menu (the interactive
                             menu already leads the column). */}
-                        {p.shape !== 'slot' && !menu && (
+                        {/* The interactive "What you get" (comes-to-you: each item
+                            has a Choose button) replaces the static list in place. */}
+                        {p.shape !== 'slot' && !menu && itemsMenu ? itemsMenu : null}
+
+                        {p.shape !== 'slot' && !menu && !itemsMenu && (
                             <section className="mt-8 border-t border-slate-200 pt-8">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">What you get</h2>
                                 <ul className="mt-4 divide-y divide-slate-100">

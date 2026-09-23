@@ -89,7 +89,7 @@ export interface RequestBookArgs {
 // month heading opens the full month grid), each day expanding to its times.
 export function RequestBookingDialog({
     who, items, minAge, isFood, needsAddress, calDays, timesByDate, providerMax, prefillAdults, prefillChildren,
-    initialDate, busy, error, onBook, onClose,
+    initialDate, lockedItemId, busy, error, onBook, onClose,
 }: {
     who: string;
     items: RequestItem[];
@@ -102,17 +102,22 @@ export function RequestBookingDialog({
     prefillAdults?: number | null;
     prefillChildren?: number | null;
     initialDate?: string | null;
+    // The option chosen on the listing. When set, the dialog opens on that item
+    // and hides the option list — the guest already chose, so only guests, date
+    // and time remain.
+    lockedItemId?: string | null;
     busy: boolean;
     error: string | null;
     onBook: (args: RequestBookArgs) => void;
     onClose: () => void;
 }) {
     const ordered = useMemo(() => [...items].sort((a, b) => a.price - b.price), [items]);
-    const [itemId, setItemId] = useState<string>(ordered[0]?.id || '');
-    // Start at the selected item's own minimum so the total reads the item's floor
+    const initialItem = (lockedItemId && ordered.find((i) => i.id === lockedItemId)) || ordered[0] || null;
+    const [itemId, setItemId] = useState<string>(initialItem?.id || '');
+    // Start at the chosen item's own minimum so the total reads the item's floor
     // from the first paint (the per-guest dinner opens at its minimum of 2, £110),
     // never a stale £55-for-one or the group item's price, before it's topped up.
-    const [adults, setAdults] = useState<number>(Math.max(itemMinPeople(ordered[0] || null), Number(prefillAdults) || 1));
+    const [adults, setAdults] = useState<number>(Math.max(itemMinPeople(initialItem), Number(prefillAdults) || 1));
     const [children, setChildren] = useState<number>(Math.max(0, Number(prefillChildren) || 0));
     const [childrenShown, setChildrenShown] = useState<boolean>(!!(prefillChildren && prefillChildren > 0));
     const [date, setDate] = useState<string>('');
@@ -256,7 +261,17 @@ export function RequestBookingDialog({
                             the month heading stays in view as it scrolls. */}
                         <div ref={listRef} onScroll={onListScroll} className="min-h-0 flex-1 overflow-y-auto">
                             <div className="border-b border-slate-100 px-5 py-4">
-                                {ordered.length > 1 && (
+                                {/* The chosen option, named but not re-pickable — the
+                                    guest chose it on the listing. When nothing was
+                                    locked (a legacy open with no choice) the full
+                                    option list still shows. */}
+                                {lockedItemId && item && (
+                                    <div className="mb-3">
+                                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Option</div>
+                                        <div className="text-sm font-semibold text-slate-900">{item.name} · {itemPriceLabel(item.price, item.unit)}</div>
+                                    </div>
+                                )}
+                                {!lockedItemId && ordered.length > 1 && (
                                     <div className="mb-3">
                                         <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Option</div>
                                         <div className="flex flex-wrap gap-1.5">

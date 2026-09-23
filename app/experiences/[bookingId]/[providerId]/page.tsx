@@ -10,6 +10,8 @@ import BookingPanel from '@/components/marketplace/BookingPanel';
 import { FoodCartProvider } from '@/components/marketplace/FoodCart';
 import FoodMenu from '@/components/marketplace/FoodMenu';
 import FoodBasket from '@/components/marketplace/FoodBasket';
+import { RequestBookingProvider } from '@/components/marketplace/RequestBookingContext';
+import ChooseMenu from '@/components/marketplace/ChooseMenu';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,12 +63,18 @@ export default async function ListingPage(
         );
     }
 
-    return (
+    // A comes-to-you experience: the guest chooses the option on the listing
+    // (ChooseMenu), which opens the panel's dialog on it — so the whole page is
+    // wrapped in the provider that connects the two.
+    const isComesToYou = p.shape === 'comes_to_you';
+
+    const body = (
         <ExperienceListingBody
             p={p}
             backHref={`/experiences/${params.bookingId}`}
             backLabel="All experiences"
             reviews={reviews}
+            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
             panel={
                 <BookingPanel
                     bookingId={params.bookingId}
@@ -107,4 +115,6 @@ export default async function ListingPage(
             }
         />
     );
+
+    return isComesToYou ? <RequestBookingProvider>{body}</RequestBookingProvider> : body;
 }

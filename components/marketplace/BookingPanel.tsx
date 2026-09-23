@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { hasExtraGuests } from '@/lib/extraGuests';
 import { generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
@@ -11,6 +11,7 @@ import { CalendarDays } from 'lucide-react';
 import BookingDialog, { type BookArgs, type DialogOpenSession } from '@/components/marketplace/BookingDialog';
 import DatePreview from '@/components/marketplace/DatePreview';
 import { RequestBookingDialog, RequestDatePreview, type RequestBookArgs } from '@/components/marketplace/RequestBooking';
+import { useRequestBooking } from '@/components/marketplace/RequestBookingContext';
 
 interface PanelItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -82,6 +83,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
     const standalone = standaloneProp ?? !bookingId;
     const [open, setOpen] = useState(false);
     const [initialDate, setInitialDate] = useState<string | null>(null);
+    // The option chosen on the listing (via ChooseMenu) — locks the dialog to it
+    // and removes the option list. Null on a plain "Show dates" open, which then
+    // defaults to the cheapest option below.
+    const [lockedItemId, setLockedItemId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -142,6 +147,25 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
     const previewDefault = provider.items.filter((i) => i.price > 0).sort((a, b) => a.price - b.price).find((i) => unitMultiplies(i.unit)) || provider.items[0] || null;
     const previewSessions = provider.perItemDurations && previewDefault ? sessionsForItem(previewDefault.id) : provider.sessions;
     const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
+
+    // Open the comes-to-you dialog on a specific OPTION (chosen on the listing)
+    // and optionally a date. A null option falls back to the cheapest — that's
+    // what a plain "Show dates" or a suggested day does.
+    const requestBooking = useRequestBooking();
+    const openRequest = useCallback((itemId: string | null, d: string | null) => {
+        setLockedItemId(itemId || cheapest?.id || null);
+        setInitialDate(d);
+        setOpen(true);
+    }, [cheapest]);
+    // A Choose press on the listing menu (ChooseMenu) parks a request in the
+    // context; open the dialog on that option.
+    useEffect(() => {
+        const p = requestBooking?.pending;
+        if (!p) return;
+        openRequest(p.itemId, p.date);
+        requestBooking?.consume();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestBooking?.pending?.nonce]);
 
     // ---- COMES-TO-YOU -------------------------------------------------------
     // A comes-to-you chef only travels, so standalone it asks for an address.
@@ -293,13 +317,13 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                         </p>
                     )}
                 </div>
-                <button type="button" onClick={() => setOpen(true)} disabled={calDays.size === 0}
+                <button type="button" onClick={() => openRequest(null, null)} disabled={calDays.size === 0}
                     className="flex-none rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
                     {calDays.size ? 'Show dates' : 'No dates'}
                 </button>
             </div>
 
-            <RequestDatePreview calDays={calDays} timesByDate={reqDialogTimes} busy={busy} onPickDay={(d) => openOn(d)} />
+            <RequestDatePreview calDays={calDays} timesByDate={reqDialogTimes} busy={busy} onPickDay={(d) => openRequest(null, d)} />
 
             {error && !open && <p className="mt-3 text-sm text-rose-700">{error}</p>}
 
@@ -316,10 +340,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                     prefillAdults={cottageAdults}
                     prefillChildren={cottageChildren}
                     initialDate={initialDate}
+                    lockedItemId={lockedItemId}
                     busy={busy}
                     error={error}
                     onBook={bookRequest}
-                    onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
+                    onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setLockedItemId(null); setError(null); } }}
                 />
             )}
         </div>
