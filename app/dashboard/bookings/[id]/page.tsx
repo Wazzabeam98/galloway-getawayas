@@ -371,7 +371,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     return (
         <div className="min-h-[calc(100dvh-81px)] bg-slate-50">
-            <div className="mx-auto max-w-[1180px] px-4 sm:px-6 py-6">
+            <div className="mx-auto max-w-[880px] px-4 sm:px-6 py-6">
                 <Link
                     href="/dashboard/bookings"
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
@@ -380,9 +380,15 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     All bookings
                 </Link>
 
-                <div className="mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-10 lg:items-start">
-                    {/* ---- MAIN COLUMN — the booking, in full ---- */}
-                    <div className="min-w-0 space-y-8">
+                {/* Airbnb's host shape: the reservations list runs down the left as a
+                    sticky rail, and the one booking reads as a single narrow column of
+                    cards on the right. On a phone the two stack — the booking first
+                    (that is what you opened), the list beneath — so the order classes
+                    only re-sort the columns at lg. */}
+                <div className="mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[280px_minmax(0,480px)] lg:gap-10 lg:items-start">
+                    {/* ---- MAIN COLUMN — the booking, in full. Second on desktop
+                        (the narrow right-hand column), first on a phone. ---- */}
+                    <div className="min-w-0 space-y-6 lg:order-2">
                         {/* Hero: the property photo, the title, the status pill,
                             the nights line and — for anyone allowed the takings —
                             the total for the stay (item 8). */}
@@ -471,6 +477,9 @@ export default async function BookingDetail({ params }: { params: { id: string }
                                     <div className="text-slate-500">{whoText}</div>
                                 </div>
                             </div>
+                            {/* Messaging lives on the floating button (bottom-right),
+                                so this row carries only the phone — no second emerald
+                                Message button competing with it in a narrow column. */}
                             <div className="mt-3 flex flex-wrap gap-2">
                                 {phone ? (
                                     <a href={'tel:' + phone} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400">
@@ -481,9 +490,6 @@ export default async function BookingDetail({ params }: { params: { id: string }
                                         {closed ? 'Their number isn’t shown once a booking is off.' : 'Their number appears here from the day before arrival.'}
                                     </span>
                                 )}
-                                <Link href={'/messages?b=' + booking.id} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
-                                    <MessageSquare className="h-4 w-4" /> Message {firstName}
-                                </Link>
                             </div>
                         </section>
 
@@ -739,10 +745,11 @@ export default async function BookingDetail({ params }: { params: { id: string }
                         </section>
                     </div>
 
-                    {/* ---- UPCOMING RAIL — the host's next arrivals, beside the
-                        booking on desktop and stacked below it on a phone (item 1).
-                        A sticky aside, the slot the guest trip page gives its map. ---- */}
-                    <aside className="lg:sticky lg:top-24">
+                    {/* ---- RESERVATIONS RAIL — the host's next arrivals, run down the
+                        left on desktop (first column, hence lg:order-1) and stacked
+                        below the booking on a phone (item 1). A sticky list, the way
+                        Airbnb keeps every other reservation one click away. ---- */}
+                    <aside className="lg:order-1 lg:sticky lg:top-24">
                         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
                             <div className="flex items-center gap-2 text-slate-900">
                                 <CalendarDays className="h-4 w-4 flex-none text-slate-400" />
@@ -783,6 +790,18 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     </aside>
                 </div>
             </div>
+
+            {/* Floating Message button — the one persistent way to reach the guest,
+                pinned bottom-right over the whole page the way Airbnb keeps its
+                message action within reach whatever you have scrolled to. Emerald,
+                the primary-action colour of the card family. */}
+            <Link
+                href={'/messages?b=' + booking.id}
+                className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 rounded-full bg-emerald-700 px-5 py-3.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(4,120,87,0.35)] transition hover:bg-emerald-800"
+            >
+                <MessageSquare className="h-4 w-4" />
+                Message {firstName}
+            </Link>
         </div>
     );
 }
