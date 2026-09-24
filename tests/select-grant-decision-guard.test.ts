@@ -90,10 +90,10 @@ const TABLES: TableDecision[] = [
             'trading_name', 'welcome_message', 'welcome_message_enabled',
         ]),
         revoked: {
+            anonymised_at: 'audit tombstone — when the account was anonymised; server/admin only, no user or public read',
             email: 'private contact detail — not public',
             phone: 'private contact detail — not public',
             residential_address: 'private PII — not public',
-            anonymised_at: 'audit tombstone — when the account was anonymised; server/admin only, no user or public read',
             payout_balance_owed: 'money owed to the platform; server/admin only',
             stripe_account_id: 'Stripe connected-account id; server-role only',
             stripe_charges_enabled: 'Stripe account state; server-role only',
