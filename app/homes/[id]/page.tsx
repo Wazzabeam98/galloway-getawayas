@@ -262,7 +262,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     // The name columns (full_name, preferred_name, show_full_name) are no longer
     // readable by the anon role: a logged-out REST caller must never be able to
     // pull a person's legal surname off /rest/v1/profiles (revoked in
-    // 20260924170000_profiles_revoke_anon_name.sql). show_full_name was only ever
+    // 20260924174233_profiles_revoke_anon_name.sql). show_full_name was only ever
     // a render-layer curtain — the grant was the real gate. So the display name is
     // resolved server-side here and only the FIRST name is ever sent to the
     // browser (see hostFirstName below); the surname stays on the server.
