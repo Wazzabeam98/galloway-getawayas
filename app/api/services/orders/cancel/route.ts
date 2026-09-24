@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, price, slot_session_id, stripe_payment_intent_id, provider_business_name, parent_order_id')
+            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, price, slot_session_id, stripe_payment_intent_id, provider_business_name, guest_email, parent_order_id')
             .eq('id', orderId)
             .maybeSingle();
 
@@ -177,6 +177,29 @@ export async function POST(request: Request) {
                     .eq('id', order.id).eq('status', 'confirmed').select('id');
                 if (refunded && refunded.length) await releaseSeat();   // a slot's time reopens
                 await settleChildren('refund');                          // added places refund with it
+                // Tell both sides — the free (before-cutoff) refund is the most
+                // common cancellation, and it used to send NO email at all, so a
+                // provider turned up to a booking that was gone. The 'ask' and
+                // 'forfeit' branches already notify; this closes the gap.
+                try {
+                    if (prov && prov.contact_email) {
+                        await sendEmail(prov.contact_email, 'A booking was cancelled and refunded', emailLayout(
+                            '<p>A guest has cancelled their booking for '
+                            + escapeHtml(String(order.service_date))
+                            + ' and been refunded in full — it was before your cancellation window. Please don’t attend or prepare for it; the date is free again.</p>'
+                            + button(SITE_URL + '/services/dashboard', 'Open your bookings'),
+                            'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                    }
+                    const guestEmail = order.guest_email || (user && user.email) || '';
+                    if (guestEmail) {
+                        const providerName = order.provider_business_name || (prov && prov.business_name) || 'your provider';
+                        await sendEmail(guestEmail, 'Your booking is cancelled and refunded', emailLayout(
+                            '<p>Your booking with ' + escapeHtml(String(providerName)) + ' for '
+                            + escapeHtml(String(order.service_date))
+                            + ' has been cancelled and refunded in full. The refund goes back to your original payment method and can take a few days to show.</p>',
+                            'You’re receiving this because you booked an experience on Galloway Getaways.'));
+                    }
+                } catch (mailErr) { console.error('[services/orders/cancel] free-refund notify', mailErr); }
                 return NextResponse.json({ ok: true, status: 'refunded' });
             }
 
