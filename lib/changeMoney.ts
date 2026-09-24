@@ -38,6 +38,14 @@ export interface ChangeMoney {
     newTotal: number;
     addedNights: number;
     removedNights: number;
+    // The two halves of the change, so a caller can scale the refund by the
+    // cancellation policy without re-deriving them: `charge` is everything ADDED
+    // (nights at today's rate + any increase in the guest/pet fees), always paid
+    // in full; `refundBase` is everything GIVEN BACK (removed nights at what was
+    // paid + any decrease in the fees), the amount that would be refunded at 100%.
+    // charge - refundBase === delta.
+    charge: number;
+    refundBase: number;
 }
 
 export function changeMoney(i: ChangeMoneyInput): ChangeMoney {
@@ -68,6 +76,30 @@ export function changeMoney(i: ChangeMoneyInput): ChangeMoney {
     // they go, otherwise unchanged.
     const petFeeDelta = i.petFee * ((i.newPets > 0 ? 1 : 0) - (i.oldPets > 0 ? 1 : 0));
 
+    // Split every line into what is charged (a positive contribution) and what is
+    // given back (a negative one), so the refund half can be scaled by the
+    // cancellation policy while the charge half is always paid in full.
+    const charge = round2(addedSum + Math.max(0, guestFeeDelta) + Math.max(0, petFeeDelta));
+    const refundBase = round2(removedSum + Math.max(0, -guestFeeDelta) + Math.max(0, -petFeeDelta));
+
     const delta = round2(nightsDelta + guestFeeDelta + petFeeDelta);
-    return { delta, newTotal: round2(Number(i.oldTotal) + delta), addedNights: added.length, removedNights: removed.length };
+    return { delta, newTotal: round2(Number(i.oldTotal) + delta), addedNights: added.length, removedNights: removed.length, charge, refundBase };
+}
+
+// Fold the cancellation policy into a change's money. The CHARGE (added nights /
+// higher fees) is always paid in full; the REFUND is `fraction` of the refund
+// base — 1 inside the free-cancellation window or when the host proposes the
+// shortening, the policy tier's share otherwise. What the guest forfeits
+// (refundBase × (1 − fraction)) is the cancellation penalty, kept by the host, so
+// the effective new total is the old total plus this policy-aware net.
+//
+//   fraction 1  → delta === charge - refundBase   (the plain diff)
+//   fraction <1 → the guest is refunded less; the booking total is higher by the
+//                 retained penalty, so net paid, balance and payout stay in step.
+export function applyChangePolicy(
+    oldTotal: number, charge: number, refundBase: number, fraction: number,
+): { delta: number; newTotal: number } {
+    const f = Math.max(0, Math.min(1, Number(fraction)));
+    const net = round2(Number(charge || 0) - Number(refundBase || 0) * f);
+    return { delta: net, newTotal: round2(Number(oldTotal || 0) + net) };
 }

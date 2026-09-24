@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { changeMoney } from '../lib/changeMoney';
+import { changeMoney, applyChangePolicy } from '../lib/changeMoney';
 
 const noGuestFee = { extraGuestFee: 0, perNightGuestFee: true, oldChargeableGuests: 0, newChargeableGuests: 0, oldPets: 0, newPets: 0, petFee: 0 };
 
@@ -38,6 +38,24 @@ test('removing a night refunds what was PAID for that night', () => {
     assert.equal(r.delta, -150, 'the dropped night comes back at what was paid');
     assert.equal(r.newTotal, 300);
     assert.equal(r.removedNights, 1);
+    // The two halves the policy scales: nothing charged, £150 refundable.
+    assert.equal(r.charge, 0);
+    assert.equal(r.refundBase, 150);
+});
+
+test('charge and refundBase split a date shift and always sum to the delta', () => {
+    const paidRate: Record<string, number> = { '2026-11-01': 300, '2026-11-02': 300, '2026-11-03': 300 };
+    const r = changeMoney({
+        ...noGuestFee,
+        oldNightKeys: ['2026-11-01', '2026-11-02', '2026-11-03'], // 3 nights paid £900
+        newNightKeys: ['2026-11-10', '2026-11-11'],               // 2 new nights at £110
+        paidRate,
+        currentRate: { '2026-11-10': 110, '2026-11-11': 110 },
+        oldTotal: 900,
+    });
+    assert.equal(r.charge, 220, 'two added nights at today’s rate');
+    assert.equal(r.refundBase, 900, 'three removed nights at what was paid');
+    assert.equal(r.delta, r.charge - r.refundBase, 'charge − refundBase === delta');
 });
 
 test('kept nights don’t move, whatever today’s rate is', () => {
@@ -96,6 +114,37 @@ test('a date SHIFT to cheaper nights can still net a refund (correctly)', () => 
     // Refund both £300 nights, charge two £100 nights → −£400.
     assert.equal(r.delta, -400);
     assert.equal(r.newTotal, 200);
+});
+
+// The cancellation policy folded into a shortening's refund. `charge` is always
+// paid in full; `refundBase` is refunded by `fraction` of its value, the rest
+// kept as the penalty (raising the effective new total by that much).
+test('applyChangePolicy at fraction 1 is the plain diff', () => {
+    // Pure shortening: nothing charged, £150 refundable, full refund.
+    assert.deepEqual(applyChangePolicy(450, 0, 150, 1), { delta: -150, newTotal: 300 });
+    // Free window / host-proposed on a £900 stay dropped to £600.
+    assert.deepEqual(applyChangePolicy(900, 0, 300, 1), { delta: -300, newTotal: 600 });
+});
+
+test('applyChangePolicy at 50% refunds half the removed nights, host keeps the rest', () => {
+    // £900 stay, £300 of nights dropped, Limited within its window (0.5): the
+    // guest gets £150 back and the booking total settles at £750.
+    assert.deepEqual(applyChangePolicy(900, 0, 300, 0.5), { delta: -150, newTotal: 750 });
+});
+
+test('applyChangePolicy at 0 refunds nothing (Firm/Moderate past the window)', () => {
+    assert.deepEqual(applyChangePolicy(900, 0, 300, 0), { delta: 0, newTotal: 900 });
+});
+
+test('applyChangePolicy leaves an increase alone (nothing to scale)', () => {
+    // Pure extension: £100 charged, nothing refundable — fraction is irrelevant.
+    assert.deepEqual(applyChangePolicy(1000, 100, 0, 0), { delta: 100, newTotal: 1100 });
+});
+
+test('applyChangePolicy scales only the refund half of a mixed shift', () => {
+    // Add £220 of nights, drop £300 of nights, refunded at 50%: the guest PAYS
+    // £220 − £150 = £70, not a refund — the removed nights are penalised.
+    assert.deepEqual(applyChangePolicy(900, 220, 300, 0.5), { delta: 70, newTotal: 970 });
 });
 
 test('pets: the per-stay fee is gained when they appear, refunded when they go', () => {

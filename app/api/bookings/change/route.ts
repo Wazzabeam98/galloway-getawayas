@@ -88,7 +88,7 @@ export async function POST(request: Request) {
         const { delta, newTotal } = await quoteChangeMoney(admin, booking as any, {
             newCheckIn: wantCheckIn, newCheckOut: wantCheckOut,
             newGuests: wantGuests, newChildren: wantChildren, newPets: wantPets,
-        });
+        }, { initiatedBy });
         const next: StaySnapshot = {
             checkIn: wantCheckIn, checkOut: wantCheckOut,
             guests: wantGuests, children: wantChildren, pets: wantPets, total: newTotal,

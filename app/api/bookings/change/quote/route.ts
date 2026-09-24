@@ -35,7 +35,7 @@ export async function POST(request: Request) {
             newGuests: Math.trunc(Number(body && body.guests)),
             newChildren: Math.trunc(Number(body && body.children) || 0),
             newPets: Math.trunc(Number(body && body.pets) || 0),
-        });
+        }, { initiatedBy: isGuest ? 'guest' : 'host' });
         return NextResponse.json({ ok: true, total: newTotal, delta });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not price that.' }, { status: 500 });

@@ -7,6 +7,10 @@
 // `children` column is the subset (see components/BookingWidget). Pets do not
 // count toward the listing's max. This module speaks that same shape.
 
+// Relative import, not '@/lib/cancellation': this module is executed directly by
+// the unit test, and Node cannot resolve the @/ alias at runtime.
+import { refundFraction } from './cancellation';
+
 export type ChangeStatus = 'pending' | 'awaiting_guest_payment' | 'accepted' | 'declined' | 'cancelled' | 'expired';
 
 export interface StaySnapshot {
@@ -52,6 +56,23 @@ export function guestChangeIsInstant(initiatedBy: 'host' | 'guest', delta: numbe
 // max(0, netPaid - newTotal), which is also automatically ≤ netPaid.
 export function refundForDecrease(netPaid: number, newTotal: number): number {
     return round2(Math.max(0, Number(netPaid || 0) - Number(newTotal || 0)));
+}
+
+// What share of a shortening's removed nights is refunded, as a partial
+// cancellation of those nights. A HOST-proposed shortening refunds them in full
+// (the host is the one shortening the stay, so the guest keeps all their money).
+// A GUEST-proposed one follows the booking's cancellation policy: full inside the
+// free-cancellation window, the tier's share outside it (none once the window has
+// closed on Firm/Moderate, 50% within Limited's or Firm's partial window — see
+// lib/cancellation.refundFraction), anchored on the original check-in.
+export function decreaseRefundFraction(
+    initiatedBy: 'host' | 'guest',
+    checkIn: string,
+    policy: string | null | undefined,
+    now?: Date,
+): number {
+    if (initiatedBy === 'host') return 1;
+    return refundFraction(checkIn, policy, now);
 }
 
 // The balance still owed after a change (and after any refund it triggered):

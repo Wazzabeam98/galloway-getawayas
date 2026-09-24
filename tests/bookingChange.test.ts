@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
     changeDelta, moneyDirection, refundForDecrease, balanceAfter, nights, isRealChange,
     validateChange, guestMayAnswerChange, hostMayCancelChange, guestMayPayChange,
-    whoAnswers, isOpenChange, isChangeTerminal, guestChangeIsInstant,
+    whoAnswers, isOpenChange, isChangeTerminal, guestChangeIsInstant, decreaseRefundFraction,
     type StaySnapshot,
 } from '../lib/bookingChange';
 
@@ -56,6 +56,26 @@ test('a guest change with no price change applies instantly; anything else is a 
     assert.equal(guestChangeIsInstant('host', 25), false);
     // Sub-penny noise still counts as zero (decided on the rounded delta).
     assert.equal(guestChangeIsInstant('guest', 0.004), true);
+});
+
+test('a host-proposed shortening refunds the removed nights in full, whatever the policy', () => {
+    const now = new Date('2026-11-01T12:00:00Z');
+    // Even a Firm policy inside the last few days: the host is shortening, so the
+    // guest keeps all their money.
+    assert.equal(decreaseRefundFraction('host', '2026-11-05', 'Firm', now), 1);
+    assert.equal(decreaseRefundFraction('host', '2026-12-20', 'Flexible', now), 1);
+});
+
+test('a guest-proposed shortening follows the cancellation policy', () => {
+    const now = new Date('2026-11-01T12:00:00Z');
+    // Inside the free-cancellation window → full.
+    assert.equal(decreaseRefundFraction('guest', '2026-12-20', 'Moderate', now), 1);
+    // Firm, ~19 days out: past the full window, inside the partial one → 50%.
+    assert.equal(decreaseRefundFraction('guest', '2026-11-20', 'Firm', now), 0.5);
+    // Limited, ~11 days out: past 14-day full window, inside the 7-day partial → 50%.
+    assert.equal(decreaseRefundFraction('guest', '2026-11-12', 'Limited', now), 0.5);
+    // Firm, only ~4 days out: past every window → nothing back.
+    assert.equal(decreaseRefundFraction('guest', '2026-11-05', 'Firm', now), 0);
 });
 
 test('nights are whole and half-open', () => {
