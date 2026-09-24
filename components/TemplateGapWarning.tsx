@@ -121,7 +121,7 @@ export default async function TemplateGapWarning() {
                             </p>
                             <Link
                                 href="/account?section=messaging"
-                                className="inline-block mt-3 px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white text-sm font-semibold rounded-lg"
+                                className="inline-flex items-center min-h-[44px] mt-3 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-lg"
                             >
                                 Set up a check-in message
                             </Link>

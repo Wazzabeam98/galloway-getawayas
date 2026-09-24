@@ -62,17 +62,17 @@ function Counter({
                     type="button"
                     onClick={() => onChange(Math.max(min, value - 1))}
                     disabled={value <= min}
-                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
+                    className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
                 >
-                    <Minus className="w-3.5 h-3.5" />
+                    <Minus className="w-4 h-4" />
                 </button>
-                <span className="w-4 text-center text-sm">{value}</span>
+                <span className="w-6 text-center text-sm">{value}</span>
                 <button
                     type="button"
                     onClick={() => onChange(value + 1)}
-                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
+                    className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
                 >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-4 h-4" />
                 </button>
             </div>
         </div>
