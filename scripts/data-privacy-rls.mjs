@@ -178,6 +178,10 @@ async function run() {
 
     for (const c of [
         'email', 'phone', 'residential_address',
+        // Legal names are no longer anon-readable (20260924174233): a logged-out
+        // REST caller must not be able to pull surnames. Public pages resolve the
+        // display name server-side (service role) and render a first name only.
+        'full_name', 'preferred_name', 'show_full_name',
         'stripe_account_id', 'stripe_charges_enabled', 'stripe_requirements_due',
         'stripe_details_submitted', 'stripe_updated_at', 'payout_balance_owed',
     ]) {
@@ -185,9 +189,9 @@ async function run() {
     }
 
     console.log('\n  profiles — what a stranger still needs');
-    const shown = await anon('/profiles?select=id,full_name,preferred_name,show_full_name,avatar_url&limit=3');
-    if (shown.ok && Array.isArray(shown.body)) ok('a display name and avatar are still readable');
-    else bad('a display name and avatar are still readable', JSON.stringify(shown.body).slice(0, 140));
+    const shown = await anon('/profiles?select=id,avatar_url&limit=3');
+    if (shown.ok && Array.isArray(shown.body)) ok('the id and avatar are still readable (names now resolve server-side)');
+    else bad('the id and avatar are still readable', JSON.stringify(shown.body).slice(0, 140));
 
     // ---- bookings ----------------------------------------------------------
     console.log('\n  bookings — a stranger must not read the row at all');
