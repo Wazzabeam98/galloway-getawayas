@@ -1,5 +1,6 @@
 import { stripeRequest } from '@/lib/stripe';
 import { expiryFrom } from '@/lib/serviceOrders';
+import { resolveGuestForPaidOrder, supabaseGuestStore } from '@/lib/guestAccount';
 import { displayName } from '@/lib/utils';
 import {
     sendEmail, emailLayout, escapeHtml, button, noteCallout, allergyCallout, SITE_URL,
@@ -59,11 +60,48 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
         .eq('id', md.provider_id)
         .maybeSingle();
 
-    const { data: guest } = md.guest_id
+    // MINT THE GUEST BEFORE THE INSERT for a signed-out standalone booker.
+    //
+    // A standalone order can be placed without an account, so md.guest_id is
+    // empty. But service_orders carries a CHECK
+    // (service_orders_guest_present_once_paid) that a paid row MUST have a
+    // guest_id — so inserting a null-guest 'authorised'/'confirmed' row is
+    // rejected, and the captured/held money would be left with no record. The
+    // slot path already mints from the payer email on payment; do the same here,
+    // so the row always has a guest_id and the booker gets an account + receipt.
+    //
+    // If minting genuinely fails we do NOT write a null-guest row. We log and
+    // return without cancelling: the reconcile sweep re-runs this same function
+    // and will mint on the next pass (mirroring the slot path's deferred mint),
+    // so a transient failure is recovered rather than dropping the booking.
+    let guestId: string | null = md.guest_id || null;
+    let mintedEmail: string | null = null;
+    if (!guestId) {
+        const payerEmail = (cs.customer_details && cs.customer_details.email) || cs.customer_email || null;
+        try {
+            const resolved = await resolveGuestForPaidOrder(supabaseGuestStore(admin), {
+                typedEmail: md.contact_email || null,
+                payerEmail,
+                name: md.contact_name || null,
+                phone: md.contact_phone || null,
+            });
+            guestId = resolved.id;
+            mintedEmail = resolved.email;
+        } catch (mintErr) {
+            await logError(
+                '[requestOrder] a standalone service order was paid but the guest account could not be minted — the reconcile sweep will retry',
+                mintErr,
+                { path: 'requestOrder' },
+            );
+            return { created: false, reason: 'error' };
+        }
+    }
+
+    const { data: guest } = guestId
         ? await admin
             .from('profiles')
             .select('id, full_name, preferred_name, show_full_name, phone, email')
-            .eq('id', md.guest_id)
+            .eq('id', guestId)
             .maybeSingle()
         : { data: null };
 
@@ -102,10 +140,10 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
         .from('service_orders')
         .insert({
             provider_id: md.provider_id,
-            // Present today: the request shape is login-gated (order/route.ts
-            // sets guest_id from the signed-in user), so the reconcile has it
-            // from the same session metadata the webhook reads.
-            guest_id: md.guest_id || null,
+            // Always set: from the signed-in user (md.guest_id) or, for a
+            // signed-out standalone booker, the account just minted above. Never
+            // null on a paid row — the guest-present CHECK requires it.
+            guest_id: guestId,
             listing_id: md.listing_id || null,
             booking_id: md.booking_id || null,
             // The chosen time (comes_to_you / made_to_order now carry one) and, for
@@ -143,7 +181,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             // standalone booker with no account yet (minted from this on payment).
             guest_name: displayName(guest, '') || md.contact_name || null,
             guest_phone: (guest ? guest.phone : null) || md.contact_phone || null,
-            guest_email: (guest && guest.email) || md.contact_email || (cs.customer_details && cs.customer_details.email) || null,
+            guest_email: (guest && guest.email) || mintedEmail || md.contact_email || (cs.customer_details && cs.customer_details.email) || null,
             // A made-to-order cart's free-text preferred collection/delivery time is
             // kept on the note (there is no fixed slot for food), labelled so the
             // order page and the provider read it plainly.
@@ -201,7 +239,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
     const linesHtml = (lineItems && lineItems.length)
         ? '<ul style="margin:0 0 16px;padding-left:18px;font-size:15px;">' + lineItems.map((l) => '<li>' + escapeHtml(String(l.qty)) + ' × ' + escapeHtml(String(l.name)) + (l.is_custom ? ' (made to order)' : '') + ' — £' + Number(l.line_total).toFixed(2) + '</li>').join('') + '</ul>'
         : '';
-    const guestTo = ((guest && guest.email) || md.contact_email || (cs.customer_details && cs.customer_details.email) || '').trim();
+    const guestTo = ((guest && guest.email) || mintedEmail || md.contact_email || (cs.customer_details && cs.customer_details.email) || '').trim();
     const totalStr = '£' + (Number(cs.amount_total || 0) / 100).toFixed(2);
     const whereWhen = ' for <strong>' + escapeHtml(String(md.service_date)) + '</strong>'
         + (md.collection_note ? ' (' + escapeHtml(String(md.collection_note)) + ')' : '')
