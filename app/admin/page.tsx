@@ -31,6 +31,11 @@ const tools = [
         blurb: 'Disputes raised by guests\u2019 banks, and what evidence to send.',
     },
     {
+        href: '/admin/resolutions',
+        title: 'Money disputes',
+        blurb: 'Escalated money requests \u2014 declined or ignored \u2014 waiting on a decision.',
+    },
+    {
         // This page existed and was linked from nowhere. You could only reach
         // it by knowing the URL, which for the one screen that holds people
         // waiting on you is the same as it not being there.
