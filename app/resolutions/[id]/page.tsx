@@ -37,7 +37,10 @@ export default async function ResolutionPage({ params }: { params: { id: string 
     const { data: host } = await admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', res.host_id).maybeSingle();
     const { data: attachments } = await admin.from('booking_resolution_attachments').select('id, content_type').eq('resolution_id', res.id);
 
-    const hostFirst = capitializeFirst((displayName(host, 'Your host') || 'Your host').split(' ')[0]);
+    // A real first name when the host has one; otherwise a natural fallback that
+    // still reads as a sentence ("Your host requested £X").
+    const hostReal = displayName(host, '');
+    const hostFirst = hostReal ? capitializeFirst(hostReal.split(' ')[0]) : 'Your host';
     const stayName = (listing && listing.title) || 'your stay';
     const amount = Math.round(Number(res.amount) * 100) / 100;
     const isRequest = res.direction === 'request';
