@@ -64,6 +64,16 @@ function shortDay(dateStr: string): string {
     const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
     return isNaN(d.getTime()) ? String(dateStr) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
+// "22–25 Sep" (or "28 Sep – 2 Oct" across months) — the header's date range.
+function nightRange(checkIn: string, checkOut: string): string {
+    const a = new Date(String(checkIn).slice(0, 10) + 'T12:00:00');
+    const b = new Date(String(checkOut).slice(0, 10) + 'T12:00:00');
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return shortDay(checkIn) + ' – ' + shortDay(checkOut);
+    if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()) {
+        return a.getDate() + '–' + b.getDate() + ' ' + b.toLocaleDateString('en-GB', { month: 'short' });
+    }
+    return shortDay(checkIn) + ' – ' + shortDay(checkOut);
+}
 // "3:00pm" from a stored 'HH:MM[:SS]'. Null in, null out — no invented time.
 function timeLabel(t: string | null | undefined): string | null {
     if (!t) return null;
@@ -295,6 +305,12 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const partyBreakdown = partyBits.join(', ');
     const extraPeople = Math.max(0, (partySize || Number(booking.guests || 1)) - 1);
     const guestsCardRow = (extraPeople > 0 ? '+' + extraPeople + ' · ' : '') + (partyBreakdown || (partySize || booking.guests) + ' guests');
+    // The header heading — "Alison's group of 2", or just "Group of 2" when the
+    // guest hasn't shared a name.
+    const partyCount = (partySize || Number(booking.guests || 1)) || 1;
+    const headerGroup = (guestName && guestName !== 'Guest')
+        ? firstName + '’s group of ' + partyCount
+        : 'Group of ' + partyCount;
 
     // The confirmation code and the day the booking was made — both derived from
     // the row already in memory (the code from the id, so there is no new
@@ -428,26 +444,19 @@ export default async function BookingDetail({ params }: { params: { id: string }
             ? '—'
             : started ? 'Overdue' : formatUk(paysOn);
 
-    const earningRows: MoneyDetailRow[] = [{ label: 'Guest pays in total', value: money(total) }];
-    if (refunded > 0) earningRows.push({ label: 'Refunded to guest', value: '−' + money(refunded) });
-    if (round2(grossDue - yours) > 0) earningRows.push({ label: 'Our fee (' + rate + '%)', value: '−' + money(grossDue - yours), muted: true });
-    earningRows.push({ label: 'You get', value: money(yours) });
-    if (Number(listing?.damage_deposit || 0) > 0) earningRows.push({ label: 'Damage deposit', value: money(Number(listing?.damage_deposit)) + ' — you collect this yourself', muted: true });
-
-    const paymentRows: MoneyDetailRow[] = [
-        { label: 'Plan', value: booking.payment_plan === 'deposit' ? 'Deposit, then the balance' : 'Paid in full at booking' },
-        { label: 'Stage', value: paymentStage },
-    ];
-    if (outstanding > 0) paymentRows.push({ label: 'Still to come', value: money(outstanding) + (booking.balance_due_date ? ', charged ' + formatUk(dateFromKey(booking.balance_due_date)) : '') });
-    if (booking.confirmed_at) paymentRows.push({ label: 'You accepted', value: formatUk(new Date(booking.confirmed_at)), muted: true });
-    if (!closed) {
-        paymentRows.push({ label: 'Free cancellation for guest', value: freeCancelDisplay ? 'Until ' + formatUk(freeCancelDisplay) : 'Window has closed', muted: true });
-        paymentRows.push({ label: 'If they cancelled today', value: money(guestWouldGet) + ' back (' + policyOf(listing?.cancellation_policy) + ')', muted: true });
-    }
-    if (closed && cancelledLine) paymentRows.push({ label: 'Cancelled', value: cancelledLine, muted: true });
-
-    const payoutRows: MoneyDetailRow[] = [{ label: 'When', value: payoutStatus, muted: !booking.payout_transfer_id }];
-    ownDebts.forEach((d: any) => payoutRows.push({
+    // ONE money card now — the total and nights on its face, the whole breakdown
+    // behind it: what the guest paid, what's in so far, any balance still due, our
+    // fee (with the working), what you get, and when the payout lands — then any
+    // money owed from before that comes off it, and the damage deposit note.
+    const feeAmount = round2((grossDue > 0 ? grossDue : 0) - yours);
+    const moneyRows: MoneyDetailRow[] = [{ label: 'Guest paid', value: money(total) }];
+    if (refunded > 0) moneyRows.push({ label: 'Refunded to guest', value: '−' + money(refunded) });
+    moneyRows.push({ label: 'Paid so far', value: money(paid) });
+    if (outstanding > 0) moneyRows.push({ label: 'Balance still due', value: money(outstanding) + (booking.balance_due_date ? ', charged ' + formatUk(dateFromKey(booking.balance_due_date)) : '') });
+    if (feeAmount > 0) moneyRows.push({ label: 'Our fee (' + rate + '%)', value: '−' + money(feeAmount), muted: true });
+    moneyRows.push({ label: 'You get', value: money(yours) });
+    moneyRows.push({ label: 'Payout', value: payoutStatus, muted: !booking.payout_transfer_id });
+    ownDebts.forEach((d: any) => moneyRows.push({
         label: debtReason(d.kind),
         value: '−' + money(Math.abs(Number(d.amount || 0)))
             + (d.status === 'settled'
@@ -457,20 +466,17 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     : ' — comes off your next payout'),
     }));
     if (deductionHere > 0) {
-        payoutRows.push({ label: 'Less owed from before', value: '−' + money(deductionHere) + (owedElsewhere > 0 ? ' (' + money(owedElsewhere) + ' more off later stays)' : '') });
-        payoutRows.push({ label: 'Expected in your bank', value: money(round2(yours - deductionHere) > 0 ? round2(yours - deductionHere) : 0) });
+        moneyRows.push({ label: 'Less owed from before', value: '−' + money(deductionHere) + (owedElsewhere > 0 ? ' (' + money(owedElsewhere) + ' more off later stays)' : '') });
+        moneyRows.push({ label: 'Expected in your bank', value: money(round2(yours - deductionHere) > 0 ? round2(yours - deductionHere) : 0) });
     }
+    if (Number(listing?.damage_deposit || 0) > 0) moneyRows.push({ label: 'Damage deposit', value: money(Number(listing?.damage_deposit)) + ' — you collect this yourself', muted: true });
 
     const moneyProps: MoneyCardsData = {
         showMoney,
-        youGet: money(yours),
-        youGetWorking,
-        paidSoFar: money(paid),
-        ofTotal: 'of ' + money(total),
-        payoutHeadline,
-        earningRows,
-        paymentRows,
-        payoutRows,
+        total: money(total),
+        nightsLabel: 'Total for ' + nights + ' ' + (nights === 1 ? 'night' : 'nights'),
+        working: youGetWorking,
+        rows: moneyRows,
     };
 
     // The ask-to-cancel draft is the same one this screen has always offered.
@@ -498,34 +504,34 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     {/* ---- MAIN COLUMN — the booking, in full. Second on desktop
                         (centred in the space beside the rail), first on a phone. ---- */}
                     <div className="min-w-0 space-y-6 lg:order-2 lg:mx-auto lg:w-full lg:max-w-[560px]">
-                        {/* Hero: the property photo, the title, the status pill,
-                            the nights line and — for anyone allowed the takings —
-                            the total for the stay. */}
-                        <div>
-                            {hero && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={hero} alt={listing?.title || 'Booking'} className="h-44 w-full rounded-2xl object-cover sm:h-56" />
-                            )}
-                            <div className={`${hero ? 'mt-4' : ''} flex items-start justify-between gap-3`}>
-                                <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                                    {listing?.title || 'Booking'}
-                                </h1>
-                                <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
-                                    {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
-                                    {meta.tone === 'wait' && <Clock3 className="h-3 w-3" />}
-                                    {meta.tone === 'over' && <XCircle className="h-3 w-3" />}
-                                    {meta.label}
-                                </span>
+                        {/* Airbnb-style header: the guest large and centred (their
+                            initial on a soft green circle when there's no photo), with
+                            the property photo tucked into the bottom-right corner; then
+                            who's coming, the dates and nights, and the place. */}
+                        <div className="flex flex-col items-center text-center">
+                            <div className="relative">
+                                {guestAvatar ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={guestAvatar} alt={guestName} className="h-24 w-24 rounded-full object-cover ring-1 ring-slate-200" />
+                                ) : (
+                                    <span className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-50 text-3xl font-semibold text-emerald-700">{firstName.slice(0, 1).toUpperCase()}</span>
+                                )}
+                                {hero ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={hero} alt={listing?.title || ''} className="absolute -bottom-1 -right-1 h-11 w-11 rounded-xl object-cover ring-2 ring-slate-50" />
+                                ) : (
+                                    <span className="absolute -bottom-1 -right-1 h-11 w-11 rounded-xl bg-slate-100 ring-2 ring-slate-50" />
+                                )}
                             </div>
-                            <p className="mt-1.5 text-sm text-slate-500">
-                                {[area, `${nights} ${nights === 1 ? 'night' : 'nights'}`].filter(Boolean).join(' · ')}
-                            </p>
-                            {showMoney && (
-                                <p className="mt-2 text-lg font-semibold text-slate-900">
-                                    {money(total)}
-                                    <span className="text-sm font-normal text-slate-500"> for {nights} {nights === 1 ? 'night' : 'nights'}</span>
-                                </p>
-                            )}
+                            <h1 className="mt-4 text-2xl font-semibold tracking-tight text-slate-900">{headerGroup}</h1>
+                            <p className="mt-1 text-sm text-slate-500">{nightRange(booking.check_in, booking.check_out)} · {nights} {nights === 1 ? 'night' : 'nights'}</p>
+                            <p className="text-sm text-slate-500">{listing?.title || 'Booking'}</p>
+                            <span className={`mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
+                                {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
+                                {meta.tone === 'wait' && <Clock3 className="h-3 w-3" />}
+                                {meta.tone === 'over' && <XCircle className="h-3 w-3" />}
+                                {meta.label}
+                            </span>
                         </div>
 
                         {/* The booking column matches the guest trip card and Airbnb's
@@ -614,10 +620,9 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             return <CancellationPolicyCard tier={words.tier} summary={words.summary} />;
                         })()}
 
-                        {/* 6 — Money and the rest. Money & Payment as three compact
-                            cards — You get (with the working), Paid so far, Payout —
-                            each opening its full detail in the page's pop-up, gated on
-                            can_earnings. */}
+                        {/* 6 — Money: one card showing the total and nights; tap it for
+                            the full breakdown (guest paid, paid so far, any balance, our
+                            fee with the working, you get, and the payout). can_earnings. */}
                         <MoneyCards {...moneyProps} />
 
                         {/* Manage reservation — a single row with a pencil that opens
