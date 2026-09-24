@@ -107,6 +107,17 @@ async function checkInFallbackPass(
         const fbCodeByListing: Record<string, string> = {};
         (fbCodes || []).forEach((c: any) => { fbCodeByListing[c.listing_id] = c.code; });
 
+        // Per-booking overrides win over the listing code here too.
+        const fbBookingIds = fb.map((b: any) => b.id);
+        const fbCodeByBooking: Record<string, string> = {};
+        if (fbBookingIds.length) {
+            const { data: fbOverrides } = await admin
+                .from('booking_access_codes')
+                .select('booking_id, code')
+                .in('booking_id', fbBookingIds);
+            (fbOverrides || []).forEach((c: any) => { fbCodeByBooking[c.booking_id] = c.code; });
+        }
+
         for (const booking of fb) {
             const listing = fbListingById[booking.listing_id];
             if (!listing) continue;
@@ -117,7 +128,7 @@ async function checkInFallbackPass(
             // have is NOT covered — it is held back, and the guest would
             // otherwise get nothing.
             const mine = live.filter((t) => t.user_id === booking.host_id);
-            const code = fbCodeByListing[booking.listing_id] || null;
+            const code = fbCodeByBooking[booking.id] || fbCodeByListing[booking.listing_id] || null;
             const tmpl = resolveTemplate(mine, 'checkin_details', booking.listing_id);
             const covered = !!tmpl && !needsLockboxCode(tmpl.body, code);
             if (covered) continue;
@@ -380,6 +391,24 @@ export async function GET(request: Request) {
             (codes || []).forEach((c: any) => { codeByListing[c.listing_id] = c.code; });
         }
 
+        // A per-booking override takes precedence over the listing's standing
+        // code for that one booking. Same table and same service-role-only wall;
+        // fetched under the same "only when a template asks for a code" guard.
+        const codeByBooking: Record<string, string> = {};
+        if (live.some((t) => usesLockboxCode(t.body))) {
+            const bookingIds = (bookings as BookingLike[]).map((b) => b.id);
+            if (bookingIds.length) {
+                const { data: overrides } = await admin
+                    .from('booking_access_codes')
+                    .select('booking_id, code')
+                    .in('booking_id', bookingIds);
+                (overrides || []).forEach((c: any) => { codeByBooking[c.booking_id] = c.code; });
+            }
+        }
+        // The code a given booking should actually receive: its override, else
+        // the listing code. Used for both the hold-back check and the fill.
+        const codeFor = (b: BookingLike) => codeByBooking[b.id] || codeByListing[b.listing_id] || null;
+
         // Booking first, then type — so exactly one template is chosen per
         // type per booking, by the shared rule, instead of every matching
         // template getting a turn.
@@ -403,7 +432,7 @@ export async function GET(request: Request) {
                 // would never get their code even once somebody noticed and
                 // filled it in. Left unclaimed, the next run after the code is
                 // set sends it — late, but sent.
-                if (needsLockboxCode(template.body, codeByListing[booking.listing_id])) {
+                if (needsLockboxCode(template.body, codeFor(booking))) {
                     await logError(
                         'scheduled-messages: held back ' + template.template_type
                             + ' for booking ' + booking.id
@@ -452,7 +481,7 @@ export async function GET(request: Request) {
                     listing: listing.title || 'your stay',
                     checkIn: formatDate(booking.check_in),
                     checkOut: formatDate(booking.check_out),
-                    lockboxCode: codeByListing[booking.listing_id] || null,
+                    lockboxCode: codeFor(booking),
                 });
 
                 const { error: messageError } = await admin.from('messages').insert({
