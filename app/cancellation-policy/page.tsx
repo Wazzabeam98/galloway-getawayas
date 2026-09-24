@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { CANCELLATION_TIERS as TIERS } from '@/lib/cancellationTiers';
 
 export const metadata: Metadata = {
     title: 'Cancellation & Refund Policy',
@@ -6,29 +7,6 @@ export const metadata: Metadata = {
         'How cancellations and refunds work when you book a holiday let through Galloway Getaways.',
     alternates: { canonical: '/cancellation-policy' },
 };
-
-const TIERS = [
-    {
-        name: 'Flexible',
-        full: 'Full refund if you cancel more than 1 day before check-in.',
-        partial: '50% refund if you cancel within 1 day of check-in.',
-    },
-    {
-        name: 'Moderate',
-        full: 'Full refund if you cancel more than 5 days before check-in.',
-        partial: '50% refund if you cancel within 5 days of check-in.',
-    },
-    {
-        name: 'Limited',
-        full: 'Full refund if you cancel more than 14 days before check-in.',
-        partial: '50% refund if you cancel 7 to 14 days before check-in. No refund within 7 days.',
-    },
-    {
-        name: 'Firm',
-        full: 'Full refund if you cancel more than 30 days before check-in.',
-        partial: '50% refund if you cancel 7 to 30 days before check-in. No refund within 7 days.',
-    },
-];
 
 export default function CancellationPolicyPage() {
     return (

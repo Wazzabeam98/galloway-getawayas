@@ -87,11 +87,25 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
     ]);
     if (!listing) redirect('/trips');
 
+    // A per-booking override, if this booking has one, takes precedence over the
+    // listing's standing code. Read under the same window gate (only its value
+    // is pulled when a code is due to show), and the same existence-without-value
+    // trick outside it, so a booking with an override still SAYS a way in exists
+    // without the secret entering the response early.
+    const { data: override } = codeReady
+        ? await admin.from('booking_access_codes').select('code').eq('booking_id', booking.id).maybeSingle()
+        : await admin.from('booking_access_codes').select('booking_id').eq('booking_id', booking.id).maybeSingle();
+
     const l: any = listing;
     const a: any = arrival || {};
-    const doorCode: string | null = codeReady ? ((access && (access as any).code) || null) : null;
-    // A code is on file, whether or not we've fetched its value yet.
-    const hasCode = !!access;
+    // Override wins where set; else the listing's standing code. Same precedence
+    // the host editor and the scheduled sender apply.
+    const doorCode: string | null = codeReady
+        ? (((override && (override as any).code) || (access && (access as any).code)) || null)
+        : null;
+    // A code is on file — an override or the listing code — whether or not we've
+    // fetched its value yet.
+    const hasCode = !!override || !!access;
     const method: string | null = l.check_in_method || null;
 
     const countdown =

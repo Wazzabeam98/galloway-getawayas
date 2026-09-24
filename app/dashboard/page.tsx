@@ -5,14 +5,18 @@ import TemplateGapWarning from "@/components/TemplateGapWarning";
 import ArrivalNudge from "@/components/ArrivalNudge";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { getImageUrl } from "@/lib/utils";
+import { getImageUrl, displayName } from "@/lib/utils";
 import { publicArea } from "@/lib/places";
 import { createClient } from "@supabase/supabase-js";
 import { accessibleListings } from "@/lib/access";
 import LeaveListingBtn from "@/components/LeaveListingBtn";
 import HideListingBtn from "@/components/HideListingBtn";
 import Link from "next/link";
-import { ChevronRight, Eye, Home, Plus, Wrench } from "lucide-react";
+import { ChevronRight, Eye, Home, Plus, Wrench, Star } from "lucide-react";
+
+// A guest can be reviewed for 14 days after they check out — the same window the
+// review page and the reminder cron use. After that the chance has passed.
+const REVIEW_WINDOW_DAYS = 14;
 
 function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
     const editHref = isDraft ? `/addhome?draft=${item.id}` : `/edit-listing/${item.id}`;
@@ -160,6 +164,46 @@ export default async function Dashboard() {
     const owned = (homes || []).filter((h) => ownedIds.indexOf(h.id) !== -1);
     const helping = (homes || []).filter((h) => helpingIds.indexOf(h.id) !== -1);
 
+    // "Your follow-ups" — guests who have checked out and are still inside the
+    // review window, whom this host hasn't reviewed yet. One card each, so the
+    // review a host means to leave doesn't quietly lapse. Only the host's own
+    // stays (host_id), checked out, within the last REVIEW_WINDOW_DAYS.
+    const uid = user.user?.id || '';
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - REVIEW_WINDOW_DAYS * 86400000).toISOString();
+    const { data: pastStays } = uid
+        ? await admin
+            .from('bookings')
+            .select('id, guest_id, listing_id, check_out')
+            .eq('host_id', uid)
+            .eq('status', 'confirmed')
+            .lt('check_out', now.toISOString())
+            .gte('check_out', windowStart)
+            .order('check_out', { ascending: false })
+        : { data: [] };
+    const { data: doneReviews } = uid && (pastStays || []).length
+        ? await admin.from('reviews').select('booking_id').eq('reviewer_id', uid).eq('review_type', 'host_to_guest')
+        : { data: [] };
+    const reviewedIds = new Set((doneReviews || []).map((r: any) => r.booking_id));
+    const followUps = (pastStays || []).filter((b: any) => !reviewedIds.has(b.id));
+    const fuGuestIds = Array.from(new Set(followUps.map((b: any) => b.guest_id)));
+    const fuListingIds = Array.from(new Set(followUps.map((b: any) => b.listing_id)));
+    const { data: fuGuests } = fuGuestIds.length
+        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url').in('id', fuGuestIds)
+        : { data: [] };
+    const { data: fuListings } = fuListingIds.length
+        ? await admin.from('listings').select('id, title').in('id', fuListingIds)
+        : { data: [] };
+    const fuGuestMap: Record<string, any> = {};
+    (fuGuests || []).forEach((g: any) => { fuGuestMap[g.id] = g; });
+    const fuListingMap: Record<string, string> = {};
+    (fuListings || []).forEach((l: any) => { fuListingMap[l.id] = l.title; });
+    const daysLeftToReview = (checkOut: string): number => {
+        const deadline = new Date(String(checkOut).slice(0, 10) + 'T23:59:59');
+        deadline.setDate(deadline.getDate() + REVIEW_WINDOW_DAYS);
+        return Math.max(0, Math.ceil((deadline.getTime() - now.getTime()) / 86400000));
+    };
+
     const accessIdOf = (listingId: string) =>
         access.find((a) => a.listingId === listingId && !a.isOwner)?.accessId || null;
 
@@ -183,6 +227,50 @@ export default async function Dashboard() {
             <div className="max-w-7xl mx-auto px-6 pt-6">
                 <ArrivalNudge userId={(user && user.user && user.user.id) || ''} />
             </div>
+
+            {/* Your follow-ups — a review to leave for each guest who has just
+                checked out, before the 14-day window closes. Airbnb's shape: the
+                guest's photo, "Leave [name] a review", the property and the days
+                left, each linking to the review form. */}
+            {followUps.length > 0 && (
+                <div className="max-w-7xl mx-auto px-6 pt-4">
+                    <h2 className="text-lg font-semibold text-slate-900 mb-4">Your follow-ups</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {followUps.map((b: any) => {
+                            const g = fuGuestMap[b.guest_id];
+                            const full = displayName(g, '');
+                            const first = full ? (full.split(' ')[0] || 'your guest') : 'your guest';
+                            const avatar = g?.avatar_url ? getImageUrl(String(g.avatar_url)) : null;
+                            const left = daysLeftToReview(b.check_out);
+                            return (
+                                <Link
+                                    key={b.id}
+                                    href="/dashboard/reviews"
+                                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)] transition hover:border-slate-300"
+                                >
+                                    {avatar ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={avatar} alt="" className="h-11 w-11 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                    ) : (
+                                        <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{first.slice(0, 1)}</span>
+                                    )}
+                                    <span className="min-w-0 flex-1">
+                                        <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                                            <Star className="h-3.5 w-3.5 flex-none text-amber-400" /> Leave {first} a review
+                                        </span>
+                                        <span className="mt-0.5 block truncate text-[13px] text-slate-500">{fuListingMap[b.listing_id] || 'your listing'}</span>
+                                        <span className={'mt-0.5 block text-[12px] font-medium ' + (left <= 3 ? 'text-amber-700' : 'text-slate-400')}>
+                                            {left === 0 ? 'Last day to review' : left === 1 ? '1 day left' : `${left} days left`}
+                                        </span>
+                                    </span>
+                                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+                                </Link>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             <div className="max-w-7xl mx-auto px-6 py-10">
                 {/* A host's second revenue line, made visible on the page
                     itself rather than left seven items down a menu. Kept to one
