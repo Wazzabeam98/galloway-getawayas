@@ -24,6 +24,7 @@ import HouseRules from '@/components/HouseRules';
 import WhenBadge from '@/components/WhenBadge';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 import StayCancelRow from '@/components/trips/StayCancelRow';
+import RequestChangeRow from '@/components/trips/RequestChangeRow';
 import PayBalanceButton from '@/components/trips/PayBalanceButton';
 
 export const dynamic = 'force-dynamic';
@@ -132,7 +133,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
     const isBooker = role === 'booker';
 
     const { data: listing } = await admin.from('listings')
-        .select('id, title, images, street_address, postcode, location, latitude, longitude, check_in_time, check_in_end_time, check_out_time, check_in_method, cancellation_policy, rating_avg, rating_count, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules')
+        .select('id, title, images, street_address, postcode, location, latitude, longitude, check_in_time, check_in_end_time, check_out_time, check_in_method, cancellation_policy, rating_avg, rating_count, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, max_guests, amenities')
         .eq('id', booking.listing_id).maybeSingle();
 
     const { data: hostProfile } = booking.host_id
@@ -570,13 +571,28 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                         <Link href="/cancellation-policy" className="font-medium text-slate-600 underline hover:text-slate-800">Full terms</Link>
                                     </p>
 
-                                    {/* The reservation actions, in the experience
-                                        page's order and style: Cancel reservation,
-                                        Add to calendar, Print details. Change guest
-                                        count and Change dates are deliberately absent
-                                        for stays — both need host approval and are
-                                        not built, so no dead rows. */}
+                                    {/* The reservation actions: Request a change
+                                        (guest proposes new dates/guests; the host
+                                        approves), Cancel reservation, Add to
+                                        calendar, Print details. */}
                                     <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
+                                        {isBooker && booking.status === 'confirmed' && String(booking.check_out).slice(0, 10) >= todayIso && (
+                                            <RequestChangeRow
+                                                bookingId={booking.id}
+                                                listingId={booking.listing_id}
+                                                listingTitle={listing?.title || 'your stay'}
+                                                listingImage={hero}
+                                                hostFirst={hostFirstName}
+                                                checkIn={String(booking.check_in).slice(0, 10)}
+                                                checkOut={String(booking.check_out).slice(0, 10)}
+                                                adults={Number((booking as any).adults || 0) || Math.max(1, Number(booking.guests || 1) - Number((booking as any).children || 0))}
+                                                childrenCount={Number((booking as any).children || 0)}
+                                                pets={Number((booking as any).pets || 0)}
+                                                maxGuests={Number(listing?.max_guests || 1)}
+                                                petsAllowed={Array.isArray((listing as any)?.amenities) && (listing as any).amenities.indexOf('Pets allowed') !== -1}
+                                                className={ROW}
+                                            />
+                                        )}
                                         {isBooker && String(booking.check_in).slice(0, 10) > todayIso && (
                                             <StayCancelRow
                                                 bookingId={booking.id}

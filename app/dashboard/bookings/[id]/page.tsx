@@ -105,7 +105,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     const { data: listing } = await admin
         .from('listings')
-        .select('id, title, images, location, check_in_time, check_in_end_time, check_out_time, commission_rate, cancellation_policy, damage_deposit, host_id')
+        .select('id, title, images, location, check_in_time, check_in_end_time, check_out_time, commission_rate, cancellation_policy, damage_deposit, host_id, max_guests, amenities')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
@@ -162,6 +162,15 @@ export default async function BookingDetail({ params }: { params: { id: string }
         .eq('booking_id', booking.id)
         .order('created_at', { ascending: true });
     const hostNotes = noteRows || [];
+
+    // An open change request on this booking, so the host can find and act on a
+    // guest's request (or see the state of their own proposal).
+    const { data: openChange } = await admin
+        .from('booking_change_requests')
+        .select('id, initiated_by, status')
+        .eq('booking_id', booking.id)
+        .in('status', ['pending', 'awaiting_guest_payment'])
+        .maybeSingle();
 
     const now = new Date();
     const started = stayHasStarted(booking.check_in, now);
@@ -584,17 +593,38 @@ export default async function BookingDetail({ params }: { params: { id: string }
                         {/* Manage reservation — a single row with a pencil that opens
                             the action pop-up: change, send/request money, dispute,
                             the guest's phone, ask to cancel, cancel (item 9). */}
+                        {openChange && (
+                            <a href={`/reservations/change/${openChange.id}`} className="mb-3 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left transition hover:border-emerald-300">
+                                <span className="flex-1 text-sm font-semibold text-emerald-900">
+                                    {openChange.initiated_by === 'guest'
+                                        ? (openChange.status === 'pending' ? 'Your guest requested a change — review it' : 'Change approved — waiting on the guest’s payment')
+                                        : (openChange.status === 'awaiting_guest_payment' ? 'Change sent — waiting on the guest’s payment' : 'You proposed a change — waiting on the guest')}
+                                </span>
+                                <span className="text-[13px] font-semibold text-emerald-700">Review</span>
+                            </a>
+                        )}
                         <ManageReservationSheet
                             bookingId={booking.id}
                             status={booking.status}
                             isOwner={isOwner}
                             ended={ended}
+                            started={started}
                             phone={phone}
                             guestFirst={firstName}
                             totalPrice={total}
                             amountPaid={paid}
                             amountRefunded={refunded}
                             askToCancelHref={askToCancelHref}
+                            checkIn={String(booking.check_in).slice(0, 10)}
+                            checkOut={String(booking.check_out).slice(0, 10)}
+                            adults={Number(booking.adults || 0) || Math.max(1, Number(booking.guests || 1) - Number(booking.children || 0))}
+                            children={Number(booking.children || 0)}
+                            pets={Number(booking.pets || 0)}
+                            maxGuests={Number(listing?.max_guests || 1)}
+                            petsAllowed={Array.isArray(listing?.amenities) && listing!.amenities.indexOf('Pets allowed') !== -1}
+                            listingId={booking.listing_id}
+                            listingTitle={listing?.title || 'your stay'}
+                            listingImage={hero}
                         />
 
                         {/* Booking details — the confirmation code (derived from the

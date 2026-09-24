@@ -7,6 +7,7 @@ import { refundDue } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
 import { sendEmail, emailLayout, escapeHtml } from '@/lib/email';
 import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
+import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 
 export const dynamic = 'force-dynamic';
 
@@ -248,6 +249,9 @@ export async function POST(request: Request) {
                 cancelled_by_role: 'guest',
             })
             .eq('id', booking.id);
+
+        // Close anything still open against this now-cancelled stay.
+        await closeOpenBookingRequests(admin, booking.id);
 
         // THE GUEST'S OWN RECEIPT.
         //

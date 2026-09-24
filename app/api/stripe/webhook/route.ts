@@ -15,6 +15,9 @@ import { resolveGuestForPaidOrder, supabaseGuestStore, guestMagicLink } from '@/
 import { notifyTopUpConfirmed } from '@/lib/slotNotify';
 import { issueRefunds } from '@/lib/refundSpread';
 import { round2 } from '@/lib/resolutions';
+import { applyBookingChange } from '@/lib/applyBookingChange';
+import { topUpHostForIncrease } from '@/lib/changePayout';
+import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 
 export const dynamic = 'force-dynamic';
 
@@ -414,6 +417,97 @@ export async function POST(request: Request) {
                                 await logError('[webhook] resolution_send guest refund email', mailErr, { path: 'stripe/webhook' });
                             }
                         }
+                    }
+                }
+                return NextResponse.json({ ok: true });
+            }
+
+            // A GUEST PAID A PRICE INCREASE FROM A "CHANGE RESERVATION" (booking_change).
+            // The stay is rewritten HERE, after the money has landed (the house
+            // rule). Claim the change first so a redelivery is a no-op, apply the
+            // change (the exclusion constraint guards the new dates), then record
+            // the extra payment against the booking. If the dates were taken while
+            // the guest was paying, refund the difference and leave the booking as
+            // it was — the same shape as the oversold branch below.
+            if (kind === 'booking_change') {
+                const changeId = cs.metadata && cs.metadata.change_id;
+                const changePi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
+                if (changeId) {
+                    const { data: claimed } = await admin.from('booking_change_requests')
+                        .update({ status: 'accepted', responded_at: new Date().toISOString(), stripe_payment_intent_id: changePi, updated_at: new Date().toISOString() })
+                        .eq('id', changeId).in('status', ['pending', 'awaiting_guest_payment'])
+                        .select('id, booking_id, guest_id, host_id, new_check_in, new_check_out, new_guests, new_children, new_pets, new_total, price_delta');
+                    if (claimed && claimed.length) {
+                        const chg = claimed[0];
+                        const delta = round2(Number(chg.price_delta));
+                        const { data: booking } = await admin.from('bookings')
+                            .select('id, amount_paid, amount_refunded, stripe_payment_intent_id, balance_payment_intent_id')
+                            .eq('id', chg.booking_id).maybeSingle();
+                        if (!booking) {
+                            await logError('[webhook] booking_change: the booking vanished — guest paid but no change could be applied, reconcile at Stripe', { change: chg.id, booking_id: chg.booking_id }, { path: 'stripe/webhook' });
+                            return NextResponse.json({ ok: true });
+                        }
+                        const applied = await applyBookingChange(admin, chg as any);
+                        if (!applied.ok) {
+                            // The guest paid but the new dates are gone. Refund the
+                            // extra and leave the booking on its original stay.
+                            // Refund THIS CHANGE'S OWN charge in full — not the
+                            // original booking charges. The guest paid the extra on
+                            // a separate payment intent that was never folded into
+                            // amount_paid (the apply never happened), so the money
+                            // to give back is exactly that intent, and the booking's
+                            // paid/refunded figures are left untouched.
+                            try {
+                                if (changePi) {
+                                    await stripeRequest('POST', '/refunds', {
+                                        payment_intent: changePi,
+                                        metadata: { booking_id: chg.booking_id, change_id: chg.id, reason: 'booking_change_reverted', initiated_by: 'system' },
+                                    }, 'booking-change-revert-' + chg.id);
+                                    await admin.from('payments').insert({
+                                        booking_id: chg.booking_id, kind: 'refund', amount: delta, status: 'succeeded',
+                                        stripe_payment_intent_id: changePi,
+                                    });
+                                }
+                            } catch (revErr) {
+                                await logError('[webhook] booking_change: the booking was gone AND refunding the change payment failed — reconcile at Stripe', revErr, { path: 'stripe/webhook' });
+                            }
+                            await admin.from('booking_change_requests').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', chg.id);
+                            try {
+                                const { data: gu } = await admin.auth.admin.getUserById(chg.guest_id);
+                                const ge = (gu && gu.user && gu.user.email) || '';
+                                if (ge) await sendEmail(ge, 'Your change couldn’t be made — you’ve been refunded', emailLayout(
+                                    '<p style="margin:0 0 16px;font-size:16px;">We’re sorry — the change couldn’t be made (the booking or those dates were no longer available while you were paying), so the <strong>£' + delta.toFixed(2) + '</strong> you just paid has been sent straight back to your card.</p>'
+                                    + button(SITE_URL + '/trips', 'View your trip'),
+                                    'You’re receiving this because you have a booking with Galloway Getaways.'));
+                            } catch { /* email best effort */ }
+                            return NextResponse.json({ ok: true, reverted: true });
+                        }
+                        // Applied. Record the extra payment and fold it into the
+                        // booking's paid/balance figures.
+                        const { error: payErr } = await admin.from('payments').insert({
+                            booking_id: chg.booking_id, kind: 'booking_change', amount: delta, status: 'succeeded',
+                            stripe_payment_intent_id: changePi,
+                        });
+                        if (payErr && payErr.code !== '23505') {
+                            await logError('[webhook] booking_change: the extra payment is missing from the payments ledger', payErr, { path: 'stripe/webhook' });
+                        }
+                        const newPaid = round2(Number(booking.amount_paid || 0) + delta);
+                        const newBalance = round2(Math.max(0, Number(chg.new_total) - (newPaid - Number(booking.amount_refunded || 0))));
+                        await admin.from('bookings').update({ amount_paid: newPaid, balance_amount: newBalance }).eq('id', chg.booking_id);
+                        // If the host has ALREADY been paid out for this stay, the
+                        // payout cron won't revisit it — so send them their share of
+                        // the extra now (net of commission). If they're not yet paid
+                        // out, this is a no-op and the cron pays the new total.
+                        await topUpHostForIncrease(admin, chg.booking_id, delta, chg.id, changePi);
+                        await admin.from('booking_change_requests').update({ applied_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', chg.id);
+                        try {
+                            const { data: hu } = await admin.auth.admin.getUserById(chg.host_id);
+                            const he = (hu && hu.user && hu.user.email) || '';
+                            if (he) await sendEmail(he, 'Your guest paid for the change', emailLayout(
+                                '<p style="margin:0 0 16px;font-size:16px;">Your guest accepted and paid £' + delta.toFixed(2) + ' for the change. The booking now runs ' + escapeHtml(String(chg.new_check_in)) + ' to ' + escapeHtml(String(chg.new_check_out)) + '.</p>'
+                                + button(SITE_URL + '/dashboard/bookings/' + chg.booking_id, 'Open the booking'),
+                                'You’re receiving this because you host with Galloway Getaways.'));
+                        } catch { /* email best effort */ }
                     }
                 }
                 return NextResponse.json({ ok: true });
@@ -916,6 +1010,9 @@ export async function POST(request: Request) {
                             stripe_payment_intent_id: cs.payment_intent,
                         })
                         .eq('id', bookingId);
+
+                    // An oversold stay is off, so close anything still open against it.
+                    await closeOpenBookingRequests(admin, bookingId);
 
                     const guestId = booking && booking.guest_id;
                     const { data: guestUser } = guestId

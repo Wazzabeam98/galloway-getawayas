@@ -8,6 +8,7 @@ import { clawBackPayout } from '@/lib/clawback';
 import { logError } from '@/lib/logError';
 import { issueRefunds } from '@/lib/refundSpread';
 import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
+import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 
 export const dynamic = 'force-dynamic';
 
@@ -315,6 +316,12 @@ export async function POST(request: Request) {
         // against it. Best-effort: the guest's stay refund has already gone back.
         if (isHost && reason === 'cancelled' && booking.status === 'confirmed') {
             await cancelStayExperienceOrders(admin, booking.id);
+        }
+
+        // A cancelled or declined stay closes any open change or money request
+        // against it, so neither can act on a booking that is no longer live.
+        if (closingStatus) {
+            await closeOpenBookingRequests(admin, booking.id);
         }
 
         // One ledger row per refund actually issued, naming the charge it came

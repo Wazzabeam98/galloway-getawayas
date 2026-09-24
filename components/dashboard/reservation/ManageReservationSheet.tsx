@@ -4,13 +4,14 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
     Pencil, ChevronRight, ChevronLeft, Banknote,
-    Phone, Copy, Check, MessageSquare, XCircle,
+    Phone, Copy, Check, MessageSquare, XCircle, CalendarDays,
 } from 'lucide-react';
 import Modal from './Modal';
 import BookingActions from '@/components/BookingActions';
 import ResolutionFlow from './ResolutionFlow';
+import ChangeReservationFlow from './ChangeReservationFlow';
 
-type View = 'menu' | 'resolution' | 'cancel';
+type View = 'menu' | 'resolution' | 'cancel' | 'change';
 
 // The single "Manage reservation" row — a pencil that opens Airbnb's kind of
 // action sheet. It gathers the host actions that are built: send or request money
@@ -29,24 +30,52 @@ export default function ManageReservationSheet({
     amountPaid,
     amountRefunded,
     askToCancelHref,
+    checkIn,
+    checkOut,
+    adults,
+    children,
+    pets,
+    maxGuests,
+    petsAllowed,
+    listingId,
+    listingTitle,
+    listingImage,
 }: {
     bookingId: string;
     status: string;
     isOwner: boolean;
     ended: boolean;
+    started?: boolean;
     phone: string | null;
     guestFirst: string;
     totalPrice: number;
     amountPaid: number;
     amountRefunded: number;
     askToCancelHref: string | null;
+    checkIn: string;
+    checkOut: string;
+    adults: number;
+    children: number;
+    pets: number;
+    maxGuests: number;
+    petsAllowed: boolean;
+    listingId: string;
+    listingTitle: string;
+    listingImage: string | null;
 }) {
     const [open, setOpen] = useState(false);
     const [view, setView] = useState<View>('menu');
     const closed = status === 'cancelled' || status === 'declined';
     const refundable = Math.round((Number(amountPaid) - Number(amountRefunded)) * 100) / 100;
+    // Changes run right up to check-out — including mid-stay extensions and
+    // extra guests. Once the stay is over it's a money matter, so the host uses
+    // "Send or request money" (still shown below) instead.
+    const canChange = isOwner && !closed && !ended;
 
-    const title = view === 'resolution' ? 'Send or request money' : view === 'cancel' ? 'Cancel booking' : 'Manage reservation';
+    const title = view === 'resolution' ? 'Send or request money'
+        : view === 'cancel' ? 'Cancel booking'
+        : view === 'change' ? 'Change reservation'
+        : 'Manage reservation';
 
     return (
         <Modal
@@ -69,6 +98,9 @@ export default function ManageReservationSheet({
 
             {view === 'menu' && (
                 <div className="-my-1 divide-y divide-slate-100">
+                    {canChange && (
+                        <Row icon={CalendarDays} label="Change reservation" sub="New dates, guests or price — the guest confirms" onClick={() => setView('change')} />
+                    )}
                     {isOwner && !closed && (
                         <Row icon={Banknote} label="Send or request money" sub="For a refund, extra services or damage" onClick={() => setView('resolution')} />
                     )}
@@ -90,6 +122,25 @@ export default function ManageReservationSheet({
                     )}
                     {closed && <p className="py-3 text-sm text-slate-500">This booking is {status}. There’s nothing left to manage.</p>}
                 </div>
+            )}
+
+            {view === 'change' && (
+                <ChangeReservationFlow
+                    bookingId={bookingId}
+                    listingId={listingId}
+                    listingTitle={listingTitle}
+                    listingImage={listingImage}
+                    role="host"
+                    counterpartyName={guestFirst}
+                    checkIn={checkIn}
+                    checkOut={checkOut}
+                    adults={adults}
+                    childrenCount={children}
+                    pets={pets}
+                    maxGuests={maxGuests}
+                    petsAllowed={petsAllowed}
+                    onClose={() => { setOpen(false); setView('menu'); }}
+                />
             )}
 
             {view === 'resolution' && (
