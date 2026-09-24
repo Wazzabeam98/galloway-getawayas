@@ -14,12 +14,14 @@ import { contactNumberVisible, stayHasEnded, stayHasStarted } from "@/lib/stayWi
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from "@/lib/hostDebt";
 import { dateFromKey } from "@/lib/pricing";
 import { confirmationNumber, partyLabel, cancellationWords } from "@/lib/bookingDisplay";
-import BookingActions from "@/components/BookingActions";
-import DoorCode from "@/components/dashboard/DoorCode";
 import HostNotes from "@/components/dashboard/HostNotes";
+import EditableDoorCode from "@/components/dashboard/reservation/EditableDoorCode";
+import CancellationPolicyCard from "@/components/dashboard/reservation/CancellationPolicyCard";
+import MoneyCards, { type MoneyCardsData, type MoneyDetailRow } from "@/components/dashboard/reservation/MoneyCards";
+import ManageReservationSheet from "@/components/dashboard/reservation/ManageReservationSheet";
 import {
-    ArrowLeft, MessageSquare, Phone, CheckCircle2, Clock3, XCircle,
-    CalendarDays, Users, ChevronRight, KeyRound,
+    ArrowLeft, MessageSquare, CheckCircle2, Clock3, XCircle,
+    CalendarDays, Users, ChevronRight,
 } from "lucide-react";
 
 // One booking, in full.
@@ -32,26 +34,6 @@ import {
 
 function money(value: number): string {
     return '£' + Number(value || 0).toFixed(2);
-}
-
-function Row({ label, value, muted }: { label: string; value: any; muted?: boolean }) {
-    return (
-        <div className="flex items-baseline justify-between gap-6 py-2 border-b border-slate-100 last:border-0">
-            <div className="text-sm text-slate-500">{label}</div>
-            <div className={'text-sm text-right ' + (muted ? 'text-slate-500' : 'font-medium text-slate-900')}>
-                {value}
-            </div>
-        </div>
-    );
-}
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-    return (
-        <div className="border border-slate-200 rounded-2xl p-6 bg-white">
-            <h2 className="font-semibold text-slate-900 mb-3">{title}</h2>
-            {children}
-        </div>
-    );
 }
 
 // The status pill, in the reservation-page family: a label and a tone, the same
@@ -157,10 +139,18 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // code pulled from listing_access_codes, so it cannot reach their page at
     // all (the value, not just its display, is withheld). Same table and same
     // permission as /api/listings/access-code, the code's own secure route.
-    const { data: codeRow } = access.can_listing
-        ? await admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle()
-        : { data: null };
-    const doorCode = access.can_listing ? (codeRow?.code || null) : null;
+    // The standing listing code AND this booking's override (if any). The
+    // override wins — the same precedence the guest's arrival screen and the
+    // scheduled sender apply — so the host sees exactly the code the guest will.
+    const [{ data: codeRow }, { data: overrideRow }] = access.can_listing
+        ? await Promise.all([
+            admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle(),
+            admin.from('booking_access_codes').select('code').eq('booking_id', booking.id).maybeSingle(),
+        ])
+        : [{ data: null }, { data: null }];
+    const listingCode = access.can_listing ? (codeRow?.code || null) : null;
+    const doorCodeOverride = access.can_listing ? (overrideRow?.code || null) : null;
+    const doorCode = doorCodeOverride || listingCode;
 
     // The host's private note — its own table with no browser grants, so the
     // guest can never read it. Read here via the service role; anyone who can
@@ -292,7 +282,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const { data: upcomingRows } = bookableIds.length
         ? await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, check_in, check_out, status')
+            .select('id, listing_id, guest_id, check_in, check_out, status, adults, children, guests')
             .in('listing_id', bookableIds)
             .in('status', ['confirmed', 'pending'])
             .gte('check_in', todayKey)
@@ -313,8 +303,21 @@ export default async function BookingDetail({ params }: { params: { id: string }
     (upListings || []).forEach((l: any) => {
         upListingMap[l.id] = { title: l.title, image: Array.isArray(l.images) && l.images[0] ? getImageUrl(l.images[0]) : null };
     });
-    const upGuestMap: Record<string, string> = {};
-    (upGuests || []).forEach((g: any) => { upGuestMap[g.id] = displayName(g, 'Guest'); });
+    // First name only, so the list reads like the reservations rail on Airbnb —
+    // and never the word "Guest": where a guest hasn't shared a name we drop the
+    // possessive rather than print a placeholder.
+    const upGuestFirst: Record<string, string | null> = {};
+    (upGuests || []).forEach((g: any) => {
+        const full = displayName(g, '');
+        upGuestFirst[g.id] = full ? (full.split(' ')[0] || null) : null;
+    });
+    // "Sara's group of 4" — the guest's first name and the party size (people,
+    // pets aside). The list says who is coming and how many, at a glance.
+    const groupLabel = (b: any): string => {
+        const size = Number(b.adults || 0) + Number(b.children || 0) || Number(b.guests || 0) || 1;
+        const first = upGuestFirst[b.guest_id];
+        return first ? `${first}'s group of ${size}` : `Group of ${size}`;
+    };
 
     // A number is only on the page close to arrival. There is no reason to put
     // a guest's private number on a screen that opens the moment somebody
@@ -369,6 +372,76 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const hero = listing?.images?.[0] ? getImageUrl(listing.images[0]) : null;
     const area = listing?.location || null;
 
+    // ---- Money & payment, arranged for the three compact cards. Every figure
+    // is formatted here (the same helpers the payout run uses) and each appears
+    // once: the fee breakdown behind "You get", the payment stage behind "Paid
+    // so far", the payout reasoning behind "Payout". ----
+    const payoutStatus = booking.payout_transfer_id
+        ? 'Sent — ' + money(Number(booking.payout_amount || 0))
+        : booking.status !== 'confirmed'
+            ? 'Nothing to send'
+            : started
+                ? 'Was due ' + formatUk(paysOn) + ' — not recorded as sent'
+                : 'Due ' + formatUk(paysOn) + ', the day after check-in';
+    const payoutHeadline = booking.payout_transfer_id
+        ? 'Sent'
+        : booking.status !== 'confirmed'
+            ? '—'
+            : started ? 'Overdue' : formatUk(paysOn);
+
+    const earningRows: MoneyDetailRow[] = [{ label: 'Guest pays in total', value: money(total) }];
+    if (refunded > 0) earningRows.push({ label: 'Refunded to guest', value: '−' + money(refunded) });
+    if (round2(grossDue - yours) > 0) earningRows.push({ label: 'Our fee (' + rate + '%)', value: '−' + money(grossDue - yours), muted: true });
+    earningRows.push({ label: 'You get', value: money(yours) });
+    if (Number(listing?.damage_deposit || 0) > 0) earningRows.push({ label: 'Damage deposit', value: money(Number(listing?.damage_deposit)) + ' — you collect this yourself', muted: true });
+
+    const paymentRows: MoneyDetailRow[] = [
+        { label: 'Plan', value: booking.payment_plan === 'deposit' ? 'Deposit, then the balance' : 'Paid in full at booking' },
+        { label: 'Stage', value: paymentStage },
+    ];
+    if (outstanding > 0) paymentRows.push({ label: 'Still to come', value: money(outstanding) + (booking.balance_due_date ? ', charged ' + formatUk(dateFromKey(booking.balance_due_date)) : '') });
+    if (booking.confirmed_at) paymentRows.push({ label: 'You accepted', value: formatUk(new Date(booking.confirmed_at)), muted: true });
+    if (!closed) {
+        paymentRows.push({ label: 'Free cancellation for guest', value: freeCancelDisplay ? 'Until ' + formatUk(freeCancelDisplay) : 'Window has closed', muted: true });
+        paymentRows.push({ label: 'If they cancelled today', value: money(guestWouldGet) + ' back (' + policyOf(listing?.cancellation_policy) + ')', muted: true });
+    }
+    if (closed && cancelledLine) paymentRows.push({ label: 'Cancelled', value: cancelledLine, muted: true });
+
+    const payoutRows: MoneyDetailRow[] = [{ label: 'When', value: payoutStatus, muted: !booking.payout_transfer_id }];
+    ownDebts.forEach((d: any) => payoutRows.push({
+        label: debtReason(d.kind),
+        value: '−' + money(Math.abs(Number(d.amount || 0)))
+            + (d.status === 'settled'
+                ? ' — taken from a later payout'
+                : outstandingOf(d) < Math.abs(Number(d.amount || 0))
+                    ? ' — ' + money(outstandingOf(d)) + ' of it still to come off'
+                    : ' — comes off your next payout'),
+    }));
+    if (deductionHere > 0) {
+        payoutRows.push({ label: 'Less owed from before', value: '−' + money(deductionHere) + (owedElsewhere > 0 ? ' (' + money(owedElsewhere) + ' more off later stays)' : '') });
+        payoutRows.push({ label: 'Expected in your bank', value: money(round2(yours - deductionHere) > 0 ? round2(yours - deductionHere) : 0) });
+    }
+
+    const moneyProps: MoneyCardsData = {
+        showMoney,
+        youGet: money(yours),
+        paidSoFar: money(paid),
+        ofTotal: 'of ' + money(total),
+        payoutHeadline,
+        earningRows,
+        paymentRows,
+        payoutRows,
+    };
+
+    // Manage-reservation links. There is no host-side stay-change flow, so
+    // "Change reservation" opens a message to the guest to arrange one; the
+    // ask-to-cancel draft is the same one this screen has always offered.
+    const changeHref = '/messages?b=' + booking.id + '&draft='
+        + encodeURIComponent('Hi ' + firstName + ', I’d like to talk about a change to your booking at ' + (listing?.title || 'the property') + '. ');
+    const askToCancelHref = (isOwner && booking.status === 'confirmed' && !ended)
+        ? '/messages?b=' + booking.id + '&draft=' + encodeURIComponent(askToCancelDraft)
+        : null;
+
     return (
         <div className="min-h-[calc(100dvh-81px)] bg-slate-50">
             <div className="mx-auto max-w-[880px] px-4 sm:px-6 py-6">
@@ -421,22 +494,17 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
                         {/* Door code — for anyone with the listing permission
                             (item 2). Read server-side only when can_listing, so a
-                            co-host without it never receives the code. */}
+                            co-host without it never receives the code. Editable on
+                            an upcoming booking: the edit sets an override for this
+                            booking only, without changing the property's code. */}
                         {access.can_listing && (
-                            doorCode
-                                ? <DoorCode code={doorCode} />
-                                : (
-                                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                                        <div className="flex items-center gap-2 text-slate-900">
-                                            <KeyRound className="h-4 w-4 flex-none text-slate-400" />
-                                            <span className="text-sm font-semibold">Door code</span>
-                                        </div>
-                                        <p className="mt-2 text-sm text-slate-500">
-                                            No door code saved for this property yet. Add one in the{' '}
-                                            <Link href={'/edit-listing/' + booking.listing_id} className="font-medium text-slate-700 underline hover:text-slate-900">listing editor</Link>.
-                                        </p>
-                                    </div>
-                                )
+                            <EditableDoorCode
+                                bookingId={booking.id}
+                                code={doorCode}
+                                hasOverride={!!doorCodeOverride}
+                                listingCode={listingCode}
+                                editable={!closed && !ended}
+                            />
                         )}
 
                         {/* Private host notes — visible to anyone who manages the
@@ -465,9 +533,10 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             ))}
                         </div>
 
-                        {/* Who's going — the guest, the party (pets included) and,
-                            close to arrival, their number (item 5). The number is
-                            gated by contactNumberVisible and nothing else. */}
+                        {/* Who's going — the guest and the party (pets included),
+                            item 5. Their phone number lives in Manage reservation
+                            (with a copy button, close to arrival only), so it isn't
+                            repeated here; messaging is the floating button. */}
                         <section className="border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Who’s going</h2>
                             <div className="mt-3 flex items-start gap-3">
@@ -476,20 +545,6 @@ export default async function BookingDetail({ params }: { params: { id: string }
                                     <div className="font-medium text-slate-900">{guestName}</div>
                                     <div className="text-slate-500">{whoText}</div>
                                 </div>
-                            </div>
-                            {/* Messaging lives on the floating button (bottom-right),
-                                so this row carries only the phone — no second emerald
-                                Message button competing with it in a narrow column. */}
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                {phone ? (
-                                    <a href={'tel:' + phone} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400">
-                                        <Phone className="h-4 w-4" /> {phone}
-                                    </a>
-                                ) : (
-                                    <span className="text-sm text-slate-500">
-                                        {closed ? 'Their number isn’t shown once a booking is off.' : 'Their number appears here from the day before arrival.'}
-                                    </span>
-                                )}
                             </div>
                         </section>
 
@@ -513,217 +568,35 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             </div>
                         </section>
 
-                        {/* Cancellation policy — the standing policy on the listing,
-                            in words (item 7). */}
+                        {/* Cancellation policy — a small card showing just the tier
+                            name; tapping opens the full policy in the page's pop-up
+                            (item 7). */}
                         {(() => {
                             const words = cancellationWords(listing?.cancellation_policy);
-                            return (
-                                <section className="border-t border-slate-200 pt-6">
-                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cancellation policy</div>
-                                    <p className="mt-1 text-sm leading-relaxed text-slate-700">
-                                        <span className="font-semibold text-slate-900">{words.tier}</span> — {words.summary}{' '}
-                                        <Link href="/cancellation-policy" className="font-medium text-slate-600 underline hover:text-slate-800">Full terms</Link>
-                                    </p>
-                                </section>
-                            );
+                            return <CancellationPolicyCard tier={words.tier} summary={words.summary} />;
                         })()}
 
-                        {/* ---- The money & payment cards, kept exactly as they
-                            were: the full breakdown, gated on can_earnings. ---- */}
-                        <div className="space-y-5">
-                {showMoney ? (
-                    <Card title="Money">
-                        <Row label="Guest pays in total" value={money(total)} />
-                        <Row label="Paid so far" value={money(paid)} />
-                        {outstanding > 0 && (
-                            <Row
-                                label="Still to come"
-                                value={
-                                    money(outstanding)
-                                    + (booking.balance_due_date
-                                        ? ', charged ' + formatUk(dateFromKey(booking.balance_due_date))
-                                        : '')
-                                }
-                            />
-                        )}
-                        {refunded > 0 && <Row label="Refunded to guest" value={'−' + money(refunded)} />}
-                        {/* Nothing was kept on a stay refunded to nothing, and
-                            "−£0.00" on a money screen reads as a rounding
-                            error rather than as zero. */}
-                        {round2(grossDue - yours) > 0 && (
-                            <Row label={'Our fee (' + rate + '%)'} value={'−' + money(grossDue - yours)} muted />
-                        )}
-                        <Row label="You get" value={money(yours)} />
-                        <Row
-                            label="Payout"
-                            value={
-                                booking.payout_transfer_id
-                                    ? 'Sent — ' + money(Number(booking.payout_amount || 0))
-                                    : booking.status !== 'confirmed'
-                                        ? 'Nothing to send'
-                                        : started
-                                            ? 'Was due ' + formatUk(paysOn) + ' — not recorded as sent'
-                                            : 'Due ' + formatUk(paysOn) + ', the day after check-in'
-                            }
-                            muted={!booking.payout_transfer_id}
+                        {/* Money & Payment merged into three compact cards — You
+                            get, Paid so far, Payout — each opening its full detail in
+                            the page's pop-up, gated on can_earnings (item 8). */}
+                        <MoneyCards {...moneyProps} />
+
+                        {/* Manage reservation — a single row with a pencil that opens
+                            the action pop-up: change, send/request money, dispute,
+                            the guest's phone, ask to cancel, cancel (item 9). */}
+                        <ManageReservationSheet
+                            bookingId={booking.id}
+                            status={booking.status}
+                            isOwner={isOwner}
+                            ended={ended}
+                            phone={phone}
+                            guestFirst={firstName}
+                            totalPrice={total}
+                            amountPaid={paid}
+                            amountRefunded={refunded}
+                            changeHref={changeHref}
+                            askToCancelHref={askToCancelHref}
                         />
-                        {ownDebts.map((d: any) => (
-                            <Row
-                                key={d.id}
-                                label={debtReason(d.kind)}
-                                value={
-                                    '−' + money(Math.abs(Number(d.amount || 0)))
-                                    + (d.status === 'settled'
-                                        ? ' — taken from a later payout'
-                                        : outstandingOf(d) < Math.abs(Number(d.amount || 0))
-                                            ? ' — ' + money(outstandingOf(d)) + ' of it still to come off'
-                                            : ' — comes off your next payout')
-                                }
-                            />
-                        ))}
-                        {deductionHere > 0 && (
-                            <Row
-                                label="Less owed from before"
-                                value={
-                                    '−' + money(deductionHere)
-                                    + (owedElsewhere > 0
-                                        ? ' (' + money(owedElsewhere) + ' more off later stays)'
-                                        : '')
-                                }
-                            />
-                        )}
-                        {deductionHere > 0 && (
-                            <Row
-                                label="Expected in your bank"
-                                value={money(round2(yours - deductionHere) > 0 ? round2(yours - deductionHere) : 0)}
-                            />
-                        )}
-                        {Number(listing?.damage_deposit || 0) > 0 && (
-                            <Row
-                                label="Damage deposit"
-                                value={money(Number(listing?.damage_deposit)) + ' — you collect this yourself'}
-                                muted
-                            />
-                        )}
-                    </Card>
-                ) : (
-                    <Card title="Money">
-                        <p className="text-sm text-slate-500">
-                            You look after this booking but not its takings, so the figures are
-                            hidden. The owner can change that under Co-hosts.
-                        </p>
-                    </Card>
-                )}
-
-                <Card title="Payment">
-                    <Row
-                        label="Plan"
-                        value={booking.payment_plan === 'deposit' ? 'Deposit, then the balance' : 'Paid in full at booking'}
-                    />
-                    <Row
-                        label="Stage"
-                        value={paymentStage}
-                    />
-                    {booking.confirmed_at && (
-                        <Row label="You accepted" value={formatUk(new Date(booking.confirmed_at))} muted />
-                    )}
-                    {/* Both of these describe a cancellation that might still
-                        happen. On a booking already called off they are noise
-                        at best — the page was quoting a guest £0.50 they could
-                        get back on a stay that had already been refunded in
-                        full. */}
-                    {!closed && (
-                        <>
-                            <Row
-                                label="Free cancellation for guest"
-                                value={
-                                    freeCancelDisplay
-                                        ? 'Until ' + formatUk(freeCancelDisplay)
-                                        : 'Window has closed'
-                                }
-                                muted
-                            />
-                            <Row
-                                label="If they cancelled today"
-                                value={money(guestWouldGet) + ' back (' + policyOf(listing?.cancellation_policy) + ')'}
-                                muted
-                            />
-                        </>
-                    )}
-                    {closed && cancelledLine && <Row label="Cancelled" value={cancelledLine} muted />}
-                </Card>
-                        </div>
-
-                        {/* Manage reservation — messaging, the ask-to-cancel draft
-                            and the owner-only accept/decline/cancel controls, exactly
-                            the instruments this screen always carried (item 9). */}
-                        <Card title="Manage reservation">
-                    <div className="flex flex-wrap gap-3 pt-1">
-                        <Link
-                            href={'/messages?b=' + booking.id}
-                            className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 hover:border-slate-900 text-slate-800 text-sm font-semibold rounded-lg transition"
-                        >
-                            <MessageSquare className="w-4 h-4" />
-                            Message guest
-                        </Link>
-
-                        {isOwner && booking.status === 'confirmed' && !ended && (
-                            <Link
-                                href={'/messages?b=' + booking.id + '&draft=' + encodeURIComponent(askToCancelDraft)}
-                                className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 hover:border-slate-900 text-slate-800 text-sm font-semibold rounded-lg transition"
-                            >
-                                Ask the guest to cancel
-                            </Link>
-                        )}
-                    </div>
-
-                    {isOwner && booking.status === 'pending' && (
-                        <div className="mt-4">
-                            <BookingActions
-                                bookingId={booking.id}
-                                totalPrice={total}
-                                amountPaid={paid}
-                                amountRefunded={refunded}
-                            />
-                        </div>
-                    )}
-
-                    {isOwner && booking.status === 'confirmed' && !started && (
-                        <div className="mt-4">
-                            <BookingActions
-                                bookingId={booking.id}
-                                mode="confirmed"
-                                totalPrice={total}
-                                amountPaid={paid}
-                                amountRefunded={refunded}
-                            />
-                        </div>
-                    )}
-
-                    {isOwner && booking.status === 'confirmed' && started && !ended && (
-                        <div className="mt-4">
-                            <p className="text-sm text-slate-500 mb-3">
-                                Your guest has arrived, so calling the stay off in full is no longer
-                                the right instrument. Refund part of what they paid and let the stay
-                                run, or ask them to cancel.
-                            </p>
-                            <BookingActions
-                                bookingId={booking.id}
-                                mode="confirmed"
-                                allowCancel={false}
-                                totalPrice={total}
-                                amountPaid={paid}
-                                amountRefunded={refunded}
-                            />
-                        </div>
-                    )}
-
-                    {!isOwner && (
-                        <p className="text-sm text-slate-500 mt-4">
-                            Accepting, cancelling and refunding stay with the owner.
-                        </p>
-                    )}
-                        </Card>
 
                         {/* Booking details — the confirmation code (derived from the
                             id, no new column) and the day the booking was made
@@ -761,7 +634,6 @@ export default async function BookingDetail({ params }: { params: { id: string }
                                 <ul className="mt-3 divide-y divide-slate-100">
                                     {upcoming.map((b: any) => {
                                         const l = upListingMap[b.listing_id];
-                                        const gName = upGuestMap[b.guest_id] || 'Guest';
                                         const daysTo = Math.round((dateFromKey(b.check_in).getTime() - dateFromKey(todayKey).getTime()) / 86400000);
                                         const when = daysTo <= 0 ? 'Today' : daysTo === 1 ? 'Tomorrow' : `${daysTo} days`;
                                         return (
@@ -775,7 +647,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
                                                             )}
                                                         </span>
                                                         <span className="min-w-0">
-                                                            <span className="block truncate text-sm font-medium text-slate-900">{gName}</span>
+                                                            <span className="block truncate text-sm font-medium text-slate-900">{groupLabel(b)}</span>
                                                             <span className="block truncate text-xs text-slate-500">{l?.title || 'Your listing'} · {when}</span>
                                                         </span>
                                                     </span>

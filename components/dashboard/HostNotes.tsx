@@ -44,9 +44,9 @@ export default function HostNotes({ bookingId, initial }: { bookingId: string; i
         <section className="border-t border-slate-200 pt-6">
             <div className="flex items-center gap-2 text-slate-900">
                 <StickyNote className="h-4 w-4 flex-none text-slate-400" />
-                <h2 className="text-lg font-semibold">Private notes</h2>
+                <h2 className="text-lg font-semibold">Your notes</h2>
             </div>
-            <p className="mt-1 text-[13px] text-slate-500">Only you and your co-hosts can see this — never the guest.</p>
+            <p className="mt-1 text-[13px] text-slate-500">Only you can see this — never the guest.</p>
             <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value.slice(0, 2000))}
