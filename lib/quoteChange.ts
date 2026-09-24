@@ -1,17 +1,13 @@
-// Re-price a stay for a proposed change, the SAME way checkout priced it — the
-// listing's nightly rates (with weekend and calendar overrides) for the new
-// dates, plus the extra-guest fee above the listing's included-guest number,
-// plus pets and cleaning. Never trust a total the browser sends; this is the
-// authoritative figure both the create route and the quote endpoint use.
+// Price a reservation change as a DIFF against what was booked (see
+// lib/changeMoney): kept nights keep their paid price, added nights are charged
+// at today's rate, removed nights are refunded at what was paid. Never trust a
+// total the browser sends; this is the authoritative figure the create route
+// and the quote endpoint both use.
 
-import { quoteBooking, dateFromKey } from '@/lib/pricing';
-
-function round2(v: number): number {
-    return Math.round(Number(v || 0) * 100) / 100;
-}
+import { nightlyRate, dateFromKey, dateKey } from '@/lib/pricing';
+import { changeMoney } from '@/lib/changeMoney';
 
 export interface ChangeQuoteInput {
-    listingId: string;
     newCheckIn: string;   // yyyy-mm-dd
     newCheckOut: string;
     newGuests: number;    // total headcount (adults + children)
@@ -19,34 +15,70 @@ export interface ChangeQuoteInput {
     newPets: number;
 }
 
-// Returns the new accommodation total for the proposed stay.
-export async function quoteChangeTotal(admin: any, input: ChangeQuoteInput): Promise<number> {
+export interface QuotedBooking {
+    listing_id: string;
+    check_in: string;
+    check_out: string;
+    guests: number;
+    pets: number;
+    total_price: number | string;
+    nightly_breakdown?: any;
+}
+
+// Enumerate the half-open [checkIn, checkOut) night date keys.
+function nightKeys(checkIn: string, checkOut: string): string[] {
+    const out: string[] = [];
+    const start = dateFromKey(checkIn);
+    const end = dateFromKey(checkOut);
+    const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    while (cursor < end) {
+        out.push(dateKey(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+    }
+    return out;
+}
+
+export async function quoteChangeMoney(admin: any, booking: QuotedBooking, input: ChangeQuoteInput): Promise<{ delta: number; newTotal: number }> {
     const { data: listing } = await admin
         .from('listings')
         .select('price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period')
-        .eq('id', input.listingId)
+        .eq('id', booking.listing_id)
         .maybeSingle();
-    if (!listing) return 0;
+    if (!listing) return { delta: 0, newTotal: Math.round(Number(booking.total_price || 0) * 100) / 100 };
 
     const { data: overrideRows } = await admin
         .from('calendar_overrides')
         .select('date, price_override')
-        .eq('listing_id', input.listingId);
+        .eq('listing_id', booking.listing_id);
     const overrides: Record<string, number> = {};
     (overrideRows || []).forEach((row: any) => {
         const key = String(row.date).split('T')[0];
         if (row.price_override) overrides[key] = Number(row.price_override);
     });
 
-    const adults = Math.max(0, Number(input.newGuests) - Number(input.newChildren));
-    const quote = quoteBooking(
-        listing,
-        overrides,
-        dateFromKey(input.newCheckIn),
-        dateFromKey(input.newCheckOut),
-        adults,
-        Number(input.newChildren) || 0,
-        Number(input.newPets) || 0,
-    );
-    return round2(quote.total);
+    const oldNightKeys = nightKeys(String(booking.check_in).slice(0, 10), String(booking.check_out).slice(0, 10));
+    const newNightKeys = nightKeys(input.newCheckIn, input.newCheckOut);
+
+    // What the guest PAID per night, from the frozen breakdown (#120).
+    const paidRate: Record<string, number> = {};
+    if (Array.isArray(booking.nightly_breakdown)) {
+        booking.nightly_breakdown.forEach((n: any) => { if (n && n.date) paidRate[String(n.date).slice(0, 10)] = Number(n.rate || 0); });
+    }
+    // Today's rate for every night in the new range (only the added ones are used).
+    const currentRate: Record<string, number> = {};
+    newNightKeys.forEach((k) => { currentRate[k] = nightlyRate(dateFromKey(k), listing, overrides); });
+
+    const includedGuests = Math.max(1, Number(listing.extra_guest_after || 1));
+    const oldChargeable = Math.max(0, Number(booking.guests || 1) - includedGuests);
+    const newChargeable = Math.max(0, Number(input.newGuests) - includedGuests);
+    const perNight = (listing.extra_guest_period || 'night') !== 'stay';
+
+    return changeMoney({
+        oldNightKeys, newNightKeys, paidRate, currentRate,
+        oldChargeableGuests: oldChargeable, newChargeableGuests: newChargeable,
+        extraGuestFee: Number(listing.extra_guest_fee || 0), perNightGuestFee: perNight,
+        oldPets: Number(booking.pets || 0), newPets: Number(input.newPets) || 0,
+        petFee: Number(listing.pet_fee || 0),
+        oldTotal: Math.round(Number(booking.total_price || 0) * 100) / 100,
+    });
 }

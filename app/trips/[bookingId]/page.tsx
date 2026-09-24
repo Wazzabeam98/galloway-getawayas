@@ -579,6 +579,9 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                         {isBooker && booking.status === 'confirmed' && String(booking.check_out).slice(0, 10) >= todayIso && (
                                             <RequestChangeRow
                                                 bookingId={booking.id}
+                                                listingId={booking.listing_id}
+                                                listingTitle={listing?.title || 'your stay'}
+                                                listingImage={hero}
                                                 hostFirst={hostFirstName}
                                                 checkIn={String(booking.check_in).slice(0, 10)}
                                                 checkOut={String(booking.check_out).slice(0, 10)}

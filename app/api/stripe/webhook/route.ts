@@ -17,6 +17,7 @@ import { issueRefunds } from '@/lib/refundSpread';
 import { round2 } from '@/lib/resolutions';
 import { applyBookingChange } from '@/lib/applyBookingChange';
 import { topUpHostForIncrease } from '@/lib/changePayout';
+import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 
 export const dynamic = 'force-dynamic';
 
@@ -450,30 +451,36 @@ export async function POST(request: Request) {
                         if (!applied.ok) {
                             // The guest paid but the new dates are gone. Refund the
                             // extra and leave the booking on its original stay.
+                            // Refund THIS CHANGE'S OWN charge in full — not the
+                            // original booking charges. The guest paid the extra on
+                            // a separate payment intent that was never folded into
+                            // amount_paid (the apply never happened), so the money
+                            // to give back is exactly that intent, and the booking's
+                            // paid/refunded figures are left untouched.
                             try {
-                                await issueRefunds(
-                                    booking, delta,
-                                    { booking_id: chg.booking_id, reason: 'booking_change_reverted', initiated_by: 'system' },
-                                    (intentId: string) => 'booking-change-revert-' + chg.id + '-' + intentId,
-                                );
-                                await admin.from('payments').insert({
-                                    booking_id: chg.booking_id, kind: 'refund', amount: delta, status: 'succeeded',
-                                    stripe_payment_intent_id: changePi,
-                                });
-                                await admin.rpc('record_booking_refund', { p_booking: chg.booking_id, p_amount: delta });
+                                if (changePi) {
+                                    await stripeRequest('POST', '/refunds', {
+                                        payment_intent: changePi,
+                                        metadata: { booking_id: chg.booking_id, change_id: chg.id, reason: 'booking_change_reverted', initiated_by: 'system' },
+                                    }, 'booking-change-revert-' + chg.id);
+                                    await admin.from('payments').insert({
+                                        booking_id: chg.booking_id, kind: 'refund', amount: delta, status: 'succeeded',
+                                        stripe_payment_intent_id: changePi,
+                                    });
+                                }
                             } catch (revErr) {
-                                await logError('[webhook] booking_change: dates taken while paying AND the refund failed — reconcile at Stripe', revErr, { path: 'stripe/webhook' });
+                                await logError('[webhook] booking_change: the booking was gone AND refunding the change payment failed — reconcile at Stripe', revErr, { path: 'stripe/webhook' });
                             }
                             await admin.from('booking_change_requests').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', chg.id);
                             try {
                                 const { data: gu } = await admin.auth.admin.getUserById(chg.guest_id);
                                 const ge = (gu && gu.user && gu.user.email) || '';
-                                if (ge) await sendEmail(ge, 'Those dates went — you’ve been refunded', emailLayout(
-                                    '<p style="margin:0 0 16px;font-size:16px;">We’re sorry — the new dates were taken in the moments while you were paying, so the change could not be made. Your booking is unchanged and the <strong>£' + delta.toFixed(2) + '</strong> has been sent back to your card.</p>'
+                                if (ge) await sendEmail(ge, 'Your change couldn’t be made — you’ve been refunded', emailLayout(
+                                    '<p style="margin:0 0 16px;font-size:16px;">We’re sorry — the change couldn’t be made (the booking or those dates were no longer available while you were paying), so the <strong>£' + delta.toFixed(2) + '</strong> you just paid has been sent straight back to your card.</p>'
                                     + button(SITE_URL + '/trips', 'View your trip'),
                                     'You’re receiving this because you have a booking with Galloway Getaways.'));
                             } catch { /* email best effort */ }
-                            return NextResponse.json({ ok: true, oversold: true });
+                            return NextResponse.json({ ok: true, reverted: true });
                         }
                         // Applied. Record the extra payment and fold it into the
                         // booking's paid/balance figures.
@@ -1003,6 +1010,9 @@ export async function POST(request: Request) {
                             stripe_payment_intent_id: cs.payment_intent,
                         })
                         .eq('id', bookingId);
+
+                    // An oversold stay is off, so close anything still open against it.
+                    await closeOpenBookingRequests(admin, bookingId);
 
                     const guestId = booking && booking.guest_id;
                     const { data: guestUser } = guestId

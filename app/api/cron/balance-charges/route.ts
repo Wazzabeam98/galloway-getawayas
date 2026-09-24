@@ -4,6 +4,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { refundDue } from '@/lib/cancellation';
 import { londonDayKey } from '@/lib/dayKey';
 import { logError } from '@/lib/logError';
+import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 import {
     sendEmail,
     emailLayout,
@@ -190,6 +191,9 @@ export async function GET(request: Request) {
                         cancelled_by_role: 'system',
                     })
                     .eq('id', booking.id);
+
+                // The stay is off, so close anything still open against it.
+                await closeOpenBookingRequests(admin, booking.id);
 
                 const guestEmail = await emailFor(admin, booking.guest_id);
                 if (guestEmail) {

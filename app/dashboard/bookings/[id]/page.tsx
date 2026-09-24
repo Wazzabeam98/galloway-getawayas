@@ -622,6 +622,9 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             pets={Number(booking.pets || 0)}
                             maxGuests={Number(listing?.max_guests || 1)}
                             petsAllowed={Array.isArray(listing?.amenities) && listing!.amenities.indexOf('Pets allowed') !== -1}
+                            listingId={booking.listing_id}
+                            listingTitle={listing?.title || 'your stay'}
+                            listingImage={hero}
                         />
 
                         {/* Booking details — the confirmation code (derived from the

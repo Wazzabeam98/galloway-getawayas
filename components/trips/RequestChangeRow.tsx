@@ -8,9 +8,12 @@ import ChangeReservationFlow from '@/components/dashboard/reservation/ChangeRese
 // the guest's role, so the guest can propose new dates or guests and the host
 // approves. Nothing moves until the host agrees.
 export default function RequestChangeRow({
-    bookingId, hostFirst, checkIn, checkOut, adults, childrenCount, pets, maxGuests, petsAllowed, className,
+    bookingId, listingId, listingTitle, listingImage, hostFirst, checkIn, checkOut, adults, childrenCount, pets, maxGuests, petsAllowed, className,
 }: {
     bookingId: string;
+    listingId: string;
+    listingTitle: string;
+    listingImage: string | null;
     hostFirst: string;
     checkIn: string;
     checkOut: string;
@@ -38,6 +41,9 @@ export default function RequestChangeRow({
                         </div>
                         <ChangeReservationFlow
                             bookingId={bookingId}
+                            listingId={listingId}
+                            listingTitle={listingTitle}
+                            listingImage={listingImage}
                             role="guest"
                             counterpartyName={hostFirst}
                             checkIn={checkIn}

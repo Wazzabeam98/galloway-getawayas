@@ -3,8 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
-import { changeDelta, round2 } from '@/lib/bookingChange';
-import { quoteChangeTotal } from '@/lib/quoteChange';
+import { quoteChangeMoney } from '@/lib/quoteChange';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,22 +22,21 @@ export async function POST(request: Request) {
 
         const admin = adminClient();
         const { data: booking } = await admin
-            .from('bookings').select('id, listing_id, guest_id, total_price').eq('id', bookingId).maybeSingle();
+            .from('bookings').select('id, listing_id, guest_id, check_in, check_out, guests, pets, total_price, nightly_breakdown').eq('id', bookingId).maybeSingle();
         if (!booking) return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
 
         const isGuest = booking.guest_id === user.id;
         const isHost = isGuest ? false : !!(await checkListing(user.id, booking.listing_id, 'can_bookings'));
         if (!isGuest && !isHost) return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
 
-        const total = await quoteChangeTotal(admin, {
-            listingId: booking.listing_id,
+        const { delta, newTotal } = await quoteChangeMoney(admin, booking as any, {
             newCheckIn: String((body && body.checkIn) || ''),
             newCheckOut: String((body && body.checkOut) || ''),
             newGuests: Math.trunc(Number(body && body.guests)),
             newChildren: Math.trunc(Number(body && body.children) || 0),
             newPets: Math.trunc(Number(body && body.pets) || 0),
         });
-        return NextResponse.json({ ok: true, total, delta: changeDelta(round2(Number(booking.total_price || 0)), total) });
+        return NextResponse.json({ ok: true, total: newTotal, delta });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not price that.' }, { status: 500 });
     }

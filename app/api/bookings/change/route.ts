@@ -6,8 +6,8 @@ import { checkListing } from '@/lib/access';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { londonDayKey } from '@/lib/dayKey';
-import { changeDelta, validateChange, round2, whoAnswers, type StaySnapshot } from '@/lib/bookingChange';
-import { quoteChangeTotal } from '@/lib/quoteChange';
+import { validateChange, round2, whoAnswers, type StaySnapshot } from '@/lib/bookingChange';
+import { quoteChangeMoney } from '@/lib/quoteChange';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
         const admin = adminClient();
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, children, pets, total_price, status')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, children, pets, total_price, status, nightly_breakdown')
             .eq('id', bookingId)
             .maybeSingle();
         if (!booking) return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
@@ -69,9 +69,10 @@ export async function POST(request: Request) {
             total: round2(Number(booking.total_price || 0)),
         };
 
-        // Re-price the proposed stay from the listing's rates — never the client.
-        const newTotal = await quoteChangeTotal(admin, {
-            listingId: booking.listing_id,
+        // Price the change as a DIFF against what was booked — kept nights keep
+        // their paid price, added nights at today's rate, removed nights refunded
+        // at what was paid (lib/changeMoney). Never the client's number.
+        const { delta, newTotal } = await quoteChangeMoney(admin, booking as any, {
             newCheckIn: wantCheckIn, newCheckOut: wantCheckOut,
             newGuests: wantGuests, newChildren: wantChildren, newPets: wantPets,
         });
@@ -82,8 +83,6 @@ export async function POST(request: Request) {
 
         const check = validateChange(oldStay, next, { maxGuests: Number(listing?.max_guests || 1), petsAllowed }, londonDayKey());
         if (!check.ok) return NextResponse.json({ ok: false, error: check.error }, { status: 400 });
-
-        const delta = changeDelta(oldStay.total, next.total);
 
         // One open change at a time (partial unique index enforces it too).
         const { data: existing } = await admin

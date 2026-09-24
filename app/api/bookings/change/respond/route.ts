@@ -183,7 +183,14 @@ export async function POST(request: Request) {
 // is rewritten by the webhook once it clears. Reusing the one session means a
 // double-click can only ever make one payment.
 async function guestCheckout(admin: any, chg: any, guestEmail: string, delta: number) {
-    const { data: listing } = await admin.from('bookings').select('listing_id').eq('id', chg.booking_id).maybeSingle();
+    // Re-read the booking at checkout time: never take a payment for a change on
+    // a booking that has been cancelled or declined out from under it.
+    const { data: bk } = await admin.from('bookings').select('listing_id, status').eq('id', chg.booking_id).maybeSingle();
+    if (!bk || (bk.status !== 'confirmed' && bk.status !== 'pending')) {
+        await admin.from('booking_change_requests').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', chg.id).in('status', ['pending', 'awaiting_guest_payment']);
+        return NextResponse.json({ ok: false, error: 'This booking is no longer active, so the change can’t be paid for.' }, { status: 409 });
+    }
+    const listing = bk;
     const { data: title } = listing ? await admin.from('listings').select('title').eq('id', listing.listing_id).maybeSingle() : { data: null };
     const stayName = (title && title.title) || 'your stay';
     try {

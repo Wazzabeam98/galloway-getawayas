@@ -37,6 +37,9 @@ export default function ManageReservationSheet({
     pets,
     maxGuests,
     petsAllowed,
+    listingId,
+    listingTitle,
+    listingImage,
 }: {
     bookingId: string;
     status: string;
@@ -56,6 +59,9 @@ export default function ManageReservationSheet({
     pets: number;
     maxGuests: number;
     petsAllowed: boolean;
+    listingId: string;
+    listingTitle: string;
+    listingImage: string | null;
 }) {
     const [open, setOpen] = useState(false);
     const [view, setView] = useState<View>('menu');
@@ -121,6 +127,9 @@ export default function ManageReservationSheet({
             {view === 'change' && (
                 <ChangeReservationFlow
                     bookingId={bookingId}
+                    listingId={listingId}
+                    listingTitle={listingTitle}
+                    listingImage={listingImage}
                     role="host"
                     counterpartyName={guestFirst}
                     checkIn={checkIn}
