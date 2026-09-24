@@ -19,6 +19,10 @@ export interface MoneyCardsData {
     showMoney: boolean;
     // Headline figures for the three cards.
     youGet: string;
+    // The working behind "You get", shown on the card itself — e.g.
+    // "Guest paid £480 − our 10% fee £48 = £432" — using the booking's stamped
+    // commission rate. Reconciles exactly to youGet.
+    youGetWorking?: string;
     paidSoFar: string;
     ofTotal: string;
     payoutHeadline: string;
@@ -41,8 +45,8 @@ function Rows({ rows }: { rows: MoneyDetailRow[] }) {
     );
 }
 
-function StatCard({ label, value, sub, title, description, rows }: {
-    label: string; value: string; sub?: string; title: string; description?: string; rows: MoneyDetailRow[];
+function StatCard({ label, value, sub, working, title, description, rows }: {
+    label: string; value: string; sub?: string; working?: string; title: string; description?: string; rows: MoneyDetailRow[];
 }) {
     return (
         <Modal
@@ -55,6 +59,7 @@ function StatCard({ label, value, sub, title, description, rows }: {
                         <ChevronRight className="h-4 w-4 text-slate-300" />
                     </span>
                     <span className="mt-1 text-lg font-semibold text-slate-900">{value}</span>
+                    {working && <span className="mt-0.5 text-[13px] leading-snug text-slate-500">{working}</span>}
                     {sub && <span className="text-[13px] text-slate-500">{sub}</span>}
                 </button>
             }
@@ -80,29 +85,35 @@ export default function MoneyCards(props: MoneyCardsData) {
     }
 
     return (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-3">
+            {/* "You get" runs full width so the working — Guest paid − our fee =
+                what you get — sits on one line rather than being squeezed into a
+                third of the column. */}
             <StatCard
                 label="You get"
                 value={props.youGet}
+                working={props.youGetWorking}
                 title="What you’ll be paid"
                 description="From the guest’s total, after our fee and anything owed."
                 rows={props.earningRows}
             />
-            <StatCard
-                label="Paid so far"
-                value={props.paidSoFar}
-                sub={props.ofTotal}
-                title="Payment"
-                description="How the guest is paying, and where cancellation stands."
-                rows={props.paymentRows}
-            />
-            <StatCard
-                label="Payout"
-                value={props.payoutHeadline}
-                title="Your payout"
-                description="When the money reaches your bank."
-                rows={props.payoutRows}
-            />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <StatCard
+                    label="Paid so far"
+                    value={props.paidSoFar}
+                    sub={props.ofTotal}
+                    title="Payment"
+                    description="How the guest is paying, and where cancellation stands."
+                    rows={props.paymentRows}
+                />
+                <StatCard
+                    label="Payout"
+                    value={props.payoutHeadline}
+                    title="Your payout"
+                    description="When the money reaches your bank."
+                    rows={props.payoutRows}
+                />
+            </div>
         </div>
     );
 }

@@ -163,6 +163,13 @@ export default async function BookingDetail({ params }: { params: { id: string }
         .order('created_at', { ascending: true });
     const hostNotes = noteRows || [];
 
+    // The guest's own note or request on this booking, shown read-only in the
+    // guest's words. A stay doesn't capture one today (the bookings table has no
+    // such column), so this is null and the box stays hidden; an experience order
+    // keeps the guest's words in service_orders.note and shows them the same way.
+    // Kept here so the box appears the day a stay does capture one.
+    const guestNote: string | null = null;
+
     // An open change request on this booking, so the host can find and act on a
     // guest's request (or see the state of their own proposal).
     const { data: openChange } = await admin
@@ -186,6 +193,13 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const outstanding = Math.round((total - paid) * 100) / 100;
     const grossDue = Math.round((total - refunded) * 100) / 100;
     const yours = netOfFee(grossDue > 0 ? grossDue : 0, rate);
+    // The working shown on the "You get" card, using the booking's stamped
+    // commission rate: "Guest paid £480 − our 10% fee £48 = £432". Base and fee
+    // reconcile exactly to `yours`, so the line can never disagree with the
+    // headline figure above it.
+    const youGetBase = grossDue > 0 ? grossDue : 0;
+    const youGetFee = round2(youGetBase - yours);
+    const youGetWorking = 'Guest paid ' + money(youGetBase) + ' − our ' + rate + '% fee ' + money(youGetFee) + ' = ' + money(yours);
 
     // A stay pays out the day after check-in.
     const paysOn = dateFromKey(booking.check_in);
@@ -298,7 +312,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
             .gte('check_in', todayKey)
             .neq('id', booking.id)
             .order('check_in', { ascending: true })
-            .limit(6)
+            .limit(20)
         : { data: [] };
     const upcoming = upcomingRows || [];
     const upListingIds = Array.from(new Set(upcoming.map((b: any) => b.listing_id)));
@@ -438,6 +452,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const moneyProps: MoneyCardsData = {
         showMoney,
         youGet: money(yours),
+        youGetWorking,
         paidSoFar: money(paid),
         ofTotal: 'of ' + money(total),
         payoutHeadline,
@@ -453,7 +468,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     return (
         <div className="min-h-[calc(100dvh-81px)] bg-slate-50">
-            <div className="mx-auto max-w-[880px] px-4 sm:px-6 py-6">
+            <div className="mx-auto max-w-[1200px] px-4 sm:px-6 py-6">
                 <Link
                     href="/dashboard/bookings"
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
@@ -467,13 +482,13 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     cards on the right. On a phone the two stack — the booking first
                     (that is what you opened), the list beneath — so the order classes
                     only re-sort the columns at lg. */}
-                <div className="mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[280px_minmax(0,480px)] lg:gap-10 lg:items-start">
+                <div className="mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[300px_minmax(0,540px)] lg:gap-x-24 lg:gap-y-6 lg:items-start">
                     {/* ---- MAIN COLUMN — the booking, in full. Second on desktop
                         (the narrow right-hand column), first on a phone. ---- */}
                     <div className="min-w-0 space-y-6 lg:order-2">
                         {/* Hero: the property photo, the title, the status pill,
                             the nights line and — for anyone allowed the takings —
-                            the total for the stay (item 8). */}
+                            the total for the stay. */}
                         <div>
                             {hero && (
                                 // eslint-disable-next-line @next/next/no-img-element
@@ -501,29 +516,12 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             )}
                         </div>
 
-                        {/* Door code — for anyone with the listing permission
-                            (item 2). Read server-side only when can_listing, so a
-                            co-host without it never receives the code. Editable on
-                            an upcoming booking: the edit sets an override for this
-                            booking only, without changing the property's code. */}
-                        {access.can_listing && (
-                            <EditableDoorCode
-                                bookingId={booking.id}
-                                code={doorCode}
-                                hasOverride={!!doorCodeOverride}
-                                listingCode={listingCode}
-                                editable={!closed && !ended}
-                            />
-                        )}
+                        {/* The booking column, top to bottom: the dates first, then
+                            who's going, then the door code, then the money and the
+                            rest, with the notes at the very bottom. */}
 
-                        {/* Private host notes — visible to anyone who manages the
-                            booking (can_bookings), never the guest (item 3). The
-                            note is walled at the database and saved through its own
-                            can_bookings-checked route. */}
-                        <HostNotes bookingId={booking.id} notes={hostNotes} />
-
-                        {/* Check-in / Check-out — two raised cards, the lifted-card
-                            treatment reserved for surfaces you act on (item 4). */}
+                        {/* 1 — Check-in / Check-out: two raised cards, the lifted-card
+                            treatment reserved for surfaces you act on. */}
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             {([
                                 { label: 'Check-in', date: booking.check_in, time: timeLabel(listing?.check_in_time), end: timeLabel(listing?.check_in_end_time) },
@@ -542,10 +540,10 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             ))}
                         </div>
 
-                        {/* Who's going — the guest and the party (pets included),
-                            item 5. Their phone number lives in Manage reservation
-                            (with a copy button, close to arrival only), so it isn't
-                            repeated here; messaging is the floating button. */}
+                        {/* 2 — Who's going: the guest and the party (pets included).
+                            Their phone number lives in Manage reservation (with a copy
+                            button, close to arrival only), so it isn't repeated here;
+                            messaging is the sticky button at the foot of this column. */}
                         <section className="border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Who’s going</h2>
                             <div className="mt-3 flex items-start gap-3">
@@ -557,9 +555,30 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             </div>
                         </section>
 
+                        {/* 3 — Door code: for anyone with the listing permission. Read
+                            server-side only when can_listing, so a co-host without it
+                            never receives the code. Editable on an upcoming booking:
+                            the edit sets an override for this booking only, without
+                            changing the property's code. */}
+                        {access.can_listing && (
+                            <EditableDoorCode
+                                bookingId={booking.id}
+                                code={doorCode}
+                                hasOverride={!!doorCodeOverride}
+                                listingCode={listingCode}
+                                editable={!closed && !ended}
+                            />
+                        )}
+
+                        {/* 4 — Money and the rest. Money & Payment as three compact
+                            cards — You get (with the working), Paid so far, Payout —
+                            each opening its full detail in the page's pop-up, gated on
+                            can_earnings. */}
+                        <MoneyCards {...moneyProps} />
+
                         {/* Hosted by — whose property this is. On the owner's own
                             screen it names them; for a co-host it names the person
-                            they look after it for (item 6). */}
+                            they look after it for. */}
                         <section className="border-t border-slate-200 pt-6">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -578,21 +597,15 @@ export default async function BookingDetail({ params }: { params: { id: string }
                         </section>
 
                         {/* Cancellation policy — a small card showing just the tier
-                            name; tapping opens the full policy in the page's pop-up
-                            (item 7). */}
+                            name; tapping opens the full policy in the page's pop-up. */}
                         {(() => {
                             const words = cancellationWords(listing?.cancellation_policy);
                             return <CancellationPolicyCard tier={words.tier} summary={words.summary} />;
                         })()}
 
-                        {/* Money & Payment merged into three compact cards — You
-                            get, Paid so far, Payout — each opening its full detail in
-                            the page's pop-up, gated on can_earnings (item 8). */}
-                        <MoneyCards {...moneyProps} />
-
                         {/* Manage reservation — a single row with a pencil that opens
                             the action pop-up: change, send/request money, dispute,
-                            the guest's phone, ask to cancel, cancel (item 9). */}
+                            the guest's phone, ask to cancel, cancel. */}
                         {openChange && (
                             <a href={`/reservations/change/${openChange.id}`} className="mb-3 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left transition hover:border-emerald-300">
                                 <span className="flex-1 text-sm font-semibold text-emerald-900">
@@ -628,8 +641,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
                         />
 
                         {/* Booking details — the confirmation code (derived from the
-                            id, no new column) and the day the booking was made
-                            (items 10 and 11). */}
+                            id, no new column) and the day the booking was made. */}
                         <section className="border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Booking details</h2>
                             <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">
@@ -645,6 +657,31 @@ export default async function BookingDetail({ params }: { params: { id: string }
                                 )}
                             </div>
                         </section>
+
+                        {/* 5 — Notes, at the very bottom. The guest's own note or
+                            request first, read-only and plainly theirs (a stay does
+                            not capture one yet, so it is usually absent); then your
+                            own private notes, add-only, that only you can see. */}
+                        {guestNote && (
+                            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">In the guest’s words</div>
+                                <p className="mt-1 whitespace-pre-line text-sm text-amber-950">{guestNote}</p>
+                            </div>
+                        )}
+                        <HostNotes bookingId={booking.id} notes={hostNotes} />
+
+                        {/* Message the guest — replaces the floating button. It lives
+                            in the booking column, centred, and sticks to the bottom of
+                            the viewport so it stays in reach however far you scroll. */}
+                        <div className="sticky bottom-4 z-30 flex justify-center pt-2">
+                            <Link
+                                href={'/messages?b=' + booking.id}
+                                className="inline-flex items-center gap-2 rounded-full bg-emerald-700 px-6 py-3.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(4,120,87,0.35)] transition hover:bg-emerald-800"
+                            >
+                                <MessageSquare className="h-4 w-4" />
+                                Message {firstName}
+                            </Link>
+                        </div>
                     </div>
 
                     {/* ---- RESERVATIONS RAIL — the host's next arrivals, run down the
@@ -652,15 +689,18 @@ export default async function BookingDetail({ params }: { params: { id: string }
                         below the booking on a phone (item 1). A sticky list, the way
                         Airbnb keeps every other reservation one click away. ---- */}
                     <aside className="lg:order-1 lg:sticky lg:top-24">
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                            <div className="flex items-center gap-2 text-slate-900">
+                        {/* The list runs the height of the page and scrolls inside
+                            itself, so more of the host's arrivals are in view at once
+                            without the card growing past the screen. */}
+                        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)] lg:h-[calc(100dvh-140px)]">
+                            <div className="flex flex-none items-center gap-2 text-slate-900">
                                 <CalendarDays className="h-4 w-4 flex-none text-slate-400" />
                                 <span className="text-sm font-semibold">Upcoming reservations</span>
                             </div>
                             {upcoming.length === 0 ? (
                                 <p className="mt-3 text-sm text-slate-500">Nothing else is coming up just now.</p>
                             ) : (
-                                <ul className="mt-3 divide-y divide-slate-100">
+                                <ul className="mt-3 divide-y divide-slate-100 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                                     {upcoming.map((b: any) => {
                                         const l = upListingMap[b.listing_id];
                                         const daysTo = Math.round((dateFromKey(b.check_in).getTime() - dateFromKey(todayKey).getTime()) / 86400000);
@@ -691,18 +731,6 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     </aside>
                 </div>
             </div>
-
-            {/* Floating Message button — the one persistent way to reach the guest,
-                pinned bottom-right over the whole page the way Airbnb keeps its
-                message action within reach whatever you have scrolled to. Emerald,
-                the primary-action colour of the card family. */}
-            <Link
-                href={'/messages?b=' + booking.id}
-                className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 rounded-full bg-emerald-700 px-5 py-3.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(4,120,87,0.35)] transition hover:bg-emerald-800"
-            >
-                <MessageSquare className="h-4 w-4" />
-                Message {firstName}
-            </Link>
         </div>
     );
 }
