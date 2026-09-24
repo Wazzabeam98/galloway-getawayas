@@ -11,6 +11,7 @@ import { seatConfig } from '@/lib/serviceSlots';
 import Link from 'next/link';
 import { orderReference, orderNet } from '@/lib/serviceOrders';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from '@/components/services/editorControls';
+import OrderHostNotes from '@/components/services/OrderHostNotes';
 
 interface Order {
     id: string; status: string; service_date: string; service_time: string | null; shape: string;
@@ -325,10 +326,14 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
 
                     {o.note ? (
                         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">From the guest</p>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">In the guest’s words</p>
                             <p className="mt-1 whitespace-pre-line text-sm text-amber-900">{o.note}</p>
                         </div>
                     ) : null}
+
+                    {/* The provider's OWN private note on this order — separate from
+                        the guest's note above and never shown to the guest. */}
+                    <OrderHostNotes orderId={o.id} />
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
