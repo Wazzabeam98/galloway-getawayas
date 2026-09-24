@@ -257,29 +257,28 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     let hostAvatar: string | null = null;
     let hostSinceYear: number | null = null;
     let hostBio: string | null = null;
-    // Stripe has been through this host's identity documents. It is a check on
-    // the person, not on the property, and the badge below says so.
+    // The host block is read through the SERVICE ROLE, not the visitor's client.
     //
-    // TWO READS, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
+    // The name columns (full_name, preferred_name, show_full_name) are no longer
+    // readable by the anon role: a logged-out REST caller must never be able to
+    // pull a person's legal surname off /rest/v1/profiles (revoked in
+    // 20260924174233_profiles_revoke_anon_name.sql). show_full_name was only ever
+    // a render-layer curtain — the grant was the real gate. So the display name is
+    // resolved server-side here and only the FIRST name is ever sent to the
+    // browser (see hostFirstName below); the surname stays on the server.
     //
-    // The name and the avatar are what a stranger is meant to see, and they
-    // come back as the visitor — most people here are signed out.
-    //
-    // `stripe_payouts_enabled` is not. It says only "this host can be paid",
-    // which is mild on its own, but it tells anyone reading which hosts are
-    // NOT set up to take money, and one Stripe column left public is the
-    // exception that gets forgotten and later extended. It is revoked from
-    // both browser roles by 20260828230825_profiles_private_columns.sql, so it
-    // is read here through the service role — this is a server component, so
-    // that costs a query and nothing else, and the flag never leaves the
-    // server except as the boolean below.
+    // stripe_payouts_enabled is service-role-only for its own reasons (it says
+    // which hosts are NOT set up to take money; revoked from both browser roles by
+    // 20260828230825_profiles_private_columns.sql). Both now come back in one read.
+    // This is a server component, so the service-role query costs nothing extra
+    // and nothing private leaves the server except the booleans/first name below.
     let hostVerified = false;
     if (home?.host_id) {
-        const { data: hostProfile } = await supabase
+        const { data: hostProfile } = await adminClient()
             .from('profiles')
-            .select('full_name, preferred_name, show_full_name, avatar_url, created_at, host_bio')
+            .select('full_name, preferred_name, show_full_name, avatar_url, created_at, host_bio, stripe_payouts_enabled')
             .eq('id', home.host_id)
-            .single();
+            .maybeSingle();
         hostName = displayName(hostProfile, 'Host');
         hostAvatar = hostProfile?.avatar_url || null;
         hostBio = (hostProfile?.host_bio || '').trim() || null;
@@ -290,13 +289,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
             const y = new Date(hostProfile.created_at).getFullYear();
             if (!isNaN(y)) hostSinceYear = y;
         }
-
-        const { data: payoutFlag } = await adminClient()
-            .from('profiles')
-            .select('stripe_payouts_enabled')
-            .eq('id', home.host_id)
-            .maybeSingle();
-        hostVerified = payoutFlag?.stripe_payouts_enabled === true;
+        hostVerified = hostProfile?.stripe_payouts_enabled === true;
     }
 
     // Guests see a first name only — a surname on a public page is more
@@ -383,7 +376,10 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const reviewerIds = Array.from(new Set((reviews || []).map((r) => r.reviewer_id)));
     let reviewerNames: Record<string, string> = {};
     if (reviewerIds.length) {
-        const { data: reviewers } = await supabase.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds);
+        // Service role: the reviewer name columns are no longer anon-readable
+        // (see the host block above). The name is resolved server-side and the
+        // list renders a first name only.
+        const { data: reviewers } = await adminClient().from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds);
         (reviewers || []).forEach((p) => { reviewerNames[p.id] = displayName(p, 'Guest'); });
     }
 
