@@ -13,15 +13,14 @@ import { londonDayKey } from "@/lib/dayKey";
 import { contactNumberVisible, stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from "@/lib/hostDebt";
 import { dateFromKey } from "@/lib/pricing";
-import { confirmationNumber, partyLabel, cancellationWords } from "@/lib/bookingDisplay";
-import HostNotes from "@/components/dashboard/HostNotes";
+import { confirmationNumber, cancellationWords } from "@/lib/bookingDisplay";
 import EditableDoorCode from "@/components/dashboard/reservation/EditableDoorCode";
 import CancellationPolicyCard from "@/components/dashboard/reservation/CancellationPolicyCard";
 import MoneyCards, { type MoneyCardsData, type MoneyDetailRow } from "@/components/dashboard/reservation/MoneyCards";
 import ManageReservationSheet from "@/components/dashboard/reservation/ManageReservationSheet";
 import {
-    ArrowLeft, MessageSquare, CheckCircle2, Clock3, XCircle,
-    CalendarDays, Users, ChevronRight,
+    ArrowLeft, MessageSquare, Phone, CheckCircle2, Clock3, XCircle,
+    ChevronRight,
 } from "lucide-react";
 
 // One booking, in full.
@@ -52,10 +51,6 @@ const PILL: Record<string, string> = {
     over: 'bg-slate-200 text-slate-600',
 };
 
-// One chevron-row token, shared by the reservation-action rows — the same quiet
-// row the guest trip page uses.
-const ROW = 'flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-medium text-slate-800 hover:text-slate-950';
-
 function weekday(dateStr: string): string {
     const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
     return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { weekday: 'long' });
@@ -63,6 +58,11 @@ function weekday(dateStr: string): string {
 function dateLong(dateStr: string): string {
     const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
     return isNaN(d.getTime()) ? String(dateStr) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+// "24 Sep" — the compact day used in the reservations rail's date range.
+function shortDay(dateStr: string): string {
+    const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
+    return isNaN(d.getTime()) ? String(dateStr) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 // "3:00pm" from a stored 'HH:MM[:SS]'. Null in, null out — no invented time.
 function timeLabel(t: string | null | undefined): string | null {
@@ -109,14 +109,28 @@ export default async function BookingDetail({ params }: { params: { id: string }
         .eq('id', booking.listing_id)
         .maybeSingle();
 
+    // The guest's private contact details — phone and email only. Their NAME is
+    // NOT here: for a silent/seed guest account the profile_private name columns
+    // are null and the account name lives on profiles. Reading the name from this
+    // table is exactly why the rail and the "Who's going" line fell back to
+    // "Group of N" and "Guest" — the name was in the other table all along.
     const { data: guest } = await admin
         .from('profile_private')
-        .select('id, full_name, preferred_name, show_full_name, phone, email')
+        .select('id, phone, email')
         .eq('id', booking.guest_id)
         .maybeSingle();
 
-    const guestName = displayName(guest, 'Guest');
+    // Name and avatar from the guest's profile (the account name + picture),
+    // like every other name on the site.
+    const { data: guestProfile } = await admin
+        .from('profiles')
+        .select('id, full_name, preferred_name, show_full_name, avatar_url')
+        .eq('id', booking.guest_id)
+        .maybeSingle();
+
+    const guestName = displayName(guestProfile, 'Guest');
     const firstName = guestName.split(' ')[0] || 'there';
+    const guestAvatar = guestProfile?.avatar_url ? getImageUrl(String(guestProfile.avatar_url)) : null;
 
     // The owner of this listing, for the "Hosted by" line — the person the
     // booking is really with. On the owner's own screen this is themselves; for
@@ -152,23 +166,9 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const doorCodeOverride = access.can_listing ? (overrideRow?.code || null) : null;
     const doorCode = doorCodeOverride || listingCode;
 
-    // The host's private notes — their own table with no browser grants, so the
-    // guest can never read them. An append-only log: read every entry in order.
-    // Anyone who can manage the booking (can_bookings, already checked) may see
-    // them and add more.
-    const { data: noteRows } = await admin
-        .from('booking_host_notes')
-        .select('host_note, created_at')
-        .eq('booking_id', booking.id)
-        .order('created_at', { ascending: true });
-    const hostNotes = noteRows || [];
-
-    // The guest's own note or request on this booking, shown read-only in the
-    // guest's words. A stay doesn't capture one today (the bookings table has no
-    // such column), so this is null and the box stays hidden; an experience order
-    // keeps the guest's words in service_orders.note and shows them the same way.
-    // Kept here so the box appears the day a stay does capture one.
-    const guestNote: string | null = null;
+    // The host's private notes box has been removed from this page. The table
+    // (booking_host_notes) and its route are kept — the notes and their data are
+    // untouched — so it isn't read here any more.
 
     // An open change request on this booking, so the host can find and act on a
     // guest's request (or see the state of their own proposal).
@@ -289,7 +289,12 @@ export default async function BookingDetail({ params }: { params: { id: string }
     if (booking.pets) partyBits.push(booking.pets + (Number(booking.pets) === 1 ? ' pet' : ' pets'));
     // "3 adults · 1 child · 1 pet", pets included — the same phrasing the guest
     // trip card uses, so the two never disagree about who's on a stay.
-    const whoText = partyLabel(booking) || ((partySize || booking.guests) + ' guests');
+    // The Guests card's second line, Airbnb-style: the party beyond the lead
+    // guest, then the make-up — e.g. "+2 · 1 adult, 1 pet". With no one beyond the
+    // lead it is just the make-up.
+    const partyBreakdown = partyBits.join(', ');
+    const extraPeople = Math.max(0, (partySize || Number(booking.guests || 1)) - 1);
+    const guestsCardRow = (extraPeople > 0 ? '+' + extraPeople + ' · ' : '') + (partyBreakdown || (partySize || booking.guests) + ' guests');
 
     // The confirmation code and the day the booking was made — both derived from
     // the row already in memory (the code from the id, so there is no new
@@ -320,8 +325,13 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const { data: upListings } = upListingIds.length
         ? await admin.from('listings').select('id, title, images').in('id', upListingIds)
         : { data: [] };
+    // Names and avatars come from profiles, not profile_private: the account name
+    // (and picture) lives there, while profile_private holds only contact details
+    // and, for a silent/seed guest, no name at all. Reading the name from
+    // profile_private is what made every row say "Group of N" instead of the
+    // guest's first name.
     const { data: upGuests } = upGuestIds.length
-        ? await admin.from('profile_private').select('id, full_name, preferred_name, show_full_name').in('id', upGuestIds)
+        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url').in('id', upGuestIds)
         : { data: [] };
     const upListingMap: Record<string, { title: string; image: string | null }> = {};
     (upListings || []).forEach((l: any) => {
@@ -334,9 +344,11 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // full name publicly, so this reads the stored name directly rather than
     // through displayName's public (show_full_name) gate.
     const upGuestFirst: Record<string, string | null> = {};
+    const upGuestAvatar: Record<string, string | null> = {};
     (upGuests || []).forEach((g: any) => {
         const held = String(g.preferred_name || g.full_name || '').trim();
         upGuestFirst[g.id] = held ? (held.split(/\s+/)[0] || null) : null;
+        upGuestAvatar[g.id] = g.avatar_url ? getImageUrl(String(g.avatar_url)) : null;
     });
     // "Sara's group of 4" — the guest's first name and the party size (people,
     // pets aside). The list says who is coming and how many, at a glance.
@@ -477,15 +489,15 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     All bookings
                 </Link>
 
-                {/* Airbnb's host shape: the reservations list runs down the left as a
-                    sticky rail, and the one booking reads as a single narrow column of
-                    cards on the right. On a phone the two stack — the booking first
-                    (that is what you opened), the list beneath — so the order classes
-                    only re-sort the columns at lg. */}
-                <div className="mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[300px_minmax(0,540px)] lg:gap-x-24 lg:gap-y-6 lg:items-start">
+                {/* Airbnb's host shape: a full-height reservations panel runs down the
+                    left, divided from the rest by a thin rule (not a floating card), and
+                    the one booking sits centred in the space beside it. On a phone the
+                    two stack — the booking first (that is what you opened), the list
+                    beneath — so the order classes only re-sort the columns at lg. */}
+                <div className="mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[320px_1fr] lg:gap-x-12 lg:items-start">
                     {/* ---- MAIN COLUMN — the booking, in full. Second on desktop
-                        (the narrow right-hand column), first on a phone. ---- */}
-                    <div className="min-w-0 space-y-6 lg:order-2">
+                        (centred in the space beside the rail), first on a phone. ---- */}
+                    <div className="min-w-0 space-y-6 lg:order-2 lg:mx-auto lg:w-full lg:max-w-[560px]">
                         {/* Hero: the property photo, the title, the status pill,
                             the nights line and — for anyone allowed the takings —
                             the total for the stay. */}
@@ -516,9 +528,10 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             )}
                         </div>
 
-                        {/* The booking column, top to bottom: the dates first, then
-                            who's going, then the door code, then the money and the
-                            rest, with the notes at the very bottom. */}
+                        {/* The booking column matches the guest trip card and Airbnb's
+                            host view, top to bottom: the dates, the door code, hosted
+                            by, then who's going as a Guests card, then the cancellation
+                            policy, the money cards and the rest. */}
 
                         {/* 1 — Check-in / Check-out: two raised cards, the lifted-card
                             treatment reserved for surfaces you act on. */}
@@ -540,22 +553,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             ))}
                         </div>
 
-                        {/* 2 — Who's going: the guest and the party (pets included).
-                            Their phone number lives in Manage reservation (with a copy
-                            button, close to arrival only), so it isn't repeated here;
-                            messaging is the sticky button at the foot of this column. */}
-                        <section className="border-t border-slate-200 pt-6">
-                            <h2 className="text-lg font-semibold text-slate-900">Who’s going</h2>
-                            <div className="mt-3 flex items-start gap-3">
-                                <Users className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
-                                <div className="min-w-0 text-sm">
-                                    <div className="font-medium text-slate-900">{guestName}</div>
-                                    <div className="text-slate-500">{whoText}</div>
-                                </div>
-                            </div>
-                        </section>
-
-                        {/* 3 — Door code: for anyone with the listing permission. Read
+                        {/* 2 — Door code: for anyone with the listing permission. Read
                             server-side only when can_listing, so a co-host without it
                             never receives the code. Editable on an upcoming booking:
                             the edit sets an override for this booking only, without
@@ -570,13 +568,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             />
                         )}
 
-                        {/* 4 — Money and the rest. Money & Payment as three compact
-                            cards — You get (with the working), Paid so far, Payout —
-                            each opening its full detail in the page's pop-up, gated on
-                            can_earnings. */}
-                        <MoneyCards {...moneyProps} />
-
-                        {/* Hosted by — whose property this is. On the owner's own
+                        {/* 3 — Hosted by — whose property this is. On the owner's own
                             screen it names them; for a co-host it names the person
                             they look after it for. */}
                         <section className="border-t border-slate-200 pt-6">
@@ -596,12 +588,37 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             </div>
                         </section>
 
-                        {/* Cancellation policy — a small card showing just the tier
+                        {/* 4 — Who's going, as a Guests card in the card family: the
+                            lead guest's avatar (initial-letter fallback) and name, with
+                            the party beneath — "+2 · 1 adult, 1 pet". */}
+                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Guests</div>
+                            <div className="mt-3 flex items-center gap-3">
+                                {guestAvatar ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={guestAvatar} alt={guestName} className="h-11 w-11 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                ) : (
+                                    <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{firstName.slice(0, 1).toUpperCase()}</span>
+                                )}
+                                <div className="min-w-0">
+                                    <div className="truncate text-base font-semibold text-slate-900">{guestName}</div>
+                                    <div className="text-[13px] text-slate-500">{guestsCardRow}</div>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* 5 — Cancellation policy — a small card showing just the tier
                             name; tapping opens the full policy in the page's pop-up. */}
                         {(() => {
                             const words = cancellationWords(listing?.cancellation_policy);
                             return <CancellationPolicyCard tier={words.tier} summary={words.summary} />;
                         })()}
+
+                        {/* 6 — Money and the rest. Money & Payment as three compact
+                            cards — You get (with the working), Paid so far, Payout —
+                            each opening its full detail in the page's pop-up, gated on
+                            can_earnings. */}
+                        <MoneyCards {...moneyProps} />
 
                         {/* Manage reservation — a single row with a pencil that opens
                             the action pop-up: change, send/request money, dispute,
@@ -658,22 +675,12 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             </div>
                         </section>
 
-                        {/* 5 — Notes, at the very bottom. The guest's own note or
-                            request first, read-only and plainly theirs (a stay does
-                            not capture one yet, so it is usually absent); then your
-                            own private notes, add-only, that only you can see. */}
-                        {guestNote && (
-                            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
-                                <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">In the guest’s words</div>
-                                <p className="mt-1 whitespace-pre-line text-sm text-amber-950">{guestNote}</p>
-                            </div>
-                        )}
-                        <HostNotes bookingId={booking.id} notes={hostNotes} />
-
-                        {/* Message the guest — replaces the floating button. It lives
-                            in the booking column, centred, and sticks to the bottom of
-                            the viewport so it stays in reach however far you scroll. */}
-                        <div className="sticky bottom-4 z-30 flex justify-center pt-2">
+                        {/* Reach the guest — replaces the floating button. Centred in
+                            the booking column and stuck to the bottom of the viewport so
+                            it stays in reach however far you scroll. Call sits beside
+                            Message only on a confirmed booking whose guest number we
+                            actually hold (close to arrival, per lib/stayWindow). */}
+                        <div className="sticky bottom-4 z-30 flex justify-center gap-3 pt-2">
                             <Link
                                 href={'/messages?b=' + booking.id}
                                 className="inline-flex items-center gap-2 rounded-full bg-emerald-700 px-6 py-3.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(4,120,87,0.35)] transition hover:bg-emerald-800"
@@ -681,44 +688,61 @@ export default async function BookingDetail({ params }: { params: { id: string }
                                 <MessageSquare className="h-4 w-4" />
                                 Message {firstName}
                             </Link>
+                            {booking.status === 'confirmed' && phone && (
+                                <a
+                                    href={'tel:' + phone}
+                                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-6 py-3.5 text-sm font-semibold text-slate-800 shadow-[0_10px_24px_rgba(0,0,0,0.10)] transition hover:border-slate-900"
+                                >
+                                    <Phone className="h-4 w-4" />
+                                    Call
+                                </a>
+                            )}
                         </div>
                     </div>
 
-                    {/* ---- RESERVATIONS RAIL — the host's next arrivals, run down the
+                    {/* ---- RESERVATIONS PANEL — the host's next arrivals, run down the
                         left on desktop (first column, hence lg:order-1) and stacked
-                        below the booking on a phone (item 1). A sticky list, the way
-                        Airbnb keeps every other reservation one click away. ---- */}
-                    <aside className="lg:order-1 lg:sticky lg:top-24">
-                        {/* The list runs the height of the page and scrolls inside
-                            itself, so more of the host's arrivals are in view at once
-                            without the card growing past the screen. */}
-                        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)] lg:h-[calc(100dvh-140px)]">
-                            <div className="flex flex-none items-center gap-2 text-slate-900">
-                                <CalendarDays className="h-4 w-4 flex-none text-slate-400" />
-                                <span className="text-sm font-semibold">Upcoming reservations</span>
+                        below the booking on a phone. A full-height panel divided from
+                        the booking by a thin rule, not a floating card — the way Airbnb
+                        keeps every other reservation one click away. ---- */}
+                    <aside className="lg:order-1 lg:sticky lg:top-24 lg:h-[calc(100dvh-112px)] lg:border-r lg:border-slate-200 lg:pr-8">
+                        <div className="flex h-full flex-col">
+                            <div className="flex flex-none items-baseline gap-2 text-slate-900">
+                                <span className="text-sm font-semibold">Upcoming</span>
+                                <span className="text-sm text-slate-400">· {upcoming.length} {upcoming.length === 1 ? 'reservation' : 'reservations'}</span>
                             </div>
                             {upcoming.length === 0 ? (
-                                <p className="mt-3 text-sm text-slate-500">Nothing else is coming up just now.</p>
+                                <p className="mt-4 text-sm text-slate-500">Nothing else is coming up just now.</p>
                             ) : (
-                                <ul className="mt-3 divide-y divide-slate-100 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                                <ul className="mt-4 space-y-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                                     {upcoming.map((b: any) => {
                                         const l = upListingMap[b.listing_id];
                                         const daysTo = Math.round((dateFromKey(b.check_in).getTime() - dateFromKey(todayKey).getTime()) / 86400000);
-                                        const when = daysTo <= 0 ? 'Today' : daysTo === 1 ? 'Tomorrow' : `${daysTo} days`;
+                                        const when = daysTo <= 0 ? 'Today' : daysTo === 1 ? 'Tomorrow' : `in ${daysTo} days`;
+                                        const av = upGuestAvatar[b.guest_id];
+                                        const first = upGuestFirst[b.guest_id];
                                         return (
                                             <li key={b.id}>
-                                                <Link href={'/dashboard/bookings/' + b.id} className={ROW}>
-                                                    <span className="flex min-w-0 items-center gap-3">
-                                                        <span className="h-9 w-9 flex-none overflow-hidden rounded-lg bg-slate-100">
+                                                <Link href={'/dashboard/bookings/' + b.id} className="group flex items-center gap-4">
+                                                    {/* The guest's avatar overlaps the listing photo, bottom-right. */}
+                                                    <span className="relative flex-none">
+                                                        <span className="block h-14 w-14 overflow-hidden rounded-xl bg-slate-100">
                                                             {l?.image && (
                                                                 // eslint-disable-next-line @next/next/no-img-element
                                                                 <img src={l.image} alt="" className="h-full w-full object-cover" />
                                                             )}
                                                         </span>
-                                                        <span className="min-w-0">
-                                                            <span className="block truncate text-sm font-medium text-slate-900">{groupLabel(b)}</span>
-                                                            <span className="block truncate text-xs text-slate-500">{l?.title || 'Your listing'} · {when}</span>
-                                                        </span>
+                                                        {av ? (
+                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                            <img src={av} alt="" className="absolute -bottom-1.5 -right-1.5 h-7 w-7 rounded-full object-cover ring-2 ring-white" />
+                                                        ) : (
+                                                            <span className="absolute -bottom-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-[11px] font-semibold text-slate-600 ring-2 ring-white">{(first || '·').slice(0, 1).toUpperCase()}</span>
+                                                        )}
+                                                    </span>
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="block text-xs font-medium text-slate-500">{shortDay(b.check_in)} – {shortDay(b.check_out)} · {when}</span>
+                                                        <span className="block truncate text-sm font-semibold text-slate-900 group-hover:text-slate-950">{groupLabel(b)}</span>
+                                                        <span className="block truncate text-xs text-slate-500">{l?.title || 'Your listing'}</span>
                                                     </span>
                                                     <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
                                                 </Link>
