@@ -13,6 +13,8 @@ import { guestBookedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bo
 import { cancellationPosition } from '@/lib/cancellationView';
 import { resolveGuestForPaidOrder, supabaseGuestStore, guestMagicLink } from '@/lib/guestAccount';
 import { notifyTopUpConfirmed } from '@/lib/slotNotify';
+import { issueRefunds } from '@/lib/refundSpread';
+import { round2 } from '@/lib/resolutions';
 
 export const dynamic = 'force-dynamic';
 
@@ -268,6 +270,98 @@ export async function POST(request: Request) {
                 // The ONE transition, shared with the reconcile sweep so a lost
                 // webhook is rebuilt identically (see lib/changeRequest).
                 if (orderId && pi) await authoriseChangeRequest(admin, orderId, pi);
+                return NextResponse.json({ ok: true });
+            }
+
+            // A GUEST PAID A MONEY REQUEST on a stay (extra services / damage). The
+            // money and the host's share have already moved (automatic capture with
+            // transfer_data + application_fee), so this just records the outcome.
+            // Guarded on 'pending' so a redelivery is a no-op; stripe_events dedupes
+            // too.
+            if (kind === 'resolution_request') {
+                const resolutionId = cs.metadata && cs.metadata.resolution_id;
+                const pi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
+                if (resolutionId) {
+                    const { data: moved } = await admin.from('booking_resolutions')
+                        .update({ status: 'paid', paid_at: new Date().toISOString(), stripe_payment_intent_id: pi, updated_at: new Date().toISOString() })
+                        .eq('id', resolutionId).eq('status', 'pending').select('id, host_id, guest_id, amount, reason, booking_id');
+                    if (moved && moved.length) {
+                        const r = moved[0];
+                        try {
+                            const { data: hostUser } = await admin.auth.admin.getUserById(r.host_id);
+                            const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
+                            if (hostEmail) {
+                                await sendEmail(hostEmail, 'Your guest paid £' + round2(Number(r.amount)).toFixed(2), emailLayout(
+                                    '<p style="margin:0 0 16px;font-size:16px;">Your guest has paid the £' + round2(Number(r.amount)).toFixed(2)
+                                    + ' you requested (' + escapeHtml(String(r.reason).replace('_', ' ')) + '). Your share is on its way to your account.</p>'
+                                    + button(SITE_URL + '/dashboard/bookings/' + r.booking_id, 'Open the booking'),
+                                    'You’re receiving this because you host with Galloway Getaways.'));
+                            }
+                        } catch (mailErr) { await logError('[webhook] resolution_request host email', mailErr, { path: 'stripe/webhook' }); }
+                    }
+                }
+                return NextResponse.json({ ok: true });
+            }
+
+            // A HOST FUNDED A REFUND ("send money"). Their one-off payment has
+            // cleared into the platform balance; now refund the guest the same
+            // amount to their original card, capped at what they have paid net of
+            // refunds, and record it against the booking. Guarded on
+            // 'awaiting_host_payment' so a redelivery never double-refunds.
+            if (kind === 'resolution_send') {
+                const resolutionId = cs.metadata && cs.metadata.resolution_id;
+                const hostPi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
+                if (resolutionId) {
+                    // Claim the row first, so two webhook deliveries can't both refund.
+                    const { data: claimed } = await admin.from('booking_resolutions')
+                        .update({ status: 'completed', paid_at: new Date().toISOString(), stripe_payment_intent_id: hostPi, updated_at: new Date().toISOString() })
+                        .eq('id', resolutionId).eq('status', 'awaiting_host_payment')
+                        .select('id, booking_id, guest_id, amount');
+                    if (claimed && claimed.length) {
+                        const r = claimed[0];
+                        const { data: booking } = await admin.from('bookings')
+                            .select('id, listing_id, guest_id, host_id, amount_paid, amount_refunded, stripe_payment_intent_id, balance_payment_intent_id, payout_transfer_id, payout_amount')
+                            .eq('id', r.booking_id).maybeSingle();
+                        const amount = round2(Number(r.amount));
+                        if (!booking) {
+                            await logError('[webhook] resolution_send: the funded booking vanished — host paid but no guest refund could be issued, reconcile at Stripe', { resolution: r.id, booking_id: r.booking_id }, { path: 'stripe/webhook' });
+                            return NextResponse.json({ ok: true });
+                        }
+                        try {
+                            const issued = await issueRefunds(
+                                booking,
+                                amount,
+                                { booking_id: r.booking_id, reason: 'host_send', initiated_by: 'host' },
+                                (intentId: string) => 'resolution-send-' + r.id + '-' + intentId,
+                            );
+                            for (let i = 0; i < issued.refunds.length; i++) {
+                                await admin.from('payments').insert({
+                                    booking_id: r.booking_id, kind: 'refund',
+                                    amount: round2(issued.shares[i] / 100), status: 'succeeded',
+                                    stripe_payment_intent_id: issued.charges[i].intentId,
+                                });
+                            }
+                            const refundedNow = round2(issued.refundedPence / 100);
+                            if (refundedNow > 0) {
+                                await admin.rpc('record_booking_refund', { p_booking: r.booking_id, p_amount: refundedNow });
+                            }
+                            if (refundedNow < amount) {
+                                await logError('[webhook] resolution_send: host funded £' + amount.toFixed(2) + ' but only £' + refundedNow.toFixed(2) + ' could be refunded to the guest — reconcile at Stripe', issued.failure || { resolution: r.id }, { path: 'stripe/webhook' });
+                            }
+                            const { data: guestUser } = await admin.auth.admin.getUserById(r.guest_id);
+                            const guestEmail = (guestUser && guestUser.user && guestUser.user.email) || '';
+                            if (guestEmail && refundedNow > 0) {
+                                await sendEmail(guestEmail, 'Your host has sent you £' + refundedNow.toFixed(2), emailLayout(
+                                    '<p style="margin:0 0 16px;font-size:16px;">Your host has sent you <strong>£' + refundedNow.toFixed(2)
+                                    + '</strong>. It goes back to the card you paid with, usually within five to ten days.</p>'
+                                    + button(SITE_URL + '/trips', 'View your trip'),
+                                    'You’re receiving this because you have a booking with Galloway Getaways.'));
+                            }
+                        } catch (refErr) {
+                            await logError('[webhook] resolution_send refund failed after host funded it — reconcile at Stripe', refErr, { path: 'stripe/webhook' });
+                        }
+                    }
+                }
                 return NextResponse.json({ ok: true });
             }
 

@@ -8,16 +8,16 @@ import {
 } from 'lucide-react';
 import Modal from './Modal';
 import BookingActions from '@/components/BookingActions';
+import ResolutionFlow from './ResolutionFlow';
 
-type View = 'menu' | 'money' | 'cancel';
+type View = 'menu' | 'resolution' | 'cancel';
 
 // The single "Manage reservation" row — a pencil that opens Airbnb's kind of
-// action sheet. It gathers the host actions that are actually built: send money
-// (a refund), the guest's phone with a copy button, ask the guest to cancel, and
-// cancel the booking. Change reservation, request money and start a dispute are
-// deliberately NOT here yet — they are only surfaced once properly built, so a
-// host is never offered an action that half-works. Money and cancellation reuse
-// the existing BookingActions component.
+// action sheet. It gathers the host actions that are built: send or request money
+// (the Resolution Centre — refunds, extra services, damage), the guest's phone
+// with a copy button, ask the guest to cancel, and cancel the booking. Change
+// reservation and disputes are surfaced separately once built. Cancellation
+// reuses the existing BookingActions component.
 export default function ManageReservationSheet({
     bookingId,
     status,
@@ -46,7 +46,7 @@ export default function ManageReservationSheet({
     const closed = status === 'cancelled' || status === 'declined';
     const refundable = Math.round((Number(amountPaid) - Number(amountRefunded)) * 100) / 100;
 
-    const title = view === 'money' ? 'Send money' : view === 'cancel' ? 'Cancel booking' : 'Manage reservation';
+    const title = view === 'resolution' ? 'Send or request money' : view === 'cancel' ? 'Cancel booking' : 'Manage reservation';
 
     return (
         <Modal
@@ -70,7 +70,7 @@ export default function ManageReservationSheet({
             {view === 'menu' && (
                 <div className="-my-1 divide-y divide-slate-100">
                     {isOwner && !closed && (
-                        <Row icon={Banknote} label="Send money" sub="Refund the guest, keeping the stay on" onClick={() => setView('money')} />
+                        <Row icon={Banknote} label="Send or request money" sub="For a refund, extra services or damage" onClick={() => setView('resolution')} />
                     )}
                     {phone && (
                         <div className="flex items-center gap-3 py-3">
@@ -92,17 +92,14 @@ export default function ManageReservationSheet({
                 </div>
             )}
 
-            {view === 'money' && (
-                <div>
-                    {refundable > 0 ? (
-                        <>
-                            <p className="mb-3 text-sm text-slate-600">Give some or all of what the guest has paid back to them, keeping the stay on.</p>
-                            <BookingActions bookingId={bookingId} mode="confirmed" allowCancel={false} totalPrice={totalPrice} amountPaid={amountPaid} amountRefunded={amountRefunded} />
-                        </>
-                    ) : (
-                        <p className="text-sm text-slate-500">There’s nothing to refund — the guest hasn’t paid anything yet.</p>
-                    )}
-                </div>
+            {view === 'resolution' && (
+                <ResolutionFlow
+                    bookingId={bookingId}
+                    guestFirst={guestFirst}
+                    afterCheckout={ended}
+                    netPaid={refundable}
+                    onClose={() => { setOpen(false); setView('menu'); }}
+                />
             )}
 
             {view === 'cancel' && (
