@@ -152,15 +152,16 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const doorCodeOverride = access.can_listing ? (overrideRow?.code || null) : null;
     const doorCode = doorCodeOverride || listingCode;
 
-    // The host's private note — its own table with no browser grants, so the
-    // guest can never read it. Read here via the service role; anyone who can
-    // manage the booking (can_bookings, already checked) may see and edit it.
-    const { data: noteRow } = await admin
+    // The host's private notes — their own table with no browser grants, so the
+    // guest can never read them. An append-only log: read every entry in order.
+    // Anyone who can manage the booking (can_bookings, already checked) may see
+    // them and add more.
+    const { data: noteRows } = await admin
         .from('booking_host_notes')
-        .select('host_note')
+        .select('host_note, created_at')
         .eq('booking_id', booking.id)
-        .maybeSingle();
-    const hostNote = noteRow?.host_note || null;
+        .order('created_at', { ascending: true });
+    const hostNotes = noteRows || [];
 
     const now = new Date();
     const started = stayHasStarted(booking.check_in, now);
@@ -305,11 +306,14 @@ export default async function BookingDetail({ params }: { params: { id: string }
     });
     // First name only, so the list reads like the reservations rail on Airbnb —
     // and never the word "Guest": where a guest hasn't shared a name we drop the
-    // possessive rather than print a placeholder.
+    // possessive rather than print a placeholder. The host is entitled to the
+    // first name of a guest on their own booking even when that guest hides their
+    // full name publicly, so this reads the stored name directly rather than
+    // through displayName's public (show_full_name) gate.
     const upGuestFirst: Record<string, string | null> = {};
     (upGuests || []).forEach((g: any) => {
-        const full = displayName(g, '');
-        upGuestFirst[g.id] = full ? (full.split(' ')[0] || null) : null;
+        const held = String(g.preferred_name || g.full_name || '').trim();
+        upGuestFirst[g.id] = held ? (held.split(/\s+/)[0] || null) : null;
     });
     // "Sara's group of 4" — the guest's first name and the party size (people,
     // pets aside). The list says who is coming and how many, at a glance.
@@ -433,11 +437,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
         payoutRows,
     };
 
-    // Manage-reservation links. There is no host-side stay-change flow, so
-    // "Change reservation" opens a message to the guest to arrange one; the
-    // ask-to-cancel draft is the same one this screen has always offered.
-    const changeHref = '/messages?b=' + booking.id + '&draft='
-        + encodeURIComponent('Hi ' + firstName + ', I’d like to talk about a change to your booking at ' + (listing?.title || 'the property') + '. ');
+    // The ask-to-cancel draft is the same one this screen has always offered.
     const askToCancelHref = (isOwner && booking.status === 'confirmed' && !ended)
         ? '/messages?b=' + booking.id + '&draft=' + encodeURIComponent(askToCancelDraft)
         : null;
@@ -511,7 +511,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             booking (can_bookings), never the guest (item 3). The
                             note is walled at the database and saved through its own
                             can_bookings-checked route. */}
-                        <HostNotes bookingId={booking.id} initial={hostNote} />
+                        <HostNotes bookingId={booking.id} notes={hostNotes} />
 
                         {/* Check-in / Check-out — two raised cards, the lifted-card
                             treatment reserved for surfaces you act on (item 4). */}
@@ -594,7 +594,6 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             totalPrice={total}
                             amountPaid={paid}
                             amountRefunded={refunded}
-                            changeHref={changeHref}
                             askToCancelHref={askToCancelHref}
                         />
 

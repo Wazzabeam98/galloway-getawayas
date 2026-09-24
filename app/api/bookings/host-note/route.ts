@@ -7,16 +7,18 @@ import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
 
-// The host's private note on a booking (bookings.host_note).
+// The host's private notes on a booking — an APPEND-ONLY log.
 //
-// The note lives in booking_host_notes, which has NO anon/authenticated grants —
-// a guest cannot read it from PostgREST, and nor can a co-host touch it directly.
-// This route is the whole surface, and it gates on can_bookings: the owner, or a
-// co-host granted bookings for that listing. It reads the booking with the
-// service key first only to learn WHICH listing to check, then checks the
-// permission in code before writing through the service role.
+// The notes live in booking_host_notes, which has NO anon/authenticated grants —
+// a guest cannot read them from PostgREST, and nor can a co-host touch them
+// directly. This route is the whole surface, and it gates on can_bookings: the
+// owner, or a co-host granted bookings for that listing. It reads the booking
+// with the service key first only to learn WHICH listing to check, then checks
+// the permission in code before writing through the service role.
 //
-// The note is host-private by design; it is never returned to a guest anywhere.
+// POST only ever INSERTs a new stamped entry; there is no update and no delete,
+// so once a note is saved it stands. Empty notes are rejected — an add with
+// nothing in it is not a note.
 
 const MAX = 2000;
 
@@ -37,6 +39,23 @@ async function gate(bookingId: string) {
     return { uid: user.id, booking, admin };
 }
 
+export async function GET(request: Request) {
+    try {
+        const bookingId = new URL(request.url).searchParams.get('booking') || '';
+        const g = await gate(bookingId);
+        if (g.error) return g.error;
+        const { data } = await g.admin
+            .from('booking_host_notes')
+            .select('host_note, created_at')
+            .eq('booking_id', bookingId)
+            .order('created_at', { ascending: true });
+        return NextResponse.json({ ok: true, notes: data || [] });
+    } catch (err: any) {
+        await logError('[booking-host-note GET]', { message: String(err && err.message) }, { path: '/api/bookings/host-note' });
+        return NextResponse.json({ ok: false, error: 'Could not read notes.' }, { status: 500 });
+    }
+}
+
 export async function POST(request: Request) {
     let bookingId = '';
     try {
@@ -47,17 +66,14 @@ export async function POST(request: Request) {
 
         const raw = typeof body.note === 'string' ? body.note : '';
         const note = raw.trim().slice(0, MAX);
+        if (!note) return NextResponse.json({ ok: false, error: 'Write something to add.' }, { status: 400 });
 
-        // Empty clears it to null, so a host can wipe a note they no longer want.
-        // One row per booking, upserted on the booking id.
-        const { error } = await g.admin
+        // Add-only: a new stamped row each time. Never an update or a delete.
+        const { data, error } = await g.admin
             .from('booking_host_notes')
-            .upsert({
-                booking_id: bookingId,
-                host_note: note || null,
-                updated_at: new Date().toISOString(),
-                updated_by: g.uid,
-            }, { onConflict: 'booking_id' });
+            .insert({ booking_id: bookingId, host_note: note, created_by: g.uid })
+            .select('host_note, created_at')
+            .single();
 
         if (error) {
             // Never the note itself — it is private, and error_log is readable at
@@ -65,7 +81,7 @@ export async function POST(request: Request) {
             await logError('booking-host-note-save', { bookingId, message: error.message }, { path: '/api/bookings/host-note' });
             return NextResponse.json({ ok: false, error: 'Could not save.' }, { status: 500 });
         }
-        return NextResponse.json({ ok: true, note: note || null });
+        return NextResponse.json({ ok: true, note: data });
     } catch (err: any) {
         await logError('booking-host-note-save', { bookingId, message: String(err && err.message) }, { path: '/api/bookings/host-note' });
         return NextResponse.json({ ok: false, error: 'Could not save.' }, { status: 500 });
