@@ -444,14 +444,14 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
             />
             <div className='mt-4'>
                 {showArea && area && (
-                    <nav aria-label="Breadcrumb" className='mb-3 text-sm text-slate-500'>
-                        <Link href="/" className='hover:text-slate-900 underline underline-offset-4'>
+                    <nav aria-label="Breadcrumb" className='mb-3 -my-1.5 flex flex-wrap items-center text-sm text-slate-500'>
+                        <Link href="/" className='inline-flex items-center min-h-[44px] py-1.5 hover:text-slate-900 underline underline-offset-4'>
                             Home
                         </Link>
                         <span className='mx-2' aria-hidden="true">/</span>
                         <Link
                             href={`/holiday-cottages/${area.slug}`}
-                            className='hover:text-slate-900 underline underline-offset-4'
+                            className='inline-flex items-center min-h-[44px] py-1.5 hover:text-slate-900 underline underline-offset-4'
                         >
                             Holiday cottages in {area.name}
                         </Link>

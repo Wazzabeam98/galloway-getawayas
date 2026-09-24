@@ -298,7 +298,7 @@ export default async function Dashboard() {
                     <Link
                         href="/addhome"
                         title="Create a new listing"
-                        className="w-10 h-10 rounded-full border border-slate-300 hover:bg-slate-100 flex items-center justify-center text-slate-800 transition flex-shrink-0"
+                        className="w-11 h-11 rounded-full border border-slate-300 hover:bg-slate-100 flex items-center justify-center text-slate-800 transition flex-shrink-0"
                     >
                         <Plus className="w-5 h-5" />
                     </Link>
@@ -354,7 +354,7 @@ export default async function Dashboard() {
                 {drafts.length > 0 && (
                     <div className="mb-10">
                         <h2 className="text-lg font-semibold text-slate-800 mb-4">In progress</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {drafts.map((item) => (
                                 <ListingCard key={item.id} item={item} isDraft />
                             ))}
@@ -365,7 +365,7 @@ export default async function Dashboard() {
                 {published.length > 0 && (
                     <div>
                         {drafts.length > 0 && <h2 className="text-lg font-semibold text-slate-800 mb-4">Published</h2>}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {published.map((item) => (
                                 <ListingCard key={item.id} item={item} isDraft={false} />
                             ))}

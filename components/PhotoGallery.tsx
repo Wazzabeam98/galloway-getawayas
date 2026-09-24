@@ -162,7 +162,7 @@ export default function PhotoGallery({
                     <button
                         type="button"
                         onClick={() => setOpen(true)}
-                        className="hidden md:flex absolute bottom-4 right-4 bg-white hover:bg-slate-50 border border-slate-900/10 shadow-sm rounded-lg px-4 py-2 text-sm font-semibold text-slate-900 items-center gap-2"
+                        className="hidden md:flex absolute bottom-4 right-4 min-h-[44px] bg-white hover:bg-slate-50 border border-slate-900/10 shadow-sm rounded-lg px-4 py-2 text-sm font-semibold text-slate-900 items-center gap-2"
                     >
                         <span className="grid grid-cols-3 gap-[2px]">
                             {Array.from({ length: 9 }).map((_, i) => (

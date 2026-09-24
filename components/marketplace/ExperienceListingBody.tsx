@@ -136,7 +136,7 @@ export default function ExperienceListingBody({
 
                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-10 mt-2">
                     <div className="lg:col-span-2 min-w-0">
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">{p.category}</p>
+                        <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-emerald-700">{p.category}</p>
                         <h1 className="mt-1.5 text-2xl md:text-3xl font-bold text-slate-900">{p.business_name}</h1>
                         <span className="mt-2 inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                             {shapeCue(p.shape)}

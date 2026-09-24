@@ -20,6 +20,22 @@
   }
 }
 
+/* iOS Safari zooms the page whenever a focused control's font is below 16px, so
+   every form control gets at least 16px at phone widths. Only the value; nothing
+   about the layout changes at or above 768px. The react-date-range month/year
+   pickers ship at 12px and carry the library's own class specificity, so they
+   are lifted by name as well as by the element rule. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  .rdrMonthAndYearPickers select {
+    font-size: 16px;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

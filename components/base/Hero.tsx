@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
@@ -114,7 +115,7 @@ function GuestCounter({
 }) {
   const button =
     size === 'mobile'
-      ? 'w-10 h-10 text-lg'
+      ? 'w-11 h-11 text-lg'
       : 'w-7 h-7';
 
   return (
@@ -153,6 +154,15 @@ function GuestCounter({
 export default function Hero() {
   const router = useRouter();
   const [activePopover, setActivePopover] = useState<'where' | 'when' | 'who' | null>(null);
+  // The phone search collapses to a single pill; tapping it opens the full
+  // search in a sheet. Desktop never uses this — it keeps the inline pill bar.
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  // The sheet renders through a portal to escape the hero's own z-40 stacking
+  // context (otherwise the sticky nav sits over it). Portals need the DOM, so
+  // it only mounts client-side.
+  const [mounted, setMounted] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useEffect(() => setMounted(true), []);
 
   // Search State
   const [location, setLocation] = useState('');
@@ -211,7 +221,11 @@ export default function Hero() {
 
   useEffect(() => {
     const handleClickOutside = (event: Event) => {
-      if (heroRef.current && !heroRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      // The mobile sheet is portaled outside heroRef, so clicks inside it must
+      // not be read as "outside" — that would close the field mid-interaction.
+      if (sheetRef.current && sheetRef.current.contains(target)) return;
+      if (heroRef.current && !heroRef.current.contains(target)) {
         setActivePopover(null);
       }
     };
@@ -224,6 +238,22 @@ export default function Hero() {
       document.removeEventListener('touchstart', handleClickOutside);
     };
   }, []);
+
+  // The mobile search sheet is a full-screen layer, so it gets Escape-to-close
+  // and holds the page still behind it while it is open.
+  useEffect(() => {
+    if (!mobileSearchOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileSearchOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [mobileSearchOpen]);
 
   const handleSelectDates = (ranges: RangeKeyDict) => {
     setDateRange(ranges.selection);
@@ -303,6 +333,7 @@ export default function Hero() {
     if (pets > 0) params.set('pets', '1');
 
     setActivePopover(null);
+    setMobileSearchOpen(false);
 
     const query = params.toString();
     router.push(query ? `/?${query}` : '/');
@@ -651,31 +682,27 @@ export default function Hero() {
           Booked direct with the people who own them. No booking fee, ever.
         </p>
 
-        {/* Compact search — small screens only. Two by two: Where and When
-            across the top, Who and Search underneath. `mt-auto` drops it to
-            the bottom of the hero so the photo is clear above it. Same three
-            controls as the desktop bar, and nothing about how they work
-            changes. */}
-        <div className="md:hidden mt-auto mb-8 md:mb-0 w-full max-w-md text-stone-800">
-          <div className="bg-white/[0.85] backdrop-blur-md rounded-3xl shadow-2xl border border-white/60 overflow-hidden">
-            <div className="grid grid-cols-2">
-              {gridCell('where', 'Where', whereChosen, 'Anywhere', 'border-r border-b border-stone-200')}
-              {gridCell('when', 'When', whenChosen, 'Any week', 'border-b border-stone-200')}
-              {gridCell('who', 'Who', guestChosen, 'Add guests', 'border-r border-stone-200')}
-              <button
-                type="button"
-                onClick={runSearch}
-                className="bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-2 text-base font-semibold transition"
-              >
-                {searchIcon('w-5 h-5')}
-                Search
-              </button>
-            </div>
-
-            {openContent && (
-              <div className="border-t border-stone-200 px-4 py-4">{openContent}</div>
-            )}
-          </div>
+        {/* Compact search — phones only. A single Airbnb-style pill that names
+            what the guest has chosen so far (or "Where to?") and opens the full
+            Where / When / Who search in a sheet when tapped. `mt-auto` drops it
+            to the bottom of the hero so the photo is clear above it. The desktop
+            pill bar below is untouched. */}
+        <div className="md:hidden mt-auto mb-8 w-full max-w-md text-stone-800">
+          <button
+            type="button"
+            onClick={() => { setActivePopover('where'); setMobileSearchOpen(true); }}
+            aria-haspopup="dialog"
+            aria-expanded={mobileSearchOpen}
+            className="flex w-full items-center gap-3 rounded-full border border-stone-100 bg-white px-5 py-3 min-h-[56px] text-left shadow-2xl"
+          >
+            <span className="flex-none text-emerald-700">{searchIcon('w-5 h-5')}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-stone-900">{whereSummary}</span>
+              <span className="block truncate text-xs text-stone-500">
+                {(whenSummary === 'Add dates' ? 'Any week' : whenSummary)} · {guestSummary}
+              </span>
+            </span>
+          </button>
         </div>
 
         {/* Search Bar — desktop. Unchanged apart from being hidden on phones. */}
@@ -796,6 +823,62 @@ export default function Hero() {
 
         </div>
       </div>
+
+      {/* Full-screen mobile search sheet. Phones only; opened from the pill
+          above. It reuses the same Where / When / Who controls as the desktop
+          bar (one source of truth), stacked, with the chosen field's content
+          expanding underneath and a single Search button at the foot.
+          Portaled to <body> so it clears the hero's z-40 context and the
+          sticky nav. */}
+      {mounted && mobileSearchOpen && createPortal(
+        <div
+          ref={sheetRef}
+          className="md:hidden fixed inset-0 z-[100] flex flex-col bg-white text-stone-800"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Search"
+        >
+          <div className="flex items-center justify-between border-b border-stone-200 px-2 py-2">
+            <button
+              type="button"
+              aria-label="Close search"
+              onClick={() => setMobileSearchOpen(false)}
+              className="flex h-11 w-11 items-center justify-center rounded-full text-stone-700 hover:bg-stone-100"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <span className="text-base font-semibold text-stone-900">Search</span>
+            <span className="h-11 w-11" aria-hidden="true" />
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div className="overflow-hidden rounded-3xl border border-stone-200">
+              <div className="flex flex-col">
+                {gridCell('where', 'Where', whereChosen, 'Anywhere', 'border-b border-stone-200')}
+                {gridCell('when', 'When', whenChosen, 'Any week', 'border-b border-stone-200')}
+                {gridCell('who', 'Who', guestChosen, 'Add guests', '')}
+              </div>
+              {openContent && (
+                <div className="border-t border-stone-200 px-4 py-4">{openContent}</div>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t border-stone-200 p-4">
+            <button
+              type="button"
+              onClick={runSearch}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-6 py-3 min-h-[52px] text-base font-semibold text-white transition hover:bg-emerald-800"
+            >
+              {searchIcon('w-5 h-5')}
+              Search
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )}
 
     </div>
   );

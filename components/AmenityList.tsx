@@ -66,7 +66,7 @@ export default function AmenityList({ amenities }: { amenities: string[] }) {
                     type="button"
                     onClick={() => setOpen((o) => !o)}
                     aria-expanded={open}
-                    className="lg:hidden mt-3 text-sm font-semibold text-slate-900 underline underline-offset-4"
+                    className="lg:hidden mt-3 inline-flex items-center min-h-[44px] text-sm font-semibold text-slate-900 underline underline-offset-4"
                 >
                     {open ? 'Show less' : `Show all ${sorted.length} things this place offers`}
                 </button>
