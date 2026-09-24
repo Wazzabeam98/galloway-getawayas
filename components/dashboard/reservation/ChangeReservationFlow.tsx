@@ -1,18 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
 
-// The host's "Change reservation" — Airbnb's Flow 1 shape on one screen: new
-// dates, a guest-count stepper and a re-priced total. Nothing moves here; "Send
-// request" records the proposal and the guest must accept before any money or
-// booking state changes. Disabled until something actually changes.
+// The "Change reservation" form, used by BOTH sides: a host proposes (the guest
+// accepts) or a guest requests (the host approves). Three levers — dates, guest
+// count, pets — and the new total is priced by the server from the listing's
+// rates, so the person sees the real charge/refund before they commit. Nothing
+// moves until the other side agrees.
 export default function ChangeReservationFlow({
-    bookingId, guestFirst, checkIn, checkOut, adults, childrenCount, pets,
-    maxGuests, petsAllowed, totalPrice, onClose,
+    bookingId, role, counterpartyName, checkIn, checkOut, adults, childrenCount, pets,
+    maxGuests, petsAllowed, onClose,
 }: {
     bookingId: string;
-    guestFirst: string;
+    role: 'host' | 'guest';
+    counterpartyName: string;   // the OTHER party's first name
     checkIn: string;
     checkOut: string;
     adults: number;
@@ -20,7 +22,6 @@ export default function ChangeReservationFlow({
     pets: number;
     maxGuests: number;
     petsAllowed: boolean;
-    totalPrice: number;
     onClose: () => void;
 }) {
     const [ci, setCi] = useState(checkIn);
@@ -28,30 +29,47 @@ export default function ChangeReservationFlow({
     const [ad, setAd] = useState(adults);
     const [ch, setCh] = useState(childrenCount);
     const [pt, setPt] = useState(pets);
-    const [price, setPrice] = useState(String(totalPrice.toFixed(2)));
+    const [quote, setQuote] = useState<{ total: number; delta: number } | null>(null);
+    const [quoting, setQuoting] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState(false);
 
     const round2 = (v: number) => Math.round(Number(v || 0) * 100) / 100;
     const guests = ad + ch;
-    const newTotal = round2(Number(price));
-    const delta = round2(newTotal - totalPrice);
-
-    const changed = ci !== checkIn || co !== checkOut || guests !== (adults + childrenCount)
-        || ch !== childrenCount || pt !== pets || newTotal !== round2(totalPrice);
+    const changed = ci !== checkIn || co !== checkOut || guests !== (adults + childrenCount) || ch !== childrenCount || pt !== pets;
     const datesOk = !!ci && !!co && co > ci;
     const capacityOk = guests >= 1 && guests <= maxGuests && ch <= guests;
-    const canSend = changed && datesOk && capacityOk && newTotal >= 0 && !busy;
+
+    // Re-price from the server whenever a lever moves (debounced).
+    const seq = useRef(0);
+    useEffect(() => {
+        if (!changed || !datesOk || !capacityOk) { setQuote(null); return; }
+        const mine = ++seq.current;
+        setQuoting(true);
+        const t = setTimeout(async () => {
+            try {
+                const res = await fetch('/api/bookings/change/quote', {
+                    method: 'POST', headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ bookingId, checkIn: ci, checkOut: co, guests, children: ch, pets: pt }),
+                });
+                const body = await res.json().catch(() => ({}));
+                if (mine === seq.current) setQuote(res.ok ? { total: round2(body.total), delta: round2(body.delta) } : null);
+            } catch { if (mine === seq.current) setQuote(null); }
+            if (mine === seq.current) setQuoting(false);
+        }, 350);
+        return () => clearTimeout(t);
+    }, [ci, co, ad, ch, pt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const canSend = changed && datesOk && capacityOk && !quoting && !busy;
 
     const submit = async () => {
         if (!canSend) return;
         setBusy(true); setError(null);
         try {
             const res = await fetch('/api/bookings/change', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ bookingId, checkIn: ci, checkOut: co, guests, children: ch, pets: pt, total: newTotal }),
+                method: 'POST', headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ bookingId, checkIn: ci, checkOut: co, guests, children: ch, pets: pt }),
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) { setError(body?.error || 'Could not do that.'); setBusy(false); return; }
@@ -63,17 +81,25 @@ export default function ChangeReservationFlow({
     };
 
     if (done) {
+        const sentTo = role === 'host' ? counterpartyName : 'your host';
         return (
             <div className="py-2">
-                <p className="text-sm text-slate-700">Sent to {guestFirst}. They’ll get an email to confirm the change, and nothing moves until they accept.</p>
+                <p className="text-sm text-slate-700">Sent to {sentTo}. They’ll get an email to {role === 'host' ? 'confirm' : 'approve'} the change, and nothing moves until they do.</p>
                 <button type="button" onClick={onClose} className="mt-4 w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white">Done</button>
             </div>
         );
     }
 
+    const delta = quote ? quote.delta : null;
+
     return (
         <div className="space-y-4">
-            <p className="text-[13px] text-slate-500">Make your changes, then send a request to {guestFirst} to confirm. Money only moves once they accept.</p>
+            <p className="text-[13px] text-slate-500">
+                {role === 'host'
+                    ? 'Make your changes, then send a request to ' + counterpartyName + ' to confirm.'
+                    : 'Make your changes, then send a request to your host to approve.'}
+                {' '}Money only moves once it’s agreed.
+            </p>
 
             <div>
                 <label className="block text-[13px] font-semibold text-slate-700">Dates</label>
@@ -95,28 +121,22 @@ export default function ChangeReservationFlow({
                 </p>
             </div>
 
-            <div>
-                <label className="block text-[13px] font-semibold text-slate-700">Total price</label>
-                <div className="mt-1 flex items-center rounded-xl border border-slate-300 px-3">
-                    <span className="text-slate-500">£</span>
-                    <input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className="w-full py-2.5 pl-1 text-base outline-none" style={{ fontSize: 16 }} />
-                </div>
-            </div>
-
-            {changed && (
+            {changed && datesOk && capacityOk && (
                 <div className="rounded-xl bg-slate-50 p-3 text-[13px] text-slate-600">
-                    {delta > 0
-                        ? <>{guestFirst} will be asked to pay an extra <strong>£{delta.toFixed(2)}</strong>.</>
-                        : delta < 0
-                            ? <>{guestFirst} will be refunded <strong>£{Math.abs(delta).toFixed(2)}</strong>.</>
-                            : <>No change to what {guestFirst} pays.</>}
+                    {quoting || delta === null
+                        ? 'Pricing the change…'
+                        : delta > 0
+                            ? <>New total <strong>£{quote!.total.toFixed(2)}</strong> — {role === 'host' ? counterpartyName + ' pays' : 'you pay'} an extra <strong>£{delta.toFixed(2)}</strong>.</>
+                            : delta < 0
+                                ? <>New total <strong>£{quote!.total.toFixed(2)}</strong> — {role === 'host' ? counterpartyName + ' is refunded' : 'you’re refunded'} <strong>£{Math.abs(delta).toFixed(2)}</strong>.</>
+                                : <>New total <strong>£{quote!.total.toFixed(2)}</strong> — nothing extra to pay.</>}
                 </div>
             )}
 
             {error && <p className="text-[13px] text-rose-600">{error}</p>}
 
             <button type="button" disabled={!canSend} onClick={submit} className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-40">
-                {busy ? 'Sending…' : 'Send request'}
+                {busy ? 'Sending…' : role === 'host' ? 'Send request' : 'Request this change'}
             </button>
         </div>
     );

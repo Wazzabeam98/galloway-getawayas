@@ -7,7 +7,7 @@
 // `children` column is the subset (see components/BookingWidget). Pets do not
 // count toward the listing's max. This module speaks that same shape.
 
-export type ChangeStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired';
+export type ChangeStatus = 'pending' | 'awaiting_guest_payment' | 'accepted' | 'declined' | 'cancelled' | 'expired';
 
 export interface StaySnapshot {
     checkIn: string;   // yyyy-mm-dd
@@ -36,11 +36,19 @@ export function moneyDirection(delta: number): 'charge' | 'refund' | 'none' {
     return 'none';
 }
 
-// A refund on a change can never exceed what the guest has actually paid, net of
-// anything already refunded — the same guard the Resolution Centre's send uses.
-export function refundForChange(delta: number, netPaid: number): number {
-    if (round2(delta) >= 0) return 0;
-    return round2(Math.min(Math.abs(round2(delta)), Math.max(0, Number(netPaid || 0))));
+// What a decrease actually refunds: only what the guest has OVERPAID against the
+// NEW total, and never more than they have paid net of refunds. A guest who paid
+// only a deposit that is still below the new total is owed nothing back — the
+// decrease just shrinks the balance they have left to pay. This is
+// max(0, netPaid - newTotal), which is also automatically ≤ netPaid.
+export function refundForDecrease(netPaid: number, newTotal: number): number {
+    return round2(Math.max(0, Number(netPaid || 0) - Number(newTotal || 0)));
+}
+
+// The balance still owed after a change (and after any refund it triggered):
+// the new total less what the guest has paid net of refunds, floored at zero.
+export function balanceAfter(newTotal: number, netPaidAfterRefund: number): number {
+    return round2(Math.max(0, Number(newTotal || 0) - Number(netPaidAfterRefund || 0)));
 }
 
 // Whole nights between two day keys (half-open, like the booking's daterange).
@@ -76,7 +84,12 @@ export function validateChange(
 ): { ok: boolean; error?: string } {
     if (!next.checkIn || !next.checkOut) return { ok: false, error: 'Pick both dates.' };
     if (next.checkOut <= next.checkIn) return { ok: false, error: 'The checkout date must be after the check-in date.' };
-    if (next.checkIn < today) return { ok: false, error: 'Check-in can’t be in the past.' };
+    // Check-in may stay in the past — a mid-stay extension keeps the original
+    // arrival — but it can't be MOVED to a new past date. Check-out must still be
+    // ahead: you can't change a stay that is already over (that's a job for Send
+    // or request money).
+    if (next.checkIn < today && next.checkIn !== oldStay.checkIn) return { ok: false, error: 'Check-in can’t be moved into the past.' };
+    if (next.checkOut < today) return { ok: false, error: 'That stay is already over — use Send or request money instead.' };
     if (!(next.guests >= 1)) return { ok: false, error: 'A stay needs at least one guest.' };
     if (next.children < 0 || next.pets < 0) return { ok: false, error: 'Counts can’t be negative.' };
     if (next.children > next.guests) return { ok: false, error: 'There can’t be more children than guests.' };
@@ -87,13 +100,30 @@ export function validateChange(
     return { ok: true };
 }
 
-// State-machine gate: the guest may accept/decline only while it is pending.
+// Who must answer a pending proposal: the party who did NOT make it. A host
+// proposal waits on the guest; a guest proposal waits on the host.
+export function whoAnswers(initiatedBy: 'host' | 'guest'): 'host' | 'guest' {
+    return initiatedBy === 'host' ? 'guest' : 'host';
+}
+
+// A change is "open" (still in play, blocks a second one) while it is waiting on
+// the counterparty or on the guest's payment.
+export function isOpenChange(status: ChangeStatus): boolean {
+    return status === 'pending' || status === 'awaiting_guest_payment';
+}
+
+// State-machine gate: the counterparty may answer only while it is pending.
 export function guestMayAnswerChange(status: ChangeStatus): boolean {
     return status === 'pending';
 }
-// The host may withdraw only while it is pending.
+// Either side may withdraw a proposal they own only while it is still open.
 export function hostMayCancelChange(status: ChangeStatus): boolean {
-    return status === 'pending';
+    return status === 'pending' || status === 'awaiting_guest_payment';
+}
+// The guest pays from the awaiting-payment step (a guest proposal the host
+// approved), and a repeat pay reuses the one session — same as host proposals.
+export function guestMayPayChange(status: ChangeStatus): boolean {
+    return status === 'awaiting_guest_payment';
 }
 export function isChangeTerminal(status: ChangeStatus): boolean {
     return status === 'accepted' || status === 'declined' || status === 'cancelled' || status === 'expired';

@@ -2,10 +2,20 @@
 
 import { useState } from 'react';
 
-// The guest's answer to a proposed change: accept (which moves any money and
-// rewrites the stay) or decline. Accept with a price increase returns a Stripe
-// URL to send them to; otherwise the page reloads onto the updated state.
-export default function ChangeRequestActions({ changeId, delta }: { changeId: string; delta: number }) {
+// The action buttons on a change-review page. One component, three shapes:
+//   - answer (default): Accept/Approve + Decline (the counterparty deciding)
+//   - payOnly: a single "Continue to payment" (guest paying after approval)
+//   - withdrawOnly: a single "Withdraw request" (the proposer taking it back)
+// Accept with a price increase returns a Stripe URL; everything else reloads.
+export default function ChangeRequestActions({
+    changeId, acceptLabel, declineLabel, payOnly, withdrawOnly,
+}: {
+    changeId: string;
+    acceptLabel?: string;
+    declineLabel?: string;
+    payOnly?: boolean;
+    withdrawOnly?: boolean;
+}) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -13,8 +23,7 @@ export default function ChangeRequestActions({ changeId, delta }: { changeId: st
         setBusy(true); setError(null);
         try {
             const res = await fetch('/api/bookings/change/respond', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
+                method: 'POST', headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ changeId, action }),
             });
             const body = await res.json().catch(() => ({}));
@@ -27,20 +36,37 @@ export default function ChangeRequestActions({ changeId, delta }: { changeId: st
         }
     };
 
-    const acceptLabel = delta > 0
-        ? 'Accept and pay £' + delta.toFixed(2)
-        : delta < 0
-            ? 'Accept and get £' + Math.abs(delta).toFixed(2) + ' back'
-            : 'Accept the change';
+    if (withdrawOnly) {
+        return (
+            <div className="mt-4 space-y-2">
+                {error && <p className="text-[13px] text-rose-600">{error}</p>}
+                <button type="button" disabled={busy} onClick={() => { if (confirm('Withdraw this change request?')) send('decline'); }} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:opacity-50">
+                    Withdraw request
+                </button>
+            </div>
+        );
+    }
+
+    if (payOnly) {
+        return (
+            <div className="mt-5 space-y-3">
+                {error && <p className="text-[13px] text-rose-600">{error}</p>}
+                <button type="button" disabled={busy} onClick={() => send('accept')} className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                    {acceptLabel || 'Continue to payment'}
+                </button>
+                <p className="text-[12px] text-slate-500">This takes you to the same secure Stripe page.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="mt-5 space-y-2">
             {error && <p className="text-[13px] text-rose-600">{error}</p>}
             <button type="button" disabled={busy} onClick={() => send('accept')} className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-                {acceptLabel}
+                {acceptLabel || 'Accept'}
             </button>
-            <button type="button" disabled={busy} onClick={() => { if (confirm('Decline this change? Your booking stays exactly as it is.')) send('decline'); }} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:opacity-50">
-                Decline
+            <button type="button" disabled={busy} onClick={() => { if (confirm('Decline this change? The booking stays exactly as it is.')) send('decline'); }} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:opacity-50">
+                {declineLabel || 'Decline'}
             </button>
         </div>
     );

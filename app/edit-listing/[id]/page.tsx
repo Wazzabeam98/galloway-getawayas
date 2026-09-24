@@ -217,6 +217,10 @@ export default function EditListing() {
     const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
     const [monthlyDiscount, setMonthlyDiscount] = useState(false);
+    // Extra-guest fee: charged per guest per night above a set number. Used at
+    // booking AND when a reservation is changed to add guests.
+    const [extraGuestFee, setExtraGuestFee] = useState('');
+    const [extraGuestAfter, setExtraGuestAfter] = useState('');
     const [icalToken, setIcalToken] = useState('');
     const [isCoHost, setIsCoHost] = useState(false);
     // Set when an owner opens somebody else's listing. Everything it turns on
@@ -326,6 +330,8 @@ export default function EditListing() {
             setNewListingPromo(listing.new_listing_promo ?? true);
             setLastMinuteDiscount(listing.last_minute_discount ?? false);
             setWeeklyDiscount(listing.weekly_discount ?? false);
+            setExtraGuestFee(listing.extra_guest_fee != null ? String(listing.extra_guest_fee) : '');
+            setExtraGuestAfter(listing.extra_guest_after != null ? String(listing.extra_guest_after) : '');
             setMonthlyDiscount(listing.monthly_discount ?? false);
             setIcalToken(listing.ical_token || '');
             setMinNights(String(listing.min_nights ?? 1));
@@ -499,6 +505,8 @@ export default function EditListing() {
                     street_address: buildStreetAddress(null, null, streetAddress) || null,
                     postcode: locPostcode.trim() ? tidyPostcode(locPostcode) : null,
                     price_per_night: Number(price),
+                    extra_guest_fee: extraGuestFee.trim() ? Number(extraGuestFee) : null,
+                    extra_guest_after: extraGuestAfter.trim() ? Number(extraGuestAfter) : null,
                     max_guests: guests,
                     images: finalPaths,
                     property_type: propertyType,
@@ -1010,6 +1018,19 @@ export default function EditListing() {
                                     <span className="text-2xl font-black text-slate-900 mr-2">£</span>
                                     <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="text-2xl font-black text-slate-900 outline-none w-full" />
                                     <span className="text-slate-500 ml-2">/ night</span>
+                                </div>
+                                <div className="mb-3 max-w-xs">
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Extra guest fee</label>
+                                    <p className="text-[12px] text-slate-500 mb-2">Charged per extra guest, per night, above the number included. Leave blank for none. Also applies when a booking is changed to add guests.</p>
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex items-center border-2 rounded-xl px-3 py-2 flex-1">
+                                            <span className="text-slate-500 mr-1">£</span>
+                                            <input type="number" inputMode="decimal" value={extraGuestFee} onChange={(e) => setExtraGuestFee(e.target.value)} placeholder="0" className="outline-none w-full text-slate-900" />
+                                            <span className="text-slate-500 text-sm ml-1">/ night</span>
+                                        </div>
+                                    </div>
+                                    <label className="block text-sm font-semibold text-slate-700 mt-3 mb-1">Guests included before the fee</label>
+                                    <input type="number" inputMode="numeric" min={1} value={extraGuestAfter} onChange={(e) => setExtraGuestAfter(e.target.value)} placeholder="1" className="border-2 rounded-xl px-3 py-2 w-24 outline-none text-slate-900" />
                                 </div>
                                 {Number(price) > 0 && (
                                     <div className="bg-slate-50 rounded-2xl border p-4 max-w-xs text-sm">

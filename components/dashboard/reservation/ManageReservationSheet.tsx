@@ -24,7 +24,6 @@ export default function ManageReservationSheet({
     status,
     isOwner,
     ended,
-    started,
     phone,
     guestFirst,
     totalPrice,
@@ -62,8 +61,10 @@ export default function ManageReservationSheet({
     const [view, setView] = useState<View>('menu');
     const closed = status === 'cancelled' || status === 'declined';
     const refundable = Math.round((Number(amountPaid) - Number(amountRefunded)) * 100) / 100;
-    // A change only makes sense on a live, upcoming stay the owner controls.
-    const canChange = isOwner && !closed && !ended && !started;
+    // Changes run right up to check-out — including mid-stay extensions and
+    // extra guests. Once the stay is over it's a money matter, so the host uses
+    // "Send or request money" (still shown below) instead.
+    const canChange = isOwner && !closed && !ended;
 
     const title = view === 'resolution' ? 'Send or request money'
         : view === 'cancel' ? 'Cancel booking'
@@ -120,7 +121,8 @@ export default function ManageReservationSheet({
             {view === 'change' && (
                 <ChangeReservationFlow
                     bookingId={bookingId}
-                    guestFirst={guestFirst}
+                    role="host"
+                    counterpartyName={guestFirst}
                     checkIn={checkIn}
                     checkOut={checkOut}
                     adults={adults}
@@ -128,7 +130,6 @@ export default function ManageReservationSheet({
                     pets={pets}
                     maxGuests={maxGuests}
                     petsAllowed={petsAllowed}
-                    totalPrice={totalPrice}
                     onClose={() => { setOpen(false); setView('menu'); }}
                 />
             )}

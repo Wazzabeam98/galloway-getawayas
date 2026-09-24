@@ -16,6 +16,7 @@ import { notifyTopUpConfirmed } from '@/lib/slotNotify';
 import { issueRefunds } from '@/lib/refundSpread';
 import { round2 } from '@/lib/resolutions';
 import { applyBookingChange } from '@/lib/applyBookingChange';
+import { topUpHostForIncrease } from '@/lib/changePayout';
 
 export const dynamic = 'force-dynamic';
 
@@ -433,7 +434,7 @@ export async function POST(request: Request) {
                 if (changeId) {
                     const { data: claimed } = await admin.from('booking_change_requests')
                         .update({ status: 'accepted', responded_at: new Date().toISOString(), stripe_payment_intent_id: changePi, updated_at: new Date().toISOString() })
-                        .eq('id', changeId).eq('status', 'pending')
+                        .eq('id', changeId).in('status', ['pending', 'awaiting_guest_payment'])
                         .select('id, booking_id, guest_id, host_id, new_check_in, new_check_out, new_guests, new_children, new_pets, new_total, price_delta');
                     if (claimed && claimed.length) {
                         const chg = claimed[0];
@@ -486,6 +487,11 @@ export async function POST(request: Request) {
                         const newPaid = round2(Number(booking.amount_paid || 0) + delta);
                         const newBalance = round2(Math.max(0, Number(chg.new_total) - (newPaid - Number(booking.amount_refunded || 0))));
                         await admin.from('bookings').update({ amount_paid: newPaid, balance_amount: newBalance }).eq('id', chg.booking_id);
+                        // If the host has ALREADY been paid out for this stay, the
+                        // payout cron won't revisit it — so send them their share of
+                        // the extra now (net of commission). If they're not yet paid
+                        // out, this is a no-op and the cron pays the new total.
+                        await topUpHostForIncrease(admin, chg.booking_id, delta, chg.id, changePi);
                         await admin.from('booking_change_requests').update({ applied_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', chg.id);
                         try {
                             const { data: hu } = await admin.auth.admin.getUserById(chg.host_id);

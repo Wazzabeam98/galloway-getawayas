@@ -27,6 +27,7 @@ export interface ChangeRow {
 export interface ApplyResult {
     ok: boolean;
     oversold: boolean;   // the new dates were taken by another confirmed stay
+    gone: boolean;       // the booking was cancelled/declined out from under it
     error?: any;
 }
 
@@ -46,7 +47,13 @@ export async function applyBookingChange(admin: any, change: ChangeRow): Promise
         .select('id, amount_paid, amount_refunded, status')
         .eq('id', change.booking_id)
         .maybeSingle();
-    if (!booking) return { ok: false, oversold: false, error: 'booking vanished' };
+    if (!booking) return { ok: false, oversold: false, gone: true, error: 'booking vanished' };
+
+    // Re-read the state at apply time: a booking cancelled (or declined) while
+    // the change was in flight must not be silently rewritten back to life.
+    if (booking.status !== 'confirmed' && booking.status !== 'pending') {
+        return { ok: false, oversold: false, gone: true, error: 'booking is ' + booking.status };
+    }
 
     const netPaid = round2(Number(booking.amount_paid || 0) - Number(booking.amount_refunded || 0));
     const balance = round2(Math.max(0, Number(change.new_total) - netPaid));
@@ -67,7 +74,7 @@ export async function applyBookingChange(admin: any, change: ChangeRow): Promise
     if (error) {
         // 23P01 is the exclusion constraint: the new dates were taken while this
         // change was in flight. Nothing was written.
-        return { ok: false, oversold: error.code === '23P01', error };
+        return { ok: false, oversold: error.code === '23P01', gone: false, error };
     }
-    return { ok: true, oversold: false };
+    return { ok: true, oversold: false, gone: false };
 }

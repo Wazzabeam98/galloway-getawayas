@@ -17,6 +17,12 @@ create table if not exists public.booking_change_requests (
     host_id uuid not null references public.profiles(id) on delete restrict,
     guest_id uuid not null references public.profiles(id) on delete restrict,
 
+    -- Who proposed the change. A host proposal is accepted by the guest; a guest
+    -- proposal is approved by the host. Either way the money is the guest's (they
+    -- pay an increase, they are refunded a decrease) and it only moves once both
+    -- sides have agreed.
+    initiated_by text not null default 'host' check (initiated_by in ('host', 'guest')),
+
     -- The proposed new stay. Dates are the booking's own [check_in, check_out)
     -- half-open shape; guests/children/pets mirror the booking's columns.
     new_check_in date not null,
@@ -41,12 +47,16 @@ create table if not exists public.booking_change_requests (
     -- < 0 refunds it (capped at net paid), 0 is a dates/guests-only change.
     price_delta numeric(10,2) not null,
 
-    -- pending → accepted | declined | cancelled | expired.
-    -- A charge (delta > 0) stays 'pending' until the guest's payment clears in the
-    -- webhook, which is where the booking is actually rewritten; a refund/zero
-    -- change is applied by the respond route itself.
+    -- pending → (both agreed) → awaiting_guest_payment → accepted, or straight to
+    -- accepted for a refund/zero change; also declined | cancelled | expired.
+    -- 'awaiting_guest_payment' is the guest-pays step: for a host proposal the
+    -- guest accepts and pays in one move, so it can go pending → accepted via the
+    -- webhook; for a GUEST proposal the host approves first (both agreed) and the
+    -- guest then pays, which is what this interim state holds. A charge is only
+    -- 'accepted' once the payment clears in the webhook, where the booking is
+    -- rewritten; a refund/zero change is applied by the respond route itself.
     status text not null default 'pending' check (status in (
-        'pending', 'accepted', 'declined', 'cancelled', 'expired'
+        'pending', 'awaiting_guest_payment', 'accepted', 'declined', 'cancelled', 'expired'
     )),
 
     -- The Checkout session opened for a positive delta; reused on a repeat accept
@@ -65,10 +75,11 @@ create table if not exists public.booking_change_requests (
 create index if not exists booking_change_requests_booking_idx
     on public.booking_change_requests (booking_id);
 -- At most one change request can be open on a booking at a time: a second
--- proposal while one is still pending would race to rewrite the same stay.
+-- proposal while one is still in play (waiting on the other side, or on the
+-- guest's payment) would race to rewrite the same stay.
 create unique index if not exists booking_change_requests_one_open
     on public.booking_change_requests (booking_id)
-    where status = 'pending';
+    where status in ('pending', 'awaiting_guest_payment');
 
 alter table public.booking_change_requests enable row level security;
 revoke all on public.booking_change_requests from anon, authenticated;

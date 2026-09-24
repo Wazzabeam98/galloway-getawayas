@@ -163,6 +163,15 @@ export default async function BookingDetail({ params }: { params: { id: string }
         .order('created_at', { ascending: true });
     const hostNotes = noteRows || [];
 
+    // An open change request on this booking, so the host can find and act on a
+    // guest's request (or see the state of their own proposal).
+    const { data: openChange } = await admin
+        .from('booking_change_requests')
+        .select('id, initiated_by, status')
+        .eq('booking_id', booking.id)
+        .in('status', ['pending', 'awaiting_guest_payment'])
+        .maybeSingle();
+
     const now = new Date();
     const started = stayHasStarted(booking.check_in, now);
     const ended = stayHasEnded(booking.check_out, listing?.check_out_time, now);
@@ -584,6 +593,16 @@ export default async function BookingDetail({ params }: { params: { id: string }
                         {/* Manage reservation — a single row with a pencil that opens
                             the action pop-up: change, send/request money, dispute,
                             the guest's phone, ask to cancel, cancel (item 9). */}
+                        {openChange && (
+                            <a href={`/reservations/change/${openChange.id}`} className="mb-3 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left transition hover:border-emerald-300">
+                                <span className="flex-1 text-sm font-semibold text-emerald-900">
+                                    {openChange.initiated_by === 'guest'
+                                        ? (openChange.status === 'pending' ? 'Your guest requested a change — review it' : 'Change approved — waiting on the guest’s payment')
+                                        : (openChange.status === 'awaiting_guest_payment' ? 'Change sent — waiting on the guest’s payment' : 'You proposed a change — waiting on the guest')}
+                                </span>
+                                <span className="text-[13px] font-semibold text-emerald-700">Review</span>
+                            </a>
+                        )}
                         <ManageReservationSheet
                             bookingId={booking.id}
                             status={booking.status}
