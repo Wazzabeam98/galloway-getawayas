@@ -137,25 +137,26 @@ $$;
 ALTER FUNCTION "public"."check_review_window"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."delete_own_account"() RETURNS "void"
+-- Closing an account ANONYMISES it — see 20260924181742_anonymise_own_account.sql.
+-- The old delete_own_account() (which deleted auth.users and cascaded away the
+-- booking/review/message history) is gone; bookings.guest_id/host_id are now
+-- RESTRICT so a profile delete can never destroy that history.
+CREATE OR REPLACE FUNCTION "public"."admin_anonymise_account"("target" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
     AS $$
 declare
-  uid uuid := auth.uid();
+  uid uuid := target;
   blocking int;
-  removed int;
 begin
   if uid is null then
-    raise exception 'You must be signed in to delete your account.';
+    raise exception 'No account given to anonymise.';
   end if;
 
-  -- The account must actually still exist.
   if not exists (select 1 from auth.users where id = uid) then
-    raise exception 'This account no longer exists. Please sign out and sign in again.';
+    raise exception 'This account no longer exists.';
   end if;
 
-  -- Refuse while there are still bookings in play, as guest or as host.
   select count(*) into blocking
   from public.bookings
   where (guest_id = uid or host_id = uid)
@@ -164,21 +165,80 @@ begin
 
   if blocking > 0 then
     raise exception
-      'You still have % upcoming or pending booking(s). Please cancel them before deleting your account.',
+      'This account still has % upcoming or pending booking(s). Cancel them before closing it.',
       blocking;
   end if;
 
-  delete from auth.users where id = uid;
+  update public.profiles set
+    full_name = 'Deleted user',
+    preferred_name = null,
+    show_full_name = false,
+    email = 'deleted+' || uid::text || '@invalid.example',
+    phone = null,
+    residential_address = null,
+    host_bio = null,
+    trading_name = null,
+    welcome_message = null,
+    welcome_message_enabled = false,
+    avatar_url = null,
+    anonymised_at = now()
+  where id = uid;
 
-  get diagnostics removed = row_count;
-  if removed = 0 then
-    raise exception 'Account could not be deleted. Please contact support.';
-  end if;
+  update public.service_providers set
+    business_name = 'Removed provider',
+    provider_name = null,
+    contact_email = null,
+    contact_phone = null,
+    based_line = null,
+    collection_street = null,
+    collection_town = null,
+    collection_postcode = null,
+    description = '',
+    guest_details = null,
+    dietary_note = null,
+    declarations = '{}'::jsonb,
+    photos = '{}'::text[],
+    headshot = null,
+    logo = null
+  where owner_id = uid;
+
+  update public.listings set status = 'hidden'
+  where host_id = uid and status in ('published', 'pending_review');
+
+  update auth.users set
+    email = 'deleted+' || uid::text || '@invalid.example',
+    phone = null,
+    raw_user_meta_data = '{}'::jsonb,
+    raw_app_meta_data = jsonb_build_object('provider', 'deleted', 'providers', '[]'::jsonb),
+    banned_until = now() + interval '100 years'
+  where id = uid;
+
+  begin delete from auth.sessions where user_id = uid; exception when undefined_table then null; end;
+  begin delete from auth.refresh_tokens where user_id::text = uid::text; exception when undefined_table then null; end;
+  begin delete from auth.identities where user_id = uid; exception when undefined_table then null; end;
 end;
 $$;
 
 
-ALTER FUNCTION "public"."delete_own_account"() OWNER TO "postgres";
+ALTER FUNCTION "public"."admin_anonymise_account"("uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."anonymise_own_account"() RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  uid uuid := auth.uid();
+begin
+  if uid is null then
+    raise exception 'You must be signed in to close your account.';
+  end if;
+  perform public.admin_anonymise_account(uid);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."anonymise_own_account"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."expire_unpaid_bookings"() RETURNS "void"
@@ -764,7 +824,8 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "stripe_requirements_due" "text",
     "stripe_updated_at" timestamp with time zone,
     "is_admin" boolean DEFAULT false NOT NULL,
-    "payout_balance_owed" numeric DEFAULT 0 NOT NULL
+    "payout_balance_owed" numeric DEFAULT 0 NOT NULL,
+    "anonymised_at" timestamp with time zone
 );
 
 
@@ -1124,12 +1185,12 @@ ALTER TABLE ONLY "public"."booking_guests"
 
 
 ALTER TABLE ONLY "public"."bookings"
-    ADD CONSTRAINT "bookings_guest_id_fkey" FOREIGN KEY ("guest_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+    ADD CONSTRAINT "bookings_guest_id_fkey" FOREIGN KEY ("guest_id") REFERENCES "public"."profiles"("id") ON DELETE RESTRICT;
 
 
 
 ALTER TABLE ONLY "public"."bookings"
-    ADD CONSTRAINT "bookings_host_id_fkey" FOREIGN KEY ("host_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+    ADD CONSTRAINT "bookings_host_id_fkey" FOREIGN KEY ("host_id") REFERENCES "public"."profiles"("id") ON DELETE RESTRICT;
 
 
 
@@ -1199,17 +1260,17 @@ ALTER TABLE ONLY "public"."notification_preferences"
 
 
 ALTER TABLE ONLY "public"."payments"
-    ADD CONSTRAINT "payments_booking_id_fkey" FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE SET NULL;
+    ADD CONSTRAINT "payments_booking_id_fkey" FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE RESTRICT;
 
 
 
 ALTER TABLE ONLY "public"."payouts"
-    ADD CONSTRAINT "payouts_booking_id_fkey" FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE SET NULL;
+    ADD CONSTRAINT "payouts_booking_id_fkey" FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE RESTRICT;
 
 
 
 ALTER TABLE ONLY "public"."payouts"
-    ADD CONSTRAINT "payouts_host_id_fkey" FOREIGN KEY ("host_id") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
+    ADD CONSTRAINT "payouts_host_id_fkey" FOREIGN KEY ("host_id") REFERENCES "public"."profiles"("id") ON DELETE RESTRICT;
 
 
 
@@ -1750,9 +1811,12 @@ GRANT ALL ON FUNCTION "public"."check_review_window"() TO "service_role";
 
 
 
-REVOKE ALL ON FUNCTION "public"."delete_own_account"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."delete_own_account"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."delete_own_account"() TO "service_role";
+REVOKE ALL ON FUNCTION "public"."admin_anonymise_account"("uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_anonymise_account"("uuid") TO "service_role";
+
+REVOKE ALL ON FUNCTION "public"."anonymise_own_account"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."anonymise_own_account"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."anonymise_own_account"() TO "service_role";
 
 
 
