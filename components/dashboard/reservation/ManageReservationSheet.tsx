@@ -4,13 +4,14 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
     Pencil, ChevronRight, ChevronLeft, Banknote,
-    Phone, Copy, Check, MessageSquare, XCircle,
+    Phone, Copy, Check, MessageSquare, XCircle, CalendarDays,
 } from 'lucide-react';
 import Modal from './Modal';
 import BookingActions from '@/components/BookingActions';
 import ResolutionFlow from './ResolutionFlow';
+import ChangeReservationFlow from './ChangeReservationFlow';
 
-type View = 'menu' | 'resolution' | 'cancel';
+type View = 'menu' | 'resolution' | 'cancel' | 'change';
 
 // The single "Manage reservation" row — a pencil that opens Airbnb's kind of
 // action sheet. It gathers the host actions that are built: send or request money
@@ -23,30 +24,51 @@ export default function ManageReservationSheet({
     status,
     isOwner,
     ended,
+    started,
     phone,
     guestFirst,
     totalPrice,
     amountPaid,
     amountRefunded,
     askToCancelHref,
+    checkIn,
+    checkOut,
+    adults,
+    children,
+    pets,
+    maxGuests,
+    petsAllowed,
 }: {
     bookingId: string;
     status: string;
     isOwner: boolean;
     ended: boolean;
+    started?: boolean;
     phone: string | null;
     guestFirst: string;
     totalPrice: number;
     amountPaid: number;
     amountRefunded: number;
     askToCancelHref: string | null;
+    checkIn: string;
+    checkOut: string;
+    adults: number;
+    children: number;
+    pets: number;
+    maxGuests: number;
+    petsAllowed: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const [view, setView] = useState<View>('menu');
     const closed = status === 'cancelled' || status === 'declined';
     const refundable = Math.round((Number(amountPaid) - Number(amountRefunded)) * 100) / 100;
+    // A change only makes sense on a live, upcoming stay the owner controls.
+    const canChange = isOwner && !closed && !ended && !started;
 
-    const title = view === 'resolution' ? 'Send or request money' : view === 'cancel' ? 'Cancel booking' : 'Manage reservation';
+    const title = view === 'resolution' ? 'Send or request money'
+        : view === 'cancel' ? 'Cancel booking'
+        : view === 'change' ? 'Change reservation'
+        : 'Manage reservation';
 
     return (
         <Modal
@@ -69,6 +91,9 @@ export default function ManageReservationSheet({
 
             {view === 'menu' && (
                 <div className="-my-1 divide-y divide-slate-100">
+                    {canChange && (
+                        <Row icon={CalendarDays} label="Change reservation" sub="New dates, guests or price — the guest confirms" onClick={() => setView('change')} />
+                    )}
                     {isOwner && !closed && (
                         <Row icon={Banknote} label="Send or request money" sub="For a refund, extra services or damage" onClick={() => setView('resolution')} />
                     )}
@@ -90,6 +115,22 @@ export default function ManageReservationSheet({
                     )}
                     {closed && <p className="py-3 text-sm text-slate-500">This booking is {status}. There’s nothing left to manage.</p>}
                 </div>
+            )}
+
+            {view === 'change' && (
+                <ChangeReservationFlow
+                    bookingId={bookingId}
+                    guestFirst={guestFirst}
+                    checkIn={checkIn}
+                    checkOut={checkOut}
+                    adults={adults}
+                    childrenCount={children}
+                    pets={pets}
+                    maxGuests={maxGuests}
+                    petsAllowed={petsAllowed}
+                    totalPrice={totalPrice}
+                    onClose={() => { setOpen(false); setView('menu'); }}
+                />
             )}
 
             {view === 'resolution' && (

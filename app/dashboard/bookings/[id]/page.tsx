@@ -105,7 +105,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     const { data: listing } = await admin
         .from('listings')
-        .select('id, title, images, location, check_in_time, check_in_end_time, check_out_time, commission_rate, cancellation_policy, damage_deposit, host_id')
+        .select('id, title, images, location, check_in_time, check_in_end_time, check_out_time, commission_rate, cancellation_policy, damage_deposit, host_id, max_guests, amenities')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
@@ -589,12 +589,20 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             status={booking.status}
                             isOwner={isOwner}
                             ended={ended}
+                            started={started}
                             phone={phone}
                             guestFirst={firstName}
                             totalPrice={total}
                             amountPaid={paid}
                             amountRefunded={refunded}
                             askToCancelHref={askToCancelHref}
+                            checkIn={String(booking.check_in).slice(0, 10)}
+                            checkOut={String(booking.check_out).slice(0, 10)}
+                            adults={Number(booking.adults || 0) || Math.max(1, Number(booking.guests || 1) - Number(booking.children || 0))}
+                            children={Number(booking.children || 0)}
+                            pets={Number(booking.pets || 0)}
+                            maxGuests={Number(listing?.max_guests || 1)}
+                            petsAllowed={Array.isArray(listing?.amenities) && listing.amenities.indexOf('Pets allowed') !== -1}
                         />
 
                         {/* Booking details — the confirmation code (derived from the
