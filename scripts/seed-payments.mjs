@@ -52,7 +52,12 @@ async function reset() {
     const bookings = await db.select('bookings', bookingFilter);
     if (bookings.length) {
         const bookingList = '(' + bookings.map((b) => b.id).join(',') + ')';
-        for (const table of ['payouts', 'payments', 'booking_guests', 'messages', 'reviews']) {
+        // booking_resolutions is RESTRICT-linked to bookings (a resolution must
+        // never be orphaned), so it has to go before the booking does or the
+        // delete fails on its foreign key — which is exactly what stopped the
+        // seed once the Resolution Centre landed. Its attachments cascade from
+        // it, so removing the resolution rows clears those too.
+        for (const table of ['booking_resolutions', 'payouts', 'payments', 'booking_guests', 'messages', 'reviews']) {
             await db.remove(table, '?booking_id=in.' + bookingList);
         }
         await db.remove('bookings', '?id=in.' + bookingList);
