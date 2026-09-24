@@ -41,6 +41,10 @@
       "schedule": "15 * * * *"
     },
     {
+      "path": "/api/cron/resolutions",
+      "schedule": "20 * * * *"
+    },
+    {
       "path": "/api/cron/service-subscriptions",
       "schedule": "0 7 * * *"
     },
