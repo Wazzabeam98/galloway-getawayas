@@ -602,7 +602,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             children={Number(booking.children || 0)}
                             pets={Number(booking.pets || 0)}
                             maxGuests={Number(listing?.max_guests || 1)}
-                            petsAllowed={Array.isArray(listing?.amenities) && listing.amenities.indexOf('Pets allowed') !== -1}
+                            petsAllowed={Array.isArray(listing?.amenities) && listing!.amenities.indexOf('Pets allowed') !== -1}
                         />
 
                         {/* Booking details — the confirmation code (derived from the
