@@ -404,13 +404,16 @@ export default function AccountSettings() {
         if (deleteConfirmText !== 'DELETE') return;
         setDeleting(true);
 
-        // Runs a database function that refuses if there are still live
-        // bookings, then removes the account. See the Supabase SQL step.
-        const { error } = await supabase.rpc('delete_own_account');
+        // Closing an account ANONYMISES it: the route scrubs personal details,
+        // disables sign-in and removes stored images, while keeping the booking
+        // and payment records (they are required and belong to other people's
+        // stays too). It refuses if there are still live bookings to cancel.
+        const res = await fetch('/api/account/delete', { method: 'POST' });
+        const body = await res.json().catch(() => ({}));
 
-        if (error) {
+        if (!res.ok) {
             setDeleting(false);
-            toast.error(error.message, { theme: 'colored' });
+            toast.error(body?.error || 'Could not close your account.', { theme: 'colored' });
             return;
         }
 
@@ -1080,7 +1083,7 @@ export default function AccountSettings() {
                                     <div className="font-semibold text-red-800 text-sm">Delete my account</div>
                                 </div>
                                 <p className="text-xs text-red-700/80 mb-4">
-                                    This permanently removes your account, your profile, your listings and your booking history. It cannot be undone. If you have upcoming or pending bookings, cancel them first — as either a guest or a host.
+                                    This closes your account for good. Your personal details — your name, contact details, address and photos — are removed and you won&apos;t be able to sign back in. Your booking and payment records are kept, because they belong to other people&apos;s stays too and we&apos;re required to hold them, but they&apos;re no longer linked to a usable account. If you have upcoming or pending bookings, cancel them first — as either a guest or a host.
                                 </p>
 
                                 {!deleteOpen ? (
@@ -1120,7 +1123,7 @@ export default function AccountSettings() {
                                                 disabled={deleting || deleteConfirmText !== 'DELETE'}
                                                 className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
-                                                {deleting ? 'Deleting...' : 'Permanently delete'}
+                                                {deleting ? 'Closing...' : 'Close my account'}
                                             </button>
                                         </div>
                                     </div>
