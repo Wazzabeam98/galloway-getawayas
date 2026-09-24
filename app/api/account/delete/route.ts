@@ -12,8 +12,11 @@ import { logError } from '@/lib/logError';
 // storage bucket, and it authenticates the caller before scrubbing.
 //
 // Order: gather the storage paths, scrub the account (which guards against live
-// bookings and raises if any exist — so a blocked erasure touches nothing),
-// then remove the images with the paths gathered before the columns were nulled.
+// bookings and raises if any exist — so a blocked erasure touches nothing, and
+// which also unpublishes any listings this user hosts), then remove the images
+// with the paths gathered before the columns were nulled. Because the scrub
+// unpublishes the listings before this route deletes their photos, no listing
+// is ever left public with its images gone.
 
 const BUCKET = process.env.NEXT_PUBLIC_S3_BUCKET || 'listings';
 

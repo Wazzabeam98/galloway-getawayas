@@ -186,17 +186,24 @@ begin
 
   update public.service_providers set
     business_name = 'Removed provider',
+    provider_name = null,
     contact_email = null,
     contact_phone = null,
     based_line = null,
     collection_street = null,
     collection_town = null,
     collection_postcode = null,
-    description = null,
-    photos = null,
+    description = '',
+    guest_details = null,
+    dietary_note = null,
+    declarations = '{}'::jsonb,
+    photos = '{}'::text[],
     headshot = null,
     logo = null
   where owner_id = uid;
+
+  update public.listings set status = 'hidden'
+  where host_id = uid and status in ('published', 'pending_review');
 
   update auth.users set
     email = 'deleted+' || uid::text || '@invalid.example',

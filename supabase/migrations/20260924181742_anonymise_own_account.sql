@@ -18,10 +18,12 @@
 --   1. adds profiles.anonymised_at (the tombstone);
 --   2. replaces delete_own_account() with anonymise_own_account() — a
 --      SECURITY DEFINER routine that, in one transaction, scrubs the caller's
---      personal data across profiles + any owned service_providers and disables
---      their auth identity, while leaving bookings/payments/payouts/orders
---      untouched. Storage objects are removed by the app (service role, storage
---      API) BEFORE this runs; see app/api/account/delete/route.ts.
+--      personal data across profiles + any owned service_providers, unpublishes
+--      any listings they host, and disables their auth identity, while leaving
+--      bookings/payments/payouts/orders untouched. The app (service role,
+--      storage API) removes the person's images AFTER this returns, so the
+--      listings are already unpublished before their photos disappear and no
+--      broken listing is left public; see app/api/account/delete/route.ts.
 --   3. flips bookings.guest_id/host_id from ON DELETE CASCADE to RESTRICT, so a
 --      profile delete can never destroy booking history even if some other path
 --      ever deletes a profile.
@@ -92,21 +94,41 @@ begin
     anonymised_at = now()
   where id = uid;
 
-  -- service_providers (if this user owns one): scrub business/contact/address
-  -- and photo fields; keep the row so orders/payouts stay linked.
+  -- service_providers (if this user owns one): scrub every field that carries
+  -- the person or their own words — business/contact/address, the photo paths,
+  -- and the free-text/JSON they wrote about themselves and their offering
+  -- (provider_name, the guest_details answers, the dietary note, and the
+  -- declarations they confirmed). Keep the row so orders/payouts stay linked.
+  -- Three of these are NOT NULL, so they are reset to their empty sentinel
+  -- rather than nulled — description ('' default), photos ('{}' default) and
+  -- declarations ('{}' default). Nulling any of them raises a not-null
+  -- violation and aborts the whole erasure. (about/what_to_expect were dropped
+  -- in 20260901140000, so they are not touched here.)
   update public.service_providers set
     business_name = 'Removed provider',
+    provider_name = null,
     contact_email = null,
     contact_phone = null,
     based_line = null,
     collection_street = null,
     collection_town = null,
     collection_postcode = null,
-    description = null,
-    photos = null,
+    description = '',
+    guest_details = null,
+    dietary_note = null,
+    declarations = '{}'::jsonb,
+    photos = '{}'::text[],
     headshot = null,
     logo = null
   where owner_id = uid;
+
+  -- listings: unpublish anything this user hosts before their images are
+  -- removed by the app, so no listing is left publicly reachable with its
+  -- photos (and its host) gone. 'hidden' is the "was live, taken down" state;
+  -- pending_review is folded in so an owner can't later approve a dead host's
+  -- listing. Drafts stay drafts — they were never public.
+  update public.listings set status = 'hidden'
+  where host_id = uid and status in ('published', 'pending_review');
 
   -- auth.users: scramble the login identity so the person can never sign back
   -- in and no personal data survives in the auth schema, but keep the row so
