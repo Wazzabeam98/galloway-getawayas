@@ -282,11 +282,31 @@ export async function POST(request: Request) {
                 const resolutionId = cs.metadata && cs.metadata.resolution_id;
                 const pi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
                 if (resolutionId) {
+                    // The guest accepts into 'awaiting_guest_payment' now; older
+                    // rows (before that state) paid straight from 'pending'. Both
+                    // move to 'paid' here, and the guarded update makes a
+                    // redelivery a no-op.
                     const { data: moved } = await admin.from('booking_resolutions')
                         .update({ status: 'paid', paid_at: new Date().toISOString(), stripe_payment_intent_id: pi, updated_at: new Date().toISOString() })
-                        .eq('id', resolutionId).eq('status', 'pending').select('id, host_id, guest_id, amount, reason, booking_id');
+                        .eq('id', resolutionId).in('status', ['awaiting_guest_payment', 'pending']).select('id, host_id, guest_id, amount, reason, booking_id');
                     if (moved && moved.length) {
                         const r = moved[0];
+                        // Record the guest's payment in the ledger. The money moved
+                        // (automatic capture with transfer + fee) but nothing wrote
+                        // it here, so it was missing from the accounts. Guarded on
+                        // the row-claim above, so it runs once; 23505 means a
+                        // redelivery already recorded it (the one-row-per-intent
+                        // index covers non-refund kinds).
+                        const { error: reqLedgerError } = await admin.from('payments').insert({
+                            booking_id: r.booking_id,
+                            kind: 'resolution_request',
+                            amount: round2(Number(r.amount)),
+                            status: 'succeeded',
+                            stripe_payment_intent_id: pi,
+                        });
+                        if (reqLedgerError && reqLedgerError.code !== '23505') {
+                            await logError('[webhook] a resolution request was paid but is missing from the payments ledger', reqLedgerError, { path: 'stripe/webhook' });
+                        }
                         try {
                             const { data: hostUser } = await admin.auth.admin.getUserById(r.host_id);
                             const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
@@ -312,13 +332,22 @@ export async function POST(request: Request) {
                 const resolutionId = cs.metadata && cs.metadata.resolution_id;
                 const hostPi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
                 if (resolutionId) {
-                    // Claim the row first, so two webhook deliveries can't both refund.
-                    const { data: claimed } = await admin.from('booking_resolutions')
-                        .update({ status: 'completed', paid_at: new Date().toISOString(), stripe_payment_intent_id: hostPi, updated_at: new Date().toISOString() })
-                        .eq('id', resolutionId).eq('status', 'awaiting_host_payment')
-                        .select('id, booking_id, guest_id, amount');
-                    if (claimed && claimed.length) {
-                        const r = claimed[0];
+                    // REFUND FIRST, MARK COMPLETED SECOND.
+                    //
+                    // This used to claim the row ('completed') before refunding.
+                    // If the refund then failed, the row was already terminal, so
+                    // nothing ever retried it: the host had paid and the guest was
+                    // never refunded, silently. The order is reversed here — the
+                    // refund is idempotent per charge on the key below, so a
+                    // redelivery or a retry after a failure never double-pays, and
+                    // the row is only marked 'completed' once money has actually
+                    // gone back. A failed refund leaves it 'awaiting_host_payment',
+                    // i.e. retryable on the next delivery or the reconcile sweep.
+                    const { data: resRow } = await admin.from('booking_resolutions')
+                        .select('id, booking_id, guest_id, amount, status')
+                        .eq('id', resolutionId).maybeSingle();
+                    if (resRow && resRow.status === 'awaiting_host_payment') {
+                        const r = resRow;
                         const { data: booking } = await admin.from('bookings')
                             .select('id, listing_id, guest_id, host_id, amount_paid, amount_refunded, stripe_payment_intent_id, balance_payment_intent_id, payout_transfer_id, payout_amount')
                             .eq('id', r.booking_id).maybeSingle();
@@ -327,38 +356,63 @@ export async function POST(request: Request) {
                             await logError('[webhook] resolution_send: the funded booking vanished — host paid but no guest refund could be issued, reconcile at Stripe', { resolution: r.id, booking_id: r.booking_id }, { path: 'stripe/webhook' });
                             return NextResponse.json({ ok: true });
                         }
-                        try {
-                            const issued = await issueRefunds(
-                                booking,
-                                amount,
-                                { booking_id: r.booking_id, reason: 'host_send', initiated_by: 'host' },
-                                (intentId: string) => 'resolution-send-' + r.id + '-' + intentId,
-                            );
+                        // Idempotent per charge — the same key never double-refunds
+                        // across deliveries/retries; issueRefunds never throws for a
+                        // refusal, it reports how much it managed.
+                        const issued = await issueRefunds(
+                            booking,
+                            amount,
+                            { booking_id: r.booking_id, reason: 'host_send', initiated_by: 'host' },
+                            (intentId: string) => 'resolution-send-' + r.id + '-' + intentId,
+                        );
+                        const refundedNow = round2(issued.refundedPence / 100);
+                        if (refundedNow <= 0) {
+                            // Nothing went back. Leave the row 'awaiting_host_payment'
+                            // so a redelivery or the reconcile sweep retries it.
+                            await logError('[webhook] resolution_send: host funded £' + amount.toFixed(2) + ' but nothing could be refunded to the guest yet — the request stays open to retry', issued.failure || { resolution: r.id }, { path: 'stripe/webhook' });
+                            return NextResponse.json({ ok: true, refunded: 0 });
+                        }
+                        // Money moved. Claim the row so the ledger rows, the
+                        // amount_refunded write-back, and the guest email happen
+                        // exactly once even under a concurrent redelivery. If
+                        // another delivery already completed it, the refunds we
+                        // just (re)issued were idempotent no-ops — stop here.
+                        const { data: claimed } = await admin.from('booking_resolutions')
+                            .update({ status: 'completed', paid_at: new Date().toISOString(), stripe_payment_intent_id: hostPi, updated_at: new Date().toISOString() })
+                            .eq('id', r.id).eq('status', 'awaiting_host_payment')
+                            .select('id');
+                        if (claimed && claimed.length) {
                             for (let i = 0; i < issued.refunds.length; i++) {
-                                await admin.from('payments').insert({
+                                // Refund rows are outside the one-row-per-intent
+                                // index, and the row-claim above runs this once,
+                                // so any insert error here is genuinely unexpected
+                                // — logged, never excused.
+                                const { error: refLedgerError } = await admin.from('payments').insert({
                                     booking_id: r.booking_id, kind: 'refund',
                                     amount: round2(issued.shares[i] / 100), status: 'succeeded',
                                     stripe_payment_intent_id: issued.charges[i].intentId,
                                 });
+                                if (refLedgerError) {
+                                    await logError('[webhook] resolution_send: a guest refund is missing from the payments ledger', refLedgerError, { path: 'stripe/webhook' });
+                                }
                             }
-                            const refundedNow = round2(issued.refundedPence / 100);
-                            if (refundedNow > 0) {
-                                await admin.rpc('record_booking_refund', { p_booking: r.booking_id, p_amount: refundedNow });
-                            }
+                            await admin.rpc('record_booking_refund', { p_booking: r.booking_id, p_amount: refundedNow });
                             if (refundedNow < amount) {
                                 await logError('[webhook] resolution_send: host funded £' + amount.toFixed(2) + ' but only £' + refundedNow.toFixed(2) + ' could be refunded to the guest — reconcile at Stripe', issued.failure || { resolution: r.id }, { path: 'stripe/webhook' });
                             }
-                            const { data: guestUser } = await admin.auth.admin.getUserById(r.guest_id);
-                            const guestEmail = (guestUser && guestUser.user && guestUser.user.email) || '';
-                            if (guestEmail && refundedNow > 0) {
-                                await sendEmail(guestEmail, 'Your host has sent you £' + refundedNow.toFixed(2), emailLayout(
-                                    '<p style="margin:0 0 16px;font-size:16px;">Your host has sent you <strong>£' + refundedNow.toFixed(2)
-                                    + '</strong>. It goes back to the card you paid with, usually within five to ten days.</p>'
-                                    + button(SITE_URL + '/trips', 'View your trip'),
-                                    'You’re receiving this because you have a booking with Galloway Getaways.'));
+                            try {
+                                const { data: guestUser } = await admin.auth.admin.getUserById(r.guest_id);
+                                const guestEmail = (guestUser && guestUser.user && guestUser.user.email) || '';
+                                if (guestEmail) {
+                                    await sendEmail(guestEmail, 'Your host has sent you £' + refundedNow.toFixed(2), emailLayout(
+                                        '<p style="margin:0 0 16px;font-size:16px;">Your host has sent you <strong>£' + refundedNow.toFixed(2)
+                                        + '</strong>. It goes back to the card you paid with, usually within five to ten days.</p>'
+                                        + button(SITE_URL + '/trips', 'View your trip'),
+                                        'You’re receiving this because you have a booking with Galloway Getaways.'));
+                                }
+                            } catch (mailErr) {
+                                await logError('[webhook] resolution_send guest refund email', mailErr, { path: 'stripe/webhook' });
                             }
-                        } catch (refErr) {
-                            await logError('[webhook] resolution_send refund failed after host funded it — reconcile at Stripe', refErr, { path: 'stripe/webhook' });
                         }
                     }
                 }

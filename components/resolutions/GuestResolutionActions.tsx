@@ -4,8 +4,8 @@ import { useState } from 'react';
 
 // The guest's three answers to a money request: accept and pay, decline, or
 // suggest a different amount. Accept returns a Stripe URL to send them to.
-export default function GuestResolutionActions({ resolutionId, amount, guestFirst }: {
-    resolutionId: string; amount: number; guestFirst: string;
+export default function GuestResolutionActions({ resolutionId, amount, guestFirst, resumeOnly }: {
+    resolutionId: string; amount: number; guestFirst: string; resumeOnly?: boolean;
 }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -29,6 +29,21 @@ export default function GuestResolutionActions({ resolutionId, amount, guestFirs
             setBusy(false);
         }
     };
+
+    // Resuming an accepted-but-unpaid request: the only action is to go back to
+    // the one Checkout session that is already open (the route reuses it), so no
+    // decline/counter here — those were answered when they accepted.
+    if (resumeOnly) {
+        return (
+            <div className="mt-5 space-y-3">
+                {error && <p className="text-[13px] text-rose-600">{error}</p>}
+                <button type="button" disabled={busy} onClick={() => send('accept')} className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                    Continue to payment · £{amount.toFixed(2)}
+                </button>
+                <p className="text-[12px] text-slate-500">You started paying this request. This takes you back to the same secure Stripe page.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="mt-5 space-y-3">

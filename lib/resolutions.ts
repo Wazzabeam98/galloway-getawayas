@@ -2,11 +2,20 @@
 // of Supabase/Stripe so the money maths and the state machine can be unit-tested
 // on their own; the routes and the webhook wire these into the world.
 
+// Relative import, not '@/lib/dayKey': this module is executed directly by the
+// unit test, and Node cannot resolve the @/ alias at runtime.
+import { londonDayKey } from './dayKey';
+
 export type ResolutionDirection = 'request' | 'send';
 export type ResolutionReason = 'extra_services' | 'damage';
 export type ResolutionStatus =
     | 'pending' | 'countered' | 'paid' | 'declined' | 'escalated'
-    | 'cancelled' | 'expired' | 'awaiting_host_payment' | 'completed';
+    | 'cancelled' | 'expired' | 'awaiting_host_payment'
+    // The guest has accepted a request and a Checkout session is open, waiting
+    // for them to pay. Parking the row here (rather than leaving it 'pending')
+    // is what lets a second click reuse the one session instead of opening a
+    // second, so a single request can only ever produce one payment.
+    | 'awaiting_guest_payment' | 'completed';
 
 // A guest has this long to respond to a request before it escalates to an admin.
 // Airbnb uses 24h; the house rule here is 72h.
@@ -38,8 +47,12 @@ export function applicationFeePence(amountPence: number, commissionRate: number)
 export function isDamageAllowed(checkOut: string | null, now: Date = new Date()): boolean {
     if (!checkOut) return false;
     // Compare on calendar date: the stay is "over" from the check-out day on.
+    // "Today" is the UK calendar day (Europe/London), not the UTC one — under
+    // British Summer Time a UTC date rolls over an hour after midnight London,
+    // so a plain toISOString() would open damage a day early (or, at the far end
+    // of the day, judge a check-out still to come). See lib/dayKey.
     const co = String(checkOut).slice(0, 10);
-    const today = now.toISOString().slice(0, 10);
+    const today = londonDayKey(now);
     return today >= co;
 }
 
@@ -69,8 +82,17 @@ export function isPastDeadline(expiresAt: string | null, now: Date = new Date())
 }
 
 // State-machine gates — who may do what, from which status.
+// Decline and counter are only offered while the request is still 'pending' —
+// once the guest has committed to pay they can no longer send it back.
 export function guestMayRespond(status: ResolutionStatus): boolean {
     return status === 'pending';
+}
+// Accepting/continuing to pay is allowed from 'pending' (first accept) and from
+// 'awaiting_guest_payment' (returning to an already-open Checkout session). The
+// route reuses the stored session in the second case rather than opening a new
+// one, so this can never turn into two payments.
+export function guestMayPay(status: ResolutionStatus): boolean {
+    return status === 'pending' || status === 'awaiting_guest_payment';
 }
 export function hostMayDecideCounter(status: ResolutionStatus): boolean {
     return status === 'countered';

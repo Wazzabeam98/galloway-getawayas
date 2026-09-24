@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
     commissionRateFor, applicationFeePence, isDamageAllowed, sendCapPounds,
     validateSendAmount, escalationDeadline, isPastDeadline, guestMayRespond,
-    hostMayDecideCounter, hostMayCancel, isTerminal, ESCALATION_HOURS, toPence,
+    guestMayPay, hostMayDecideCounter, hostMayCancel, isTerminal, ESCALATION_HOURS, toPence,
 } from '../lib/resolutions';
 
 test('an extra-services request takes 10%; damage and sends take nothing', () => {
@@ -26,6 +26,20 @@ test('damage is only allowed from check-out day onward', () => {
     assert.equal(isDamageAllowed('2026-10-05', now), true, 'after check-out');
     assert.equal(isDamageAllowed('2026-10-12', now), false, 'before check-out (stay still upcoming)');
     assert.equal(isDamageAllowed(null, now), false);
+});
+
+test('the "after check-out" gate is judged on the UK calendar day, not UTC', () => {
+    // 23:30 UTC on 30 June is already 00:30 (BST) on 1 July in the UK. The gate
+    // must read the UK day: on the 1st, a check-out dated the 1st is over. The
+    // old UTC comparison still read "30 June" here and wrongly refused it.
+    const justAfterUkMidnight = new Date('2026-06-30T23:30:00Z');
+    assert.equal(isDamageAllowed('2026-07-01', justAfterUkMidnight), true,
+        'the UK day has ticked over to the check-out date');
+    // And it does not open a day early: at 09:00 UTC on 30 June it is still
+    // 30 June in the UK, so a check-out on 1 July is not yet reachable.
+    const morningBefore = new Date('2026-06-30T09:00:00Z');
+    assert.equal(isDamageAllowed('2026-07-01', morningBefore), false,
+        'still the day before check-out in the UK');
 });
 
 test('a send is capped at what the guest has paid net of refunds', () => {
@@ -51,6 +65,14 @@ test('the state machine gates who can act from each status', () => {
     assert.equal(guestMayRespond('pending'), true);
     assert.equal(guestMayRespond('countered'), false);
     assert.equal(guestMayRespond('paid'), false);
+    // Decline/counter are pending-only; paying is allowed from pending and from
+    // awaiting_guest_payment (the repeat-accept that reuses the open session).
+    assert.equal(guestMayRespond('awaiting_guest_payment'), false, 'no decline/counter once accepted');
+    assert.equal(guestMayPay('pending'), true);
+    assert.equal(guestMayPay('awaiting_guest_payment'), true, 'a repeat accept is allowed, and reuses the session');
+    assert.equal(guestMayPay('paid'), false);
+    assert.equal(guestMayPay('countered'), false);
+    assert.equal(isTerminal('awaiting_guest_payment'), false);
     assert.equal(hostMayDecideCounter('countered'), true);
     assert.equal(hostMayDecideCounter('pending'), false);
     assert.equal(hostMayCancel('pending'), true);

@@ -45,6 +45,9 @@ export default async function ResolutionPage({ params }: { params: { id: string 
     const amount = Math.round(Number(res.amount) * 100) / 100;
     const isRequest = res.direction === 'request';
     const canAnswer = isRequest && res.status === 'pending';
+    // The guest accepted but hasn't finished paying — offer them the way back
+    // into the same Checkout session rather than a fresh accept.
+    const canResume = isRequest && res.status === 'awaiting_guest_payment';
 
     const statusLine: Record<string, string> = {
         paid: 'You paid this request. Thank you.',
@@ -88,6 +91,8 @@ export default async function ResolutionPage({ params }: { params: { id: string 
 
                 {canAnswer ? (
                     <GuestResolutionActions resolutionId={res.id} amount={amount} guestFirst={hostFirst} />
+                ) : canResume ? (
+                    <GuestResolutionActions resolutionId={res.id} amount={amount} guestFirst={hostFirst} resumeOnly />
                 ) : (
                     <p className="mt-5 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">{statusLine[res.status] || 'This request is closed.'}</p>
                 )}

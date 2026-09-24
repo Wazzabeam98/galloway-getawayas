@@ -6,7 +6,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import {
-    applicationFeePence, guestMayRespond, escalationDeadline, round2, toPence,
+    applicationFeePence, guestMayRespond, guestMayPay, escalationDeadline, round2, toPence,
 } from '@/lib/resolutions';
 
 export const dynamic = 'force-dynamic';
@@ -29,13 +29,17 @@ export async function POST(request: Request) {
         const admin = adminClient();
         const { data: res } = await admin
             .from('booking_resolutions')
-            .select('id, booking_id, host_id, guest_id, direction, reason, amount, commission_rate, status')
+            .select('id, booking_id, host_id, guest_id, direction, reason, amount, commission_rate, status, stripe_checkout_session_id')
             .eq('id', resolutionId)
             .maybeSingle();
         if (!res) return NextResponse.json({ ok: false, error: 'No such request' }, { status: 404 });
         if (res.guest_id !== user.id) return NextResponse.json({ ok: false, error: 'Not your request' }, { status: 403 });
         if (res.direction !== 'request') return NextResponse.json({ ok: false, error: 'Not a request you can answer' }, { status: 400 });
-        if (!guestMayRespond(res.status as any)) {
+        // Accept can run from 'pending' or from 'awaiting_guest_payment' (a
+        // repeat click, which reuses the open session below); decline and
+        // counter are 'pending'-only.
+        const allowed = action === 'accept' ? guestMayPay(res.status as any) : guestMayRespond(res.status as any);
+        if (!allowed) {
             return NextResponse.json({ ok: false, error: 'This request has already been answered.' }, { status: 409 });
         }
 
@@ -58,6 +62,22 @@ export async function POST(request: Request) {
             const stayName = (title && title.title) || 'your stay';
             const amount = round2(Number(res.amount));
             try {
+                // REUSE, DON'T RE-OPEN. If the guest already accepted, a Checkout
+                // session is on the row — return it while it is still open rather
+                // than starting a second one. A Checkout session can only be paid
+                // once, so one session is one payment.
+                if (res.stripe_checkout_session_id) {
+                    try {
+                        const existing = await stripeRequest('GET', '/checkout/sessions/' + res.stripe_checkout_session_id);
+                        if (existing && existing.status === 'open' && existing.url) {
+                            return NextResponse.json({ ok: true, url: existing.url });
+                        }
+                        if (existing && existing.status === 'complete') {
+                            return NextResponse.json({ ok: false, error: 'This looks like it’s already paid. Refresh the page.' }, { status: 409 });
+                        }
+                        // expired/cancelled → fall through and open a fresh one.
+                    } catch { /* unreadable → open a fresh one below */ }
+                }
                 const checkout = await stripeRequest('POST', '/checkout/sessions', {
                     mode: 'payment',
                     customer_email: user.email || undefined,
@@ -83,7 +103,19 @@ export async function POST(request: Request) {
                     success_url: SITE_URL + '/resolutions/' + res.id + '?paid=1',
                     cancel_url: SITE_URL + '/resolutions/' + res.id + '?paid=cancelled',
                     metadata: { kind: 'resolution_request', resolution_id: res.id, booking_id: res.booking_id },
-                });
+                    // Idempotent on the request: two near-simultaneous accepts (a
+                    // genuine double-click) collapse to ONE session, and a return
+                    // within the session's 24h life replays that same one. Only
+                    // once both the session and this key have expired does a later
+                    // accept open a genuinely new session.
+                }, 'resolution-accept-' + res.id);
+                // Park the row in awaiting_guest_payment and remember the session,
+                // so the page offers "continue to payment" and a repeat accept
+                // reuses this session. Guarded to the pre-payment states so a
+                // webhook that has already marked it paid is never walked back.
+                await admin.from('booking_resolutions')
+                    .update({ status: 'awaiting_guest_payment', stripe_checkout_session_id: checkout.id, responded_at: nowIso, updated_at: nowIso })
+                    .eq('id', res.id).in('status', ['pending', 'awaiting_guest_payment']);
                 return NextResponse.json({ ok: true, url: checkout.url });
             } catch (err: any) {
                 await logError('[resolutions/respond] accept checkout failed', err, { path: 'bookings/resolutions/respond' });
