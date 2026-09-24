@@ -3,11 +3,10 @@
 import { Wallet, ChevronRight } from 'lucide-react';
 import Modal from './Modal';
 
-// The Money and Payment sections merged into three compact cards — You get,
-// Paid so far, Payout — each showing only its headline figure and opening the
-// full breakdown in the page's pop-up. Every number that used to be listed
-// twice now lives in exactly one place: the fee breakdown behind "You get", the
-// payment stage behind "Paid so far", the payout reasoning behind "Payout".
+// The money for a booking, as ONE card: the total and the number of nights,
+// nothing more. Tapping it opens the pop-up with the whole picture — what the
+// guest paid, what's paid so far and any balance still due, our fee with the
+// working, what you get, and when the payout lands.
 //
 // All figures are computed server-side (the same helpers the payout run uses)
 // and passed in formatted; this is a presentational shell so no money maths
@@ -17,15 +16,10 @@ export interface MoneyDetailRow { label: string; value: string; muted?: boolean 
 
 export interface MoneyCardsData {
     showMoney: boolean;
-    // Headline figures for the three cards.
-    youGet: string;
-    paidSoFar: string;
-    ofTotal: string;
-    payoutHeadline: string;
-    // Detail rows for each card's pop-up.
-    earningRows: MoneyDetailRow[];
-    paymentRows: MoneyDetailRow[];
-    payoutRows: MoneyDetailRow[];
+    total: string;          // "£480.00" — the headline on the card
+    nightsLabel: string;    // "Total for 3 nights"
+    working?: string;       // "Guest paid £480.00 − our 10% fee £48.00 = £432.00"
+    rows: MoneyDetailRow[]; // the full breakdown, shown in the pop-up
 }
 
 function Rows({ rows }: { rows: MoneyDetailRow[] }) {
@@ -38,29 +32,6 @@ function Rows({ rows }: { rows: MoneyDetailRow[] }) {
                 </div>
             ))}
         </div>
-    );
-}
-
-function StatCard({ label, value, sub, title, description, rows }: {
-    label: string; value: string; sub?: string; title: string; description?: string; rows: MoneyDetailRow[];
-}) {
-    return (
-        <Modal
-            title={title}
-            description={description}
-            trigger={
-                <button type="button" className="flex w-full flex-col rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300">
-                    <span className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</span>
-                        <ChevronRight className="h-4 w-4 text-slate-300" />
-                    </span>
-                    <span className="mt-1 text-lg font-semibold text-slate-900">{value}</span>
-                    {sub && <span className="text-[13px] text-slate-500">{sub}</span>}
-                </button>
-            }
-        >
-            <Rows rows={rows} />
-        </Modal>
     );
 }
 
@@ -80,29 +51,21 @@ export default function MoneyCards(props: MoneyCardsData) {
     }
 
     return (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <StatCard
-                label="You get"
-                value={props.youGet}
-                title="What you’ll be paid"
-                description="From the guest’s total, after our fee and anything owed."
-                rows={props.earningRows}
-            />
-            <StatCard
-                label="Paid so far"
-                value={props.paidSoFar}
-                sub={props.ofTotal}
-                title="Payment"
-                description="How the guest is paying, and where cancellation stands."
-                rows={props.paymentRows}
-            />
-            <StatCard
-                label="Payout"
-                value={props.payoutHeadline}
-                title="Your payout"
-                description="When the money reaches your bank."
-                rows={props.payoutRows}
-            />
-        </div>
+        <Modal
+            title="Money"
+            description="What the guest paid, our fee, and when you’re paid."
+            trigger={
+                <button type="button" className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300">
+                    <span className="min-w-0 text-base font-semibold text-slate-900">
+                        {props.total}
+                        <span className="ml-1.5 text-[13px] font-normal text-slate-500">· {props.nightsLabel}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+                </button>
+            }
+        >
+            <Rows rows={props.rows} />
+            {props.working && <p className="mt-3 text-[13px] leading-snug text-slate-500">{props.working}</p>}
+        </Modal>
     );
 }

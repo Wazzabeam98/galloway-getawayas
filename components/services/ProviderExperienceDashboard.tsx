@@ -5,7 +5,6 @@ import { MessageCircle } from 'lucide-react';
 import { unitMultiplies, unitNoun, unitLabel } from '@/lib/serviceOrders';
 import { whenLabel, partyMatters } from '@/components/marketplace/present';
 import OrderThread from '@/components/marketplace/OrderThread';
-import OrderHostNotes from '@/components/services/OrderHostNotes';
 
 // What an approved guest-trade provider does after approval: set up payouts,
 // and answer the requests that come in.
@@ -293,12 +292,6 @@ export default function ProviderExperienceDashboard(props: { providerId: string;
                                         <p className="mt-0.5 text-sm text-amber-950 whitespace-pre-line">{o.note}</p>
                                     </div>
                                 ) : null}
-
-                                {/* The provider's own private note — separate from the
-                                    guest's note above, never shown to the guest. */}
-                                <div className="mt-2">
-                                    <OrderHostNotes orderId={o.id} />
-                                </div>
 
                                 {/* The cottage — photo, name, exact address, link.
                                     Released on confirm, because they have to get
