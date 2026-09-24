@@ -18,6 +18,12 @@ function fromKey(s: string): Date {
 function addDays(d: Date, n: number): Date { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function addMonths(d: Date, n: number): Date { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// "2026-09-24" → "Thu 24 Sep"
+function fmtDay(s: string): string {
+    if (!s) return '';
+    const d = new Date(s + 'T12:00:00');
+    return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
 
 export default function ChangeCalendar({
     listingId, ownCheckIn, ownCheckOut, checkIn, checkOut, onSave, onClose,
@@ -90,29 +96,40 @@ export default function ChangeCalendar({
         for (let i = 0; i < startPad; i++) cells.push(null);
         for (let d = 1; d <= days; d++) cells.push(key(new Date(y, m, d)));
         return (
-            <div className="flex-1">
+            <div className="min-w-0">
                 <div className="mb-2 text-center text-sm font-semibold text-slate-900">{MONTHS[m]} {y}</div>
-                <div className="grid grid-cols-7 gap-y-1 text-center text-[11px] text-slate-400">
-                    {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <div key={i}>{d}</div>)}
+                <div className="grid grid-cols-7 text-center text-[11px] text-slate-400">
+                    {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <div key={i} className="py-1">{d}</div>)}
                 </div>
-                <div className="mt-1 grid grid-cols-7 gap-y-1">
+                <div className="mt-1 grid grid-cols-7">
                     {cells.map((k, i) => {
-                        if (!k) return <div key={i} />;
+                        if (!k) return <div key={i} className="h-10" />;
                         const past = k < todayKey && !ownNights.has(k);
                         const blocked = isBlocked(k) || past;
                         const selected = k === ci || k === co;
-                        const between = inRange(k);
+                        const isStart = !!co && k === ci;   // left edge of a chosen range
+                        const isEnd = !!co && k === co;      // right edge
+                        const mid = inRange(k) && !selected; // strictly between the endpoints
                         return (
-                            <button key={i} type="button" disabled={blocked} onClick={() => pick(k)}
-                                className={
-                                    'mx-auto grid h-9 w-9 place-items-center rounded-full text-[13px] '
-                                    + (selected ? 'bg-emerald-700 font-semibold text-white '
-                                        : between ? 'bg-emerald-50 text-emerald-900 '
-                                            : blocked ? 'text-slate-300 line-through cursor-not-allowed '
-                                                : 'text-slate-800 hover:bg-slate-100 ')
-                                }>
-                                {Number(k.slice(-2))}
-                            </button>
+                            <div key={i} className="relative flex h-10 items-center justify-center">
+                                {/* one continuous shaded band under the between-nights, joined to each circle */}
+                                {(mid || isStart || isEnd) && (
+                                    <span aria-hidden className={
+                                        'absolute inset-y-1 bg-emerald-50 '
+                                        + (mid ? 'left-0 right-0 ' : isStart ? 'left-1/2 right-0 ' : 'left-0 right-1/2 ')
+                                    } />
+                                )}
+                                <button type="button" disabled={blocked} onClick={() => pick(k)}
+                                    className={
+                                        'relative z-10 grid h-9 w-9 place-items-center rounded-full text-[13px] '
+                                        + (selected ? 'bg-emerald-700 font-semibold text-white '
+                                            : mid ? 'text-emerald-900 '
+                                                : blocked ? 'text-slate-300 line-through cursor-not-allowed '
+                                                    : 'text-slate-800 hover:bg-slate-100 ')
+                                    }>
+                                    {Number(k.slice(-2))}
+                                </button>
+                            </div>
                         );
                     })}
                 </div>
@@ -127,12 +144,13 @@ export default function ChangeCalendar({
                 <span className="text-[12px] text-slate-500">Pick your new dates</span>
                 <button type="button" onClick={() => setMonth(addMonths(month, 1))} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"><ChevronRight className="h-4 w-4" /></button>
             </div>
-            <div className="flex gap-4">
+            {/* Two equal-width months side by side; a single month on mobile, paged by the arrows above. */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 {renderMonth(month)}
                 <div className="hidden sm:block">{renderMonth(addMonths(month, 1))}</div>
             </div>
             <div className="mt-3 flex items-center justify-between gap-2">
-                <span className="text-[12px] text-slate-500">{ci ? (co ? ci + ' → ' + co : ci + ' → …') : 'Select check-in'}</span>
+                <span className="text-[12px] text-slate-500">{ci ? (co ? fmtDay(ci) + ' → ' + fmtDay(co) : fmtDay(ci) + ' → …') : 'Select check-in'}</span>
                 <div className="flex gap-2">
                     <button type="button" onClick={onClose} className="rounded-xl border border-slate-300 px-3 py-2 text-[13px] font-semibold text-slate-700">Cancel</button>
                     <button type="button" disabled={!ci || !co} onClick={() => onSave(ci, co)} className="rounded-xl bg-emerald-700 px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-40">Save</button>

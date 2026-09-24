@@ -115,7 +115,7 @@ export default function ChangeReservationFlow({
                     : <div className="h-14 w-14 flex-none rounded-lg bg-slate-100" />}
                 <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-slate-900">{listingTitle}</div>
-                    <div className="truncate text-[12px] text-slate-500">{checkIn} → {checkOut} · {adults + childrenCount} guest{(adults + childrenCount) === 1 ? '' : 's'}</div>
+                    <div className="truncate text-[12px] text-slate-500">{fmtDay(checkIn)} → {fmtDay(checkOut)} · {adults + childrenCount} guest{(adults + childrenCount) === 1 ? '' : 's'}</div>
                 </div>
             </div>
 
@@ -127,7 +127,7 @@ export default function ChangeReservationFlow({
                     <CalendarDays className="h-4 w-4 flex-none text-slate-400" />
                     <span className="flex-1">
                         <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Dates</span>
-                        <span className="block text-sm font-medium text-slate-900">{ci} → {co}</span>
+                        <span className="block text-sm font-medium text-slate-900">{fmtDay(ci)} → {fmtDay(co)}</span>
                     </span>
                     <ChevronDown className={'h-4 w-4 flex-none text-slate-400 transition ' + (showCal ? 'rotate-180' : '')} />
                 </button>
@@ -154,7 +154,7 @@ export default function ChangeReservationFlow({
                         <Stepper label="Adults" sub="Ages 13+" value={ad} onChange={setAd} min={1} disablePlus={atMax} />
                         <Stepper label="Children" sub="Ages 2–12" value={ch} onChange={setCh} min={0} disablePlus={atMax} />
                         <Stepper label="Infants" sub="Under 2" value={inf} onChange={setInf} min={0} disablePlus={false} />
-                        <Stepper label="Pets" sub={petsAllowed ? 'Assistance animals excluded' : 'Not allowed here'} value={pt} onChange={setPt} min={0} disablePlus={!petsAllowed} />
+                        {petsAllowed && <Stepper label="Pets" sub="Assistance animals excluded" value={pt} onChange={setPt} min={0} disablePlus={false} />}
                         <p className="mt-2 text-[12px] text-slate-500">{limitLine}</p>
                     </div>
                 )}
@@ -186,6 +186,13 @@ export default function ChangeReservationFlow({
 }
 
 function r2(v: number): number { return Math.round(Number(v || 0) * 100) / 100; }
+
+// "2026-09-24" → "Thu 24 Sep" (never show the raw ISO date to a guest or host).
+function fmtDay(s: string): string {
+    if (!s) return '';
+    const d = new Date(s + 'T12:00:00');
+    return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
 
 function Stepper({ label, sub, value, onChange, min, disablePlus }: { label: string; sub: string; value: number; onChange: (v: number) => void; min: number; disablePlus: boolean }) {
     return (
