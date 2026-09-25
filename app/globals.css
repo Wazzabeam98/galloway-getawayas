@@ -170,9 +170,11 @@
   visibility: hidden !important;
 }
 
-/* 6b. The "Change date or time" modal calendar — fills the modal and uses larger,
-   comfortably-tappable day cells (the default cells are too small in a phone-width
-   sheet). Scoped to .rdr-move so the cottage booking calendar is untouched. */
+/* 6b. The in-app change calendars (the "Change date or time" experience modal and
+   the change-reservation form) — fills its card and uses larger, comfortably-
+   tappable day cells spread evenly across the width (the default .rdrMonth is a
+   fixed 23em and too small in a phone-width sheet). Scoped to .rdr-move so the
+   cottage booking calendar is untouched. */
 .rdr-move .rdrCalendarWrapper { width: 100%; font-size: 15px; }
 .rdr-move .rdrMonth { width: 100% !important; padding: 0 0.25em 0.5em 0.25em !important; }
 .rdr-move .rdrMonthAndYearWrapper { height: 44px; padding-top: 6px; }

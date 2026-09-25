@@ -4,14 +4,14 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
     Pencil, ChevronRight, ChevronLeft, Banknote,
-    Phone, Copy, Check, MessageSquare, XCircle, CalendarDays, Users,
+    Phone, Copy, Check, MessageSquare, XCircle, CalendarDays,
 } from 'lucide-react';
 import Modal from './Modal';
 import BookingActions from '@/components/BookingActions';
 import ResolutionFlow from './ResolutionFlow';
 import ChangeReservationFlow from './ChangeReservationFlow';
 
-type View = 'menu' | 'resolution' | 'cancel' | 'change' | 'guests';
+type View = 'menu' | 'resolution' | 'cancel' | 'change';
 
 // The single "Manage reservation" row — a pencil that opens Airbnb's kind of
 // action sheet. It gathers the host actions that are built: send or request money
@@ -74,7 +74,6 @@ export default function ManageReservationSheet({
 
     const title = view === 'resolution' ? 'Send or request money'
         : view === 'cancel' ? 'Cancel booking'
-        : view === 'guests' ? 'Change guest count'
         : view === 'change' ? 'Change reservation'
         : 'Manage reservation';
 
@@ -100,10 +99,7 @@ export default function ManageReservationSheet({
             {view === 'menu' && (
                 <div className="-my-1 divide-y divide-slate-100">
                     {canChange && (
-                        <Row icon={Users} label="Change guest count" sub="Adults, children or pets — the guest confirms" onClick={() => setView('guests')} />
-                    )}
-                    {canChange && (
-                        <Row icon={CalendarDays} label="Change reservation" sub="New dates, guests or price — the guest confirms" onClick={() => setView('change')} />
+                        <Row icon={CalendarDays} label="Change reservation" sub="New dates — the guest confirms" onClick={() => setView('change')} />
                     )}
                     {isOwner && !closed && (
                         <Row icon={Banknote} label="Send or request money" sub="For a refund, extra services or damage" onClick={() => setView('resolution')} />
@@ -128,9 +124,8 @@ export default function ManageReservationSheet({
                 </div>
             )}
 
-            {(view === 'change' || view === 'guests') && (
+            {view === 'change' && (
                 <ChangeReservationFlow
-                    key={view}
                     bookingId={bookingId}
                     listingId={listingId}
                     listingTitle={listingTitle}
@@ -144,7 +139,6 @@ export default function ManageReservationSheet({
                     pets={pets}
                     maxGuests={maxGuests}
                     petsAllowed={petsAllowed}
-                    startGuestsOpen={view === 'guests'}
                     onClose={() => { setOpen(false); setView('menu'); }}
                 />
             )}

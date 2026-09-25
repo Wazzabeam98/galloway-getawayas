@@ -58,6 +58,17 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'This stay is over — use Send or request money instead.' }, { status: 409 });
         }
 
+        // Only the GUEST may change the guest count. A host-initiated change is
+        // dates-only — refuse any attempt to move guests, children or pets (infants
+        // aren't stored on the booking, so they never reach here anyway).
+        if (initiatedBy === 'host' && (
+            wantGuests !== Number(booking.guests || 1)
+            || wantChildren !== Number(booking.children || 0)
+            || wantPets !== Number(booking.pets || 0)
+        )) {
+            return NextResponse.json({ ok: false, error: 'Only the guest can change the guest count. You can change the dates.' }, { status: 403 });
+        }
+
         const { data: listing } = await admin
             .from('listings').select('max_guests, amenities').eq('id', booking.listing_id).maybeSingle();
         const petsAllowed = Array.isArray(listing?.amenities) && listing!.amenities.indexOf('Pets allowed') !== -1;

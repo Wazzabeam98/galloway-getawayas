@@ -151,7 +151,9 @@ export default function ChangeReservationFlow({
                 )}
             </div>
 
-            {/* Guests dropdown → steppers */}
+            {/* Guests dropdown → steppers. Only the GUEST may change the guest count;
+                the host's change form is dates-only. */}
+            {role === 'guest' && (
             <div>
                 <button type="button" onClick={() => { setShowGuests((v) => !v); setShowCal(false); }} className="flex w-full items-center gap-3 rounded-xl border border-slate-300 px-3 py-3 text-left">
                     <Users className="h-4 w-4 flex-none text-slate-400" />
@@ -171,6 +173,7 @@ export default function ChangeReservationFlow({
                     </div>
                 )}
             </div>
+            )}
 
             {/* Request-style summary */}
             {changed && datesOk && capacityOk && (
