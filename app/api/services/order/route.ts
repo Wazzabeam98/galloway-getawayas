@@ -18,21 +18,9 @@ import { displayName } from '@/lib/utils';
 import { withinLimits, callerAddress } from '@/lib/rateLimit';
 import { hasUkPostcode, extractUkPostcode } from '@/lib/postcode';
 import { deliveryReach, type ReachDecision } from '@/lib/postcodeGeocode';
+import { outOfReachMessage } from '@/lib/deliveryReachMessage';
 
 export const dynamic = 'force-dynamic';
-
-// The guest-facing reason a delivery/travelling order was refused for being out of
-// the provider's reach — shown in the basket BEFORE payment, never a failed
-// checkout. `verb` is "deliver" or "travel" so the message fits either shape.
-function outOfReachMessage(d: Extract<ReachDecision, { ok: false }>, who: string, radiusMiles: number, verb: 'deliver' | 'travel'): string {
-    if (d.reason === 'unplaceable') return 'We couldn’t place that postcode. Please check it, or arrange collection instead.';
-    if (d.reason === 'out_of_region') return `Sorry — ${who} only ${verb}s within Dumfries & Galloway.`;
-    const r = Math.round(Number(radiusMiles) || 0);
-    const m = d.miles != null ? Math.round(d.miles) : null;
-    return `Sorry — ${who} only ${verb}s within ${r} mile${r === 1 ? '' : 's'}`
-        + (m != null ? `, and that address is about ${m} miles away` : '')
-        + `. You could collect instead.`;
-}
 
 // A guest asking a provider for an experience during their stay.
 //
@@ -634,9 +622,15 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ ok: true, url: checkout.url });
     } catch (err: any) {
+        // Log the real reason (a Stripe failure, a bad connected account, a
+        // network blip) for us; show the guest a plain line. The raw error used
+        // to be handed straight back — a guest once saw Stripe's internal
+        // "No such on_behalf_of: 'acct_…'", which leaks our plumbing and helps
+        // nobody. The intentional 4xx validation messages above are unaffected;
+        // this only replaces the unexpected-500 text.
         console.error('[services/order]', err && err.message);
         return NextResponse.json(
-            { ok: false, error: (err && err.message) || 'Could not start that' },
+            { ok: false, error: 'Something went wrong placing your order, please try again.' },
             { status: 500 }
         );
     }
