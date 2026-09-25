@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
     changeDelta, moneyDirection, refundForDecrease, balanceAfter, nights, isRealChange,
     validateChange, guestMayAnswerChange, hostMayCancelChange, guestMayPayChange,
-    whoAnswers, isOpenChange, isChangeTerminal,
+    whoAnswers, isOpenChange, isChangeTerminal, guestChangeIsInstant,
     type StaySnapshot,
 } from '../lib/bookingChange';
 
@@ -42,6 +42,20 @@ test('the balance is the new total less what is paid net of any refund', () => {
     // Increase, paid in full to the old total → the extra is owed until paid.
     assert.equal(balanceAfter(1120, 980), 140);
     assert.equal(balanceAfter(700, 900), 0, 'never negative');
+});
+
+test('a guest change with no price change applies instantly; anything else is a request', () => {
+    // Guest, delta 0 (no extra-guest/pet fee, or within paid-for numbers) → instant.
+    assert.equal(guestChangeIsInstant('guest', 0), true);
+    assert.equal(guestChangeIsInstant('guest', 0.0), true);
+    // Guest, a charge or a refund → stays a request.
+    assert.equal(guestChangeIsInstant('guest', 25), false);
+    assert.equal(guestChangeIsInstant('guest', -25), false);
+    // A HOST-proposed change is never instant, even at zero.
+    assert.equal(guestChangeIsInstant('host', 0), false);
+    assert.equal(guestChangeIsInstant('host', 25), false);
+    // Sub-penny noise still counts as zero (decided on the rounded delta).
+    assert.equal(guestChangeIsInstant('guest', 0.004), true);
 });
 
 test('nights are whole and half-open', () => {

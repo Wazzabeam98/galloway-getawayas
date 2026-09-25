@@ -6,8 +6,10 @@ import { checkListing } from '@/lib/access';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { londonDayKey } from '@/lib/dayKey';
-import { validateChange, round2, whoAnswers, type StaySnapshot } from '@/lib/bookingChange';
+import { validateChange, round2, whoAnswers, guestChangeIsInstant, type StaySnapshot } from '@/lib/bookingChange';
 import { quoteChangeMoney } from '@/lib/quoteChange';
+import { applyBookingChange } from '@/lib/applyBookingChange';
+import { displayName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,6 +121,65 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Could not start that. Try again.' }, { status: 500 });
         }
 
+        // A GUEST change with NO price change applies straight away — no host
+        // approval. The delta was re-priced on the server above and the listing's
+        // max-guests / pets rules were enforced by validateChange, so this is our
+        // decision, not the browser's. The host is only told.
+        if (guestChangeIsInstant(initiatedBy, delta)) {
+            const claimIso = new Date().toISOString();
+            // Claim the row (pending → accepted) as a once-only guard, then rewrite
+            // the booking. delta is 0, so no money moves and no balance shifts.
+            const { data: claimed } = await admin.from('booking_change_requests')
+                .update({ status: 'accepted', responded_at: claimIso, updated_at: claimIso })
+                .eq('id', created.id).eq('status', 'pending')
+                .select('id');
+            if (!claimed || !claimed.length) {
+                return NextResponse.json({ ok: false, error: 'That change was just handled. Refresh and try again.' }, { status: 409 });
+            }
+            const applied = await applyBookingChange(admin, {
+                id: created.id, booking_id: booking.id,
+                new_check_in: next.checkIn, new_check_out: next.checkOut,
+                new_guests: next.guests, new_children: next.children, new_pets: next.pets, new_total: next.total,
+            });
+            if (!applied.ok) {
+                await admin.from('booking_change_requests').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', created.id);
+                if (applied.oversold) return NextResponse.json({ ok: false, error: 'Those dates were just taken. Your booking is unchanged.' }, { status: 409 });
+                if (applied.gone) return NextResponse.json({ ok: false, error: 'This booking is no longer active, so it can’t be changed.' }, { status: 409 });
+                await logError('[bookings/change] instant apply failed', applied.error, { path: 'bookings/change' });
+                return NextResponse.json({ ok: false, error: 'Could not apply the change. Your booking is unchanged.' }, { status: 500 });
+            }
+            await admin.from('booking_change_requests').update({ applied_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', created.id);
+
+            // Tell the host who changed what — a message in the thread AND an email.
+            try {
+                const [{ data: listingRow }, { data: guestProfile }] = await Promise.all([
+                    admin.from('listings').select('title').eq('id', booking.listing_id).maybeSingle(),
+                    admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', booking.guest_id).maybeSingle(),
+                ]);
+                const stayName = (listingRow && listingRow.title) || 'the stay';
+                const guestFirst = displayName(guestProfile, 'Your guest').split(' ')[0] || 'Your guest';
+                const what = describeChange(oldStay, next);
+                await admin.from('messages').insert({
+                    booking_id: booking.id, sender_id: user.id, recipient_id: booking.host_id,
+                    body: guestFirst + ' updated the booking — ' + what + '. No change to the price, so it’s applied.',
+                });
+                const { data: hostUser } = await admin.auth.admin.getUserById(booking.host_id);
+                const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
+                if (hostEmail) {
+                    await sendEmail(hostEmail, guestFirst + ' updated their booking at ' + stayName, emailLayout(
+                        '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(guestFirst) + ' has updated their booking at <strong>' + escapeHtml(stayName) + '</strong>.</p>'
+                        + '<p style="margin:0 0 16px;font-size:15px;color:#475569;">' + escapeHtml(what) + '</p>'
+                        + '<p style="margin:0 0 16px;font-size:16px;">There was no change to the price, so it has been applied — no action needed.</p>'
+                        + button(SITE_URL + '/dashboard/bookings/' + booking.id, 'Open the booking'),
+                        'You’re receiving this because you host this stay with Galloway Getaways.'));
+                }
+            } catch (mailErr) {
+                await logError('[bookings/change] instant notify failed', mailErr, { path: 'bookings/change' });
+            }
+
+            return NextResponse.json({ ok: true, id: created.id, delta: 0, applied: true });
+        }
+
         // Tell the party who must answer — the guest for a host proposal, the host
         // for a guest proposal.
         try {
@@ -155,4 +216,15 @@ export async function POST(request: Request) {
         await logError('[bookings/change] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/change' });
         return NextResponse.json({ ok: false, error: 'Could not process that.' }, { status: 500 });
     }
+}
+
+// A short "who changed what" line for the host's message and email — only the
+// levers that actually moved.
+function describeChange(o: StaySnapshot, n: StaySnapshot): string {
+    const parts: string[] = [];
+    if (o.guests !== n.guests) parts.push('guests ' + o.guests + ' → ' + n.guests);
+    if (o.children !== n.children) parts.push('children ' + o.children + ' → ' + n.children);
+    if (o.pets !== n.pets) parts.push('pets ' + o.pets + ' → ' + n.pets);
+    if (o.checkIn !== n.checkIn || o.checkOut !== n.checkOut) parts.push('dates ' + o.checkIn + ' → ' + n.checkIn + ', ' + o.checkOut + ' → ' + n.checkOut);
+    return parts.length ? parts.join(' · ') : 'the guest count';
 }
