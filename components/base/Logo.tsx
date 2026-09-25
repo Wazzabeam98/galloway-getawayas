@@ -25,7 +25,7 @@ const Logo = () => {
         <span className="text-lg font-extrabold tracking-tight text-stone-900 leading-none">
           Galloway
         </span>
-        <span className="text-[10px] font-semibold tracking-[0.2em] text-emerald-700 uppercase mt-0.5">
+        <span className="text-[0.625rem] font-semibold tracking-[0.2em] text-emerald-700 uppercase mt-0.5">
           Getaways
         </span>
       </div>

@@ -15,6 +15,7 @@ import ChangeCalendar from '@/components/reservations/ChangeCalendar';
 export default function ChangeReservationFlow({
     bookingId, listingId, listingTitle, listingImage, role, counterpartyName,
     checkIn, checkOut, adults, childrenCount, pets, maxGuests, petsAllowed, onClose,
+    startGuestsOpen = false,
 }: {
     bookingId: string;
     listingId: string;
@@ -30,6 +31,9 @@ export default function ChangeReservationFlow({
     maxGuests: number;
     petsAllowed: boolean;
     onClose: () => void;
+    // "Change guest count" opens this same form with the Guests dropdown already
+    // expanded and the dates left as they are — same pricing, limits and approval.
+    startGuestsOpen?: boolean;
 }) {
     const [ci, setCi] = useState(checkIn);
     const [co, setCo] = useState(checkOut);
@@ -38,7 +42,7 @@ export default function ChangeReservationFlow({
     const [inf, setInf] = useState(0);
     const [pt, setPt] = useState(pets);
     const [showCal, setShowCal] = useState(false);
-    const [showGuests, setShowGuests] = useState(false);
+    const [showGuests, setShowGuests] = useState(startGuestsOpen);
     const [quote, setQuote] = useState<{ total: number; delta: number } | null>(null);
     const [quoting, setQuoting] = useState(false);
     const [busy, setBusy] = useState(false);

@@ -486,7 +486,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     return (
         <div className="min-h-[calc(100dvh-81px)] bg-slate-50">
-            <div className="mx-auto max-w-[1200px] px-4 sm:px-6 py-6">
+            <div className="mx-auto max-w-[75rem] px-4 sm:px-6 py-6">
                 <Link
                     href="/dashboard/bookings"
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
@@ -500,10 +500,10 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     the one booking sits centred in the space beside it. On a phone the
                     two stack — the booking first (that is what you opened), the list
                     beneath — so the order classes only re-sort the columns at lg. */}
-                <div className="mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[320px_1fr] lg:gap-x-12 lg:items-start">
+                <div className="mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[20rem_1fr] lg:gap-x-12 lg:items-start">
                     {/* ---- MAIN COLUMN — the booking, in full. Second on desktop
                         (centred in the space beside the rail), first on a phone. ---- */}
-                    <div className="min-w-0 space-y-6 lg:order-2 lg:mx-auto lg:w-full lg:max-w-[560px]">
+                    <div className="min-w-0 space-y-6 lg:order-2 lg:mx-auto lg:w-full lg:max-w-[35rem]">
                         {/* Airbnb-style header: the guest large and centred (their
                             initial on a soft green circle when there's no photo), with
                             the property photo tucked into the bottom-right corner; then
