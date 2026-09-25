@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Minus, Plus, ChevronDown, CalendarDays, Users } from 'lucide-react';
-import ChangeCalendar from '@/components/reservations/ChangeCalendar';
+import ChangeDateRange from '@/components/reservations/ChangeDateRange';
 
 // "What do you want to change?" — Airbnb's change-reservation shape, used by both
 // sides. A listing card and the reservation details up top; a Dates box that
@@ -15,6 +15,7 @@ import ChangeCalendar from '@/components/reservations/ChangeCalendar';
 export default function ChangeReservationFlow({
     bookingId, listingId, listingTitle, listingImage, role, counterpartyName,
     checkIn, checkOut, adults, childrenCount, pets, maxGuests, petsAllowed, onClose,
+    startGuestsOpen = false,
 }: {
     bookingId: string;
     listingId: string;
@@ -30,6 +31,9 @@ export default function ChangeReservationFlow({
     maxGuests: number;
     petsAllowed: boolean;
     onClose: () => void;
+    // "Change guest count" opens this same form with the Guests dropdown already
+    // expanded and the dates left as they are — same pricing, limits and approval.
+    startGuestsOpen?: boolean;
 }) {
     const [ci, setCi] = useState(checkIn);
     const [co, setCo] = useState(checkOut);
@@ -38,12 +42,13 @@ export default function ChangeReservationFlow({
     const [inf, setInf] = useState(0);
     const [pt, setPt] = useState(pets);
     const [showCal, setShowCal] = useState(false);
-    const [showGuests, setShowGuests] = useState(false);
+    const [showGuests, setShowGuests] = useState(startGuestsOpen);
     const [quote, setQuote] = useState<{ total: number; delta: number } | null>(null);
     const [quoting, setQuoting] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState(false);
+    const [appliedInstant, setAppliedInstant] = useState(false);
 
     const guests = ad + ch;                       // infants don't count toward the max or the price
     const atMax = guests >= maxGuests;
@@ -83,6 +88,7 @@ export default function ChangeReservationFlow({
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) { setError(body?.error || 'Could not do that.'); setBusy(false); return; }
+            if (body?.applied) setAppliedInstant(true);
             setDone(true);
         } catch { setError('Something went wrong. Try again.'); }
         setBusy(false);
@@ -92,7 +98,11 @@ export default function ChangeReservationFlow({
         const sentTo = role === 'host' ? counterpartyName : 'your host';
         return (
             <div className="py-2">
-                <p className="text-sm text-slate-700">Sent to {sentTo}. They’ll get an email to {role === 'host' ? 'confirm' : 'approve'} the change, and nothing moves until they do.</p>
+                <p className="text-sm text-slate-700">
+                    {appliedInstant
+                        ? 'Your booking is updated. We’ve let your host know.'
+                        : <>Sent to {sentTo}. They’ll get an email to {role === 'host' ? 'confirm' : 'approve'} the change, and nothing moves until they do.</>}
+                </p>
                 <button type="button" onClick={onClose} className="mt-4 w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white">Done</button>
             </div>
         );
@@ -133,13 +143,17 @@ export default function ChangeReservationFlow({
                 </button>
                 {showCal && (
                     <div className="mt-2">
-                        <ChangeCalendar listingId={listingId} ownCheckIn={checkIn} ownCheckOut={checkOut} checkIn={ci} checkOut={co}
-                            onSave={(a, b) => { setCi(a); setCo(b); setShowCal(false); }} onClose={() => setShowCal(false)} />
+                        {/* The cottage booking widget's own calendar, reused here. Picks
+                            update the dates live, so the price summary re-quotes as you go. */}
+                        <ChangeDateRange listingId={listingId} ownCheckIn={checkIn} ownCheckOut={checkOut} checkIn={ci} checkOut={co}
+                            onChange={(a, b) => { setCi(a); setCo(b); }} />
                     </div>
                 )}
             </div>
 
-            {/* Guests dropdown → steppers */}
+            {/* Guests dropdown → steppers. Only the GUEST may change the guest count;
+                the host's change form is dates-only. */}
+            {role === 'guest' && (
             <div>
                 <button type="button" onClick={() => { setShowGuests((v) => !v); setShowCal(false); }} className="flex w-full items-center gap-3 rounded-xl border border-slate-300 px-3 py-3 text-left">
                     <Users className="h-4 w-4 flex-none text-slate-400" />
@@ -159,6 +173,7 @@ export default function ChangeReservationFlow({
                     </div>
                 )}
             </div>
+            )}
 
             {/* Request-style summary */}
             {changed && datesOk && capacityOk && (
@@ -166,9 +181,9 @@ export default function ChangeReservationFlow({
                     {quoting || delta === null
                         ? 'Pricing the change…'
                         : role === 'guest'
-                            ? (delta > 0 ? <>If your host accepts, you’ll pay <strong>£{delta.toFixed(2)}</strong> more.</>
-                                : delta < 0 ? <>If your host accepts, you’ll get <strong>£{Math.abs(delta).toFixed(2)}</strong> back.</>
-                                    : <>If your host accepts, there’s nothing extra to pay.</>)
+                            ? (delta > 0 ? <>Your host will need to approve this, <strong>£{delta.toFixed(2)} more</strong>.</>
+                                : delta < 0 ? <>Your host will need to approve this — you’ll get <strong>£{Math.abs(delta).toFixed(2)}</strong> back.</>
+                                    : <>This updates your booking straight away.</>)
                             : (delta > 0 ? <>If {counterpartyName} accepts, they’ll pay <strong>£{delta.toFixed(2)}</strong> more.</>
                                 : delta < 0 ? <>If {counterpartyName} accepts, they’ll get <strong>£{Math.abs(delta).toFixed(2)}</strong> back.</>
                                     : <>If {counterpartyName} accepts, there’s nothing extra to pay.</>)}
@@ -179,7 +194,11 @@ export default function ChangeReservationFlow({
             {error && <p className="text-[13px] text-rose-600">{error}</p>}
 
             <button type="button" disabled={!canSend} onClick={submit} className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-40">
-                {busy ? 'Sending…' : 'Send request'}
+                {(() => {
+                    const guestInstant = role === 'guest' && delta === 0;
+                    if (busy) return guestInstant ? 'Updating…' : 'Sending…';
+                    return guestInstant ? 'Update booking' : 'Send request';
+                })()}
             </button>
         </div>
     );

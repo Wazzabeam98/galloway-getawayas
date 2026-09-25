@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Scale ONLY the host reservation page's content up ~15% on laptop and desktop
+   widths, like 115% browser zoom on that one page. The class goes on the page's
+   own content container (below the nav, above the footer), so the nav bar, the
+   footer and every other page are left exactly as they were. `zoom` reflows the
+   subtree to fit the viewport width, so nothing overflows horizontally. Phones
+   and tablets (< 1024px) stay at their normal size. */
+@media (min-width: 1024px) {
+  .hostres-zoom {
+    zoom: 1.15;
+  }
+}
+
 /* `.container` carries 2rem of side padding, which is 64px off a 375px screen
    before any content gets a look in — the listing page was rendering its
    booking card at 247px and clipping Friday and Saturday out of the calendar.
@@ -158,9 +170,11 @@
   visibility: hidden !important;
 }
 
-/* 6b. The "Change date or time" modal calendar — fills the modal and uses larger,
-   comfortably-tappable day cells (the default cells are too small in a phone-width
-   sheet). Scoped to .rdr-move so the cottage booking calendar is untouched. */
+/* 6b. The in-app change calendars (the "Change date or time" experience modal and
+   the change-reservation form) — fills its card and uses larger, comfortably-
+   tappable day cells spread evenly across the width (the default .rdrMonth is a
+   fixed 23em and too small in a phone-width sheet). Scoped to .rdr-move so the
+   cottage booking calendar is untouched. */
 .rdr-move .rdrCalendarWrapper { width: 100%; font-size: 15px; }
 .rdr-move .rdrMonth { width: 100% !important; padding: 0 0.25em 0.5em 0.25em !important; }
 .rdr-move .rdrMonthAndYearWrapper { height: 44px; padding-top: 6px; }
@@ -172,6 +186,34 @@
    above, so this sheet needs no selection override of its own — only its larger
    cells (above). A rounder circle to suit those taller cells: */
 .rdr-move .rdrSelected { border-radius: 1.35em !important; }
+
+/* The change-reservation calendar shows the month only — no year dropdown (the
+   prev/next arrows still roll the year over). Scoped to .change-cal so no other
+   react-date-range calendar is affected. */
+.change-cal .rdrYearPicker { display: none !important; }
+
+/* Make the change-reservation calendar fill its card. react-date-range pins
+   intrinsic (inline-flex / fixed) widths on every level, so .rdrMonth at 100%
+   alone still sat left with empty space; force the whole chain — the picker
+   wrapper, the calendar wrapper, the months container, the month, the weekday and
+   day rows — to 100%, and spread the seven day cells evenly. Scoped to .change-cal
+   so the cottage booking widget is untouched. */
+.change-cal .rdrDateRangePickerWrapper,
+.change-cal .rdrDateRangeWrapper,
+.change-cal .rdrCalendarWrapper,
+.change-cal .rdrMonths,
+.change-cal .rdrMonthsVertical,
+.change-cal .rdrMonth,
+.change-cal .rdrMonthAndYearWrapper,
+.change-cal .rdrWeekDays,
+.change-cal .rdrDays {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.change-cal .rdrDateRangePickerWrapper,
+.change-cal .rdrMonths,
+.change-cal .rdrMonthsVertical { display: flex; }
+.change-cal .rdrDay { width: 14.2857% !important; }
 
 
 /* 7. Toast styling

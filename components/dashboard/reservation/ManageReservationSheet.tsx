@@ -99,7 +99,7 @@ export default function ManageReservationSheet({
             {view === 'menu' && (
                 <div className="-my-1 divide-y divide-slate-100">
                     {canChange && (
-                        <Row icon={CalendarDays} label="Change reservation" sub="New dates, guests or price — the guest confirms" onClick={() => setView('change')} />
+                        <Row icon={CalendarDays} label="Change reservation" sub="New dates — the guest confirms" onClick={() => setView('change')} />
                     )}
                     {isOwner && !closed && (
                         <Row icon={Banknote} label="Send or request money" sub="For a refund, extra services or damage" onClick={() => setView('resolution')} />

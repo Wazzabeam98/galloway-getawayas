@@ -36,6 +36,15 @@ export function moneyDirection(delta: number): 'charge' | 'refund' | 'none' {
     return 'none';
 }
 
+// A GUEST change whose re-priced delta is exactly zero — no extra-guest fee, no
+// pet fee, or still within the numbers already paid for — applies straight away
+// with no host approval (the host is only told). Any price change, up or down,
+// and every HOST-proposed change, stays a request. Decided on the server's
+// re-priced delta, never the browser's number.
+export function guestChangeIsInstant(initiatedBy: 'host' | 'guest', delta: number): boolean {
+    return initiatedBy === 'guest' && round2(delta) === 0;
+}
+
 // What a decrease actually refunds: only what the guest has OVERPAID against the
 // NEW total, and never more than they have paid net of refunds. A guest who paid
 // only a deposit that is still below the new total is owed nothing back — the
