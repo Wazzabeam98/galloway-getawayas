@@ -672,7 +672,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Could not start that. Try again.' }, { status: 500 });
         }
     } catch (err: any) {
+        // Log the real reason; show the guest a plain line rather than a raw
+        // Stripe/internal message. The specific 4xx messages above are unaffected.
         console.error('[services/slots/book]', err && err.message);
-        return NextResponse.json({ ok: false, error: (err && err.message) || 'Could not start that' }, { status: 500 });
+        return NextResponse.json({ ok: false, error: 'Something went wrong placing your order, please try again.' }, { status: 500 });
     }
 }

@@ -622,9 +622,15 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ ok: true, url: checkout.url });
     } catch (err: any) {
+        // Log the real reason (a Stripe failure, a bad connected account, a
+        // network blip) for us; show the guest a plain line. The raw error used
+        // to be handed straight back — a guest once saw Stripe's internal
+        // "No such on_behalf_of: 'acct_…'", which leaks our plumbing and helps
+        // nobody. The intentional 4xx validation messages above are unaffected;
+        // this only replaces the unexpected-500 text.
         console.error('[services/order]', err && err.message);
         return NextResponse.json(
-            { ok: false, error: (err && err.message) || 'Could not start that' },
+            { ok: false, error: 'Something went wrong placing your order, please try again.' },
             { status: 500 }
         );
     }
