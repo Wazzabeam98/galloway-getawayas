@@ -486,7 +486,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     return (
         <div className="min-h-[calc(100dvh-81px)] bg-slate-50">
-            <div className="mx-auto max-w-[75rem] px-4 sm:px-6 py-6">
+            <div className="hostres-zoom mx-auto max-w-[75rem] px-4 sm:px-6 py-6">
                 <Link
                     href="/dashboard/bookings"
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"

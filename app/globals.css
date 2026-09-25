@@ -2,16 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Scale the whole site up ~15% on laptop and desktop widths. Raising the root
-   font size lifts every rem — text, spacing, rounded corners, and any width or
-   height set in rem (Tailwind's default scale) — together, exactly the way the
-   browser's own "115% zoom" does. Phones and tablets (< 1024px) stay at 16px.
-   Anything pinned in px (a few images, the logo, a handful of arbitrary [..px]
-   sizes) does NOT ride along, so those are converted to rem where they should
-   grow with the rest. */
+/* Scale ONLY the host reservation page's content up ~15% on laptop and desktop
+   widths, like 115% browser zoom on that one page. The class goes on the page's
+   own content container (below the nav, above the footer), so the nav bar, the
+   footer and every other page are left exactly as they were. `zoom` reflows the
+   subtree to fit the viewport width, so nothing overflows horizontally. Phones
+   and tablets (< 1024px) stay at their normal size. */
 @media (min-width: 1024px) {
-  html {
-    font-size: 115%; /* 18.4px off the 16px browser default */
+  .hostres-zoom {
+    zoom: 1.15;
   }
 }
 
