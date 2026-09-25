@@ -17,7 +17,8 @@ import ShowAllReviews from '@/components/ShowAllReviews';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
-import { areaForTownKey, hasCopy } from '@/config/areas';
+import { areaForTownKey, areaBySlug, hasCopy } from '@/config/areas';
+import ListingCard, { CardListing } from '@/components/ListingCard';
 import PropertyMap from '@/components/PropertyMap';
 import HouseRules from '@/components/HouseRules';
 import ShowMoreText from '@/components/ShowMoreText';
@@ -386,20 +387,56 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const { data: { user: viewer } } = await supabase.auth.getUser();
     const isHostViewing = viewer?.id === home.host_id;
 
-    // The stored average is maintained by a database trigger, so it's the
-    // same number everywhere. Falls back to computing it if a listing
-    // predates that trigger.
-    const avgRating = home.rating_avg
-        ? Number(home.rating_avg)
-        : reviews && reviews.length
-            ? reviews.reduce((sum, r) => sum + Number(r.rating), 0) / reviews.length
-            : 0;
+    // ONE rating source for the whole site: the stored aggregate columns,
+    // rating_avg and rating_count, maintained by a database trigger. They are
+    // the same two columns the listing cards and the area grids read, so the
+    // score under the title matches the score on the card that linked here.
+    // reviews.length (the length of the list actually rendered further down)
+    // and a from-scratch average are deliberately NOT used for the number:
+    // three sources for one rating is three chances to disagree, which is
+    // exactly what was happening.
+    const ratingAvg = Number(home.rating_avg) || 0;
 
     // A handful of reviews is not a rating yet, so a listing stays "New" until
     // it has MIN_PUBLIC_REVIEWS of them rather than publishing a number that
     // one more review could swing by a whole star.
-    const reviewCount = reviews?.length || 0;
-    const showScore = hasPublicScore(reviewCount);
+    const ratingCount = Number(home.rating_count) || 0;
+    const showScore = hasPublicScore(ratingCount);
+
+    // More places nearby — so a listing is not a dead end. Until now a property
+    // linked only UP to its area page; nothing linked one cottage to another,
+    // for a guest or a crawler. This fills that in: other published listings in
+    // the same town first, then the neighbouring areas the area config already
+    // names (area.nearby), capped at a tidy row. Named columns only — anon has
+    // no table grant, and the card needs just these.
+    const townForNearby = townKey(home.location);
+    const areaForNearby = areaForTownKey(townForNearby);
+    const nearbyKeys = new Set<string>();
+    if (areaForNearby) {
+        areaForNearby.townKeys.forEach((k) => nearbyKeys.add(k));
+        areaForNearby.nearby.forEach((slug) => {
+            const nb = areaBySlug(slug);
+            if (nb) nb.townKeys.forEach((k) => nearbyKeys.add(k));
+        });
+    } else if (townForNearby) {
+        nearbyKeys.add(townForNearby);
+    }
+
+    let nearbyListings: CardListing[] = [];
+    if (nearbyKeys.size) {
+        const { data: candidates } = await supabase
+            .from('listings')
+            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities')
+            .eq('status', 'published')
+            .neq('id', home.id)
+            .order('created_at', { ascending: false })
+            .limit(60);
+        const inArea = (candidates || []).filter((l) => nearbyKeys.has(townKey(l.location)));
+        // Same town ahead of a neighbouring one, so the closest places show first.
+        const sameTown = inArea.filter((l) => townKey(l.location) === townForNearby);
+        const neighbour = inArea.filter((l) => townKey(l.location) !== townForNearby);
+        nearbyListings = sameTown.concat(neighbour).slice(0, 4);
+    }
 
     // The way back up. Until the area pages existed a listing linked to
     // nothing at all — every property on the site was a dead end, for a guest
@@ -462,14 +499,14 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (
                         <>
-                            <ReviewStars value={Math.round(avgRating)} size={15} />
-                            <span className='font-semibold text-slate-900'>{avgRating.toFixed(1)}</span>
-                            <span>· {reviewCount} review{reviewCount > 1 ? 's' : ''}</span>
+                            <ReviewStars value={Math.round(ratingAvg)} size={15} />
+                            <span className='font-semibold text-slate-900'>{ratingAvg.toFixed(1)}</span>
+                            <span>· {ratingCount} review{ratingCount > 1 ? 's' : ''}</span>
                         </>
-                    ) : reviewCount > 0 ? (
+                    ) : ratingCount > 0 ? (
                         <span className='inline-flex items-center gap-1.5 font-semibold text-slate-900'>
                             <span className='bg-emerald-50 text-emerald-800 text-xs px-2 py-0.5 rounded-full'>New</span>
-                            {reviewCount} review{reviewCount > 1 ? 's' : ''} so far
+                            {ratingCount} review{ratingCount > 1 ? 's' : ''} so far
                         </span>
                     ) : (
                         <span className='bg-emerald-50 text-emerald-800 text-xs px-2 py-0.5 rounded-full font-semibold'>New</span>
@@ -522,8 +559,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 ? {
                                       aggregateRating: {
                                           '@type': 'AggregateRating',
-                                          ratingValue: avgRating.toFixed(2),
-                                          reviewCount: reviewCount,
+                                          ratingValue: ratingAvg.toFixed(2),
+                                          reviewCount: ratingCount,
                                           bestRating: 5,
                                           worstRating: 1,
                                       },
@@ -597,11 +634,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                     {hostSinceYear && (
                                         <span>Hosting since {hostSinceYear}</span>
                                     )}
-                                    {hostSinceYear && reviews && reviews.length > 0 && (
+                                    {hostSinceYear && ratingCount > 0 && (
                                         <span aria-hidden='true'>·</span>
                                     )}
-                                    {reviews && reviews.length > 0 && (
-                                        <span>{reviews.length} review{reviews.length > 1 ? 's' : ''} from guests</span>
+                                    {ratingCount > 0 && (
+                                        <span>{ratingCount} review{ratingCount > 1 ? 's' : ''} from guests</span>
                                     )}
                                 </div>
                             </div>
@@ -757,8 +794,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             {showScore && (
                                 <ReviewsSummary
                                     reviews={reviews}
-                                    ratingAvg={avgRating}
-                                    ratingCount={home.rating_count || reviewCount}
+                                    ratingAvg={ratingAvg}
+                                    ratingCount={ratingCount}
                                     categoryAverages={{
                                         cleanliness: home.rating_cleanliness,
                                         accuracy: home.rating_accuracy,
@@ -773,11 +810,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             <h2 className='text-xl font-semibold my-6 flex items-center gap-2'>
                                 {showScore ? (
                                     <>
-                                        <ReviewStars value={Math.round(avgRating)} size={18} />
-                                        {avgRating.toFixed(1)} · {reviewCount} review{reviewCount > 1 ? 's' : ''}
+                                        <ReviewStars value={Math.round(ratingAvg)} size={18} />
+                                        {ratingAvg.toFixed(1)} · {ratingCount} review{ratingCount > 1 ? 's' : ''}
                                     </>
                                 ) : (
-                                    <>{reviewCount} review{reviewCount > 1 ? 's' : ''}</>
+                                    <>{ratingCount} review{ratingCount > 1 ? 's' : ''}</>
                                 )}
                             </h2>
                             {!showScore && (
@@ -809,6 +846,20 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     )}
                 </div>
             </div>
+
+            {nearbyListings.length > 0 && (
+                <section className='mt-12 pt-10 border-t'>
+                    <h2 className='text-xl md:text-2xl font-bold text-slate-900'>More places nearby</h2>
+                    <p className='mt-1 text-sm text-slate-500'>
+                        Other cottages {areaForNearby ? `in and around ${areaForNearby.name}` : 'nearby'}.
+                    </p>
+                    <div className='mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6'>
+                        {nearbyListings.map((l) => (
+                            <ListingCard key={l.id} listing={l} />
+                        ))}
+                    </div>
+                </section>
+            )}
             <MobileBookingBar
                 pricePerNight={home.price_per_night}
                 label={home.instant_book === true ? 'Reserve' : 'Request to book'}

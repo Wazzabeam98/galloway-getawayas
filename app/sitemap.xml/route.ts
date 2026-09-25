@@ -4,6 +4,7 @@ import Env from '@/config/Env';
 import { logError } from '@/lib/logError';
 import { AREAS, hasCopy } from '@/config/areas';
 import { townKey } from '@/lib/places';
+import { SHOP_TRADES } from '@/lib/serviceProviders';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -81,6 +82,19 @@ export async function GET() {
         { loc: `${SITE_URL}/cancellation-policy`, lastmod: now, changefreq: 'yearly', priority: '0.4' },
     ];
 
+    // The real trade pages — one per enquirable trade (SHOP_TRADES), the same
+    // seven that carry Service structured data and stay indexable. The three
+    // "Not this one yet" placeholders and /services/guest are noindex (see
+    // app/services/[trade]/layout.tsx) and deliberately left out. Static, so
+    // they are added to every return path below, including the DB-error ones.
+    const tradePages: Entry[] = SHOP_TRADES.map((trade) => ({
+        loc: `${SITE_URL}/services/${trade}`,
+        lastmod: now,
+        changefreq: 'weekly',
+        priority: '0.6',
+    }));
+    const knownPages = staticPages.concat(tradePages);
+
     const headers = {
         'Content-Type': 'application/xml; charset=utf-8',
         // Five minutes at the CDN, so a crawl storm does not become a query
@@ -113,7 +127,7 @@ export async function GET() {
                 error,
                 { path: 'sitemap.xml' }
             );
-            return new NextResponse(render(staticPages), { headers });
+            return new NextResponse(render(knownPages), { headers });
         }
 
         const listingPages: Entry[] = (listings || []).map((listing: any) => ({
@@ -169,7 +183,7 @@ export async function GET() {
         // so reporting it would fill /admin/errors with the same row. A query
         // that FAILED is a different thing and is caught above.
         return new NextResponse(
-            render(staticPages.concat(areaPages).concat(listingPages)),
+            render(knownPages.concat(areaPages).concat(listingPages)),
             { headers }
         );
     } catch (err) {
@@ -177,6 +191,6 @@ export async function GET() {
         // fail quietly either: this now shows up on /admin/errors rather than
         // only in a Vercel log nobody reads.
         await logError('[sitemap] could not be built', err, { path: 'sitemap.xml' });
-        return new NextResponse(render(staticPages), { headers });
+        return new NextResponse(render(knownPages), { headers });
     }
 }
