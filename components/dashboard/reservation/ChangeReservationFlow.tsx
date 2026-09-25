@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Minus, Plus, ChevronDown, CalendarDays, Users } from 'lucide-react';
-import ChangeCalendar from '@/components/reservations/ChangeCalendar';
+import ChangeDateRange from '@/components/reservations/ChangeDateRange';
 
 // "What do you want to change?" — Airbnb's change-reservation shape, used by both
 // sides. A listing card and the reservation details up top; a Dates box that
@@ -143,8 +143,10 @@ export default function ChangeReservationFlow({
                 </button>
                 {showCal && (
                     <div className="mt-2">
-                        <ChangeCalendar listingId={listingId} ownCheckIn={checkIn} ownCheckOut={checkOut} checkIn={ci} checkOut={co}
-                            onSave={(a, b) => { setCi(a); setCo(b); setShowCal(false); }} onClose={() => setShowCal(false)} />
+                        {/* The cottage booking widget's own calendar, reused here. Picks
+                            update the dates live, so the price summary re-quotes as you go. */}
+                        <ChangeDateRange listingId={listingId} ownCheckIn={checkIn} ownCheckOut={checkOut} checkIn={ci} checkOut={co}
+                            onChange={(a, b) => { setCi(a); setCo(b); }} />
                     </div>
                 )}
             </div>
