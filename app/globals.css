@@ -192,6 +192,29 @@
    react-date-range calendar is affected. */
 .change-cal .rdrYearPicker { display: none !important; }
 
+/* Make the change-reservation calendar fill its card. react-date-range pins
+   intrinsic (inline-flex / fixed) widths on every level, so .rdrMonth at 100%
+   alone still sat left with empty space; force the whole chain — the picker
+   wrapper, the calendar wrapper, the months container, the month, the weekday and
+   day rows — to 100%, and spread the seven day cells evenly. Scoped to .change-cal
+   so the cottage booking widget is untouched. */
+.change-cal .rdrDateRangePickerWrapper,
+.change-cal .rdrDateRangeWrapper,
+.change-cal .rdrCalendarWrapper,
+.change-cal .rdrMonths,
+.change-cal .rdrMonthsVertical,
+.change-cal .rdrMonth,
+.change-cal .rdrMonthAndYearWrapper,
+.change-cal .rdrWeekDays,
+.change-cal .rdrDays {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.change-cal .rdrDateRangePickerWrapper,
+.change-cal .rdrMonths,
+.change-cal .rdrMonthsVertical { display: flex; }
+.change-cal .rdrDay { width: 14.2857% !important; }
+
 
 /* 7. Toast styling
    react-toastify's "colored" theme paints the whole box solid green or red.
