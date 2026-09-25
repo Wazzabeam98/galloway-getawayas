@@ -1,6 +1,11 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { TRADES, tradeLabel } from '@/lib/serviceProviders';
+import { TRADES, tradeLabel, canBeEnquiredAbout } from '@/lib/serviceProviders';
+
+// Absolute base for structured data, the same origin the area and listing
+// pages use. Defined here rather than imported from lib/email so this route
+// carries no dependency on the mail layer.
+const SITE_URL = 'https://gallowaygetaways.co.uk';
 
 // app/services/[trade]/page.tsx is a client component and cannot export
 // metadata, so it lives here. Two things this fixes.
@@ -27,6 +32,19 @@ export async function generateMetadata({
 
   const label = tradeLabel(params.trade);
 
+  // A known trade that isn't in the shop yet renders a "Not this one yet"
+  // placeholder (sponge/bin/trees), and /services/guest only redirects away.
+  // Neither has content a search result should land on, and an indexed thin
+  // page drags the rest of the domain down — so they are kept out of the
+  // index. follow stays on so a crawler still uses the links out of them.
+  if (!canBeEnquiredAbout(params.trade)) {
+    return {
+      title: `${label} for holiday lets in Dumfries & Galloway`,
+      robots: { index: false, follow: true },
+      alternates: { canonical: `/services/${params.trade}` },
+    };
+  }
+
   return {
     title: `${label} for holiday lets in Dumfries & Galloway`,
     description:
@@ -44,5 +62,44 @@ export default function TradeLayout({
   params: { trade: string };
 }) {
   if (KEYS.indexOf(params.trade) === -1) notFound();
-  return <>{children}</>;
+
+  // Service structured data on the seven real trade pages. It tells Google the
+  // page is a service (an <trade> covering holiday lets) offered across
+  // Dumfries & Galloway, which is how these pages can win the local result.
+  // Only the enquirable trades get it — the placeholder and redirect slugs are
+  // noindex (see generateMetadata) and have nothing to describe.
+  const label = tradeLabel(params.trade);
+  const serviceSchema = canBeEnquiredAbout(params.trade)
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'Service',
+        serviceType: label,
+        name: `${label} for holiday lets in Dumfries & Galloway`,
+        description:
+          `Find a ${label.toLowerCase()} covering your holiday let in `
+          + 'Dumfries & Galloway, ordered by how close they are to your property.',
+        provider: {
+          '@type': 'Organization',
+          name: 'Galloway Getaways',
+          url: SITE_URL,
+        },
+        areaServed: {
+          '@type': 'AdministrativeArea',
+          name: 'Dumfries & Galloway',
+        },
+        url: `${SITE_URL}/services/${params.trade}`,
+      }
+    : null;
+
+  return (
+    <>
+      {serviceSchema && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceSchema) }}
+        />
+      )}
+      {children}
+    </>
+  );
 }

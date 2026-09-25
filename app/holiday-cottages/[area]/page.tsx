@@ -290,11 +290,15 @@ export default async function AreaPage({ params }: { params: { area: string } })
                 </section>
 
                 {/* --- FAQs --- */}
-                <section className="mt-14 max-w-3xl">
-                    <h2 className="text-xl md:text-2xl font-bold text-stone-900 mb-4">
-                        Common questions about staying in {area.name}
-                    </h2>
-                    {area.faqs.length ? (
+                {/* Nothing at all when there are no questions, not a lone
+                    heading over empty space. The FAQ JSON-LD is already
+                    suppressed when faqs is empty, so an empty heading was the
+                    one thin remnant a crawler (and a reader) still saw. */}
+                {area.faqs.length > 0 && (
+                    <section className="mt-14 max-w-3xl">
+                        <h2 className="text-xl md:text-2xl font-bold text-stone-900 mb-4">
+                            Common questions about staying in {area.name}
+                        </h2>
                         <dl className="space-y-6">
                             {area.faqs.map((faq, i) => (
                                 <div key={i}>
@@ -303,10 +307,8 @@ export default async function AreaPage({ params }: { params: { area: string } })
                                 </div>
                             ))}
                         </dl>
-                    ) : (
-                        <Placeholder what={`three or four questions people ask about ${area.name}`} />
-                    )}
-                </section>
+                    </section>
+                )}
 
                 {/* --- the sideways links that stop every page being a dead end --- */}
                 {nearbyAreas.length > 0 && (
