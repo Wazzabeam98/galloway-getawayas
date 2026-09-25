@@ -126,7 +126,7 @@ export default function ChangeDateRange({
         // rdr-move makes the month grid fill the card (the base .rdrMonth is a fixed
         // 23em) with day cells spread evenly — scoped so the cottage booking widget's
         // calendar is untouched.
-        <div ref={calendarRef} className="rdr-move border rounded-xl overflow-hidden">
+        <div ref={calendarRef} className="rdr-move change-cal border rounded-xl overflow-hidden">
             <DateRangePicker
                 ranges={[range]}
                 onChange={handleSelect}

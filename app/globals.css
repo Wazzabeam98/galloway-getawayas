@@ -187,6 +187,11 @@
    cells (above). A rounder circle to suit those taller cells: */
 .rdr-move .rdrSelected { border-radius: 1.35em !important; }
 
+/* The change-reservation calendar shows the month only — no year dropdown (the
+   prev/next arrows still roll the year over). Scoped to .change-cal so no other
+   react-date-range calendar is affected. */
+.change-cal .rdrYearPicker { display: none !important; }
+
 
 /* 7. Toast styling
    react-toastify's "colored" theme paints the whole box solid green or red.
