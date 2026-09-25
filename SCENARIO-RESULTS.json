@@ -1,8 +1,8 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-09-24T20:42:31.211Z",
-      "target": "http://localhost:3000",
+      "ranAt": "2026-09-25T13:31:34.323Z",
+      "target": "http://localhost:3100",
       "passed": 7,
       "failed": 0,
       "untestable": 0,
@@ -52,8 +52,8 @@
       ]
     },
     "refund": {
-      "ranAt": "2026-09-24T20:43:42.348Z",
-      "target": "http://localhost:3000",
+      "ranAt": "2026-09-25T13:32:45.086Z",
+      "target": "http://localhost:3100",
       "passed": 8,
       "failed": 0,
       "untestable": 0,
@@ -109,8 +109,8 @@
       ]
     },
     "balance": {
-      "ranAt": "2026-09-24T20:44:41.917Z",
-      "target": "http://localhost:3000",
+      "ranAt": "2026-09-25T13:33:44.508Z",
+      "target": "http://localhost:3100",
       "passed": 8,
       "failed": 0,
       "untestable": 0,
@@ -166,8 +166,8 @@
       ]
     },
     "crosscutting": {
-      "ranAt": "2026-09-24T20:46:04.034Z",
-      "target": "http://localhost:3000",
+      "ranAt": "2026-09-25T13:36:18.811Z",
+      "target": "http://localhost:3100",
       "passed": 7,
       "failed": 0,
       "untestable": 0,
@@ -215,9 +215,54 @@
           "failedChecks": []
         }
       ]
+    },
+    "change": {
+      "ranAt": "2026-09-25T13:34:55.323Z",
+      "target": "http://localhost:3100",
+      "passed": 6,
+      "failed": 0,
+      "untestable": 0,
+      "scenarios": [
+        {
+          "number": "cg1",
+          "title": "Guest shortens a deposit booking — balance drops, no card refund",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cg2",
+          "title": "Guest shortens a fully-paid stay INSIDE the free window — full refund",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cg3",
+          "title": "Guest shortens a fully-paid stay OUTSIDE the free window (Firm) — 50% back",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cg4",
+          "title": "Guest shortens a fully-paid stay in the NON-REFUNDABLE window (Firm) — nothing back",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "ch1",
+          "title": "Host shortens a stay already paid out — full refund and host clawback",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cm1",
+          "title": "Guest MOVES onto pricier nights — charges the difference, no penalty",
+          "status": "passed",
+          "failedChecks": []
+        }
+      ]
     }
   },
-  "updatedAt": "2026-09-24T20:46:04.034Z",
+  "updatedAt": "2026-09-25T13:36:18.811Z",
   "fingerprint": {
     "app/api/cron/host-payouts/route.ts": "6f592c9618305ff9",
     "app/api/cron/balance-charges/route.ts": "b9dde47e622af8ff",
@@ -233,11 +278,19 @@
     "lib/refundSpread.ts": "fad761755dc4b85b",
     "lib/fees.ts": "eee8370bca28610e",
     "lib/pricing.ts": "b448a43e9bc66e81",
-    "lib/cancellation.ts": "17829661b2f52ab4",
-    "scripts/seed-payments.mjs": "156b35b461a78583",
+    "lib/cancellation.ts": "71b6b77d021a2457",
+    "lib/changeMoney.ts": "4c017db0168381f2",
+    "lib/quoteChange.ts": "53c00619cc539cf0",
+    "lib/bookingChange.ts": "6f159ed4a4cac0ec",
+    "lib/applyBookingChange.ts": "21926d3799a439c8",
+    "app/api/bookings/change/route.ts": "bc638db4742bb170",
+    "app/api/bookings/change/quote/route.ts": "1b23a4a56946c1a8",
+    "app/api/bookings/change/respond/route.ts": "d8908e27f96db325",
+    "scripts/seed-payments.mjs": "23bf2167edc831cb",
     "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
     "scripts/refund-scenarios.mjs": "e26d179dc89d7a68",
     "scripts/balance-scenarios.mjs": "cd9d045653faf651",
+    "scripts/change-scenarios.mjs": "fedc558161c3c6fe",
     "scripts/crosscutting-scenarios.mjs": "d96b8581a8be7672"
   }
 }

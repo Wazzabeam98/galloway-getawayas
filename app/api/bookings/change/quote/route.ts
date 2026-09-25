@@ -29,14 +29,14 @@ export async function POST(request: Request) {
         const isHost = isGuest ? false : !!(await checkListing(user.id, booking.listing_id, 'can_bookings'));
         if (!isGuest && !isHost) return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
 
-        const { delta, newTotal } = await quoteChangeMoney(admin, booking as any, {
+        const { delta, newTotal, notice } = await quoteChangeMoney(admin, booking as any, {
             newCheckIn: String((body && body.checkIn) || ''),
             newCheckOut: String((body && body.checkOut) || ''),
             newGuests: Math.trunc(Number(body && body.guests)),
             newChildren: Math.trunc(Number(body && body.children) || 0),
             newPets: Math.trunc(Number(body && body.pets) || 0),
         }, { initiatedBy: isGuest ? 'guest' : 'host' });
-        return NextResponse.json({ ok: true, total: newTotal, delta });
+        return NextResponse.json({ ok: true, total: newTotal, delta, notice });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not price that.' }, { status: 500 });
     }

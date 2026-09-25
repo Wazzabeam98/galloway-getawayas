@@ -43,7 +43,7 @@ export default function ChangeReservationFlow({
     const [pt, setPt] = useState(pets);
     const [showCal, setShowCal] = useState(false);
     const [showGuests, setShowGuests] = useState(startGuestsOpen);
-    const [quote, setQuote] = useState<{ total: number; delta: number } | null>(null);
+    const [quote, setQuote] = useState<{ total: number; delta: number; notice: string | null } | null>(null);
     const [quoting, setQuoting] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export default function ChangeReservationFlow({
                     body: JSON.stringify({ bookingId, checkIn: ci, checkOut: co, guests, children: ch, pets: pt }),
                 });
                 const body = await res.json().catch(() => ({}));
-                if (mine === seq.current) setQuote(res.ok ? { total: r2(body.total), delta: r2(body.delta) } : null);
+                if (mine === seq.current) setQuote(res.ok ? { total: r2(body.total), delta: r2(body.delta), notice: body.notice || null } : null);
             } catch { if (mine === seq.current) setQuote(null); }
             if (mine === seq.current) setQuoting(false);
         }, 350);
@@ -188,6 +188,10 @@ export default function ChangeReservationFlow({
                                 : delta < 0 ? <>If {counterpartyName} accepts, they’ll get <strong>£{Math.abs(delta).toFixed(2)}</strong> back.</>
                                     : <>If {counterpartyName} accepts, there’s nothing extra to pay.</>)}
                 </div>
+            )}
+            {/* A shortening that won't come back in full — said plainly before they send. */}
+            {!quoting && quote?.notice && (
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-800">{quote.notice}</p>
             )}
             {!capacityOk && changed && <p className="text-[12px] text-rose-600">{!petsAllowed && pt > 0 ? 'This place doesn’t allow pets.' : 'That’s over the guest limit.'}</p>}
 
