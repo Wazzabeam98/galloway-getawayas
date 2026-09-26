@@ -3,9 +3,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    changeDelta, moneyDirection, refundForDecrease, balanceAfter, nights, isRealChange,
+    changeDelta, moneyDirection, refundForDecrease, refundSplit, balanceAfter, nights, isRealChange,
     validateChange, guestMayAnswerChange, hostMayCancelChange, guestMayPayChange,
     whoAnswers, isOpenChange, isChangeTerminal, guestChangeIsInstant, decreaseRefundFraction,
+    round2,
     type StaySnapshot,
 } from '../lib/bookingChange';
 
@@ -32,6 +33,26 @@ test('a decrease refunds only what is overpaid against the NEW total', () => {
     assert.equal(refundForDecrease(500, 420), 80);
     // Never negative.
     assert.equal(refundForDecrease(0, 700), 0);
+});
+
+test('a decrease is split into a card refund and a balance drop for the copy', () => {
+    // Paid in full (£980), new total £840: the whole £140 drop comes back to the
+    // card, nothing left on the balance.
+    assert.deepEqual(refundSplit(980, 980, 840), { cardRefund: 140, balanceDrop: 0 });
+    // Deposit only (£245) and the new total (£840) still above it: NOTHING to the
+    // card — the whole £140 drop just lowers the remaining balance. This is the
+    // case the wording must get right ("your remaining balance drops by £140").
+    assert.deepEqual(refundSplit(245, 980, 840), { cardRefund: 0, balanceDrop: 140 });
+    // Deposit (£900) that now sits above the new total (£840): £60 of the £140
+    // drop is overpaid and comes back to the card; the other £80 is a balance
+    // reduction — a genuinely mixed case.
+    assert.deepEqual(refundSplit(900, 980, 840), { cardRefund: 60, balanceDrop: 80 });
+    // An increase or a no-op splits to nothing.
+    assert.deepEqual(refundSplit(245, 980, 1120), { cardRefund: 0, balanceDrop: 0 });
+    assert.deepEqual(refundSplit(245, 980, 980), { cardRefund: 0, balanceDrop: 0 });
+    // The two halves always sum to the drop.
+    const s = refundSplit(500, 980, 620);
+    assert.equal(round2(s.cardRefund + s.balanceDrop), 360);
 });
 
 test('the balance is the new total less what is paid net of any refund', () => {

@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { quoteChangeMoney } from '@/lib/quoteChange';
+import { refundSplit, round2 } from '@/lib/bookingChange';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
 
         const admin = adminClient();
         const { data: booking } = await admin
-            .from('bookings').select('id, listing_id, guest_id, check_in, check_out, guests, pets, total_price, nightly_breakdown').eq('id', bookingId).maybeSingle();
+            .from('bookings').select('id, listing_id, guest_id, check_in, check_out, guests, pets, total_price, nightly_breakdown, amount_paid, amount_refunded').eq('id', bookingId).maybeSingle();
         if (!booking) return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
 
         const isGuest = booking.guest_id === user.id;
@@ -36,7 +37,15 @@ export async function POST(request: Request) {
             newChildren: Math.trunc(Number(body && body.children) || 0),
             newPets: Math.trunc(Number(body && body.pets) || 0),
         }, { initiatedBy: isGuest ? 'guest' : 'host' });
-        return NextResponse.json({ ok: true, total: newTotal, delta, notice });
+
+        // Split a decrease so the form can word it honestly: what actually comes
+        // back to the card (only overpayment against the new total) versus what
+        // merely lowers a deposit booking's remaining balance. This mirrors the
+        // respond route, which refunds refundForDecrease(netPaid, newTotal) and
+        // leaves the rest to shrink the balance.
+        const netPaid = round2(Number(booking.amount_paid || 0) - Number(booking.amount_refunded || 0));
+        const { cardRefund, balanceDrop } = refundSplit(netPaid, round2(Number(booking.total_price || 0)), newTotal);
+        return NextResponse.json({ ok: true, total: newTotal, delta, notice, refund: cardRefund, balanceDrop });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not price that.' }, { status: 500 });
     }

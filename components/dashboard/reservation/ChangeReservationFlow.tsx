@@ -43,7 +43,7 @@ export default function ChangeReservationFlow({
     const [pt, setPt] = useState(pets);
     const [showCal, setShowCal] = useState(false);
     const [showGuests, setShowGuests] = useState(startGuestsOpen);
-    const [quote, setQuote] = useState<{ total: number; delta: number; notice: string | null } | null>(null);
+    const [quote, setQuote] = useState<{ total: number; delta: number; notice: string | null; refund: number; balanceDrop: number } | null>(null);
     const [quoting, setQuoting] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export default function ChangeReservationFlow({
                     body: JSON.stringify({ bookingId, checkIn: ci, checkOut: co, guests, children: ch, pets: pt }),
                 });
                 const body = await res.json().catch(() => ({}));
-                if (mine === seq.current) setQuote(res.ok ? { total: r2(body.total), delta: r2(body.delta), notice: body.notice || null } : null);
+                if (mine === seq.current) setQuote(res.ok ? { total: r2(body.total), delta: r2(body.delta), notice: body.notice || null, refund: r2(body.refund || 0), balanceDrop: r2(body.balanceDrop || 0) } : null);
             } catch { if (mine === seq.current) setQuote(null); }
             if (mine === seq.current) setQuoting(false);
         }, 350);
@@ -109,6 +109,26 @@ export default function ChangeReservationFlow({
     }
 
     const delta = quote ? quote.delta : null;
+
+    // The honest wording for a decrease. A card refund only covers what the guest
+    // has overpaid against the new total; on a deposit booking still below it, the
+    // whole drop just lowers the balance they've yet to pay — so we say the balance
+    // drops rather than that money comes "back". `who` picks the voice: the guest
+    // reading about themselves, or the host reading about the guest.
+    const money = (n: number) => <strong>£{n.toFixed(2)}</strong>;
+    const decreaseWording = (who: 'guest' | 'host') => {
+        const refund = quote?.refund ?? 0;
+        const balDrop = quote?.balanceDrop ?? 0;
+        if (who === 'guest') {
+            if (refund > 0 && balDrop > 0) return <>you’ll get {money(refund)} back and your remaining balance drops by {money(balDrop)}.</>;
+            if (refund > 0) return <>you’ll get {money(refund)} back.</>;
+            return <>your remaining balance drops by {money(balDrop)}.</>;
+        }
+        if (refund > 0 && balDrop > 0) return <>they’ll get {money(refund)} back and their remaining balance drops by {money(balDrop)}.</>;
+        if (refund > 0) return <>they’ll get {money(refund)} back.</>;
+        return <>their remaining balance drops by {money(balDrop)}.</>;
+    };
+
     const guestsSummary = ad + ' adult' + (ad === 1 ? '' : 's')
         + (ch ? ', ' + ch + ' child' + (ch === 1 ? '' : 'ren') : '')
         + (inf ? ', ' + inf + ' infant' + (inf === 1 ? '' : 's') : '')
@@ -182,10 +202,10 @@ export default function ChangeReservationFlow({
                         ? 'Pricing the change…'
                         : role === 'guest'
                             ? (delta > 0 ? <>Your host will need to approve this, <strong>£{delta.toFixed(2)} more</strong>.</>
-                                : delta < 0 ? <>Your host will need to approve this — you’ll get <strong>£{Math.abs(delta).toFixed(2)}</strong> back.</>
+                                : delta < 0 ? <>Your host will need to approve this — {decreaseWording('guest')}</>
                                     : <>This updates your booking straight away.</>)
                             : (delta > 0 ? <>If {counterpartyName} accepts, they’ll pay <strong>£{delta.toFixed(2)}</strong> more.</>
-                                : delta < 0 ? <>If {counterpartyName} accepts, they’ll get <strong>£{Math.abs(delta).toFixed(2)}</strong> back.</>
+                                : delta < 0 ? <>If {counterpartyName} accepts, {decreaseWording('host')}</>
                                     : <>If {counterpartyName} accepts, there’s nothing extra to pay.</>)}
                 </div>
             )}

@@ -58,6 +58,26 @@ export function refundForDecrease(netPaid: number, newTotal: number): number {
     return round2(Math.max(0, Number(netPaid || 0) - Number(newTotal || 0)));
 }
 
+// How a price DECREASE reaches the guest, split for the copy shown before anyone
+// commits. The stay's cost drops by `drop = oldTotal − newTotal`; that money
+// reaches the guest in two ways, and the wording has to be honest about which:
+//   * cardRefund — the part that comes back to their card, which is only what
+//     they have OVERPAID against the new total (refundForDecrease). On a
+//     fully-paid booking this is the whole drop.
+//   * balanceDrop — the rest simply lowers the balance they have yet to pay. On a
+//     DEPOSIT booking still sitting below the new total, cardRefund is 0 and the
+//     whole drop is a balance reduction — so the guest must be told their balance
+//     drops, NOT that they will "get £X back".
+// The two always sum to the drop. Returns zeros for an increase or a no-op.
+export function refundSplit(netPaid: number, oldTotal: number, newTotal: number): { cardRefund: number; balanceDrop: number } {
+    const drop = round2(Math.max(0, Number(oldTotal || 0) - Number(newTotal || 0)));
+    if (drop <= 0) return { cardRefund: 0, balanceDrop: 0 };
+    // Never claim more back to the card than the drop itself (netPaid can't
+    // exceed the old total, so this only guards against rounding).
+    const cardRefund = Math.min(refundForDecrease(netPaid, newTotal), drop);
+    return { cardRefund: round2(cardRefund), balanceDrop: round2(drop - cardRefund) };
+}
+
 // What share of a shortening's removed nights is refunded, as a partial
 // cancellation of those nights. A HOST-proposed shortening refunds them in full
 // (the host is the one shortening the stay, so the guest keeps all their money).
