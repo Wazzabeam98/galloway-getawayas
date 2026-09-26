@@ -15,10 +15,10 @@ import AddressLookup, { AddressParts, EMPTY_ADDRESS, composeAddressLine } from '
 //
 // It is DELIBERATELY thinner than DeliveryAddressModal: a chef travelling to a
 // cottage is not a delivery, so there is no delivery-reach preflight and no
-// saving to the guest's delivery address book. Hand-entry only (searchEnabled
-// false) — the address routes spend a paid lookup and need a signed-in user,
-// and this panel is reachable by an anonymous booker, so the fields that always
-// work are the ones shown. Validation appears only on Save.
+// saving to the guest's delivery address book. The postcode search is on, the
+// same as the delivery modal — the address routes are open to signed-out guests
+// (rate-limited), so an anonymous booker gets the search too, with hand entry
+// always available underneath. Validation appears only on Save.
 export default function TravelAddressModal({
     who, initial, onSave, onClose,
 }: {
@@ -51,7 +51,7 @@ export default function TravelAddressModal({
                 <p className="mt-0.5 text-sm text-slate-500">Where should {who} come?</p>
 
                 <div className="mt-4">
-                    <AddressLookup value={parts} onChange={setParts} searchEnabled={false} showErrors={showErrors} />
+                    <AddressLookup value={parts} onChange={setParts} searchEnabled={true} showErrors={showErrors} />
                 </div>
 
                 <div className="mt-5 flex gap-2">
