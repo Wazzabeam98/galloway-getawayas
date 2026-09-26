@@ -35,6 +35,7 @@ const RUNNERS = [
     ['payout', 'scripts/payout-scenarios.mjs'],
     ['refund', 'scripts/refund-scenarios.mjs'],
     ['balance', 'scripts/balance-scenarios.mjs'],
+    ['change', 'scripts/change-scenarios.mjs'],
     ['crosscutting', 'scripts/crosscutting-scenarios.mjs'],
 ];
 

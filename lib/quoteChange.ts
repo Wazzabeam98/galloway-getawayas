@@ -5,7 +5,9 @@
 // and the quote endpoint both use.
 
 import { nightlyRate, dateFromKey, dateKey } from '@/lib/pricing';
-import { changeMoney } from '@/lib/changeMoney';
+import { changeMoney, applyChangePolicy, shorteningNotice } from '@/lib/changeMoney';
+import { decreaseRefundFraction } from '@/lib/bookingChange';
+import { policyOf } from '@/lib/cancellation';
 
 export interface ChangeQuoteInput {
     newCheckIn: string;   // yyyy-mm-dd
@@ -38,13 +40,21 @@ function nightKeys(checkIn: string, checkOut: string): string[] {
     return out;
 }
 
-export async function quoteChangeMoney(admin: any, booking: QuotedBooking, input: ChangeQuoteInput): Promise<{ delta: number; newTotal: number }> {
+export interface ChangeQuoteContext {
+    // Who is proposing the change. A host-proposed shortening refunds the removed
+    // nights in full; a guest-proposed one follows the cancellation policy. When
+    // omitted (older callers) the guest rule is applied — the more conservative one.
+    initiatedBy?: 'host' | 'guest';
+    now?: Date;
+}
+
+export async function quoteChangeMoney(admin: any, booking: QuotedBooking, input: ChangeQuoteInput, ctx: ChangeQuoteContext = {}): Promise<{ delta: number; newTotal: number; notice: string | null }> {
     const { data: listing } = await admin
         .from('listings')
-        .select('price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period')
+        .select('price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, cancellation_policy')
         .eq('id', booking.listing_id)
         .maybeSingle();
-    if (!listing) return { delta: 0, newTotal: Math.round(Number(booking.total_price || 0) * 100) / 100 };
+    if (!listing) return { delta: 0, newTotal: Math.round(Number(booking.total_price || 0) * 100) / 100, notice: null };
 
     const { data: overrideRows } = await admin
         .from('calendar_overrides')
@@ -73,12 +83,32 @@ export async function quoteChangeMoney(admin: any, booking: QuotedBooking, input
     const newChargeable = Math.max(0, Number(input.newGuests) - includedGuests);
     const perNight = (listing.extra_guest_period || 'night') !== 'stay';
 
-    return changeMoney({
+    const oldTotal = Math.round(Number(booking.total_price || 0) * 100) / 100;
+    const money = changeMoney({
         oldNightKeys, newNightKeys, paidRate, currentRate,
         oldChargeableGuests: oldChargeable, newChargeableGuests: newChargeable,
         extraGuestFee: Number(listing.extra_guest_fee || 0), perNightGuestFee: perNight,
         oldPets: Number(booking.pets || 0), newPets: Number(input.newPets) || 0,
         petFee: Number(listing.pet_fee || 0),
-        oldTotal: Math.round(Number(booking.total_price || 0) * 100) / 100,
+        oldTotal,
     });
+
+    // Apply the cancellation policy to a NET LOSS of nights only. A move (same or
+    // more nights) settles in full — added nights charged, removed ones credited,
+    // netted — with no penalty; only nights given back on net are a partial
+    // cancellation. A host-proposed shortening refunds them in full; a
+    // guest-proposed one is full inside the free window and the tier's share
+    // outside it. Fees always settle in full.
+    const fraction = decreaseRefundFraction(
+        ctx.initiatedBy || 'guest',
+        String(booking.check_in).slice(0, 10),
+        listing.cancellation_policy,
+        ctx.now,
+    );
+    const { delta, newTotal } = applyChangePolicy(oldTotal, money, fraction);
+    // Warn a guest, before they send, when a shortening won't come back in full.
+    const notice = (ctx.initiatedBy || 'guest') === 'guest'
+        ? shorteningNotice(money, fraction, policyOf(listing.cancellation_policy))
+        : null;
+    return { delta, newTotal, notice };
 }

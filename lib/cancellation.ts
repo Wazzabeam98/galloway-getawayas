@@ -3,7 +3,7 @@
 //
 // These mirror the wording shown in the listing editor.
 
-import { londonDayKey, shiftDayKey, ukLongDate } from './dayKey';
+import { londonDayKey, shiftDayKey, ukLongDate, daysBetweenKeys } from './dayKey';
 
 export type PolicyKey = 'Flexible' | 'Moderate' | 'Limited' | 'Firm';
 
@@ -32,12 +32,17 @@ export function policyOf(value: string | null | undefined): PolicyKey {
 // the same calendar day whatever zone the code runs in. The old version floored
 // to LOCAL midnight and was then stored through toISOString, which lands a day
 // early under BST (check-in 6 Oct, Moderate → 30 Sept when it should be 1 Oct).
-export function freeCancelUntilKey(checkIn: string | Date, policy: string | null | undefined): string {
-    const key = typeof checkIn === 'string'
+// A check-in as a 'yyyy-mm-dd' day key: a string is taken as-is; a picked Date
+// (the booking widget) becomes its own calendar day, read on the parts — never
+// through an instant, which lands a day early under BST.
+function checkInKey(checkIn: string | Date): string {
+    return typeof checkIn === 'string'
         ? String(checkIn).slice(0, 10)
-        // A picked Date (the booking widget) — its own calendar day, on the parts.
         : `${checkIn.getFullYear()}-${String(checkIn.getMonth() + 1).padStart(2, '0')}-${String(checkIn.getDate()).padStart(2, '0')}`;
-    return shiftDayKey(key, -RULES[policyOf(policy)].fullRefundDaysBefore);
+}
+
+export function freeCancelUntilKey(checkIn: string | Date, policy: string | null | undefined): string {
+    return shiftDayKey(checkInKey(checkIn), -RULES[policyOf(policy)].fullRefundDaysBefore);
 }
 
 // The same day as a Date anchored at UTC midnight, so it stands for one calendar
@@ -47,19 +52,21 @@ export function freeCancelUntil(checkIn: string | Date, policy: string | null | 
 }
 
 // What proportion of what they've paid comes back, cancelling today.
+//
+// Worked out on London day keys — the same part arithmetic freeCancelUntilKey and
+// cancellationSummary use — not by subtracting two instants floored to LOCAL
+// midnight. The old instant maths compared a UTC-midnight check-in against a
+// local-midnight "today", which drifts a day on a boundary date under BST (and on
+// any runtime behind UTC), so the fraction could disagree with the free-cancel
+// date shown right beside it. Day keys make the boundary land on the same day
+// everywhere.
 export function refundFraction(
     checkIn: string | Date,
     policy: string | null | undefined,
     on?: Date
 ): number {
     const rule = RULES[policyOf(policy)];
-    const today = on ? new Date(on.getTime()) : new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const start = typeof checkIn === 'string' ? new Date(checkIn) : new Date(checkIn.getTime());
-    start.setHours(0, 0, 0, 0);
-
-    const daysBefore = Math.round((start.getTime() - today.getTime()) / 86400000);
+    const daysBefore = daysBetweenKeys(londonDayKey(on || new Date()), checkInKey(checkIn));
 
     if (daysBefore >= rule.fullRefundDaysBefore) return 1;
     if (daysBefore >= rule.halfRefundDaysBefore) return 0.5;

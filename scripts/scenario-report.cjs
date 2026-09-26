@@ -49,10 +49,20 @@ const WATCHED = [
     'lib/fees.ts',
     'lib/pricing.ts',
     'lib/cancellation.ts',
+    // "Change reservation" money: the diff pricing, the policy on a net loss of
+    // nights, and the routes that quote, create and settle a change.
+    'lib/changeMoney.ts',
+    'lib/quoteChange.ts',
+    'lib/bookingChange.ts',
+    'lib/applyBookingChange.ts',
+    'app/api/bookings/change/route.ts',
+    'app/api/bookings/change/quote/route.ts',
+    'app/api/bookings/change/respond/route.ts',
     'scripts/seed-payments.mjs',
     'scripts/payout-scenarios.mjs',
     'scripts/refund-scenarios.mjs',
     'scripts/balance-scenarios.mjs',
+    'scripts/change-scenarios.mjs',
     'scripts/crosscutting-scenarios.mjs',
 ];
 

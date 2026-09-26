@@ -3,9 +3,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    changeDelta, moneyDirection, refundForDecrease, balanceAfter, nights, isRealChange,
+    changeDelta, moneyDirection, refundForDecrease, refundSplit, balanceAfter, nights, isRealChange,
     validateChange, guestMayAnswerChange, hostMayCancelChange, guestMayPayChange,
-    whoAnswers, isOpenChange, isChangeTerminal, guestChangeIsInstant,
+    whoAnswers, isOpenChange, isChangeTerminal, guestChangeIsInstant, decreaseRefundFraction,
+    round2,
     type StaySnapshot,
 } from '../lib/bookingChange';
 
@@ -34,6 +35,26 @@ test('a decrease refunds only what is overpaid against the NEW total', () => {
     assert.equal(refundForDecrease(0, 700), 0);
 });
 
+test('a decrease is split into a card refund and a balance drop for the copy', () => {
+    // Paid in full (£980), new total £840: the whole £140 drop comes back to the
+    // card, nothing left on the balance.
+    assert.deepEqual(refundSplit(980, 980, 840), { cardRefund: 140, balanceDrop: 0 });
+    // Deposit only (£245) and the new total (£840) still above it: NOTHING to the
+    // card — the whole £140 drop just lowers the remaining balance. This is the
+    // case the wording must get right ("your remaining balance drops by £140").
+    assert.deepEqual(refundSplit(245, 980, 840), { cardRefund: 0, balanceDrop: 140 });
+    // Deposit (£900) that now sits above the new total (£840): £60 of the £140
+    // drop is overpaid and comes back to the card; the other £80 is a balance
+    // reduction — a genuinely mixed case.
+    assert.deepEqual(refundSplit(900, 980, 840), { cardRefund: 60, balanceDrop: 80 });
+    // An increase or a no-op splits to nothing.
+    assert.deepEqual(refundSplit(245, 980, 1120), { cardRefund: 0, balanceDrop: 0 });
+    assert.deepEqual(refundSplit(245, 980, 980), { cardRefund: 0, balanceDrop: 0 });
+    // The two halves always sum to the drop.
+    const s = refundSplit(500, 980, 620);
+    assert.equal(round2(s.cardRefund + s.balanceDrop), 360);
+});
+
 test('the balance is the new total less what is paid net of any refund', () => {
     // Full-paid decrease, £140 refunded → net paid 840, new total 840 → 0 owed.
     assert.equal(balanceAfter(840, 840), 0);
@@ -56,6 +77,26 @@ test('a guest change with no price change applies instantly; anything else is a 
     assert.equal(guestChangeIsInstant('host', 25), false);
     // Sub-penny noise still counts as zero (decided on the rounded delta).
     assert.equal(guestChangeIsInstant('guest', 0.004), true);
+});
+
+test('a host-proposed shortening refunds the removed nights in full, whatever the policy', () => {
+    const now = new Date('2026-11-01T12:00:00Z');
+    // Even a Firm policy inside the last few days: the host is shortening, so the
+    // guest keeps all their money.
+    assert.equal(decreaseRefundFraction('host', '2026-11-05', 'Firm', now), 1);
+    assert.equal(decreaseRefundFraction('host', '2026-12-20', 'Flexible', now), 1);
+});
+
+test('a guest-proposed shortening follows the cancellation policy', () => {
+    const now = new Date('2026-11-01T12:00:00Z');
+    // Inside the free-cancellation window → full.
+    assert.equal(decreaseRefundFraction('guest', '2026-12-20', 'Moderate', now), 1);
+    // Firm, ~19 days out: past the full window, inside the partial one → 50%.
+    assert.equal(decreaseRefundFraction('guest', '2026-11-20', 'Firm', now), 0.5);
+    // Limited, ~11 days out: past 14-day full window, inside the 7-day partial → 50%.
+    assert.equal(decreaseRefundFraction('guest', '2026-11-12', 'Limited', now), 0.5);
+    // Firm, only ~4 days out: past every window → nothing back.
+    assert.equal(decreaseRefundFraction('guest', '2026-11-05', 'Firm', now), 0);
 });
 
 test('nights are whole and half-open', () => {

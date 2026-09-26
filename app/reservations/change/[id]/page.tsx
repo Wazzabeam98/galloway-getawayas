@@ -8,7 +8,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { checkListing } from '@/lib/access';
 import { displayName, capitializeFirst } from '@/lib/utils';
 import { ukLongDate } from '@/lib/dayKey';
-import { round2, whoAnswers } from '@/lib/bookingChange';
+import { round2, whoAnswers, refundSplit } from '@/lib/bookingChange';
 import ChangeRequestActions from '@/components/reservations/ChangeRequestActions';
 
 // The review page for a proposed change, shown to whoever must act on it — the
@@ -35,7 +35,7 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
         .maybeSingle();
     if (!chg) notFound();
 
-    const { data: booking } = await admin.from('bookings').select('listing_id').eq('id', chg.booking_id).maybeSingle();
+    const { data: booking } = await admin.from('bookings').select('listing_id, amount_paid, amount_refunded').eq('id', chg.booking_id).maybeSingle();
     const isGuest = chg.guest_id === user.id;
     const isHost = !isGuest && !!(booking && await checkListing(user.id, booking.listing_id, 'can_bookings'));
     if (!isGuest && !isHost) notFound();
@@ -48,6 +48,13 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
     const otherFirst = otherReal ? capitializeFirst(otherReal.split(' ')[0]) : (viewer === 'guest' ? 'Your host' : 'Your guest');
     const stayName = (listing && listing.title) || 'the stay';
     const delta = round2(Number(chg.price_delta));
+
+    // Split a decrease the same way the money actually settles: only overpayment
+    // against the new total comes back to the card; the rest lowers a deposit
+    // booking's remaining balance. Drives both the button and the summary so
+    // neither promises a card refund that a deposit guest won't receive.
+    const netPaid = round2(Number(booking?.amount_paid || 0) - Number(booking?.amount_refunded || 0));
+    const { cardRefund, balanceDrop } = refundSplit(netPaid, round2(Number(chg.old_total)), round2(Number(chg.new_total)));
 
     const answerer = whoAnswers(chg.initiated_by as any);
     // What THIS viewer can do now.
@@ -78,7 +85,11 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
     const acceptLabel = delta > 0
         ? (viewer === 'guest' ? 'Accept and pay £' + delta.toFixed(2) : 'Approve — guest pays £' + delta.toFixed(2))
         : delta < 0
-            ? (viewer === 'guest' ? 'Accept and get £' + Math.abs(delta).toFixed(2) + ' back' : 'Approve — refund £' + Math.abs(delta).toFixed(2))
+            // A card refund only when something is actually coming back to the card;
+            // a decrease that only shrinks the balance keeps a plain "Accept".
+            ? (cardRefund > 0
+                ? (viewer === 'guest' ? 'Accept and get £' + cardRefund.toFixed(2) + ' back' : 'Approve — refund £' + cardRefund.toFixed(2))
+                : (viewer === 'guest' ? 'Accept the change' : 'Approve the change'))
             : (viewer === 'guest' ? 'Accept the change' : 'Approve the change');
 
     return (
@@ -106,7 +117,7 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
                     {delta > 0
                         ? <>The guest {viewer === 'guest' ? '(you) ' : ''}pay{viewer === 'guest' ? '' : 's'} an extra <strong>£{delta.toFixed(2)}</strong> to confirm.</>
                         : delta < 0
-                            ? <>The guest {viewer === 'guest' ? '(you) are' : 'is'} refunded <strong>£{Math.abs(delta).toFixed(2)}</strong> to their original card.</>
+                            ? <>{decreaseSummary(viewer, cardRefund, balanceDrop)}</>
                             : <>There’s nothing extra to pay for this change.</>}
                 </div>
 
@@ -127,6 +138,23 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
             </div>
         </div>
     );
+}
+
+// The honest summary for a decrease: money back to the card only for what the
+// guest overpaid, the rest shown as a drop in the balance they've yet to pay.
+// A deposit booking still below the new total shows only the balance drop, never
+// a card refund the guest won't see.
+function decreaseSummary(viewer: 'host' | 'guest', cardRefund: number, balanceDrop: number) {
+    const money = (n: number) => <strong>£{n.toFixed(2)}</strong>;
+    const subj = viewer === 'guest' ? 'You’re' : 'The guest is';
+    const their = viewer === 'guest' ? 'your' : 'their';
+    if (cardRefund > 0 && balanceDrop > 0) {
+        return <>{subj} refunded {money(cardRefund)} to {viewer === 'guest' ? 'your' : 'their'} original card, and {their} remaining balance drops by {money(balanceDrop)}.</>;
+    }
+    if (cardRefund > 0) {
+        return <>{subj} refunded {money(cardRefund)} to {viewer === 'guest' ? 'your' : 'their'} original card.</>;
+    }
+    return <>{viewer === 'guest' ? 'Your' : 'The guest’s'} remaining balance drops by {money(balanceDrop)}. Nothing goes back to the card — the reduced nights hadn’t been paid yet.</>;
 }
 
 function Diff({ label, from, to }: { label: string; from: string; to: string }) {
