@@ -92,7 +92,7 @@ export default function DeliveryAddressModal({
                 <p className="mt-0.5 text-sm text-slate-500">Where should your order be delivered?</p>
 
                 <div className="mt-4">
-                    <AddressLookup value={parts} onChange={setParts} searchEnabled={signedIn} showErrors={showErrors} />
+                    <AddressLookup value={parts} onChange={setParts} searchEnabled={true} showErrors={showErrors} />
                 </div>
 
                 {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}

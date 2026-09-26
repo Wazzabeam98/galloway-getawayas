@@ -10,6 +10,8 @@ import { itemPriceLabel, dateLabel, dayHeadingLabel, monthYearLabel } from '@/co
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { hasUkPostcode } from '@/lib/postcode';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
+import TravelAddressModal from '@/components/marketplace/TravelAddressModal';
+import type { AddressParts } from '@/components/address/AddressLookup';
 
 export interface RequestItem {
     id: string; name: string; description: string | null; price: number; unit: string;
@@ -122,7 +124,12 @@ export function RequestBookingDialog({
     const [childrenShown, setChildrenShown] = useState<boolean>(!!(prefillChildren && prefillChildren > 0));
     const [date, setDate] = useState<string>('');
     const [time, setTime] = useState<string>('');
+    // The address is captured through TravelAddressModal now. `address` stays
+    // the composed one-line string the validation and the request submit read;
+    // the parts are kept only to re-open the modal on what was entered.
     const [address, setAddress] = useState('');
+    const [addressParts, setAddressParts] = useState<AddressParts | null>(null);
+    const [addrModalOpen, setAddrModalOpen] = useState(false);
     const [allergy, setAllergy] = useState('');
     // Two steps: (1) the option, guests, date and time; (2) the address, notes
     // and total. Splitting keeps the address/notes fields off the bottom of a
@@ -426,14 +433,20 @@ export function RequestBookingDialog({
                             {(needsAddress || isFood) && (
                                 <div className="mt-4 space-y-3">
                                     {needsAddress && (
-                                        <label className="block">
+                                        <div>
                                             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where should {who} come?</span>
-                                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="Full address, including postcode"
-                                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                                            {address.trim() && !hasUkPostcode(address) && (
-                                                <span className="mt-1 block text-xs text-rose-600">Please give a full address, including a postcode.</span>
+                                            {address ? (
+                                                <div className="mt-1 flex items-start justify-between gap-3 rounded-lg border border-slate-300 px-3 py-2">
+                                                    <span className="text-sm text-slate-700">{address}</span>
+                                                    <button type="button" onClick={() => setAddrModalOpen(true)} className="shrink-0 text-sm font-semibold text-emerald-700 hover:text-emerald-800">Edit</button>
+                                                </div>
+                                            ) : (
+                                                <button type="button" onClick={() => setAddrModalOpen(true)}
+                                                    className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400">
+                                                    <Plus className="h-4 w-4 flex-none" aria-hidden /> Add address
+                                                </button>
                                             )}
-                                        </label>
+                                        </div>
                                     )}
                                     {isFood && (
                                         <label className="block">
@@ -445,6 +458,15 @@ export function RequestBookingDialog({
                                 </div>
                             )}
                         </div>
+
+                        {needsAddress && addrModalOpen && (
+                            <TravelAddressModal
+                                who={who}
+                                initial={addressParts}
+                                onSave={({ parts, line }) => { setAddressParts(parts); setAddress(line); setAddrModalOpen(false); }}
+                                onClose={() => setAddrModalOpen(false)}
+                            />
+                        )}
 
                         {/* Step 2 footer: total + Send request. */}
                         <div className="flex-none border-t border-slate-100 px-5 py-4">

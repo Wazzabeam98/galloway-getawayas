@@ -92,9 +92,15 @@ test('no API route authorises on getSession()', () => {
 test('the routes that were fixed stayed fixed', () => {
     // Named individually so a regression says which one, and so that deleting
     // a route does not quietly shrink the coverage of the rule above.
+    //
+    // /api/address/autocomplete and /api/address/get were removed from this list
+    // deliberately: a guest can order food or book a comes-to-you chef without an
+    // account, so both routes are now open to signed-out callers and no longer
+    // verify a user at all. The paid Ideal Postcodes allowance they draw on is
+    // protected by a rate limit (per-IP plus a site-wide cap) instead of a
+    // sign-in wall. There is nothing left to check for getUser() here; the
+    // getSession()-forgery rule above still covers them because they use neither.
     const fixed = [
-        'app/api/address/autocomplete/route.ts',
-        'app/api/address/get/route.ts',
         'app/api/booking-guests/accept/route.ts',
         'app/api/errors/report/route.ts',
         'app/api/listing-access/accept/route.ts',
