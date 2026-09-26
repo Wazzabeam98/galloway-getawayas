@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
-import { recipients, sendEmailToAll, emailLayout, detailRows, escapeHtml } from '@/lib/email';
+import { recipients, sendEmailToAll, emailLayout, detailRows, escapeHtml, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { parseInterest, CATEGORY_LABEL, REGION_LABEL } from '@/lib/interest';
 
 export const dynamic = 'force-dynamic';
@@ -187,7 +187,7 @@ async function notifyOwner(r: {
         + '<p style="margin:0 0 16px 0;color:#6b7280;">Someone registered their interest while sign-up is behind the coming-soon tiles.</p>'
         + detailRows(rows)
         + notesBlock,
-        'You are getting this because you are the Galloway Getaways interest-list contact.'
+        'You are getting this because you are the Galloway Getaways interest-list contact.', undefined, NEUTRAL_SUBTITLE
     );
 
     await sendEmailToAll(to, 'New interest — ' + label + ': ' + r.name, html);

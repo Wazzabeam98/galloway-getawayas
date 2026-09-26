@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { parseBusyIntervals } from '@/lib/icalParse';
 import { minutesOfDay } from '@/lib/serviceSlots';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -121,7 +121,7 @@ async function alertProvider(admin: any, feed: any, message: string) {
                 + '<p style="margin:0 0 16px;font-size:16px;">What we’re seeing: ' + escapeHtml(message) + '</p>'
                 + '<p style="margin:0 0 16px;font-size:16px;">The hours we already blocked from it are still blocked, but anything new in that calendar won’t block a session here until this is fixed. Export links do get regenerated, so it’s worth copying yours again.</p>'
                 + button(SITE_URL + '/services/dashboard', 'Open your calendar'),
-            'You’re receiving this because you run experiences on Galloway Getaways.'
+            'You’re receiving this because you run experiences on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE
         )
     );
     return true;

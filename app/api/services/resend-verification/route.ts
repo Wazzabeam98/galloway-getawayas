@@ -110,7 +110,9 @@ export async function POST(req: Request) {
         // write failed would email a link that authenticates against nothing.
         // This way the worst case is a live token nobody was told about, which
         // expires on its own.
-        const mail = verificationEmail(application, token, new URL(req.url).origin);
+        // Built from SITE_URL, not the request origin — a preview/localhost
+        // origin would email a link to the wrong host. See services/apply.
+        const mail = verificationEmail(application, token);
         const went = await sendEmail(application.email, mail.subject, mail.html);
 
         if (!went) {

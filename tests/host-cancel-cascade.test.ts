@@ -38,6 +38,8 @@ function loadRoute(adminClientObj: any, stripeCalls: any[], emailTo: string[]) {
         sendEmail: async (to: string) => { emailTo.push(to); },
         emailLayout: (h: string) => h,
         escapeHtml: (s: string) => s,
+        formatDate: (s: string) => String(s),
+        NEUTRAL_SUBTITLE: '',
     });
     clearModule('@/lib/experienceCancel');
     clearModule(ROUTE);

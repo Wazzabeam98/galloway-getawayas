@@ -4,6 +4,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { displayName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -235,13 +236,22 @@ export async function POST(request: Request) {
                 const { data: ownerUser } = await admin.auth.admin.getUserById(listing.host_id);
                 const ownerEmail = (ownerUser && ownerUser.user && ownerUser.user.email) || '';
 
+                // Name the person, not their raw email — the subject should not
+                // carry an address (it leaks and reads unprofessionally).
+                const { data: leaverProfile } = await admin
+                    .from('profiles')
+                    .select('full_name, preferred_name, show_full_name')
+                    .eq('id', row.user_id)
+                    .maybeSingle();
+                const leaverName = displayName(leaverProfile, row.email || 'A co-host');
+
                 if (ownerEmail) {
                     await sendEmail(
                         ownerEmail,
-                        row.email + ' has stepped down as a co-host',
+                        leaverName + ' has stepped down as a co-host',
                         emailLayout(
                             '<p style="margin:0 0 16px;font-size:16px;"><strong>'
-                                + escapeHtml(row.email)
+                                + escapeHtml(leaverName)
                                 + '</strong> no longer helps with <strong>'
                                 + escapeHtml(listing.title || 'your property')
                                 + '</strong>. They removed themselves.</p>'

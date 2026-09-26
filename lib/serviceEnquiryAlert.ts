@@ -40,6 +40,7 @@ import {
     button,
     formatDate,
     SITE_URL,
+    NEUTRAL_SUBTITLE,
 } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { sendSms, emergencySms, toE164 } from '@/lib/sms';
@@ -180,7 +181,9 @@ export async function announceEnquiry(
             emailLayout(
                 opening + summaryBlock(enquiry) + detailRows(jobRows(enquiry, listing)) + actions,
                 'You are receiving this because you are listed on Galloway Getaways as a '
-                + escapeHtml(trade.toLowerCase()) + '. Reference ' + ref + '.'
+                + escapeHtml(trade.toLowerCase()) + '. Reference ' + ref + '.',
+                undefined,
+                NEUTRAL_SUBTITLE
             )
         );
 
@@ -251,7 +254,9 @@ export async function announceEnquiry(
                 body + summaryBlock(enquiry) + detailRows(jobRows(enquiry, listing))
                     + button(SITE_URL + '/dashboard/enquiries', 'See your enquiries'),
                 'You are receiving this because you asked a tradesman for help through Galloway Getaways. '
-                + 'Reference ' + ref + '.'
+                + 'Reference ' + ref + '.',
+                undefined,
+                NEUTRAL_SUBTITLE
             )
         );
     }
@@ -336,7 +341,9 @@ export async function announceResponse(
                 '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(summary.detail) + '</p>'
                     + reply + contact + next,
                 'You are receiving this because you asked a tradesman for help through Galloway Getaways. '
-                + 'Reference ' + ref + '.'
+                + 'Reference ' + ref + '.',
+                undefined,
+                NEUTRAL_SUBTITLE
             )
         );
     }
@@ -368,7 +375,9 @@ export async function announceResponse(
                     ))
                     + summaryBlock(enquiry),
                 'You are receiving this because you accepted an enquiry on Galloway Getaways. '
-                + 'Reference ' + ref + '.'
+                + 'Reference ' + ref + '.',
+                undefined,
+                NEUTRAL_SUBTITLE
             )
         );
     }
@@ -421,7 +430,9 @@ export async function announceExpiry(
                         : ' has not answered your enquiry.')
                     + ' We would try somebody else rather than wait any longer.</p>'
                     + button(SITE_URL + '/services/' + String(enquiry.trade || ''), 'See who else covers you'),
-                'You are receiving this because you asked a tradesman for help through Galloway Getaways.'
+                'You are receiving this because you asked a tradesman for help through Galloway Getaways.',
+                undefined,
+                NEUTRAL_SUBTITLE
             )
         );
     }
@@ -469,7 +480,9 @@ async function tellTheAdmins(
         subject,
         emailLayout(
             opening + summaryBlock(enquiry) + detailRows(jobRows(enquiry, listing)),
-            'You are receiving this because you look after services on Galloway Getaways.'
+            'You are receiving this because you look after services on Galloway Getaways.',
+            undefined,
+            NEUTRAL_SUBTITLE
         )
     );
 
@@ -517,7 +530,9 @@ export async function announceWanted(row: any, tradeName: string): Promise<strin
                 + '<p style="margin:16px 0 0;font-size:14px;color:#6b7280;">'
                 + 'The full list is one query: select trade, area_key, count(*) from service_wanted '
                 + 'group by 1, 2 order by count(*) desc.</p>',
-            'You are receiving this because you look after services on Galloway Getaways.'
+            'You are receiving this because you look after services on Galloway Getaways.',
+            undefined,
+            NEUTRAL_SUBTITLE
         )
     );
 
@@ -570,7 +585,9 @@ export async function announceProposedChange(
                     + escapeHtml(newText) + '</strong>' + (oldText ? ' (you asked for ' + escapeHtml(oldText) + ')' : '') + '.</p>'
                     + '<p style="margin:0 0 16px;font-size:15px;color:#64748b;">Nothing changes until you say so — you know if a guest is in that day. Accept it or keep the original in your enquiries.</p>'
                     + button(SITE_URL + '/dashboard/enquiries', 'Accept or decline'),
-                'You are receiving this because a tradesman asked to change the date of work you arranged through Galloway Getaways. Reference ' + ref + '.'
+                'You are receiving this because a tradesman asked to change the date of work you arranged through Galloway Getaways. Reference ' + ref + '.',
+                undefined,
+                NEUTRAL_SUBTITLE
             )
         );
     }
@@ -602,7 +619,9 @@ export async function announceChangeDecision(
                     : '<p style="margin:0 0 16px;font-size:16px;">The host kept the original day. The ' + escapeHtml(trade)
                         + ' work at <strong>' + escapeHtml(place) + '</strong> still stands for <strong>' + escapeHtml(dayText)
                         + '</strong> — give them a call if that no longer works for you.</p>',
-                'You are receiving this because a host answered your request to change a date on Galloway Getaways. Reference ' + ref + '.'
+                'You are receiving this because a host answered your request to change a date on Galloway Getaways. Reference ' + ref + '.',
+                undefined,
+                NEUTRAL_SUBTITLE
             )
         );
     }
@@ -661,7 +680,9 @@ export async function announceCancellation(
                         + escapeHtml(dateText) + '. You’ll need to arrange someone else.</p>'
                         + reasonRow + soonLine
                         + button(SITE_URL + '/services/' + String(enquiry.trade || ''), 'Find someone else who covers you'),
-                    'You are receiving this because a tradesman you asked through Galloway Getaways has cancelled. Reference ' + ref + '.'
+                    'You are receiving this because a tradesman you asked through Galloway Getaways has cancelled. Reference ' + ref + '.',
+                    undefined,
+                    NEUTRAL_SUBTITLE
                 )
             );
         }
@@ -676,7 +697,9 @@ export async function announceCancellation(
                         + escapeHtml(place) + '</strong> on ' + escapeHtml(dateText)
                         + ' is no longer needed — the host has called it off, so there is nothing to turn out for.</p>'
                         + reasonRow,
-                    'You are receiving this because a host cancelled a job you had accepted on Galloway Getaways. Reference ' + ref + '.'
+                    'You are receiving this because a host cancelled a job you had accepted on Galloway Getaways. Reference ' + ref + '.',
+                    undefined,
+                    NEUTRAL_SUBTITLE
                 )
             );
         }
@@ -724,7 +747,9 @@ export async function announceWorkNowClashes(
                 + escapeHtml(formatDay(booking.check_out)) + '.</p>'
             + '<p style="margin:0 0 16px;font-size:16px;">Nothing is blocked and nothing has changed — a short job and a guest can share a day. But it is a different conversation with the tradesman, and you have just agreed to the date, so we wanted you to know now rather than on the morning.</p>'
             + button(SITE_URL + '/dashboard/calendar', 'Open your calendar'),
-            'You are receiving this because work you agreed on your cottage overlaps a guest stay.'
+            'You are receiving this because work you agreed on your cottage overlaps a guest stay.',
+            undefined,
+            NEUTRAL_SUBTITLE
         )
     );
 

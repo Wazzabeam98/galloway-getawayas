@@ -12,7 +12,8 @@
 // Relative imports on purpose: this module is exercised by a unit test, and the
 // '@/' alias is a build-time path Node cannot resolve at runtime (the same reason
 // experienceCancel.ts and slotNotify.ts import relatively).
-import { sendEmail, emailLayout, detailRows, escapeHtml } from './email';
+import { sendEmail, emailLayout, detailRows, escapeHtml, formatDate, NEUTRAL_SUBTITLE } from './email';
+import { formatTime } from './utils';
 import { logError } from './logError';
 
 export interface MoveResult {
@@ -76,12 +77,15 @@ export function moveTargetEligibility(
 }
 
 // A human "date at time" for an email. The RPC hands back the date as YYYY-MM-DD
-// and the time as HH:MM already, so this is presentation only.
+// and the time as HH:MM; this renders them the way the booking emails do —
+// "Mon, 5 October 2026 at 6pm" — rather than leaking the raw database value.
 export function whenLabel(date: string | null | undefined, time: string | null | undefined): string {
     const d = String(date || '').trim();
     const t = time ? String(time).slice(0, 5) : '';
     if (!d) return 'the booked time';
-    return t ? d + ' at ' + t : d;
+    const shownDate = formatDate(d) || d;
+    const shownTime = t ? formatTime(t) : '';
+    return shownTime ? shownDate + ' at ' + shownTime : shownDate;
 }
 
 // The provider's "your booking has moved" email — PURE so a test can prove it
@@ -113,7 +117,8 @@ export function moveProviderEmail(args: {
         ])
         + '<p style="margin:16px 0 0;font-size:15px;color:#374151;">Please expect them at the new time, '
         + 'not the old one.</p>',
-        'You’re receiving this because you offer experiences on Galloway Getaways.'
+        'You’re receiving this because you offer experiences on Galloway Getaways.',
+        undefined, NEUTRAL_SUBTITLE
     );
     return { subject, html };
 }

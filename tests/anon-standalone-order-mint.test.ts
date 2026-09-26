@@ -25,6 +25,8 @@ stubModule('@/lib/email', {
     button: () => '',
     noteCallout: () => '',
     allergyCallout: () => '',
+    formatDate: (s: any) => String(s),
+    NEUTRAL_SUBTITLE: '',
     SITE_URL: 'http://example.invalid',
 });
 stubModule('@/lib/stripe', { stripeRequest: async () => ({}) });

@@ -12,8 +12,9 @@
 // Relative imports on purpose, matching lib/experienceCancel.ts: this may be
 // exercised by a unit test, and the '@/' alias is a build-time path Node cannot
 // resolve at runtime.
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from './email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, formatDate, NEUTRAL_SUBTITLE } from './email';
 import { foldOrderFamily } from './orderFamily';
+import { formatTime } from './utils';
 
 // A confirmed top-up child order, as the webhook / sweep hands it over. Only the
 // fields the emails need.
@@ -31,7 +32,8 @@ export interface ConfirmedTopUp {
 }
 
 function timeLabel(t: string | null): string {
-    return t ? ' at ' + String(t).slice(0, 5) : '';
+    const shown = t ? formatTime(t) : '';
+    return shown ? ' at ' + shown : '';
 }
 
 /**
@@ -42,7 +44,7 @@ function timeLabel(t: string | null): string {
 export async function notifyTopUpConfirmed(admin: any, child: ConfirmedTopUp): Promise<void> {
     const added = Number(child.quantity) || 1;
     const placeWord = added === 1 ? 'place' : 'places';
-    const date = escapeHtml(String(child.service_date || ''));
+    const date = escapeHtml(formatDate(String(child.service_date || '')));
     const when = date + escapeHtml(timeLabel(child.service_time));
     const business = child.provider_business_name || 'your experience';
     const itemName = child.item_name || business;
@@ -77,7 +79,7 @@ export async function notifyTopUpConfirmed(admin: any, child: ConfirmedTopUp): P
         if (prov && prov.contact_email) {
             await sendEmail(
                 prov.contact_email,
-                'A guest added ' + added + ' ' + placeWord + ' — ' + String(child.service_date || ''),
+                'A guest added ' + added + ' ' + placeWord + ' — ' + formatDate(String(child.service_date || '')),
                 emailLayout(
                     '<p>A guest has added <strong>' + added + ' more ' + placeWord + '</strong> to their booking of '
                     + escapeHtml(itemName) + ' on <strong>' + when + '</strong>.</p>'
@@ -85,7 +87,8 @@ export async function notifyTopUpConfirmed(admin: any, child: ConfirmedTopUp): P
                     + (familyTotal != null ? ', for a total of <strong>£' + familyTotal.toFixed(2) + '</strong>' : '')
                     + '.</p>'
                     + button(SITE_URL + '/services/dashboard', 'View your bookings'),
-                    'You’re receiving this because you offer experiences on Galloway Getaways.'
+                    'You’re receiving this because you offer experiences on Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE
                 )
             );
         }
@@ -104,7 +107,8 @@ export async function notifyTopUpConfirmed(admin: any, child: ConfirmedTopUp): P
                     + escapeHtml(itemName) + ' with ' + escapeHtml(business) + ' on <strong>' + when + '</strong>.</p>'
                     + (child.price != null ? '<p>You paid £' + Number(child.price).toFixed(2) + ' for the added ' + placeWord + '.</p>' : '')
                     + button(SITE_URL + '/experiences/order/' + child.parent_order_id, 'View your booking'),
-                    'You’re receiving this because you booked an experience on Galloway Getaways.'
+                    'You’re receiving this because you booked an experience on Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE
                 )
             );
         }

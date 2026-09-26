@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, formatDate } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { londonDayKey } from '@/lib/dayKey';
 import { validateChange, round2, whoAnswers, guestChangeIsInstant, type StaySnapshot } from '@/lib/bookingChange';
@@ -201,10 +201,19 @@ export async function POST(request: Request) {
             const { data: toUser } = await admin.auth.admin.getUserById(toId);
             const toEmail = (toUser && toUser.user && toUser.user.email) || '';
             if (toEmail) {
+                // This email goes to whoever must answer: the GUEST for a host
+                // proposal, the HOST for a guest proposal. Money copy is written
+                // for the reader — "you'd pay / you'd be refunded" to the guest,
+                // "the guest would pay / be refunded" to the host.
+                const toGuest = answerer === 'guest';
                 const moneyLine = delta > 0
-                    ? 'The guest would pay an extra <strong>£' + delta.toFixed(2) + '</strong>.'
+                    ? (toGuest
+                        ? 'You&rsquo;d pay an extra <strong>£' + delta.toFixed(2) + '</strong>.'
+                        : 'The guest would pay an extra <strong>£' + delta.toFixed(2) + '</strong>.')
                     : delta < 0
-                        ? 'The guest would be refunded <strong>£' + Math.abs(delta).toFixed(2) + '</strong>.'
+                        ? (toGuest
+                            ? 'You&rsquo;d be refunded <strong>£' + Math.abs(delta).toFixed(2) + '</strong>.'
+                            : 'The guest would be refunded <strong>£' + Math.abs(delta).toFixed(2) + '</strong>.')
                         : 'There’s nothing extra to pay.';
                 const subject = initiatedBy === 'host' ? 'Your host proposed a change to your stay' : 'Your guest requested a change to their stay';
                 const lead = initiatedBy === 'host'
@@ -212,7 +221,7 @@ export async function POST(request: Request) {
                     : 'Your guest has asked to change their stay at <strong>' + escapeHtml(stayName) + '</strong>.';
                 await sendEmail(toEmail, subject, emailLayout(
                     '<p style="margin:0 0 16px;font-size:16px;">' + lead + '</p>'
-                    + '<p style="margin:0 0 16px;font-size:15px;color:#475569;">New dates: ' + escapeHtml(next.checkIn) + ' → ' + escapeHtml(next.checkOut)
+                    + '<p style="margin:0 0 16px;font-size:15px;color:#475569;">New dates: ' + escapeHtml(formatDate(next.checkIn)) + ' → ' + escapeHtml(formatDate(next.checkOut))
                     + ' · ' + next.guests + ' guest' + (next.guests === 1 ? '' : 's') + '</p>'
                     + '<p style="margin:0 0 16px;font-size:16px;">' + moneyLine + ' Nothing changes until it’s agreed.</p>'
                     + button(SITE_URL + '/reservations/change/' + created.id, 'Review the change'),

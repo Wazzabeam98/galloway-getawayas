@@ -6,7 +6,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { canTransition } from '@/lib/serviceOrders';
 import { providerFirstName } from '@/lib/providerName';
 import { guestMayCancelFree, shapeOf } from '@/lib/serviceSlots';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
 import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
@@ -185,19 +185,19 @@ export async function POST(request: Request) {
                     if (prov && prov.contact_email) {
                         await sendEmail(prov.contact_email, 'A booking was cancelled and refunded', emailLayout(
                             '<p>A guest has cancelled their booking for '
-                            + escapeHtml(String(order.service_date))
+                            + escapeHtml(formatDate(order.service_date))
                             + ' and been refunded in full — it was before your cancellation window. Please don’t attend or prepare for it; the date is free again.</p>'
                             + button(SITE_URL + '/services/dashboard', 'Open your bookings'),
-                            'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                            'You’re receiving this because you offer experiences on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE));
                     }
                     const guestEmail = order.guest_email || (user && user.email) || '';
                     if (guestEmail) {
                         const providerName = order.provider_business_name || (prov && prov.business_name) || 'your provider';
                         await sendEmail(guestEmail, 'Your booking is cancelled and refunded', emailLayout(
                             '<p>Your booking with ' + escapeHtml(String(providerName)) + ' for '
-                            + escapeHtml(String(order.service_date))
+                            + escapeHtml(formatDate(order.service_date))
                             + ' has been cancelled and refunded in full. The refund goes back to your original payment method and can take a few days to show.</p>',
-                            'You’re receiving this because you booked an experience on Galloway Getaways.'));
+                            'You’re receiving this because you booked an experience on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE));
                     }
                 } catch (mailErr) { console.error('[services/orders/cancel] free-refund notify', mailErr); }
                 return NextResponse.json({ ok: true, status: 'refunded' });
@@ -223,10 +223,10 @@ export async function POST(request: Request) {
                     if (prov && prov.contact_email) {
                         await sendEmail(prov.contact_email, 'A guest has asked to cancel', emailLayout(
                             '<p>A guest has asked to cancel their booking for '
-                            + escapeHtml(String(order.service_date))
+                            + escapeHtml(formatDate(order.service_date))
                             + ' and would like a refund. It’s inside your cancellation window, so the choice is yours — refund them from your dashboard, or reply.</p>'
                             + button(SITE_URL + '/services/dashboard', 'Open your bookings'),
-                            'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                            'You’re receiving this because you offer experiences on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE));
                     }
                 } catch (mailErr) { console.error('[services/orders/cancel] ask notify', mailErr); }
                 return NextResponse.json({ ok: true, status: 'confirmed', requested: true });
@@ -259,10 +259,10 @@ export async function POST(request: Request) {
                     if (prov && prov.contact_email) {
                         await sendEmail(prov.contact_email, 'A guest cancelled — you keep the payment', emailLayout(
                             '<p>A guest has cancelled their booking for '
-                            + escapeHtml(String(order.service_date))
+                            + escapeHtml(formatDate(order.service_date))
                             + '. It was inside your cancellation window, so no refund was due — the payment stays yours, and the date is free again.</p>'
                             + button(SITE_URL + '/services/dashboard', 'Open your bookings'),
-                            'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                            'You’re receiving this because you offer experiences on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE));
                     }
                 } catch (mailErr) { console.error('[services/orders/cancel] forfeit notify', mailErr); }
                 return NextResponse.json({ ok: true, status: 'cancelled', refunded: 0 });

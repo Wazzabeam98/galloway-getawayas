@@ -135,8 +135,22 @@ export function detailRows(rows: Array<{ label: string; value: string }>): strin
     return html + '</table>';
 }
 
+// The header subtitle under "Galloway Getaways". The default is the
+// self-catering line, which is right for the stay/booking emails. But an
+// experience, service, provider or delivery email has a provider as the
+// merchant of record, not a self-catering let — telling a foraging-walk
+// customer they've booked a self-catering stay is simply wrong. Those emails
+// pass NEUTRAL_SUBTITLE instead.
+export const COTTAGE_SUBTITLE = 'SELF-CATERING STAYS IN DUMFRIES & GALLOWAY';
+export const NEUTRAL_SUBTITLE = 'STAYS & EXPERIENCES IN DUMFRIES & GALLOWAY';
+
 // The shared shell — same design as the Supabase auth templates.
-export function emailLayout(bodyHtml: string, footnote: string, unsubscribeUrl?: string): string {
+export function emailLayout(
+    bodyHtml: string,
+    footnote: string,
+    unsubscribeUrl?: string,
+    subtitle: string = COTTAGE_SUBTITLE
+): string {
     const unsubscribe = unsubscribeUrl
         ? '<div style="padding-top:10px;"><a href="' + unsubscribeUrl + '" style="color:#9ca3af;text-decoration:underline;">Unsubscribe from these emails</a></div>'
         : '';
@@ -148,7 +162,7 @@ export function emailLayout(bodyHtml: string, footnote: string, unsubscribeUrl?:
 
         '<tr><td style="background-color:#047857;padding:26px 32px;">' +
         '<div style="color:#ffffff;font-size:21px;font-weight:700;letter-spacing:0.2px;line-height:1.2;">Galloway Getaways</div>' +
-        '<div style="color:#a7f3d0;font-size:12px;padding-top:4px;letter-spacing:0.4px;">SELF-CATERING STAYS IN DUMFRIES &amp; GALLOWAY</div>' +
+        '<div style="color:#a7f3d0;font-size:12px;padding-top:4px;letter-spacing:0.4px;">' + escapeHtml(subtitle) + '</div>' +
         '</td></tr>' +
 
         '<tr><td style="padding:34px 32px 30px 32px;color:#111827;font-size:16px;line-height:1.6;">' +

@@ -1,6 +1,6 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmailToAll, recipients, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
@@ -42,8 +42,8 @@ export async function GET(request: Request) {
                 // respond, so "no response" would be untrue for that one.
                 const unpaidAccept = r.status === 'awaiting_guest_payment';
                 try {
-                    const to = process.env.DISPUTES_ALERT_EMAIL || '';
-                    if (to) await sendEmail(to, 'A money request escalated (unresolved after 72h)', emailLayout(
+                    const to = recipients(process.env.DISPUTES_ALERT_EMAIL);
+                    if (to.length) await sendEmailToAll(to, 'A money request escalated (unresolved after 72h)', emailLayout(
                         '<p>A money request went unresolved for 72 hours and has been escalated'
                         + (unpaidAccept ? ' — the guest accepted it but never completed payment.' : ' — the guest did not respond.') + '</p>'
                         + '<p>Booking ' + escapeHtml(String(r.booking_id)) + ', £' + Number(r.amount).toFixed(2)

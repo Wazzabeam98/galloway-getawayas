@@ -8,6 +8,7 @@ import { formatUk } from '@/lib/cancellation';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
 import { loadBookingSeats } from '@/lib/groupSeats';
+import { displayName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -430,10 +431,15 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Add an email first, or share the link.' }, { status: 400 });
             }
 
+            // Name the booker to the invitee the way the rest of the site names
+            // one person to another: through displayName (which honours
+            // show_full_name) and reduced to a first name — matching the notify
+            // route. The old code took preferred_name || full_name raw, so it put
+            // the booker's full legal name in the subject and body regardless of
+            // their privacy setting.
             const { data: bookerProfile } = await admin
-                .from('profiles').select('full_name, preferred_name').eq('id', user.id).maybeSingle();
-            const bookerName =
-                (bookerProfile && (bookerProfile.preferred_name || bookerProfile.full_name)) || 'Someone';
+                .from('profiles').select('full_name, preferred_name, show_full_name').eq('id', user.id).maybeSingle();
+            const bookerName = displayName(bookerProfile, 'Someone').split(' ')[0] || 'Someone';
 
             // An experience invite reads about the experience \u2014 its name and date,
             // never the cottage secrets or the price. A stay invite keeps its

@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { orderThreadContext } from '@/lib/orderThreads';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 
 export const dynamic = 'force-dynamic';
@@ -96,7 +96,7 @@ export async function POST(req: Request, { params }: { params: { orderId: string
                 // the guest to the business.
                 const senderName = ctx.isGuest ? ctx.business : ctx.otherName;
                 const about = (ctx.order.item_name ? String(ctx.order.item_name) + ' — ' : '')
-                    + String(ctx.order.service_date);
+                    + formatDate(String(ctx.order.service_date));
                 if (to && !isAutomatedTestAddress(to)) {
                     await sendEmail(
                         to,
@@ -106,8 +106,17 @@ export async function POST(req: Request, { params }: { params: { orderId: string
                                 + '</strong> sent you a message about ' + escapeHtml(about) + ':</p>'
                                 + '<p style="margin:0 0 16px;font-size:16px;padding:12px 16px;background:#f8fafc;border-radius:10px;"><em>'
                                 + escapeHtml(body.slice(0, 300)) + (body.length > 300 ? '…' : '') + '</em></p>'
-                                + button(SITE_URL + (ctx.isGuest ? '/services/dashboard' : '/trips'), 'Reply'),
-                            'You are receiving this because you have a booking thread on Galloway Getaways.'
+                                // Deep-link the RECIPIENT to their own copy of this
+                                // thread. ctx.isGuest describes the SENDER, so the
+                                // recipient is the opposite party: a guest sender
+                                // (isGuest) means the provider receives this and
+                                // replies in the provider area; a provider sender
+                                // means the guest receives it and replies in theirs.
+                                + button(SITE_URL + (ctx.isGuest
+                                    ? '/services/messages/order/' + params.orderId
+                                    : '/experiences/order/' + params.orderId), 'Reply'),
+                            'You are receiving this because you have a booking thread on Galloway Getaways.',
+                            undefined, NEUTRAL_SUBTITLE
                         )
                     );
                 }

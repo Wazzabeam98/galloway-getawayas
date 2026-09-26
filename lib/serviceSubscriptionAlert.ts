@@ -23,6 +23,7 @@ import {
     button,
     detailRows,
     SITE_URL,
+    NEUTRAL_SUBTITLE,
 } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { logError } from '@/lib/logError';
@@ -65,7 +66,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
             + terms()
             + p('It starts now rather than when you were approved because what you are paying '
                 + 'for is the work we send you, and this is the first of it.'),
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -76,7 +79,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
             + p('Nothing to do today — this is just so the date is not a surprise. We will ask you '
                 + 'for a card a fortnight before it ends.')
             + terms(),
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -89,7 +94,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
                 + 'rather than later.')
             + terms()
             + cta,
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -100,7 +107,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
             + p('Nothing is taken before then. If you would rather not carry on, ignore this and '
                 + 'the listing will come down on its own — there is nothing to cancel.')
             + cta,
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -111,7 +120,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
             + p('If a card is not added, your listing stays up for another ' + GRACE_DAYS
                 + ' days and then comes off the site. Nothing else happens, and nothing is charged.')
             + cta,
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -133,7 +144,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
             + 'details and no second review.')
         + terms()
         + cta,
-        FOOT
+        FOOT,
+        undefined,
+        NEUTRAL_SUBTITLE
     );
 }
 

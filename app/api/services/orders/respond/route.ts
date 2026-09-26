@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { canTransition } from '@/lib/serviceOrders';
 import { providerFirstName } from '@/lib/providerName';
-import { sendEmail, emailLayout, escapeHtml, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
 import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +37,7 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
     // Sunrise wild swim". Falls back to the frozen listing name, then a generic.
     const name = providerName || order.provider_business_name || 'your experience';
     const who = escapeHtml(name);
-    const date = escapeHtml(String(order.service_date || ''));
+    const date = escapeHtml(formatDate(order.service_date));
     const amount = '£' + Number(order.price || 0).toFixed(2);
 
     let subject: string;
@@ -51,7 +51,7 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
             + escapeHtml(amount) + ' in full.</p>'
             + '<p style="margin:0 0 16px;font-size:16px;">The money is on its way back to your card. '
             + 'You’re welcome to book another experience for your stay.</p>',
-            'You’re receiving this because you booked an experience through Galloway Getaways.'
+            'You’re receiving this because you booked an experience through Galloway Getaways.', undefined, NEUTRAL_SUBTITLE
         );
     } else if (outcome === 'confirmed') {
         subject = 'Your booking with ' + name + ' is confirmed';
@@ -60,20 +60,20 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
             + '</strong> has confirmed your booking for <strong>' + date + '</strong>.</p>'
             + '<p style="margin:0 0 16px;font-size:16px;">Your card has now been charged '
             + escapeHtml(amount) + '. They are expecting you; they will be in touch to sort the details.</p>',
-            'You’re receiving this because you booked an experience through Galloway Getaways.'
+            'You’re receiving this because you booked an experience through Galloway Getaways.', undefined, NEUTRAL_SUBTITLE
         );
     } else if (outcome === 'date_accepted') {
         subject = name + ' moved your booking';
         html = emailLayout(
             '<p style="margin:0 0 16px;font-size:16px;"><strong>' + who + '</strong> has agreed to move your booking to <strong>' + date + '</strong>.</p>'
             + '<p style="margin:0 0 16px;font-size:16px;">Nothing has changed on your card. See you then.</p>',
-            'You’re receiving this because you booked an experience through Galloway Getaways.'
+            'You’re receiving this because you booked an experience through Galloway Getaways.', undefined, NEUTRAL_SUBTITLE
         );
     } else if (outcome === 'date_declined') {
         subject = 'About the date change with ' + name;
         html = emailLayout(
             '<p style="margin:0 0 16px;font-size:16px;">Unfortunately <strong>' + who + '</strong> couldn’t move your booking. It stays on its original date, and nothing has changed on your card.</p>',
-            'You’re receiving this because you booked an experience through Galloway Getaways.'
+            'You’re receiving this because you booked an experience through Galloway Getaways.', undefined, NEUTRAL_SUBTITLE
         );
     } else {
         subject = 'About your booking with ' + name;
@@ -82,7 +82,7 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
             + '</strong> can’t make <strong>' + date + '</strong>.</p>'
             + '<p style="margin:0 0 16px;font-size:16px;">Nothing has been charged — the hold on your card '
             + 'has been released. You’re welcome to try another experience for your stay.</p>',
-            'You’re receiving this because you requested an experience through Galloway Getaways.'
+            'You’re receiving this because you requested an experience through Galloway Getaways.', undefined, NEUTRAL_SUBTITLE
         );
     }
 
