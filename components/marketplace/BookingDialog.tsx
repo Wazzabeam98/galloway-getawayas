@@ -8,6 +8,8 @@ import { childrenAllowed } from '@/lib/guestAges';
 import { itemPriceLabel, timeLabel, monthYearLabel, dayHeadingLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
+import TravelAddressModal from '@/components/marketplace/TravelAddressModal';
+import type { AddressParts } from '@/components/address/AddressLookup';
 
 export interface DialogItem { id: string; name: string; price: number; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; }
 export interface DialogOpenSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
@@ -83,7 +85,13 @@ export default function BookingDialog({
     const kidsOk = childrenAllowed(minAge);
     useEffect(() => { if (!kidsOk) { setChildren(0); setChildrenShown(false); } }, [kidsOk]);
     const [selKey, setSelKey] = useState<string | null>(null);
+    // The travelling address is captured through TravelAddressModal now, not a
+    // free-text box. `address` stays the composed one-line string everything
+    // downstream reads (validation, the serviceAddress sent to the order); the
+    // parts are kept only so re-opening the modal shows what was entered.
     const [address, setAddress] = useState('');
+    const [addressParts, setAddressParts] = useState<AddressParts | null>(null);
+    const [addrModalOpen, setAddrModalOpen] = useState(false);
     const [allergy, setAllergy] = useState('');
 
     // Month-jump calendar (the calendar icon by the header). `calSel` is the day a
@@ -415,11 +423,20 @@ export default function BookingDialog({
                         {(travels || isFood) && (
                             <div className="space-y-3 border-t border-slate-100 px-5 py-4">
                                 {travels && (
-                                    <label className="block">
+                                    <div>
                                         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where should {who} come?</span>
-                                        <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="The address they travel to"
-                                            className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-600" />
-                                    </label>
+                                        {address ? (
+                                            <div className="mt-1 flex items-start justify-between gap-3 rounded-lg border border-slate-300 px-3 py-2">
+                                                <span className="text-sm text-slate-700">{address}</span>
+                                                <button type="button" onClick={() => setAddrModalOpen(true)} className="shrink-0 text-sm font-semibold text-emerald-700 hover:text-emerald-800">Edit</button>
+                                            </div>
+                                        ) : (
+                                            <button type="button" onClick={() => setAddrModalOpen(true)}
+                                                className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400">
+                                                <Plus className="h-4 w-4 flex-none" aria-hidden /> Add address
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
                                 {isFood && (
                                     <label className="block">
@@ -429,6 +446,15 @@ export default function BookingDialog({
                                     </label>
                                 )}
                             </div>
+                        )}
+
+                        {travels && addrModalOpen && (
+                            <TravelAddressModal
+                                who={who}
+                                initial={addressParts}
+                                onSave={({ parts, line }) => { setAddressParts(parts); setAddress(line); setAddrModalOpen(false); }}
+                                onClose={() => setAddrModalOpen(false)}
+                            />
                         )}
 
                         {/* Footer: total + one CTA → Stripe Checkout */}

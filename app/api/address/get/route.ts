@@ -1,9 +1,8 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import ServerEnv from '@/config/ServerEnv';
 import { mapAddress, upstreamDetail } from '@/lib/address';
 import { adminDistrictForPostcode, DG_ADMIN_DISTRICT } from '@/lib/postcodeGeocode';
+import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,23 +15,28 @@ export const dynamic = 'force-dynamic';
 // wrong slot. That was the old bug: the mapping was spread through a .map(),
 // a click handler and two fallbacks.
 //
-// THIS IS ALSO THE REGION GATE. The autocomplete only BIASES to D&G; the real
-// "is this address in Dumfries & Galloway" test is the council area, checked
-// here on the resolved postcode via postcodes.io. An address outside D&G comes
-// back with { ok: false, outOfRegion: true, district } so the form can say so
-// plainly rather than silently accepting it.
+// THIS IS THE REGION GATE. The autocomplete hard-filters suggestions to the DG
+// postcode area; the authoritative "is this address in Dumfries & Galloway" test
+// is the council area, checked here on the resolved postcode via postcodes.io. An
+// address outside D&G comes back with { ok: false, outOfRegion: true, district }
+// so the form can say so plainly rather than silently accepting it — this catches
+// the few DG-area postcodes that reach over the Cumbrian border.
+//
+// NO SIGN-IN, same as /api/address/autocomplete: a guest orders without an
+// account, so a paid lookup is protected by the rate limit below rather than a
+// sign-in wall.
 
 export async function GET(request: Request) {
     try {
-        const supabase = createRouteHandlerClient({ cookies });
-        // getUser(), not getSession(). getSession() only decodes the auth
-        // cookie — it never checks the signature — so the id below would be
-        // whatever the caller wrote in it. getUser() asks the auth server,
-        // which verifies the token and that the session has not been revoked.
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
+        const verdict = await withinLimits([
+            { bucket: 'address-get:all', key: GLOBAL_KEY, max: 600, windowMinutes: 60 },
+            { bucket: 'address-get:ip', key: callerAddress(request.headers), max: 60, windowMinutes: 60 },
+        ]);
+        if (!verdict.ok) {
+            return NextResponse.json(
+                { ok: false, error: 'Too many address lookups in a short time. Try again shortly, or enter your address by hand.' },
+                { status: 429 }
+            );
         }
 
         if (!ServerEnv.IDEAL_POSTCODES_API_KEY) {
@@ -40,8 +44,8 @@ export async function GET(request: Request) {
                 {
                     ok: false,
                     // Same wording as /address/autocomplete, and for the same
-                    // reason: the person reading it is a host, not whoever can
-                    // set the variable.
+                    // reason: the person reading it is a guest or host, not
+                    // whoever can set the variable.
                     error: 'We can\u2019t look up addresses just now. Enter yours by hand instead \u2014 nothing else changes.',
                 },
                 { status: 503 }

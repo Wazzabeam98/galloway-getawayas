@@ -15,9 +15,11 @@ export { EMPTY_ADDRESS, composeAddressLine };
 // "enter it by hand" escape all behave exactly as they do in the sign-up wizard;
 // only the labels are tuned for a guest entering a DELIVERY address.
 //
-// The two /api/address routes need a signed-in user (each call spends a paid
-// lookup), so an anonymous booker is given the hand-entry fields straight away
-// (searchEnabled=false) — the fields always work without the lookup.
+// Search works for signed-out guests too — the two /api/address routes are open
+// (rate-limited, not sign-in gated) because a guest can order without an account.
+// searchEnabled is kept as a prop only so a caller that has no use for the search
+// (or wants to force hand entry) can still switch it off; the fields always work
+// without the lookup.
 //
 // Controlled: the parent owns the AddressParts and the "have they tried to save
 // yet" flag, so validation messages appear only on Save (showErrors), never while
@@ -63,7 +65,10 @@ export default function AddressLookup({
                     return;
                 }
                 const list = (body.suggestions || []).map((s: any) => ({ id: String(s.id), label: String(s.address || '') }));
-                setNotice(list.length ? '' : 'No matches — enter it by hand below.');
+                // Suggestions are hard-filtered to Dumfries & Galloway upstream,
+                // so an empty list means nothing local matched — say exactly that,
+                // with the "Enter it by hand" link (rendered below) as the way on.
+                setNotice(list.length ? '' : 'No addresses found in Dumfries & Galloway');
                 setResults(list);
             } catch {
                 if (mine !== seq.current) return;
