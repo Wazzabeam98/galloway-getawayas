@@ -10,6 +10,7 @@ import ChromeGate from '@/components/base/ChromeGate';
 import { ToastContainer } from 'react-toastify';
 import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
+import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import type { Metadata } from 'next';
 
@@ -135,6 +136,10 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <Toast />
         </Suspense>
+        {/* Vercel Web Analytics — privacy-friendly visitor and page-view trends.
+            It only reports once deployed on Vercel with Analytics switched on for
+            the project; locally it no-ops. */}
+        <Analytics />
       </body>
     </html>
   );
