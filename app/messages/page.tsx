@@ -1,5 +1,7 @@
 'use client';
 
+import { formatGBP } from '@/lib/formatMoney';
+
 import { notify } from '@/lib/notify';
 import ConversationRow from '@/components/messages/ConversationRow';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -895,14 +897,14 @@ export default function MessagesInboxPage() {
                     <div className="flex justify-between">
                         <span className="text-slate-500">Total</span>
                         <span className="text-slate-900 font-medium">
-                            £{Number(thread.booking.total_price).toFixed(2)}
+                            {formatGBP(thread.booking.total_price)}
                         </span>
                     </div>
                     {thread.booking.amount_paid !== null && (
                         <div className="flex justify-between">
                             <span className="text-slate-500">Paid</span>
                             <span className="text-slate-900 font-medium">
-                                £{Number(thread.booking.amount_paid || 0).toFixed(2)}
+                                {formatGBP(thread.booking.amount_paid || 0)}
                             </span>
                         </div>
                     )}
@@ -910,7 +912,7 @@ export default function MessagesInboxPage() {
                         <div className="flex justify-between gap-2">
                             <span className="text-slate-500 flex-shrink-0">Still to pay</span>
                             <span className="text-amber-700 font-medium text-right">
-                                £{Number(thread.booking.balance_amount).toFixed(2)}
+                                {formatGBP(thread.booking.balance_amount)}
                                 {thread.booking.balance_due_date
                                     ? ' by ' +
                                       new Date(thread.booking.balance_due_date).toLocaleDateString('en-GB')
@@ -1002,36 +1004,66 @@ export default function MessagesInboxPage() {
             </div>
         </div>
     ) : (
-        // Order / enquiry thread: no booking behind it, just a compact summary.
-        <div className="h-full overflow-y-auto p-5 space-y-4">
-            <div>
-                <div className="font-semibold text-slate-900">
-                    {(thread.context && thread.context.business) || (thread.other && thread.other.name) || 'Conversation'}
+        // Order / enquiry thread: the reservation this thread is about, in the
+        // reservation-card's language (When / What / Party / Where / the money as
+        // its own card), viewer-aware, matching what the dashboard card shows.
+        (() => {
+            const c = (thread.context || {}) as any;
+            const rez = c.reservation;
+            const dateStr = (() => {
+                const d = new Date(String(c.serviceDate || ''));
+                return isNaN(d.getTime()) ? String(c.serviceDate || '') : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+            })();
+            const Line = ({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) => (
+                <div className="flex items-baseline justify-between gap-4 border-b border-slate-100 py-2 last:border-0">
+                    <span className="text-sm text-slate-500 flex-shrink-0">{label}</span>
+                    <span className={'text-right text-sm ' + (muted ? 'text-slate-500' : 'font-medium text-slate-900')}>{value}</span>
                 </div>
-                {thread.context && thread.context.item && (
-                    <div className="text-sm text-slate-500">{thread.context.item}</div>
-                )}
-            </div>
-            {thread.context && thread.context.serviceDate && (
-                <div className="flex justify-between gap-2 text-sm">
-                    <span className="text-slate-500 flex-shrink-0">Date</span>
-                    <span className="text-slate-900 font-medium text-right">
-                        {(() => {
-                            const d = new Date(String(thread.context.serviceDate));
-                            return isNaN(d.getTime())
-                                ? String(thread.context.serviceDate)
-                                : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
-                        })()}
-                    </span>
+            );
+            return (
+                <div className="h-full overflow-y-auto p-5 space-y-4">
+                    <div>
+                        <div className="font-semibold text-slate-900">{c.business || (thread.other && thread.other.name) || 'Conversation'}</div>
+                        {c.item && <div className="text-sm text-slate-500">{c.item}</div>}
+                        {rez && <div className="text-xs text-slate-400 mt-0.5">{rez.reference}</div>}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 p-3">
+                        <Line label={rez ? rez.whenHeading : 'Date'} value={rez ? rez.whenLabel : dateStr} />
+                        {c.item && <Line label="What" value={c.item} />}
+                        {rez && rez.party && <Line label="Party" value={rez.party} />}
+                        {rez && rez.where && <Line label="Where" value={rez.where} />}
+                        {c.status && <Line label="Status" value={<span className="capitalize">{String(c.status).replace(/_/g, ' ')}</span>} muted />}
+                    </div>
+
+                    {rez && rez.allergy && (
+                        <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-3">
+                            <div className="text-xs font-bold uppercase tracking-wide text-rose-800">⚠ Allergy / dietary need</div>
+                            <div className="mt-1 whitespace-pre-line text-sm text-rose-950">{rez.allergy}</div>
+                        </div>
+                    )}
+                    {rez && rez.note && (
+                        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">In the guest’s words</div>
+                            <div className="mt-1 whitespace-pre-line text-sm text-amber-950">{rez.note}</div>
+                        </div>
+                    )}
+
+                    {rez && rez.money && rez.money.show && (
+                        <div className="rounded-2xl border border-slate-200 p-3">
+                            {rez.money.rows.map((m: any, i: number) => <Line key={i} label={m.label} value={m.value} muted={m.muted} />)}
+                            {rez.money.working && <p className="mt-2 text-xs text-slate-500">{rez.money.working}</p>}
+                        </div>
+                    )}
+
+                    {rez && rez.phone && (
+                        <a href={'tel:' + rez.phone} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                            Call
+                        </a>
+                    )}
                 </div>
-            )}
-            {thread.context && thread.context.status && (
-                <div className="flex justify-between gap-2 text-sm">
-                    <span className="text-slate-500 flex-shrink-0">Status</span>
-                    <span className="text-slate-900 font-medium text-right capitalize">{String(thread.context.status).replace(/_/g, ' ')}</span>
-                </div>
-            )}
-        </div>
+            );
+        })()
     );
 
     return (

@@ -6,6 +6,10 @@ import { logError } from '@/lib/logError';
 import { orderThreadContext } from '@/lib/orderThreads';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
+import { orderNet, orderReference } from '@/lib/serviceOrders';
+import { orderLocation } from '@/lib/orderLocation';
+import { whenLabel } from '@/components/marketplace/present';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +49,54 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
             .eq('recipient_id', uid)
             .is('read_at', null);
 
+        // The reservation this thread is about, in the reservation-card's own
+        // language — so the messages right pane can show the same detail the
+        // dashboard card does. Money is viewer-aware: a provider sees their take
+        // (with our fee shown as working); a guest sees what they paid.
+        const { data: full } = await admin
+            .from('service_orders')
+            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_phone')
+            .eq('id', params.orderId)
+            .maybeSingle();
+
+        let reservation: any = null;
+        if (full) {
+            const net = orderNet(full);
+            const loc = orderLocation({ shape: full.shape, fulfilment: full.fulfilment });
+            const a = Number(full.adults) || 0, c = Number(full.children) || 0;
+            const party = (a > 0 || c > 0)
+                ? [a > 0 ? a + (a === 1 ? ' adult' : ' adults') : '', c > 0 ? c + (c === 1 ? ' child' : ' children') : ''].filter(Boolean).join(', ')
+                : (full.item_unit === 'person'
+                    ? (Number(full.quantity) || 1) + ((Number(full.quantity) || 1) === 1 ? ' place' : ' places')
+                    : null);
+            const where = full.shape === 'comes_to_you'
+                ? (full.service_address ? (ctx.isGuest ? 'They come to ' + full.service_address : 'You go to ' + full.service_address) : (ctx.isGuest ? 'They come to you' : 'You go to the guest'))
+                : full.shape === 'made_to_order'
+                    ? (loc.comesToCottage ? (full.service_address ? 'Delivery to ' + full.service_address : 'For delivery') : 'For collection')
+                    : (loc.slotTravels ? 'They travel to you' : 'At the provider’s place');
+            reservation = {
+                reference: orderReference(full.id),
+                whenLabel: whenLabel(full.shape, ctx.order.service_date, full.service_time),
+                whenHeading: full.shape === 'made_to_order' ? 'Ready for' : 'When',
+                party,
+                where,
+                note: full.note || null,
+                allergy: full.allergy || null,
+                money: ctx.isGuest
+                    ? { show: true, rows: [{ label: 'You paid', value: formatGBP(net.gross - net.refunded) }], working: null }
+                    : {
+                        show: true,
+                        rows: [
+                            { label: 'Guest paid', value: formatGBP(net.gross - net.refunded) },
+                            { label: 'Our fee (' + Math.round(net.rate * 100) + '%)', value: '-' + formatGBP(net.fee), muted: true },
+                            { label: 'You get', value: formatGBP(net.youGet) },
+                        ],
+                        working: 'Guest paid ' + formatGBP(net.gross - net.refunded) + ' − our ' + Math.round(net.rate * 100) + '% fee ' + formatGBP(net.fee) + ' = ' + formatGBP(net.youGet) + '.',
+                    },
+                phone: ctx.isGuest ? null : (full.guest_phone || null),
+            };
+        }
+
         return NextResponse.json({
             ok: true,
             viewerId: uid,
@@ -54,6 +106,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 item: ctx.order.item_name,
                 serviceDate: ctx.order.service_date,
                 status: ctx.order.status,
+                reservation,
             },
             messages: messages || [],
         });

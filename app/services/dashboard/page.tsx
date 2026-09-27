@@ -15,6 +15,8 @@ import ProviderDashboard, {
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 import ProviderSlotDashboard from '@/components/services/ProviderSlotDashboard';
 import ExperienceIcalFeeds from '@/components/services/ExperienceIcalFeeds';
+import ProviderUpcoming from '@/components/services/ProviderUpcoming';
+import { loadProviderReservations } from '@/lib/providerReservations';
 import { shapeOf } from '@/lib/serviceSlots';
 import { isLiveToGuests } from '@/lib/serviceOrders';
 
@@ -77,7 +79,7 @@ export default async function ProviderDashboardPage() {
     // half-finished draft for a second trade.
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, owner_paused, trial_ends_at, shape')
+        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, owner_paused, trial_ends_at, shape, fulfilment, photos')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -129,6 +131,9 @@ export default async function ProviderDashboardPage() {
                 .from('service_providers').select('ical_token').eq('id', provider.id).maybeSingle();
             icalToken = (tok && tok.ical_token) || '';
         }
+        // The host-style upcoming reservations view — a list + reservation card in
+        // the cottage card's language, above the shape-specific workspace below.
+        const guestUpcoming = await loadProviderReservations(admin, provider);
         return (
             <div className={`${isSlotHome ? 'max-w-6xl' : 'max-w-2xl'} mx-auto px-4 sm:px-6 py-8 pb-24`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -150,6 +155,10 @@ export default async function ProviderDashboardPage() {
                     >
                         Your listing
                     </Link>
+                </div>
+
+                <div className="mt-6">
+                    <ProviderUpcoming reservations={guestUpcoming.reservations} summary={guestUpcoming.summary} />
                 </div>
 
                 {/* Two homes by shape: a slot provider gets a CALENDAR (a booked
@@ -269,19 +278,28 @@ export default async function ProviderDashboardPage() {
         };
     });
 
+    // The same host-style upcoming reservations view a guest provider gets —
+    // built from accepted enquiries, in the trade's own "asked for" wording.
+    const tradeUpcoming = await loadProviderReservations(admin, provider);
+
     return (
-        <ProviderDashboard
-            businessName={provider.business_name}
-            tradeName={tradeLabel(provider.trade)}
-            areaLabel={areaLabel}
-            badge={badge}
-            offPlatform={offPlatform}
-            live={live}
-            editHref={`/services/join?trade=${provider.trade}`}
-            enquiries={requests}
-            upcoming={upcoming}
-            toAnswer={toAnswer}
-            nextPayoutLabel={null}
-        />
+        <>
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-8">
+                <ProviderUpcoming reservations={tradeUpcoming.reservations} summary={tradeUpcoming.summary} />
+            </div>
+            <ProviderDashboard
+                businessName={provider.business_name}
+                tradeName={tradeLabel(provider.trade)}
+                areaLabel={areaLabel}
+                badge={badge}
+                offPlatform={offPlatform}
+                live={live}
+                editHref={`/services/join?trade=${provider.trade}`}
+                enquiries={requests}
+                upcoming={upcoming}
+                toAnswer={toAnswer}
+                nextPayoutLabel={null}
+            />
+        </>
     );
 }
