@@ -21,6 +21,11 @@ const tools = [
         blurb: 'Every property ranked by what it has taken this year.',
     },
     {
+        href: '/admin/traffic',
+        title: 'Traffic and growth',
+        blurb: 'Month by month: sign-ups, listings, bookings, nights, value, commission and cancellations.',
+    },
+    {
         href: '/admin/payouts',
         title: 'Payouts',
         blurb: 'What each host is owed, and what has already been sent.',
