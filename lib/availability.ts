@@ -1,5 +1,6 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { dateFromKey, dateKey } from '@/lib/pricing';
+import { fetchIcalText } from '@/lib/feedFetch';
 
 // Dates taken on Airbnb, Booking.com and anything else a host syncs.
 //
@@ -35,20 +36,18 @@ export function parseIcsEvents(text: string): IcalEvent[] {
 // Fetch a feed's current events LIVE. Returns null (not an empty list) when the
 // feed can't be read, so a caller can tell "reachable and genuinely empty" from
 // "couldn't check" and fall back to the cached column rather than either
-// blocking a real booking on a momentary outage or trusting stale data. Short
-// timeout because this runs in the checkout request, right before payment.
-export async function fetchLiveIcalEvents(url: string, timeoutMs = 8000): Promise<IcalEvent[] | null> {
+// blocking a real booking on a momentary outage or trusting stale data.
+//
+// Goes through fetchIcalText (lib/feedUrl), which enforces public-https-only and
+// refuses private/loopback/link-local/metadata addresses and redirects to them —
+// this runs on a HOST-SUPPLIED url inside the checkout request, so it must not be
+// coaxable into fetching an internal service. Three-second timeout: right before
+// payment, a slow feed must not hold the guest up — the cached column carries it.
+export async function fetchLiveIcalEvents(url: string, timeoutMs = 3000): Promise<IcalEvent[] | null> {
     if (!url) return null;
-    try {
-        const res = await fetch(url, {
-            signal: AbortSignal.timeout(timeoutMs),
-            headers: { 'User-Agent': 'GallowayGetaways/ical-checkout' },
-        });
-        if (!res.ok) return null;
-        return parseIcsEvents(await res.text());
-    } catch {
-        return null;
-    }
+    const text = await fetchIcalText(url, { timeoutMs });
+    if (text === null) return null;
+    return parseIcsEvents(text);
 }
 
 // An iCal event runs from its arrival date to its checkout date, and the
