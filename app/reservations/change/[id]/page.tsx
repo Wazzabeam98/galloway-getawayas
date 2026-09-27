@@ -10,6 +10,7 @@ import { displayName, capitializeFirst } from '@/lib/utils';
 import { ukLongDate } from '@/lib/dayKey';
 import { round2, whoAnswers, refundSplit } from '@/lib/bookingChange';
 import ChangeRequestActions from '@/components/reservations/ChangeRequestActions';
+import { formatGBP } from '@/lib/formatMoney';
 
 // The review page for a proposed change, shown to whoever must act on it — the
 // guest (for a host proposal) or the host (for a guest proposal). Read through
@@ -83,12 +84,12 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
 
     // The label the actor sees when accepting.
     const acceptLabel = delta > 0
-        ? (viewer === 'guest' ? 'Accept and pay £' + delta.toFixed(2) : 'Approve — guest pays £' + delta.toFixed(2))
+        ? (viewer === 'guest' ? 'Accept and pay ' + formatGBP(delta) : 'Approve — guest pays ' + formatGBP(delta))
         : delta < 0
             // A card refund only when something is actually coming back to the card;
             // a decrease that only shrinks the balance keeps a plain "Accept".
             ? (cardRefund > 0
-                ? (viewer === 'guest' ? 'Accept and get £' + cardRefund.toFixed(2) + ' back' : 'Approve — refund £' + cardRefund.toFixed(2))
+                ? (viewer === 'guest' ? 'Accept and get ' + formatGBP(cardRefund) + ' back' : 'Approve — refund ' + formatGBP(cardRefund))
                 : (viewer === 'guest' ? 'Accept the change' : 'Approve the change'))
             : (viewer === 'guest' ? 'Accept the change' : 'Approve the change');
 
@@ -110,12 +111,12 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
                             from={guestLine(chg.old_guests, chg.old_children, chg.old_pets)}
                             to={guestLine(chg.new_guests, chg.new_children, chg.new_pets)} />
                     )}
-                    <Diff label="Total" from={'£' + round2(chg.old_total).toFixed(2)} to={'£' + round2(chg.new_total).toFixed(2)} />
+                    <Diff label="Total" from={formatGBP(round2(chg.old_total))} to={formatGBP(round2(chg.new_total))} />
                 </div>
 
                 <div className="mt-5 rounded-xl bg-slate-50 p-3 text-[15px] text-slate-700">
                     {delta > 0
-                        ? <>The guest {viewer === 'guest' ? '(you) ' : ''}pay{viewer === 'guest' ? '' : 's'} an extra <strong>£{delta.toFixed(2)}</strong> to confirm.</>
+                        ? <>The guest {viewer === 'guest' ? '(you) ' : ''}pay{viewer === 'guest' ? '' : 's'} an extra <strong>{formatGBP(delta)}</strong> to confirm.</>
                         : delta < 0
                             ? <>{decreaseSummary(viewer, cardRefund, balanceDrop)}</>
                             : <>There’s nothing extra to pay for this change.</>}
@@ -124,7 +125,7 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
                 {canAnswer ? (
                     <ChangeRequestActions changeId={chg.id} acceptLabel={acceptLabel} declineLabel="Decline" />
                 ) : canPay ? (
-                    <ChangeRequestActions changeId={chg.id} acceptLabel={'Continue to payment · £' + delta.toFixed(2)} payOnly />
+                    <ChangeRequestActions changeId={chg.id} acceptLabel={'Continue to payment · ' + formatGBP(delta)} payOnly />
                 ) : canWithdraw ? (
                     <>
                         <p className="mt-5 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Waiting for {otherFirst} to respond.</p>
@@ -145,7 +146,7 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
 // A deposit booking still below the new total shows only the balance drop, never
 // a card refund the guest won't see.
 function decreaseSummary(viewer: 'host' | 'guest', cardRefund: number, balanceDrop: number) {
-    const money = (n: number) => <strong>£{n.toFixed(2)}</strong>;
+    const money = (n: number) => <strong>{formatGBP(n)}</strong>;
     const subj = viewer === 'guest' ? 'You’re' : 'The guest is';
     const their = viewer === 'guest' ? 'your' : 'their';
     if (cardRefund > 0 && balanceDrop > 0) {

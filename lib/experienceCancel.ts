@@ -18,6 +18,7 @@
 import { sendEmail, emailLayout, escapeHtml, formatDate, NEUTRAL_SUBTITLE } from './email';
 import { logError } from './logError';
 import { stripeRequest } from './stripe';
+import { formatGBP } from './formatMoney';
 
 // Tell both sides — the guest that their dinner went back with the stay, and the
 // provider that a booking they were counting on is off and the money reversed,
@@ -26,7 +27,7 @@ import { stripeRequest } from './stripe';
 async function tellAboutStayCancel(admin: any, order: any): Promise<void> {
     const who = escapeHtml(order.provider_business_name || 'your experience');
     const date = escapeHtml(formatDate(String(order.service_date || '')));
-    const amount = '£' + Number(order.price || 0).toFixed(2);
+    const amount = formatGBP(order.price || 0);
 
     if (order.guest_email) {
         try {

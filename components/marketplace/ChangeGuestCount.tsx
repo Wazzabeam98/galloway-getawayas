@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatGBP } from '@/lib/formatMoney';
 import { createPortal } from 'react-dom';
 import { Users, Minus, Plus, Loader2, ChevronRight, X } from 'lucide-react';
 import { childrenAllowed } from '@/lib/guestAges';
@@ -55,7 +56,7 @@ interface Quote {
 }
 
 function money(n: number): string {
-    return '£' + (Math.round(Math.abs(n) * 100) / 100).toFixed(2);
+    return formatGBP(Math.abs(n));
 }
 function people(n: number, kind: 'adult' | 'child'): string {
     if (kind === 'adult') return n + (n === 1 ? ' adult' : ' adults');

@@ -26,7 +26,7 @@ export default function BookingsLink({
 
     const link = (
         <Link href="/dashboard/bookings" className={'flex items-center gap-2 ' + (className || '')}>
-            <span>Bookings</span>
+            <span>Your reservations</span>
             {pending > 0 && (
                 <span className="text-xs font-bold text-white bg-emerald-700 rounded-full px-2 py-0.5 leading-none">
                     {pending > 99 ? '99+' : pending}

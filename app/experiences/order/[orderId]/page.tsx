@@ -28,6 +28,7 @@ import ExperienceGroup from '@/components/ExperienceGroup';
 import ChangeGuestCount from '@/components/marketplace/ChangeGuestCount';
 import ChangeDateTime from '@/components/marketplace/ChangeDateTime';
 import WhenBadge from '@/components/WhenBadge';
+import { formatGBP } from '@/lib/formatMoney';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
@@ -654,7 +655,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     {cartLineItems.map((l: any, i: number) => (
                                         <li key={i} className="flex items-baseline justify-between gap-3 text-slate-700">
                                             <span>{Number(l.qty) > 1 ? Number(l.qty) + ' × ' : ''}{String(l.name || 'Item')}{l.is_custom ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Made to order</span> : null}</span>
-                                            <span className="tabular-nums text-slate-900">£{(Number(l.line_total) || 0).toFixed(2)}</span>
+                                            <span className="tabular-nums text-slate-900">{formatGBP(l.line_total || 0)}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -1006,9 +1007,9 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 <div className="text-sm font-semibold text-slate-900">{charged ? 'Amount paid' : 'Amount held'}</div>
                                 {/* The net across the whole family (base + any accepted
                                     added places), less any refund. */}
-                                <div className="mt-1 text-base text-slate-900">£{(breakdownTotal > 0 ? breakdownNet : (Number(price) - amountRefunded)).toFixed(2)}</div>
+                                <div className="mt-1 text-base text-slate-900">{formatGBP(breakdownTotal > 0 ? breakdownNet : (Number(price) - amountRefunded))}</div>
                                 {amountRefunded > 0 && (
-                                    <div className="mt-0.5 text-[13px] text-slate-500">£{amountRefunded.toFixed(2)} refunded of the £{(breakdownTotal > 0 ? breakdownTotal : Number(price)).toFixed(2)} you paid</div>
+                                    <div className="mt-0.5 text-[13px] text-slate-500">{formatGBP(amountRefunded)} refunded of the {formatGBP(breakdownTotal > 0 ? breakdownTotal : Number(price))} you paid</div>
                                 )}
                                 {/* The itemised breakdown, like a holiday-let booking —
                                     a <details> so it needs no client JavaScript. */}
@@ -1023,12 +1024,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                                 {breakdownLines.map((l, i) => (
                                                     <div key={i} className="flex items-baseline justify-between text-slate-600">
                                                         <span>{l.label}</span>
-                                                        <span className="tabular-nums">£{l.amount.toFixed(2)}</span>
+                                                        <span className="tabular-nums">{formatGBP(l.amount)}</span>
                                                     </div>
                                                 ))}
-                                                <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">£{breakdownTotal.toFixed(2)}</span></div>
-                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Refunded</span><span className="tabular-nums">−£{amountRefunded.toFixed(2)}</span></div>}
-                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between font-medium text-slate-900"><span>{charged ? 'Net paid' : 'Net held'}</span><span className="tabular-nums">£{breakdownNet.toFixed(2)}</span></div>}
+                                                <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">{formatGBP(breakdownTotal)}</span></div>
+                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Refunded</span><span className="tabular-nums">−{formatGBP(amountRefunded)}</span></div>}
+                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between font-medium text-slate-900"><span>{charged ? 'Net paid' : 'Net held'}</span><span className="tabular-nums">{formatGBP(breakdownNet)}</span></div>}
                                             </div>
                                         </div>
                                     </details>

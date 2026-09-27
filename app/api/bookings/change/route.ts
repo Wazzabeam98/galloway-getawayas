@@ -10,6 +10,7 @@ import { validateChange, round2, whoAnswers, guestChangeIsInstant, type StaySnap
 import { quoteChangeMoney } from '@/lib/quoteChange';
 import { applyBookingChange } from '@/lib/applyBookingChange';
 import { displayName } from '@/lib/utils';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -208,12 +209,12 @@ export async function POST(request: Request) {
                 const toGuest = answerer === 'guest';
                 const moneyLine = delta > 0
                     ? (toGuest
-                        ? 'You&rsquo;d pay an extra <strong>£' + delta.toFixed(2) + '</strong>.'
-                        : 'The guest would pay an extra <strong>£' + delta.toFixed(2) + '</strong>.')
+                        ? 'You&rsquo;d pay an extra <strong>' + formatGBP(delta) + '</strong>.'
+                        : 'The guest would pay an extra <strong>' + formatGBP(delta) + '</strong>.')
                     : delta < 0
                         ? (toGuest
-                            ? 'You&rsquo;d be refunded <strong>£' + Math.abs(delta).toFixed(2) + '</strong>.'
-                            : 'The guest would be refunded <strong>£' + Math.abs(delta).toFixed(2) + '</strong>.')
+                            ? 'You&rsquo;d be refunded <strong>' + formatGBP(Math.abs(delta)) + '</strong>.'
+                            : 'The guest would be refunded <strong>' + formatGBP(Math.abs(delta)) + '</strong>.')
                         : 'There’s nothing extra to pay.';
                 const subject = initiatedBy === 'host' ? 'Your host proposed a change to your stay' : 'Your guest requested a change to their stay';
                 const lead = initiatedBy === 'host'

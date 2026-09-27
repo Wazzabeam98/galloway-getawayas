@@ -10,6 +10,7 @@ import { daySlots, dayTicks, type DayInputs, type DaySlotRow } from '@/lib/slotD
 import { seatConfig } from '@/lib/serviceSlots';
 import Link from 'next/link';
 import { orderReference, orderNet } from '@/lib/serviceOrders';
+import { formatGBP } from '@/lib/formatMoney';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from '@/components/services/editorControls';
 
 interface Order {
@@ -25,7 +26,7 @@ interface Order {
 // Money + the label/value Row + the titled Card — the same atoms the cottage
 // booking detail (app/dashboard/bookings/[id]) is built from, so an experience
 // booking reads in the same language rather than a second invented one.
-const money = (value: number) => '£' + Number(value || 0).toFixed(2);
+const money = (value: number) => formatGBP(value);
 function Row({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) {
     return (
         <div className="flex items-baseline justify-between gap-6 border-b border-slate-100 py-2 last:border-0">

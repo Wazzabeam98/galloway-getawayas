@@ -5,6 +5,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { displayName } from '@/lib/utils';
 import { sendEmail, emailLayout, button, escapeHtml, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
         ]);
         const where = (listing && listing.title) || 'your stay';
         const firstName = displayName(guest, 'there').split(' ')[0] || 'there';
-        const pounds = '£' + amount.toFixed(2);
+        const pounds = formatGBP(amount);
 
         // In the conversation, so the guest sees it where they see everything
         // else about the stay, and there is a record either way.

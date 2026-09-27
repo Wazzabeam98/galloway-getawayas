@@ -8,6 +8,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { getImageUrl, capitializeFirst, displayName, firstName } from '@/lib/utils';
+import { formatGBP } from '@/lib/formatMoney';
 import { publicArea } from '@/lib/places';
 import { partyLabel, confirmationNumber, cancellationWords } from '@/lib/bookingDisplay';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
@@ -485,7 +486,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                     <div className="mt-4">
                                         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cancelled</div>
                                         <div className="mt-1 text-sm font-medium text-slate-900">
-                                            {payRefunded > 0 ? `£${payRefunded.toFixed(2)} refunded` : payPaid > 0 ? 'No refund due' : 'Nothing was paid'}
+                                            {payRefunded > 0 ? `${formatGBP(payRefunded)} refunded` : payPaid > 0 ? 'No refund due' : 'Nothing was paid'}
                                         </div>
                                     </div>
                                 ) : (
@@ -495,7 +496,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                             The full price and what's left sit in the
                                             breakdown / the balance box below. */}
                                         <div className="text-sm font-semibold text-slate-900">Amount paid</div>
-                                        <div className="mt-1 text-base text-slate-900">£{payPaid.toFixed(2)}</div>
+                                        <div className="mt-1 text-base text-slate-900">{formatGBP(payPaid)}</div>
                                         {/* The breakdown opens in place — a <details>
                                             so it needs no client JavaScript, the same
                                             trick the experience page uses for the bio. */}
@@ -520,7 +521,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                                                     {nightDateLabel(n.date)}
                                                                     {nightKindLabel(n.kind) && <span className="ml-1.5 text-slate-400">· {nightKindLabel(n.kind)}</span>}
                                                                 </span>
-                                                                <span className="tabular-nums">£{Number(n.rate).toFixed(2)}</span>
+                                                                <span className="tabular-nums">{formatGBP(Number(n.rate))}</span>
                                                             </div>
                                                         ))
                                                     ) : (
@@ -529,20 +530,20 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                                                 Accommodation · {nights} {nights === 1 ? 'night' : 'nights'}
                                                                 <span className="block text-xs text-slate-400">Estimated — this booking predates the per-night record</span>
                                                             </span>
-                                                            <span className="tabular-nums">£{payAccommodation.toFixed(2)}</span>
+                                                            <span className="tabular-nums">{formatGBP(payAccommodation)}</span>
                                                         </div>
                                                     )}
-                                                    {payExtraGuest > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Extra guest fee</span><span className="tabular-nums">£{payExtraGuest.toFixed(2)}</span></div>}
-                                                    {payCleaning > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Cleaning fee</span><span className="tabular-nums">£{payCleaning.toFixed(2)}</span></div>}
-                                                    {payPet > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Pet fee</span><span className="tabular-nums">£{payPet.toFixed(2)}</span></div>}
-                                                    {payOtherFees > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Other fees</span><span className="tabular-nums">£{payOtherFees.toFixed(2)}</span></div>}
-                                                    <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">£{payTotal.toFixed(2)}</span></div>
-                                                    <div className="flex items-baseline justify-between text-slate-600"><span>Paid so far</span><span className="tabular-nums">£{payPaid.toFixed(2)}</span></div>
-                                                    {payRefunded > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Refunded</span><span className="tabular-nums">£{payRefunded.toFixed(2)}</span></div>}
+                                                    {payExtraGuest > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Extra guest fee</span><span className="tabular-nums">{formatGBP(payExtraGuest)}</span></div>}
+                                                    {payCleaning > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Cleaning fee</span><span className="tabular-nums">{formatGBP(payCleaning)}</span></div>}
+                                                    {payPet > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Pet fee</span><span className="tabular-nums">{formatGBP(payPet)}</span></div>}
+                                                    {payOtherFees > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Other fees</span><span className="tabular-nums">{formatGBP(payOtherFees)}</span></div>}
+                                                    <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">{formatGBP(payTotal)}</span></div>
+                                                    <div className="flex items-baseline justify-between text-slate-600"><span>Paid so far</span><span className="tabular-nums">{formatGBP(payPaid)}</span></div>
+                                                    {payRefunded > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Refunded</span><span className="tabular-nums">{formatGBP(payRefunded)}</span></div>}
                                                     {payRemaining > 0 && (
                                                         <div className="flex items-baseline justify-between font-medium text-amber-800">
                                                             <span>Still to pay{booking.balance_due_date ? (balanceOverdue ? ' · overdue' : ' · due ' + booking.balance_due_date) : ''}</span>
-                                                            <span className="tabular-nums">£{payRemaining.toFixed(2)}</span>
+                                                            <span className="tabular-nums">{formatGBP(payRemaining)}</span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -551,7 +552,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
 
                                         {balanceDue && (
                                             <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
-                                                <div className="text-sm font-semibold text-amber-900">£{payRemaining.toFixed(2)} still to pay</div>
+                                                <div className="text-sm font-semibold text-amber-900">{formatGBP(payRemaining)} still to pay</div>
                                                 <p className="mt-0.5 text-xs text-amber-800">
                                                     {booking.balance_due_date
                                                         ? (balanceOverdue

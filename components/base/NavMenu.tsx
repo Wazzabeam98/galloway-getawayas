@@ -87,17 +87,9 @@ const NavMenu = ({
             </PopoverTrigger>
             <PopoverContent className='mr-6'>
                 <ul>
-                    {/* Experiences is a public destination — the mobile and
-                        in-menu counterpart of the top-bar link, shown to
-                        everyone once the feature is live. */}
-                    {experiencesOpen && (
-                        <>
-                            <li className={itemClass}>
-                                <Link href='/experiences/browse'>Experiences</Link>
-                            </li>
-                            <div className='border-t my-1' />
-                        </>
-                    )}
+                    {/* Experiences is not repeated here — it already sits in the top
+                        nav bar (Navbar.tsx), so a second copy in the dropdown was
+                        just noise. */}
                     {session != null ? (
                         <>
                             {hostView ? (
@@ -154,6 +146,12 @@ const NavMenu = ({
                                         <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
                                             Your listing
                                         </Link>
+                                    </li>
+                                    {/* A provider's incoming reservations, labelled for
+                                        what they're doing (providing), not "trips". Their
+                                        own travel stays reachable as "Your trips" below. */}
+                                    <li className={itemClass}>
+                                        <Link href='/services/dashboard#upcoming'>Your reservations</Link>
                                     </li>
                                     <li className={itemClass}>
                                         <Link href='/services/dashboard'>Calendar</Link>

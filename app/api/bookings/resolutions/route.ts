@@ -6,6 +6,7 @@ import { checkListing } from '@/lib/access';
 import { stripeRequest } from '@/lib/stripe';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { formatGBP } from '@/lib/formatMoney';
 import {
     commissionRateFor, isDamageAllowed, sendCapPounds, validateSendAmount,
     escalationDeadline, round2, toPence,
@@ -142,7 +143,7 @@ export async function POST(request: Request) {
                             unit_amount: toPence(amount),
                             product_data: {
                                 name: 'Refund to your guest — ' + stayName,
-                                description: 'You are sending £' + amount.toFixed(2) + ' back to your guest. Once this payment clears, we refund them the same amount to their original card.',
+                                description: 'You are sending ' + formatGBP(amount) + ' back to your guest. Once this payment clears, we refund them the same amount to their original card.',
                             },
                         },
                     }],
@@ -169,8 +170,8 @@ export async function POST(request: Request) {
             const { data: guestUser } = await admin.auth.admin.getUserById(booking.guest_id);
             const guestEmail = (guestUser && guestUser.user && guestUser.user.email) || '';
             if (guestEmail) {
-                await sendEmail(guestEmail, 'Your host has requested £' + amount.toFixed(2), emailLayout(
-                    '<p style="margin:0 0 16px;font-size:16px;">Your host has requested <strong>£' + amount.toFixed(2)
+                await sendEmail(guestEmail, 'Your host has requested ' + formatGBP(amount), emailLayout(
+                    '<p style="margin:0 0 16px;font-size:16px;">Your host has requested <strong>' + formatGBP(amount)
                     + '</strong> for your stay at <strong>' + escapeHtml(stayName) + '</strong>'
                     + (reason === 'damage' ? ' (damage or extra cleaning)' : ' (extra services)') + '.</p>'
                     + (note ? '<p style="margin:0 0 16px;font-size:15px;color:#475569;">“' + escapeHtml(note) + '”</p>' : '')

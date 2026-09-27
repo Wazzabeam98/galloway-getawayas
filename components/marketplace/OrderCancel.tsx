@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { formatGBP } from '@/lib/formatMoney';
 import { useRouter } from 'next/navigation';
 import { Loader2, MessageCircle, Ban } from 'lucide-react';
 
@@ -76,14 +77,14 @@ export default function OrderCancel({
                 flow, so it asks twice and names the number both times. */}
             {view === 'forfeit' && (
                 <div className={cx(panelClassName, 'rounded-xl border border-red-200 bg-red-50 p-4')}>
-                    <div className="text-sm font-semibold text-red-900">Cancel and lose the £{price.toFixed(2)}?</div>
+                    <div className="text-sm font-semibold text-red-900">Cancel and lose the {formatGBP(price)}?</div>
                     <p className="mt-1 text-sm text-red-800">
-                        This can’t be undone. You won’t get the £{price.toFixed(2)} back, {providerName} keeps it, and your booking is cancelled.
+                        This can’t be undone. You won’t get the {formatGBP(price)} back, {providerName} keeps it, and your booking is cancelled.
                     </p>
                     <div className="mt-3 flex items-center gap-2">
                         <button type="button" disabled={busy} onClick={() => act('forfeit')}
                             className="inline-flex items-center gap-1.5 rounded-lg bg-red-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50">
-                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Yes, cancel and forfeit £{price.toFixed(2)}
+                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Yes, cancel and forfeit {formatGBP(price)}
                         </button>
                         <button type="button" onClick={() => setView('open')} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Go back</button>
                     </div>
@@ -112,7 +113,7 @@ export default function OrderCancel({
                 <>
                     <div className="text-sm font-semibold text-slate-900">Cancel and get your money back?</div>
                     <p className="mt-1 text-sm text-slate-600">
-                        You’ll get your full <span className="font-semibold">£{price.toFixed(2)}</span> back to your card.
+                        You’ll get your full <span className="font-semibold">{formatGBP(price)}</span> back to your card.
                     </p>
                     <div className="mt-3 flex items-center gap-2">
                         {/* A full refund is not a loss, so this confirm button is
@@ -120,7 +121,7 @@ export default function OrderCancel({
                             forfeit money (the no-refund and walk-away steps below). */}
                         <button type="button" disabled={busy} onClick={() => act('refund')}
                             className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50">
-                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Cancel &amp; refund £{price.toFixed(2)}
+                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Cancel &amp; refund {formatGBP(price)}
                         </button>
                         <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Keep booking</button>
                     </div>

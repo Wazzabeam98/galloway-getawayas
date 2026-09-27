@@ -1015,7 +1015,14 @@ export default function MessagesInboxPage() {
             {thread.context && thread.context.serviceDate && (
                 <div className="flex justify-between gap-2 text-sm">
                     <span className="text-slate-500 flex-shrink-0">Date</span>
-                    <span className="text-slate-900 font-medium text-right">{thread.context.serviceDate}</span>
+                    <span className="text-slate-900 font-medium text-right">
+                        {(() => {
+                            const d = new Date(String(thread.context.serviceDate));
+                            return isNaN(d.getTime())
+                                ? String(thread.context.serviceDate)
+                                : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+                        })()}
+                    </span>
                 </div>
             )}
             {thread.context && thread.context.status && (

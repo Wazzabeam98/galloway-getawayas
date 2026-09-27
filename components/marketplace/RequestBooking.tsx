@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X, Minus, Plus, Calendar, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react';
+import { formatGBP } from '@/lib/formatMoney';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { hasExtraGuests, partyPrice, partyCeiling, extraGuestsLine } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
@@ -473,7 +474,7 @@ export function RequestBookingDialog({
                             {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
                             <div className="flex items-baseline justify-between">
                                 <span className="text-sm font-medium text-slate-600">Total</span>
-                                <span className="text-lg font-semibold text-slate-900">£{total.toFixed(2)}</span>
+                                <span className="text-lg font-semibold text-slate-900">{formatGBP(total)}</span>
                             </div>
                             {/* The itemised breakdown, the same shape (and lines) as the
                                 confirmed booking page — a <details> so it needs no state. */}
@@ -488,10 +489,10 @@ export function RequestBookingDialog({
                                             {breakdownLines.map((l, i) => (
                                                 <div key={i} className="flex items-baseline justify-between text-slate-600">
                                                     <span>{l.label}</span>
-                                                    <span className="tabular-nums">£{l.amount.toFixed(2)}</span>
+                                                    <span className="tabular-nums">{formatGBP(l.amount)}</span>
                                                 </div>
                                             ))}
-                                            <div className="flex items-baseline justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">£{total.toFixed(2)}</span></div>
+                                            <div className="flex items-baseline justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">{formatGBP(total)}</span></div>
                                         </div>
                                     </div>
                                 </details>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { cancellationPosition } from '@/lib/cancellationView';
+import { formatGBP } from '@/lib/formatMoney';
 
 // The "Are you sure?" step of cancelling a stay — the one confirm panel the
 // trips card AND the home upcoming-trip card both use, so the two can't drift
@@ -82,10 +83,10 @@ export default function CancelBookingConfirm({
                 {paidSoFar <= 0
                     ? 'You haven’t paid anything for this stay, so there’s nothing to refund.'
                     : refund >= paidSoFar
-                        ? 'You’ll get your full £' + paidSoFar.toFixed(2) + ' back to your card.'
+                        ? 'You’ll get your full ' + formatGBP(paidSoFar) + ' back to your card.'
                     : refund > 0
-                        ? 'You’ll get £' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid back to your card, usually within five to ten days.'
-                        : 'These dates are inside the non-refundable period for this place, so no refund is due on the £' + paidSoFar.toFixed(2) + ' you’ve paid.'}
+                        ? 'You’ll get ' + formatGBP(refund) + ' of the ' + formatGBP(paidSoFar) + ' you’ve paid back to your card, usually within five to ten days.'
+                        : 'These dates are inside the non-refundable period for this place, so no refund is due on the ' + formatGBP(paidSoFar) + ' you’ve paid.'}
             </p>
 
             {orders.length > 0 && (

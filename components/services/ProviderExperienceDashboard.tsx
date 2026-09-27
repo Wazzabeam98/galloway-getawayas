@@ -5,6 +5,7 @@ import { MessageCircle } from 'lucide-react';
 import { unitMultiplies, unitNoun, unitLabel } from '@/lib/serviceOrders';
 import { whenLabel, partyMatters } from '@/components/marketplace/present';
 import OrderThread from '@/components/marketplace/OrderThread';
+import { formatGBP } from '@/lib/formatMoney';
 
 // What an approved guest-trade provider does after approval: set up payouts,
 // and answer the requests that come in.
@@ -64,7 +65,7 @@ function countLine(o: Order): string | null {
     if (!o.item_unit || !unitMultiplies(o.item_unit) || !o.quantity) return null;
     const noun = unitNoun(o.item_unit);
     const plural = o.quantity === 1 ? noun : (noun === 'person' ? 'people' : noun + 's');
-    const each = o.unit_price != null ? ' · £' + o.unit_price.toFixed(2) + ' ' + unitLabel(o.item_unit) : '';
+    const each = o.unit_price != null ? ' · ' + formatGBP(o.unit_price) + ' ' + unitLabel(o.item_unit) : '';
     return o.quantity + ' ' + plural + each;
 }
 
@@ -211,7 +212,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string;
                                 <div className="text-sm text-gray-600">
                                     {whenLabel(o.shape, o.service_date, o.service_time)}
                                     {partyText(o)}
-                                    {' · £' + (Number(o.price) - (Number(o.amount_refunded) || 0)).toFixed(2)}
+                                    {' · ' + formatGBP(Number(o.price) - (Number(o.amount_refunded) || 0))}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="text-sm text-gray-500">For {o.guest_name}</div> : null}
@@ -266,7 +267,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string;
                                 <div className="text-sm text-gray-600">
                                     {whenLabel(o.shape, o.service_date, o.service_time)}
                                     {partyText(o)}
-                                    {' · £' + (Number(o.price) - (Number(o.amount_refunded) || 0)).toFixed(2)}
+                                    {' · ' + formatGBP(Number(o.price) - (Number(o.amount_refunded) || 0))}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="mt-0.5 text-sm text-gray-700">For {o.guest_name}</div> : null}
@@ -361,7 +362,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string;
                     <ul className="mt-2 space-y-1 text-sm text-gray-500">
                         {other.map((o) => (
                             <li key={o.id}>
-                                {whenLabel(o.shape, o.service_date, o.service_time)} · £{(Number(o.price) - (Number(o.amount_refunded) || 0)).toFixed(2)} · {STATUS_WORD[o.status] || o.status}
+                                {whenLabel(o.shape, o.service_date, o.service_time)} · {formatGBP(Number(o.price) - (Number(o.amount_refunded) || 0))} · {STATUS_WORD[o.status] || o.status}
                             </li>
                         ))}
                     </ul>

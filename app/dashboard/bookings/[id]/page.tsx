@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
+import { formatGBP } from "@/lib/formatMoney";
 import Link from "next/link";
 import { adminClient } from "@/lib/supabaseAdmin";
 import { checkListing, accessibleListings } from "@/lib/access";
@@ -32,7 +33,7 @@ import {
 // already looking at. This is the screen for when something has gone wrong.
 
 function money(value: number): string {
-    return '£' + Number(value || 0).toFixed(2);
+    return formatGBP(value);
 }
 
 // The status pill, in the reservation-page family: a label and a tone, the same
