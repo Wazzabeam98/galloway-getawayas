@@ -254,7 +254,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         .eq('id', params.id)
         .single();
 
-    let hostName = 'Host';
+    // One sensible fallback for a nameless host, shared with the trip page
+    // ("your host") rather than the old inconsistent "Host".
+    let hostName = 'your host';
     let hostAvatar: string | null = null;
     let hostSinceYear: number | null = null;
     let hostBio: string | null = null;
@@ -280,7 +282,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
             .select('full_name, preferred_name, show_full_name, avatar_url, created_at, host_bio, stripe_payouts_enabled')
             .eq('id', home.host_id)
             .maybeSingle();
-        hostName = displayName(hostProfile, 'Host');
+        hostName = displayName(hostProfile, 'your host');
         hostAvatar = hostProfile?.avatar_url || null;
         hostBio = (hostProfile?.host_bio || '').trim() || null;
         // When they joined — the tenure line a guest looks for on a page
@@ -294,8 +296,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     }
 
     // Guests see a first name only — a surname on a public page is more
-    // than anyone needs, and it's how the big platforms do it.
-    const hostFirstName = capitializeFirst((hostName || 'Host').split(' ')[0]);
+    // than anyone needs, and it's how the big platforms do it. A nameless host
+    // stays "your host" (never the bare word "Your" from splitting the fallback).
+    const hostFirstName = hostName === 'your host'
+        ? 'your host'
+        : capitializeFirst(hostName.split(' ')[0]);
     const highlights = propertyHighlights(home);
 
     // Rounded to about 110m before it ever left the database. PropertyMap

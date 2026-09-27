@@ -140,7 +140,14 @@ export default async function StayReservationPage({ params }: { params: { bookin
         ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, phone, avatar_url, host_bio').eq('id', booking.host_id).maybeSingle()
         : { data: null };
     const hostName = capitializeFirst(hostProfile ? displayName(hostProfile, 'your host') : 'your host');
-    const hostFirstName = firstName(hostProfile, '') || hostName.split(' ')[0];
+    // A host with no name must never render as the bare word "Your" in a sentence
+    // ("Message Your", "Your will let you know"). When there's no real first name,
+    // fall back to "your host" — one sensible fallback used everywhere below, and
+    // the same one the listing page shows. (The old fallback took the first WORD
+    // of "Your host", which is where the stray "Your" came from — and passing
+    // 'your host' AS firstName's fallback would be split to just "your" for the
+    // same reason, so the whole phrase is applied only when firstName is empty.)
+    const hostFirstName = firstName(hostProfile, '') || 'your host';
     const hostAvatar = (hostProfile && hostProfile.avatar_url) ? getImageUrl(String(hostProfile.avatar_url)) : null;
     const hostBio = (hostProfile && (hostProfile.host_bio || '')).trim() || null;
 
@@ -392,7 +399,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                         {checkInBlurb(listing.check_in_method) && <div className="text-sm text-slate-600">{checkInBlurb(listing.check_in_method)}</div>}
                                     </div>
                                 ) : (
-                                    <p className="mt-2 text-sm text-slate-500">{hostFirstName} will let you know how to get in — send a message if you’re not sure.</p>
+                                    <p className="mt-2 text-sm text-slate-500">{capitializeFirst(hostFirstName)} will let you know how to get in — send a message if you’re not sure.</p>
                                 )}
                             </section>
                         )}
@@ -410,7 +417,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={hostAvatar} alt={hostName} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
                                 ) : (
-                                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{(hostFirstName || hostName).slice(0, 1)}</span>
+                                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{capitializeFirst(hostFirstName || hostName).slice(0, 1)}</span>
                                 )}
                             </div>
                             {hostBio && (

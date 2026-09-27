@@ -1,5 +1,6 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { dateFromKey, dateKey } from '@/lib/pricing';
+import { fetchIcalText } from '@/lib/feedFetch';
 
 // Dates taken on Airbnb, Booking.com and anything else a host syncs.
 //
@@ -14,6 +15,40 @@ import { dateFromKey, dateKey } from '@/lib/pricing';
 // rows — so an ordinary client here would block nothing and look fine.
 
 export type IcalEvent = { start: string; end: string };
+
+// Parse an .ics feed body into the { start, end } events this module reasons
+// about — the same shape and the same DATE handling as the cron's own parser
+// (app/api/cron/ical-sync). Kept here so checkout can re-parse a freshly-fetched
+// feed with identical logic and never disagree with the cached column.
+export function parseIcsEvents(text: string): IcalEvent[] {
+    const events: IcalEvent[] = [];
+    const blocks = String(text || '').split('BEGIN:VEVENT').slice(1);
+    for (const block of blocks) {
+        const startMatch = block.match(/DTSTART[^:]*:(\d{8})/);
+        const endMatch = block.match(/DTEND[^:]*:(\d{8})/);
+        if (!startMatch || !endMatch) continue;
+        const toISO = (raw: string) => raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8);
+        events.push({ start: toISO(startMatch[1]), end: toISO(endMatch[1]) });
+    }
+    return events;
+}
+
+// Fetch a feed's current events LIVE. Returns null (not an empty list) when the
+// feed can't be read, so a caller can tell "reachable and genuinely empty" from
+// "couldn't check" and fall back to the cached column rather than either
+// blocking a real booking on a momentary outage or trusting stale data.
+//
+// Goes through fetchIcalText (lib/feedUrl), which enforces public-https-only and
+// refuses private/loopback/link-local/metadata addresses and redirects to them —
+// this runs on a HOST-SUPPLIED url inside the checkout request, so it must not be
+// coaxable into fetching an internal service. Three-second timeout: right before
+// payment, a slow feed must not hold the guest up — the cached column carries it.
+export async function fetchLiveIcalEvents(url: string, timeoutMs = 3000): Promise<IcalEvent[] | null> {
+    if (!url) return null;
+    const text = await fetchIcalText(url, { timeoutMs });
+    if (text === null) return null;
+    return parseIcsEvents(text);
+}
 
 // An iCal event runs from its arrival date to its checkout date, and the
 // checkout date is itself free — the same convention as a booking here. So

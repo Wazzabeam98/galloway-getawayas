@@ -105,6 +105,28 @@ test('firstName with no profile falls back rather than throwing', () => {
     assert.equal(firstName(undefined, 'Host'), 'Host');
 });
 
+// A host with an empty profile name must render as the whole fallback ("your
+// host"), never the bare word "Your". The trip page used to do
+// firstName(profile,'') || "Your host".split(' ')[0], which produced "Your" in
+// guest-facing sentences ("Message Your", "Your will let you know"). It now uses
+// the composition `firstName(profile, '') || 'your host'` — note the empty
+// fallback: passing 'your host' straight to firstName would be split to "your".
+// This test pins the exact composition the page relies on.
+test('a nameless host falls back to the whole "your host", never the bare "Your"', () => {
+    const hostFirst = (p: any) => firstName(p, '') || 'your host';
+    const emptyName = { full_name: '', preferred_name: '', show_full_name: true };
+    assert.equal(hostFirst(emptyName), 'your host');
+    assert.equal(hostFirst(null), 'your host');
+    // The specific regression: never the bare "Your" (nor a truncated "your").
+    assert.notEqual(hostFirst(emptyName), 'Your');
+    assert.notEqual(hostFirst(emptyName), 'your');
+    // A real name still comes through as the first name only.
+    assert.equal(hostFirst({ full_name: 'Tom Fraser', show_full_name: true }), 'Tom');
+    // And the trap that would reintroduce the bug: firstName with the phrase as
+    // its own fallback splits it, so the page must NOT do that.
+    assert.equal(firstName(emptyName, 'your host'), 'your');
+});
+
 test('the booking message thread names the other person by first name, honouring the switch', () => {
     // Both directions: the list route and the single-thread route each name the
     // counterparty (a host to a guest, a guest to a host). Both must use
