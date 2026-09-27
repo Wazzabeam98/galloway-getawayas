@@ -95,6 +95,39 @@ export async function POST(request: Request) {
             );
         }
 
+        // A PAYOUT ACCOUNT, before the listing can take real money.
+        //
+        // Publishing used to gate only on title/price/address/photos, so a host
+        // could go fully live and take live-mode bookings with no connected
+        // Stripe account — their money then sat held while the payout cron
+        // skipped them silently (host-payouts/route.ts:221) and alerted only
+        // /admin/errors, never the host. A listing that can be booked must be one
+        // that can be paid.
+        //
+        // Only the FIRST time live, matching the photo bar above — an
+        // already-published or paused ('hidden') listing has been through this and
+        // is left alone, so this never disturbs a live listing. `needsPayoutSetup`
+        // lets the wizard show a "set up payouts" prompt rather than a dead error;
+        // the listing is saved as a draft, so they lose nothing by leaving to set
+        // it up and coming back.
+        if (!everPublished) {
+            const { data: hostProfile } = await admin
+                .from('profiles')
+                .select('stripe_payouts_enabled')
+                .eq('id', user.id)
+                .maybeSingle();
+            if (!hostProfile || hostProfile.stripe_payouts_enabled !== true) {
+                return NextResponse.json(
+                    {
+                        ok: false,
+                        needsPayoutSetup: true,
+                        error: 'Set up how you get paid before your listing goes live. It takes a couple of minutes, and your listing is saved as a draft while you do — come straight back to publish it.',
+                    },
+                    { status: 400 }
+                );
+            }
+        }
+
         const { error } = await admin
             .from('listings')
             // THE OTHER DOOR A POSTCODE COMES THROUGH.

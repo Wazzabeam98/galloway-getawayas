@@ -27,7 +27,17 @@ const LoginModel = ({ next }: { next?: string } = {}) => {
             password,
         });
         if (error) {
-            setError(error.message);
+            // "Invalid login credentials" is what Supabase returns BOTH for a
+            // wrong password and for an email that has no account at all — shown
+            // bare it reads as "wrong password" to someone who has never signed
+            // up. Say the true either/or and point new visitors at Sign Up (in
+            // the account menu this modal opens from, and on the host gate).
+            const message = error.message || '';
+            if (/invalid login credentials/i.test(message)) {
+                setError('We couldn’t sign you in. Either the password is wrong, or there’s no account for that email yet — if you’re new, use Sign Up to create one.');
+            } else {
+                setError(message || 'Something went wrong signing you in. Please try again.');
+            }
             return;
         }
 

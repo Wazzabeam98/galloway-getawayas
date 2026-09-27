@@ -28,6 +28,15 @@ export async function POST(request: Request) {
         const body = await request.json().catch(function () { return {}; });
         const action = (body && body.action) || 'onboard';
 
+        // Where Stripe sends the host back to after onboarding. Defaults to the
+        // account payments section, but the publish flow passes the page it
+        // interrupted (e.g. /addhome) so the host lands back where they were and
+        // can publish — "set it up and come back". Kept to our own paths: a
+        // single leading slash and no protocol/host, so it can never redirect off
+        // site.
+        const rawReturn = String((body && body.returnTo) || '');
+        const safeReturn = /^\/[^/\\]/.test(rawReturn) ? rawReturn : '';
+
         const admin = adminClient();
 
         const { data: profile } = await admin
@@ -107,10 +116,13 @@ export async function POST(request: Request) {
         // A fresh onboarding link. These expire quickly and are single
         // use, so one is generated every time rather than being stored.
         // -------------------------------------------------------------
+        const defaultReturn = '/account?section=payments';
+        const returnPath = safeReturn || defaultReturn;
+        const joiner = returnPath.indexOf('?') === -1 ? '?' : '&';
         const accountLink = await stripeRequest('POST', '/account_links', {
             account: accountId,
-            refresh_url: SITE_URL + '/account?section=payments&refresh=1',
-            return_url: SITE_URL + '/account?section=payments&done=1',
+            refresh_url: SITE_URL + returnPath + joiner + 'refresh=1',
+            return_url: SITE_URL + returnPath + joiner + 'done=1',
             type: 'account_onboarding',
             collection_options: {
                 fields: 'eventually_due',
