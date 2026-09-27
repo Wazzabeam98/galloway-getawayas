@@ -7,7 +7,7 @@ import { SITE_URL } from '@/lib/email';
 import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
 import { balanceDueKey } from '@/lib/balanceDue';
 import { londonDayKey } from '@/lib/dayKey';
-import { blockedNightsFromEvents } from '@/lib/availability';
+import { blockedNightsFromEvents, fetchLiveIcalEvents } from '@/lib/availability';
 import { rateFor } from '@/lib/fees';
 import { logError } from '@/lib/logError';
 
@@ -157,14 +157,30 @@ export async function POST(request: Request) {
         // this guest was deciding.
         const { data: icalFeeds } = await admin
             .from('listing_ical_feeds')
-            .select('id, label, events')
+            .select('id, label, url, events')
             .eq('listing_id', booking.listing_id);
+
+        // LIVE re-check, right before payment — not just the cached column.
+        //
+        // The sync cron runs feeds serially under a 60s cap with no ordering, so
+        // above ~20 listings an arbitrary tail is never re-synced and its cached
+        // `events` go stale. Reading only that column let a date sold on Airbnb
+        // after the last successful sync stay bookable here right through payment —
+        // two guests, one cottage. So each feed is fetched live here and, when the
+        // fetch succeeds, its FRESH events decide availability; a feed that can't
+        // be reached falls back to its cached column (best available) rather than
+        // blocking a real booking on a momentary outage. Feeds are fetched
+        // concurrently so the added latency is one feed's, not the sum.
+        const liveEvents = await Promise.all(
+            (icalFeeds || []).map((feed: any) => fetchLiveIcalEvents(String(feed.url || '')))
+        );
 
         // Expanded by lib/availability, which is also what search filters
         // with — so a stay search calls free and a stay checkout calls taken
         // cannot come apart.
-        (icalFeeds || []).forEach(function (feed: any) {
-            blockedNightsFromEvents(feed.events).forEach(function (night: string) {
+        (icalFeeds || []).forEach(function (feed: any, i: number) {
+            const events = liveEvents[i] !== null ? liveEvents[i] : feed.events;
+            blockedNightsFromEvents(events).forEach(function (night: string) {
                 blockedDates[night] = true;
             });
         });

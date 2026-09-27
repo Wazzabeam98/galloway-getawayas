@@ -217,6 +217,15 @@ export default async function Dashboard() {
     );
     const drafts = owned.filter((h) => h.status === 'draft');
 
+    // A host with no name shows to guests as "your host" everywhere. Nudge them
+    // to set one — this is the other half of the fix for the "Your" bug: stop it
+    // rendering ungrammatically AND ask hosts to fill the name in.
+    const { data: myProfile } = uid
+        ? await admin.from('profiles').select('full_name, preferred_name').eq('id', uid).maybeSingle()
+        : { data: null };
+    const hostNeedsName = !!uid && !!myProfile
+        && !((myProfile.preferred_name || myProfile.full_name || '') as string).trim();
+
     return (
         <div>
             <Toast />
@@ -227,6 +236,20 @@ export default async function Dashboard() {
             <div className="max-w-7xl mx-auto px-6 pt-6">
                 <ArrivalNudge userId={(user && user.user && user.user.id) || ''} />
             </div>
+
+            {hostNeedsName && (
+                <div className="max-w-7xl mx-auto px-6 pt-4">
+                    <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                            <h2 className="font-semibold text-slate-900">Add your name</h2>
+                            <p className="text-sm text-slate-700 mt-0.5">Guests currently see “your host” instead of your name on their trip and on your listing. Add a name so they know who they’re booking with.</p>
+                        </div>
+                        <Link href="/account" className="flex-none self-start sm:self-auto rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+                            Set your name
+                        </Link>
+                    </div>
+                </div>
+            )}
 
             {/* Your follow-ups — a review to leave for each guest who has just
                 checked out, before the 14-day window closes. Airbnb's shape: the

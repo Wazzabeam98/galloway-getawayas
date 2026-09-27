@@ -164,8 +164,13 @@ export default async function TripsPage() {
                     </div>
                 </div>
             ) : (
-                <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,540px)_1fr]">
-                    <div>
+                // grid-cols-1 (a minmax(0,1fr) track) on mobile — without it the
+                // single implicit column is `auto`, sized to its children's
+                // min-content, so the list column and the map grew to ~390px inside
+                // a ~358px container and the page scrolled sideways at 390px. The lg
+                // template already had minmax(0,…); the phone needed the same.
+                <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,540px)_1fr]">
+                    <div className="min-w-0">
                         <Section title="Upcoming" items={upcoming} />
                         <Section title="Past" items={past} />
                     </div>
