@@ -1,15 +1,15 @@
 import { logError } from '@/lib/logError';
 import { guidanceFor } from '@/lib/disputes';
-import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, detailRows, noteCallout, allergyCallout, SITE_URL } from '@/lib/email';
+import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, detailRows, noteCallout, allergyCallout, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
-import { displayName } from '@/lib/utils';
+import { displayName, formatTime } from '@/lib/utils';
 import { createRequestOrderFromSession } from '@/lib/requestOrder';
 import { authoriseChangeRequest } from '@/lib/changeRequest';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
-import { guestBookedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
+import { guestBookedEmail, guestRequestReceivedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { resolveGuestForPaidOrder, supabaseGuestStore, guestMagicLink } from '@/lib/guestAccount';
 import { notifyTopUpConfirmed } from '@/lib/slotNotify';
@@ -606,7 +606,7 @@ export async function POST(request: Request) {
                     if (slotOrder && slotOrder.parent_order_id) {
                         await notifyTopUpConfirmed(admin, slotOrder);
                     } else if (slotOrder) {
-                        const time = slotOrder.service_time ? String(slotOrder.service_time).slice(0, 5) : '';
+                        const time = slotOrder.service_time ? formatTime(String(slotOrder.service_time)) : '';
                         const qty = Number(slotOrder.quantity) || 1;
                         const { data: prov } = await admin
                             .from('service_providers')
@@ -628,13 +628,14 @@ export async function POST(request: Request) {
                                         allergyCallout(slotOrder.allergy)
                                         + '<p>A guest has booked '
                                         + escapeHtml(slotOrder.item_name || business)
-                                        + ' for ' + escapeHtml(String(slotOrder.service_date))
+                                        + ' for ' + escapeHtml(formatDate(String(slotOrder.service_date)))
                                         + (time ? ' at ' + escapeHtml(time) : '')
                                         + (qty > 1 ? ' · ' + qty + ' places' : '')
                                         + '.</p>'
                                         + noteCallout(slotOrder.note)
                                         + button(SITE_URL + '/services/dashboard', 'View your bookings'),
-                                        'You’re receiving this because you offer experiences on Galloway Getaways.'
+                                        'You’re receiving this because you offer experiences on Galloway Getaways.',
+                                        undefined, NEUTRAL_SUBTITLE
                                     )
                                 );
                             }
@@ -666,14 +667,15 @@ export async function POST(request: Request) {
                                         '<p>You’re booked'
                                         + (slotOrder.item_name ? ' for ' + escapeHtml(slotOrder.item_name) : '')
                                         + ' with ' + escapeHtml(business)
-                                        + ' on ' + escapeHtml(String(slotOrder.service_date))
+                                        + ' on ' + escapeHtml(formatDate(String(slotOrder.service_date)))
                                         + (time ? ' at ' + escapeHtml(time) : '')
                                         + (qty > 1 ? ', for ' + qty + ' places' : '')
                                         + '.</p>'
                                         + (slotOrder.price != null
                                             ? '<p>You paid £' + Number(slotOrder.price).toFixed(2) + '.</p>' : '')
                                         + button(viewUrl, 'View your booking'),
-                                        'You’re receiving this because you booked an experience on Galloway Getaways.'
+                                        'You’re receiving this because you booked an experience on Galloway Getaways.',
+                                        undefined, NEUTRAL_SUBTITLE
                                     )
                                 );
                             }
@@ -1151,15 +1153,15 @@ export async function POST(request: Request) {
                         });
                         if (hostEmail) await sendEmail(hostEmail, hostMail.subject, hostMail.html);
 
-                        // Only the Instant-Book guest — a request-flow guest is
-                        // told when the host accepts, and telling them now would
-                        // say "You're booked" while it is still pending.
+                        // The guest greeted by their own name, which does not
+                        // consult the privacy switch — it is their own name in
+                        // their own inbox.
+                        const guestOwnFirst = ((guestProfile.preferred_name || guestProfile.full_name || 'there')
+                            .trim().split(' ')[0]) || 'there';
+
                         if (instant && guestEmail) {
-                            // The guest greeted by their own name, which does not
-                            // consult the privacy switch — it is their own name in
-                            // their own inbox.
-                            const guestOwnFirst = ((guestProfile.preferred_name || guestProfile.full_name || 'there')
-                                .trim().split(' ')[0]) || 'there';
+                            // Instant Book confirmed itself here, so the guest gets
+                            // the full "You're booked" now.
                             const guestMail = guestBookedEmail({
                                 guestFirst: guestOwnFirst,
                                 listingTitle,
@@ -1181,6 +1183,24 @@ export async function POST(request: Request) {
                                 }).freeUntilKey,
                             });
                             await sendEmail(guestEmail, guestMail.subject, guestMail.html);
+                        } else if (!instant && guestEmail) {
+                            // A request-to-book guest has PAID and is now waiting on
+                            // the host. Their "You're booked" only comes if and when
+                            // the host accepts — so without this, a guest who paid
+                            // and heard nothing (host slow, host silent, or the
+                            // accept-time notify erroring) got no email at all. Tell
+                            // them their money is held and exactly how it comes back
+                            // if the host never responds.
+                            const reqMail = guestRequestReceivedEmail({
+                                guestFirst: guestOwnFirst,
+                                listingTitle,
+                                checkIn: booking.check_in,
+                                checkOut: booking.check_out,
+                                guests: booking.guests || 1,
+                                total: Number(booking.total_price || 0),
+                                amountPaid: Number(booking.amount_paid || amount || 0),
+                            });
+                            await sendEmail(guestEmail, reqMail.subject, reqMail.html);
                         }
                     } catch (err) {
                         // A booking notification that fails must never affect the

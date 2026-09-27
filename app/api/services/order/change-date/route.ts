@@ -7,7 +7,8 @@ import { shapeOf, generateSessions } from '@/lib/serviceSlots';
 import { changeWindowState, dayKey, dayKeyFromNow, providerTakesChanges } from '@/lib/orderChange';
 import { offeredTimes as providerOfferedTimes, isOfferedTime, normaliseTime } from '@/lib/offeredTimes';
 import { logError } from '@/lib/logError';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
+import { formatTime } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -287,11 +288,11 @@ export async function POST(request: Request) {
             const { data: prov } = await admin.from('service_providers').select('business_name, contact_email').eq('id', loaded.provider.id).maybeSingle();
             if (prov && prov.contact_email) {
                 await sendEmail(prov.contact_email, 'A guest wants to change a booking', emailLayout(
-                    '<p>A guest has asked to move their ' + escapeHtml(loaded.order.item_name || 'booking') + ' to <strong>' + escapeHtml(newDate)
-                    + (newTime ? ' at ' + escapeHtml(newTime) : '')
+                    '<p>A guest has asked to move their ' + escapeHtml(loaded.order.item_name || 'booking') + ' to <strong>' + escapeHtml(formatDate(newDate))
+                    + (newTime ? ' at ' + escapeHtml(formatTime(newTime)) : '')
                     + '</strong>. Nothing is charged either way — accept within 48 hours, or decline to keep the original.</p>'
                     + button(SITE_URL + '/services/dashboard', 'Answer the request'),
-                    'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                    'You’re receiving this because you offer experiences on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE));
             }
         } catch (e) { console.error('[change-date] notify', e); }
 

@@ -6,7 +6,7 @@ import { logError } from '@/lib/logError';
 import { enquiryThreadContext } from '@/lib/enquiryThreads';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 
 export const dynamic = 'force-dynamic';
@@ -120,7 +120,8 @@ export async function POST(req: Request, { params }: { params: { enquiryId: stri
                                 + '<p style="margin:0 0 16px;font-size:16px;padding:12px 16px;background:#f8fafc;border-radius:10px;"><em>'
                                 + escapeHtml(body.slice(0, 300)) + (body.length > 300 ? '…' : '') + '</em></p>'
                                 + button(SITE_URL + '/messages/enquiry/' + params.enquiryId, 'Reply'),
-                            'You are receiving this because you have a job thread on Galloway Getaways. Reference ' + escapeHtml(String(ctx.enquiry.reference)) + '.'
+                            'You are receiving this because you have a job thread on Galloway Getaways. Reference ' + escapeHtml(String(ctx.enquiry.reference)) + '.',
+                            undefined, NEUTRAL_SUBTITLE
                         )
                     );
                 }

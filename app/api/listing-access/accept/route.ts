@@ -4,6 +4,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { displayName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,13 +83,24 @@ export async function POST(request: Request) {
                 .eq('id', invite.listing_id)
                 .maybeSingle();
 
+            // Name the person who accepted, not their raw email address — a
+            // subject line like "jamie@example.com has accepted" leaks the
+            // address (subjects show in previews and notifications) and reads
+            // unprofessionally. Fall back to the email only if they have no name.
+            const { data: accepterProfile } = await admin
+                .from('profiles')
+                .select('full_name, preferred_name, show_full_name')
+                .eq('id', user.id)
+                .maybeSingle();
+            const accepterName = displayName(accepterProfile, invite.email || 'Someone');
+
             if (ownerEmail) {
                 await sendEmail(
                     ownerEmail,
-                    invite.email + ' has accepted your invitation',
+                    accepterName + ' has accepted your invitation',
                     emailLayout(
                         '<p style="margin:0 0 16px;font-size:16px;"><strong>'
-                            + escapeHtml(invite.email)
+                            + escapeHtml(accepterName)
                             + '</strong> now has access to <strong>'
                             + escapeHtml((listing && listing.title) || 'your property')
                             + '</strong> as '

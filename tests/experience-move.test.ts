@@ -65,12 +65,18 @@ test('a blocked session is never offered', () => {
     assert.deepEqual(e, { available: false, reason: 'blocked' });
 });
 
-// whenLabel is presentation only — the RPC already hands back a YYYY-MM-DD date
-// and an HH:MM time.
-test('whenLabel joins a date and time, and degrades gracefully', () => {
-    assert.equal(whenLabel('2026-10-05', '14:00'), '2026-10-05 at 14:00');
-    assert.equal(whenLabel('2026-10-05', '14:00:00'), '2026-10-05 at 14:00', 'trims seconds');
-    assert.equal(whenLabel('2026-10-05', null), '2026-10-05', 'a date with no time is just the date');
+// whenLabel is presentation only — the RPC hands back a YYYY-MM-DD date and an
+// HH:MM time, and this renders them the human way the booking emails do (no raw
+// database value leaks into an email).
+test('whenLabel formats a date and time, and degrades gracefully', () => {
+    const dt = whenLabel('2026-10-05', '14:00');
+    assert.match(dt, /October 2026 at 2pm/);
+    assert.doesNotMatch(dt, /2026-10-05/, 'no raw ISO date');
+    assert.doesNotMatch(dt, /14:00/, 'no raw 24h time');
+    assert.match(whenLabel('2026-10-05', '14:00:00'), /October 2026 at 2pm/, 'trims seconds');
+    const dateOnly = whenLabel('2026-10-05', null);
+    assert.match(dateOnly, /October 2026/, 'a date with no time is just the formatted date');
+    assert.doesNotMatch(dateOnly, / at /, 'no time, so no "at"');
     assert.equal(whenLabel(null, '14:00'), 'the booked time', 'no date is unusable');
 });
 
@@ -85,13 +91,14 @@ test('the provider move email names BOTH the old and the new time', () => {
         seats: 2,
     });
 
-    // Subject carries the change.
-    assert.match(mail.subject, /2026-10-05 at 18:00/);
-    assert.match(mail.subject, /2026-10-12 at 20:00/);
+    // Subject carries the change, formatted the human way (not raw ISO).
+    assert.match(mail.subject, /October 2026 at 6pm/);
+    assert.match(mail.subject, /October 2026 at 8pm/);
+    assert.doesNotMatch(mail.subject, /2026-10-05|18:00/, 'no raw date/time in subject');
 
     // Body names both, labelled Was / Now, and the item and party size.
-    assert.match(mail.html, /2026-10-05 at 18:00/, 'old time in body');
-    assert.match(mail.html, /2026-10-12 at 20:00/, 'new time in body');
+    assert.match(mail.html, /October 2026 at 6pm/, 'old time in body');
+    assert.match(mail.html, /October 2026 at 8pm/, 'new time in body');
     assert.match(mail.html, /Was/);
     assert.match(mail.html, /Now/);
     assert.match(mail.html, /Evening sauna session/);

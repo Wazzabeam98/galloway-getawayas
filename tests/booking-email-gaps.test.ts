@@ -236,6 +236,7 @@ test('a guest who cancels their own stay is emailed a receipt', async () => {
     stubModule('@/lib/email', {
         sendEmail: async (to: string, subject: string, html: string) => { sent.push({ to, subject, html }); return true; },
         emailLayout: (b: string) => b, escapeHtml: (x: string) => x,
+        button: (url: string, label: string) => label, SITE_URL: 'http://example.invalid',
     });
     stubModule('next/server', {
         NextResponse: { json: (body: any, init?: any) => ({ body, status: (init && init.status) || 200 }) },

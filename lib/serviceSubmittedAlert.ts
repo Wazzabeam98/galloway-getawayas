@@ -15,7 +15,7 @@
 
 import { adminClient } from '@/lib/supabaseAdmin';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
-import { sendEmailToAll, recipients, emailLayout, escapeHtml, detailRows, button, SITE_URL } from '@/lib/email';
+import { sendEmailToAll, recipients, emailLayout, escapeHtml, detailRows, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import {
     tradeLabel,
@@ -181,7 +181,9 @@ export async function announceSubmission(provider: any): Promise<AnnounceResult>
                         : []
                 ))
                 + button(SITE_URL + '/admin/providers', changed ? 'Review the changes' : 'Review application'),
-            'You are receiving this because you review businesses on Galloway Getaways.'
+            'You are receiving this because you review businesses on Galloway Getaways.',
+            undefined,
+            NEUTRAL_SUBTITLE
         )
     );
 

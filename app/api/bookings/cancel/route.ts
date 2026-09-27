@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { issueRefunds } from '@/lib/refundSpread';
 import { refundDue } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
-import { sendEmail, emailLayout, escapeHtml } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
 import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 
@@ -86,15 +86,25 @@ export async function POST(request: Request) {
         const alreadyRefunded = Number(booking.amount_refunded || 0);
         const refundable = round2(paid - alreadyRefunded);
 
-        // One rule, in lib/cancellation.ts, shared with /api/stripe/refund,
-        // the balance job and the two screens that predict this figure.
-        const amount = refundDue({
-            amountPaid: paid,
-            alreadyRefunded: alreadyRefunded,
-            cleaningFee: booking.cleaning_fee,
-            checkIn: booking.check_in,
-            policy: listing && listing.cancellation_policy,
-        });
+        // A REQUEST-TO-BOOK the host has NOT yet confirmed (status 'pending') is a
+        // request being WITHDRAWN, not a confirmed stay being cancelled. The
+        // cancellation policy governs confirmed stays — its date tiers have no
+        // business docking money the host never accepted — so the guest gets
+        // everything back, whatever the dates. This is what the "Request received"
+        // email promises: a full refund any time before the host confirms. (A
+        // pending booking has had no payout, so there is nothing to claw back.)
+        // A confirmed stay still follows the one shared rule in lib/cancellation.ts,
+        // used by /api/stripe/refund, the balance job and the two screens that
+        // predict this figure.
+        const amount = booking.status === 'pending'
+            ? refundable
+            : refundDue({
+                amountPaid: paid,
+                alreadyRefunded: alreadyRefunded,
+                cleaningFee: booking.cleaning_fee,
+                checkIn: booking.check_in,
+                policy: listing && listing.cancellation_policy,
+            });
 
         // The money goes back before the booking changes. If Stripe refuses,
         // the guest still has their stay rather than neither.
@@ -275,7 +285,9 @@ export async function POST(request: Request) {
                 const refundLine = refundedNow > 0
                     ? 'A refund of <strong>£' + refundedNow.toFixed(2)
                         + '</strong> is on its way back to your card. It usually takes five to ten days to appear.'
-                    : 'Under the cancellation policy for these dates, no refund was due on what you had already paid.';
+                    : 'Under the cancellation policy for these dates, no refund was due on what you had'
+                        + ' already paid. You can see the policy and the full details of this booking from'
+                        + ' your trips page.';
 
                 await sendEmail(
                     user.email,
@@ -284,6 +296,7 @@ export async function POST(request: Request) {
                         '<p style="margin:0 0 16px;font-size:16px;">You have cancelled your stay at <strong>'
                             + title + '</strong>. This is your confirmation.</p>'
                         + '<p style="margin:0 0 16px;font-size:16px;">' + refundLine + '</p>'
+                        + button(SITE_URL + '/trips', 'View booking')
                         + '<p style="margin:0;font-size:16px;">We hope to welcome you to Dumfries &amp; Galloway another time.</p>',
                         'You’re receiving this because you cancelled a booking with Galloway Getaways.'
                     )

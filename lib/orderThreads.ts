@@ -26,6 +26,11 @@ export interface OrderThreadContext {
     otherId: string;
     otherName: string;
     business: string;
+    // The guest's display name, independent of who is viewing (honouring
+    // show_full_name). Needed when NAMING THE SENDER to the recipient: a message
+    // FROM the guest must show the guest's name to the provider, which otherName
+    // cannot give from the guest's own perspective.
+    guestName: string;
 }
 
 // The provider side of the inbox: the order threads for every provider this user
@@ -124,6 +129,17 @@ export async function orderThreadContext(
 
     const business = order.provider_business_name || prov.business_name || 'the provider';
 
+    // The guest's display name, always — honouring show_full_name, the way a
+    // person is named everywhere else. Read once here so both the "other party"
+    // label (guest → provider) and the "sender" label (a message FROM the guest,
+    // shown to the provider) can use it, whoever is viewing.
+    const { data: guest } = await admin
+        .from('profiles')
+        .select('full_name, preferred_name, show_full_name')
+        .eq('id', order.guest_id)
+        .maybeSingle();
+    const guestName = displayName(guest, 'the guest');
+
     let otherId: string;
     let otherName: string;
     if (isGuest) {
@@ -131,15 +147,8 @@ export async function orderThreadContext(
         otherName = business;
     } else {
         otherId = order.guest_id;
-        // The guest named to the provider — through displayName, honouring the
-        // show_full_name switch like everywhere else a person is named.
-        const { data: guest } = await admin
-            .from('profiles')
-            .select('full_name, preferred_name, show_full_name')
-            .eq('id', order.guest_id)
-            .maybeSingle();
-        otherName = displayName(guest, 'the guest');
+        otherName = guestName;
     }
 
-    return { order, isGuest, otherId, otherName, business };
+    return { order, isGuest, otherId, otherName, business, guestName };
 }
