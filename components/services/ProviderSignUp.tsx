@@ -4175,9 +4175,20 @@ function ApplicationForm() {
                             </p>
                         </>
                     ) : (
+                        /* A live-status banner, not a heading. A bare bold
+                           "Live" read as a section title; a provider glancing at
+                           it could not tell it was telling them their state. The
+                           pulsing dot and the pill say "this is your status"
+                           before the words are read. */
                         <>
-                            <p className="font-semibold text-emerald-900">{summary.label}</p>
-                            <p className="text-sm text-emerald-900/80 mt-1">{summary.detail}</p>
+                            <div className="flex items-center gap-2">
+                                <span className="relative flex h-2.5 w-2.5" aria-hidden>
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-600" />
+                                </span>
+                                <span className="text-xs font-bold uppercase tracking-wider text-emerald-800">{summary.label}</span>
+                            </div>
+                            <p className="text-sm text-emerald-900/80 mt-1.5">{summary.detail}</p>
                         </>
                     )}
 
@@ -4497,9 +4508,16 @@ function ApplicationForm() {
                     the rest. */}
                 {!isGuest && onStep('business') && (
                 <section className="mb-8">
+                    {/* The box was unlabelled — just a placeholder that vanished
+                        the moment you typed, leaving a paragraph with no title
+                        under the business name. The label names it and the line
+                        below says who reads it, so it is written for its reader. */}
+                    <label htmlFor="biz-description" className="block text-sm font-semibold text-slate-900 mb-1.5">What you do</label>
+                    <p className="text-sm text-slate-500 mb-2">This is what hosts and guests read when deciding who to ask.</p>
                     {/* Capped to a measure rather than the window: past about 70
                         characters a line is harder to read. */}
                     <textarea
+                        id="biz-description"
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         rows={5}

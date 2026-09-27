@@ -285,6 +285,7 @@ export default async function ProviderDashboardPage() {
                 offPlatform={offPlatform}
                 live={live}
                 editHref={`/services/join?trade=${provider.trade}`}
+                providerId={provider.id}
                 enquiries={requests}
                 upcoming={upcoming}
                 toAnswer={toAnswer}

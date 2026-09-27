@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import EnquiryActions from '@/components/services/EnquiryActions';
 import UpcomingJobActions from '@/components/services/UpcomingJobActions';
+import PayoutSetupButton from '@/components/services/PayoutSetupButton';
 
 // The provider's own view of their business — the screen a tradesman or an
 // experience-seller lands on when they log in. Until this existed an approved
@@ -75,6 +76,9 @@ export type ProviderDashboardProps = {
     // guest trades only: payouts connected and enabled.
     live: boolean;
     editHref: string;
+    // the provider's own id, so the payout gate can start Stripe onboarding
+    // (POST /api/services/connect) rather than link back into the sign-up wizard.
+    providerId: string;
     enquiries: DashboardEnquiry[];
     upcoming: DashboardUpcoming[];
     toAnswer: number;
@@ -119,7 +123,7 @@ function Chip({ chip, label }: { chip: DashboardEnquiry['chip']; label: string }
 export default function ProviderDashboard(props: ProviderDashboardProps) {
     const {
         businessName, tradeName, areaLabel, badge,
-        offPlatform, live, editHref, enquiries, upcoming, toAnswer, nextPayoutLabel,
+        offPlatform, live, editHref, providerId, enquiries, upcoming, toAnswer, nextPayoutLabel,
     } = props;
 
     return (
@@ -182,12 +186,10 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                             money. It takes a couple of minutes through Stripe, and you go live the moment it&rsquo;s done.
                         </p>
                         <div className="mt-4 flex flex-wrap items-center gap-3">
-                            <Link
-                                href={editHref}
-                                className="inline-flex items-center gap-2 font-bold text-sm text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl px-5 py-3 transition"
-                            >
-                                Set up payouts <ArrowRight className="w-4 h-4" strokeWidth={2.4} />
-                            </Link>
+                            {/* Straight to Stripe Connect onboarding, like every
+                                other "set up payouts" control — not a Link back to
+                                the sign-up wizard, which is where this used to go. */}
+                            <PayoutSetupButton providerId={providerId} />
                             <span className="text-xs text-slate-400">
                                 Secure, handled by Stripe · you can leave and come back
                             </span>
