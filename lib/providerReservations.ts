@@ -34,6 +34,7 @@ export interface MoneyCardsData {
     working?: string;
     rows: MoneyLine[];
     description?: string;
+    caption?: string;
 }
 
 export interface ProviderReservation {
@@ -193,6 +194,7 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
                     // provider: "£36.00 · Your take". The pop-up carries the full
                     // split with our fee working.
                     showMoney: true,
+                    caption: 'Money',
                     total: formatGBP(net.youGet),
                     nightsLabel: 'Your take',
                     description: 'What the guest paid, our fee, and what reaches you.',

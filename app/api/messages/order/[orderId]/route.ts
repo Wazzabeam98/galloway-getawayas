@@ -109,6 +109,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 if (awaiting) moneyNote = 'Your card is held, not charged yet — the provider confirms to take payment.';
                 else money = {
                     showMoney: true,
+                    caption: 'Money',
                     total: formatGBP(net.gross - net.refunded),
                     nightsLabel: 'What you paid',
                     description: 'What you paid for this booking.',
@@ -118,6 +119,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 if (awaiting) moneyNote = 'Their card is held, not charged — confirm the request to take the payment (' + formatGBP(net.gross) + ').';
                 else money = {
                     showMoney: true,
+                    caption: 'Money',
                     total: formatGBP(net.youGet),
                     nightsLabel: 'Your take',
                     description: 'What the guest paid, our fee, and what reaches you.',

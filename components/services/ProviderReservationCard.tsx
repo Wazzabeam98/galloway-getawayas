@@ -116,7 +116,10 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
             {r.money
                 ? <MoneyCards {...r.money} />
                 : r.moneyNote
-                    ? <div className={lifted + ' text-sm text-slate-600'}>{r.moneyNote}</div>
+                    ? <div className={lifted}>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Money</div>
+                        <div className="mt-1 text-sm text-slate-600">{r.moneyNote}</div>
+                    </div>
                     : null}
 
             {r.manage && <ProviderManageSheet data={r.manage} />}
