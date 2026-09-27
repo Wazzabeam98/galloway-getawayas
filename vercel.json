@@ -1,4 +1,7 @@
 {
+  "env": {
+    "GUEST_EXPERIENCES_OPEN": "true"
+  },
   "crons": [
     {
       "path": "/api/cron/review-reminders",
