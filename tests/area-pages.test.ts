@@ -83,15 +83,14 @@ test('written, and with somewhere to stay, is publishable', () => {
 
 /* ------------------------------------------------------- shipping unwritten */
 
-test('no area can reach Google yet — the written ones are all held', () => {
-    // The copy is now written for all ten towns, but every one of them carries
-    // `hold: true`, so none is publishable and none is in the sitemap. Adding
-    // the copy did not publish the pages; clearing a hold does. That keeps
-    // "a page goes in front of Google" a decision somebody made, exactly as the
-    // original build intended — the gate just moved from "is it written" to
-    // "is it written AND released".
+test('only Kirkcudbright is released — every other written area is still held', () => {
+    // The copy is written for all ten towns; each carries `hold: true` and stays
+    // out of the index and the sitemap until it is deliberately released.
+    // Kirkcudbright is the first one off hold: its copy was checked live (its
+    // attractions verified — the Cocoabean Company at Twynholm now stands in for
+    // the closed Cream o' Galloway visitor centre), so it is publishable.
     //
-    // WHEN YOU CLEAR A HOLD, this test fails and names the town. Read
+    // WHEN YOU CLEAR ANOTHER HOLD, this test fails and names the town. Read
     // AREA-BRIEF.md, check its attractions are still open, and add the slug to
     // the expected list below. That failure is the checkpoint, not a nuisance.
     const readyToPublish = (AREAS as Area[])
@@ -99,10 +98,10 @@ test('no area can reach Google yet — the written ones are all held', () => {
         .map((a) => a.slug);
 
     assert.deepEqual(
-        readyToPublish, [],
-        'These areas are written AND no longer held, so they can reach Google: '
-        + readyToPublish.join(', ')
-        + '\n\nIf that was deliberate, add them here. If not, restore hold: true.'
+        readyToPublish, ['kirkcudbright'],
+        'The set of written, released areas changed. Expected exactly Kirkcudbright.\n'
+        + 'Now released: ' + readyToPublish.join(', ')
+        + '\n\nIf you meant to release another town, add its slug here. If not, restore hold: true.'
     );
 });
 
