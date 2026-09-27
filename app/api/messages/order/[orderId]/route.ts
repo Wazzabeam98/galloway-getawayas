@@ -93,8 +93,13 @@ export async function POST(req: Request, { params }: { params: { orderId: string
                 const recipient = await admin.auth.admin.getUserById(ctx.otherId);
                 const to = (recipient && recipient.data && recipient.data.user && recipient.data.user.email) || '';
                 // The sender, named to the recipient: the business to the guest,
-                // the guest to the business.
-                const senderName = ctx.isGuest ? ctx.business : ctx.otherName;
+                // the guest to the business. ctx.isGuest describes the SENDER
+                // (the current user), and this email goes to the OTHER party — so
+                // a guest sender is named by their own name to the provider, and a
+                // provider sender is named by the business to the guest. (This was
+                // inverted: it showed the provider their own business name and the
+                // guest their own name.)
+                const senderName = ctx.isGuest ? ctx.guestName : ctx.business;
                 const about = (ctx.order.item_name ? String(ctx.order.item_name) + ' — ' : '')
                     + formatDate(String(ctx.order.service_date));
                 if (to && !isAutomatedTestAddress(to)) {

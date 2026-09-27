@@ -86,15 +86,25 @@ export async function POST(request: Request) {
         const alreadyRefunded = Number(booking.amount_refunded || 0);
         const refundable = round2(paid - alreadyRefunded);
 
-        // One rule, in lib/cancellation.ts, shared with /api/stripe/refund,
-        // the balance job and the two screens that predict this figure.
-        const amount = refundDue({
-            amountPaid: paid,
-            alreadyRefunded: alreadyRefunded,
-            cleaningFee: booking.cleaning_fee,
-            checkIn: booking.check_in,
-            policy: listing && listing.cancellation_policy,
-        });
+        // A REQUEST-TO-BOOK the host has NOT yet confirmed (status 'pending') is a
+        // request being WITHDRAWN, not a confirmed stay being cancelled. The
+        // cancellation policy governs confirmed stays — its date tiers have no
+        // business docking money the host never accepted — so the guest gets
+        // everything back, whatever the dates. This is what the "Request received"
+        // email promises: a full refund any time before the host confirms. (A
+        // pending booking has had no payout, so there is nothing to claw back.)
+        // A confirmed stay still follows the one shared rule in lib/cancellation.ts,
+        // used by /api/stripe/refund, the balance job and the two screens that
+        // predict this figure.
+        const amount = booking.status === 'pending'
+            ? refundable
+            : refundDue({
+                amountPaid: paid,
+                alreadyRefunded: alreadyRefunded,
+                cleaningFee: booking.cleaning_fee,
+                checkIn: booking.check_in,
+                policy: listing && listing.cancellation_policy,
+            });
 
         // The money goes back before the booking changes. If Stripe refuses,
         // the guest still has their stay rather than neither.

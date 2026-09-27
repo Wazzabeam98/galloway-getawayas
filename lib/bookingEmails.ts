@@ -186,9 +186,10 @@ export function guestRequestReceivedEmail(input: GuestRequestReceivedInput): { s
         '<p style="margin:0 0 16px 0;">You&rsquo;re never left waiting with no way out. If the host'
         + ' declines, everything you&rsquo;ve paid'
         + (paid > 0 ? ' &mdash; &pound;' + paid.toFixed(2) + ' &mdash;' : '')
-        + ' is refunded to your card automatically. And if you&rsquo;d rather not keep waiting, you can'
-        + ' cancel the request yourself any time before it&rsquo;s confirmed and get the same full refund'
-        + ' &mdash; just open Your trips. Refunds take five to ten days to show on your statement.</p>' +
+        + ' is refunded to your card automatically. And if the host simply doesn&rsquo;t reply and'
+        + ' you&rsquo;d rather not keep waiting, you can cancel the request yourself any time before'
+        + ' it&rsquo;s confirmed and get a full refund &mdash; just open Your trips. Refunds take five'
+        + ' to ten days to show on your statement.</p>' +
         button(SITE_URL + '/trips', 'View your request'),
         "You're receiving this because you have a booking request with Galloway Getaways. Booking emails can't be switched off."
     );
