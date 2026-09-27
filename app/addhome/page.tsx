@@ -7,7 +7,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
-import LoginModel from '@/components/auth/LoginModel';
+import AuthPanel from '@/components/auth/AuthPanel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
@@ -45,6 +45,12 @@ export default function AddHome() {
     const [coverIndex, setCoverIndex] = useState(0);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
+    // Set when publish is refused because the host has no Stripe payout account —
+    // shows a prompt that takes them to set it up and brings them back to THIS
+    // saved draft (not a blank wizard) to publish.
+    const [payoutSetupNeeded, setPayoutSetupNeeded] = useState(false);
+    const [connectingPayouts, setConnectingPayouts] = useState(false);
+    const [payoutDraftId, setPayoutDraftId] = useState<string | null>(null);
 
     // Airbnb-style wizard state
     const [step, setStep] = useState(1);
@@ -497,6 +503,15 @@ export default function AddHome() {
             if (!publishRes.ok || !publishBody.ok) {
                 const msg = (publishBody && publishBody.error)
                     || 'Your listing was saved as a draft but could not be published. Please try again.';
+                // A missing payout account is not a failure to shout about — it's a
+                // step the host hasn't done yet. Show the set-up prompt instead of a
+                // red error, and keep the listing saved as the draft it now is.
+                if (publishBody && publishBody.needsPayoutSetup) {
+                    setPayoutSetupNeeded(true);
+                    setPayoutDraftId(listingId);
+                    setFormError('');
+                    return;
+                }
                 toast.error(msg, { theme: 'colored' });
                 setFormError(msg);
                 return;
@@ -509,6 +524,32 @@ export default function AddHome() {
             setFormError(msg);
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    // Take the host to Stripe onboarding, telling Stripe to send them back to
+    // their SAVED DRAFT (/addhome?draft=<id>, which reloads everything they
+    // entered) so they can publish the moment payouts are set up — not a blank
+    // wizard that throws the work away.
+    const startPayoutSetup = async () => {
+        setConnectingPayouts(true);
+        try {
+            const returnTo = payoutDraftId ? '/addhome?draft=' + encodeURIComponent(payoutDraftId) : '/dashboard';
+            const res = await fetch('/api/stripe/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'onboard', returnTo }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data && data.ok && data.url) {
+                window.location.href = data.url;
+                return;
+            }
+            toast.error((data && data.error) || 'Could not open payout setup. Please try again.', { theme: 'colored' });
+        } catch {
+            toast.error('Could not open payout setup. Please try again.', { theme: 'colored' });
+        } finally {
+            setConnectingPayouts(false);
         }
     };
 
@@ -525,15 +566,23 @@ export default function AddHome() {
 
     if (!session) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-6 text-center px-4">
+            <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-6 px-4">
                 <Logo />
-                <h1 className="text-2xl font-bold text-slate-900">Sign in to become a host</h1>
-                <p className="text-slate-600 max-w-md">
-                    You need to be logged into your Galloway Getaways account to create and manage listings.
-                </p>
-                <div className="flex space-x-4">
-                    <LoginModel />
+                <div className="text-center">
+                    <h1 className="text-2xl font-bold text-slate-900">Become a host</h1>
+                    <p className="text-slate-600 max-w-md mt-1">
+                        Create your free Galloway Getaways account to list your place — or log in if you already have one.
+                    </p>
                 </div>
+                {/* Both flows on one screen with a clear switch. A brand-new host
+                    lands on "Create account"; the old gate showed a login-only
+                    box where a fresh email returned "Invalid login credentials". */}
+                <AuthPanel
+                    defaultMode="signup"
+                    next="/addhome"
+                    heading="Create your host account"
+                    subheading="It’s free to list. You only pay a commission when you get a booking."
+                />
             </div>
         );
     }
@@ -1065,12 +1114,31 @@ export default function AddHome() {
 
                         {formError && <p className="text-red-600 text-sm mb-4">{formError}</p>}
 
+                        {payoutSetupNeeded && (
+                            <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                                <h3 className="font-bold text-slate-900">One last step: set up how you get paid</h3>
+                                <p className="text-sm text-slate-700 mt-1">
+                                    Before your listing can take bookings, connect your bank through Stripe so your
+                                    payouts have somewhere to go. It takes a couple of minutes. <strong>Your listing is
+                                    saved as a draft</strong> — you’ll come straight back here to publish it.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={startPayoutSetup}
+                                    disabled={connectingPayouts}
+                                    className="mt-3 w-full py-3 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60"
+                                >
+                                    {connectingPayouts ? 'Opening Stripe…' : 'Set up payouts'}
+                                </button>
+                            </div>
+                        )}
+
                         <button
                             type="submit"
                             disabled={submitting}
                             className="w-full py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60"
                         >
-                            {submitting ? 'Publishing...' : 'Publish listing'}
+                            {submitting ? 'Publishing...' : (payoutSetupNeeded ? 'Try publishing again' : 'Publish listing')}
                         </button>
                     </form>
                 )}
