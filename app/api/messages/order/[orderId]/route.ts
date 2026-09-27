@@ -12,6 +12,7 @@ import { whenLabel } from '@/components/marketplace/present';
 import { formatGBP } from '@/lib/formatMoney';
 import { groupLabel } from '@/lib/bookingDisplay';
 import { displayName, getImageUrl } from '@/lib/utils';
+import { cancellationFor } from '@/lib/providerReservations';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,7 +58,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
         // (with our fee shown as working); a guest sees what they paid.
         const { data: full } = await admin
             .from('service_orders')
-            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_id, guest_name, guest_phone')
+            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_id, guest_name, guest_phone, pending_service_date, pending_service_time, pending_change_expires_at')
             .eq('id', params.orderId)
             .maybeSingle();
 
@@ -77,7 +78,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 full.guest_id
                     ? admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', full.guest_id).maybeSingle()
                     : Promise.resolve({ data: null }),
-                admin.from('service_providers').select('photos, headshot').eq('id', ctx.order.provider_id).maybeSingle(),
+                admin.from('service_providers').select('photos, headshot, cancellation_window_hours, guest_details').eq('id', ctx.order.provider_id).maybeSingle(),
             ]);
             const guestName = gProf ? displayName(gProf, full.guest_name || 'Guest') : (full.guest_name || 'Guest');
             const guestFirst = String(guestName).trim().split(' ')[0] || 'Guest';
@@ -117,8 +118,9 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 if (awaiting) moneyNote = 'Their card is held, not charged — confirm the request to take the payment (' + formatGBP(net.gross) + ').';
                 else money = {
                     showMoney: true,
-                    total: formatGBP(net.gross - net.refunded),
-                    nightsLabel: 'You keep ' + formatGBP(net.youGet),
+                    total: formatGBP(net.youGet),
+                    nightsLabel: 'Your take',
+                    description: 'What the guest paid, our fee, and what reaches you.',
                     rows: [
                         { label: 'Guest paid', value: formatGBP(net.gross - net.refunded) },
                         ...refundRow,
@@ -128,6 +130,32 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                     working: 'Guest paid ' + formatGBP(net.gross - net.refunded) + ' − our ' + Math.round(net.rate * 100) + '% fee ' + formatGBP(net.fee) + ' = ' + formatGBP(net.youGet) + '.',
                 };
             }
+
+            // Provider-only extras: the Guests card, the provider's cancellation
+            // terms, and the Manage sheet. A guest viewing their own thread sees
+            // none of these.
+            const partyLabel = (a > 0 || c > 0)
+                ? [a > 0 ? a + (a === 1 ? ' adult' : ' adults') : '', c > 0 ? c + (c === 1 ? ' child' : ' children') : ''].filter(Boolean).join(', ')
+                : (full.item_unit === 'person'
+                    ? (Number(full.quantity) || 1) + ((Number(full.quantity) || 1) === 1 ? ' place' : ' places')
+                    : 'Party of ' + party);
+            const pendingLive = full.pending_service_date
+                && (!full.pending_change_expires_at || new Date(full.pending_change_expires_at).getTime() > Date.now());
+            const pendingChange = pendingLive ? whenLabel(full.shape, full.pending_service_date, full.pending_service_time) : null;
+            const guests = ctx.isGuest ? null : { name: guestName, party: partyLabel };
+            const cancellation = ctx.isGuest ? null : cancellationFor(
+                full.shape,
+                Number((prov && prov.cancellation_window_hours) ?? 48),
+                !!(prov && prov.guest_details && prov.guest_details.no_refund),
+            );
+            const manage = ctx.isGuest ? null : {
+                orderId: full.id,
+                status,
+                phone: full.guest_phone || null,
+                guestFirst,
+                messageHref: '/messages?o=' + full.id,
+                pendingChange,
+            };
 
             reservation = {
                 reference: orderReference(full.id),
@@ -146,6 +174,9 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 moneyNote,
                 phone: ctx.isGuest ? null : (full.guest_phone || null),
                 personFirst: ctx.isGuest ? (ctx.otherName || '').split(' ')[0] : guestFirst,
+                guests,
+                cancellation,
+                manage,
             };
         }
 

@@ -11,7 +11,7 @@
 
 import { orderNet, orderReference } from '@/lib/serviceOrders';
 import { orderLocation } from '@/lib/orderLocation';
-import { whenLabel, timeLabel, dateLabel } from '@/components/marketplace/present';
+import { whenLabel, timeLabel, dateLabel, cancellationSentence } from '@/components/marketplace/present';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { groupLabel } from '@/lib/bookingDisplay';
 import { formatGBP } from '@/lib/formatMoney';
@@ -68,7 +68,16 @@ export interface ProviderReservation {
     messageHref: string;
     needsReply: boolean;             // awaiting the provider's answer (a held request / an unanswered enquiry)
     inWeek: boolean;                 // dated within the next 7 days (for the "This week" filter)
+    // For the provider's Manage sheet and cancellation card (guest experiences
+    // only; a trade is off-platform so both are null).
+    rawStatus: string;               // 'authorised' | 'confirmed' | …
+    pendingChange: string | null;    // a date/time the guest has asked to move to
+    cancellation: ReservationCancellation | null;
 }
+
+// Structural mirror of ProviderCancellationCard's data (kept here so the server
+// lib does not import a client component; see the note by StatusTone above).
+export interface ReservationCancellation { headline: string; summary: string; lateLine: string }
 
 export interface ProviderReservationsResult {
     reservations: ProviderReservation[];
@@ -110,9 +119,31 @@ function whereForOrder(o: any, providerFulfilment: string | null): string | null
     return 'For collection';
 }
 
+// The provider's own cancellation terms, phrased for the reservation card: a
+// headline, the sentence a guest is shown, and what happens if they cancel late.
+// Shape-aware wording, from the provider's single notice window (or "no refund").
+export function cancellationFor(shape: string, hours: number, noRefund: boolean): ReservationCancellation {
+    if (noRefund) {
+        return {
+            headline: 'No refunds',
+            summary: 'This booking is non-refundable — the guest was told so when they booked.',
+            lateLine: 'A cancellation, whenever it comes, keeps the payment.',
+        };
+    }
+    const h = Math.max(0, Number(hours) || 0);
+    const headline = shape === 'slot'
+        ? 'Free up to ' + h + ' hour' + (h === 1 ? '' : 's') + ' before'
+        : 'Free up to ' + Math.round(h / 24) + ' day' + (Math.round(h / 24) === 1 ? '' : 's') + ' before';
+    return {
+        headline,
+        summary: cancellationSentence(shape, h, 'the guest'),
+        lateLine: 'After that, a cancellation is non-refundable — the payment stays with you.',
+    };
+}
+
 export async function loadProviderReservations(
     admin: any,
-    provider: { id: string; audience: string | null; business_name: string | null; fulfilment?: string | null; photos?: string[] | null },
+    provider: { id: string; audience: string | null; business_name: string | null; fulfilment?: string | null; photos?: string[] | null; cancellation_window_hours?: number | null; guest_details?: any },
 ): Promise<ProviderReservationsResult> {
     const today = londonDayKey();
     const tomorrow = shiftDayKey(today, 1);
@@ -127,7 +158,7 @@ export async function loadProviderReservations(
 async function loadGuestReservations(admin: any, provider: any, today: string, tomorrow: string, weekEnd: string): Promise<ProviderReservationsResult> {
     const { data: orders } = await admin
         .from('service_orders')
-        .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, guest_id, guest_name, guest_phone, note, allergy, listing_id, created_at')
+        .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, guest_id, guest_name, guest_phone, note, allergy, listing_id, created_at, pending_service_date, pending_service_time, pending_change_expires_at')
         .eq('provider_id', provider.id)
         .in('status', ['authorised', 'confirmed'])
         .is('parent_order_id', null)
@@ -157,9 +188,14 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
             const money: MoneyCardsData | null = awaiting
                 ? null
                 : {
+                    // The headline is the provider's own take (their terms), like
+                    // the host card's "£480 · Total for 3 nights" but for a
+                    // provider: "£36.00 · Your take". The pop-up carries the full
+                    // split with our fee working.
                     showMoney: true,
-                    total: formatGBP(net.gross - net.refunded),
-                    nightsLabel: 'You keep ' + formatGBP(net.youGet),
+                    total: formatGBP(net.youGet),
+                    nightsLabel: 'Your take',
+                    description: 'What the guest paid, our fee, and what reaches you.',
                     rows: [
                         { label: 'Guest paid', value: formatGBP(net.gross - net.refunded) },
                         ...refundLine,
@@ -174,6 +210,15 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
             const status: { label: string; tone: StatusTone } = awaiting
                 ? { label: 'Awaiting your confirmation', tone: 'wait' }
                 : { label: 'Confirmed', tone: 'ok' };
+            // A live date-change request the guest is waiting on (PR #173).
+            const pendingLive = o.pending_service_date
+                && (!o.pending_change_expires_at || new Date(o.pending_change_expires_at).getTime() > Date.now());
+            const pendingChange = pendingLive ? whenLabel(o.shape, o.pending_service_date, o.pending_service_time) : null;
+            const cancellation = cancellationFor(
+                o.shape,
+                Number(provider.cancellation_window_hours ?? 48),
+                !!(provider.guest_details && provider.guest_details.no_refund),
+            );
             return {
                 id: o.id,
                 kind: (o.shape as ReservationKind) || 'made_to_order',
@@ -200,6 +245,9 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
                 messageHref: '/messages?o=' + o.id,
                 needsReply: awaiting,
                 inWeek: String(o.service_date).slice(0,10) >= today && String(o.service_date).slice(0,10) <= weekEnd,
+                rawStatus: o.status,
+                pendingChange,
+                cancellation,
             } as ProviderReservation;
         });
 
@@ -266,6 +314,11 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             messageHref: '/messages?e=' + e.id,
             needsReply,
             inWeek: !!dateKey && dateKey >= today && dateKey <= weekEnd,
+            // A trade job is off-platform and runs on the separate enquiry flow, so
+            // it carries no through-platform Manage sheet or cancellation card here.
+            rawStatus: e.status,
+            pendingChange: null,
+            cancellation: null,
         };
     };
 

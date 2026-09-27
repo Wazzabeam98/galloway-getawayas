@@ -1043,6 +1043,11 @@ export default function MessagesInboxPage() {
                 phone: rez.phone ?? null,
                 messageHref: null,
                 personFirst: rez.personFirst || '',
+                guests: rez.guests ?? null,
+                cancellation: rez.cancellation ?? null,
+                // The Manage sheet's own Message action would loop back to this
+                // thread, so drop it here (you're already in the conversation).
+                manage: rez.manage ? { ...rez.manage, messageHref: null } : null,
             };
             return (
                 <div className="h-full overflow-y-auto p-5">

@@ -17,6 +17,8 @@ import { MessageSquare, Phone } from 'lucide-react';
 import ReservationHeader from '@/components/dashboard/reservation/ReservationHeader';
 import type { StatusTone } from '@/components/dashboard/reservation/ReservationStatusPill';
 import MoneyCards, { type MoneyCardsData } from '@/components/dashboard/reservation/MoneyCards';
+import ProviderManageSheet, { type ManageData } from '@/components/services/ProviderManageSheet';
+import ProviderCancellationCard, { type CancellationCardData } from '@/components/services/ProviderCancellationCard';
 
 export interface ReservationCardData {
     avatarUrl: string | null;
@@ -35,6 +37,15 @@ export interface ReservationCardData {
     phone: string | null;
     messageHref: string | null;      // shows the Message button when set
     personFirst: string;
+    // The lead guest and the party beneath — the host page's Guests card, for a
+    // provider. Null for a trade job (there is no party) and on the guest's own
+    // view of the thread.
+    guests: { name: string; party: string | null } | null;
+    // The provider's own cancellation terms, and the Manage-reservation action
+    // sheet. Both are provider-only (never shown to a guest viewing the thread),
+    // and only on guest-experience orders — a trade job is off-platform.
+    cancellation: CancellationCardData | null;
+    manage: ManageData | null;
 }
 
 const lifted = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]';
@@ -80,11 +91,35 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                 </div>
             )}
 
+            {/* Who's coming — the lead guest and the party beneath, in the host
+                page's Guests-card style. */}
+            {r.guests && (
+                <div className={lifted}>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Guests</div>
+                    <div className="mt-3 flex items-center gap-3">
+                        {r.avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={r.avatarUrl} alt="" className="h-11 w-11 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                        ) : (
+                            <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{r.initial}</span>
+                        )}
+                        <div className="min-w-0">
+                            <div className="truncate text-base font-semibold text-slate-900">{r.guests.name}</div>
+                            {r.guests.party && <div className="text-[13px] text-slate-500">{r.guests.party}</div>}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {r.cancellation && <ProviderCancellationCard data={r.cancellation} />}
+
             {r.money
                 ? <MoneyCards {...r.money} />
                 : r.moneyNote
                     ? <div className={lifted + ' text-sm text-slate-600'}>{r.moneyNote}</div>
                     : null}
+
+            {r.manage && <ProviderManageSheet data={r.manage} />}
 
             {(r.messageHref || r.phone) && (
                 <div className="flex gap-2">

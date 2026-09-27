@@ -60,6 +60,19 @@ function toCardData(r: ProviderReservation): ReservationCardData {
         phone: r.phone,
         messageHref: r.messageHref,
         personFirst: r.personFirst,
+        // A trade job has a property owner, not a party of guests, and runs on the
+        // separate off-platform enquiry flow — so no Guests card, no through-platform
+        // cancellation card, and no Manage sheet here.
+        guests: r.kind === 'trade' ? null : { name: r.personName, party: r.partyLabel },
+        cancellation: r.kind === 'trade' ? null : r.cancellation,
+        manage: r.kind === 'trade' ? null : {
+            orderId: r.id,
+            status: r.rawStatus,
+            phone: r.phone,
+            guestFirst: r.personFirst,
+            messageHref: r.messageHref,
+            pendingChange: r.pendingChange,
+        },
     };
 }
 
