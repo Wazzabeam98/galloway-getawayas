@@ -144,10 +144,16 @@ export async function POST(request: Request) {
         // A fresh single-use onboarding link every time — Stripe's expire fast,
         // and the refresh_url catches an expired one mid-flow and comes back
         // here for a new one, so a stale link is never a dead end.
+        // Back to the provider's own dashboard, not the sign-up wizard. The
+        // dashboard polls /api/services/connect on load, so a returning provider
+        // sees "you're live" the moment Stripe hands them back — no wizard, no
+        // /services/join?payouts=done. The refresh_url (an expired link mid-flow)
+        // lands in the same place, where the payout card is, to start again.
+        const dashboard = SITE_URL + '/services/dashboard/calendar?provider=' + provider.id;
         const accountLink = await stripeRequest('POST', '/account_links', {
             account: accountId,
-            refresh_url: SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || '') + '&payouts=refresh&provider=' + provider.id,
-            return_url: SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || '') + '&payouts=done&provider=' + provider.id,
+            refresh_url: dashboard + '&payouts=refresh',
+            return_url: dashboard + '&payouts=done',
             type: 'account_onboarding',
             collection_options: { fields: 'eventually_due' },
         });

@@ -10,6 +10,8 @@ import { orderNet, orderReference } from '@/lib/serviceOrders';
 import { orderLocation } from '@/lib/orderLocation';
 import { whenLabel } from '@/components/marketplace/present';
 import { formatGBP } from '@/lib/formatMoney';
+import { groupLabel } from '@/lib/bookingDisplay';
+import { displayName, getImageUrl } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,45 +57,95 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
         // (with our fee shown as working); a guest sees what they paid.
         const { data: full } = await admin
             .from('service_orders')
-            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_phone')
+            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_id, guest_name, guest_phone')
             .eq('id', params.orderId)
             .maybeSingle();
 
+        // The reservation card is the holiday-let host page's own layout, fed the
+        // same shape here as on the provider dashboard so the two stay in step.
+        // Viewer-aware: a provider sees the guest large with their take (our fee as
+        // working); a guest sees the business large and only what they paid.
         let reservation: any = null;
         if (full) {
             const net = orderNet(full);
             const loc = orderLocation({ shape: full.shape, fulfilment: full.fulfilment });
+            const status = ctx.order.status;
+            const awaiting = status === 'authorised';
+
+            // Guest name/avatar (provider view) and provider photo (guest view).
+            const [{ data: gProf }, { data: prov }] = await Promise.all([
+                full.guest_id
+                    ? admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', full.guest_id).maybeSingle()
+                    : Promise.resolve({ data: null }),
+                admin.from('service_providers').select('photos, headshot').eq('id', ctx.order.provider_id).maybeSingle(),
+            ]);
+            const guestName = gProf ? displayName(gProf, full.guest_name || 'Guest') : (full.guest_name || 'Guest');
+            const guestFirst = String(guestName).trim().split(' ')[0] || 'Guest';
+            const guestAvatar = (gProf && gProf.avatar_url) ? getImageUrl(String(gProf.avatar_url)) : null;
+            const provPhoto = (prov && Array.isArray(prov.photos) && prov.photos[0]) ? getImageUrl(String(prov.photos[0]))
+                : (prov && prov.headshot) ? getImageUrl(String(prov.headshot)) : null;
+
             const a = Number(full.adults) || 0, c = Number(full.children) || 0;
-            const party = (a > 0 || c > 0)
-                ? [a > 0 ? a + (a === 1 ? ' adult' : ' adults') : '', c > 0 ? c + (c === 1 ? ' child' : ' children') : ''].filter(Boolean).join(', ')
-                : (full.item_unit === 'person'
-                    ? (Number(full.quantity) || 1) + ((Number(full.quantity) || 1) === 1 ? ' place' : ' places')
-                    : null);
+            const party = (a > 0 || c > 0) ? (a + c) : (Number(full.attendees || full.quantity) || 1);
+            const itemName = ctx.order.item_name || full.item_name || ctx.business || 'Experience';
+
             const where = full.shape === 'comes_to_you'
                 ? (full.service_address ? (ctx.isGuest ? 'They come to ' + full.service_address : 'You go to ' + full.service_address) : (ctx.isGuest ? 'They come to you' : 'You go to the guest'))
                 : full.shape === 'made_to_order'
                     ? (loc.comesToCottage ? (full.service_address ? 'Delivery to ' + full.service_address : 'For delivery') : 'For collection')
                     : (loc.slotTravels ? 'They travel to you' : 'At the provider’s place');
+
+            const statusPill = status === 'confirmed' ? { label: 'Confirmed', tone: 'ok' }
+                : awaiting ? (ctx.isGuest ? { label: 'Requested', tone: 'wait' } : { label: 'Awaiting your confirmation', tone: 'wait' })
+                    : status === 'refunded' ? { label: 'Refunded', tone: 'over' }
+                        : status === 'cancelled' ? { label: 'Cancelled', tone: 'over' }
+                            : { label: String(status), tone: 'over' };
+
+            const refundRow = net.refunded > 0 ? [{ label: 'Refunded', value: '-' + formatGBP(net.refunded), muted: true }] : [];
+            let money: any = null;
+            let moneyNote: string | null = null;
+            if (ctx.isGuest) {
+                if (awaiting) moneyNote = 'Your card is held, not charged yet — the provider confirms to take payment.';
+                else money = {
+                    showMoney: true,
+                    total: formatGBP(net.gross - net.refunded),
+                    nightsLabel: 'What you paid',
+                    description: 'What you paid for this booking.',
+                    rows: [{ label: 'You paid', value: formatGBP(net.gross - net.refunded) }, ...refundRow],
+                };
+            } else {
+                if (awaiting) moneyNote = 'Their card is held, not charged — confirm the request to take the payment (' + formatGBP(net.gross) + ').';
+                else money = {
+                    showMoney: true,
+                    total: formatGBP(net.gross - net.refunded),
+                    nightsLabel: 'You keep ' + formatGBP(net.youGet),
+                    rows: [
+                        { label: 'Guest paid', value: formatGBP(net.gross - net.refunded) },
+                        ...refundRow,
+                        { label: 'Our fee (' + Math.round(net.rate * 100) + '%)', value: '-' + formatGBP(net.fee), muted: true },
+                        { label: 'You get', value: formatGBP(net.youGet) },
+                    ],
+                    working: 'Guest paid ' + formatGBP(net.gross - net.refunded) + ' − our ' + Math.round(net.rate * 100) + '% fee ' + formatGBP(net.fee) + ' = ' + formatGBP(net.youGet) + '.',
+                };
+            }
+
             reservation = {
                 reference: orderReference(full.id),
+                avatarUrl: ctx.isGuest ? null : guestAvatar,
+                initial: ctx.isGuest ? (ctx.business || 'G').slice(0, 1).toUpperCase() : guestFirst.slice(0, 1).toUpperCase(),
+                photoUrl: ctx.isGuest ? null : provPhoto,
+                heading: ctx.isGuest ? ctx.business : groupLabel(guestFirst, party),
                 whenLabel: whenLabel(full.shape, ctx.order.service_date, full.service_time),
+                itemName,
+                status: statusPill,
                 whenHeading: full.shape === 'made_to_order' ? 'Ready for' : 'When',
-                party,
                 where,
-                note: full.note || null,
-                allergy: full.allergy || null,
-                money: ctx.isGuest
-                    ? { show: true, rows: [{ label: 'You paid', value: formatGBP(net.gross - net.refunded) }], working: null }
-                    : {
-                        show: true,
-                        rows: [
-                            { label: 'Guest paid', value: formatGBP(net.gross - net.refunded) },
-                            { label: 'Our fee (' + Math.round(net.rate * 100) + '%)', value: '-' + formatGBP(net.fee), muted: true },
-                            { label: 'You get', value: formatGBP(net.youGet) },
-                        ],
-                        working: 'Guest paid ' + formatGBP(net.gross - net.refunded) + ' − our ' + Math.round(net.rate * 100) + '% fee ' + formatGBP(net.fee) + ' = ' + formatGBP(net.youGet) + '.',
-                    },
+                note: ctx.isGuest ? null : (full.note || null),
+                allergy: ctx.isGuest ? null : (full.allergy || null),
+                money,
+                moneyNote,
                 phone: ctx.isGuest ? null : (full.guest_phone || null),
+                personFirst: ctx.isGuest ? (ctx.otherName || '').split(' ')[0] : guestFirst,
             };
         }
 

@@ -4,6 +4,7 @@ import { formatGBP } from '@/lib/formatMoney';
 
 import { notify } from '@/lib/notify';
 import ConversationRow from '@/components/messages/ConversationRow';
+import ProviderReservationCard, { type ReservationCardData } from '@/components/services/ProviderReservationCard';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Link from 'next/link';
@@ -1011,65 +1012,42 @@ export default function MessagesInboxPage() {
         </div>
     ) : (
         // Order / enquiry thread: the reservation this thread is about, in the
-        // reservation-card's language (When / What / Party / Where / the money as
-        // its own card), viewer-aware, matching what the dashboard card shows.
+        // SAME card the holiday-let host page and the provider dashboard show, fed
+        // the viewer-aware shape from the thread route (a guest sees only what they
+        // paid). No Message button here — you are already in the thread.
         (() => {
             const c = (thread.context || {}) as any;
             const rez = c.reservation;
-            const dateStr = (() => {
-                const d = new Date(String(c.serviceDate || ''));
-                return isNaN(d.getTime()) ? String(c.serviceDate || '') : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
-            })();
-            const Line = ({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) => (
-                <div className="flex items-baseline justify-between gap-4 border-b border-slate-100 py-2 last:border-0">
-                    <span className="text-sm text-slate-500 flex-shrink-0">{label}</span>
-                    <span className={'text-right text-sm ' + (muted ? 'text-slate-500' : 'font-medium text-slate-900')}>{value}</span>
-                </div>
-            );
-            return (
-                <div className="h-full overflow-y-auto p-5 space-y-4">
-                    <div>
+            if (!rez) {
+                return (
+                    <div className="h-full overflow-y-auto p-5">
                         <div className="font-semibold text-slate-900">{c.business || (thread.other && thread.other.name) || 'Conversation'}</div>
                         {c.item && <div className="text-sm text-slate-500">{c.item}</div>}
-                        {rez && <div className="text-xs text-slate-400 mt-0.5">{rez.reference}</div>}
                     </div>
-
-                    <div className="rounded-2xl border border-slate-200 p-3">
-                        <Line label={rez ? rez.whenHeading : 'Date'} value={rez ? rez.whenLabel : dateStr} />
-                        {c.item && <Line label="What" value={c.item} />}
-                        {rez && rez.party && <Line label="Party" value={rez.party} />}
-                        {rez && rez.where && <Line label="Where" value={rez.where} />}
-                        {c.status && <Line label="Status" value={<span className="capitalize">{String(c.status).replace(/_/g, ' ')}</span>} muted />}
-                    </div>
-
-                    {rez && rez.allergy && (
-                        <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-3">
-                            <div className="text-xs font-bold uppercase tracking-wide text-rose-800">⚠ Allergy / dietary need</div>
-                            <div className="mt-1 whitespace-pre-line text-sm text-rose-950">{rez.allergy}</div>
-                        </div>
-                    )}
-                    {rez && rez.note && (
-                        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">In the guest’s words</div>
-                            <div className="mt-1 whitespace-pre-line text-sm text-amber-950">{rez.note}</div>
-                        </div>
-                    )}
-
-                    {rez && rez.money && rez.money.show && (
-                        <div className="rounded-2xl border border-slate-200 p-3">
-                            {rez.money.rows.map((m: any, i: number) => <Line key={i} label={m.label} value={m.value} muted={m.muted} />)}
-                            {rez.money.working && <p className="mt-2 text-xs text-slate-500">{rez.money.working}</p>}
-                        </div>
-                    )}
-                    {rez && rez.money && !rez.money.show && rez.money.note && (
-                        <div className="rounded-2xl border border-slate-200 p-3 text-sm text-slate-600">{rez.money.note}</div>
-                    )}
-
-                    {rez && rez.phone && (
-                        <a href={'tel:' + rez.phone} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                            Call
-                        </a>
-                    )}
+                );
+            }
+            const data: ReservationCardData = {
+                avatarUrl: rez.avatarUrl ?? null,
+                initial: rez.initial || '·',
+                photoUrl: rez.photoUrl ?? null,
+                heading: rez.heading || c.business || 'Reservation',
+                whenLabel: rez.whenLabel || '',
+                itemName: rez.itemName || c.item || '',
+                status: rez.status || null,
+                when: { heading: rez.whenHeading || 'When', value: rez.whenLabel || '' },
+                where: rez.where ?? null,
+                note: rez.note ?? null,
+                allergy: rez.allergy ?? null,
+                money: rez.money ?? null,
+                moneyNote: rez.moneyNote ?? null,
+                phone: rez.phone ?? null,
+                messageHref: null,
+                personFirst: rez.personFirst || '',
+            };
+            return (
+                <div className="h-full overflow-y-auto p-5">
+                    <ProviderReservationCard r={data} size="sm" />
+                    {rez.reference && <div className="mt-4 text-center text-xs text-slate-400">{rez.reference}</div>}
                 </div>
             );
         })()

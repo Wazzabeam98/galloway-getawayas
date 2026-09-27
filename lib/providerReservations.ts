@@ -20,7 +20,21 @@ import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 
 export type ReservationKind = 'slot' | 'comes_to_you' | 'made_to_order' | 'trade';
 
+// Structural mirrors of the reservation-card component types
+// (ReservationStatusPill's StatusTone and MoneyCards' MoneyCardsData). Declared
+// here rather than imported so this server lib — which the test build compiles —
+// never pulls in a .tsx component (tsc's test config has no --jsx). Structural
+// typing keeps them compatible when the card is fed this shape.
+export type StatusTone = 'ok' | 'wait' | 'over';
 export interface MoneyLine { label: string; value: string; muted?: boolean }
+export interface MoneyCardsData {
+    showMoney: boolean;
+    total: string;
+    nightsLabel: string;
+    working?: string;
+    rows: MoneyLine[];
+    description?: string;
+}
 
 export interface ProviderReservation {
     id: string;
@@ -43,7 +57,13 @@ export interface ProviderReservation {
     whereLabel: string | null;       // "At the studio" / "They travel to you…" / collection / delivery / cottage
     note: string | null;
     allergy: string | null;
-    money: { show: boolean; rows: MoneyLine[]; working: string | null; note: string | null };
+    // A status pill in the reservation-page family (ok / wait / over).
+    status: { label: string; tone: StatusTone };
+    // The money as one card that opens the full breakdown with our fee working
+    // (reuses MoneyCards) when there is money through us; otherwise a plain note
+    // (a trade paid off-platform, or a held request not yet confirmed).
+    money: MoneyCardsData | null;
+    moneyNote: string | null;
     phone: string | null;
     messageHref: string;
     needsReply: boolean;             // awaiting the provider's answer (a held request / an unanswered enquiry)
@@ -134,10 +154,12 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
             const first = String(name).trim().split(' ')[0] || 'Guest';
             const net = orderNet(o);
             const refundLine: MoneyLine[] = net.refunded > 0 ? [{ label: 'Refunded', value: '-' + formatGBP(net.refunded), muted: true }] : [];
-            const money = awaiting
-                ? { show: false, rows: [], working: null, note: 'Their card is held, not charged — confirm the request to take the payment (' + formatGBP(net.gross) + ').' }
+            const money: MoneyCardsData | null = awaiting
+                ? null
                 : {
-                    show: true,
+                    showMoney: true,
+                    total: formatGBP(net.gross - net.refunded),
+                    nightsLabel: 'You keep ' + formatGBP(net.youGet),
                     rows: [
                         { label: 'Guest paid', value: formatGBP(net.gross - net.refunded) },
                         ...refundLine,
@@ -145,8 +167,13 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
                         { label: 'You get', value: formatGBP(net.youGet) },
                     ],
                     working: 'Guest paid ' + formatGBP(net.gross - net.refunded) + ' − our ' + Math.round(net.rate * 100) + '% fee ' + formatGBP(net.fee) + ' = ' + formatGBP(net.youGet) + ', paid straight to your account.',
-                    note: 'Paid in full at booking.',
                 };
+            const moneyNote = awaiting
+                ? 'Their card is held, not charged — confirm the request to take the payment (' + formatGBP(net.gross) + ').'
+                : null;
+            const status: { label: string; tone: StatusTone } = awaiting
+                ? { label: 'Awaiting your confirmation', tone: 'wait' }
+                : { label: 'Confirmed', tone: 'ok' };
             return {
                 id: o.id,
                 kind: (o.shape as ReservationKind) || 'made_to_order',
@@ -166,7 +193,9 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
                 whereLabel: whereForOrder(o, provider.fulfilment ?? null),
                 note: o.note || null,
                 allergy: o.allergy || null,
+                status,
                 money,
+                moneyNote,
                 phone: o.guest_phone || null,
                 messageHref: '/messages?o=' + o.id,
                 needsReply: awaiting,
@@ -226,14 +255,13 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             whereLabel: l ? (l.title || 'the property') : 'the property',
             note: null,
             allergy: null,
-            money: {
-                show: false,
-                rows: [],
-                working: null,
-                note: needsReply
-                    ? 'A request to answer — reply to the owner, then agree the price and take payment directly.'
-                    : 'Agree the price and take payment directly — this job isn’t billed through Galloway Getaways.',
-            },
+            status: needsReply
+                ? { label: 'New request', tone: 'wait' as StatusTone }
+                : { label: 'Accepted', tone: 'ok' as StatusTone },
+            money: null,
+            moneyNote: needsReply
+                ? 'A request to answer — reply to the owner, then agree the price and take payment directly.'
+                : 'Agree the price and take payment directly — this job isn’t billed through Galloway Getaways.',
             phone: e.host_phone || null,
             messageHref: '/messages?e=' + e.id,
             needsReply,

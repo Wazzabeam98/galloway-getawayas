@@ -1,0 +1,105 @@
+'use client';
+
+// The provider's reservation, in the holiday-let host reservation page's style,
+// so a stay and an experience read as one product. Shared by the dashboard's
+// upcoming list (ProviderUpcoming) and the messages right-hand pane, fed the same
+// shape from either side, so the two can never drift.
+//
+// Top to bottom: the guest large and centred with the item photo tucked into its
+// corner, "Liam's group of 2", the date and time, the item, a status pill; then
+// cards in the same family — when and where side by side, the guest's note or
+// allergy where there is one, the money as one card that opens the full
+// breakdown (reusing MoneyCards, the host page's own money card), and Message /
+// Call. Each provider kind supplies its own wording (a class, a chef at a
+// cottage, a bakery order, a trade job).
+
+import { MessageSquare, Phone } from 'lucide-react';
+import ReservationHeader from '@/components/dashboard/reservation/ReservationHeader';
+import type { StatusTone } from '@/components/dashboard/reservation/ReservationStatusPill';
+import MoneyCards, { type MoneyCardsData } from '@/components/dashboard/reservation/MoneyCards';
+
+export interface ReservationCardData {
+    avatarUrl: string | null;
+    initial: string;
+    photoUrl: string | null;
+    heading: string;                 // "Liam's group of 2"
+    whenLabel: string;               // the date & time, per kind
+    itemName: string;                // what they booked / the job
+    status: { label: string; tone: StatusTone } | null;
+    when: { heading: string; value: string };
+    where: string | null;
+    note: string | null;
+    allergy: string | null;
+    money: MoneyCardsData | null;    // the money card when there is money through us
+    moneyNote: string | null;        // otherwise a plain note (off-platform / held)
+    phone: string | null;
+    messageHref: string | null;      // shows the Message button when set
+    personFirst: string;
+}
+
+const lifted = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]';
+
+function FactCard({ heading, children }: { heading: string; children: React.ReactNode }) {
+    return (
+        <div className={lifted}>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{heading}</div>
+            <div className="mt-1 text-sm font-medium text-slate-900">{children}</div>
+        </div>
+    );
+}
+
+export default function ProviderReservationCard({ r, size = 'lg' }: { r: ReservationCardData; size?: 'lg' | 'sm' }) {
+    return (
+        <div className="space-y-5">
+            <ReservationHeader
+                avatarUrl={r.avatarUrl}
+                initial={r.initial}
+                photoUrl={r.photoUrl}
+                heading={r.heading}
+                sublines={[r.whenLabel, r.itemName]}
+                status={r.status}
+                size={size}
+            />
+
+            {/* When and where, side by side (they stack in the narrow pane). */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FactCard heading={r.when.heading}>{r.when.value}</FactCard>
+                {r.where && <FactCard heading="Where">{r.where}</FactCard>}
+            </div>
+
+            {r.allergy && (
+                <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-4">
+                    <div className="text-xs font-bold uppercase tracking-wide text-rose-800">⚠ Allergy / dietary need</div>
+                    <div className="mt-1 whitespace-pre-line text-sm text-rose-950">{r.allergy}</div>
+                </div>
+            )}
+            {r.note && (
+                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">In the guest&rsquo;s words</div>
+                    <div className="mt-1 whitespace-pre-line text-sm text-amber-950">{r.note}</div>
+                </div>
+            )}
+
+            {r.money
+                ? <MoneyCards {...r.money} />
+                : r.moneyNote
+                    ? <div className={lifted + ' text-sm text-slate-600'}>{r.moneyNote}</div>
+                    : null}
+
+            {(r.messageHref || r.phone) && (
+                <div className="flex gap-2">
+                    {r.messageHref && (
+                        <a href={r.messageHref} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">
+                            <MessageSquare className="h-4 w-4" /> Message {r.personFirst}
+                        </a>
+                    )}
+                    {r.phone && (
+                        <a href={'tel:' + r.phone} className={'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500' + (r.messageHref ? '' : ' flex-1')}>
+                            <Phone className="h-4 w-4" /> Call
+                        </a>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}

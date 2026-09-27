@@ -20,6 +20,10 @@ export interface MoneyCardsData {
     nightsLabel: string;    // "Total for 3 nights"
     working?: string;       // "Guest paid £480.00 − our 10% fee £48.00 = £432.00"
     rows: MoneyDetailRow[]; // the full breakdown, shown in the pop-up
+    // The pop-up's subtitle. Defaults to the host/provider wording; a guest,
+    // who is only shown what they paid, passes their own so the pop-up never
+    // mentions a fee that is not theirs.
+    description?: string;
 }
 
 function Rows({ rows }: { rows: MoneyDetailRow[] }) {
@@ -53,7 +57,7 @@ export default function MoneyCards(props: MoneyCardsData) {
     return (
         <Modal
             title="Money"
-            description="What the guest paid, our fee, and when you’re paid."
+            description={props.description || 'What the guest paid, our fee, and when you’re paid.'}
             trigger={
                 <button type="button" className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300">
                     <span className="min-w-0 text-base font-semibold text-slate-900">

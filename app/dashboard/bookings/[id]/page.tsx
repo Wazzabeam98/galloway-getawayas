@@ -20,9 +20,10 @@ import CancellationPolicyCard from "@/components/dashboard/reservation/Cancellat
 import MoneyCards, { type MoneyCardsData, type MoneyDetailRow } from "@/components/dashboard/reservation/MoneyCards";
 import ManageReservationSheet from "@/components/dashboard/reservation/ManageReservationSheet";
 import {
-    ArrowLeft, MessageSquare, Phone, CheckCircle2, Clock3, XCircle,
+    ArrowLeft, MessageSquare, Phone,
     ChevronRight,
 } from "lucide-react";
+import ReservationHeader from "@/components/dashboard/reservation/ReservationHeader";
 
 // One booking, in full.
 //
@@ -46,12 +47,6 @@ const STATUS: Record<string, { label: string; tone: 'ok' | 'wait' | 'over' }> = 
     declined: { label: 'Declined', tone: 'over' },
     cancelled: { label: 'Cancelled', tone: 'over' },
 };
-const PILL: Record<string, string> = {
-    ok: 'bg-emerald-100 text-emerald-800',
-    wait: 'bg-amber-100 text-amber-800',
-    over: 'bg-slate-200 text-slate-600',
-};
-
 function weekday(dateStr: string): string {
     const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
     return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { weekday: 'long' });
@@ -508,32 +503,20 @@ export default async function BookingDetail({ params }: { params: { id: string }
                         {/* Airbnb-style header: the guest large and centred (their
                             initial on a soft green circle when there's no photo), with
                             the property photo tucked into the bottom-right corner; then
-                            who's coming, the dates and nights, and the place. */}
-                        <div className="flex flex-col items-center text-center">
-                            <div className="relative">
-                                {guestAvatar ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={guestAvatar} alt={guestName} className="h-24 w-24 rounded-full object-cover ring-1 ring-slate-200" />
-                                ) : (
-                                    <span className="flex h-24 w-24 items-center justify-center rounded-full bg-emerald-50 text-3xl font-semibold text-emerald-700">{firstName.slice(0, 1).toUpperCase()}</span>
-                                )}
-                                {hero ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={hero} alt={listing?.title || ''} className="absolute -bottom-1 -right-1 h-11 w-11 rounded-xl object-cover ring-2 ring-slate-50" />
-                                ) : (
-                                    <span className="absolute -bottom-1 -right-1 h-11 w-11 rounded-xl bg-slate-100 ring-2 ring-slate-50" />
-                                )}
-                            </div>
-                            <h1 className="mt-4 text-2xl font-semibold tracking-tight text-slate-900">{headerGroup}</h1>
-                            <p className="mt-1 text-sm text-slate-500">{nightRange(booking.check_in, booking.check_out)} · {nights} {nights === 1 ? 'night' : 'nights'}</p>
-                            <p className="text-sm text-slate-500">{listing?.title || 'Booking'}</p>
-                            <span className={`mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
-                                {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
-                                {meta.tone === 'wait' && <Clock3 className="h-3 w-3" />}
-                                {meta.tone === 'over' && <XCircle className="h-3 w-3" />}
-                                {meta.label}
-                            </span>
-                        </div>
+                            who's coming, the dates and nights, and the place. Shared with
+                            the provider's reservation card (ReservationHeader) so a stay
+                            and an experience read as one product from either side. */}
+                        <ReservationHeader
+                            avatarUrl={guestAvatar}
+                            initial={firstName.slice(0, 1).toUpperCase()}
+                            photoUrl={hero}
+                            heading={headerGroup}
+                            sublines={[
+                                `${nightRange(booking.check_in, booking.check_out)} · ${nights} ${nights === 1 ? 'night' : 'nights'}`,
+                                listing?.title || 'Booking',
+                            ]}
+                            status={{ label: meta.label, tone: meta.tone }}
+                        />
 
                         {/* The booking column matches the guest trip card and Airbnb's
                             host view, top to bottom: the dates, the door code, hosted

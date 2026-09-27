@@ -10,26 +10,9 @@
 // Money is pre-formatted server-side (strings), same rule as MoneyCards.
 
 import { useState } from 'react';
-import { Phone, MessageSquare, ChevronRight, ArrowLeft, CalendarDays } from 'lucide-react';
+import { ChevronRight, ArrowLeft, CalendarDays } from 'lucide-react';
 import type { ProviderReservation } from '@/lib/providerReservations';
-
-function Row({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) {
-    return (
-        <div className="flex items-baseline justify-between gap-6 border-b border-slate-100 py-2 last:border-0">
-            <div className="text-sm text-slate-500">{label}</div>
-            <div className={'text-right text-sm ' + (muted ? 'text-slate-500' : 'font-medium text-slate-900')}>{value}</div>
-        </div>
-    );
-}
-
-function DetailCard({ title, children }: { title: string; children: React.ReactNode }) {
-    return (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">{title}</h3>
-            {children}
-        </div>
-    );
-}
+import ProviderReservationCard, { type ReservationCardData } from '@/components/services/ProviderReservationCard';
 
 function initials(name: string): string {
     const p = String(name || '').trim().split(/\s+/).filter(Boolean);
@@ -56,58 +39,32 @@ function AvatarOverPhoto({ r, size = 'sm' }: { r: ProviderReservation; size?: 's
     );
 }
 
+// Map the normalised reservation to the shared card's shape. The card is the
+// holiday-let host reservation page's own layout (ReservationHeader + lifted
+// when/where cards + MoneyCards), so the provider side stays in step with it.
+function toCardData(r: ProviderReservation): ReservationCardData {
+    return {
+        avatarUrl: r.avatarUrl,
+        initial: (r.personFirst || '·').slice(0, 1).toUpperCase(),
+        photoUrl: r.photoUrl,
+        heading: r.groupLabel,
+        whenLabel: r.whenLabel,
+        itemName: r.title,
+        status: r.status,
+        when: { heading: r.whenHeading, value: r.whenLabel },
+        where: r.whereLabel,
+        note: r.note,
+        allergy: r.allergy,
+        money: r.money,
+        moneyNote: r.moneyNote,
+        phone: r.phone,
+        messageHref: r.messageHref,
+        personFirst: r.personFirst,
+    };
+}
+
 function ReservationCard({ r }: { r: ProviderReservation }) {
-    return (
-        <div className="space-y-4">
-            <div className="flex items-center gap-3">
-                <AvatarOverPhoto r={r} size="lg" />
-                <div className="min-w-0">
-                    <div className="truncate text-lg font-semibold text-slate-900">{r.groupLabel}</div>
-                    <div className="text-sm text-slate-500">{r.reference}</div>
-                </div>
-            </div>
-
-            <DetailCard title={r.kind === 'trade' ? 'Job' : 'Booking'}>
-                <Row label={r.whenHeading} value={r.whenLabel} />
-                <Row label={r.kind === 'trade' ? 'What they need' : 'What they booked'} value={r.title} />
-                {r.partyLabel && <Row label="Party" value={r.partyLabel} />}
-                {r.whereLabel && <Row label={r.kind === 'trade' ? 'Property' : 'Where'} value={r.whereLabel} />}
-            </DetailCard>
-
-            {r.allergy && (
-                <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-4">
-                    <div className="text-xs font-bold uppercase tracking-wide text-rose-800">⚠ Allergy / dietary need</div>
-                    <div className="mt-1 whitespace-pre-line text-sm text-rose-950">{r.allergy}</div>
-                </div>
-            )}
-            {r.note && (
-                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">In the guest’s words</div>
-                    <div className="mt-1 whitespace-pre-line text-sm text-amber-950">{r.note}</div>
-                </div>
-            )}
-
-            <DetailCard title="Money">
-                {r.money.show
-                    ? <>
-                        {r.money.rows.map((m, i) => <Row key={i} label={m.label} value={m.value} muted={m.muted} />)}
-                        {r.money.working && <p className="mt-2 text-xs text-slate-500">{r.money.working}</p>}
-                    </>
-                    : <p className="text-sm text-slate-600">{r.money.note}</p>}
-            </DetailCard>
-
-            <div className="flex gap-2">
-                <a href={r.messageHref} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">
-                    <MessageSquare className="h-4 w-4" /> Message {r.personFirst}
-                </a>
-                {r.phone && (
-                    <a href={'tel:' + r.phone} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                        <Phone className="h-4 w-4" /> Call
-                    </a>
-                )}
-            </div>
-        </div>
-    );
+    return <ProviderReservationCard r={toCardData(r)} />;
 }
 
 type Filter = 'all' | 'today' | 'week' | 'reply';

@@ -6,6 +6,7 @@ import { logError } from '@/lib/logError';
 import { enquiryThreadContext } from '@/lib/enquiryThreads';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
+import { displayName, getImageUrl } from '@/lib/utils';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 
@@ -47,10 +48,61 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
             .is('read_at', null);
 
         let cottage: string | null = null;
+        let cottageImage: string | null = null;
         if (ctx.enquiry.listing_id) {
-            const { data: l } = await admin.from('listings').select('title').eq('id', ctx.enquiry.listing_id).maybeSingle();
+            const { data: l } = await admin.from('listings').select('title, images').eq('id', ctx.enquiry.listing_id).maybeSingle();
             cottage = (l && l.title) || null;
+            cottageImage = (l && Array.isArray(l.images) && l.images[0]) ? getImageUrl(String(l.images[0])) : null;
         }
+
+        // Host name/avatar (provider view) and host phone (released on accept), for
+        // the reservation card beside the thread — the holiday-let host page's own
+        // layout, so a job reads like a stay. A trade job is "asked for", at a
+        // cottage, and paid off-platform (a note, not a fee card).
+        const status = ctx.enquiry.status;
+        const accepted = status === 'accepted';
+        const needsReply = status === 'sent' || status === 'viewed';
+        const [{ data: hostProf }, { data: eRow }] = await Promise.all([
+            ctx.enquiry.host_id
+                ? admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', ctx.enquiry.host_id).maybeSingle()
+                : Promise.resolve({ data: null }),
+            admin.from('service_enquiries').select('host_phone').eq('id', params.enquiryId).maybeSingle(),
+        ]);
+        const hostName = hostProf ? displayName(hostProf, ctx.enquiry.host_name || 'The owner') : (ctx.enquiry.host_name || 'The owner');
+        const hostFirst = String(hostName).trim().split(' ')[0] || 'the owner';
+        const hostAvatar = (hostProf && hostProf.avatar_url) ? getImageUrl(String(hostProf.avatar_url)) : null;
+        const business = String((ctx.provider && ctx.provider.business_name) || ctx.enquiry.business_name || 'The tradesman');
+
+        const statusPill = accepted ? { label: 'Accepted', tone: 'ok' }
+            : needsReply ? (ctx.isHost ? { label: 'Sent', tone: 'wait' } : { label: 'New request', tone: 'wait' })
+                : status === 'cancelled' ? { label: 'Cancelled', tone: 'over' }
+                    : status === 'declined' ? { label: 'Declined', tone: 'over' }
+                        : { label: String(status), tone: 'over' };
+
+        const moneyNote = ctx.isHost
+            ? 'Agreed and paid directly — this job isn’t billed through Galloway Getaways.'
+            : needsReply
+                ? 'A request to answer — reply to the owner, then agree the price and take payment directly.'
+                : 'Agree the price and take payment directly — this job isn’t billed through Galloway Getaways.';
+
+        const reservation = {
+            reference: ctx.enquiry.reference,
+            avatarUrl: ctx.isHost ? null : hostAvatar,
+            initial: (ctx.isHost ? business : hostFirst).slice(0, 1).toUpperCase(),
+            photoUrl: cottageImage,
+            heading: ctx.isHost ? business : hostName,
+            whenLabel: requestedWhen(ctx.enquiry) || 'A date still to agree',
+            itemName: ctx.enquiry.summary || 'Job',
+            status: statusPill,
+            whenHeading: 'Asked for',
+            where: cottage || 'the property',
+            note: null,
+            allergy: null,
+            money: null,
+            moneyNote,
+            phone: (!ctx.isHost && accepted && eRow && eRow.host_phone) ? eRow.host_phone : null,
+            personFirst: ctx.isHost ? business.split(' ')[0] : hostFirst,
+        };
 
         return NextResponse.json({
             ok: true,
@@ -67,19 +119,7 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
                 cancelled: ctx.enquiry.status === 'cancelled'
                     ? { by: ctx.enquiry.cancelled_by, reason: ctx.enquiry.cancel_reason }
                     : null,
-                // The reservation card beside the thread — a trade job is
-                // "asked for", at a cottage, and paid off-platform (no fee card).
-                reservation: {
-                    reference: ctx.enquiry.reference,
-                    whenHeading: 'Asked for',
-                    whenLabel: requestedWhen(ctx.enquiry) || 'A date still to agree',
-                    party: null,
-                    where: cottage || 'the property',
-                    note: null,
-                    allergy: null,
-                    money: { show: false, rows: [], working: null, note: 'Agreed and paid directly — this job isn’t billed through Galloway Getaways.' },
-                    phone: null,
-                },
+                reservation,
             },
             messages: messages || [],
         });
