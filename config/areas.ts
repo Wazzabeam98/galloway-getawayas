@@ -100,9 +100,10 @@ export const AREAS: Area[] = [
         slug: "kirkcudbright",
         name: "Kirkcudbright",
         townKeys: ["kirkcudbright"],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Published: the first area off hold — copy checked live, so the page is
+        // indexable and in the sitemap. Every other area stays on hold until its
+        // own copy is checked.
+        hold: false,
         intro: [
             "Kirkcudbright — say it kur-KOO-bree — has been called the Artists’ Town since the late nineteenth century, when a colony of painters settled here for the quality of the light coming off the Dee estuary. They never really left. The town is still full of galleries, studios and independent shops, with Broughton House, Kirkcudbright Galleries and the Tolbooth Art Centre all within a few minutes’ walk of each other.",
             "It is a working harbour town rather than a museum piece. Boats still land scallops and shellfish, the streets are lined with pastel-painted houses, and MacLellan’s Castle sits in the middle of it all, roofless since the 1700s. There is a riverside walk along the Dee, a beach at Dhoon a few minutes out of town, and a summer programme of art trails, festivals and the floodlit tattoo.",
@@ -111,8 +112,8 @@ export const AREAS: Area[] = [
         metaDescription: "Scotland’s Artists’ Town, on the River Dee. Pastel houses, a working harbour, and a light that has drawn painters here for two hundred years.",
         thingsToDo: [
             "The town is the attraction. Broughton House on the High Street was the home of the artist E A Hornel and has a Japanese-inspired garden running down to the Dee — worth an hour on its own. Kirkcudbright Galleries, in the converted town hall, holds the town’s art collection and changes its exhibitions through the year, and the Tolbooth Art Centre sits in a seventeenth-century building that was once the jail. MacLellan’s Castle is roofless and free to wander when it’s open.",
-            "Beyond the galleries, walk the riverside path along the Dee, or drive ten minutes to Dhoon Bay for the beach. The harbour still lands shellfish, and the town’s summer programme runs from the art and crafts trail in the spring through to the floodlit tattoo.",
-            "Cream o’ Galloway is twenty minutes west if you have children with you, and Threave and Castle Douglas are fifteen minutes the other way.",
+            "Beyond the galleries, walk the riverside path along the Dee, or head to Dhoon Bay, a few minutes out of town, for the beach. The harbour still lands shellfish, and the town’s summer programme runs from the art and crafts trail in the spring through to the floodlit tattoo.",
+            "The Cocoabean Company at Twynholm is about ten to fifteen minutes away if you have children with you, and Threave and Castle Douglas are fifteen minutes the other way.",
         ],
         gettingThere: [
             "Kirkcudbright is about 28 miles west of Dumfries, a few minutes south off the A75. From the border at Gretna it is roughly an hour and a quarter, straight along the A75 the whole way. Carlisle adds about fifteen minutes to that, Glasgow is around two hours, and Edinburgh a little over two.",
