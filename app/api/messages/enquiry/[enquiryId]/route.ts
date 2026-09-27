@@ -61,11 +61,25 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
                 status: ctx.enquiry.status,
                 trade: tradeLabel(ctx.enquiry.trade),
                 summary: ctx.enquiry.summary,
+                item: ctx.enquiry.summary,
                 askedFor: requestedWhen(ctx.enquiry),
                 cottage,
                 cancelled: ctx.enquiry.status === 'cancelled'
                     ? { by: ctx.enquiry.cancelled_by, reason: ctx.enquiry.cancel_reason }
                     : null,
+                // The reservation card beside the thread — a trade job is
+                // "asked for", at a cottage, and paid off-platform (no fee card).
+                reservation: {
+                    reference: ctx.enquiry.reference,
+                    whenHeading: 'Asked for',
+                    whenLabel: requestedWhen(ctx.enquiry) || 'A date still to agree',
+                    party: null,
+                    where: cottage || 'the property',
+                    note: null,
+                    allergy: null,
+                    money: { show: false, rows: [], working: null, note: 'Agreed and paid directly — this job isn’t billed through Galloway Getaways.' },
+                    phone: null,
+                },
             },
             messages: messages || [],
         });

@@ -338,7 +338,7 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
                         same surface the inbox links to — not a panel inside the
                         calendar. The thread masks the guest's address and emails
                         them a link back. */}
-                    <Link href={`/services/messages/order/${o.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"><MessageSquare className="h-4 w-4" />Message</Link>
+                    <Link href={`/messages?o=${o.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"><MessageSquare className="h-4 w-4" />Message</Link>
                     <button type="button" disabled={busy === o.id} onClick={() => refund(o.id)} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-red-600 disabled:opacity-60"><Trash2 className="h-4 w-4" />{busy === o.id ? 'Refunding…' : 'Cancel & refund'}</button>
                 </div>
             </div>

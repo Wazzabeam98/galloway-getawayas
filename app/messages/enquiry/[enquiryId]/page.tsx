@@ -1,29 +1,10 @@
+import { redirect } from 'next/navigation';
+
 export const dynamic = 'force-dynamic';
 
-import { redirect } from 'next/navigation';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
-import { adminClient } from '@/lib/supabaseAdmin';
-import { enquiryThreadContext } from '@/lib/enquiryThreads';
-import EnquiryThread from '@/components/services/EnquiryThread';
-
-export const metadata = {
-    title: 'Job messages',
-    robots: { index: false, follow: false },
-};
-
-export default async function EnquiryThreadPage({ params }: { params: { enquiryId: string } }) {
-    const supabase = createServerComponentClient({ cookies });
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) redirect('/');
-
-    const admin = adminClient();
-    const ctx = await enquiryThreadContext(admin, params.enquiryId, user.id);
-    if (!ctx) redirect('/');
-
-    // Back to wherever this side finds their threads: the tradesman's job
-    // messages list, or the host's enquiries.
-    const backHref = ctx.isProvider ? '/services/messages' : '/dashboard/enquiries';
-
-    return <EnquiryThread enquiryId={params.enquiryId} backHref={backHref} />;
+// Folded into the three-pane messages inbox: a job thread now opens at
+// /messages?e=<id> with its reservation card on the right. Kept as a redirect so
+// old links (emails, bookmarks) still land in the right place.
+export default function EnquiryThreadRedirect({ params }: { params: { enquiryId: string } }) {
+    redirect('/messages?e=' + params.enquiryId);
 }

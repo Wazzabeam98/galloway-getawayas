@@ -46,6 +46,8 @@ export interface ProviderReservation {
     money: { show: boolean; rows: MoneyLine[]; working: string | null; note: string | null };
     phone: string | null;
     messageHref: string;
+    needsReply: boolean;             // awaiting the provider's answer (a held request / an unanswered enquiry)
+    inWeek: boolean;                 // dated within the next 7 days (for the "This week" filter)
 }
 
 export interface ProviderReservationsResult {
@@ -125,13 +127,26 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
     const providerPhoto = (Array.isArray(provider.photos) && provider.photos[0]) ? getImageUrl(String(provider.photos[0])) : null;
 
     const reservations: ProviderReservation[] = rows
-        .filter((o: any) => o.status === 'confirmed')
         .map((o: any) => {
+            const awaiting = o.status === 'authorised';   // a held request the provider hasn't confirmed
             const prof = o.guest_id ? profiles[o.guest_id] : null;
             const name = prof ? displayName(prof, o.guest_name || 'Guest') : (o.guest_name || 'Guest');
             const first = String(name).trim().split(' ')[0] || 'Guest';
             const net = orderNet(o);
             const refundLine: MoneyLine[] = net.refunded > 0 ? [{ label: 'Refunded', value: '-' + formatGBP(net.refunded), muted: true }] : [];
+            const money = awaiting
+                ? { show: false, rows: [], working: null, note: 'Their card is held, not charged — confirm the request to take the payment (' + formatGBP(net.gross) + ').' }
+                : {
+                    show: true,
+                    rows: [
+                        { label: 'Guest paid', value: formatGBP(net.gross - net.refunded) },
+                        ...refundLine,
+                        { label: 'Our fee (' + Math.round(net.rate * 100) + '%)', value: '-' + formatGBP(net.fee), muted: true },
+                        { label: 'You get', value: formatGBP(net.youGet) },
+                    ],
+                    working: 'Guest paid ' + formatGBP(net.gross - net.refunded) + ' − our ' + Math.round(net.rate * 100) + '% fee ' + formatGBP(net.fee) + ' = ' + formatGBP(net.youGet) + ', paid straight to your account.',
+                    note: 'Paid in full at booking.',
+                };
             return {
                 id: o.id,
                 kind: (o.shape as ReservationKind) || 'made_to_order',
@@ -151,19 +166,11 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
                 whereLabel: whereForOrder(o, provider.fulfilment ?? null),
                 note: o.note || null,
                 allergy: o.allergy || null,
-                money: {
-                    show: true,
-                    rows: [
-                        { label: 'Guest paid', value: formatGBP(net.gross - net.refunded) },
-                        ...refundLine,
-                        { label: 'Our fee (' + Math.round(net.rate * 100) + '%)', value: '-' + formatGBP(net.fee), muted: true },
-                        { label: 'You get', value: formatGBP(net.youGet) },
-                    ],
-                    working: 'Guest paid ' + formatGBP(net.gross - net.refunded) + ' − our ' + Math.round(net.rate * 100) + '% fee ' + formatGBP(net.fee) + ' = ' + formatGBP(net.youGet) + ', paid straight to your account.',
-                    note: 'Paid in full at booking.',
-                },
+                money,
                 phone: o.guest_phone || null,
-                messageHref: '/services/messages/order/' + o.id,
+                messageHref: '/messages?o=' + o.id,
+                needsReply: awaiting,
+                inWeek: String(o.service_date).slice(0,10) >= today && String(o.service_date).slice(0,10) <= weekEnd,
             } as ProviderReservation;
         });
 
@@ -184,16 +191,19 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
         .eq('provider_id', provider.id)
         .order('preferred_date', { ascending: true });
 
+    // Accepted jobs still ahead, plus requests still to answer (needs a reply).
     const accepted = (enquiries || []).filter((e: any) => e.status === 'accepted' && (!e.preferred_date || String(e.preferred_date).slice(0, 10) >= today));
+    const toAnswer = (enquiries || []).filter((e: any) => e.status === 'sent' || e.status === 'viewed');
+    const relevant = [...toAnswer, ...accepted];
 
-    const listingIds = Array.from(new Set(accepted.map((e: any) => e.listing_id).filter(Boolean)));
+    const listingIds = Array.from(new Set(relevant.map((e: any) => e.listing_id).filter(Boolean)));
     const listings: Record<string, any> = {};
     if (listingIds.length) {
         const { data: ls } = await admin.from('listings').select('id, title, location, images').in('id', listingIds);
         (ls || []).forEach((l: any) => { listings[l.id] = l; });
     }
 
-    const reservations: ProviderReservation[] = accepted.map((e: any) => {
+    const mapEnquiry = (e: any, needsReply: boolean): ProviderReservation => {
         const dateKey = e.preferred_date ? String(e.preferred_date).slice(0, 10) : '';
         const l = e.listing_id ? listings[e.listing_id] : null;
         const hostFirst = String(e.host_name || '').trim().split(' ')[0] || 'the owner';
@@ -220,12 +230,21 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
                 show: false,
                 rows: [],
                 working: null,
-                note: 'Agree the price and take payment directly — this job isn’t billed through Galloway Getaways.',
+                note: needsReply
+                    ? 'A request to answer — reply to the owner, then agree the price and take payment directly.'
+                    : 'Agree the price and take payment directly — this job isn’t billed through Galloway Getaways.',
             },
             phone: e.host_phone || null,
-            messageHref: '/messages/enquiry/' + e.id,
-        } as ProviderReservation;
-    });
+            messageHref: '/messages?e=' + e.id,
+            needsReply,
+            inWeek: !!dateKey && dateKey >= today && dateKey <= weekEnd,
+        };
+    };
+
+    const reservations: ProviderReservation[] = [
+        ...toAnswer.map((e: any) => mapEnquiry(e, true)),
+        ...accepted.map((e: any) => mapEnquiry(e, false)),
+    ];
 
     const summary = {
         today: reservations.filter((r) => r.dateKey === today).length,

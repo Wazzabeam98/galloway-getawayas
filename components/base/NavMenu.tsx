@@ -151,10 +151,10 @@ const NavMenu = ({
                                         what they're doing (providing), not "trips". Their
                                         own travel stays reachable as "Your trips" below. */}
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard#upcoming'>Your reservations</Link>
+                                        <Link href='/services/dashboard'>Your reservations</Link>
                                     </li>
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard'>Calendar</Link>
+                                        <Link href='/services/dashboard/calendar'>Calendar</Link>
                                     </li>
                                     {isGuestProvider ? (
                                         /* Booked-and-paid through us: money and the
@@ -174,7 +174,7 @@ const NavMenu = ({
                                         threads — a home they can navigate to so a
                                         thread is never a lost email. */}
                                     <li className={itemClass}>
-                                        <Link href='/services/messages'>Messages</Link>
+                                        <Link href='/messages'>Messages</Link>
                                     </li>
                                     {/* A provider is a traveller too: their own
                                         stays and booked experiences, one place. */}

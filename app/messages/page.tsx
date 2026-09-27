@@ -129,6 +129,10 @@ export default function MessagesInboxPage() {
             // link, so the one conversation for that order opens here rather than
             // in a second thread on that page.
             const wantedOrder = params.get('o');
+            // ?e=<enquiryId>: a Message button on a trade job (host or provider
+            // side), so the three-pane opens on that enquiry rather than the old
+            // single-thread page.
+            const wantedEnquiry = params.get('e');
             const draft = params.get('draft');
             if (draft) setText(draft);
 
@@ -136,7 +140,9 @@ export default function MessagesInboxPage() {
                 ? convos.find((c: any) => c.bookingId === wanted)
                 : wantedOrder
                     ? convos.find((c: any) => c.kind === 'order' && c.id === wantedOrder)
-                    : null;
+                    : wantedEnquiry
+                        ? convos.find((c: any) => c.kind === 'enquiry' && c.id === wantedEnquiry)
+                        : null;
 
             // Something archived is out of the inbox, so the row for it would
             // not be in the list beside the thread. Show the archive instead
@@ -1054,6 +1060,9 @@ export default function MessagesInboxPage() {
                             {rez.money.rows.map((m: any, i: number) => <Line key={i} label={m.label} value={m.value} muted={m.muted} />)}
                             {rez.money.working && <p className="mt-2 text-xs text-slate-500">{rez.money.working}</p>}
                         </div>
+                    )}
+                    {rez && rez.money && !rez.money.show && rez.money.note && (
+                        <div className="rounded-2xl border border-slate-200 p-3 text-sm text-slate-600">{rez.money.note}</div>
                     )}
 
                     {rez && rez.phone && (

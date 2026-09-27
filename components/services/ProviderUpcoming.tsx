@@ -110,41 +110,78 @@ function ReservationCard({ r }: { r: ProviderReservation }) {
     );
 }
 
-function SummaryChips({ s }: { s: { today: number; thisWeek: number; needsReply: number } }) {
-    const chip = (label: string, n: number, tone: string) => (
-        <div className={'rounded-2xl border p-3 ' + tone}>
-            <div className="text-2xl font-bold text-slate-900">{n}</div>
-            <div className="text-xs font-medium text-slate-500">{label}</div>
-        </div>
-    );
+type Filter = 'all' | 'today' | 'week' | 'reply';
+
+function SummaryChips({ s, filter, onPick }: { s: { today: number; thisWeek: number; needsReply: number }; filter: Filter; onPick: (f: Filter) => void }) {
+    const chip = (key: Filter, label: string, n: number, amber?: boolean) => {
+        const active = filter === key;
+        return (
+            <button
+                type="button"
+                onClick={() => onPick(active ? 'all' : key)}
+                aria-pressed={active}
+                className={'rounded-2xl border p-3 text-left transition '
+                    + (active ? 'border-emerald-600 ring-1 ring-emerald-600 bg-emerald-50 '
+                        : (amber && n > 0 ? 'border-amber-300 bg-amber-50 hover:border-amber-400 ' : 'border-slate-200 bg-white hover:border-slate-300 '))}
+            >
+                <div className="text-2xl font-bold text-slate-900">{n}</div>
+                <div className="text-xs font-medium text-slate-500">{label}</div>
+            </button>
+        );
+    };
     return (
         <div className="grid grid-cols-3 gap-3">
-            {chip('Today', s.today, 'border-slate-200 bg-white')}
-            {chip('This week', s.thisWeek, 'border-slate-200 bg-white')}
-            {chip('Needs a reply', s.needsReply, s.needsReply > 0 ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white')}
+            {chip('today', 'Today', s.today)}
+            {chip('week', 'This week', s.thisWeek)}
+            {chip('reply', 'Needs a reply', s.needsReply, true)}
         </div>
     );
 }
 
 export default function ProviderUpcoming({ reservations, summary }: { reservations: ProviderReservation[]; summary: { today: number; thisWeek: number; needsReply: number } }) {
-    const [selectedId, setSelectedId] = useState<string | null>(reservations[0]?.id ?? null);
+    const [filter, setFilter] = useState<Filter>('all');
     const [mobileOpen, setMobileOpen] = useState(false);
-    const selected = reservations.find((r) => r.id === selectedId) || reservations[0] || null;
+
+    const matches = (r: ProviderReservation, f: Filter) => {
+        if (f === 'today') return r.soon === 'Today';
+        if (f === 'week') return r.inWeek;
+        if (f === 'reply') return r.needsReply;
+        return true;
+    };
+    const filtered = reservations.filter((r) => matches(r, filter));
+
+    const [selectedId, setSelectedId] = useState<string | null>(reservations[0]?.id ?? null);
+    const selected = filtered.find((r) => r.id === selectedId) || filtered[0] || null;
+
+    const pick = (f: Filter) => {
+        setFilter(f);
+        const first = reservations.filter((r) => matches(r, f))[0];
+        if (first) setSelectedId(first.id);
+    };
+
+    const filterLabel = filter === 'today' ? 'today' : filter === 'week' ? 'this week' : filter === 'reply' ? 'needing a reply' : '';
 
     return (
         <section id="upcoming" className="space-y-4">
             <h2 className="text-lg font-semibold text-slate-900">Upcoming reservations</h2>
-            <SummaryChips s={summary} />
+            <SummaryChips s={summary} filter={filter} onPick={pick} />
 
-            {reservations.length === 0 ? (
+            {filter !== 'all' && (
+                <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500">Showing {filtered.length} {filterLabel}</span>
+                    <button type="button" onClick={() => setFilter('all')} className="font-semibold text-emerald-700 underline">Show all</button>
+                </div>
+            )}
+
+            {filtered.length === 0 ? (
                 <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
-                    Nothing coming up.
+                    {filter === 'all' ? 'Nothing coming up.' : 'Nothing ' + filterLabel + '.'}
                 </div>
             ) : (
                 <div className="grid gap-4 lg:grid-cols-[20rem_1fr]">
                     {/* The list. Hidden on mobile once a row is opened. */}
                     <div className={(mobileOpen ? 'hidden ' : '') + 'lg:block space-y-2'}>
-                        {reservations.map((r) => {
+                        {filtered.map((r) => {
                             const active = selected && r.id === selected.id;
                             return (
                                 <button
@@ -157,6 +194,7 @@ export default function ProviderUpcoming({ reservations, summary }: { reservatio
                                     <AvatarOverPhoto r={r} />
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2">
+                                            {r.needsReply && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Needs reply</span>}
                                             {r.soon && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-900">{r.soon}</span>}
                                             <span className="truncate text-[13px] text-slate-500">{r.whenLabel}</span>
                                         </div>
