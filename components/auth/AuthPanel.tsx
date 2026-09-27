@@ -72,9 +72,6 @@ export default function AuthPanel({
         if (status === 429 || /rate limit/i.test(message)) {
             return 'We could not send your confirmation email just now — too many have gone out from the site in the last hour. Nothing is wrong with your details. Please try again a little later.';
         }
-        if (/already registered|already been registered/i.test(message)) {
-            return 'There is already an account with that email address. Switch to “Log in” instead, or use “Forgotten your password?”.';
-        }
         if (/password/i.test(message)) return message;
         if (!message) return 'Something went wrong reaching the server, so your account was not created. Please check your connection and try again.';
         return message;
@@ -123,7 +120,23 @@ export default function AuthPanel({
                     emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
                 },
             });
-            if (signUpError) { setBusy(false); setError(explainSignup(signUpError)); return; }
+            if (signUpError) {
+                setBusy(false);
+                // Never reveal whether an email is already registered — that turns
+                // sign-up into an account-enumeration oracle. If Supabase reports
+                // the address is taken, answer EXACTLY as a fresh sign-up would:
+                // show "check your inbox". Supabase (with signup email confirmation
+                // on) sends the existing owner a "you already have an account"
+                // notice, so a real owner is still helped without a stranger being
+                // able to tell the address exists. (See the note about the
+                // dashboard's enumeration-protection setting.)
+                if (/already registered|already been registered|already exists/i.test(signUpError.message || '')) {
+                    setSentTo(email.trim());
+                    return;
+                }
+                setError(explainSignup(signUpError));
+                return;
+            }
 
             // Email confirmation OFF → a session comes back straight away.
             if (data.session) {

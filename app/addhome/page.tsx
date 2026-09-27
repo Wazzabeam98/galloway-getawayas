@@ -46,9 +46,11 @@ export default function AddHome() {
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
     // Set when publish is refused because the host has no Stripe payout account —
-    // shows a prompt that takes them to set it up and brings them back here.
+    // shows a prompt that takes them to set it up and brings them back to THIS
+    // saved draft (not a blank wizard) to publish.
     const [payoutSetupNeeded, setPayoutSetupNeeded] = useState(false);
     const [connectingPayouts, setConnectingPayouts] = useState(false);
+    const [payoutDraftId, setPayoutDraftId] = useState<string | null>(null);
 
     // Airbnb-style wizard state
     const [step, setStep] = useState(1);
@@ -506,6 +508,7 @@ export default function AddHome() {
                 // red error, and keep the listing saved as the draft it now is.
                 if (publishBody && publishBody.needsPayoutSetup) {
                     setPayoutSetupNeeded(true);
+                    setPayoutDraftId(listingId);
                     setFormError('');
                     return;
                 }
@@ -525,15 +528,17 @@ export default function AddHome() {
     };
 
     // Take the host to Stripe onboarding, telling Stripe to send them back to
-    // this wizard so they can publish the moment payouts are set up. The listing
-    // is already saved as a draft, so nothing is lost across the round trip.
+    // their SAVED DRAFT (/addhome?draft=<id>, which reloads everything they
+    // entered) so they can publish the moment payouts are set up — not a blank
+    // wizard that throws the work away.
     const startPayoutSetup = async () => {
         setConnectingPayouts(true);
         try {
+            const returnTo = payoutDraftId ? '/addhome?draft=' + encodeURIComponent(payoutDraftId) : '/dashboard';
             const res = await fetch('/api/stripe/connect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'onboard', returnTo: '/addhome' }),
+                body: JSON.stringify({ action: 'onboard', returnTo }),
             });
             const data = await res.json().catch(() => ({}));
             if (data && data.ok && data.url) {
