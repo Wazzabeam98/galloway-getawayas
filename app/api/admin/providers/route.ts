@@ -2,7 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { idsFrom, decideBatch, MAX_BATCH } from '@/lib/reviewQueue';
 import {
@@ -469,7 +469,7 @@ export async function POST(req: Request) {
                                 + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
                                 + terms
                                 + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'See your listing'),
-                            FOOT
+                            FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     } else if (decision === 'decline') {
                         subject = 'About your Galloway Getaways listing';
@@ -479,7 +479,7 @@ export async function POST(req: Request) {
                                 + quoted(note)
                                 + '<p style="margin:0 0 16px;font-size:16px;">You can change it and send it back to us whenever you like.</p>'
                                 + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'Update your details'),
-                            FOOT
+                            FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     } else if (decision === 'approve_changes') {
                         // They were told we would look and come back to them, so
@@ -490,7 +490,7 @@ export async function POST(req: Request) {
                             '<p style="margin:0 0 16px;font-size:16px;">We have looked at the changes you made to <strong>'
                                 + name + '</strong>. Nothing needs doing — you stayed on the site throughout.</p>'
                                 + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'See your listing'),
-                            FOOT
+                            FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     } else {
                         subject = 'About the changes to your listing';
@@ -504,7 +504,7 @@ export async function POST(req: Request) {
                                     : 'Your listing is still up. Change it whenever you can and we will take another look.')
                                 + '</p>'
                                 + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'Update your details'),
-                            FOOT
+                            FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     }
 

@@ -1,4 +1,4 @@
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, formatDate, NEUTRAL_SUBTITLE } from '@/lib/email';
 
 // Turn a paid-but-held CHANGE REQUEST (extra places on a comes_to_you booking)
 // from 'holding' into 'authorised' — the state the provider answers within 48
@@ -28,10 +28,11 @@ export async function authoriseChangeRequest(
         if (prov && prov.contact_email) {
             await sendEmail(prov.contact_email, 'A guest wants to add to a booking', emailLayout(
                 '<p>A guest has asked to add ' + (child.quantity || 1) + ' more to their ' + escapeHtml(child.item_name || 'booking')
-                + ' on ' + escapeHtml(String(child.service_date).slice(0, 10)) + '. Their card is held for £' + Number(child.price || 0).toFixed(2)
+                + ' on ' + escapeHtml(formatDate(String(child.service_date))) + '. Their card is held for £' + Number(child.price || 0).toFixed(2)
                 + ', not charged — accept within 48 hours to take it, or decline to release it.</p>'
                 + button(SITE_URL + '/services/dashboard', 'Answer the request'),
-                'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                'You’re receiving this because you offer experiences on Galloway Getaways.',
+                undefined, NEUTRAL_SUBTITLE));
         }
     } catch (e) { console.error('[changeRequest] notify', e); }
 

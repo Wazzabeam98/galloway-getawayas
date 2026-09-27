@@ -19,11 +19,11 @@ export const metadata: Metadata = {
   // Every page title gets " | Galloway Getaways" appended automatically,
   // so individual pages only need to say what they are.
   title: {
-    default: 'Self Catering Cottages in Dumfries & Galloway',
+    default: 'Holiday Cottages & Accommodation in Dumfries & Galloway',
     template: '%s | Galloway Getaways',
   },
   description:
-    'Book self catering holiday cottages and apartments across Dumfries & Galloway. Booked direct with the people who own them — no booking fee, ever.',
+    'Book holiday cottages and accommodation across Dumfries & Galloway. Booked direct with the people who own them — no booking fee, ever.',
 
   // Tells search engines which address is the real one, so the www and
   // vercel.app versions don't compete with this one.
@@ -47,9 +47,9 @@ export const metadata: Metadata = {
     locale: 'en_GB',
     url: SITE_URL,
     siteName: 'Galloway Getaways',
-    title: 'Self Catering Holiday Cottages in Dumfries & Galloway',
+    title: 'Holiday Cottages & Accommodation in Dumfries & Galloway',
     description:
-      'Handpicked self catering cottages and apartments across Dumfries & Galloway. Book direct with local hosts.',
+      'Handpicked holiday cottages and accommodation across Dumfries & Galloway. Book direct with local hosts.',
     images: [
       {
         url: '/images/hero-1.jpg',
@@ -62,9 +62,9 @@ export const metadata: Metadata = {
 
   twitter: {
     card: 'summary_large_image',
-    title: 'Self Catering Holiday Cottages in Dumfries & Galloway',
+    title: 'Holiday Cottages & Accommodation in Dumfries & Galloway',
     description:
-      'Handpicked self catering cottages and apartments across Dumfries & Galloway.',
+      'Handpicked holiday cottages and accommodation across Dumfries & Galloway.',
     images: ['/images/hero-1.jpg'],
   },
 

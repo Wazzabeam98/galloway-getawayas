@@ -15,7 +15,7 @@
 //
 // Relative imports on purpose: this module is exercised by a unit test, and the
 // '@/' alias is a build-time path Node cannot resolve at runtime.
-import { sendEmail, emailLayout, escapeHtml } from './email';
+import { sendEmail, emailLayout, escapeHtml, formatDate, NEUTRAL_SUBTITLE } from './email';
 import { logError } from './logError';
 import { stripeRequest } from './stripe';
 
@@ -25,7 +25,7 @@ import { stripeRequest } from './stripe';
 // cottage nobody is in.
 async function tellAboutStayCancel(admin: any, order: any): Promise<void> {
     const who = escapeHtml(order.provider_business_name || 'your experience');
-    const date = escapeHtml(String(order.service_date || ''));
+    const date = escapeHtml(formatDate(String(order.service_date || '')));
     const amount = '£' + Number(order.price || 0).toFixed(2);
 
     if (order.guest_email) {
@@ -37,7 +37,8 @@ async function tellAboutStayCancel(admin: any, order: any): Promise<void> {
                     '<p style="margin:0 0 16px;font-size:16px;">Because your stay was cancelled, your booking with <strong>'
                     + who + '</strong> for <strong>' + date + '</strong> has been cancelled too and refunded '
                     + escapeHtml(amount) + ' in full.</p>',
-                    'You’re receiving this because you booked an experience through Galloway Getaways.'
+                    'You’re receiving this because you booked an experience through Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE
                 )
             );
         } catch (e: any) { await logError('experience-cancel-guest-order-email', { order: order.id, message: String(e && e.message) }); }
@@ -57,7 +58,8 @@ async function tellAboutStayCancel(admin: any, order: any): Promise<void> {
                     '<p style="margin:0 0 16px;font-size:16px;">The guest booked with you for <strong>' + date
                     + '</strong> has had their stay cancelled, so this booking is off — please don’t turn up. They have been refunded '
                     + escapeHtml(amount) + ' in full, and that amount has been reversed from your account.</p>',
-                    'You’re receiving this because you offer experiences on Galloway Getaways.'
+                    'You’re receiving this because you offer experiences on Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE
                 )
             );
         }

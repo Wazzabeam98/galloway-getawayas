@@ -1,9 +1,10 @@
 import { stripeRequest } from '@/lib/stripe';
 import { expiryFrom } from '@/lib/serviceOrders';
 import { resolveGuestForPaidOrder, supabaseGuestStore } from '@/lib/guestAccount';
-import { displayName } from '@/lib/utils';
+import { displayName, formatTime } from '@/lib/utils';
 import {
     sendEmail, emailLayout, escapeHtml, button, noteCallout, allergyCallout, SITE_URL,
+    NEUTRAL_SUBTITLE, formatDate,
 } from '@/lib/email';
 import { logError } from '@/lib/logError';
 
@@ -241,7 +242,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
         : '';
     const guestTo = ((guest && guest.email) || mintedEmail || md.contact_email || (cs.customer_details && cs.customer_details.email) || '').trim();
     const totalStr = '£' + (Number(cs.amount_total || 0) / 100).toFixed(2);
-    const whereWhen = ' for <strong>' + escapeHtml(String(md.service_date)) + '</strong>'
+    const whereWhen = ' for <strong>' + escapeHtml(formatDate(String(md.service_date))) + '</strong>'
         + (md.collection_note ? ' (' + escapeHtml(String(md.collection_note)) + ')' : '')
         + (md.fulfilment === 'delivery' && md.service_address ? ', delivered to ' + escapeHtml(String(md.service_address)) : ', for collection');
 
@@ -255,7 +256,8 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     + linesHtml
                     + '<p style="margin:0 0 16px;font-size:16px;">Total paid: <strong>' + escapeHtml(totalStr) + '</strong>.</p>'
                     + allergyCallout(md.allergy) + noteCallout(md.note),
-                    'You’re receiving this because you booked through Galloway Getaways.'));
+                    'You’re receiving this because you booked through Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE));
             }
         } catch (e) { console.error('[requestOrder] instant guest receipt failed', e); }
         try {
@@ -267,7 +269,8 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     + '<p style="margin:0 0 16px;font-size:16px;">Total: <strong>' + escapeHtml(totalStr) + '</strong>, less the Galloway Getaways fee.</p>'
                     + noteCallout(md.note)
                     + button(SITE_URL + '/services/dashboard#order-' + order.id, 'See the order'),
-                    'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                    'You’re receiving this because you offer experiences on Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE));
             }
         } catch (e) { console.error('[requestOrder] instant provider notice failed', e); }
         return { created: true, orderId: order.id };
@@ -287,8 +290,8 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     + '<p>' + (md.booking_id ? 'A guest staying nearby' : 'A guest') + ' has asked to book '
                     + escapeHtml(prov.business_name || 'your experience')
                     + (md.item_name ? ' — ' + escapeHtml(String(md.item_name)) : '')
-                    + ' for ' + escapeHtml(String(md.service_date))
-                    + (md.service_time ? ' at ' + escapeHtml(String(md.service_time)) : '')
+                    + ' for ' + escapeHtml(formatDate(String(md.service_date)))
+                    + (md.service_time ? ' at ' + escapeHtml(formatTime(String(md.service_time))) : '')
                     + (Number.isFinite(guestsNum as number) && (guestsNum as number) > 0
                         ? ' · ' + guestsNum + ' guest' + (guestsNum === 1 ? '' : 's') : '')
                     + '.</p>'
@@ -299,7 +302,8 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     + 'take the booking; if you can’t make it, decline and the hold is '
                     + 'released.</p>'
                     + button(SITE_URL + '/services/dashboard#order-' + order.id, 'View the request'),
-                    'You’re receiving this because you offer experiences on Galloway Getaways.'
+                    'You’re receiving this because you offer experiences on Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE
                 )
             );
         }
@@ -328,7 +332,8 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     + '<p style="margin:0 0 16px;font-size:16px;">Amount held: <strong>' + escapeHtml(totalStr) + '</strong>.</p>'
                     + allergyCallout(md.allergy) + noteCallout(md.note)
                     + button(SITE_URL + '/experiences/order/' + order.id, 'View your request'),
-                    'You’re receiving this because you booked through Galloway Getaways.'
+                    'You’re receiving this because you booked through Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE
                 )
             );
         }

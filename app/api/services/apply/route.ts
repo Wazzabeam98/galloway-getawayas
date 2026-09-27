@@ -227,9 +227,14 @@ export async function POST(req: Request) {
         // have also sent a link" whatever happened, which is a claim the
         // applicant cannot check: they wait for an email that was never
         // accepted.
+        // The verification link is built from SITE_URL, NOT the request origin.
+        // On a preview or localhost deploy the origin is that throwaway host, so
+        // an emailed "finish your application" link pointed at the wrong place
+        // (or somewhere that no longer exists) — the link has to go to the real
+        // site whatever host answered this request.
         const mail = addressHasAccount
             ? alreadyHaveAccountEmail(application)
-            : verificationEmail(application, token, new URL(req.url).origin);
+            : verificationEmail(application, token);
 
         let verificationEmailed = false;
         try {

@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { stripeRequest } from '@/lib/stripe';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, formatDate } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { issueRefunds } from '@/lib/refundSpread';
 import { clawBackPayout } from '@/lib/clawback';
@@ -168,9 +168,19 @@ export async function POST(request: Request) {
             .eq('id', chg.id);
 
         const otherId = actorRole === 'guest' ? chg.host_id : chg.guest_id;
+        // This lands with the party who proposed the change — which can be the
+        // guest (they proposed a decrease the host has just approved). Write the
+        // refund line for the reader: "refunded to you" to the guest, "refunded
+        // to the guest" to the host.
+        const otherIsGuest = otherId === chg.guest_id;
+        const refundLine = refunded > 0
+            ? (otherIsGuest
+                ? ' £' + refunded.toFixed(2) + ' has been refunded to you.'
+                : ' £' + refunded.toFixed(2) + ' was refunded to the guest.')
+            : '';
         await notify(admin, otherId, 'A reservation change was accepted',
-            'The change is done. The booking now runs ' + chg.new_check_in + ' to ' + chg.new_check_out + '.'
-            + (refunded > 0 ? ' £' + refunded.toFixed(2) + ' was refunded to the guest.' : ''),
+            'The change is done. The booking now runs ' + formatDate(chg.new_check_in) + ' to ' + formatDate(chg.new_check_out) + '.'
+            + refundLine,
             SITE_URL + '/dashboard/bookings/' + chg.booking_id);
         return NextResponse.json({ ok: true, status: 'accepted', refunded });
     } catch (err: any) {

@@ -27,7 +27,7 @@
 // and spends a fortnight on a job in Ayrshire is ordinary, and the link sitting
 // unused in his inbox costs us nothing.
 
-import { emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { newApplicationToken, hashApplicationToken } from '@/lib/serviceApplicationToken';
 
 /** How long an emailed link works for. */
@@ -198,7 +198,9 @@ export function verificationEmail(row: {
                 + ' Somebody has typed your address into our form.'
                 + ' <strong style="color:#111827">No account has been made</strong> and nothing will'
                 + ' happen if you ignore this. Reply to this email and we will delete it.</p>',
-            'You are receiving this because this address was used to apply to list a business on Galloway Getaways.'
+            'You are receiving this because this address was used to apply to list a business on Galloway Getaways.',
+            undefined,
+            NEUTRAL_SUBTITLE
         ),
     };
 }
@@ -231,7 +233,9 @@ export function alreadyHaveAccountEmail(row: { business_name: string; trade?: st
                 + 'font-size:14px;color:#6b7280;"><strong style="color:#111827">Did not apply?</strong>'
                 + ' Somebody has typed your address into our form. Nothing has changed about your'
                 + ' account and nothing will happen if you ignore this. Reply and we will delete it.</p>',
-            'You are receiving this because this address was used to apply to list a business on Galloway Getaways.'
+            'You are receiving this because this address was used to apply to list a business on Galloway Getaways.',
+            undefined,
+            NEUTRAL_SUBTITLE
         ),
     };
 }

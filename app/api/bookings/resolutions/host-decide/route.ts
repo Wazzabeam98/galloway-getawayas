@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { hostMayDecideCounter, hostMayCancel, escalationDeadline, round2 } from '@/lib/resolutions';
 
@@ -60,8 +60,11 @@ export async function POST(request: Request) {
                 .update({ status: 'escalated', escalated_at: nowIso, updated_at: nowIso })
                 .eq('id', res.id).eq('status', 'countered');
             try {
-                const to = process.env.DISPUTES_ALERT_EMAIL || '';
-                if (to) await sendEmail(to, 'A money request was escalated', emailLayout(
+                // Comma-split so two directors both hear about it, via the same
+                // helper the webhook and dispute routes use — a bare string here
+                // gave Resend one malformed recipient and neither was told.
+                const to = recipients(process.env.DISPUTES_ALERT_EMAIL);
+                if (to.length) await sendEmailToAll(to, 'Escalated: host declined a counter-offer', emailLayout(
                     '<p>The host declined the guest’s counter-offer on booking ' + escapeHtml(String(res.booking_id)) + '.</p>'
                     + button(SITE_URL + '/admin/resolutions', 'Open the resolutions queue'),
                     'Galloway Getaways admin alert.'));

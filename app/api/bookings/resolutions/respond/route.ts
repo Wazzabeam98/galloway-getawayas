@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import {
     applicationFeePence, guestMayRespond, guestMayPay, escalationDeadline, round2, toPence,
@@ -162,9 +162,11 @@ export async function POST(request: Request) {
 
 async function notifyEscalation(admin: any, res: any, why: string) {
     try {
-        const to = process.env.DISPUTES_ALERT_EMAIL || '';
-        if (to) {
-            await sendEmail(to, 'A money request was escalated', emailLayout(
+        // Comma-split so every director on DISPUTES_ALERT_EMAIL is told, through
+        // the same helper the webhook and dispute routes use.
+        const to = recipients(process.env.DISPUTES_ALERT_EMAIL);
+        if (to.length) {
+            await sendEmailToAll(to, 'Escalated: guest declined a money request', emailLayout(
                 '<p>' + escapeHtml(why) + '</p>'
                 + '<p>Booking ' + escapeHtml(String(res.booking_id)) + ', £' + round2(Number(res.amount)).toFixed(2)
                 + ' (' + escapeHtml(String(res.reason)) + ').</p>'
