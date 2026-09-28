@@ -76,7 +76,7 @@ export async function GET(
 
     const { data: listing } = await admin
         .from('listings')
-        .select('id, title, location, images, check_in_time, check_in_end_time, check_out_time, check_in_method, cancellation_policy')
+        .select('id, title, location, images, check_in_time, check_in_end_time, check_out_time, check_in_method, cancellation_policy, max_guests, amenities')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
@@ -149,6 +149,11 @@ export async function GET(
             cancellation_policy: listing && listing.cancellation_policy,
             total_price: showMoney ? booking.total_price : null,
             amount_paid: showMoney ? booking.amount_paid : null,
+            // Fed to the Manage-reservation flows: the refund figure the host's
+            // Send-money sheet and either side's Cancel confirm compute from
+            // net paid. Money, so withheld from a companion the same as the rest.
+            amount_refunded: showMoney ? booking.amount_refunded : null,
+            cleaning_fee: showMoney ? booking.cleaning_fee : null,
             balance_amount: showMoney ? booking.balance_amount : null,
             balance_due_date: showMoney ? booking.balance_due_date : null,
             payment_status: showMoney ? booking.payment_status : null,

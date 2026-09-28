@@ -5,6 +5,10 @@ import { formatGBP } from '@/lib/formatMoney';
 import { notify } from '@/lib/notify';
 import ConversationRow from '@/components/messages/ConversationRow';
 import ProviderReservationCard, { type ReservationCardData } from '@/components/services/ProviderReservationCard';
+import ManageReservationSheet from '@/components/dashboard/reservation/ManageReservationSheet';
+import RequestChangeRow from '@/components/trips/RequestChangeRow';
+import StayCancelRow from '@/components/trips/StayCancelRow';
+import { stayHasEnded, stayHasStarted } from '@/lib/stayWindow';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Link from 'next/link';
@@ -980,7 +984,7 @@ export default function MessagesInboxPage() {
                 </div>
             )}
 
-            <div className="border-t pt-4 space-y-2">
+            <div className="border-t pt-4 space-y-3">
                 {thread.listing && (
                     <Link
                         href={'/homes/' + thread.listing.id}
@@ -990,16 +994,84 @@ export default function MessagesInboxPage() {
                         View the listing
                     </Link>
                 )}
-                {thread.role === 'host' && (
-                    <Link
-                        href={'/dashboard/bookings/' + thread.booking.id}
-                        className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
-                    >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        Manage this booking
-                    </Link>
+
+                {/* The host's Manage reservation pop-up — the very sheet the host
+                    reservation page uses, so a host can change the stay, send or
+                    request money, or cancel from the thread instead of being sent
+                    out to the dashboard. Fed from the thread's own booking. */}
+                {thread.role === 'host' && thread.listing && (
+                    <ManageReservationSheet
+                        bookingId={thread.booking.id}
+                        status={thread.booking.status}
+                        isOwner
+                        ended={stayHasEnded(thread.booking.check_out, thread.listing.check_out_time)}
+                        started={stayHasStarted(thread.booking.check_in)}
+                        phone={thread.other.phone}
+                        guestFirst={capitializeFirst(thread.other.name)}
+                        totalPrice={Number(thread.booking.total_price || 0)}
+                        amountPaid={Number(thread.booking.amount_paid || 0)}
+                        amountRefunded={Number(thread.booking.amount_refunded || 0)}
+                        askToCancelHref={null}
+                        checkIn={String(thread.booking.check_in).slice(0, 10)}
+                        checkOut={String(thread.booking.check_out).slice(0, 10)}
+                        adults={Number(thread.booking.adults || 0) || Math.max(1, Number(thread.booking.guests || 1) - Number(thread.booking.children || 0))}
+                        children={Number(thread.booking.children || 0)}
+                        pets={Number(thread.booking.pets || 0)}
+                        maxGuests={Number(thread.listing.max_guests || 1)}
+                        petsAllowed={Array.isArray(thread.listing.amenities) && thread.listing.amenities.indexOf('Pets allowed') !== -1}
+                        listingId={thread.listing.id}
+                        listingTitle={thread.listing.title || 'your stay'}
+                        listingImage={thread.listing.images && thread.listing.images[0] ? getImageUrl(thread.listing.images[0]) : null}
+                    />
                 )}
-                {(thread.role === 'guest' || thread.role === 'companion') && (
+
+                {/* The guest's own reservation actions on a cottage thread — the
+                    same change/cancel flows their Trips page carries, gated the
+                    same way, so the booker can act from the conversation too. */}
+                {thread.role === 'guest' && thread.listing && (() => {
+                    const todayIso = new Date().toISOString().slice(0, 10);
+                    const checkInIso = String(thread.booking.check_in).slice(0, 10);
+                    const checkOutIso = String(thread.booking.check_out).slice(0, 10);
+                    const canChange = thread.booking.status === 'confirmed' && checkOutIso >= todayIso;
+                    const canCancel = checkInIso > todayIso;
+                    if (!canChange && !canCancel) return null;
+                    const rowCls = 'flex w-full items-center justify-between py-3 text-left text-sm font-semibold text-slate-900';
+                    return (
+                        <div className="-mb-1 divide-y divide-slate-100 border-t border-slate-100 pt-1">
+                            {canChange && (
+                                <RequestChangeRow
+                                    bookingId={thread.booking.id}
+                                    listingId={thread.listing.id}
+                                    listingTitle={thread.listing.title || 'your stay'}
+                                    listingImage={thread.listing.images && thread.listing.images[0] ? getImageUrl(thread.listing.images[0]) : null}
+                                    hostFirst={capitializeFirst(thread.other.name)}
+                                    checkIn={checkInIso}
+                                    checkOut={checkOutIso}
+                                    adults={Number(thread.booking.adults || 0) || Math.max(1, Number(thread.booking.guests || 1) - Number(thread.booking.children || 0))}
+                                    childrenCount={Number(thread.booking.children || 0)}
+                                    pets={Number(thread.booking.pets || 0)}
+                                    maxGuests={Number(thread.listing.max_guests || 1)}
+                                    petsAllowed={Array.isArray(thread.listing.amenities) && thread.listing.amenities.indexOf('Pets allowed') !== -1}
+                                    className={rowCls}
+                                />
+                            )}
+                            {canCancel && (
+                                <StayCancelRow
+                                    bookingId={thread.booking.id}
+                                    checkIn={thread.booking.check_in}
+                                    policy={thread.booking.cancellation_policy}
+                                    amountPaid={thread.booking.amount_paid}
+                                    amountRefunded={thread.booking.amount_refunded}
+                                    cleaningFee={thread.booking.cleaning_fee}
+                                    className={rowCls + ' text-slate-600 hover:text-rose-700'}
+                                    panelClassName="pb-3"
+                                />
+                            )}
+                        </div>
+                    );
+                })()}
+
+                {thread.role === 'companion' && (
                     <Link
                         href="/trips"
                         className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
