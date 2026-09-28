@@ -7,7 +7,7 @@ import { logError } from '@/lib/logError';
 import { idsFrom, decideBatch, MAX_BATCH } from '@/lib/reviewQueue';
 import {
     reviewDigest, approvalBlockers, schemeLabel,
-    planForTrade, TRIAL_DAYS, SUBSCRIPTION_MONTHLY,
+    planForTrade, TRIAL_PERIOD_LABEL, SUBSCRIPTION_MONTHLY,
 } from '@/lib/serviceProviders';
 import { ASSIGNABLE_MCCS } from '@/lib/serviceOrders';
 import { SHAPES, shapeOf } from '@/lib/serviceSlots';
@@ -449,11 +449,11 @@ export async function POST(req: Request) {
                         // told, which the email that stamps the clock then keeps.
                         const terms = patch.plan === 'subscription'
                             ? '<p style="margin:0 0 16px;font-size:16px;">Your first '
-                                + TRIAL_DAYS + ' days are free, and they do not start today — they start'
+                                + TRIAL_PERIOD_LABEL + ' are free, and they do not start today — they start'
                                 + ' when we send you your first enquiry. If we do not find you any work,'
                                 + ' you are not paying for it.</p>'
                                 + '<p style="margin:0 0 16px;font-size:16px;">After those '
-                                + TRIAL_DAYS + ' days it is £' + SUBSCRIPTION_MONTHLY
+                                + TRIAL_PERIOD_LABEL + ' it is £' + SUBSCRIPTION_MONTHLY
                                 + ' a month, and we take no commission on your work — you quote and get paid'
                                 + ' direct, the same as you do now. We will tell you the day your free period'
                                 + ' starts and write to you well before anything is due. There is nothing to'

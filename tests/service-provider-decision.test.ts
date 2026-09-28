@@ -708,7 +708,7 @@ test('the email tells a subscription trade what it costs, and that it has not st
     assert.equal(sent.length, 1);
     const body = String(sent[0].html || '');
 
-    assert.match(body, /90 days are free/);
+    assert.match(body, /six months are free/);
     assert.match(body, /£20 a month/);
     assert.match(body, /no commission/);
     assert.match(body, /first enquiry/, 'he is told what actually starts the clock');

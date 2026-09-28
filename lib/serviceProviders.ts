@@ -792,8 +792,20 @@ export function planForTrade(trade: string): ProviderPlan {
     return TRADE_PLANS[String(trade || '')] || 'commission';
 }
 
-// Ninety days, from approval.
-export const TRIAL_DAYS = 90;
+// Six months free, from the first enquiry. This is the one place the length of
+// the free period is defined — everything that states it reads from here, so a
+// page, an email and the admin screen cannot disagree. It was ninety days until
+// 28 September 2026, when it became six months for every subscription trade.
+export const TRIAL_MONTHS = 6;
+
+// The free period in words, for any copy that names its length. Kept beside the
+// number so the sentence and the arithmetic move together.
+export const TRIAL_PERIOD_LABEL = 'six months';
+
+// The nominal length in days, DERIVED from the months above. It is used only by
+// the reminder ladder's start-of-trial marker and by day-offset arithmetic; the
+// real end of a trial is a calendar date (see trialEndsAt), not this count.
+export const TRIAL_DAYS = TRIAL_MONTHS * 30;
 
 // £20 a month, said in one place so a page and an email cannot disagree.
 export const SUBSCRIPTION_MONTHLY = 20;
@@ -821,8 +833,17 @@ export const SUBSCRIPTION_MONTHLY = 20;
 // app/api/services/enquiries/route.ts, which stamps only on a true.
 export function trialEndsAt(approvedAt: Date | string): string {
     const from = approvedAt instanceof Date ? approvedAt : new Date(String(approvedAt));
+
+    // Six calendar months, so "six months" is literally true rather than an
+    // approximate day count. Clamped to the end of the target month rather than
+    // rolled over, so 31 August + 6 months lands on 28 (or 29) February, not
+    // 2 or 3 March — JS setUTCMonth would otherwise spill into the next month.
+    const y = from.getUTCFullYear();
+    const m = from.getUTCMonth();
+    const d = from.getUTCDate();
+    const lastOfTarget = new Date(Date.UTC(y, m + TRIAL_MONTHS + 1, 0)).getUTCDate();
     const end = new Date(from.getTime());
-    end.setUTCDate(end.getUTCDate() + TRIAL_DAYS);
+    end.setUTCFullYear(y, m + TRIAL_MONTHS, Math.min(d, lastOfTarget));
     return end.toISOString();
 }
 
@@ -867,7 +888,7 @@ export function commissionRateFor(provider: any): number {
 // appears in the email sent when the clock actually starts.
 export function planTerms(trade: string): string {
     return planForTrade(trade) === 'subscription'
-        ? 'Nothing to pay for your first ' + TRIAL_DAYS + ' days once we send you your '
+        ? 'Nothing to pay for your first ' + TRIAL_PERIOD_LABEL + ' once we send you your '
             + 'first enquiry, then £' + SUBSCRIPTION_MONTHLY + ' a month. We take no '
             + 'commission — you quote and get paid direct.'
         : 'Nothing to pay to be listed. We take 10% of a job when you accept one through '

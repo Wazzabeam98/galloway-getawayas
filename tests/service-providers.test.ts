@@ -33,7 +33,8 @@ const {
     trialState,
     shouldStartTrial,
     planTerms,
-    TRIAL_DAYS,
+    TRIAL_MONTHS,
+    TRIAL_PERIOD_LABEL,
     SUBSCRIPTION_MONTHLY,
     slotAsksWhereFork,
     slotIsMeetingPoint,
@@ -326,18 +327,25 @@ test('a commission provider with no rate falls back rather than charging nothing
     assert.equal(commissionRateFor({ trade: 'sponge', plan: 'commission', commission_rate: null }), 0.10);
 });
 
-test('the trial is ninety days, counted in days rather than months', () => {
-    const end = trialEndsAt('2026-08-27T09:00:00.000Z');
-
-    // 27 August + 90 days = 25 November. Months vary in length; the promise
-    // is a number of days, so the arithmetic has to be too.
-    assert.equal(end, '2026-11-25T09:00:00.000Z');
-    assert.equal(TRIAL_DAYS, 90);
+test('the trial is six months, as a calendar span from the first enquiry', () => {
+    // 27 August + 6 months = 27 February. It became six months on 28 September
+    // 2026, and it is counted as calendar months so "six months" is literally
+    // what a provider is given, not an approximate day count.
+    assert.equal(trialEndsAt('2026-08-27T09:00:00.000Z'), '2027-02-27T09:00:00.000Z');
+    assert.equal(TRIAL_MONTHS, 6);
+    assert.equal(TRIAL_PERIOD_LABEL, 'six months');
 });
 
-test('the trial clock crosses a month end and a leap year without drifting', () => {
-    assert.equal(trialEndsAt('2026-12-15T00:00:00.000Z'), '2027-03-15T00:00:00.000Z');
-    assert.equal(trialEndsAt('2027-12-15T00:00:00.000Z'), '2028-03-14T00:00:00.000Z');
+test('six months clamps to the end of a short month rather than spilling over', () => {
+    // 31 August + 6 months has no 31 February, so it lands on the last day of
+    // February — the 28th, or the 29th in a leap year — not on 2 or 3 March.
+    assert.equal(trialEndsAt('2026-08-31T00:00:00.000Z'), '2027-02-28T00:00:00.000Z');
+    assert.equal(trialEndsAt('2027-08-31T00:00:00.000Z'), '2028-02-29T00:00:00.000Z');
+});
+
+test('the trial clock crosses a year end and a leap day without drifting', () => {
+    assert.equal(trialEndsAt('2026-12-15T00:00:00.000Z'), '2027-06-15T00:00:00.000Z');
+    assert.equal(trialEndsAt('2027-12-15T00:00:00.000Z'), '2028-06-15T00:00:00.000Z');
 });
 
 test('a running trial is only a thing a subscription provider can have', () => {
@@ -441,7 +449,7 @@ test('a trial that has not started is a different state from one that has ended'
 
 test('what a provider is told they will pay comes from the same numbers', () => {
     const plumber = planTerms('plumber');
-    assert.match(plumber, new RegExp(String(TRIAL_DAYS) + ' days'));
+    assert.match(plumber, new RegExp(TRIAL_PERIOD_LABEL));
     assert.match(plumber, new RegExp('£' + String(SUBSCRIPTION_MONTHLY) + ' a month'));
     assert.equal(plumber.indexOf('10%'), -1, 'a subscription trade is not told about commission');
 

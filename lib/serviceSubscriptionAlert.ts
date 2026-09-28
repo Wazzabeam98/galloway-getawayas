@@ -27,7 +27,7 @@ import {
 } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { logError } from '@/lib/logError';
-import { SUBSCRIPTION_MONTHLY, TRIAL_DAYS } from '@/lib/serviceProviders';
+import { SUBSCRIPTION_MONTHLY, TRIAL_PERIOD_LABEL } from '@/lib/serviceProviders';
 import { GRACE_DAYS, Reminder, graceEndsAt, reminderByKey } from '@/lib/serviceSubscription';
 
 const FOOT = 'You are receiving this because you list a business on Galloway Getaways.';
@@ -60,7 +60,7 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
         return emailLayout(
             p('Somebody has asked for <strong>' + name + '</strong> through Galloway Getaways, '
                 + 'so your free period has started today.')
-            + p('You have <strong>' + TRIAL_DAYS + ' free days</strong>, running to <strong>'
+            + p('You have <strong>' + TRIAL_PERIOD_LABEL + ' free</strong>, running to <strong>'
                 + escapeHtml(ends) + '</strong>. There is nothing to pay and nothing to set up '
                 + 'until then — we will write to you well before anything is due.')
             + terms()
