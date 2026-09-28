@@ -8,31 +8,28 @@
 // arrangement" under the Package Travel Regulations 2018, which he asked us to
 // handle with a notice at experience checkout. This is that notice.
 //
-// ONE PLACE, ON PURPOSE. The wording below is placeholder text, to be swapped
-// for the solicitor's final wording when it arrives. Everything that shows the
-// notice — the checkout component and, through the version, the record kept
-// against each order — reads it from here, so a swap is a single edit. When you
-// change the wording, BUMP `LTA_NOTICE_VERSION` so orders record which wording a
+// ONE PLACE, ON PURPOSE. Everything that shows the notice — the checkout
+// component and, through the version, the record kept against each order — reads
+// the wording from here, so changing it is a single edit. Whenever you change
+// SUMMARY or FULL, BUMP `LTA_NOTICE_VERSION` so orders record which wording a
 // guest actually saw.
 
 // Bump this whenever SUMMARY or FULL changes, so the version stamped on an order
 // tells you exactly which wording that guest was shown.
-export const LTA_NOTICE_VERSION = 'placeholder-2026-09-28';
+export const LTA_NOTICE_VERSION = 'v1-2026-09-28';
 
 // The one-line notice shown collapsed, above the pay button.
 export const LTA_NOTICE_SUMMARY =
-    'This isn’t a package holiday — the provider is responsible for their own service.';
+    'This is not a package holiday. Your experience is provided by an independent local business.';
 
-// The full wording, revealed when the guest expands the notice. PLACEHOLDER —
-// replace with the solicitor's text (and bump LTA_NOTICE_VERSION) when it lands.
+// The full wording, revealed when the guest expands the notice.
 export const LTA_NOTICE_FULL =
-    'Placeholder wording, to be replaced by our solicitor. Your stay and this '
-    + 'experience are separate bookings. The experience is provided by an '
-    + 'independent local provider, not by Galloway Getaways, and you pay that '
-    + 'provider through our checkout — we act only as their agent for the payment. '
-    + 'Because you are booking an experience around a stay you have already booked, '
-    + 'the two together may form a "linked travel arrangement" under the Package '
-    + 'Travel Regulations 2018. This is not a package holiday: the provider is '
-    + 'responsible for the experience itself, including its quality and safety, and '
-    + 'Galloway Getaways is not liable for the provider’s acts or omissions. Your '
-    + 'money for the experience goes directly to the provider and is not held by us.';
+    'You are booking a stay and an experience separately, and they are not sold '
+    + 'together as a package holiday. Your experience is provided by the local '
+    + 'business named above, not by Galloway Getaways. That business is responsible '
+    + 'for delivering the experience, for its safety, and for meeting its own legal '
+    + 'obligations, including any insurance, licensing or food hygiene requirements. '
+    + 'We take the payment on their behalf and act as an intermediary. If something '
+    + 'goes wrong with the experience itself, your agreement is with the provider, '
+    + 'though we will help you reach them. Your stay is a separate booking with your '
+    + 'host, and cancelling or changing one does not affect the other.';
