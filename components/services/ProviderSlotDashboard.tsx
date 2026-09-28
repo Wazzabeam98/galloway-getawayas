@@ -10,6 +10,7 @@ import { daySlots, dayTicks, type DayInputs, type DaySlotRow } from '@/lib/slotD
 import { seatConfig } from '@/lib/serviceSlots';
 import Link from 'next/link';
 import { orderReference, orderNet } from '@/lib/serviceOrders';
+import { formatGBP } from '@/lib/formatMoney';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from '@/components/services/editorControls';
 
 interface Order {
@@ -25,7 +26,7 @@ interface Order {
 // Money + the label/value Row + the titled Card — the same atoms the cottage
 // booking detail (app/dashboard/bookings/[id]) is built from, so an experience
 // booking reads in the same language rather than a second invented one.
-const money = (value: number) => '£' + Number(value || 0).toFixed(2);
+const money = (value: number) => formatGBP(value);
 function Row({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) {
     return (
         <div className="flex items-baseline justify-between gap-6 border-b border-slate-100 py-2 last:border-0">
@@ -337,7 +338,7 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
                         same surface the inbox links to — not a panel inside the
                         calendar. The thread masks the guest's address and emails
                         them a link back. */}
-                    <Link href={`/services/messages/order/${o.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"><MessageSquare className="h-4 w-4" />Message</Link>
+                    <Link href={`/messages?o=${o.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"><MessageSquare className="h-4 w-4" />Message</Link>
                     <button type="button" disabled={busy === o.id} onClick={() => refund(o.id)} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-red-600 disabled:opacity-60"><Trash2 className="h-4 w-4" />{busy === o.id ? 'Refunding…' : 'Cancel & refund'}</button>
                 </div>
             </div>

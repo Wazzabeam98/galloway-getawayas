@@ -10,6 +10,7 @@ import { issueRefunds } from '@/lib/refundSpread';
 import { clawBackPayout } from '@/lib/clawback';
 import { whoAnswers, refundForDecrease, balanceAfter, round2 } from '@/lib/bookingChange';
 import { applyBookingChange } from '@/lib/applyBookingChange';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
                 .update({ status: 'awaiting_guest_payment', responded_at: nowIso, updated_at: nowIso })
                 .eq('id', chg.id).eq('status', 'pending');
             await notify(admin, chg.guest_id, 'Your host approved your change — pay to confirm',
-                'Your host approved the change. Pay the extra £' + delta.toFixed(2) + ' to confirm it.',
+                'Your host approved the change. Pay the extra ' + formatGBP(delta) + ' to confirm it.',
                 SITE_URL + '/reservations/change/' + chg.id);
             return NextResponse.json({ ok: true, status: 'awaiting_guest_payment' });
         }
@@ -175,8 +176,8 @@ export async function POST(request: Request) {
         const otherIsGuest = otherId === chg.guest_id;
         const refundLine = refunded > 0
             ? (otherIsGuest
-                ? ' £' + refunded.toFixed(2) + ' has been refunded to you.'
-                : ' £' + refunded.toFixed(2) + ' was refunded to the guest.')
+                ? ' ' + formatGBP(refunded) + ' has been refunded to you.'
+                : ' ' + formatGBP(refunded) + ' was refunded to the guest.')
             : '';
         await notify(admin, otherId, 'A reservation change was accepted',
             'The change is done. The booking now runs ' + formatDate(chg.new_check_in) + ' to ' + formatDate(chg.new_check_out) + '.'

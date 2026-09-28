@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 
         const { data: orders } = await admin
             .from('service_orders')
-            .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, guests, adults, children, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, guest_name, guest_phone, guest_email, note, allergy, listing_id, expires_at, created_at, pending_service_date, pending_change_expires_at')
+            .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, guests, adults, children, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, guest_name, guest_phone, guest_email, note, allergy, listing_id, expires_at, created_at, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
             .eq('provider_id', providerId)
             .order('created_at', { ascending: false })
             .limit(50);

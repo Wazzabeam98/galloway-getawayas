@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X, Minus, Plus, Calendar, ChevronDown } from 'lucide-react';
+import { formatGBP } from '@/lib/formatMoney';
 import { optionAvailability, seatConfig } from '@/lib/serviceSlots';
 import { unitMultiplies, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { childrenAllowed } from '@/lib/guestAges';
@@ -463,7 +464,7 @@ export default function BookingDialog({
                             <div className="flex items-center justify-between gap-3">
                                 <div className="text-sm text-slate-600">
                                     {selected
-                                        ? <><span className="font-semibold text-slate-900">£{lineTotal.toFixed(2)}</span> total</>
+                                        ? <><span className="font-semibold text-slate-900">{formatGBP(lineTotal)}</span> total</>
                                         : <span className="text-slate-400">Pick a time</span>}
                                 </div>
                                 <button type="button" onClick={submit} disabled={!canBook || busy}

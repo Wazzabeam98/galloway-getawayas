@@ -1,7 +1,10 @@
 'use client';
 
+import { formatGBP } from '@/lib/formatMoney';
+
 import { notify } from '@/lib/notify';
 import ConversationRow from '@/components/messages/ConversationRow';
+import ProviderReservationCard, { type ReservationCardData } from '@/components/services/ProviderReservationCard';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Link from 'next/link';
@@ -127,6 +130,10 @@ export default function MessagesInboxPage() {
             // link, so the one conversation for that order opens here rather than
             // in a second thread on that page.
             const wantedOrder = params.get('o');
+            // ?e=<enquiryId>: a Message button on a trade job (host or provider
+            // side), so the three-pane opens on that enquiry rather than the old
+            // single-thread page.
+            const wantedEnquiry = params.get('e');
             const draft = params.get('draft');
             if (draft) setText(draft);
 
@@ -134,7 +141,9 @@ export default function MessagesInboxPage() {
                 ? convos.find((c: any) => c.bookingId === wanted)
                 : wantedOrder
                     ? convos.find((c: any) => c.kind === 'order' && c.id === wantedOrder)
-                    : null;
+                    : wantedEnquiry
+                        ? convos.find((c: any) => c.kind === 'enquiry' && c.id === wantedEnquiry)
+                        : null;
 
             // Something archived is out of the inbox, so the row for it would
             // not be in the list beside the thread. Show the archive instead
@@ -895,14 +904,14 @@ export default function MessagesInboxPage() {
                     <div className="flex justify-between">
                         <span className="text-slate-500">Total</span>
                         <span className="text-slate-900 font-medium">
-                            £{Number(thread.booking.total_price).toFixed(2)}
+                            {formatGBP(thread.booking.total_price)}
                         </span>
                     </div>
                     {thread.booking.amount_paid !== null && (
                         <div className="flex justify-between">
                             <span className="text-slate-500">Paid</span>
                             <span className="text-slate-900 font-medium">
-                                £{Number(thread.booking.amount_paid || 0).toFixed(2)}
+                                {formatGBP(thread.booking.amount_paid || 0)}
                             </span>
                         </div>
                     )}
@@ -910,7 +919,7 @@ export default function MessagesInboxPage() {
                         <div className="flex justify-between gap-2">
                             <span className="text-slate-500 flex-shrink-0">Still to pay</span>
                             <span className="text-amber-700 font-medium text-right">
-                                £{Number(thread.booking.balance_amount).toFixed(2)}
+                                {formatGBP(thread.booking.balance_amount)}
                                 {thread.booking.balance_due_date
                                     ? ' by ' +
                                       new Date(thread.booking.balance_due_date).toLocaleDateString('en-GB')
@@ -1002,29 +1011,51 @@ export default function MessagesInboxPage() {
             </div>
         </div>
     ) : (
-        // Order / enquiry thread: no booking behind it, just a compact summary.
-        <div className="h-full overflow-y-auto p-5 space-y-4">
-            <div>
-                <div className="font-semibold text-slate-900">
-                    {(thread.context && thread.context.business) || (thread.other && thread.other.name) || 'Conversation'}
+        // Order / enquiry thread: the reservation this thread is about, in the
+        // SAME card the holiday-let host page and the provider dashboard show, fed
+        // the viewer-aware shape from the thread route (a guest sees only what they
+        // paid). No Message button here — you are already in the thread.
+        (() => {
+            const c = (thread.context || {}) as any;
+            const rez = c.reservation;
+            if (!rez) {
+                return (
+                    <div className="h-full overflow-y-auto p-5">
+                        <div className="font-semibold text-slate-900">{c.business || (thread.other && thread.other.name) || 'Conversation'}</div>
+                        {c.item && <div className="text-sm text-slate-500">{c.item}</div>}
+                    </div>
+                );
+            }
+            const data: ReservationCardData = {
+                avatarUrl: rez.avatarUrl ?? null,
+                initial: rez.initial || '·',
+                photoUrl: rez.photoUrl ?? null,
+                heading: rez.heading || c.business || 'Reservation',
+                whenLabel: rez.whenLabel || '',
+                itemName: rez.itemName || c.item || '',
+                status: rez.status || null,
+                when: { heading: rez.whenHeading || 'When', value: rez.whenLabel || '' },
+                where: rez.where ?? null,
+                note: rez.note ?? null,
+                allergy: rez.allergy ?? null,
+                money: rez.money ?? null,
+                moneyNote: rez.moneyNote ?? null,
+                phone: rez.phone ?? null,
+                messageHref: null,
+                personFirst: rez.personFirst || '',
+                guests: rez.guests ?? null,
+                cancellation: rez.cancellation ?? null,
+                // The Manage sheet's own Message action would loop back to this
+                // thread, so drop it here (you're already in the conversation).
+                manage: rez.manage ? { ...rez.manage, messageHref: null } : null,
+            };
+            return (
+                <div className="h-full overflow-y-auto p-5">
+                    <ProviderReservationCard r={data} size="sm" />
+                    {rez.reference && <div className="mt-4 text-center text-xs text-slate-400">{rez.reference}</div>}
                 </div>
-                {thread.context && thread.context.item && (
-                    <div className="text-sm text-slate-500">{thread.context.item}</div>
-                )}
-            </div>
-            {thread.context && thread.context.serviceDate && (
-                <div className="flex justify-between gap-2 text-sm">
-                    <span className="text-slate-500 flex-shrink-0">Date</span>
-                    <span className="text-slate-900 font-medium text-right">{thread.context.serviceDate}</span>
-                </div>
-            )}
-            {thread.context && thread.context.status && (
-                <div className="flex justify-between gap-2 text-sm">
-                    <span className="text-slate-500 flex-shrink-0">Status</span>
-                    <span className="text-slate-900 font-medium text-right capitalize">{String(thread.context.status).replace(/_/g, ' ')}</span>
-                </div>
-            )}
-        </div>
+            );
+        })()
     );
 
     return (

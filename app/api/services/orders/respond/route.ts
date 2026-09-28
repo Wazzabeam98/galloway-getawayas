@@ -115,7 +115,7 @@ export async function POST(request: Request) {
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, provider_id, status, shape, slot_session_id, quantity, stripe_payment_intent_id, guest_email, guest_name, service_date, service_time, price, provider_business_name, pending_service_date, pending_service_time, pending_change_expires_at, exclusive_per_date')
+            .select('id, provider_id, status, shape, slot_session_id, quantity, stripe_payment_intent_id, guest_email, guest_name, service_date, service_time, price, provider_business_name, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, exclusive_per_date')
             .eq('id', orderId)
             .maybeSingle();
 
@@ -145,12 +145,18 @@ export async function POST(request: Request) {
             if (order.status !== 'confirmed' || !order.pending_service_date) {
                 return NextResponse.json({ ok: false, error: 'There’s no date change to answer.' }, { status: 409 });
             }
+            // The provider answers a change the GUEST asked for. A change the
+            // PROVIDER proposed is the guest's to answer (via change-date), so it is
+            // refused here. A legacy pending row (null marker) is a guest request.
+            if (order.pending_change_by === 'provider') {
+                return NextResponse.json({ ok: false, error: 'You proposed this change — it’s the guest’s to accept.' }, { status: 409 });
+            }
             if (order.pending_change_expires_at && new Date(order.pending_change_expires_at) < new Date()) {
                 await admin.from('service_orders').update({ pending_service_date: null, pending_change_expires_at: null }).eq('id', order.id);
                 return NextResponse.json({ ok: false, error: 'That date request has expired.' }, { status: 409 });
             }
             if (decision === 'decline_date') {
-                await admin.from('service_orders').update({ pending_service_date: null, pending_service_time: null, pending_change_expires_at: null }).eq('id', order.id).eq('status', 'confirmed');
+                await admin.from('service_orders').update({ pending_service_date: null, pending_service_time: null, pending_change_expires_at: null, pending_change_by: null }).eq('id', order.id).eq('status', 'confirmed');
                 await notifyGuest(order, 'date_declined', providerName);
                 return NextResponse.json({ ok: true, status: 'date_declined' });
             }
@@ -165,7 +171,7 @@ export async function POST(request: Request) {
                 if (clash && clash.length) return NextResponse.json({ ok: false, error: 'You already have a booking on that date.' }, { status: 409 });
             }
             const { error: mvErr } = await admin.from('service_orders')
-                .update({ service_date: newDate, service_time: newTime, pending_service_date: null, pending_service_time: null, pending_change_expires_at: null })
+                .update({ service_date: newDate, service_time: newTime, pending_service_date: null, pending_service_time: null, pending_change_expires_at: null, pending_change_by: null })
                 .eq('id', order.id).eq('status', 'confirmed');
             if (mvErr) {
                 if (String((mvErr as any).code) === '23505') return NextResponse.json({ ok: false, error: 'You already have a booking on that date.' }, { status: 409 });

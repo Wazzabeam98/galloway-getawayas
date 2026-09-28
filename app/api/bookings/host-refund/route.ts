@@ -6,6 +6,7 @@ import { issueRefunds } from '@/lib/refundSpread';
 import { clawBackPayout } from '@/lib/clawback';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
             return NextResponse.json(
                 {
                     ok: false,
-                    error: 'That is more than the £' + refundable.toFixed(2) + ' the guest has paid.',
+                    error: 'That is more than the ' + formatGBP(refundable) + ' the guest has paid.',
                 },
                 { status: 400 }
             );
@@ -166,7 +167,7 @@ export async function POST(request: Request) {
             // dangerous case — the booking then looks less refunded than it is
             // and its refundable guard reads wrong on the next refund.
             await logError(
-                '[bookings/host-refund] refunded £' + refundedNow.toFixed(2)
+                '[bookings/host-refund] refunded ' + formatGBP(refundedNow)
                     + ' but could not record it against the booking',
                 refundWriteError || { booking_id: booking.id, amount: refundedNow },
                 { path: 'api/bookings/host-refund', userId: booking.host_id }
@@ -176,8 +177,8 @@ export async function POST(request: Request) {
             // because a concurrent refund took the headroom. The money left at
             // Stripe, so a person has to reconcile it.
             await logError(
-                '[bookings/host-refund] £' + refundedNow.toFixed(2) + ' was refunded but only £'
-                    + round2(Number(applied.applied)).toFixed(2)
+                '[bookings/host-refund] ' + formatGBP(refundedNow) + ' was refunded but only '
+                    + formatGBP(Number(applied.applied))
                     + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
                 Object.assign({ booking_id: booking.id }, applied),
                 { path: 'api/bookings/host-refund', userId: booking.host_id }
@@ -201,10 +202,10 @@ export async function POST(request: Request) {
         if (guestEmail) {
             await sendEmail(
                 guestEmail,
-                'Your host has refunded you \u00A3' + refundedNow.toFixed(2),
+                'Your host has refunded you ' + formatGBP(refundedNow),
                 emailLayout(
-                    '<p style="margin:0 0 16px;font-size:16px;">Your host has sent back <strong>\u00A3'
-                        + refundedNow.toFixed(2)
+                    '<p style="margin:0 0 16px;font-size:16px;">Your host has sent back <strong>'
+                        + formatGBP(refundedNow)
                         + '</strong> on your stay at <strong>'
                         + escapeHtml((listing && listing.title) || 'their place')
                         + '</strong>.</p>'

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { formatGBP } from '@/lib/formatMoney';
 import { ShoppingBag, X, ChevronDown, Plus, Home, Pencil } from 'lucide-react';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { dateLabel, cancellationBadge } from '@/components/marketplace/present';
@@ -162,7 +163,7 @@ export default function FoodBasket({
                 </div>
                 {count > 0 && (
                     <div className="text-right">
-                        <div className="text-xl font-semibold text-slate-900">£{total.toFixed(2)}</div>
+                        <div className="text-xl font-semibold text-slate-900">{formatGBP(total)}</div>
                         <div className="text-xs text-slate-500">{count} item{count === 1 ? '' : 's'}</div>
                     </div>
                 )}
@@ -189,13 +190,13 @@ export default function FoodBasket({
                         {lines.map((l) => (
                             <li key={l.it.id} className="flex items-baseline justify-between gap-3 text-sm">
                                 <span className="min-w-0 text-slate-800"><span className="font-medium">{l.qty} ×</span> {l.it.name}</span>
-                                <span className="tabular-nums font-medium text-slate-900">£{(l.it.price * l.qty).toFixed(2)}</span>
+                                <span className="tabular-nums font-medium text-slate-900">{formatGBP(l.it.price * l.qty)}</span>
                             </li>
                         ))}
                         {fee > 0 && (
                             <li className="flex items-baseline justify-between gap-3 text-sm text-slate-600">
                                 <span>Delivery</span>
-                                <span className="tabular-nums">£{fee.toFixed(2)}</span>
+                                <span className="tabular-nums">{formatGBP(fee)}</span>
                             </li>
                         )}
                     </ul>
@@ -317,7 +318,7 @@ export default function FoodBasket({
                 {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
                 <button type="button" onClick={send} disabled={!canSend}
                     className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                    {busy ? 'Sending…' : (hasCustom ? `Send order request · £${total.toFixed(2)}` : `Place order & pay · £${total.toFixed(2)}`)}
+                    {busy ? 'Sending…' : (hasCustom ? `Send order request · ${formatGBP(total)}` : `Place order & pay · ${formatGBP(total)}`)}
                 </button>
                 <p className="mt-2 text-xs text-slate-400">{hasCustom
                     ? `Your card is held, not charged, until ${who} accepts your made-to-order items.`
@@ -353,7 +354,7 @@ export default function FoodBasket({
                             <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-white/20 px-1.5 text-xs font-bold tabular-nums">{count}</span>
                             View basket
                         </span>
-                        <span className="text-sm font-bold tabular-nums">£{total.toFixed(2)}</span>
+                        <span className="text-sm font-bold tabular-nums">{formatGBP(total)}</span>
                     </button>
                 </div>
             )}

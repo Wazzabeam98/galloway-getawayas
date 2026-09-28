@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatGBP } from '@/lib/formatMoney';
 
 // What a host sees about their own cottage: the experiences a guest staying
 // here can book. Read-only — the host is not buying anything, they are finding
@@ -69,8 +70,8 @@ export default function GuestBookableHere(props: { listingId: string }) {
                             </div>
                             <div className="font-semibold text-slate-900 whitespace-nowrap">
                                 {p.items.length === 1
-                                    ? '£' + p.items[0].price.toFixed(2)
-                                    : 'from £' + Math.min(...p.items.map((i) => i.price)).toFixed(2)}
+                                    ? formatGBP(p.items[0].price)
+                                    : 'from ' + formatGBP(Math.min(...p.items.map((i) => i.price)))}
                             </div>
                         </li>
                     ))}

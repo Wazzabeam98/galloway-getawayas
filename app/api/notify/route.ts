@@ -24,6 +24,7 @@ import {
 } from '@/lib/email';
 import { guestBookedEmail } from '@/lib/bookingEmails';
 import { cancellationPosition } from '@/lib/cancellationView';
+import { formatGBPAmount } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -182,7 +183,7 @@ export async function POST(request: Request) {
                     { label: 'Guest', value: guestFirst },
                     { label: 'Dates', value: nights },
                     { label: 'Guests', value: String(booking.guests || 1) },
-                    { label: 'Total', value: '&pound;' + Number(booking.total_price || 0).toFixed(2) },
+                    { label: 'Total', value: '&pound;' + formatGBPAmount(Number(booking.total_price || 0)) },
                 ]) +
                 button(SITE_URL + '/dashboard/bookings/' + booking.id, instant ? 'View the booking' : 'Review this request'),
                 "You're receiving this because you host on Galloway Getaways. Booking emails can't be switched off."
@@ -258,7 +259,7 @@ export async function POST(request: Request) {
                     { label: 'Dates', value: nights },
                     ...(arrivalLine ? [{ label: 'Times', value: escapeHtml(arrivalLine + '.') }] : []),
                     { label: 'Guests', value: String(booking.guests || 1) },
-                    { label: 'Total', value: '&pound;' + Number(booking.total_price || 0).toFixed(2) },
+                    { label: 'Total', value: '&pound;' + formatGBPAmount(Number(booking.total_price || 0)) },
                 ]) +
                 button(SITE_URL + '/trips', 'View your trip'),
                 "You're receiving this because you have a booking with Galloway Getaways. Booking emails can't be switched off."

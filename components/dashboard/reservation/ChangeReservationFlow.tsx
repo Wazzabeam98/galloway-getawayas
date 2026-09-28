@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
+import { formatGBP } from '@/lib/formatMoney';
 import { Minus, Plus, ChevronDown, CalendarDays, Users } from 'lucide-react';
 import ChangeDateRange from '@/components/reservations/ChangeDateRange';
 
@@ -115,7 +116,7 @@ export default function ChangeReservationFlow({
     // whole drop just lowers the balance they've yet to pay — so we say the balance
     // drops rather than that money comes "back". `who` picks the voice: the guest
     // reading about themselves, or the host reading about the guest.
-    const money = (n: number) => <strong>£{n.toFixed(2)}</strong>;
+    const money = (n: number) => <strong>{formatGBP(n)}</strong>;
     const decreaseWording = (who: 'guest' | 'host') => {
         const refund = quote?.refund ?? 0;
         const balDrop = quote?.balanceDrop ?? 0;
@@ -201,10 +202,10 @@ export default function ChangeReservationFlow({
                     {quoting || delta === null
                         ? 'Pricing the change…'
                         : role === 'guest'
-                            ? (delta > 0 ? <>Your host will need to approve this, <strong>£{delta.toFixed(2)} more</strong>.</>
+                            ? (delta > 0 ? <>Your host will need to approve this, <strong>{formatGBP(delta)} more</strong>.</>
                                 : delta < 0 ? <>Your host will need to approve this — {decreaseWording('guest')}</>
                                     : <>This updates your booking straight away.</>)
-                            : (delta > 0 ? <>If {counterpartyName} accepts, they’ll pay <strong>£{delta.toFixed(2)}</strong> more.</>
+                            : (delta > 0 ? <>If {counterpartyName} accepts, they’ll pay <strong>{formatGBP(delta)}</strong> more.</>
                                 : delta < 0 ? <>If {counterpartyName} accepts, {decreaseWording('host')}</>
                                     : <>If {counterpartyName} accepts, there’s nothing extra to pay.</>)}
                 </div>

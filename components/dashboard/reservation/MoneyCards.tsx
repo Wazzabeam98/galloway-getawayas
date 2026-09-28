@@ -20,6 +20,13 @@ export interface MoneyCardsData {
     nightsLabel: string;    // "Total for 3 nights"
     working?: string;       // "Guest paid £480.00 − our 10% fee £48.00 = £432.00"
     rows: MoneyDetailRow[]; // the full breakdown, shown in the pop-up
+    // The pop-up's subtitle. Defaults to the host/provider wording; a guest,
+    // who is only shown what they paid, passes their own so the pop-up never
+    // mentions a fee that is not theirs.
+    description?: string;
+    // An uppercase caption on the card, matching the other reservation cards
+    // (GUESTS, CANCELLATION). The host page omits it and keeps the bare total.
+    caption?: string;
 }
 
 function Rows({ rows }: { rows: MoneyDetailRow[] }) {
@@ -53,12 +60,17 @@ export default function MoneyCards(props: MoneyCardsData) {
     return (
         <Modal
             title="Money"
-            description="What the guest paid, our fee, and when you’re paid."
+            description={props.description || 'What the guest paid, our fee, and when you’re paid.'}
             trigger={
                 <button type="button" className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300">
-                    <span className="min-w-0 text-base font-semibold text-slate-900">
-                        {props.total}
-                        <span className="ml-1.5 text-[13px] font-normal text-slate-500">· {props.nightsLabel}</span>
+                    <span className="min-w-0">
+                        {props.caption && (
+                            <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{props.caption}</span>
+                        )}
+                        <span className={(props.caption ? 'mt-0.5 ' : '') + 'block text-base font-semibold text-slate-900'}>
+                            {props.total}
+                            <span className="ml-1.5 text-[13px] font-normal text-slate-500">· {props.nightsLabel}</span>
+                        </span>
                     </span>
                     <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
                 </button>

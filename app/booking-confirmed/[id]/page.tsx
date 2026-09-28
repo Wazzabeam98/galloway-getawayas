@@ -6,6 +6,7 @@ import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukLongDate } from '@/lib/dayKey';
 import { publicArea } from '@/lib/places';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,10 +120,10 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
 
                 <div className="border-t pt-4">
                     <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Paid today</div>
-                    <div className="text-xl font-bold text-slate-900">£{paid.toFixed(2)}</div>
+                    <div className="text-xl font-bold text-slate-900">{formatGBP(paid)}</div>
                     {balance > 0 && (
                         <p className="text-sm text-slate-600 mt-1">
-                            The remaining <strong>£{balance.toFixed(2)}</strong>
+                            The remaining <strong>{formatGBP(balance)}</strong>
                             {booking.balance_due_date
                                 ? ' is taken from the same card on ' + formatUk(new Date(booking.balance_due_date)) + '.'
                                 : ' is due before your stay.'}{' '}
