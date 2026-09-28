@@ -64,6 +64,7 @@ import {
     offersHourlyChoice,
     pickerEntries,
     unclaimedTrades,
+    isTradeComingSoon,
     tradesFor,
     groupByKey,
     bandsFor,
@@ -4294,7 +4295,10 @@ function ApplicationForm() {
                 }
 
                 const entries = pickerEntries(mine, 'host');
-                const left = unclaimedTrades(mine, 'host');
+                // Coming-soon trades are not joinable, so they do not count as
+                // trades still "left" to sign up for — keeps the picker grid and
+                // the "signed up for everything" line agreeing.
+                const left = unclaimedTrades(mine, 'host').filter((t) => !isTradeComingSoon(t.key));
 
                 return (
                     <div>
