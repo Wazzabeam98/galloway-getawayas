@@ -13,6 +13,17 @@ import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
+import { ukDate, londonDayKey } from '@/lib/dayKey';
+
+// A message timestamp as DD/MM/YYYY (the shared formatter, London day key so a
+// near-midnight message lands on the right day) then the London time — the same
+// shape the standalone experience threads now use.
+function msgTime(iso: string): string {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+    return `${ukDate(londonDayKey(d))}, ${time}`;
+}
 import { toast } from 'react-toastify';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
@@ -716,12 +727,7 @@ export default function MessagesInboxPage() {
                                                 (mine ? 'text-emerald-100' : 'text-slate-400')
                                             }
                                         >
-                                            {new Date(m.created_at).toLocaleString('en-GB', {
-                                                day: 'numeric',
-                                                month: 'short',
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                            })}
+                                            {msgTime(m.created_at)}
                                         </div>
                                     </div>
                                 </div>
@@ -1150,12 +1156,7 @@ export default function MessagesInboxPage() {
                                                             (mine ? 'text-emerald-100' : 'text-slate-400')
                                                         }
                                                     >
-                                                        {new Date(m.created_at).toLocaleString('en-GB', {
-                                                            day: 'numeric',
-                                                            month: 'short',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit',
-                                                        })}
+                                                        {msgTime(m.created_at)}
                                                     </div>
                                                 </div>
                                             </div>

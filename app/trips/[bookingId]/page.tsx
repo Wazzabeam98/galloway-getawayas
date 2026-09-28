@@ -16,7 +16,7 @@ import { liveForGuestCard, stayCountdown, upcomingUntilCheckout } from '@/lib/bo
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadBookingSeats } from '@/lib/groupSeats';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
-import { londonDayKey } from '@/lib/dayKey';
+import { londonDayKey, ukWeekday, ukDate } from '@/lib/dayKey';
 import PropertyMap from '@/components/PropertyMap';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
@@ -64,13 +64,16 @@ const PILL: Record<string, string> = {
 // across both reservation pages.
 const ROW = 'flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-medium text-slate-800 hover:text-slate-950';
 
+// The weekday and the date, from the ONE shared formatter (lib/dayKey), so the
+// guest trip page and the host booking page — which now renders the shared
+// reservation card — read dates the same way and cannot drift. DD/MM/YYYY, the
+// site's one numeric date format, and DST-safe (the old local Date parse slipped
+// a day under British Summer Time).
 function weekday(dateStr: string): string {
-    const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
-    return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { weekday: 'long' });
+    return ukWeekday(String(dateStr).slice(0, 10));
 }
 function dateLong(dateStr: string): string {
-    const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
-    return isNaN(d.getTime()) ? String(dateStr) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    return ukDate(String(dateStr).slice(0, 10)) || String(dateStr);
 }
 // "3:00pm" from a stored 'HH:MM[:SS]'. Null in, null out — no invented time.
 function timeLabel(t: string | null | undefined): string | null {

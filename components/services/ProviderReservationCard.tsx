@@ -133,7 +133,16 @@ function DayCard({ cell, icon: Icon }: { cell: StayDayCell; icon: any }) {
     );
 }
 
-export default function ProviderReservationCard({ r, size = 'lg' }: { r: ReservationCardData; size?: 'lg' | 'sm' }) {
+export default function ProviderReservationCard({ r, size = 'lg', arrivalEditor }: {
+    r: ReservationCardData;
+    size?: 'lg' | 'sm';
+    // The host's own reservation page passes its editable door-code control here.
+    // When set it takes the place of the read-only arrival block, so the host
+    // edits the code in the same slot the guest and provider read it — one card,
+    // still only one arrival block. Everyone else (the inbox, the guest, the
+    // provider) omits it and gets the read-only block from r.stay.arrival.
+    arrivalEditor?: React.ReactNode;
+}) {
     const arrival = r.stay && r.stay.arrival;
     const hasArrival = !!(arrival && (arrival.doorCode || arrival.wifiName || arrival.wifiPassword));
     return (
@@ -155,7 +164,7 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                         <DayCard cell={r.stay.checkIn} icon={LogIn} />
                         <DayCard cell={r.stay.checkOut} icon={LogOut} />
                     </div>
-                    {hasArrival && (
+                    {arrivalEditor ? arrivalEditor : hasArrival && (
                         <div className={lifted}>
                             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Arrival details</div>
                             <div className="mt-3 space-y-3">

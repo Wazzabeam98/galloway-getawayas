@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Send, Loader2, Info } from 'lucide-react';
+import { ukDate, londonDayKey } from '@/lib/dayKey';
 
 // The message thread on a job. A written record of what was agreed, and a way
 // to talk without swapping numbers. Reachable from an accepted (or cancelled)
@@ -24,7 +25,10 @@ type Data = {
 function timeLabel(iso: string) {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
-    return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+    // DD/MM/YYYY from the shared formatter (London day key so a near-midnight
+    // timestamp lands on the right day), then the London time.
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+    return `${ukDate(londonDayKey(d))}, ${time}`;
 }
 
 export default function EnquiryThread({ enquiryId, backHref }: { enquiryId: string; backHref: string }) {

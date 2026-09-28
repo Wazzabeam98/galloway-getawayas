@@ -10,20 +10,19 @@ import { checkListing, accessibleListings } from "@/lib/access";
 import { displayName, getImageUrl, capitializeFirst } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
 import { formatUk, refundDue, policyOf, freeCancelUntilKey } from "@/lib/cancellation";
-import { londonDayKey } from "@/lib/dayKey";
+import { londonDayKey, ukDate, ukWeekday } from "@/lib/dayKey";
 import { contactNumberVisible, stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from "@/lib/hostDebt";
 import { dateFromKey } from "@/lib/pricing";
 import { confirmationNumber, cancellationWords } from "@/lib/bookingDisplay";
 import EditableDoorCode from "@/components/dashboard/reservation/EditableDoorCode";
-import CancellationPolicyCard from "@/components/dashboard/reservation/CancellationPolicyCard";
-import MoneyCards, { type MoneyCardsData, type MoneyDetailRow } from "@/components/dashboard/reservation/MoneyCards";
+import { type MoneyCardsData, type MoneyDetailRow } from "@/components/dashboard/reservation/MoneyCards";
 import ManageReservationSheet from "@/components/dashboard/reservation/ManageReservationSheet";
 import {
     ArrowLeft, MessageSquare, Phone,
     ChevronRight,
 } from "lucide-react";
-import ReservationHeader from "@/components/dashboard/reservation/ReservationHeader";
+import ProviderReservationCard, { type ReservationCardData } from "@/components/services/ProviderReservationCard";
 
 // One booking, in full.
 //
@@ -480,6 +479,72 @@ export default async function BookingDetail({ params }: { params: { id: string }
         ? '/messages?b=' + booking.id + '&draft=' + encodeURIComponent(askToCancelDraft)
         : null;
 
+    // The one shared reservation card (ProviderReservationCard), fed the host's
+    // view. Same component the guest trip page and the Messages panes now render,
+    // so the two cannot drift. The host's own extras — the editable door code
+    // (via the arrivalEditor slot), the full payout/balance money (moneyProps,
+    // unchanged), the Manage sheet and the message bar — stay wired here; the
+    // card renders the summary. Dates are DD/MM/YYYY from the shared formatter.
+    const ciKey = String(booking.check_in).slice(0, 10);
+    const coKey = String(booking.check_out).slice(0, 10);
+    const dateRange = ukDate(ciKey) + ' – ' + ukDate(coKey);
+    const cardWords = cancellationWords(listing?.cancellation_policy);
+    const ciTime = timeLabel(listing?.check_in_time);
+    const ciEnd = timeLabel(listing?.check_in_end_time);
+    const coTime = timeLabel(listing?.check_out_time);
+    const leadInitial = firstName.slice(0, 1).toUpperCase();
+    const cardExtras: string[] = [];
+    {
+        const a = Number(booking.adults || 0) || Math.max(1, Number(booking.guests || 1) - Number(booking.children || 0));
+        const kids = Number(booking.children || 0);
+        const pets = Number(booking.pets || 0);
+        if (a - 1 > 0) cardExtras.push('+' + (a - 1) + ((a - 1) === 1 ? ' adult' : ' adults'));
+        if (kids > 0) cardExtras.push('+' + kids + (kids === 1 ? ' child' : ' children'));
+        if (pets > 0) cardExtras.push('+' + pets + (pets === 1 ? ' pet' : ' pets'));
+    }
+    const cardData: ReservationCardData = {
+        avatarUrl: guestAvatar,
+        initial: leadInitial,
+        photoUrl: hero,
+        heading: headerGroup,
+        whenLabel: dateRange + ' · ' + nights + (nights === 1 ? ' night' : ' nights'),
+        itemName: listing?.title || 'Booking',
+        status: { label: meta.label, tone: meta.tone },
+        when: { heading: 'When', value: dateRange },
+        where: null,
+        note: null,
+        allergy: null,
+        money: moneyProps,
+        moneyNote: null,
+        phone: null,        // the host's own sticky Message/Call bar stays below
+        messageHref: null,
+        personFirst: firstName,
+        guests: null,
+        cancellation: null,
+        manage: null,       // the host's ManageReservationSheet stays below
+        guestManage: null,
+        stay: {
+            checkIn: {
+                heading: 'Check-in', weekday: ukWeekday(ciKey), dateLabel: ukDate(ciKey),
+                timeLabel: ciTime ? ('From ' + ciTime + (ciEnd ? '–' + ciEnd : '')) : null,
+            },
+            checkOut: {
+                heading: 'Check-out', weekday: ukWeekday(coKey), dateLabel: ukDate(coKey),
+                timeLabel: coTime ? ('By ' + coTime) : null,
+            },
+            arrival: null,  // shown via the editable door code (arrivalEditor)
+        },
+        guestsList: { lead: { name: guestName, avatarUrl: guestAvatar, initial: leadInitial }, extras: cardExtras },
+        hostedBy: {
+            label: 'Hosted by', name: ownerFirst, sub: area,
+            avatarUrl: ownerAvatar, initial: ownerFirst.slice(0, 1), isViewer: ownerIsViewer,
+        },
+        stayCancellation: { tier: cardWords.tier, summary: cardWords.summary, freeUntil: (londonDayKey() <= freeKey ? ukDate(freeKey) : null) },
+        booked: booking.created_at ? ukDate(londonDayKey(new Date(booking.created_at))) : null,
+        reference: confCode,
+        viewListingHref: listing ? '/homes/' + listing.id : null,
+    };
+
     return (
         <div className="min-h-[calc(100dvh-81px)] bg-slate-50">
             <div className="hostres-zoom mx-auto max-w-[75rem] px-4 sm:px-6 py-6">
@@ -500,114 +565,24 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     {/* ---- MAIN COLUMN — the booking, in full. Second on desktop
                         (centred in the space beside the rail), first on a phone. ---- */}
                     <div className="min-w-0 space-y-6 lg:order-2 lg:mx-auto lg:w-full lg:max-w-[35rem]">
-                        {/* Airbnb-style header: the guest large and centred (their
-                            initial on a soft green circle when there's no photo), with
-                            the property photo tucked into the bottom-right corner; then
-                            who's coming, the dates and nights, and the place. Shared with
-                            the provider's reservation card (ReservationHeader) so a stay
-                            and an experience read as one product from either side. */}
-                        <ReservationHeader
-                            avatarUrl={guestAvatar}
-                            initial={firstName.slice(0, 1).toUpperCase()}
-                            photoUrl={hero}
-                            heading={headerGroup}
-                            sublines={[
-                                `${nightRange(booking.check_in, booking.check_out)} · ${nights} ${nights === 1 ? 'night' : 'nights'}`,
-                                listing?.title || 'Booking',
-                            ]}
-                            status={{ label: meta.label, tone: meta.tone }}
+                        {/* The one shared reservation card. The host's editable door
+                            code goes in the arrivalEditor slot (the guest and provider
+                            see it read-only there); everything else — dates, guests,
+                            hosted-by, cancellation and the full payout/balance money —
+                            is the same card the guest trip page and Messages render, so
+                            the host and guest views cannot drift apart. */}
+                        <ProviderReservationCard
+                            r={cardData}
+                            arrivalEditor={access.can_listing ? (
+                                <EditableDoorCode
+                                    bookingId={booking.id}
+                                    code={doorCode}
+                                    hasOverride={!!doorCodeOverride}
+                                    listingCode={listingCode}
+                                    editable={!closed && !ended}
+                                />
+                            ) : undefined}
                         />
-
-                        {/* The booking column matches the guest trip card and Airbnb's
-                            host view, top to bottom: the dates, the door code, hosted
-                            by, then who's going as a Guests card, then the cancellation
-                            policy, the money cards and the rest. */}
-
-                        {/* 1 — Check-in / Check-out: two raised cards, the lifted-card
-                            treatment reserved for surfaces you act on. */}
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            {([
-                                { label: 'Check-in', date: booking.check_in, time: timeLabel(listing?.check_in_time), end: timeLabel(listing?.check_in_end_time) },
-                                { label: 'Check-out', date: booking.check_out, time: timeLabel(listing?.check_out_time), end: null },
-                            ] as const).map((c) => (
-                                <div key={c.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{c.label}</div>
-                                    <div className="mt-1 text-sm font-medium text-slate-900">{weekday(c.date)}</div>
-                                    <div className="text-sm text-slate-600">{dateLong(c.date)}</div>
-                                    {c.time && (
-                                        <div className="mt-1 text-sm text-slate-600">
-                                            {c.label === 'Check-in' ? 'From ' : 'By '}{c.time}{c.end ? `–${c.end}` : ''}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* 2 — Door code: for anyone with the listing permission. Read
-                            server-side only when can_listing, so a co-host without it
-                            never receives the code. Editable on an upcoming booking:
-                            the edit sets an override for this booking only, without
-                            changing the property's code. */}
-                        {access.can_listing && (
-                            <EditableDoorCode
-                                bookingId={booking.id}
-                                code={doorCode}
-                                hasOverride={!!doorCodeOverride}
-                                listingCode={listingCode}
-                                editable={!closed && !ended}
-                            />
-                        )}
-
-                        {/* 3 — Hosted by — whose property this is. On the owner's own
-                            screen it names them; for a co-host it names the person
-                            they look after it for. */}
-                        <section className="border-t border-slate-200 pt-6">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <h2 className="text-lg font-semibold text-slate-900">
-                                        Hosted by {ownerFirst}{ownerIsViewer ? ' · you' : ''}
-                                    </h2>
-                                    {area && <div className="mt-0.5 text-[13px] text-slate-500">{area}</div>}
-                                </div>
-                                {ownerAvatar ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={ownerAvatar} alt={ownerName} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
-                                ) : (
-                                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{ownerFirst.slice(0, 1)}</span>
-                                )}
-                            </div>
-                        </section>
-
-                        {/* 4 — Who's going, as a Guests card in the card family: the
-                            lead guest's avatar (initial-letter fallback) and name, with
-                            the party beneath — "+2 · 1 adult, 1 pet". */}
-                        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Guests</div>
-                            <div className="mt-3 flex items-center gap-3">
-                                {guestAvatar ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={guestAvatar} alt={guestName} className="h-11 w-11 flex-none rounded-full object-cover ring-1 ring-slate-200" />
-                                ) : (
-                                    <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{firstName.slice(0, 1).toUpperCase()}</span>
-                                )}
-                                <div className="min-w-0">
-                                    <div className="truncate text-base font-semibold text-slate-900">{guestName}</div>
-                                    <div className="text-[13px] text-slate-500">{guestsCardRow}</div>
-                                </div>
-                            </div>
-                        </section>
-
-                        {/* 5 — Cancellation policy — a small card showing just the tier
-                            name; tapping opens the full policy in the page's pop-up. */}
-                        {(() => {
-                            const words = cancellationWords(listing?.cancellation_policy);
-                            return <CancellationPolicyCard tier={words.tier} summary={words.summary} />;
-                        })()}
-
-                        {/* 6 — Money: one card showing the total and nights; tap it for
-                            the full breakdown (guest paid, paid so far, any balance, our
-                            fee with the working, you get, and the payout). can_earnings. */}
-                        <MoneyCards {...moneyProps} />
 
                         {/* Manage reservation — a single row with a pencil that opens
                             the action pop-up: change, send/request money, dispute,
@@ -645,24 +620,6 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             listingTitle={listing?.title || 'your stay'}
                             listingImage={hero}
                         />
-
-                        {/* Booking details — the confirmation code (derived from the
-                            id, no new column) and the day the booking was made. */}
-                        <section className="border-t border-slate-200 pt-6">
-                            <h2 className="text-lg font-semibold text-slate-900">Booking details</h2>
-                            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4">
-                                <div>
-                                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confirmation</div>
-                                    <div className="mt-1 font-mono text-sm tracking-wide text-slate-900">{confCode}</div>
-                                </div>
-                                {bookedOn && (
-                                    <div>
-                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Booked</div>
-                                        <div className="mt-1 text-sm font-medium text-slate-900">{bookedOn}</div>
-                                    </div>
-                                )}
-                            </div>
-                        </section>
 
                         {/* Reach the guest — replaces the floating button. Centred in
                             the booking column and stuck to the bottom of the viewport so
