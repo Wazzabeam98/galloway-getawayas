@@ -8,6 +8,7 @@ import { notFound } from 'next/navigation';
 import { getImageUrl, adminName } from '@/lib/utils';
 import { publicArea } from '@/lib/places';
 import AdminListingRow from '@/components/admin/AdminListingRow';
+import PropertiesMap from '@/components/PropertiesMap';
 import ListingReviewQueue from '@/components/admin/ListingReviewQueue';
 import { publishProblems, fromRow } from '@/lib/listingRules';
 import { waitedFor } from '@/lib/email';
@@ -37,7 +38,7 @@ export default async function AdminListings() {
     // broken key, and is a lie in the one place that must not tell them.
     const { data: listings, error: listingsError } = await admin
         .from('listings')
-        .select('id, title, location, images, status, host_id, created_at, property_type, street_address, postcode, price_per_night, max_guests, bedrooms, beds, bathrooms, amenities, description, check_in_method, weekend_price')
+        .select('id, title, location, images, status, host_id, created_at, property_type, street_address, postcode, price_per_night, max_guests, bedrooms, beds, bathrooms, amenities, description, check_in_method, weekend_price, approx_latitude, approx_longitude')
         .order('created_at', { ascending: false });
 
     if (listingsError) {
@@ -103,8 +104,23 @@ export default async function AdminListings() {
     // the queue, and it is deliberately visible before it can fill up.
     const waiting = rows.filter((l) => l.status === 'pending_review');
 
+    // House pins for the side map — every property we hold a street-level point
+    // for, whatever its status. Never the exact pair: approx_latitude/longitude
+    // are the ~110m rounded columns, so the map cannot give a door away.
+    const mapPoints = rows
+        .filter((l) => l.approx_latitude != null && l.approx_longitude != null)
+        .map((l) => ({
+            id: l.id,
+            lat: Number(l.approx_latitude),
+            lng: Number(l.approx_longitude),
+            title: l.title || 'Untitled listing',
+            href: `/homes/${l.id}`,
+        }));
+
     return (
-        <div className="max-w-4xl mx-auto px-6 py-10">
+        <div className="max-w-6xl mx-auto px-6 py-10">
+          <div className="lg:flex lg:items-start lg:gap-8">
+            <div className="min-w-0 lg:flex-1">
             <Link href="/admin" className="text-sm text-slate-500 hover:text-slate-800 underline">
                 &larr; Owner tools
             </Link>
@@ -195,6 +211,17 @@ export default async function AdminListings() {
             ) : (
                 <p className="text-sm text-slate-500">Nothing yet.</p>
             )}
+            </div>
+
+            <aside className="mt-10 lg:mt-0 lg:w-[360px] lg:flex-none lg:sticky lg:top-6">
+                <h2 className="text-sm font-semibold text-slate-700 mb-2">Where they are</h2>
+                <p className="text-xs text-slate-500 mb-3">
+                    A house for every property with an address. Pins show the
+                    approximate street, never the exact door.
+                </p>
+                <PropertiesMap points={mapPoints} />
+            </aside>
+          </div>
         </div>
     );
 }

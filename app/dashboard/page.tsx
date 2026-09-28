@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import { accessibleListings } from "@/lib/access";
 import LeaveListingBtn from "@/components/LeaveListingBtn";
 import HideListingBtn from "@/components/HideListingBtn";
+import PropertiesMap from "@/components/PropertiesMap";
 import Link from "next/link";
 import { ChevronRight, Eye, Home, Plus, Wrench, Star } from "lucide-react";
 
@@ -156,13 +157,26 @@ export default async function Dashboard() {
     const { data: homes } = allIds.length
         ? await admin
             .from("listings")
-            .select("id, images, title, location, price_per_night, created_at, status, review_note")
+            .select("id, images, title, location, price_per_night, created_at, status, review_note, approx_latitude, approx_longitude")
             .in("id", allIds)
             .order("created_at", { ascending: false })
         : { data: [] };
 
     const owned = (homes || []).filter((h) => ownedIds.indexOf(h.id) !== -1);
     const helping = (homes || []).filter((h) => helpingIds.indexOf(h.id) !== -1);
+
+    // House pins for the side map — the host's own properties that we hold a
+    // street-level point for. approx_latitude/longitude are the ~110m rounded
+    // columns, never the exact door.
+    const ownedMapPoints = owned
+        .filter((h) => (h as any).approx_latitude != null && (h as any).approx_longitude != null)
+        .map((h) => ({
+            id: h.id,
+            lat: Number((h as any).approx_latitude),
+            lng: Number((h as any).approx_longitude),
+            title: h.title || 'Your listing',
+            href: `/homes/${h.id}`,
+        }));
 
     // "Your follow-ups" — guests who have checked out and are still inside the
     // review window, whom this host hasn't reviewed yet. One card each, so the
@@ -316,6 +330,8 @@ export default async function Dashboard() {
                     <ChevronRight className="w-5 h-5 text-slate-400 ml-auto flex-shrink-0" />
                 </Link>
 
+              <div className="lg:flex lg:items-start lg:gap-8">
+                <div className="min-w-0 lg:flex-1">
                 <div className="flex items-center justify-between mb-8">
                     <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your listings</h1>
                     <Link
@@ -408,6 +424,19 @@ export default async function Dashboard() {
                         </Link>
                     </div>
                 )}
+                </div>
+
+                {ownedMapPoints.length > 0 && (
+                    <aside className="mt-10 lg:mt-0 lg:w-[340px] lg:flex-none lg:sticky lg:top-6">
+                        <h2 className="text-sm font-semibold text-slate-700 mb-2">Where they are</h2>
+                        <p className="text-xs text-slate-500 mb-3">
+                            A house for each of your properties. Pins show the
+                            approximate street, never the exact door.
+                        </p>
+                        <PropertiesMap points={ownedMapPoints} />
+                    </aside>
+                )}
+              </div>
             </div>
         </div>
     );
