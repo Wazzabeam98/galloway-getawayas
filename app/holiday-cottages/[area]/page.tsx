@@ -9,6 +9,8 @@ import { MapPin } from 'lucide-react';
 import ListingCard, { type CardListing } from '@/components/ListingCard';
 import { townKey } from '@/lib/places';
 import { AREAS, areaBySlug, hasCopy, type Area } from '@/config/areas';
+import { COVERAGE_TOWNS } from '@/lib/serviceProviders';
+import AreaExperiences from '@/components/AreaExperiences';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -33,7 +35,7 @@ async function listingsForArea(area: Area): Promise<CardListing[]> {
     // fails the build for one. Same list the home page grid asks for.
     const { data } = await supabase
         .from('listings')
-        .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities')
+        .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude')
         .eq('status', 'published')
         .order('created_at', { ascending: false });
 
@@ -256,6 +258,23 @@ export default async function AreaPage({ params }: { params: { area: string } })
                         </div>
                     )}
                 </section>
+
+                {/* Experiences based in or covering this town — self-gates to
+                    nothing while the feature is dormant or nothing matches. The
+                    town centre comes from the coverage towns the rest of the
+                    site measures from (matched to this area's town keys). */}
+                {(() => {
+                    const town = COVERAGE_TOWNS.find((t) => area.townKeys.indexOf(townKey(t.label)) !== -1);
+                    return (
+                        <AreaExperiences
+                            lat={town?.lat ?? null}
+                            lng={town?.lng ?? null}
+                            townLabel={area.name}
+                            heading={`Experiences in and around ${area.name}`}
+                            intro={`Local chefs, bakers, saunas and guides who come to ${area.name} — add one to a stay.`}
+                        />
+                    );
+                })()}
 
                 {/* --- things to do --- */}
                 <section className="mt-14 max-w-3xl">

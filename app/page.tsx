@@ -117,7 +117,7 @@ export default async function HomePage({
 
     let query = supabase
         .from('listings')
-        .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities')
+        .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude')
         .eq('status', 'published')
         .order('created_at', { ascending: false });
 

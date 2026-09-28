@@ -16,6 +16,7 @@ import { toast } from 'react-toastify';
 import { DEFAULT_COMMISSION_PERCENT, feeAmount, netOfFee } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
+import { plural } from '@/lib/plural';
 import {
     problemAtStep as ruleAtStep,
     firstPublishProblem as firstProblemIn,
@@ -1100,7 +1101,7 @@ export default function AddHome() {
                             <ul className="text-sm text-slate-600 space-y-1">
                                 <li><span className="font-medium text-slate-800">Type:</span> {propertyType || '—'} · {privacyType}</li>
                                 <li><span className="font-medium text-slate-800">Location:</span> {[city, state].filter(Boolean).join(', ') || '—'}</li>
-                                <li><span className="font-medium text-slate-800">Guests:</span> {guests} · {bedrooms} bedrooms · {beds} beds · {bathrooms} bathrooms</li>
+                                <li><span className="font-medium text-slate-800">Guests:</span> {plural(guests, 'guest')} · {plural(bedrooms, 'bedroom')} · {plural(beds, 'bed')} · {plural(bathrooms, 'bathroom')}</li>
                                 <li><span className="font-medium text-slate-800">Amenities:</span> {amenities.length ? amenities.join(', ') : 'None selected'}</li>
                                 <li><span className="font-medium text-slate-800">Title:</span> {title || '—'}</li>
                                 <li><span className="font-medium text-slate-800">Discounts:</span> {[
