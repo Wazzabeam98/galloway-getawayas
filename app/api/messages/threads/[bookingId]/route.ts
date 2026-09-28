@@ -4,7 +4,8 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { contactNumberVisible } from '@/lib/stayWindow';
-import { firstName } from '@/lib/utils';
+import { firstName, getImageUrl } from '@/lib/utils';
+import { groupLabel } from '@/lib/bookingDisplay';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,9 +121,49 @@ export async function GET(
             : 'early')
         : null;
 
+    // The reservation-pane header, in the SAME shape the experience threads use
+    // (ReservationHeader): a stay and an experience read as one product. The host
+    // side sees the guest large with the listing photo tucked into the corner and
+    // "Isla's group of 2"; the guest/companion side sees the listing large with
+    // its initial, mirroring how a guest sees the business on an experience thread.
+    const onHostSide = isHost || isCoHost;
+    // The guest's PUBLIC profile for the header name + avatar — the same source
+    // the experience thread and the host booking page use, so the heading reads
+    // "Isla's group of 2", not the profile_private fallback "Guest". FIRST name
+    // only (never displayName): the counterparty must not be shown a surname —
+    // the display-names guard enforces this route stays clear of displayName.
+    const { data: guestPublic } = onHostSide
+        ? await admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', booking.guest_id).maybeSingle()
+        : { data: null };
+    const guestFirstForHeader = firstName(guestPublic, 'Guest');
+    const guestAvatar = onHostSide && guestPublic && guestPublic.avatar_url
+        ? getImageUrl(String(guestPublic.avatar_url)) : null;
+    const listingPhoto = listing && Array.isArray(listing.images) && listing.images[0]
+        ? getImageUrl(String(listing.images[0])) : null;
+    const listingTitle = (listing && listing.title) || 'your stay';
+    const header = onHostSide
+        ? {
+            avatarUrl: guestAvatar,
+            initial: (guestFirstForHeader || 'G').slice(0, 1).toUpperCase(),
+            photoUrl: listingPhoto,
+            heading: groupLabel(guestFirstForHeader, booking.guests),
+            // The guest's public first name, so the Manage sheet and its money
+            // flow name the same person the heading does ("Isla"), not the
+            // profile_private fallback the conversation falls back to.
+            personFirst: guestFirstForHeader,
+        }
+        : {
+            avatarUrl: null,
+            initial: listingTitle.slice(0, 1).toUpperCase(),
+            photoUrl: null,
+            heading: listingTitle,
+            personFirst: firstName(otherProfile, 'Host'),
+        };
+
     return NextResponse.json({
         ok: true,
         role: isGuest ? 'guest' : isHost ? 'host' : isCoHost ? 'co_host' : 'companion',
+        header,
         canSeePhone: phoneAllowed,
         other: {
             id: otherId,

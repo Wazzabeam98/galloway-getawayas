@@ -9,7 +9,7 @@ import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
 import {
     commissionRateFor, isDamageAllowed, sendCapPounds, validateSendAmount,
-    escalationDeadline, round2, toPence,
+    escalationDeadline, round2, toPence, reasonAllowedFor, reasonLabel,
     type ResolutionDirection, type ResolutionReason,
 } from '@/lib/resolutions';
 
@@ -47,7 +47,10 @@ export async function POST(request: Request) {
 
         if (!bookingId) return NextResponse.json({ ok: false, error: 'Missing booking' }, { status: 400 });
         if (direction !== 'request' && direction !== 'send') return NextResponse.json({ ok: false, error: 'Choose send or request.' }, { status: 400 });
-        if (reason !== 'extra_services' && reason !== 'damage') return NextResponse.json({ ok: false, error: 'Choose a reason.' }, { status: 400 });
+        // The reason has to belong to the direction: a request is extra services,
+        // damage or other; a send is a goodwill refund, a change to the booking or
+        // other. commissionRateFor still charges only an extra-services request.
+        if (!reasonAllowedFor(direction, reason)) return NextResponse.json({ ok: false, error: 'Choose a reason.' }, { status: 400 });
         if (!(amount > 0)) return NextResponse.json({ ok: false, error: 'Enter an amount.' }, { status: 400 });
         if (note.length > NOTE_MAX) return NextResponse.json({ ok: false, error: 'That note is too long.' }, { status: 400 });
 
@@ -173,7 +176,7 @@ export async function POST(request: Request) {
                 await sendEmail(guestEmail, 'Your host has requested ' + formatGBP(amount), emailLayout(
                     '<p style="margin:0 0 16px;font-size:16px;">Your host has requested <strong>' + formatGBP(amount)
                     + '</strong> for your stay at <strong>' + escapeHtml(stayName) + '</strong>'
-                    + (reason === 'damage' ? ' (damage or extra cleaning)' : ' (extra services)') + '.</p>'
+                    + ' (' + reasonLabel(reason).toLowerCase() + ').</p>'
                     + (note ? '<p style="margin:0 0 16px;font-size:15px;color:#475569;">“' + escapeHtml(note) + '”</p>' : '')
                     + '<p style="margin:0 0 16px;font-size:16px;">You can accept and pay, decline, or suggest a different amount.</p>'
                     + button(SITE_URL + '/resolutions/' + resolutionId, 'Review the request'),

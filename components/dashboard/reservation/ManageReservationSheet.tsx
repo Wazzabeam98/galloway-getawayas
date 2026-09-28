@@ -149,6 +149,10 @@ export default function ManageReservationSheet({
                     guestFirst={guestFirst}
                     afterCheckout={ended}
                     netPaid={refundable}
+                    guestParty={Number(adults || 0) + Number(children || 0)}
+                    checkIn={checkIn}
+                    checkOut={checkOut}
+                    listingTitle={listingTitle}
                     onClose={() => { setOpen(false); setView('menu'); }}
                 />
             )}

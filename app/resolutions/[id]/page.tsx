@@ -9,6 +9,7 @@ import { displayName, capitializeFirst } from '@/lib/utils';
 import GuestResolutionActions from '@/components/resolutions/GuestResolutionActions';
 import { Paperclip } from 'lucide-react';
 import { formatGBP } from '@/lib/formatMoney';
+import { reasonLabel, type ResolutionReason } from '@/lib/resolutions';
 
 // The guest's view of a money request from their host. Read through the service
 // role (the table is service-role only) and gated to the guest it belongs to.
@@ -64,7 +65,7 @@ export default async function ResolutionPage({ params }: { params: { id: string 
         <div className="mx-auto min-h-[calc(100dvh-4rem)] max-w-lg px-4 py-8">
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                    {res.reason === 'damage' ? 'Damage or extra cleaning' : 'Extra services'}
+                    {reasonLabel(res.reason as ResolutionReason)}
                 </p>
                 <h1 className="mt-1.5 text-2xl font-bold text-slate-900">
                     {hostFirst} requested {formatGBP(amount)}

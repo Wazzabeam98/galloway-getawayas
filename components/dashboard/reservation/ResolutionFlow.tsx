@@ -1,30 +1,56 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, Paperclip, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Paperclip, X, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { REQUEST_REASONS, SEND_REASONS, reasonLabel, type ResolutionReason } from '@/lib/resolutions';
 
-// The host's "Send or request money" flow, Airbnb's Resolution Centre shape:
-// choose direction → reason → amount + attachments + note → confirm. A REQUEST is
-// recorded and the guest is emailed to accept/pay, decline or counter; a SEND
-// takes the host to a one-off Stripe page and refunds the guest once it clears.
-type Step = 'choose' | 'reason' | 'details' | 'confirm' | 'done';
+// The host's "Send or request money" flow, Airbnb's Resolution Centre shape but in
+// our own styling: a stepped wizard with a progress bar and Back / Next.
+//   1 — send or request? (with who it concerns: the guest, their dates, party
+//       and listing, so the host knows which booking they're acting on)
+//   2 — what it's for. Our own reasons, not Airbnb's:
+//         request → extra services, damage, or other
+//         send    → a goodwill refund, a change to the booking, or other
+//   3 — the amount, any attachments and a note, then confirm.
+// The money rules are unchanged and enforced server-side: the 10% on an
+// extra-services request, nothing on damage or a send, the send cap (net paid)
+// and the 72-hour window. A REQUEST is recorded and the guest is emailed to
+// accept/pay, decline or counter; a SEND opens a one-off Stripe page and refunds
+// the guest once it clears.
+type Step = 'choose' | 'reason' | 'details' | 'done';
 type Direction = 'request' | 'send';
-type Reason = 'extra_services' | 'damage';
 
 const NOTE_MAX = 1000;
+const ORDER: Step[] = ['choose', 'reason', 'details'];
+
+function dateRange(checkIn: string, checkOut: string): string {
+    const fmt = (iso: string, withYear: boolean) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}),
+    });
+    if (!checkIn || !checkOut) return '';
+    const sameYear = checkIn.slice(0, 4) === checkOut.slice(0, 4);
+    return fmt(checkIn, !sameYear) + ' – ' + fmt(checkOut, true);
+}
 
 export default function ResolutionFlow({
     bookingId, guestFirst, afterCheckout, netPaid, onClose,
+    guestParty, checkIn, checkOut, listingTitle,
 }: {
     bookingId: string;
     guestFirst: string;
     afterCheckout: boolean;   // damage is only offered once the stay is over
     netPaid: number;          // the most a send may refund
     onClose: () => void;
+    // Who the money concerns — shown on step one so the host acts on the right
+    // booking. Defaulted so any older caller still compiles.
+    guestParty?: number;
+    checkIn?: string;
+    checkOut?: string;
+    listingTitle?: string;
 }) {
     const [step, setStep] = useState<Step>('choose');
     const [direction, setDirection] = useState<Direction | null>(null);
-    const [reason, setReason] = useState<Reason | null>(null);
+    const [reason, setReason] = useState<ResolutionReason | null>(null);
     const [amount, setAmount] = useState('');
     const [note, setNote] = useState('');
     const [files, setFiles] = useState<File[]>([]);
@@ -33,6 +59,34 @@ export default function ResolutionFlow({
 
     const amountNum = Math.round(Number(amount) * 100) / 100;
     const amountValid = amountNum > 0 && (direction !== 'send' || amountNum <= netPaid);
+
+    // A reason is only valid for its direction, and damage needs the stay to be
+    // over — the same gate the server applies, mirrored here so the tile is
+    // disabled rather than the submit rejected.
+    const reasonUsable = (r: ResolutionReason) => r !== 'damage' || afterCheckout;
+    const reasons = direction === 'send' ? SEND_REASONS : REQUEST_REASONS;
+
+    const reasonSub: Record<ResolutionReason, string> = {
+        extra_services: 'Meals, transport or amenities not in the listing',
+        damage: afterCheckout ? 'Reimbursement for damage during the stay' : 'Available after the guest checks out',
+        goodwill_refund: 'A gesture back to the guest',
+        booking_change: 'Money owed after a change to the stay',
+        other: 'Something else — explain it in the note',
+    };
+
+    const stepIndex = ORDER.indexOf(step as any);
+    const canNext = step === 'choose' ? !!direction : step === 'reason' ? !!reason : amountValid;
+
+    const goBack = () => {
+        setError(null);
+        if (step === 'reason') setStep('choose');
+        else if (step === 'details') setStep('reason');
+    };
+    const goNext = () => {
+        setError(null);
+        if (step === 'choose' && direction) setStep('reason');
+        else if (step === 'reason' && reason) setStep('details');
+    };
 
     const submit = async () => {
         if (!direction || !reason || !amountValid) return;
@@ -68,19 +122,42 @@ export default function ResolutionFlow({
 
     return (
         <div>
+            {/* Progress across the three steps. */}
+            <div className="mb-4 flex items-center gap-1.5">
+                {ORDER.map((s, i) => (
+                    <span key={s} className={'h-1.5 flex-1 rounded-full transition ' + (i <= stepIndex ? 'bg-emerald-600' : 'bg-slate-200')} />
+                ))}
+            </div>
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Step {stepIndex + 1} of 3</p>
+
             {step === 'choose' && (
-                <div className="space-y-2">
-                    <p className="mb-1 text-sm text-slate-600">What would you like to do?</p>
-                    <Choice icon={ArrowDownLeft} label="Request money" sub="Ask the guest for money — extra services or damage" onClick={() => { setDirection('request'); setStep('reason'); }} />
-                    <Choice icon={ArrowUpRight} label="Send money" sub={netPaid > 0 ? 'Send the guest a refund (you pay, we refund them)' : 'Nothing to send — the guest hasn’t paid'} disabled={netPaid <= 0} onClick={() => { setDirection('send'); setReason('extra_services'); setStep('details'); }} />
+                <div className="space-y-3">
+                    {/* Who this concerns — so the host is acting on the right stay. */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="text-sm font-semibold text-slate-900">{guestFirst}’s group of {Math.max(1, Number(guestParty) || 1)}</div>
+                        <div className="mt-0.5 text-[13px] text-slate-500">
+                            {[dateRange(checkIn || '', checkOut || ''), listingTitle].filter(Boolean).join(' · ')}
+                        </div>
+                    </div>
+                    <p className="text-sm text-slate-600">What would you like to do?</p>
+                    <Choice icon={ArrowDownLeft} label="Request money" sub="Ask the guest for money" selected={direction === 'request'} onClick={() => { setDirection('request'); setReason(null); }} />
+                    <Choice icon={ArrowUpRight} label="Send money" sub={netPaid > 0 ? 'Send the guest a refund (you pay, we refund them)' : 'Nothing to send — the guest hasn’t paid'} selected={direction === 'send'} disabled={netPaid <= 0} onClick={() => { setDirection('send'); setReason(null); }} />
                 </div>
             )}
 
             {step === 'reason' && (
                 <div className="space-y-2">
-                    <p className="mb-1 text-sm text-slate-600">What is this request for?</p>
-                    <Choice label="Extra services" sub="Meals, transport or amenities not in the listing" onClick={() => { setReason('extra_services'); setStep('details'); }} />
-                    <Choice label="Damage or extra cleaning" sub={afterCheckout ? 'Reimbursement for damage during the stay' : 'Available after the guest checks out'} disabled={!afterCheckout} onClick={() => { setReason('damage'); setStep('details'); }} />
+                    <p className="mb-1 text-sm text-slate-600">{direction === 'send' ? 'What is this refund for?' : 'What is this request for?'}</p>
+                    {reasons.map((r) => (
+                        <Choice
+                            key={r}
+                            label={reasonLabel(r)}
+                            sub={reasonSub[r]}
+                            selected={reason === r}
+                            disabled={!reasonUsable(r)}
+                            onClick={() => setReason(r)}
+                        />
+                    ))}
                 </div>
             )}
 
@@ -94,6 +171,7 @@ export default function ResolutionFlow({
                         </div>
                         {direction === 'send' && <span className="mt-1 block text-[12px] text-slate-500">Up to £{netPaid.toFixed(2)} — what {guestFirst} has paid, net of refunds.</span>}
                         {direction === 'send' && amountNum > netPaid && <span className="mt-1 block text-[12px] text-rose-600">That’s more than the £{netPaid.toFixed(2)} they’ve paid.</span>}
+                        {direction === 'request' && reason === 'extra_services' && <span className="mt-1 block text-[12px] text-slate-500">Our 10% fee comes off an extra-services request.</span>}
                     </label>
 
                     <div>
@@ -121,45 +199,59 @@ export default function ResolutionFlow({
                         <span className="mt-0.5 block text-right text-[12px] text-slate-400">{note.length}/{NOTE_MAX}</span>
                     </label>
 
-                    <button type="button" disabled={!amountValid} onClick={() => setStep('confirm')} className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-40">Continue</button>
+                    {/* What happens on confirm — the money made plain before the button. */}
+                    {amountValid && (
+                        <p className="text-[13px] text-slate-500">
+                            {direction === 'send'
+                                ? 'You’ll pay £' + amountNum.toFixed(2) + ' on the next screen. Once it clears, we refund ' + guestFirst + ' the same amount to their original card.'
+                                : guestFirst + ' can accept and pay, decline, or suggest a different amount. If they don’t respond within 72 hours, we step in.'}
+                        </p>
+                    )}
+                    {error && <p className="text-[13px] text-rose-600">{error}</p>}
                 </div>
             )}
 
-            {step === 'confirm' && direction && (
-                <div className="space-y-3">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                        <Line k={direction === 'send' ? 'Sending' : 'Requesting'} v={'£' + amountNum.toFixed(2)} />
-                        <Line k="Reason" v={reason === 'damage' ? 'Damage or extra cleaning' : 'Extra services'} />
-                        {files.length > 0 && <Line k="Attachments" v={files.length + ' file' + (files.length > 1 ? 's' : '')} />}
-                        {note && <p className="mt-2 border-t border-slate-200 pt-2 text-[13px] text-slate-600">“{note}”</p>}
-                    </div>
-                    <p className="text-[13px] text-slate-500">
-                        {direction === 'send'
-                            ? 'You’ll pay £' + amountNum.toFixed(2) + ' on the next screen. Once it clears, we refund ' + guestFirst + ' the same amount to their original card.'
-                            : guestFirst + ' can accept and pay, decline, or suggest a different amount.'}
-                    </p>
-                    {error && <p className="text-[13px] text-rose-600">{error}</p>}
-                    <button type="button" disabled={busy} onClick={submit} className="w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-                        {busy ? 'Working…' : direction === 'send' ? 'Continue to payment' : 'Confirm and request'}
+            {/* Back / Next — Next becomes the submit on the final step. */}
+            <div className="mt-5 flex items-center justify-between gap-3">
+                {step === 'choose' ? (
+                    <button type="button" onClick={onClose} className="text-sm font-semibold text-slate-500 hover:text-slate-800">Cancel</button>
+                ) : (
+                    <button type="button" onClick={goBack} className="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-800">
+                        <ChevronLeft className="h-4 w-4" /> Back
                     </button>
-                </div>
-            )}
+                )}
+                {step === 'details' ? (
+                    <button type="button" disabled={busy || !amountValid} onClick={submit} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                        {busy ? 'Working…' : direction === 'send' ? 'Continue to payment' : 'Confirm and request'}
+                        {!busy && <Check className="h-4 w-4" />}
+                    </button>
+                ) : (
+                    <button type="button" disabled={!canNext} onClick={goNext} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-40">
+                        Next <ChevronRight className="h-4 w-4" />
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
 
-function Choice({ icon: Icon, label, sub, onClick, disabled }: { icon?: any; label: string; sub?: string; onClick: () => void; disabled?: boolean }) {
+function Choice({ icon: Icon, label, sub, onClick, disabled, selected }: { icon?: any; label: string; sub?: string; onClick: () => void; disabled?: boolean; selected?: boolean }) {
     return (
-        <button type="button" disabled={disabled} onClick={onClick} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 p-3 text-left transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50">
-            {Icon && <Icon className="h-5 w-5 flex-none text-emerald-700" />}
+        <button
+            type="button"
+            disabled={disabled}
+            onClick={onClick}
+            className={
+                'flex w-full items-center gap-3 rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 '
+                + (selected ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-slate-300')
+            }
+        >
+            {Icon && <Icon className={'h-5 w-5 flex-none ' + (selected ? 'text-emerald-700' : 'text-emerald-700')} />}
             <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-slate-900">{label}</span>
                 {sub && <span className="block text-[13px] text-slate-500">{sub}</span>}
             </span>
+            {selected && <Check className="h-4 w-4 flex-none text-emerald-700" />}
         </button>
     );
-}
-
-function Line({ k, v }: { k: string; v: string }) {
-    return <div className="flex justify-between py-0.5"><span className="text-slate-500">{k}</span><span className="font-semibold text-slate-900">{v}</span></div>;
 }

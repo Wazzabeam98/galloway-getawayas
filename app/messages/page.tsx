@@ -6,6 +6,7 @@ import { notify } from '@/lib/notify';
 import ConversationRow from '@/components/messages/ConversationRow';
 import ProviderReservationCard, { type ReservationCardData } from '@/components/services/ProviderReservationCard';
 import ManageReservationSheet from '@/components/dashboard/reservation/ManageReservationSheet';
+import ReservationHeader from '@/components/dashboard/reservation/ReservationHeader';
 import RequestChangeRow from '@/components/trips/RequestChangeRow';
 import StayCancelRow from '@/components/trips/StayCancelRow';
 import { stayHasEnded, stayHasStarted } from '@/lib/stayWindow';
@@ -814,22 +815,23 @@ export default function MessagesInboxPage() {
         <div className="p-5 text-sm text-slate-400">Pick a conversation</div>
     ) : thread.booking ? (
         <div className="h-full overflow-y-auto p-5 space-y-5">
-            {thread.listing && thread.listing.images && thread.listing.images[0] && (
-                <img
-                    src={getImageUrl(thread.listing.images[0])}
-                    alt=""
-                    className="w-full h-32 object-cover rounded-xl"
+            {/* The guest avatar + listing photo pairing and "Isla's group of 2"
+                heading — the same header the experience threads use, so both thread
+                types read as one product. Fed the viewer-aware shape from the
+                route (host side sees the guest; guest side sees the listing). */}
+            {thread.header && (
+                <ReservationHeader
+                    avatarUrl={thread.header.avatarUrl}
+                    initial={thread.header.initial}
+                    photoUrl={thread.header.photoUrl}
+                    heading={thread.header.heading}
+                    sublines={[
+                        thread.listing && thread.listing.title,
+                        thread.listing && publicArea(thread.listing.location),
+                    ].filter((s) => s && s !== thread.header.heading) as string[]}
+                    size="sm"
                 />
             )}
-
-            <div>
-                <div className="font-semibold text-slate-900">
-                    {thread.listing && thread.listing.title}
-                </div>
-                <div className="text-sm text-slate-500">
-                    {thread.listing && publicArea(thread.listing.location)}
-                </div>
-            </div>
 
             <div className="space-y-2 text-sm">
                 <div className="flex justify-between gap-2">
@@ -1007,7 +1009,7 @@ export default function MessagesInboxPage() {
                         ended={stayHasEnded(thread.booking.check_out, thread.listing.check_out_time)}
                         started={stayHasStarted(thread.booking.check_in)}
                         phone={thread.other.phone}
-                        guestFirst={capitializeFirst(thread.other.name)}
+                        guestFirst={capitializeFirst((thread.header && thread.header.personFirst) || thread.other.name)}
                         totalPrice={Number(thread.booking.total_price || 0)}
                         amountPaid={Number(thread.booking.amount_paid || 0)}
                         amountRefunded={Number(thread.booking.amount_refunded || 0)}

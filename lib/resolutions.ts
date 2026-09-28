@@ -8,7 +8,36 @@ import { londonDayKey } from './dayKey';
 import { formatGBP } from './formatMoney';
 
 export type ResolutionDirection = 'request' | 'send';
-export type ResolutionReason = 'extra_services' | 'damage';
+// A REQUEST is for extra services, damage, or other; a SEND is a goodwill refund,
+// a change to the booking, or other. The column stores all six in one text field
+// (the check constraint in the booking_resolutions migration), and the money
+// rules below key only off 'extra_services' — every other reason carries no fee.
+export type ResolutionReason =
+    | 'extra_services' | 'damage' | 'other'
+    | 'goodwill_refund' | 'booking_change';
+
+// Which reasons belong to which direction, for the stepped flow and the route's
+// validation — a send can never be 'extra_services'/'damage', a request can never
+// be 'goodwill_refund'/'booking_change'.
+export const REQUEST_REASONS: ResolutionReason[] = ['extra_services', 'damage', 'other'];
+export const SEND_REASONS: ResolutionReason[] = ['goodwill_refund', 'booking_change', 'other'];
+
+export function reasonAllowedFor(direction: ResolutionDirection, reason: ResolutionReason): boolean {
+    return (direction === 'request' ? REQUEST_REASONS : SEND_REASONS).indexOf(reason) !== -1;
+}
+
+// One label per reason, so the guest email, the guest's review screen, the Stripe
+// line item, the admin note and the flow itself all word a reason the same way.
+export function reasonLabel(reason: ResolutionReason): string {
+    switch (reason) {
+        case 'damage': return 'Damage or extra cleaning';
+        case 'extra_services': return 'Extra services';
+        case 'goodwill_refund': return 'Goodwill refund';
+        case 'booking_change': return 'Change to the booking';
+        case 'other': return 'Other';
+        default: return 'Other';
+    }
+}
 export type ResolutionStatus =
     | 'pending' | 'countered' | 'paid' | 'declined' | 'escalated'
     | 'cancelled' | 'expired' | 'awaiting_host_payment'
