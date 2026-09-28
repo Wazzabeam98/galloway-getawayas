@@ -75,6 +75,8 @@ function toCardData(r: ProviderReservation): ReservationCardData {
             pendingChange: r.pendingChange,
             pendingChangeBy: r.pendingChangeBy,
         },
+        // The provider dashboard is the provider's own view, so never the guest sheet.
+        guestManage: null,
     };
 }
 

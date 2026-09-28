@@ -1048,6 +1048,9 @@ export default function MessagesInboxPage() {
                 // The Manage sheet's own Message action would loop back to this
                 // thread, so drop it here (you're already in the conversation).
                 manage: rez.manage ? { ...rez.manage, messageHref: null } : null,
+                // The guest's mirror of the Manage sheet — change/cancel from the
+                // thread. The route sets exactly one of manage / guestManage.
+                guestManage: rez.guestManage ?? null,
             };
             return (
                 <div className="h-full overflow-y-auto p-5">
@@ -1062,11 +1065,17 @@ export default function MessagesInboxPage() {
         <div className="max-w-[1400px] mx-auto px-4 py-6">
             <h1 className="text-2xl font-bold text-slate-900 mb-4">Messages</h1>
 
-            {/* Three panes side by side once there's room for them. */}
+            {/* Three panes side by side once there's room for them. The thread
+                list keeps its width; the reservation pane is widened to roughly
+                Airbnb's proportions (the when/where cards sit side by side and
+                nothing wraps awkwardly), and the space comes from the middle
+                conversation column, which flexes. h-full + min-h-0 let the pane
+                scroll inside the fixed-height row rather than clipping its last
+                card. */}
             <div className="hidden lg:flex border rounded-2xl overflow-hidden h-[calc(100vh-14rem)] min-h-[32rem] bg-white">
-                <div className="w-80 border-r flex-shrink-0">{list}</div>
-                <div className="flex-1 min-w-0 border-r">{conversation}</div>
-                <div className="w-72 flex-shrink-0">{details}</div>
+                <div className="w-80 border-r flex-shrink-0 h-full min-h-0">{list}</div>
+                <div className="flex-1 min-w-0 border-r h-full min-h-0">{conversation}</div>
+                <div className="w-[400px] flex-shrink-0 h-full min-h-0">{details}</div>
             </div>
 
             {/* On a phone the same panes become two screens: the list, then
@@ -1189,9 +1198,14 @@ export default function MessagesInboxPage() {
                             )}
                         </div>
 
-                        {/* The third column, folded away until asked for. */}
+                        {/* The third column, folded away until asked for. A
+                            definite height (not max-h) gives the inner h-full
+                            pane something to resolve against, so the reservation
+                            card scrolls within the drawer and its last card —
+                            the Manage reservation row — is reachable rather than
+                            spilling over the conversation beneath. */}
                         {showDetails && thread && (
-                            <div className="border-b bg-slate-50 max-h-64 overflow-y-auto">
+                            <div className="border-b bg-slate-50 h-[60vh] overflow-hidden">
                                 {details}
                             </div>
                         )}
