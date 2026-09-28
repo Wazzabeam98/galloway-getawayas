@@ -63,6 +63,22 @@ export const HOST_TRADES = [
 // a trade. See GUEST-EXPERIENCES-ONE-FORM.md.
 export const GUEST_TRADES = ['guest'] as const;
 
+// Trades that are not open for business yet: they stay VISIBLE wherever hosts or
+// guests browse trades — so somebody who came for one is told it is on the way
+// rather than concluding the site does not do it — but they are marked "Coming
+// soon", cannot be selected or requested, and are not offered on the sign-up
+// picker so no new provider joins under them.
+//
+// Cleaning is here (decision, 28 September 2026): it is coming soon rather than
+// available. It stays a member of HOST_TRADES so it keeps appearing in the shop
+// and so an existing cleaning provider's row still resolves an audience; the
+// coming-soon rule is layered on top of that membership, not carved out of it.
+export const COMING_SOON_TRADES = ['sponge'] as const;
+
+export function isTradeComingSoon(trade: string): boolean {
+    return (COMING_SOON_TRADES as readonly string[]).indexOf(String(trade || '')) !== -1;
+}
+
 // ---------------------------------------------------------------------------
 // GUEST CATEGORIES — the picker a guest provider starts from.
 //
@@ -596,7 +612,9 @@ export function pickerEntries(
     existing: Array<{ trade?: string | null }> | null | undefined,
     audience: string
 ): Array<{ kind: 'trade' | 'group'; key: string; label: string; hint?: string; left?: number }> {
-    const left = unclaimedTrades(existing, audience);
+    // A coming-soon trade is browsable but not joinable, so it never appears on
+    // the picker even though it is still an unclaimed host trade.
+    const left = unclaimedTrades(existing, audience).filter((t) => !isTradeComingSoon(t.key));
     const entries: Array<{ kind: 'trade' | 'group'; key: string; label: string; hint?: string; left?: number }> = [];
     const seenGroups: string[] = [];
 
@@ -675,16 +693,18 @@ export function audienceLabel(audience: string): string {
 //   commission    10%, held in `commission_rate` on the row and snapshotted
 //                 onto each enquiry, the same way bookings.commission_rate
 //                 already works — so changing the rate later never rewrites
-//                 what somebody already agreed to. Cleaning and waste, and
-//                 the four guest trades.
-//   subscription  £20 a month after 90 free days, and the commission rate
-//                 resolves to zero. Every other host trade.
+//                 what somebody already agreed to. Cleaning, and the guest
+//                 trades. (Cleaning is also coming soon, so no new provider
+//                 joins under it — see COMING_SOON_TRADES.)
+//   subscription  £20 a month after the free period, and the commission rate
+//                 resolves to zero. Every host trade except cleaning — waste
+//                 included, since 28 September 2026.
 //
 // THE RULE, AND WHAT IT IS NOT
 //
-// Every host trade except cleaning and waste is on the subscription. That is
-// the rule as it stands; it is a decision about these trades rather than
-// something falling out of a property they share.
+// Every host trade except cleaning is on the subscription. That is the rule as
+// it stands; it is a decision about these trades rather than something falling
+// out of a property they share.
 //
 // It used to be justified as "the work is quoted on site and paid
 // off-platform", which described the six maintenance trades exactly. It no
@@ -744,9 +764,15 @@ const TRADE_PLANS: Record<string, ProviderPlan> = {
     trees: 'subscription',
     droplet: 'subscription',
 
-    // The two host trades that stay on commission.
+    // Waste is on the subscription, on the same terms as every other host trade
+    // (decision, 28 September 2026): the free period then £20 a month, and no
+    // per-job commission. It used to sit on commission alongside cleaning.
+    bin: 'subscription',
+
+    // Cleaning is the one host trade still on commission — and it is coming soon
+    // rather than open (see COMING_SOON_TRADES), so no new provider joins under
+    // it. The plan is kept here for any existing cleaning provider's row.
     sponge: 'commission',
-    bin: 'commission',
 
     // The one guest trade — always commission (10% on the sale), never a
     // subscription. A guest experience bills nothing until a guest buys.
@@ -755,9 +781,9 @@ const TRADE_PLANS: Record<string, ProviderPlan> = {
 
 // The host trades that pay a percentage instead of a subscription. Named here
 // so the rule is stated once: the map above and the test that guards it both
-// read this, rather than each carrying its own copy of "except cleaning and
-// waste".
-export const COMMISSION_HOST_TRADES = ['sponge', 'bin'] as const;
+// read this, rather than each carrying its own copy of the exception. Waste
+// moved to the subscription on 28 September 2026, leaving cleaning alone here.
+export const COMMISSION_HOST_TRADES = ['sponge'] as const;
 
 // Commission is the safe default for a trade nobody has placed: it bills
 // nothing until there is a job, where an unplaced trade defaulting to a
@@ -766,8 +792,20 @@ export function planForTrade(trade: string): ProviderPlan {
     return TRADE_PLANS[String(trade || '')] || 'commission';
 }
 
-// Ninety days, from approval.
-export const TRIAL_DAYS = 90;
+// Six months free, from the first enquiry. This is the one place the length of
+// the free period is defined — everything that states it reads from here, so a
+// page, an email and the admin screen cannot disagree. It was ninety days until
+// 28 September 2026, when it became six months for every subscription trade.
+export const TRIAL_MONTHS = 6;
+
+// The free period in words, for any copy that names its length. Kept beside the
+// number so the sentence and the arithmetic move together.
+export const TRIAL_PERIOD_LABEL = 'six months';
+
+// The nominal length in days, DERIVED from the months above. It is used only by
+// the reminder ladder's start-of-trial marker and by day-offset arithmetic; the
+// real end of a trial is a calendar date (see trialEndsAt), not this count.
+export const TRIAL_DAYS = TRIAL_MONTHS * 30;
 
 // £20 a month, said in one place so a page and an email cannot disagree.
 export const SUBSCRIPTION_MONTHLY = 20;
@@ -795,8 +833,17 @@ export const SUBSCRIPTION_MONTHLY = 20;
 // app/api/services/enquiries/route.ts, which stamps only on a true.
 export function trialEndsAt(approvedAt: Date | string): string {
     const from = approvedAt instanceof Date ? approvedAt : new Date(String(approvedAt));
+
+    // Six calendar months, so "six months" is literally true rather than an
+    // approximate day count. Clamped to the end of the target month rather than
+    // rolled over, so 31 August + 6 months lands on 28 (or 29) February, not
+    // 2 or 3 March — JS setUTCMonth would otherwise spill into the next month.
+    const y = from.getUTCFullYear();
+    const m = from.getUTCMonth();
+    const d = from.getUTCDate();
+    const lastOfTarget = new Date(Date.UTC(y, m + TRIAL_MONTHS + 1, 0)).getUTCDate();
     const end = new Date(from.getTime());
-    end.setUTCDate(end.getUTCDate() + TRIAL_DAYS);
+    end.setUTCFullYear(y, m + TRIAL_MONTHS, Math.min(d, lastOfTarget));
     return end.toISOString();
 }
 
@@ -841,7 +888,7 @@ export function commissionRateFor(provider: any): number {
 // appears in the email sent when the clock actually starts.
 export function planTerms(trade: string): string {
     return planForTrade(trade) === 'subscription'
-        ? 'Nothing to pay for your first ' + TRIAL_DAYS + ' days once we send you your '
+        ? 'Nothing to pay for your first ' + TRIAL_PERIOD_LABEL + ' once we send you your '
             + 'first enquiry, then £' + SUBSCRIPTION_MONTHLY + ' a month. We take no '
             + 'commission — you quote and get paid direct.'
         : 'Nothing to pay to be listed. We take 10% of a job when you accept one through '
@@ -1319,11 +1366,11 @@ export function canBeBooked(trade: string): boolean {
 //               A gardener in the shop would show every host a blank where
 //               the price goes. It joins the day the form asks, and that is
 //               a one-line change to this list.
-//   sponge      cleaning and waste take 10% at acceptance. A commission needs
-//   bin         a total, a total needs a completion step, and that is a
-//               booking rather than an enquiry. They are also the two trades
-//               where a host can already see a real price from the bands, so
-//               sending them down the enquiry route would be a downgrade.
+//   sponge      cleaning is booked from the bands, not enquired about — a host
+//   bin         can already see a real price, so the enquiry route would be a
+//               downgrade — and it is coming soon in any case. Waste sits out
+//               of the enquiry shop for the same booked-from-bands reason; it is
+//               on the subscription like the rest and takes no per-job cut.
 //   chef        the four guest trades are sold to somebody on holiday and
 //   cake        have their own shop. Nothing about this one applies.
 //   basket
@@ -1358,10 +1405,8 @@ export function enquirableTrades(): Array<{ key: string; label: string }> {
 // cleaner and found silence assumes the page is broken.
 export function comingSoonNote(trade: string): string | null {
     if (canBeEnquiredAbout(trade)) return null;
-    if (trade === 'sponge' || trade === 'bin') {
-        return 'Booked, not enquired about — coming shortly.';
-    }
-    if (trade === 'trees') return 'Coming shortly.';
+    if (isTradeComingSoon(trade)) return 'Coming soon.';
+    if (trade === 'bin' || trade === 'trees') return 'Coming shortly.';
     return null;
 }
 

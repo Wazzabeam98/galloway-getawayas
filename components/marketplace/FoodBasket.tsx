@@ -9,6 +9,7 @@ import { dateLabel, cancellationBadge } from '@/components/marketplace/present';
 import { DateOnlyDialog } from '@/components/marketplace/RequestBooking';
 import { useFoodCart } from '@/components/marketplace/FoodCart';
 import DeliveryAddressModal, { SavedAddressResult } from '@/components/marketplace/DeliveryAddressModal';
+import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
 import { AddressParts } from '@/components/address/AddressLookup';
 
 // A delivery address the guest has chosen for this order, and where it came from:
@@ -316,6 +317,7 @@ export default function FoodBasket({
 
             <div className="mt-5 border-t border-slate-100 pt-4">
                 {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
+                <LinkedTravelNotice show={!standalone} />
                 <button type="button" onClick={send} disabled={!canSend}
                     className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
                     {busy ? 'Sending…' : (hasCustom ? `Send order request · ${formatGBP(total)}` : `Place order & pay · ${formatGBP(total)}`)}

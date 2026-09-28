@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-import { planForTrade, bandLabel, SUBSCRIPTION_MONTHLY, TRIAL_DAYS, reviewContentFrom } from '@/lib/serviceProviders';
+import { planForTrade, bandLabel, SUBSCRIPTION_MONTHLY, TRIAL_PERIOD_LABEL, reviewContentFrom } from '@/lib/serviceProviders';
 import ReviewContent from '@/components/admin/ReviewContent';
 import { ASSIGNABLE_MCCS, assignableMccLabel } from '@/lib/serviceOrders';
 
@@ -480,7 +480,7 @@ export default function ProviderReviewRow({
                                         })}
                                     </span>
                                 ) : (
-                                    <span className="text-slate-500"> &middot; {TRIAL_DAYS} free days start on approval</span>
+                                    <span className="text-slate-500"> &middot; {TRIAL_PERIOD_LABEL} free from the first enquiry</span>
                                 )}
                             </>
                         ) : (

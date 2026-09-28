@@ -624,6 +624,10 @@ export default function BookingWidget({
                     ? 'Payment is taken securely by Stripe. Your dates are confirmed straight away.'
                     : 'Payment is taken securely by Stripe. If the host declines, you get it all back.'}
             </p>
+            <p className="text-xs text-slate-400 text-center mt-1">
+                The stay is provided by the host. Galloway Getaways is acting as the host&apos;s agent and
+                takes payment on their behalf.
+            </p>
         </div>
     );
 }

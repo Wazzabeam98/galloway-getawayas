@@ -20,6 +20,9 @@ import MoneyCards, { type MoneyCardsData } from '@/components/dashboard/reservat
 import ProviderManageSheet, { type ManageData } from '@/components/services/ProviderManageSheet';
 import ProviderCancellationCard, { type CancellationCardData } from '@/components/services/ProviderCancellationCard';
 
+// The "Where" value: a plain line, or a name with an address beneath it.
+export type WhereField = string | { line: string; sub?: string | null };
+
 export interface ReservationCardData {
     avatarUrl: string | null;
     initial: string;
@@ -29,7 +32,10 @@ export interface ReservationCardData {
     itemName: string;                // what they booked / the job
     status: { label: string; tone: StatusTone } | null;
     when: { heading: string; value: string };
-    where: string | null;
+    // A plain line, or a name with an address beneath it — the latter for a
+    // provider looking at a booking held at their own venue, where the useful
+    // answer is their listing/venue name and, if we hold it, the address.
+    where: WhereField | null;
     note: string | null;
     allergy: string | null;
     money: MoneyCardsData | null;    // the money card when there is money through us
@@ -75,7 +81,18 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
             {/* When and where, side by side (they stack in the narrow pane). */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <FactCard heading={r.when.heading}>{r.when.value}</FactCard>
-                {r.where && <FactCard heading="Where">{r.where}</FactCard>}
+                {r.where && (
+                    <FactCard heading="Where">
+                        {typeof r.where === 'string' ? r.where : (
+                            <>
+                                {r.where.line}
+                                {r.where.sub && (
+                                    <div className="mt-0.5 text-[13px] font-normal text-slate-500">{r.where.sub}</div>
+                                )}
+                            </>
+                        )}
+                    </FactCard>
+                )}
             </div>
 
             {r.allergy && (

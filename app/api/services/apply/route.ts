@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
-import { TRADES } from '@/lib/serviceProviders';
+import { TRADES, isTradeComingSoon } from '@/lib/serviceProviders';
 import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
 import { sendEmail } from '@/lib/email';
 import { mintToken, verificationEmail, alreadyHaveAccountEmail, APPLICATION_PAYLOAD_KEYS } from '@/lib/serviceApplications';
@@ -97,6 +97,12 @@ export async function POST(req: Request) {
         const trade = String(incoming.trade || '');
         if (!TRADES.some((t: any) => t.key === trade)) {
             return NextResponse.json({ ok: false, error: 'Pick what kind of business this is.' }, { status: 400 });
+        }
+        // A coming-soon trade is browsable but not open for sign-up. The picker
+        // never offers it, but a hand-crafted ?trade= could still reach here, so
+        // this is the wall that keeps anyone new from joining under it.
+        if (isTradeComingSoon(trade)) {
+            return NextResponse.json({ ok: false, error: 'That trade is coming soon and not open for sign-up yet.' }, { status: 400 });
         }
         if (!String(incoming.business_name || '').trim()) {
             return NextResponse.json({ ok: false, error: 'Your business needs a name.' }, { status: 400 });

@@ -17,6 +17,7 @@ import { itemFulfilment } from '@/lib/serviceProviders';
 import { childrenAllowed } from '@/lib/guestAges';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import { LTA_NOTICE_VERSION } from '@/lib/linkedTravelNotice';
 import { displayName } from '@/lib/utils';
 import { withinLimits, callerAddress } from '@/lib/rateLimit';
 
@@ -562,6 +563,12 @@ export async function POST(request: Request) {
                 guest_id: user ? user.id : null,
                 listing_id: standalone ? null : (booking.listing_id || null),
                 booking_id: standalone ? null : booking.id,
+                // A stay-linked checkout shows the linked-travel-arrangement notice
+                // above the pay button; record the wording version and when, against
+                // the order. Null for a standalone slot, which never shows it.
+                ...(standalone
+                    ? {}
+                    : { lta_notice_version: LTA_NOTICE_VERSION, lta_notice_shown_at: nowIso }),
                 // The buyer's contact, for the provider — written here for a
                 // standalone order (the webhook writes it for the against-a-stay one).
                 guest_name: standalone ? guestName : undefined,

@@ -8,6 +8,7 @@ import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE,
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { orderNet, orderReference } from '@/lib/serviceOrders';
 import { orderLocation } from '@/lib/orderLocation';
+import { whereForOrder } from '@/lib/providerReservations';
 import { whenLabel } from '@/components/marketplace/present';
 import { formatGBP } from '@/lib/formatMoney';
 import { groupLabel } from '@/lib/bookingDisplay';
@@ -78,7 +79,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 full.guest_id
                     ? admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', full.guest_id).maybeSingle()
                     : Promise.resolve({ data: null }),
-                admin.from('service_providers').select('photos, headshot, cancellation_window_hours, guest_details').eq('id', ctx.order.provider_id).maybeSingle(),
+                admin.from('service_providers').select('business_name, fulfilment, collection_street, collection_town, collection_postcode, photos, headshot, cancellation_window_hours, guest_details').eq('id', ctx.order.provider_id).maybeSingle(),
             ]);
             const guestName = gProf ? displayName(gProf, full.guest_name || 'Guest') : (full.guest_name || 'Guest');
             const guestFirst = String(guestName).trim().split(' ')[0] || 'Guest';
@@ -90,11 +91,18 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
             const party = (a > 0 || c > 0) ? (a + c) : (Number(full.attendees || full.quantity) || 1);
             const itemName = ctx.order.item_name || full.item_name || ctx.business || 'Experience';
 
-            const where = full.shape === 'comes_to_you'
-                ? (full.service_address ? (ctx.isGuest ? 'They come to ' + full.service_address : 'You go to ' + full.service_address) : (ctx.isGuest ? 'They come to you' : 'You go to the guest'))
-                : full.shape === 'made_to_order'
-                    ? (loc.comesToCottage ? (full.service_address ? 'Delivery to ' + full.service_address : 'For delivery') : 'For collection')
-                    : (loc.slotTravels ? 'They travel to you' : 'At the provider’s place');
+            // The guest reads it from their side; the provider reads it from
+            // theirs, reusing the dashboard's whereForOrder so the two cards can
+            // never word the same booking differently — in particular a booking
+            // at the provider's own place shows the provider their venue name and
+            // address, not "At the provider's place".
+            const where = ctx.isGuest
+                ? (full.shape === 'comes_to_you'
+                    ? (full.service_address ? 'They come to ' + full.service_address : 'They come to you')
+                    : full.shape === 'made_to_order'
+                        ? (loc.comesToCottage ? (full.service_address ? 'Delivery to ' + full.service_address : 'For delivery') : 'For collection')
+                        : (loc.slotTravels ? 'They travel to you' : 'At the provider’s place'))
+                : whereForOrder(full, prov || {});
 
             const statusPill = status === 'confirmed' ? { label: 'Confirmed', tone: 'ok' }
                 : awaiting ? (ctx.isGuest ? { label: 'Requested', tone: 'wait' } : { label: 'Awaiting your confirmation', tone: 'wait' })

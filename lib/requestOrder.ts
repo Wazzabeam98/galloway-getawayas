@@ -8,6 +8,7 @@ import {
 } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
+import { LTA_NOTICE_VERSION } from '@/lib/linkedTravelNotice';
 
 // Builds the 'authorised' service order for a REQUEST-shape guest experience
 // (a chef/baker/masseur booked against a stay) from a completed Checkout
@@ -148,6 +149,13 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             guest_id: guestId,
             listing_id: md.listing_id || null,
             booking_id: md.booking_id || null,
+            // A stay-linked experience checkout shows the guest the linked-travel-
+            // arrangement notice above the pay button, so record which wording they
+            // saw and when, against the order. Null for a standalone order (no
+            // stay), which never shows the notice.
+            ...(md.booking_id
+                ? { lta_notice_version: LTA_NOTICE_VERSION, lta_notice_shown_at: nowIso }
+                : {}),
             // The chosen time (comes_to_you / made_to_order now carry one) and, for
             // a travelling shape, the address the provider goes to. Frozen here so
             // they never drift if the provider edits their offering later.
