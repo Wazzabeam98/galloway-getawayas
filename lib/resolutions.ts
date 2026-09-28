@@ -26,6 +26,21 @@ export function reasonAllowedFor(direction: ResolutionDirection, reason: Resolut
     return (direction === 'request' ? REQUEST_REASONS : SEND_REASONS).indexOf(reason) !== -1;
 }
 
+// A "change to the booking" SEND must not run alongside the automated change-order
+// flow (#173). That flow already settles the money for a change — charging the
+// guest the extra or refunding the difference when the change is accepted — so a
+// manual send for the SAME change, while its request is still open, would move
+// money twice. Block the send only while a change request is open
+// (pending / awaiting_guest_payment); once none is open there is nothing in flight
+// to double, and a discretionary send is the host's own call.
+export function sendCollidesWithOpenChange(
+    direction: ResolutionDirection,
+    reason: ResolutionReason,
+    hasOpenChangeRequest: boolean,
+): boolean {
+    return direction === 'send' && reason === 'booking_change' && hasOpenChangeRequest;
+}
+
 // One label per reason, so the guest email, the guest's review screen, the Stripe
 // line item, the admin note and the flow itself all word a reason the same way.
 export function reasonLabel(reason: ResolutionReason): string {
@@ -59,10 +74,13 @@ export function toPence(pounds: number): number {
     return Math.round(pounds * 100);
 }
 
-// Commission: an EXTRA-SERVICES request takes the platform's 10%; DAMAGE takes
-// nothing (it is reimbursement, not a sale), and a SEND is a refund, so no cut.
+// Commission on a REQUEST: the platform takes its 10% on every reason EXCEPT
+// damage, which is reimbursement for a loss rather than a sale. 'other' is charged
+// too, on purpose — otherwise a host could dodge the fee on an extra-services
+// charge by wording it "other". A SEND is a refund to the guest, so it never
+// carries a cut, whatever its reason.
 export function commissionRateFor(direction: ResolutionDirection, reason: ResolutionReason): number {
-    if (direction === 'request' && reason === 'extra_services') return 0.10;
+    if (direction === 'request') return reason === 'damage' ? 0 : 0.10;
     return 0;
 }
 

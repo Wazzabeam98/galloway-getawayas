@@ -58,6 +58,14 @@ const WATCHED = [
     'app/api/bookings/change/route.ts',
     'app/api/bookings/change/quote/route.ts',
     'app/api/bookings/change/respond/route.ts',
+    // The stay Resolution Centre ("send or request money"): the money rules
+    // (commission, the send cap, the change-flow collision guard) and the routes
+    // that create a request/send, take the guest's accepted payment and settle
+    // the host's decision. Watched so a change here re-proves against the run.
+    'lib/resolutions.ts',
+    'app/api/bookings/resolutions/route.ts',
+    'app/api/bookings/resolutions/respond/route.ts',
+    'app/api/bookings/resolutions/host-decide/route.ts',
     'scripts/seed-payments.mjs',
     'scripts/payout-scenarios.mjs',
     'scripts/refund-scenarios.mjs',

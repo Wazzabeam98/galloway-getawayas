@@ -9,7 +9,7 @@ import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
 import {
     commissionRateFor, isDamageAllowed, sendCapPounds, validateSendAmount,
-    escalationDeadline, round2, toPence, reasonAllowedFor, reasonLabel,
+    escalationDeadline, round2, toPence, reasonAllowedFor, reasonLabel, sendCollidesWithOpenChange,
     type ResolutionDirection, type ResolutionReason,
 } from '@/lib/resolutions';
 
@@ -80,6 +80,23 @@ export async function POST(request: Request) {
             const cap = sendCapPounds(booking.amount_paid, booking.amount_refunded);
             const check = validateSendAmount(amount, cap);
             if (!check.ok) return NextResponse.json({ ok: false, error: check.error }, { status: 400 });
+        }
+
+        // "Change to the booking" money must not be paid twice for one change: the
+        // #173 change-order flow already settles the difference when a change is
+        // accepted, so refuse a booking_change send while a change request is still
+        // open on this booking. Once it has settled (or there is none), a
+        // discretionary send is allowed.
+        if (direction === 'send' && reason === 'booking_change') {
+            const { data: openChange } = await admin
+                .from('booking_change_requests')
+                .select('id')
+                .eq('booking_id', booking.id)
+                .in('status', ['pending', 'awaiting_guest_payment'])
+                .maybeSingle();
+            if (sendCollidesWithOpenChange(direction, reason, !!openChange)) {
+                return NextResponse.json({ ok: false, error: 'There’s an open change request on this booking. That flow settles the money for the change itself — finish or cancel it before sending money here, so the same change isn’t paid twice.' }, { status: 409 });
+            }
         }
 
         const commissionRate = commissionRateFor(direction, reason);

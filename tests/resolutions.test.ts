@@ -6,6 +6,7 @@ import {
     commissionRateFor, applicationFeePence, isDamageAllowed, sendCapPounds,
     validateSendAmount, escalationDeadline, isPastDeadline, guestMayRespond,
     guestMayPay, hostMayDecideCounter, hostMayCancel, isTerminal, ESCALATION_HOURS, toPence,
+    sendCollidesWithOpenChange,
 } from '../lib/resolutions';
 
 test('an extra-services request takes 10%; damage and sends take nothing', () => {
@@ -13,6 +14,32 @@ test('an extra-services request takes 10%; damage and sends take nothing', () =>
     assert.equal(commissionRateFor('request', 'damage'), 0);
     assert.equal(commissionRateFor('send', 'extra_services'), 0);
     assert.equal(commissionRateFor('send', 'damage'), 0);
+});
+
+test('an "other" request carries the same 10% as extra services — no dodging the fee', () => {
+    // The whole point: a host must not be able to charge for extra services but
+    // pick "other" to escape commission. Only damage (a reimbursement) is exempt.
+    assert.equal(commissionRateFor('request', 'other'), 0.10);
+    assert.equal(commissionRateFor('request', 'extra_services'), 0.10);
+    assert.equal(commissionRateFor('request', 'damage'), 0);
+    // A send is a refund to the guest, so no reason on it ever carries a cut.
+    assert.equal(commissionRateFor('send', 'other'), 0);
+    assert.equal(commissionRateFor('send', 'goodwill_refund'), 0);
+    assert.equal(commissionRateFor('send', 'booking_change'), 0);
+    // And the fee in pence follows: £50 "other" request → £5.
+    assert.equal(applicationFeePence(toPence(50), commissionRateFor('request', 'other')), 500);
+});
+
+test('a "change to the booking" send is blocked only while a change request is open', () => {
+    // With a change still in flight, the #173 flow will settle the difference —
+    // sending money here too would pay for the same change twice, so it is blocked.
+    assert.equal(sendCollidesWithOpenChange('send', 'booking_change', true), true);
+    // No open change: nothing in flight to double, so a discretionary send is fine.
+    assert.equal(sendCollidesWithOpenChange('send', 'booking_change', false), false);
+    // Other reasons and requests are never caught by this guard.
+    assert.equal(sendCollidesWithOpenChange('send', 'goodwill_refund', true), false);
+    assert.equal(sendCollidesWithOpenChange('send', 'other', true), false);
+    assert.equal(sendCollidesWithOpenChange('request', 'other', true), false);
 });
 
 test('the application fee is 10% of the amount for extras, 0 for damage', () => {
