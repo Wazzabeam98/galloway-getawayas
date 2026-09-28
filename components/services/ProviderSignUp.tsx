@@ -4433,7 +4433,7 @@ function ApplicationForm() {
                             type="text"
                             value={businessName}
                             onChange={(e) => setBusinessName(e.target.value)}
-                            placeholder="Solway Sparkle"
+                            placeholder="Solway Joinery"
                             className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
                         {problemFor('business_name') && (
