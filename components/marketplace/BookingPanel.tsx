@@ -294,6 +294,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                         initialDate={initialDate}
                         prefillAdults={cottageAdults}
                         prefillChildren={cottageChildren}
+                        hasStay={!standalone}
                         busy={busy}
                         error={error}
                         onBook={bookSlot}
@@ -349,6 +350,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                     prefillChildren={cottageChildren}
                     initialDate={initialDate}
                     lockedItemId={lockedItemId}
+                    hasStay={!standalone}
                     busy={busy}
                     error={error}
                     onBook={bookRequest}

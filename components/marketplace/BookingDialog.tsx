@@ -6,6 +6,7 @@ import { formatGBP } from '@/lib/formatMoney';
 import { optionAvailability, seatConfig } from '@/lib/serviceSlots';
 import { unitMultiplies, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { childrenAllowed } from '@/lib/guestAges';
+import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
 import { itemPriceLabel, timeLabel, monthYearLabel, dayHeadingLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
@@ -33,9 +34,12 @@ interface Offering {
 // Selecting a slot and pressing Book goes straight to Stripe Checkout — the panel's
 // onBook does the POST + redirect; no contact is collected here (Checkout does that).
 export default function BookingDialog({
-    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, minAge, initialDate, prefillAdults, prefillChildren, busy, error, onBook, onClose,
+    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, minAge, initialDate, prefillAdults, prefillChildren, hasStay, busy, error, onBook, onClose,
 }: {
     who: string;
+    // True when this checkout is booked against a confirmed stay: the linked-
+    // travel-arrangement notice shows only then, never for a standalone booking.
+    hasStay?: boolean;
     // The provider's minimum age (null / 12 / 16 / 18 / 21). 16+ takes no children
     // (the 4–12 band is all below it), so no Children stepper and no "Add children".
     minAge?: number | null;
@@ -461,6 +465,7 @@ export default function BookingDialog({
                         {/* Footer: total + one CTA → Stripe Checkout */}
                         <div className="border-t border-slate-100 px-5 py-4">
                             {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
+                            <LinkedTravelNotice show={!!hasStay} />
                             <div className="flex items-center justify-between gap-3">
                                 <div className="text-sm text-slate-600">
                                     {selected

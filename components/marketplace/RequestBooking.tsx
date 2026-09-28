@@ -6,6 +6,7 @@ import { formatGBP } from '@/lib/formatMoney';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { hasExtraGuests, partyPrice, partyCeiling, extraGuestsLine } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
+import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
 import { prettyTime } from '@/lib/offeredTimes';
 import { itemPriceLabel, dateLabel, dayHeadingLabel, monthYearLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
@@ -92,9 +93,11 @@ export interface RequestBookArgs {
 // month heading opens the full month grid), each day expanding to its times.
 export function RequestBookingDialog({
     who, items, minAge, isFood, needsAddress, calDays, timesByDate, providerMax, prefillAdults, prefillChildren,
-    initialDate, lockedItemId, busy, error, onBook, onClose,
+    initialDate, lockedItemId, hasStay, busy, error, onBook, onClose,
 }: {
     who: string;
+    // True when booked against a confirmed stay — gates the linked-travel notice.
+    hasStay?: boolean;
     items: RequestItem[];
     minAge?: number | null;
     isFood?: boolean;
@@ -497,6 +500,7 @@ export function RequestBookingDialog({
                                     </div>
                                 </details>
                             )}
+                            <LinkedTravelNotice show={!!hasStay} />
                             <button type="button" onClick={submit} disabled={busy || !canBook}
                                 className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
                                 {busy ? 'Sending…' : 'Send request'}
