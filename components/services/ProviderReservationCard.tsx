@@ -18,6 +18,7 @@ import ReservationHeader from '@/components/dashboard/reservation/ReservationHea
 import type { StatusTone } from '@/components/dashboard/reservation/ReservationStatusPill';
 import MoneyCards, { type MoneyCardsData } from '@/components/dashboard/reservation/MoneyCards';
 import ProviderManageSheet, { type ManageData } from '@/components/services/ProviderManageSheet';
+import GuestManageSheet, { type GuestManageData } from '@/components/marketplace/GuestManageSheet';
 import ProviderCancellationCard, { type CancellationCardData } from '@/components/services/ProviderCancellationCard';
 
 // The "Where" value: a plain line, or a name with an address beneath it.
@@ -52,6 +53,10 @@ export interface ReservationCardData {
     // and only on guest-experience orders — a trade job is off-platform.
     cancellation: CancellationCardData | null;
     manage: ManageData | null;
+    // The guest's own Manage-reservation sheet (change/cancel), the mirror of
+    // `manage`. Exactly one of the two is ever set — a viewer is a provider or a
+    // guest — so each party sees only its own actions.
+    guestManage: GuestManageData | null;
 }
 
 const lifted = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]';
@@ -140,6 +145,7 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                     : null}
 
             {r.manage && <ProviderManageSheet data={r.manage} />}
+            {r.guestManage && <GuestManageSheet data={r.guestManage} />}
 
             {(r.messageHref || r.phone) && (
                 <div className="flex gap-2">

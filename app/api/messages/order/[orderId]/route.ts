@@ -6,7 +6,8 @@ import { logError } from '@/lib/logError';
 import { orderThreadContext } from '@/lib/orderThreads';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
-import { orderNet, orderReference } from '@/lib/serviceOrders';
+import { orderNet, orderReference, unitMultiplies } from '@/lib/serviceOrders';
+import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
 import { whereForOrder } from '@/lib/providerReservations';
 import { whenLabel } from '@/components/marketplace/present';
@@ -59,7 +60,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
         // (with our fee shown as working); a guest sees what they paid.
         const { data: full } = await admin
             .from('service_orders')
-            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_id, guest_name, guest_phone, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
+            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_id, guest_name, guest_phone, parent_order_id, slot_session_id, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
             .eq('id', params.orderId)
             .maybeSingle();
 
@@ -170,6 +171,33 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 pendingChangeBy,
             };
 
+            // The guest's own Manage-reservation sheet, so a guest can change or
+            // cancel from messages without leaving. It reuses the same actions the
+            // order page offers (ChangeGuestCount / ChangeDateTime / OrderCancel),
+            // which self-fetch, so it needs only these flags — mirroring the order
+            // page's own gating (app/experiences/order/[orderId]/page.tsx). Each
+            // party sees only its own actions: this is null for the provider.
+            const windowHours = Number((prov && prov.cancellation_window_hours) ?? 48);
+            const isSlotShape = full.shape === 'slot';
+            const guestCharged = status === 'confirmed';
+            const guestManage = ctx.isGuest ? {
+                orderId: full.id,
+                shape: full.shape,
+                status,
+                charged: guestCharged,
+                free: guestCharged
+                    ? guestMayCancelFree(full.shape, String(ctx.order.service_date), full.service_time || null, windowHours, new Date())
+                    : false,
+                price: net.gross,
+                providerName: ctx.business || 'the provider',
+                live: status === 'authorised' || status === 'confirmed' || status === 'holding',
+                canChangeCount: status === 'confirmed' && !full.parent_order_id
+                    && (isSlotShape ? unitMultiplies(full.item_unit) : full.shape === 'comes_to_you'),
+                canChangeDate: status === 'confirmed' && !full.parent_order_id
+                    && (isSlotShape ? !!full.slot_session_id : true),
+                providerProposal: (pendingLive && full.pending_change_by === 'provider') ? pendingChange : null,
+            } : null;
+
             reservation = {
                 reference: orderReference(full.id),
                 avatarUrl: ctx.isGuest ? null : guestAvatar,
@@ -190,6 +218,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 guests,
                 cancellation,
                 manage,
+                guestManage,
             };
         }
 
