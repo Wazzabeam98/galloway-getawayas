@@ -72,7 +72,8 @@ export interface ProviderReservation {
     // For the provider's Manage sheet and cancellation card (guest experiences
     // only; a trade is off-platform so both are null).
     rawStatus: string;               // 'authorised' | 'confirmed' | …
-    pendingChange: string | null;    // a date/time the guest has asked to move to
+    pendingChange: string | null;    // a date/time change awaiting an answer
+    pendingChangeBy: 'guest' | 'provider' | null;  // who proposed it
     cancellation: ReservationCancellation | null;
 }
 
@@ -159,7 +160,7 @@ export async function loadProviderReservations(
 async function loadGuestReservations(admin: any, provider: any, today: string, tomorrow: string, weekEnd: string): Promise<ProviderReservationsResult> {
     const { data: orders } = await admin
         .from('service_orders')
-        .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, guest_id, guest_name, guest_phone, note, allergy, listing_id, created_at, pending_service_date, pending_service_time, pending_change_expires_at')
+        .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, guest_id, guest_name, guest_phone, note, allergy, listing_id, created_at, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
         .eq('provider_id', provider.id)
         .in('status', ['authorised', 'confirmed'])
         .is('parent_order_id', null)
@@ -216,6 +217,8 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
             const pendingLive = o.pending_service_date
                 && (!o.pending_change_expires_at || new Date(o.pending_change_expires_at).getTime() > Date.now());
             const pendingChange = pendingLive ? whenLabel(o.shape, o.pending_service_date, o.pending_service_time) : null;
+            // Who proposed the pending change (null marker = a legacy guest request).
+            const pendingChangeBy: 'guest' | 'provider' | null = pendingLive ? (o.pending_change_by === 'provider' ? 'provider' : 'guest') : null;
             const cancellation = cancellationFor(
                 o.shape,
                 Number(provider.cancellation_window_hours ?? 48),
@@ -249,6 +252,7 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
                 inWeek: String(o.service_date).slice(0,10) >= today && String(o.service_date).slice(0,10) <= weekEnd,
                 rawStatus: o.status,
                 pendingChange,
+                pendingChangeBy,
                 cancellation,
             } as ProviderReservation;
         });
@@ -320,6 +324,7 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             // it carries no through-platform Manage sheet or cancellation card here.
             rawStatus: e.status,
             pendingChange: null,
+            pendingChangeBy: null,
             cancellation: null,
         };
     };

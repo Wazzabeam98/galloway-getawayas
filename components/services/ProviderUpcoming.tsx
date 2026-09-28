@@ -68,10 +68,12 @@ function toCardData(r: ProviderReservation): ReservationCardData {
         manage: r.kind === 'trade' ? null : {
             orderId: r.id,
             status: r.rawStatus,
+            shape: r.kind,
             phone: r.phone,
             guestFirst: r.personFirst,
             messageHref: r.messageHref,
             pendingChange: r.pendingChange,
+            pendingChangeBy: r.pendingChangeBy,
         },
     };
 }

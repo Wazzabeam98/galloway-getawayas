@@ -27,6 +27,8 @@ import CopyField from '@/components/arrival/CopyField';
 import ExperienceGroup from '@/components/ExperienceGroup';
 import ChangeGuestCount from '@/components/marketplace/ChangeGuestCount';
 import ChangeDateTime from '@/components/marketplace/ChangeDateTime';
+import ProviderProposalBanner from '@/components/marketplace/ProviderProposalBanner';
+import { whenLabel as changeWhenLabel } from '@/components/marketplace/present';
 import WhenBadge from '@/components/WhenBadge';
 import { formatGBP } from '@/lib/formatMoney';
 import { foldOrderFamily } from '@/lib/orderFamily';
@@ -349,6 +351,21 @@ export default async function OrderPage({ params, searchParams }: { params: { or
         && (isSlot ? isPerPersonParent : order.shape === 'comes_to_you');
     const canChangeDate = isBooker && order.status === 'confirmed' && !order.parent_order_id
         && (isSlot ? !!order.slot_session_id : true);
+
+    // A change the PROVIDER has proposed, waiting on this guest to accept or
+    // decline (pending_change_by='provider'). Read on its own — the money-walled
+    // loader does not carry the pending columns. Booker only.
+    let providerProposal: string | null = null;
+    if (isBooker && order.status === 'confirmed') {
+        const { data: pend } = await admin
+            .from('service_orders')
+            .select('pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
+            .eq('id', order.id).maybeSingle();
+        if (pend && pend.pending_change_by === 'provider' && pend.pending_service_date
+            && (!pend.pending_change_expires_at || new Date(pend.pending_change_expires_at) > new Date())) {
+            providerProposal = changeWhenLabel(order.shape, pend.pending_service_date, pend.pending_service_time);
+        }
+    }
 
     const { comesToCottage, collects } = orderLocation(order, prov?.fulfilment);
     // Assembled from the three private fields, same order the cottage address
@@ -912,6 +929,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     </div>
                                 );
                             })()}
+
+                            {providerProposal && (
+                                <div className="mt-4">
+                                    <ProviderProposalBanner orderId={order.id} whenLabel={providerProposal} businessName={shortWho} />
+                                </div>
+                            )}
 
                             <div className="mt-4">
                                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cancellation policy</div>

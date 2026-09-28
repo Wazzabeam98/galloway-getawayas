@@ -58,7 +58,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
         // (with our fee shown as working); a guest sees what they paid.
         const { data: full } = await admin
             .from('service_orders')
-            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_id, guest_name, guest_phone, pending_service_date, pending_service_time, pending_change_expires_at')
+            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_id, guest_name, guest_phone, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
             .eq('id', params.orderId)
             .maybeSingle();
 
@@ -144,6 +144,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
             const pendingLive = full.pending_service_date
                 && (!full.pending_change_expires_at || new Date(full.pending_change_expires_at).getTime() > Date.now());
             const pendingChange = pendingLive ? whenLabel(full.shape, full.pending_service_date, full.pending_service_time) : null;
+            const pendingChangeBy = pendingLive ? (full.pending_change_by === 'provider' ? 'provider' : 'guest') : null;
             const guests = ctx.isGuest ? null : { name: guestName, party: partyLabel };
             const cancellation = ctx.isGuest ? null : cancellationFor(
                 full.shape,
@@ -153,10 +154,12 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
             const manage = ctx.isGuest ? null : {
                 orderId: full.id,
                 status,
+                shape: full.shape,
                 phone: full.guest_phone || null,
                 guestFirst,
                 messageHref: '/messages?o=' + full.id,
                 pendingChange,
+                pendingChangeBy,
             };
 
             reservation = {

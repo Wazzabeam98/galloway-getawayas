@@ -55,6 +55,7 @@ interface Order {
     // A pending DATE-change request on a confirmed order, and its 48h deadline.
     pending_service_date?: string | null;
     pending_change_expires_at?: string | null;
+    pending_change_by?: 'guest' | 'provider' | null;
 }
 
 // What the provider is turning up to, when the price is a rate: "6 people ·
@@ -272,14 +273,22 @@ export default function ProviderExperienceDashboard(props: { providerId: string;
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="mt-0.5 text-sm text-gray-700">For {o.guest_name}</div> : null}
                                 {o.pending_service_date && (!o.pending_change_expires_at || new Date(o.pending_change_expires_at) > new Date()) ? (
-                                    <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
-                                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Date change requested</div>
-                                        <p className="mt-0.5 text-sm text-amber-950">The guest would like to move this to {whenLabel(o.shape, o.pending_service_date, null)}.</p>
-                                        <div className="mt-2 flex gap-2">
-                                            <button type="button" disabled={busy === o.id} onClick={() => answer(o.id, 'accept_date')} className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60">{busy === o.id ? '…' : 'Accept date'}</button>
-                                            <button type="button" disabled={busy === o.id} onClick={() => answer(o.id, 'decline_date')} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:opacity-60">Decline</button>
+                                    o.pending_change_by === 'provider' ? (
+                                        // A change YOU proposed — the guest answers it, not you.
+                                        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                                            <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Waiting on the guest</div>
+                                            <p className="mt-0.5 text-sm text-amber-950">You proposed moving this to {whenLabel(o.shape, o.pending_service_date, null)}.</p>
                                         </div>
-                                    </div>
+                                    ) : (
+                                        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                                            <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Date change requested</div>
+                                            <p className="mt-0.5 text-sm text-amber-950">The guest would like to move this to {whenLabel(o.shape, o.pending_service_date, null)}.</p>
+                                            <div className="mt-2 flex gap-2">
+                                                <button type="button" disabled={busy === o.id} onClick={() => answer(o.id, 'accept_date')} className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60">{busy === o.id ? '…' : 'Accept date'}</button>
+                                                <button type="button" disabled={busy === o.id} onClick={() => answer(o.id, 'decline_date')} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:opacity-60">Decline</button>
+                                            </div>
+                                        </div>
+                                    )
                                 ) : null}
                                 {o.allergy ? (
                                     <div className="mt-2 rounded-lg border-2 border-rose-400 bg-rose-50 px-3 py-2">
