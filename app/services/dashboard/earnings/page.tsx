@@ -10,6 +10,7 @@ import { londonDayKey } from '@/lib/dayKey';
 import EarningsDateFilter from '@/components/EarningsDateFilter';
 import MonthlyTrendChart, { type TrendMonth } from '@/components/MonthlyTrendChart';
 import { ArrowLeft } from 'lucide-react';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const metadata = {
     title: 'Earnings',
@@ -29,7 +30,7 @@ export const metadata = {
 // Every figure shown is the provider's take (their 90%), via orderNet.
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const money = (n: number) => '£' + Number(n || 0).toFixed(2);
+const money = (n: number) => formatGBP(n);
 const ukDate = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 const MONTH_LETTERS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

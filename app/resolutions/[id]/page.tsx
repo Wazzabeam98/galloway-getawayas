@@ -8,6 +8,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { displayName, capitializeFirst } from '@/lib/utils';
 import GuestResolutionActions from '@/components/resolutions/GuestResolutionActions';
 import { Paperclip } from 'lucide-react';
+import { formatGBP } from '@/lib/formatMoney';
 
 // The guest's view of a money request from their host. Read through the service
 // role (the table is service-role only) and gated to the guest it belongs to.
@@ -51,7 +52,7 @@ export default async function ResolutionPage({ params }: { params: { id: string 
 
     const statusLine: Record<string, string> = {
         paid: 'You paid this request. Thank you.',
-        countered: 'You suggested £' + (Number(res.counter_amount || 0)).toFixed(2) + '. Waiting for ' + hostFirst + ' to respond.',
+        countered: 'You suggested ' + formatGBP(res.counter_amount || 0) + '. Waiting for ' + hostFirst + ' to respond.',
         declined: 'You declined this request. It has been sent to us to resolve.',
         escalated: 'This request is with Galloway Getaways to resolve.',
         cancelled: hostFirst + ' withdrew this request. There’s nothing for you to do.',
@@ -66,7 +67,7 @@ export default async function ResolutionPage({ params }: { params: { id: string 
                     {res.reason === 'damage' ? 'Damage or extra cleaning' : 'Extra services'}
                 </p>
                 <h1 className="mt-1.5 text-2xl font-bold text-slate-900">
-                    {hostFirst} requested £{amount.toFixed(2)}
+                    {hostFirst} requested {formatGBP(amount)}
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">For your stay at {stayName}.</p>
 

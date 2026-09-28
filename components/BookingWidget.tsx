@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { formatGBP } from '@/lib/formatMoney';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
 import { addDays, addMonths } from 'date-fns';
 import 'react-date-range/dist/styles.css';
@@ -497,18 +498,18 @@ export default function BookingWidget({
                 <div className="border-t pt-3 mb-4 text-sm space-y-1.5">
                     <div className="flex justify-between text-slate-600">
                         <span>{nights} night{nights > 1 ? 's' : ''}</span>
-                        <span>£{nightsSubtotal.toFixed(2)}</span>
+                        <span>{formatGBP(nightsSubtotal)}</span>
                     </div>
                     {cleaningFeeTotal > 0 && (
                         <div className="flex justify-between text-slate-600">
                             <span>Cleaning fee</span>
-                            <span>£{cleaningFeeTotal.toFixed(2)}</span>
+                            <span>{formatGBP(cleaningFeeTotal)}</span>
                         </div>
                     )}
                     {petFeeTotal > 0 && (
                         <div className="flex justify-between text-slate-600">
                             <span>Pet fee</span>
-                            <span>£{petFeeTotal.toFixed(2)}</span>
+                            <span>{formatGBP(petFeeTotal)}</span>
                         </div>
                     )}
                     {extraGuestTotal > 0 && (
@@ -521,18 +522,18 @@ export default function BookingWidget({
                                     return (
                                         extra +
                                         (extra === 1 ? ' extra guest' : ' extra guests') +
-                                        ' × £' +
-                                        Number(extraGuestFee).toFixed(2) +
+                                        ' × ' +
+                                        formatGBP(extraGuestFee) +
                                         (extraGuestPeriod === 'stay' ? '' : ' × ' + nights + (nights === 1 ? ' night' : ' nights'))
                                     );
                                 })()}
                             </span>
-                            <span>£{extraGuestTotal.toFixed(2)}</span>
+                            <span>{formatGBP(extraGuestTotal)}</span>
                         </div>
                     )}
                     <div className="flex justify-between font-bold text-slate-900 mt-2 pt-2 border-t">
                         <span>Total</span>
-                        <span>£{total.toFixed(2)}</span>
+                        <span>{formatGBP(total)}</span>
                     </div>
                 </div>
             )}
@@ -546,10 +547,10 @@ export default function BookingWidget({
                     >
                         <div className="flex items-center justify-between">
                             <span className="text-sm font-semibold text-slate-900">Book now, pay the rest later</span>
-                            <span className="text-sm font-bold text-slate-900">£{depositNow.toFixed(2)}</span>
+                            <span className="text-sm font-bold text-slate-900">{formatGBP(depositNow)}</span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
-                            £{depositNow.toFixed(2)} now &middot; £{depositLater.toFixed(2)} on {formatUk(balanceDate)}
+                            {formatGBP(depositNow)} now &middot; {formatGBP(depositLater)} on {formatUk(balanceDate)}
                         </p>
                         <p className="text-xs text-slate-400 mt-0.5">No fees, no interest.</p>
                     </button>
@@ -561,7 +562,7 @@ export default function BookingWidget({
                     >
                         <div className="flex items-center justify-between">
                             <span className="text-sm font-semibold text-slate-900">Pay in full today</span>
-                            <span className="text-sm font-bold text-slate-900">£{total.toFixed(2)}</span>
+                            <span className="text-sm font-bold text-slate-900">{formatGBP(total)}</span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1">Settled in one go, nothing more to pay.</p>
                     </button>
@@ -586,7 +587,7 @@ export default function BookingWidget({
             {Number(damageDeposit) > 0 && nights > 0 && (
                 <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
                     <span className="font-semibold text-slate-800">
-                        £{Number(damageDeposit).toFixed(2)} damage deposit
+                        {formatGBP(damageDeposit)} damage deposit
                     </span>
                     <span className="block mt-0.5">
                         Collected by your host at the property and returned after your stay. It
@@ -614,7 +615,7 @@ export default function BookingWidget({
                     {submitting
                         ? 'Taking you to payment...'
                         : nights > 0
-                            ? 'Secure your dates for £' + dueNow.toFixed(2)
+                            ? 'Secure your dates for ' + formatGBP(dueNow)
                             : (instantBook ? 'Reserve' : 'Request to book')}
                 </button>
             )}

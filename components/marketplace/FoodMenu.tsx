@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { formatGBP } from '@/lib/formatMoney';
 import { Minus, Plus, Info, X, Utensils, Clock } from 'lucide-react';
 import { useFoodCart, type FoodMenuItem } from '@/components/marketplace/FoodCart';
 import { noticeLabel } from '@/components/marketplace/present';
@@ -129,7 +130,7 @@ function MenuCard({ it, qty, onOpen, onSet }: {
                             <span className="mt-0.5 flex-none text-slate-400"><Info className="h-3.5 w-3.5" aria-hidden /></span>
                         )}
                     </div>
-                    <div className="mt-0.5 font-semibold text-slate-900">£{it.price.toFixed(2)}</div>
+                    <div className="mt-0.5 font-semibold text-slate-900">{formatGBP(it.price)}</div>
                     {it.description ? (
                         <p className="mt-1 text-sm leading-relaxed text-slate-600 line-clamp-2">{it.description}</p>
                     ) : null}
@@ -201,7 +202,7 @@ function ItemSheet({ it, qty, notice, onSet, onClose }: {
                 <div className="p-5">
                     {it.image ? <h3 className="text-lg font-bold text-slate-900">{it.name}</h3> : null}
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-slate-900">£{it.price.toFixed(2)}</span>
+                        <span className="font-semibold text-slate-900">{formatGBP(it.price)}</span>
                         {notice ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                                 <Clock className="h-3.5 w-3.5" aria-hidden />{notice}
@@ -243,7 +244,7 @@ function ItemSheet({ it, qty, notice, onSet, onClose }: {
                         </span>
                         <button type="button" onClick={() => { onSet(draft); onClose(); }}
                             className="flex-1 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800">
-                            {qty > 0 ? 'Update basket' : 'Add to basket'} · £{(it.price * draft).toFixed(2)}
+                            {qty > 0 ? 'Update basket' : 'Add to basket'} · {formatGBP(it.price * draft)}
                         </button>
                     </div>
                     {(it.ingredients || it.allergens) ? (

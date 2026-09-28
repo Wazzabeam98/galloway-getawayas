@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { formatGBP } from '@/lib/formatMoney';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { displayName } from '@/lib/utils';
@@ -65,7 +66,7 @@ export default function BookingActions({
             return;
         }
         if (value > refundable) {
-            setPanelError('The guest has only paid £' + refundable.toFixed(2) + '.');
+            setPanelError('The guest has only paid ' + formatGBP(refundable) + '.');
             return;
         }
 
@@ -79,7 +80,7 @@ export default function BookingActions({
             const data = await res.json();
 
             if (data && data.ok) {
-                toast.success('£' + value.toFixed(2) + ' refunded to your guest.', { theme: 'colored' });
+                toast.success(formatGBP(value) + ' refunded to your guest.', { theme: 'colored' });
                 closeRefund();
                 router.refresh();
             } else {
@@ -296,12 +297,12 @@ export default function BookingActions({
                     </div>
                     <p className="text-sm text-red-800 mt-1">
                         Your guest has this stay confirmed and may have arranged travel around it.
-                        They&apos;ll be refunded the full £{refundable.toFixed(2)} they have paid,
+                        They&apos;ll be refunded the full {formatGBP(refundable)} they have paid,
                         whatever your cancellation policy says, and the dates go back on sale.
                     </p>
                     {penalty > 0 && (
                         <p className="text-sm text-red-800 mt-2">
-                            A cancellation fee of <strong>£{penalty.toFixed(2)}</strong> (5% of the
+                            A cancellation fee of <strong>{formatGBP(penalty)}</strong> (5% of the
                             booking) will be taken off your next payout.
                         </p>
                     )}
@@ -352,7 +353,7 @@ export default function BookingActions({
                     >
                         {updating && !partial
                             ? 'Refunding…'
-                            : 'Refund the full £' + refundable.toFixed(2)}
+                            : 'Refund the full ' + formatGBP(refundable)}
                     </button>
 
                     {!partial ? (
@@ -367,7 +368,7 @@ export default function BookingActions({
                     ) : (
                         <div className="mt-3 pt-3 border-t border-slate-200">
                             <div className="text-xs text-slate-500 mb-2">
-                                Anything up to £{refundable.toFixed(2)}.
+                                Anything up to {formatGBP(refundable)}.
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className="text-slate-500">£</span>
@@ -445,7 +446,7 @@ export default function BookingActions({
                 </div>
                 <p className="text-sm text-red-800 mt-1">
                     {refundable > 0
-                        ? 'Your guest is refunded the full £' + refundable.toFixed(2)
+                        ? 'Your guest is refunded the full ' + formatGBP(refundable)
                             + ' they have paid, and the dates go back on sale.'
                         : 'The request is turned down and the dates go back on sale.'}
                 </p>

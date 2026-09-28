@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
@@ -70,9 +70,24 @@ function CalendarIcon() {
     );
 }
 
-export default function ChangeDateTime({ orderId, shape, className }: { orderId: string; shape?: string | null; className?: string }) {
+export default function ChangeDateTime({ orderId, shape, className, endpoint: endpointProp, verb, inline, onDone }: {
+    orderId: string;
+    shape?: string | null;
+    className?: string;
+    // Override the API endpoint (GET feed + POST). Defaults to the guest's own
+    // change-date / slots-move; the provider passes its propose-change route to
+    // reuse the very same picker for a provider-proposed change.
+    endpoint?: string;
+    // The confirm verb — "Request" for the guest, "Propose" for the provider.
+    verb?: string;
+    // Render the picker body directly (no trigger button, no portal), for embedding
+    // in another sheet. Loads on mount and calls onDone after a successful submit.
+    inline?: boolean;
+    onDone?: () => void;
+}) {
     const isRequest = shape === 'made_to_order' || shape === 'comes_to_you';
-    const endpoint = isRequest ? '/api/services/order/change-date' : '/api/services/slots/move';
+    const endpoint = endpointProp || (isRequest ? '/api/services/order/change-date' : '/api/services/slots/move');
+    const submitVerb = verb || 'Request';
 
     const [open, setOpen] = useState(false);
     const [slot, setSlot] = useState<SlotFeed | null>(null);
@@ -106,11 +121,14 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                 : { orderId, sessionDate: pickedTime?.date, sessionTime: pickedTime?.time };
             const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const d = await r.json();
-            if (r.ok && d && d.ok) { window.location.reload(); return; }
+            if (r.ok && d && d.ok) { if (onDone) onDone(); window.location.reload(); return; }
             setError((d && d.error) || 'Could not change the date.');
         } catch { setError('Could not change the date.'); }
         setBusy(false);
     }
+
+    // Inline mode loads the feed on mount (there is no trigger to open it).
+    useEffect(() => { if (inline) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [inline]);
 
     // ---- slot-only derived (unchanged behaviour) -------------------------------
     const other = slot ? slot.sessions.filter((s) => s.reason !== 'current') : [];
@@ -193,29 +211,11 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
     const reqReady = !dateFeed || (reqTimeOptions.length ? !!reqTime : true);
     const currentWhen = isRequest ? whenLabel(dateFeed?.current.date || '', dateFeed?.current.time || undefined) : whenLabel(slot?.current.date || '', slot?.current.time);
 
-    return (
-        <>
-            <button type="button" onClick={openModal}
-                className={className || 'text-sm font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800'}>
-                {className ? (
-                    <><span className="flex items-center gap-3"><CalendarIcon /> Change date or time</span><ChevronRight className="h-4 w-4 flex-none text-slate-300" /></>
-                ) : 'Change date or time'}
-            </button>
-
-            {open && typeof document !== 'undefined' && createPortal(
-                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-0 sm:items-center sm:px-4" onClick={closeModal}>
-                    <div className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between px-5 pt-5">
-                            <h2 className="text-lg font-bold text-slate-900">{isRequest && !showsReqTime ? 'Change date' : 'Change date or time'}</h2>
-                            <button type="button" onClick={closeModal} className="text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
-                        </div>
-
-                        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3">
-                            {loadErr ? (
-                                <p className="text-sm text-rose-600">{loadErr}</p>
-                            ) : !feedReady ? (
-                                <p className="text-sm text-slate-400">Loading…</p>
-                            ) : (
+    const inner = loadErr ? (
+        <p className="text-sm text-rose-600">{loadErr}</p>
+    ) : !feedReady ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+    ) : (
                                 <div className="space-y-4">
                                     <div className="rounded-lg bg-slate-50 p-3 text-sm">
                                         <div className="text-slate-700">Currently <span className="font-semibold text-slate-900">{currentWhen}</span>.</div>
@@ -330,20 +330,49 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                                         </>
                                     )}
                                 </div>
-                            )}
-                        </div>
+    );
 
-                        {feedReady && !locked && anyOpen && !loadErr && (
-                            <div className="border-t border-slate-100 p-4">
-                                <button type="button" disabled={busy || (isRequest ? (!reqChanged || !reqReady) : !pickedTime)} onClick={proceed}
-                                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-                                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                                    {isRequest
-                                        ? (reqChanged ? 'Request ' + (reqTimeOptions.length && reqTime ? whenLabel(effectiveReqDate, reqTime) : dayLabel(effectiveReqDate)) : 'Pick a new date or time')
-                                        : (pickedTime ? 'Move to ' + whenLabel(pickedTime.date, pickedTime.time) : 'Pick a new time')}
-                                </button>
-                            </div>
-                        )}
+    const footerNode = feedReady && !locked && anyOpen && !loadErr ? (
+        <div className="border-t border-slate-100 p-4">
+            <button type="button" disabled={busy || (isRequest ? (!reqChanged || !reqReady) : !pickedTime)} onClick={proceed}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {isRequest
+                    ? (reqChanged ? submitVerb + ' ' + (reqTimeOptions.length && reqTime ? whenLabel(effectiveReqDate, reqTime) : dayLabel(effectiveReqDate)) : 'Pick a new date or time')
+                    : (pickedTime ? 'Move to ' + whenLabel(pickedTime.date, pickedTime.time) : 'Pick a new time')}
+            </button>
+        </div>
+    ) : null;
+
+    // Embedded in another sheet (the provider's Manage pop-up): the body directly,
+    // no trigger and no portal, so it never fights the outer modal.
+    if (inline) {
+        return (
+            <div className="flex max-h-[70vh] flex-col">
+                <div className="min-h-0 flex-1 overflow-y-auto pt-1">{inner}</div>
+                {footerNode}
+            </div>
+        );
+    }
+
+    return (
+        <>
+            <button type="button" onClick={openModal}
+                className={className || 'text-sm font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800'}>
+                {className ? (
+                    <><span className="flex items-center gap-3"><CalendarIcon /> Change date or time</span><ChevronRight className="h-4 w-4 flex-none text-slate-300" /></>
+                ) : 'Change date or time'}
+            </button>
+
+            {open && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-0 sm:items-center sm:px-4" onClick={closeModal}>
+                    <div className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-5 pt-5">
+                            <h2 className="text-lg font-bold text-slate-900">{isRequest && !showsReqTime ? 'Change date' : 'Change date or time'}</h2>
+                            <button type="button" onClick={closeModal} className="text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3">{inner}</div>
+                        {footerNode}
                     </div>
                 </div>,
                 document.body

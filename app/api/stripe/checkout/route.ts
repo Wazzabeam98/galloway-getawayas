@@ -10,6 +10,7 @@ import { londonDayKey } from '@/lib/dayKey';
 import { blockedNightsFromEvents, fetchLiveIcalEvents } from '@/lib/availability';
 import { rateFor } from '@/lib/fees';
 import { logError } from '@/lib/logError';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -137,8 +138,8 @@ export async function POST(request: Request) {
             return NextResponse.json(
                 {
                     ok: false,
-                    error: 'The price for these dates has changed to \u00A3'
-                        + quote.total.toFixed(2)
+                    error: 'The price for these dates has changed to '
+                        + formatGBP(quote.total)
                         + '. Please refresh the page and book again.',
                 },
                 { status: 409 }

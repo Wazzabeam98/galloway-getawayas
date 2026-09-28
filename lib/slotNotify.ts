@@ -15,6 +15,7 @@
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, formatDate, NEUTRAL_SUBTITLE } from './email';
 import { foldOrderFamily } from './orderFamily';
 import { formatTime } from './utils';
+import { formatGBP } from './formatMoney';
 
 // A confirmed top-up child order, as the webhook / sweep hands it over. Only the
 // fields the emails need.
@@ -84,7 +85,7 @@ export async function notifyTopUpConfirmed(admin: any, child: ConfirmedTopUp): P
                     '<p>A guest has added <strong>' + added + ' more ' + placeWord + '</strong> to their booking of '
                     + escapeHtml(itemName) + ' on <strong>' + when + '</strong>.</p>'
                     + '<p>The party is now <strong>' + headcount + '</strong>'
-                    + (familyTotal != null ? ', for a total of <strong>£' + familyTotal.toFixed(2) + '</strong>' : '')
+                    + (familyTotal != null ? ', for a total of <strong>' + formatGBP(familyTotal) + '</strong>' : '')
                     + '.</p>'
                     + button(SITE_URL + '/services/dashboard', 'View your bookings'),
                     'You’re receiving this because you offer experiences on Galloway Getaways.',
@@ -105,7 +106,7 @@ export async function notifyTopUpConfirmed(admin: any, child: ConfirmedTopUp): P
                 emailLayout(
                     '<p>You’ve added <strong>' + added + ' more ' + placeWord + '</strong> to your booking of '
                     + escapeHtml(itemName) + ' with ' + escapeHtml(business) + ' on <strong>' + when + '</strong>.</p>'
-                    + (child.price != null ? '<p>You paid £' + Number(child.price).toFixed(2) + ' for the added ' + placeWord + '.</p>' : '')
+                    + (child.price != null ? '<p>You paid ' + formatGBP(child.price) + ' for the added ' + placeWord + '.</p>' : '')
                     + button(SITE_URL + '/experiences/order/' + child.parent_order_id, 'View your booking'),
                     'You’re receiving this because you booked an experience on Galloway Getaways.',
                     undefined, NEUTRAL_SUBTITLE

@@ -34,6 +34,16 @@ export function partyLabel(b: {
     return null;
 }
 
+// "Liam's group of 2" — the party named to whoever is looking after them, for a
+// reservation row or a card header. First name when we have one, else "Group of
+// N". Used by the host booking rail and the provider upcoming-reservations view
+// so both read the same way (was inline in app/dashboard/bookings/[id]).
+export function groupLabel(firstName: string | null | undefined, count: number | null | undefined): string {
+    const n = Math.max(1, Number(count) || 1);
+    const who = (firstName || '').trim();
+    return who ? who + '’s group of ' + n : 'Group of ' + n;
+}
+
 // A human-readable confirmation number DERIVED from the booking's UUID, so there
 // is no new column and no migration. Stable for a given booking. If email or
 // support ever needs to quote it, promote it to a real stored reference then —

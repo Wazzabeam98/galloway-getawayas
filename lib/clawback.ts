@@ -1,5 +1,6 @@
 import { stripeRequest } from '@/lib/stripe';
 import { logError } from '@/lib/logError';
+import { formatGBP } from '@/lib/formatMoney';
 
 function round2(value: number): number {
     return Math.round(value * 100) / 100;
@@ -232,7 +233,7 @@ export async function clawBackPayout(
                 status: 'succeeded',
                 stripe_transfer_id: booking.payout_transfer_id,
                 note: shortfall > 0
-                    ? 'All the host had at Stripe. £' + shortfall.toFixed(2) + ' carried forward'
+                    ? 'All the host had at Stripe. ' + formatGBP(shortfall) + ' carried forward'
                     : null,
             });
         }
@@ -240,7 +241,7 @@ export async function clawBackPayout(
         if (shortfall > 0) {
             await carryForward(
                 admin, booking, shortfall,
-                'The host’s Stripe balance was £' + shortfall.toFixed(2)
+                'The host’s Stripe balance was ' + formatGBP(shortfall)
                     + ' short, carried to their next payout'
             );
         }

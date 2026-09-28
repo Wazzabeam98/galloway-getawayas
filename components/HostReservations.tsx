@@ -1,4 +1,5 @@
 import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee } from '@/lib/fees';
+import { formatGBP } from '@/lib/formatMoney';
 import { londonDayKey } from '@/lib/dayKey';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
@@ -299,7 +300,7 @@ export default async function HostReservations() {
                                             to know what is coming, and can
                                             open the sum if they want it. */}
                                         <div className="text-lg font-semibold text-stone-900">
-                                            &pound;{earns.toFixed(2)}
+                                            {formatGBP(earns)}
                                             <span className="text-sm font-normal text-stone-500">
                                                 {' '}for {nights} {nights === 1 ? 'night' : 'nights'}
                                             </span>
@@ -321,7 +322,7 @@ export default async function HostReservations() {
                                                     + (balanceLate ? 'text-amber-700' : 'text-stone-600')
                                                 }
                                             >
-                                                &pound;{stillOwed.toFixed(2)} of it is still to come
+                                                {formatGBP(stillOwed)} of it is still to come
                                                 {balanceDue
                                                     ? balanceLate
                                                         ? ' — was due ' + formatUk(balanceDue) + ', so the charge may have failed'
@@ -338,15 +339,15 @@ export default async function HostReservations() {
                                             <div className="mt-2 text-sm space-y-1">
                                                 <div className="flex justify-between gap-6 text-stone-600">
                                                     <span>Guest pays</span>
-                                                    <span>&pound;{grossDue.toFixed(2)}</span>
+                                                    <span>{formatGBP(grossDue)}</span>
                                                 </div>
                                                 <div className="flex justify-between gap-6 text-stone-600">
                                                     <span>Our fee ({rate}%)</span>
-                                                    <span>&minus; &pound;{(Math.round((grossDue - earns) * 100) / 100).toFixed(2)}</span>
+                                                    <span>&minus; {formatGBP(Math.round((grossDue - earns) * 100) / 100)}</span>
                                                 </div>
                                                 <div className="flex justify-between gap-6 font-semibold text-stone-900 pt-1 border-t border-stone-100">
                                                     <span>You get</span>
-                                                    <span>&pound;{earns.toFixed(2)}</span>
+                                                    <span>{formatGBP(earns)}</span>
                                                 </div>
                                             </div>
                                         </details>

@@ -8,6 +8,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { formatUk } from '@/lib/cancellation';
 import { outcomeLabel } from '@/lib/adminResolutions';
 import ResolveResolutionForm from '@/components/admin/ResolveResolutionForm';
+import { formatGBP } from '@/lib/formatMoney';
 
 // The admin side of the stay Resolution Centre — where a money request the guest
 // declined, or let run past the 72h deadline, comes to be adjudicated. The
@@ -98,7 +99,7 @@ export default async function AdminResolutions() {
                             <div key={r.id} className="border border-slate-200 rounded-2xl p-6">
                                 <div className="flex items-baseline justify-between gap-4 flex-wrap">
                                     <div className="font-bold text-slate-900">{reasonLabel(r.reason)}</div>
-                                    <div className="font-bold text-slate-900">£{Number(r.amount || 0).toFixed(2)}</div>
+                                    <div className="font-bold text-slate-900">{formatGBP(r.amount || 0)}</div>
                                 </div>
                                 <div className="text-sm text-slate-500 mt-0.5">
                                     {nameById[r.host_id] || 'Host'} &rarr; {nameById[r.guest_id] || 'Guest'}
@@ -110,7 +111,7 @@ export default async function AdminResolutions() {
                                         <>
                                             {listingTitle[booking.listing_id] || 'Listing'} &middot;{' '}
                                             {formatUk(new Date(booking.check_in))} &rarr; {formatUk(new Date(booking.check_out))} &middot;{' '}
-                                            £{Number(booking.total_price || 0).toFixed(2)} booking
+                                            {formatGBP(booking.total_price || 0)} booking
                                         </>
                                     ) : 'Not matched to a booking'}
                                 </div>
@@ -122,7 +123,7 @@ export default async function AdminResolutions() {
                                 )}
                                 {r.counter_amount != null && (
                                     <p className="text-sm text-slate-500 mt-2">
-                                        Guest suggested £{Number(r.counter_amount).toFixed(2)} instead.
+                                        Guest suggested {formatGBP(r.counter_amount)} instead.
                                     </p>
                                 )}
 
@@ -170,7 +171,7 @@ export default async function AdminResolutions() {
                         {closed.map((r: any) => (
                             <div key={r.id} className="border-b pb-2 text-sm">
                                 <div className="flex justify-between">
-                                    <span className="text-slate-600">£{Number(r.amount || 0).toFixed(2)} &middot; {reasonLabel(r.reason)}</span>
+                                    <span className="text-slate-600">{formatGBP(r.amount || 0)} &middot; {reasonLabel(r.reason)}</span>
                                     <span className="font-semibold text-slate-700">
                                         {outcomeLabel(r.admin_outcome)}{r.resolved_at ? ' · ' + formatUk(new Date(r.resolved_at)) : ''}
                                     </span>

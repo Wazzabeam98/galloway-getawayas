@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { formatGBP } from '@/lib/formatMoney';
 import {
     applicationFeePence, guestMayRespond, guestMayPay, escalationDeadline, round2, toPence,
 } from '@/lib/resolutions';
@@ -143,9 +144,9 @@ export async function POST(request: Request) {
             const { data: hostUser } = await admin.auth.admin.getUserById(res.host_id);
             const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
             if (hostEmail) {
-                await sendEmail(hostEmail, 'Your guest suggested £' + counter.toFixed(2), emailLayout(
-                    '<p style="margin:0 0 16px;font-size:16px;">Your guest has suggested <strong>£' + counter.toFixed(2)
-                    + '</strong> instead of the £' + round2(Number(res.amount)).toFixed(2) + ' you requested.</p>'
+                await sendEmail(hostEmail, 'Your guest suggested ' + formatGBP(counter), emailLayout(
+                    '<p style="margin:0 0 16px;font-size:16px;">Your guest has suggested <strong>' + formatGBP(counter)
+                    + '</strong> instead of the ' + formatGBP(res.amount) + ' you requested.</p>'
                     + '<p style="margin:0 0 16px;font-size:16px;">You can accept their amount or decline (which sends it to us to resolve).</p>'
                     + button(SITE_URL + '/dashboard/bookings/' + res.booking_id, 'Open the booking'),
                     'You’re receiving this because you host with Galloway Getaways.'));
@@ -168,7 +169,7 @@ async function notifyEscalation(admin: any, res: any, why: string) {
         if (to.length) {
             await sendEmailToAll(to, 'Escalated: guest declined a money request', emailLayout(
                 '<p>' + escapeHtml(why) + '</p>'
-                + '<p>Booking ' + escapeHtml(String(res.booking_id)) + ', £' + round2(Number(res.amount)).toFixed(2)
+                + '<p>Booking ' + escapeHtml(String(res.booking_id)) + ', ' + formatGBP(res.amount)
                 + ' (' + escapeHtml(String(res.reason)) + ').</p>'
                 + button(SITE_URL + '/admin/resolutions', 'Open the resolutions queue'),
                 'Galloway Getaways admin alert.'));

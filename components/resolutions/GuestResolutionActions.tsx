@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatGBP } from '@/lib/formatMoney';
 
 // The guest's three answers to a money request: accept and pay, decline, or
 // suggest a different amount. Accept returns a Stripe URL to send them to.
@@ -38,7 +39,7 @@ export default function GuestResolutionActions({ resolutionId, amount, guestFirs
             <div className="mt-5 space-y-3">
                 {error && <p className="text-[13px] text-rose-600">{error}</p>}
                 <button type="button" disabled={busy} onClick={() => send('accept')} className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-                    Continue to payment · £{amount.toFixed(2)}
+                    Continue to payment · {formatGBP(amount)}
                 </button>
                 <p className="text-[12px] text-slate-500">You started paying this request. This takes you back to the same secure Stripe page.</p>
             </div>
@@ -51,7 +52,7 @@ export default function GuestResolutionActions({ resolutionId, amount, guestFirs
             {!countering ? (
                 <div className="space-y-2">
                     <button type="button" disabled={busy} onClick={() => send('accept')} className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-                        Accept and pay £{amount.toFixed(2)}
+                        Accept and pay {formatGBP(amount)}
                     </button>
                     <div className="flex gap-2">
                         <button type="button" disabled={busy} onClick={() => setCountering(true)} className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:opacity-50">

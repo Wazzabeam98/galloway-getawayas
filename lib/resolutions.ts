@@ -5,6 +5,7 @@
 // Relative import, not '@/lib/dayKey': this module is executed directly by the
 // unit test, and Node cannot resolve the @/ alias at runtime.
 import { londonDayKey } from './dayKey';
+import { formatGBP } from './formatMoney';
 
 export type ResolutionDirection = 'request' | 'send';
 export type ResolutionReason = 'extra_services' | 'damage';
@@ -66,7 +67,7 @@ export function sendCapPounds(amountPaid: number, amountRefunded: number): numbe
 export function validateSendAmount(amount: number, cap: number): { ok: boolean; error?: string } {
     if (!(amount > 0)) return { ok: false, error: 'Enter an amount to send.' };
     if (round2(amount) > round2(cap)) {
-        return { ok: false, error: 'That is more than the £' + round2(cap).toFixed(2) + ' the guest has paid, net of refunds.' };
+        return { ok: false, error: 'That is more than the ' + formatGBP(cap) + ' the guest has paid, net of refunds.' };
     }
     return { ok: true };
 }

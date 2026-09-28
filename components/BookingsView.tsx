@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatGBP } from '@/lib/formatMoney';
 import Link from 'next/link';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
 import BookingActions from '@/components/BookingActions';
@@ -134,11 +135,11 @@ export default function BookingsView({
                         </div>
                         <div className="text-sm text-slate-700 mt-0.5">
                             <span className="font-semibold text-slate-900">
-                                £{netOfFee(Number(booking.total_price), commission).toFixed(2)}
+                                {formatGBP(netOfFee(Number(booking.total_price), commission))}
                             </span>
                             <span className="text-slate-500"> to you</span>
                             <span className="text-slate-400">
-                                {' '}&middot; £{Number(booking.total_price).toFixed(2)} guest total
+                                {' '}&middot; {formatGBP(booking.total_price)} guest total
                                 {commission > 0 ? ', less ' + commission + '% fee' : ', no fee'}
                             </span>
                         </div>

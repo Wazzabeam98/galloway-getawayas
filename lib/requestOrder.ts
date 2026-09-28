@@ -7,6 +7,7 @@ import {
     NEUTRAL_SUBTITLE, formatDate,
 } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { formatGBP } from '@/lib/formatMoney';
 
 // Builds the 'authorised' service order for a REQUEST-shape guest experience
 // (a chef/baker/masseur booked against a stay) from a completed Checkout
@@ -238,10 +239,10 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
 
     // A rendered list of the cart's lines, for the emails below.
     const linesHtml = (lineItems && lineItems.length)
-        ? '<ul style="margin:0 0 16px;padding-left:18px;font-size:15px;">' + lineItems.map((l) => '<li>' + escapeHtml(String(l.qty)) + ' × ' + escapeHtml(String(l.name)) + (l.is_custom ? ' (made to order)' : '') + ' — £' + Number(l.line_total).toFixed(2) + '</li>').join('') + '</ul>'
+        ? '<ul style="margin:0 0 16px;padding-left:18px;font-size:15px;">' + lineItems.map((l) => '<li>' + escapeHtml(String(l.qty)) + ' × ' + escapeHtml(String(l.name)) + (l.is_custom ? ' (made to order)' : '') + ' — ' + formatGBP(l.line_total) + '</li>').join('') + '</ul>'
         : '';
     const guestTo = ((guest && guest.email) || mintedEmail || md.contact_email || (cs.customer_details && cs.customer_details.email) || '').trim();
-    const totalStr = '£' + (Number(cs.amount_total || 0) / 100).toFixed(2);
+    const totalStr = formatGBP(Number(cs.amount_total || 0) / 100);
     const whereWhen = ' for <strong>' + escapeHtml(formatDate(String(md.service_date))) + '</strong>'
         + (md.collection_note ? ' (' + escapeHtml(String(md.collection_note)) + ')' : '')
         + (md.fulfilment === 'delivery' && md.service_address ? ', delivered to ' + escapeHtml(String(md.service_address)) : ', for collection');

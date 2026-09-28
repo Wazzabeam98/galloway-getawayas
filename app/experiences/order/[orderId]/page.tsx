@@ -27,7 +27,10 @@ import CopyField from '@/components/arrival/CopyField';
 import ExperienceGroup from '@/components/ExperienceGroup';
 import ChangeGuestCount from '@/components/marketplace/ChangeGuestCount';
 import ChangeDateTime from '@/components/marketplace/ChangeDateTime';
+import ProviderProposalBanner from '@/components/marketplace/ProviderProposalBanner';
+import { whenLabel as changeWhenLabel } from '@/components/marketplace/present';
 import WhenBadge from '@/components/WhenBadge';
+import { formatGBP } from '@/lib/formatMoney';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
@@ -349,6 +352,21 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const canChangeDate = isBooker && order.status === 'confirmed' && !order.parent_order_id
         && (isSlot ? !!order.slot_session_id : true);
 
+    // A change the PROVIDER has proposed, waiting on this guest to accept or
+    // decline (pending_change_by='provider'). Read on its own — the money-walled
+    // loader does not carry the pending columns. Booker only.
+    let providerProposal: string | null = null;
+    if (isBooker && order.status === 'confirmed') {
+        const { data: pend } = await admin
+            .from('service_orders')
+            .select('pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
+            .eq('id', order.id).maybeSingle();
+        if (pend && pend.pending_change_by === 'provider' && pend.pending_service_date
+            && (!pend.pending_change_expires_at || new Date(pend.pending_change_expires_at) > new Date())) {
+            providerProposal = changeWhenLabel(order.shape, pend.pending_service_date, pend.pending_service_time);
+        }
+    }
+
     const { comesToCottage, collects } = orderLocation(order, prov?.fulfilment);
     // Assembled from the three private fields, same order the cottage address
     // uses: "The Old Bakery, 4 Shore Road, Kirkcudbright, DG6 4JT". Released only
@@ -654,7 +672,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     {cartLineItems.map((l: any, i: number) => (
                                         <li key={i} className="flex items-baseline justify-between gap-3 text-slate-700">
                                             <span>{Number(l.qty) > 1 ? Number(l.qty) + ' × ' : ''}{String(l.name || 'Item')}{l.is_custom ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Made to order</span> : null}</span>
-                                            <span className="tabular-nums text-slate-900">£{(Number(l.line_total) || 0).toFixed(2)}</span>
+                                            <span className="tabular-nums text-slate-900">{formatGBP(l.line_total || 0)}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -912,6 +930,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 );
                             })()}
 
+                            {providerProposal && (
+                                <div className="mt-4">
+                                    <ProviderProposalBanner orderId={order.id} whenLabel={providerProposal} businessName={shortWho} />
+                                </div>
+                            )}
+
                             <div className="mt-4">
                                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cancellation policy</div>
                                 <p className="mt-0.5 text-sm leading-relaxed text-slate-700">{cancellationSentence(order.shape, windowHours, shortWho)}</p>
@@ -1006,9 +1030,9 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 <div className="text-sm font-semibold text-slate-900">{charged ? 'Amount paid' : 'Amount held'}</div>
                                 {/* The net across the whole family (base + any accepted
                                     added places), less any refund. */}
-                                <div className="mt-1 text-base text-slate-900">£{(breakdownTotal > 0 ? breakdownNet : (Number(price) - amountRefunded)).toFixed(2)}</div>
+                                <div className="mt-1 text-base text-slate-900">{formatGBP(breakdownTotal > 0 ? breakdownNet : (Number(price) - amountRefunded))}</div>
                                 {amountRefunded > 0 && (
-                                    <div className="mt-0.5 text-[13px] text-slate-500">£{amountRefunded.toFixed(2)} refunded of the £{(breakdownTotal > 0 ? breakdownTotal : Number(price)).toFixed(2)} you paid</div>
+                                    <div className="mt-0.5 text-[13px] text-slate-500">{formatGBP(amountRefunded)} refunded of the {formatGBP(breakdownTotal > 0 ? breakdownTotal : Number(price))} you paid</div>
                                 )}
                                 {/* The itemised breakdown, like a holiday-let booking —
                                     a <details> so it needs no client JavaScript. */}
@@ -1023,12 +1047,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                                 {breakdownLines.map((l, i) => (
                                                     <div key={i} className="flex items-baseline justify-between text-slate-600">
                                                         <span>{l.label}</span>
-                                                        <span className="tabular-nums">£{l.amount.toFixed(2)}</span>
+                                                        <span className="tabular-nums">{formatGBP(l.amount)}</span>
                                                     </div>
                                                 ))}
-                                                <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">£{breakdownTotal.toFixed(2)}</span></div>
-                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Refunded</span><span className="tabular-nums">−£{amountRefunded.toFixed(2)}</span></div>}
-                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between font-medium text-slate-900"><span>{charged ? 'Net paid' : 'Net held'}</span><span className="tabular-nums">£{breakdownNet.toFixed(2)}</span></div>}
+                                                <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">{formatGBP(breakdownTotal)}</span></div>
+                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Refunded</span><span className="tabular-nums">−{formatGBP(amountRefunded)}</span></div>}
+                                                {amountRefunded > 0 && <div className="flex items-baseline justify-between font-medium text-slate-900"><span>{charged ? 'Net paid' : 'Net held'}</span><span className="tabular-nums">{formatGBP(breakdownNet)}</span></div>}
                                             </div>
                                         </div>
                                     </details>
