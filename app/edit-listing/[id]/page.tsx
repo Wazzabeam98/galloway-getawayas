@@ -497,7 +497,13 @@ export default function EditListing() {
 
         setSubmitting(true);
         try {
-            const orderedPhotos = [photos[coverIndex], ...photos.filter((_, i) => i !== coverIndex)];
+            // Cover first, then the rest — but only when there IS a cover. On a
+            // listing with no photos, photos[coverIndex] is undefined, and the old
+            // [undefined, ...] array threw "reading 'kind'" below, so the save
+            // crashed before it ever ran. Filter guards it either way.
+            const cover = photos[coverIndex];
+            const orderedPhotos = (cover ? [cover, ...photos.filter((_, i) => i !== coverIndex)] : [...photos])
+                .filter(Boolean);
             const finalPaths: string[] = [];
 
             for (const photo of orderedPhotos) {
@@ -1436,7 +1442,11 @@ export default function EditListing() {
                             </div>
                         )}
 
-                        {formError && <p className="text-red-600 text-sm mt-8">{formError}</p>}
+                        {formError && (
+                            <div role="alert" className="mt-8 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                                {formError}
+                            </div>
+                        )}
 
                         <button type="submit" disabled={submitting || (moderating && moderationReason.trim().length < 3)}
                             className="w-full mt-8 py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60">
