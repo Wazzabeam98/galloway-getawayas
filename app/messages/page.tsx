@@ -1,12 +1,9 @@
 'use client';
 
-import { formatGBP } from '@/lib/formatMoney';
-
 import { notify } from '@/lib/notify';
 import ConversationRow from '@/components/messages/ConversationRow';
 import ProviderReservationCard, { type ReservationCardData } from '@/components/services/ProviderReservationCard';
 import ManageReservationSheet from '@/components/dashboard/reservation/ManageReservationSheet';
-import ReservationHeader from '@/components/dashboard/reservation/ReservationHeader';
 import RequestChangeRow from '@/components/trips/RequestChangeRow';
 import StayCancelRow from '@/components/trips/StayCancelRow';
 import { stayHasEnded, stayHasStarted } from '@/lib/stayWindow';
@@ -15,10 +12,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { getImageUrl, capitializeFirst, formatTime } from '@/lib/utils';
-import { publicArea } from '@/lib/places';
-import { cancellationPosition } from '@/lib/cancellationView';
-import { ukLongDate } from '@/lib/dayKey';
+import { getImageUrl, capitializeFirst } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
@@ -676,7 +670,7 @@ export default function MessagesInboxPage() {
                     <div className="p-4 border-b flex items-center justify-between gap-3">
                         <div className="min-w-0">
                             <div className="font-semibold text-slate-900 truncate">
-                                {capitializeFirst(thread.other.name)}
+                                {capitializeFirst((thread.header && thread.header.personFirst) || thread.other.name)}
                             </div>
                             <div className="text-xs text-slate-500 truncate">
                                 {thread.listing && thread.listing.title}
@@ -815,231 +809,57 @@ export default function MessagesInboxPage() {
         <div className="p-5 text-sm text-slate-400">Pick a conversation</div>
     ) : thread.booking ? (
         <div className="h-full overflow-y-auto p-5 space-y-5">
-            {/* The guest avatar + listing photo pairing and "Isla's group of 2"
-                heading — the same header the experience threads use, so both thread
-                types read as one product. Fed the viewer-aware shape from the
-                route (host side sees the guest; guest side sees the listing). */}
-            {thread.header && (
-                <ReservationHeader
-                    avatarUrl={thread.header.avatarUrl}
-                    initial={thread.header.initial}
-                    photoUrl={thread.header.photoUrl}
-                    heading={thread.header.heading}
-                    sublines={[
-                        thread.listing && thread.listing.title,
-                        thread.listing && publicArea(thread.listing.location),
-                    ].filter((s) => s && s !== thread.header.heading) as string[]}
-                    size="sm"
+            {/* The reservation, as the SAME floating-card set the experience threads
+                and the host reservation page use — viewer-aware from the route (the
+                host sees the guest and their take; the guest sees their host and
+                what they paid). The card carries the header, the split check-in/out
+                with arrival, the guests list, hosted-by, cancellation, money, and
+                booked/reference; the Manage-reservation actions sit under it. */}
+            {thread.reservation && (
+                <ProviderReservationCard r={thread.reservation as ReservationCardData} size="sm" />
+            )}
+
+            {/* Manage reservation — the host's pop-up (change / send-or-request
+                money / cancel), or the guest's own change/cancel, in a card of the
+                same family so it reads as the last card in the stack. */}
+            {thread.role === 'host' && thread.listing && (
+                <ManageReservationSheet
+                    bookingId={thread.booking.id}
+                    status={thread.booking.status}
+                    isOwner
+                    ended={stayHasEnded(thread.booking.check_out, thread.listing.check_out_time)}
+                    started={stayHasStarted(thread.booking.check_in)}
+                    phone={thread.other.phone}
+                    guestFirst={capitializeFirst((thread.header && thread.header.personFirst) || thread.other.name)}
+                    totalPrice={Number(thread.booking.total_price || 0)}
+                    amountPaid={Number(thread.booking.amount_paid || 0)}
+                    amountRefunded={Number(thread.booking.amount_refunded || 0)}
+                    askToCancelHref={null}
+                    checkIn={String(thread.booking.check_in).slice(0, 10)}
+                    checkOut={String(thread.booking.check_out).slice(0, 10)}
+                    adults={Number(thread.booking.adults || 0) || Math.max(1, Number(thread.booking.guests || 1) - Number(thread.booking.children || 0))}
+                    children={Number(thread.booking.children || 0)}
+                    pets={Number(thread.booking.pets || 0)}
+                    maxGuests={Number(thread.listing.max_guests || 1)}
+                    petsAllowed={Array.isArray(thread.listing.amenities) && thread.listing.amenities.indexOf('Pets allowed') !== -1}
+                    listingId={thread.listing.id}
+                    listingTitle={thread.listing.title || 'your stay'}
+                    listingImage={thread.listing.images && thread.listing.images[0] ? getImageUrl(thread.listing.images[0]) : null}
                 />
             )}
 
-            <div className="space-y-2 text-sm">
-                <div className="flex justify-between gap-2">
-                    <span className="text-slate-500 flex-shrink-0">Check in</span>
-                    <span className="text-slate-900 font-medium text-right">
-                        {thread.booking.check_in}
-                        {thread.listing && formatTime(thread.listing.check_in_time)
-                            ? ' · from ' + formatTime(thread.listing.check_in_time)
-                            : ''}
-                    </span>
-                </div>
-                <div className="flex justify-between gap-2">
-                    <span className="text-slate-500 flex-shrink-0">Check out</span>
-                    <span className="text-slate-900 font-medium text-right">
-                        {thread.booking.check_out}
-                        {thread.listing && formatTime(thread.listing.check_out_time)
-                            ? ' · by ' + formatTime(thread.listing.check_out_time)
-                            : ''}
-                    </span>
-                </div>
-                <div className="flex justify-between gap-2">
-                    <span className="text-slate-500 flex-shrink-0">Guests</span>
-                    <span className="text-slate-900 font-medium text-right">
-                        {thread.booking.guests}
-                        {thread.booking.adults
-                            ? ' (' +
-                              thread.booking.adults +
-                              (thread.booking.adults === 1 ? ' adult' : ' adults') +
-                              (thread.booking.children
-                                  ? ', ' +
-                                    thread.booking.children +
-                                    (thread.booking.children === 1 ? ' child' : ' children')
-                                  : '') +
-                              ')'
-                            : ''}
-                    </span>
-                </div>
-                {thread.booking.pets > 0 && (
-                    <div className="flex justify-between">
-                        <span className="text-slate-500">Pets</span>
-                        <span className="text-slate-900 font-medium">{thread.booking.pets}</span>
-                    </div>
-                )}
-                <div className="flex justify-between">
-                    <span className="text-slate-500">Nights</span>
-                    <span className="text-slate-900 font-medium">
-                        {Math.round(
-                            (new Date(thread.booking.check_out).getTime() -
-                                new Date(thread.booking.check_in).getTime()) /
-                                86400000
-                        )}
-                    </span>
-                </div>
-                <div className="flex justify-between">
-                    <span className="text-slate-500">Status</span>
-                    <span className="text-slate-900 font-medium capitalize">
-                        {String(thread.booking.status).replace(/_/g, ' ')}
-                    </span>
-                </div>
-                <div className="flex justify-between gap-2">
-                    <span className="text-slate-500 flex-shrink-0">Booked</span>
-                    <span className="text-slate-900 font-medium text-right">
-                        {new Date(thread.booking.created_at).toLocaleDateString('en-GB')}
-                    </span>
-                </div>
-                <div className="flex justify-between gap-2">
-                    <span className="text-slate-500 flex-shrink-0">Reference</span>
-                    <span className="text-slate-500 font-mono text-xs text-right">
-                        {String(thread.booking.id).slice(0, 8)}
-                    </span>
-                </div>
-            </div>
-
-            {thread.booking.total_price !== null && (
-                <div className="border-t pt-4 space-y-2 text-sm">
-                    <div className="flex justify-between">
-                        <span className="text-slate-500">Total</span>
-                        <span className="text-slate-900 font-medium">
-                            {formatGBP(thread.booking.total_price)}
-                        </span>
-                    </div>
-                    {thread.booking.amount_paid !== null && (
-                        <div className="flex justify-between">
-                            <span className="text-slate-500">Paid</span>
-                            <span className="text-slate-900 font-medium">
-                                {formatGBP(thread.booking.amount_paid || 0)}
-                            </span>
-                        </div>
-                    )}
-                    {Number(thread.booking.balance_amount) > 0 && (
-                        <div className="flex justify-between gap-2">
-                            <span className="text-slate-500 flex-shrink-0">Still to pay</span>
-                            <span className="text-amber-700 font-medium text-right">
-                                {formatGBP(thread.booking.balance_amount)}
-                                {thread.booking.balance_due_date
-                                    ? ' by ' +
-                                      new Date(thread.booking.balance_due_date).toLocaleDateString('en-GB')
-                                    : ''}
-                            </span>
-                        </div>
-                    )}
-                    {/* The cancellation position, stated as a fact, worked out by
-                        the same function the guest's Cancel screen and home card
-                        read — never the stored free-cancel date on its own, which
-                        goes on reading "free until Friday" after Friday. Shown
-                        only while the stay could still be called off. */}
-                    {thread.booking.status !== 'cancelled'
-                        && thread.booking.status !== 'declined'
-                        && new Date(thread.booking.check_in) > new Date()
-                        && (() => {
-                            const pos = cancellationPosition({
-                                checkIn: thread.booking.check_in,
-                                policy: thread.booking.cancellation_policy,
-                            });
-                            return (
-                                <div className="flex justify-between gap-2">
-                                    <span className="text-slate-500 flex-shrink-0">Cancellation</span>
-                                    <span className="text-slate-600 text-right">
-                                        {pos.kind === 'free' && pos.freeUntilKey
-                                            ? 'free until ' + ukLongDate(pos.freeUntilKey)
-                                            : pos.kind === 'partial'
-                                                ? '50% refundable'
-                                                : 'non-refundable dates'}
-                                    </span>
-                                </div>
-                            );
-                        })()}
-                </div>
-            )}
-
-            {/* The number itself only arrives close to arrival — see the
-                rule in lib/stayWindow.ts. When it is being held back the
-                route says so rather than sending nothing, so a host looking
-                for it knows it is coming and does not go hunting. */}
-            {(thread.other.phone || thread.other.phoneHeld) && (
-                <div className="border-t pt-4">
-                    <div className="text-xs text-slate-500 mb-1">Phone</div>
-                    {thread.other.phone ? (
-                        <a
-                            href={'tel:' + thread.other.phone}
-                            className="text-sm text-emerald-700 hover:underline"
-                        >
-                            {thread.other.phone}
-                        </a>
-                    ) : (
-                        <div className="text-sm text-slate-400">
-                            {thread.other.phoneHeld === 'closed'
-                                ? 'Not shown once a booking is off'
-                                : 'Shown from the day before arrival'}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            <div className="border-t pt-4 space-y-3">
-                {thread.listing && (
-                    <Link
-                        href={'/homes/' + thread.listing.id}
-                        className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
-                    >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        View the listing
-                    </Link>
-                )}
-
-                {/* The host's Manage reservation pop-up — the very sheet the host
-                    reservation page uses, so a host can change the stay, send or
-                    request money, or cancel from the thread instead of being sent
-                    out to the dashboard. Fed from the thread's own booking. */}
-                {thread.role === 'host' && thread.listing && (
-                    <ManageReservationSheet
-                        bookingId={thread.booking.id}
-                        status={thread.booking.status}
-                        isOwner
-                        ended={stayHasEnded(thread.booking.check_out, thread.listing.check_out_time)}
-                        started={stayHasStarted(thread.booking.check_in)}
-                        phone={thread.other.phone}
-                        guestFirst={capitializeFirst((thread.header && thread.header.personFirst) || thread.other.name)}
-                        totalPrice={Number(thread.booking.total_price || 0)}
-                        amountPaid={Number(thread.booking.amount_paid || 0)}
-                        amountRefunded={Number(thread.booking.amount_refunded || 0)}
-                        askToCancelHref={null}
-                        checkIn={String(thread.booking.check_in).slice(0, 10)}
-                        checkOut={String(thread.booking.check_out).slice(0, 10)}
-                        adults={Number(thread.booking.adults || 0) || Math.max(1, Number(thread.booking.guests || 1) - Number(thread.booking.children || 0))}
-                        children={Number(thread.booking.children || 0)}
-                        pets={Number(thread.booking.pets || 0)}
-                        maxGuests={Number(thread.listing.max_guests || 1)}
-                        petsAllowed={Array.isArray(thread.listing.amenities) && thread.listing.amenities.indexOf('Pets allowed') !== -1}
-                        listingId={thread.listing.id}
-                        listingTitle={thread.listing.title || 'your stay'}
-                        listingImage={thread.listing.images && thread.listing.images[0] ? getImageUrl(thread.listing.images[0]) : null}
-                    />
-                )}
-
-                {/* The guest's own reservation actions on a cottage thread — the
-                    same change/cancel flows their Trips page carries, gated the
-                    same way, so the booker can act from the conversation too. */}
-                {thread.role === 'guest' && thread.listing && (() => {
-                    const todayIso = new Date().toISOString().slice(0, 10);
-                    const checkInIso = String(thread.booking.check_in).slice(0, 10);
-                    const checkOutIso = String(thread.booking.check_out).slice(0, 10);
-                    const canChange = thread.booking.status === 'confirmed' && checkOutIso >= todayIso;
-                    const canCancel = checkInIso > todayIso;
-                    if (!canChange && !canCancel) return null;
-                    const rowCls = 'flex w-full items-center justify-between py-3 text-left text-sm font-semibold text-slate-900';
-                    return (
-                        <div className="-mb-1 divide-y divide-slate-100 border-t border-slate-100 pt-1">
+            {thread.role === 'guest' && thread.listing && (() => {
+                const todayIso = new Date().toISOString().slice(0, 10);
+                const checkInIso = String(thread.booking.check_in).slice(0, 10);
+                const checkOutIso = String(thread.booking.check_out).slice(0, 10);
+                const canChange = thread.booking.status === 'confirmed' && checkOutIso >= todayIso;
+                const canCancel = checkInIso > todayIso;
+                if (!canChange && !canCancel) return null;
+                const rowCls = 'flex w-full items-center justify-between py-3 text-left text-sm font-semibold text-slate-900';
+                return (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Manage reservation</div>
+                        <div className="mt-1 divide-y divide-slate-100">
                             {canChange && (
                                 <RequestChangeRow
                                     bookingId={thread.booking.id}
@@ -1070,19 +890,19 @@ export default function MessagesInboxPage() {
                                 />
                             )}
                         </div>
-                    );
-                })()}
+                    </div>
+                );
+            })()}
 
-                {thread.role === 'companion' && (
-                    <Link
-                        href="/trips"
-                        className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
-                    >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        Your trip
-                    </Link>
-                )}
-            </div>
+            {thread.role === 'companion' && (
+                <Link
+                    href="/trips"
+                    className="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900"
+                >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Your trip
+                </Link>
+            )}
         </div>
     ) : (
         // Order / enquiry thread: the reservation this thread is about, in the
@@ -1240,7 +1060,7 @@ export default function MessagesInboxPage() {
 
                             <div className="min-w-0 flex-1">
                                 <div className="font-semibold text-slate-900 truncate text-sm">
-                                    {thread ? capitializeFirst(thread.other.name) : 'Loading…'}
+                                    {thread ? capitializeFirst((thread.header && thread.header.personFirst) || thread.other.name) : 'Loading…'}
                                 </div>
                                 <div className="text-xs text-slate-500 truncate">
                                     {thread && thread.listing && thread.listing.title}

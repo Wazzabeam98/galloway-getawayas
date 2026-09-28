@@ -66,3 +66,26 @@ export function ukLongDate(key: string): string {
     const [y, m, d] = key.split('-').map(Number);
     return `${d} ${MONTHS[m - 1]} ${y}`;
 }
+
+// A day key as DD/MM/YYYY — the one numeric date format the UI uses. Formatted
+// from the parts of the key (never through a Date/toISOString), so British
+// Summer Time can never slip it a day. Tolerates a full ISO/timestamp by taking
+// its leading date portion. This is the shared formatter every card and header
+// should call so no surface can drift into its own ordering.
+export function ukDate(key: string | null | undefined): string {
+    if (!key) return '';
+    const [y, m, d] = String(key).slice(0, 10).split('-');
+    return (y && m && d) ? `${d}/${m}/${y}` : '';
+}
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// The weekday name of a day key ("Thursday"). Anchored at UTC noon so the ±1h of
+// a clock change can never push it onto the wrong day, and computed from the
+// parts rather than parsing the string as an instant.
+export function ukWeekday(key: string | null | undefined): string {
+    if (!key) return '';
+    const [y, m, d] = String(key).slice(0, 10).split('-').map(Number);
+    if (!y || !m || !d) return '';
+    return WEEKDAYS[new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay()];
+}

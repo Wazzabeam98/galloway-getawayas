@@ -4,8 +4,14 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { contactNumberVisible } from '@/lib/stayWindow';
-import { firstName, getImageUrl } from '@/lib/utils';
-import { groupLabel } from '@/lib/bookingDisplay';
+import { firstName, getImageUrl, formatTime } from '@/lib/utils';
+import { groupLabel, cancellationWords } from '@/lib/bookingDisplay';
+import { cancellationPosition } from '@/lib/cancellationView';
+import { ukDate, ukWeekday, daysBetweenKeys } from '@/lib/dayKey';
+import { stayCountdown } from '@/lib/bookingWindows';
+import { rateFor, netOfFee } from '@/lib/fees';
+import { formatGBP } from '@/lib/formatMoney';
+import { publicArea } from '@/lib/places';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,7 +83,7 @@ export async function GET(
 
     const { data: listing } = await admin
         .from('listings')
-        .select('id, title, location, images, check_in_time, check_in_end_time, check_out_time, check_in_method, cancellation_policy, max_guests, amenities')
+        .select('id, host_id, title, location, images, check_in_time, check_in_end_time, check_out_time, check_in_method, cancellation_policy, commission_rate, max_guests, amenities')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
@@ -127,43 +133,175 @@ export async function GET(
     // "Isla's group of 2"; the guest/companion side sees the listing large with
     // its initial, mirroring how a guest sees the business on an experience thread.
     const onHostSide = isHost || isCoHost;
-    // The guest's PUBLIC profile for the header name + avatar — the same source
-    // the experience thread and the host booking page use, so the heading reads
-    // "Isla's group of 2", not the profile_private fallback "Guest". FIRST name
-    // only (never displayName): the counterparty must not be shown a surname —
-    // the display-names guard enforces this route stays clear of displayName.
-    const { data: guestPublic } = onHostSide
-        ? await admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', booking.guest_id).maybeSingle()
-        : { data: null };
-    const guestFirstForHeader = firstName(guestPublic, 'Guest');
-    const guestAvatar = onHostSide && guestPublic && guestPublic.avatar_url
-        ? getImageUrl(String(guestPublic.avatar_url)) : null;
+
+    // The two people the card names, from their PUBLIC profiles — FIRST name only
+    // (never displayName: the display-names guard keeps this route clear of it, so
+    // a counterparty is never shown a surname). The guest is who the party is
+    // about; the owner is who hosts it.
+    const [{ data: guestPublic }, { data: ownerPublic }] = await Promise.all([
+        admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', booking.guest_id).maybeSingle(),
+        listing && listing.host_id
+            ? admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', listing.host_id).maybeSingle()
+            : Promise.resolve({ data: null }),
+    ]);
+    const guestFirst = firstName(guestPublic, 'Guest');
+    const guestAvatar = guestPublic && guestPublic.avatar_url ? getImageUrl(String(guestPublic.avatar_url)) : null;
+    // A real first name where the host has one; a plain fallback otherwise (never
+    // "your", which is what splitting "your host" on the space would leave).
+    const ownerFirst = firstName(ownerPublic, '') || 'your host';
+    const ownerAvatar = ownerPublic && ownerPublic.avatar_url ? getImageUrl(String(ownerPublic.avatar_url)) : null;
     const listingPhoto = listing && Array.isArray(listing.images) && listing.images[0]
         ? getImageUrl(String(listing.images[0])) : null;
     const listingTitle = (listing && listing.title) || 'your stay';
+    const area = listing && listing.location ? publicArea(listing.location) : null;
+
+    // The header, viewer-aware, keeping the avatar+listing-photo pairing on both
+    // sides: the host sees the guest large and "Isla's group of 2"; the guest sees
+    // their host large and the listing name.
     const header = onHostSide
-        ? {
-            avatarUrl: guestAvatar,
-            initial: (guestFirstForHeader || 'G').slice(0, 1).toUpperCase(),
-            photoUrl: listingPhoto,
-            heading: groupLabel(guestFirstForHeader, booking.guests),
-            // The guest's public first name, so the Manage sheet and its money
-            // flow name the same person the heading does ("Isla"), not the
-            // profile_private fallback the conversation falls back to.
-            personFirst: guestFirstForHeader,
-        }
-        : {
-            avatarUrl: null,
-            initial: listingTitle.slice(0, 1).toUpperCase(),
-            photoUrl: null,
-            heading: listingTitle,
-            personFirst: firstName(otherProfile, 'Host'),
+        ? { avatarUrl: guestAvatar, initial: (guestFirst || 'G').slice(0, 1).toUpperCase(), photoUrl: listingPhoto, heading: groupLabel(guestFirst, booking.guests), personFirst: guestFirst }
+        : { avatarUrl: ownerAvatar, initial: (ownerFirst || 'H').slice(0, 1).toUpperCase(), photoUrl: listingPhoto, heading: listingTitle, personFirst: ownerFirst };
+
+    // Dates, always DD/MM/YYYY from the day key (never toISOString, which slips a
+    // day under BST). Nights from part arithmetic on the keys.
+    const ciKey = String(booking.check_in).slice(0, 10);
+    const coKey = String(booking.check_out).slice(0, 10);
+    const nights = Math.max(1, daysBetweenKeys(ciKey, coKey));
+    const dateRange = ukDate(ciKey) + ' – ' + ukDate(coKey);
+    const ciTime = listing && formatTime(listing.check_in_time);
+    const ciEnd = listing && formatTime(listing.check_in_end_time);
+    const coTime = listing && formatTime(listing.check_out_time);
+
+    // Arrival secrets — a server-side wall: pulled ONLY when the existing rules
+    // allow them, so a viewer who may not see them never has the value sent. The
+    // host (or a co-host holding the listing permission) always may; the guest may
+    // once check-in is within the arrival window and the booking is still live.
+    const closedBooking = booking.status === 'cancelled' || booking.status === 'declined';
+    const hostSecrets = isHost || (isCoHost && !!(await checkListing(uid, booking.listing_id, 'can_listing')));
+    const guestSecrets = isGuest && !closedBooking
+        && stayCountdown({ check_in: booking.check_in, check_out: booking.check_out }, new Date()).daysUntilCheckIn <= 3;
+    let arrival: { doorCode: string | null; wifiName: string | null; wifiPassword: string | null } | null = null;
+    if (hostSecrets || guestSecrets) {
+        const [{ data: arr }, { data: code }, { data: override }] = await Promise.all([
+            admin.from('listing_arrival').select('wifi_name, wifi_password').eq('listing_id', booking.listing_id).maybeSingle(),
+            admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle(),
+            admin.from('booking_access_codes').select('code').eq('booking_id', booking.id).maybeSingle(),
+        ]);
+        arrival = {
+            doorCode: (override && override.code) || (code && code.code) || null,
+            wifiName: (arr && arr.wifi_name) || null,
+            wifiPassword: (arr && arr.wifi_password) || null,
         };
+    }
+
+    // The guest party as rows: the lead guest, then "+1 adult / +1 child / +1 pet".
+    const adults = Number(booking.adults || 0) || Math.max(1, Number(booking.guests || 1) - Number(booking.children || 0));
+    const kids = Number(booking.children || 0);
+    const pets = Number(booking.pets || 0);
+    const extras: string[] = [];
+    if (adults - 1 > 0) extras.push('+' + (adults - 1) + ((adults - 1) === 1 ? ' adult' : ' adults'));
+    if (kids > 0) extras.push('+' + kids + (kids === 1 ? ' child' : ' children'));
+    if (pets > 0) extras.push('+' + pets + (pets === 1 ? ' pet' : ' pets'));
+
+    // Cancellation: the tier name, and the free-until date only while it is free.
+    const cw = cancellationWords(listing && listing.cancellation_policy);
+    const pos = cancellationPosition({ checkIn: ciKey, policy: (listing && listing.cancellation_policy) || null });
+    const freeUntil = pos.kind === 'free' && pos.freeUntilKey ? ukDate(pos.freeUntilKey) : null;
+
+    // Money, viewer-aware and computed server-side. Host: what the guest paid, our
+    // commission and their take. Guest: what they paid. Companion: nothing (they
+    // were never shown the price). Rates and figures match the host booking page.
+    // Same figures and units as the host booking page: `rate` is a PERCENT (the
+    // booking's stamped rate, else the listing's standard one), and the fee is
+    // taken with netOfFee so base + fee reconcile to the take exactly.
+    const total = Number(booking.total_price || 0);
+    const paid = Number(booking.amount_paid || 0);
+    const refunded = Number(booking.amount_refunded || 0);
+    const netPaid = Math.round((paid - refunded) * 100) / 100;
+    const rate = (booking.commission_rate !== null && booking.commission_rate !== undefined)
+        ? Number(booking.commission_rate) : rateFor(listing);
+    const grossDue = Math.round((total - refunded) * 100) / 100;
+    const youGetBase = grossDue > 0 ? grossDue : 0;
+    const youGet = netOfFee(youGetBase, rate);
+    const fee = Math.round((youGetBase - youGet) * 100) / 100;
+    let money: any = null;
+    if (onHostSide) {
+        money = {
+            showMoney: true, caption: 'Money', total: formatGBP(youGet), nightsLabel: 'Your take',
+            description: 'What the guest paid, our fee, and what reaches you.',
+            rows: [
+                { label: 'Guest paid', value: formatGBP(youGetBase) },
+                { label: 'Our fee (' + rate + '%)', value: '-' + formatGBP(fee), muted: true },
+                { label: 'You get', value: formatGBP(youGet) },
+            ],
+            working: 'Guest paid ' + formatGBP(youGetBase) + ' − our ' + rate + '% fee ' + formatGBP(fee) + ' = ' + formatGBP(youGet) + '.',
+        };
+    } else if (isGuest) {
+        money = {
+            showMoney: true, caption: 'Money', total: formatGBP(netPaid), nightsLabel: 'What you paid',
+            description: 'What you paid for this booking.',
+            rows: [
+                { label: 'You paid', value: formatGBP(netPaid) },
+                ...(refunded > 0 ? [{ label: 'Refunded', value: '-' + formatGBP(refunded), muted: true }] : []),
+            ],
+        };
+    }
+
+    const reservation = {
+        avatarUrl: header.avatarUrl,
+        initial: header.initial,
+        photoUrl: header.photoUrl,
+        heading: header.heading,
+        // Dates + nights, then the listing name (host) or the area (guest, whose
+        // heading is already the listing name).
+        whenLabel: dateRange + ' · ' + nights + (nights === 1 ? ' night' : ' nights'),
+        itemName: onHostSide ? listingTitle : (area || ''),
+        status: null,
+        when: { heading: 'When', value: dateRange },
+        where: null,
+        note: null,
+        allergy: null,
+        money,
+        moneyNote: null,
+        phone: null,
+        messageHref: null,
+        personFirst: header.personFirst,
+        guests: null,
+        cancellation: null,
+        manage: null,
+        guestManage: null,
+        // Stay cards.
+        stay: {
+            checkIn: {
+                heading: 'Check-in', weekday: ukWeekday(ciKey), dateLabel: ukDate(ciKey),
+                timeLabel: ciTime ? ('From ' + ciTime + (ciEnd ? '–' + ciEnd : '')) : null,
+            },
+            checkOut: {
+                heading: 'Check-out', weekday: ukWeekday(coKey), dateLabel: ukDate(coKey),
+                timeLabel: coTime ? ('By ' + coTime) : null,
+            },
+            arrival,
+        },
+        guestsList: {
+            lead: { name: guestFirst, avatarUrl: guestAvatar, initial: (guestFirst || 'G').slice(0, 1).toUpperCase() },
+            extras,
+        },
+        hostedBy: {
+            label: 'Hosted by', name: ownerFirst, sub: area,
+            avatarUrl: ownerAvatar, initial: (ownerFirst || 'H').slice(0, 1).toUpperCase(),
+            isViewer: isHost,
+        },
+        stayCancellation: { tier: cw.tier, summary: cw.summary, freeUntil },
+        booked: ukDate(String(booking.created_at).slice(0, 10)),
+        reference: String(booking.id).slice(0, 8),
+        viewListingHref: listing ? '/homes/' + listing.id : null,
+    };
 
     return NextResponse.json({
         ok: true,
         role: isGuest ? 'guest' : isHost ? 'host' : isCoHost ? 'co_host' : 'companion',
         header,
+        reservation,
         canSeePhone: phoneAllowed,
         other: {
             id: otherId,
