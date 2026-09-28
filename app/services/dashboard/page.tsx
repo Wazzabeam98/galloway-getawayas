@@ -30,7 +30,7 @@ export default async function ProviderReservationsPage() {
 
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, status, fulfilment, photos, cancellation_window_hours, guest_details')
+        .select('id, business_name, trade, audience, status, fulfilment, photos, cancellation_window_hours, guest_details, collection_street, collection_town, collection_postcode')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 

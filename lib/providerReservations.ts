@@ -26,6 +26,10 @@ export type ReservationKind = 'slot' | 'comes_to_you' | 'made_to_order' | 'trade
 // never pulls in a .tsx component (tsc's test config has no --jsx). Structural
 // typing keeps them compatible when the card is fed this shape.
 export type StatusTone = 'ok' | 'wait' | 'over';
+// The "Where" value: a plain line, or a name with an address beneath it (the
+// latter for a provider looking at a booking at their own venue). Structural
+// mirror of the card's WhereField, declared here to keep this a .tsx-free lib.
+export type WhereField = string | { line: string; sub?: string | null };
 export interface MoneyLine { label: string; value: string; muted?: boolean }
 export interface MoneyCardsData {
     showMoney: boolean;
@@ -55,7 +59,7 @@ export interface ProviderReservation {
     partyLabel: string | null;
     // Detail card
     whenHeading: string;
-    whereLabel: string | null;       // "At the studio" / "They travel to you…" / collection / delivery / cottage
+    whereLabel: WhereField | null;   // provider venue (name + address) / "You travel to…" / collection / delivery / cottage
     note: string | null;
     allergy: string | null;
     // A status pill in the reservation-page family (ok / wait / over).
@@ -111,10 +115,23 @@ function partyCount(o: any): number {
     return Number(o.attendees || o.quantity) || 1;
 }
 
-// Where the experience happens, in the provider's own words.
-function whereForOrder(o: any, providerFulfilment: string | null): string | null {
-    const loc = orderLocation({ shape: o.shape, fulfilment: o.fulfilment }, providerFulfilment);
-    if (o.shape === 'slot') return loc.slotTravels ? (o.service_address ? 'You travel to ' + o.service_address : 'You travel to the guest') : 'At your place';
+// The provider's own venue address, assembled from the three private fields in
+// the same order the cottage address uses. Null when we hold none of them.
+export function providerVenueAddress(provider: any): string | null {
+    return [provider.collection_street, provider.collection_town, provider.collection_postcode]
+        .map((p: any) => String(p || '').trim()).filter(Boolean).join(', ') || null;
+}
+
+// Where the experience happens, in the provider's own words — never worded as
+// though the provider were the guest. When the guest comes to the provider's own
+// place, the useful answer is the provider's venue/listing name with its address
+// beneath (if we hold one), not "your place".
+export function whereForOrder(o: any, provider: any): WhereField | null {
+    const loc = orderLocation({ shape: o.shape, fulfilment: o.fulfilment }, provider.fulfilment ?? null);
+    if (o.shape === 'slot') {
+        if (loc.slotTravels) return o.service_address ? 'You travel to ' + o.service_address : 'You travel to the guest';
+        return { line: provider.business_name || 'Your place', sub: providerVenueAddress(provider) };
+    }
     if (o.shape === 'comes_to_you') return o.service_address ? 'You go to ' + o.service_address : 'You go to the guest';
     // made_to_order (bakery etc.)
     if (loc.comesToCottage) return o.service_address ? 'Deliver to ' + o.service_address : 'For delivery';
@@ -240,7 +257,7 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
                 photoUrl: providerPhoto,
                 groupLabel: groupLabel(first, partyCount(o)),
                 partyLabel: partyLabelForOrder(o),
-                whereLabel: whereForOrder(o, provider.fulfilment ?? null),
+                whereLabel: whereForOrder(o, provider),
                 note: o.note || null,
                 allergy: o.allergy || null,
                 status,
