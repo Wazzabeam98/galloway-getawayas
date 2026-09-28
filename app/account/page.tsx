@@ -1390,8 +1390,11 @@ export default function AccountSettings() {
                     ) : activeSection === 'bookings' ? (
                         <div>
                             <h2 className="text-2xl font-bold text-slate-900 mb-1">Booking permissions</h2>
-                            <p className="text-sm text-slate-500 mb-6">
-                                Decide how guests can book each of your places.
+                            <p className="text-sm text-slate-500 mb-4">
+                                Decide how guests can book each of your places. Instant book, the fees, deposit,
+                                stay length and cancellation policy all live together under
+                                <span className="font-medium text-slate-700"> Booking settings</span> on each
+                                listing&rsquo;s editor now — the toggles here still work and stay in step.
                             </p>
 
                             {hostListings.length === 0 ? (
@@ -1407,8 +1410,13 @@ export default function AccountSettings() {
                                         const busy = savingListing === l.id;
                                         return (
                                             <div key={l.id} className="border rounded-2xl p-5">
-                                                <div className="font-semibold text-slate-900 text-sm mb-4">
-                                                    {l.title || 'Untitled listing'}
+                                                <div className="flex items-center justify-between gap-3 mb-4">
+                                                    <div className="font-semibold text-slate-900 text-sm">
+                                                        {l.title || 'Untitled listing'}
+                                                    </div>
+                                                    <a href={`/edit-listing/${l.id}?section=booking`} className="flex-none text-[13px] font-semibold text-emerald-700 hover:underline">
+                                                        Booking settings &rarr;
+                                                    </a>
                                                 </div>
 
                                                 {/* Scottish short-term let licence */}
