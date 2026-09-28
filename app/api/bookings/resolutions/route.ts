@@ -9,7 +9,7 @@ import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
 import {
     commissionRateFor, isDamageAllowed, sendCapPounds, validateSendAmount,
-    escalationDeadline, round2, toPence,
+    escalationDeadline, round2, toPence, reasonAllowedFor, reasonLabel, sendCollidesWithOpenChange,
     type ResolutionDirection, type ResolutionReason,
 } from '@/lib/resolutions';
 
@@ -47,7 +47,10 @@ export async function POST(request: Request) {
 
         if (!bookingId) return NextResponse.json({ ok: false, error: 'Missing booking' }, { status: 400 });
         if (direction !== 'request' && direction !== 'send') return NextResponse.json({ ok: false, error: 'Choose send or request.' }, { status: 400 });
-        if (reason !== 'extra_services' && reason !== 'damage') return NextResponse.json({ ok: false, error: 'Choose a reason.' }, { status: 400 });
+        // The reason has to belong to the direction: a request is extra services,
+        // damage or other; a send is a goodwill refund, a change to the booking or
+        // other. commissionRateFor still charges only an extra-services request.
+        if (!reasonAllowedFor(direction, reason)) return NextResponse.json({ ok: false, error: 'Choose a reason.' }, { status: 400 });
         if (!(amount > 0)) return NextResponse.json({ ok: false, error: 'Enter an amount.' }, { status: 400 });
         if (note.length > NOTE_MAX) return NextResponse.json({ ok: false, error: 'That note is too long.' }, { status: 400 });
 
@@ -77,6 +80,23 @@ export async function POST(request: Request) {
             const cap = sendCapPounds(booking.amount_paid, booking.amount_refunded);
             const check = validateSendAmount(amount, cap);
             if (!check.ok) return NextResponse.json({ ok: false, error: check.error }, { status: 400 });
+        }
+
+        // "Change to the booking" money must not be paid twice for one change: the
+        // #173 change-order flow already settles the difference when a change is
+        // accepted, so refuse a booking_change send while a change request is still
+        // open on this booking. Once it has settled (or there is none), a
+        // discretionary send is allowed.
+        if (direction === 'send' && reason === 'booking_change') {
+            const { data: openChange } = await admin
+                .from('booking_change_requests')
+                .select('id')
+                .eq('booking_id', booking.id)
+                .in('status', ['pending', 'awaiting_guest_payment'])
+                .maybeSingle();
+            if (sendCollidesWithOpenChange(direction, reason, !!openChange)) {
+                return NextResponse.json({ ok: false, error: 'There’s an open change request on this booking. That flow settles the money for the change itself — finish or cancel it before sending money here, so the same change isn’t paid twice.' }, { status: 409 });
+            }
         }
 
         const commissionRate = commissionRateFor(direction, reason);
@@ -173,7 +193,7 @@ export async function POST(request: Request) {
                 await sendEmail(guestEmail, 'Your host has requested ' + formatGBP(amount), emailLayout(
                     '<p style="margin:0 0 16px;font-size:16px;">Your host has requested <strong>' + formatGBP(amount)
                     + '</strong> for your stay at <strong>' + escapeHtml(stayName) + '</strong>'
-                    + (reason === 'damage' ? ' (damage or extra cleaning)' : ' (extra services)') + '.</p>'
+                    + ' (' + reasonLabel(reason).toLowerCase() + ').</p>'
                     + (note ? '<p style="margin:0 0 16px;font-size:15px;color:#475569;">“' + escapeHtml(note) + '”</p>' : '')
                     + '<p style="margin:0 0 16px;font-size:16px;">You can accept and pay, decline, or suggest a different amount.</p>'
                     + button(SITE_URL + '/resolutions/' + resolutionId, 'Review the request'),

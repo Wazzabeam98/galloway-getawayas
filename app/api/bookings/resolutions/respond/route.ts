@@ -7,7 +7,8 @@ import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, button,
 import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
 import {
-    applicationFeePence, guestMayRespond, guestMayPay, escalationDeadline, round2, toPence,
+    applicationFeePence, guestMayRespond, guestMayPay, escalationDeadline, round2, toPence, reasonLabel,
+    type ResolutionReason,
 } from '@/lib/resolutions';
 
 export const dynamic = 'force-dynamic';
@@ -89,8 +90,8 @@ export async function POST(request: Request) {
                             currency: 'gbp',
                             unit_amount: toPence(amount),
                             product_data: {
-                                name: (res.reason === 'damage' ? 'Damage / cleaning' : 'Extra services') + ' — ' + stayName,
-                                description: 'Payment to your host for ' + (res.reason === 'damage' ? 'damage or extra cleaning' : 'extra services') + ' on your stay.',
+                                name: reasonLabel(res.reason as ResolutionReason) + ' — ' + stayName,
+                                description: 'Payment to your host for ' + reasonLabel(res.reason as ResolutionReason).toLowerCase() + ' on your stay.',
                             },
                         },
                     }],
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
                         on_behalf_of: host.stripe_account_id,
                         transfer_data: { destination: host.stripe_account_id },
                         application_fee_amount: applicationFeePence(toPence(amount), Number(res.commission_rate) || 0),
-                        description: 'Galloway Getaways — ' + (res.reason === 'damage' ? 'damage reimbursement' : 'extra services') + ' · ' + stayName,
+                        description: 'Galloway Getaways — ' + reasonLabel(res.reason as ResolutionReason).toLowerCase() + ' · ' + stayName,
                         metadata: { kind: 'resolution_request', resolution_id: res.id, booking_id: res.booking_id },
                     },
                     success_url: SITE_URL + '/resolutions/' + res.id + '?paid=1',
@@ -170,7 +171,7 @@ async function notifyEscalation(admin: any, res: any, why: string) {
             await sendEmailToAll(to, 'Escalated: guest declined a money request', emailLayout(
                 '<p>' + escapeHtml(why) + '</p>'
                 + '<p>Booking ' + escapeHtml(String(res.booking_id)) + ', ' + formatGBP(res.amount)
-                + ' (' + escapeHtml(String(res.reason)) + ').</p>'
+                + ' (' + escapeHtml(reasonLabel(res.reason as ResolutionReason).toLowerCase()) + ').</p>'
                 + button(SITE_URL + '/admin/resolutions', 'Open the resolutions queue'),
                 'Galloway Getaways admin alert.'));
         }

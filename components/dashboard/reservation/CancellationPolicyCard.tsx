@@ -8,7 +8,7 @@ import { CANCELLATION_TIERS } from '@/lib/cancellationTiers';
 // Firm). Tapping it opens the full policy in the page's pop-up, with this
 // booking's tier called out. The name and summary are computed server-side
 // (cancellationWords) and passed in, so this stays a thin presentational shell.
-export default function CancellationPolicyCard({ tier, summary }: { tier: string; summary: string }) {
+export default function CancellationPolicyCard({ tier, summary, freeUntil }: { tier: string; summary: string; freeUntil?: string | null }) {
     return (
         <Modal
             title="Cancellation policy"
@@ -22,6 +22,7 @@ export default function CancellationPolicyCard({ tier, summary }: { tier: string
                     <span className="min-w-0 flex-1">
                         <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Cancellation policy</span>
                         <span className="mt-0.5 block text-sm font-semibold text-slate-900">{tier}</span>
+                        {freeUntil && <span className="mt-0.5 block text-[13px] text-slate-500">Free until {freeUntil}</span>}
                     </span>
                     <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
                 </button>

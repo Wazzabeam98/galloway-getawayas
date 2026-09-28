@@ -6,7 +6,7 @@ import { isAdmin } from '@/lib/adminAudit';
 import { logError } from '@/lib/logError';
 import { validateAdminResolve, outcomeLabel } from '@/lib/adminResolutions';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
-import { round2 } from '@/lib/resolutions';
+import { round2, reasonLabel, type ResolutionReason } from '@/lib/resolutions';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         // Tell both parties it has been decided. Non-blocking: the decision is
         // recorded whether or not the mail goes out.
         const line = 'An admin has reviewed the £' + round2(Number(res!.amount || 0)).toFixed(2)
-            + (res!.reason === 'damage' ? ' damage' : ' extra-services') + ' request. Outcome: '
+            + ' ' + reasonLabel(res!.reason as ResolutionReason).toLowerCase() + ' request. Outcome: '
             + outcomeLabel(String(outcome)) + '.';
         await notify(admin, res!.host_id, 'A money request was resolved', line, SITE_URL + '/dashboard', 'Open your dashboard');
         await notify(admin, res!.guest_id, 'A money request was resolved', line, SITE_URL + '/trips', 'View your trips');
