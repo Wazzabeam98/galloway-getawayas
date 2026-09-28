@@ -31,7 +31,7 @@ export default function TermsPage() {
                     ways. Hosts list self catering accommodation and guests book it. Local providers
                     offer experiences — a private chef, a sauna, a cake, a photographer and the like —
                     which a guest can book around their stay. And we introduce hosts and guests to local
-                    tradespeople for jobs such as plumbing, electrical work and cleaning.
+                    tradespeople for jobs such as plumbing, electrical work and joinery.
                 </p>
                 <p>
                     In each case the service is provided by someone else — the host, the provider or the
@@ -138,7 +138,7 @@ export default function TermsPage() {
                 <h2 className="text-xl font-bold text-slate-900 pt-4">10. Tradespeople</h2>
                 <p>
                     We introduce hosts and guests to local tradespeople for jobs such as plumbing,
-                    electrical work and cleaning. When you are introduced to a tradesperson, any contract
+                    electrical work and joinery. When you are introduced to a tradesperson, any contract
                     for the work is directly between you and them. No money for the job passes through us —
                     the tradesperson quotes and is paid directly by you — so cancellation, refunds and the
                     quality of the work are matters between you and the tradesperson.
