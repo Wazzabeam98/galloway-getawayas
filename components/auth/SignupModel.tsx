@@ -40,7 +40,7 @@ const SignupModel = () => {
     // box in the middle of the screen wondering why nothing happened.
     const [failure, setFailure] = useState<string>('');
 
-    // The Terms of Service, ticked as the account is made — the shared rule
+    // The Guest Terms, ticked as the account is made — the shared rule
     // (lib/agreements) decides whether it may go ahead, as /api/agreements does.
     const [termsTicked, setTermsTicked] = useState<boolean>(false);
     const [termsError, setTermsError] = useState<string>('');

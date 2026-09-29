@@ -30,7 +30,7 @@ import AgreementTick, { fetchAgreementStatus, holdAgreementGate, recordAgreement
  *   code     — the 6-digit code we emailed; resend; or "use your password"
  *   password — for an account that already has one (still works, always)
  *   name     — only if the account has no name yet (a new one never does),
- *              and/or hasn't agreed to the Terms of Service: Airbnb's "Finish
+ *              and/or hasn't agreed to the Guest Terms: Airbnb's "Finish
  *              signing up" — the name, and the tick box, on one screen
  *
  * Whoever is already signed in never sees any of this — the page mounting it
@@ -83,7 +83,7 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
     const [termsError, setTermsError] = useState('');
     const firstField = useRef<HTMLInputElement>(null);
 
-    // This screen asks for the Terms of Service itself, so the site-wide
+    // This screen asks for the Guest Terms itself, so the site-wide
     // sign-in prompt stays out of the way while it is up.
     useEffect(() => holdAgreementGate(), []);
 
@@ -112,7 +112,7 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
     };
 
     // Signed in. Ask for a name only if the account has none, and for the
-    // Terms of Service only if it hasn't agreed to the current version — a new
+    // Guest Terms only if it hasn't agreed to the current version — a new
     // account never has either.
     const afterSignIn = async (s: any) => {
         setSession(s);
@@ -412,7 +412,7 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
                             <p className="mb-8 text-slate-600 [text-wrap:pretty]">
                                 {askName
                                     ? 'You’re signed in. This is the name guests and our team will see on your account.'
-                                    : 'You’re signed in. Before you carry on, please read and agree to our Terms of Service.'}
+                                    : 'You’re signed in. Before you carry on, please read and agree to our Guest Terms.'}
                             </p>
                             <form onSubmit={submitName} className="space-y-4" noValidate>
                                 {askName && (

@@ -2,7 +2,7 @@
 //
 // Structured the way Airbnb does it:
 //
-//   guest                 The general terms. EVERYONE accepts these when they
+//   guest                 The Guest Terms, the general terms. EVERYONE accepts these when they
 //                         make an account: the platform, your account, bookings,
 //                         liability. /terms/guests.
 //   host                  Accepted on top, once, when someone first submits a
@@ -19,6 +19,9 @@
 //
 //   1. the text, in the one file named by `textFile` below; and
 //   2. `version` (and `lastUpdated`) for that document, here.
+//
+// (Wording lives in markdown inside a .ts file, rendered by
+// components/legal/LegalMarkdown, so a new draft can be pasted straight in.)
 //
 // Every account whose recorded version no longer matches is asked to accept the
 // new one the next time they sign in (components/legal/AgreementGate), and every
@@ -58,13 +61,13 @@ export interface Agreement {
 export const AGREEMENTS: Record<AgreementKey, Agreement> = {
     guest: {
         key: 'guest',
-        title: 'Terms of Service',
+        title: 'Guest Terms',
         audience: 'Everyone with an account — guests, hosts, providers and tradespeople.',
         path: '/terms/guests',
-        version: '2026-09-29',
+        version: 'v1-draft-2026-09-29',
         lastUpdated: '2026-09-29',
-        textFile: 'components/legal/agreements/GuestTerms.tsx',
-        draft: false,
+        textFile: 'components/legal/agreements/text/guest.ts',
+        draft: true,
     },
     host: {
         key: 'host',
@@ -84,11 +87,11 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
         title: 'Experience Provider Agreement',
         audience: 'Local providers who offer guest experiences — a chef, a sauna, a cake, a photographer.',
         path: '/terms/experience-providers',
-        // Unchanged from lib/providerTerms' PROVIDER_TERMS_VERSION, which the
-        // guest-experience sign-up has recorded since 07/09/2026.
-        version: 'draft-2026-09-07',
-        lastUpdated: '2026-09-07',
-        textFile: 'lib/providerTerms.ts',
+        // The v1 draft replaces the 07/09/2026 provider terms
+        // (draft-2026-09-07), so a provider who agreed to those is asked again.
+        version: 'v1-draft-2026-09-29',
+        lastUpdated: '2026-09-29',
+        textFile: 'components/legal/agreements/text/experience-provider.ts',
         draft: true,
     },
     tradesperson: {
@@ -96,9 +99,9 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
         title: 'Tradesperson Agreement',
         audience: 'Tradespeople who take jobs from hosts — plumbers, electricians, joiners and the rest.',
         path: '/terms/tradespeople',
-        version: 'draft-2026-09-29',
+        version: 'v1-draft-2026-09-29',
         lastUpdated: '2026-09-29',
-        textFile: 'components/legal/agreements/TradespersonAgreement.tsx',
+        textFile: 'components/legal/agreements/text/tradesperson.ts',
         draft: true,
     },
 };
@@ -130,7 +133,7 @@ export function agreementProblem(
     if (submittedVersion && submittedVersion === AGREEMENTS[key].version) return null;
     const title = AGREEMENTS[key].title;
     if (submittedVersion) {
-        return `The ${title} has been updated since this page loaded. Refresh the page, read it, and agree again to continue.`;
+        return `The ${title} was updated after this page loaded. Refresh the page, read it, and agree again to continue.`;
     }
     return `Please agree to the ${title} to continue.`;
 }

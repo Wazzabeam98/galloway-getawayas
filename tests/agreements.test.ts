@@ -5,7 +5,7 @@
 //   * the shared rule — no tick, or a stale version, is refused; a current
 //     record needs nothing — for every document, and the host wrapper still
 //     answers exactly as lib/hostTerms always did;
-//   * the sign-in prompt asks for ONE document, the Terms of Service first,
+//   * the sign-in prompt asks for ONE document, the Guest Terms first,
 //     and a role agreement only of someone in that role;
 //   * the route refuses to record without the tick, and records with it.
 import { test } from 'node:test';
@@ -40,7 +40,7 @@ test('the shared rule: no tick is refused, a stale page is refused, the current 
     for (const key of A.AGREEMENT_ORDER) {
         const v = A.AGREEMENTS[key].version;
         assert.match(A.agreementProblem(key, null, undefined), /Please agree to the/);
-        assert.match(A.agreementProblem(key, null, 'an-old-version'), /has been updated since this page loaded/);
+        assert.match(A.agreementProblem(key, null, 'an-old-version'), /was updated after this page loaded/);
         assert.equal(A.agreementProblem(key, null, v), null);
         assert.equal(A.agreementProblem(key, v, undefined), null, 'already on record: nothing to send');
         assert.equal(A.versionForTick(key, false), undefined);
@@ -57,10 +57,10 @@ test('the host wrapper still answers as lib/hostTerms did', () => {
     assert.equal(hostTerms.TERMS_LAST_UPDATED, '28/09/2026', 'DD/MM/YYYY from the day key');
 });
 
-test('the sign-in prompt: Terms of Service first, then only the role agreements the account holds', () => {
+test('the sign-in prompt: Guest Terms first, then only the role agreements the account holds', () => {
     const g = A.AGREEMENTS.guest.version;
     const h = A.AGREEMENTS.host.version;
-    assert.equal(A.nextOwed(NONE, {}), 'guest', 'everyone owes the Terms of Service');
+    assert.equal(A.nextOwed(NONE, {}), 'guest', 'everyone owes the Guest Terms');
     assert.equal(A.nextOwed(NONE, { guest: [g] }), null, 'a guest with it owes nothing');
     assert.equal(A.nextOwed({ ...NONE, isHost: true }, {}), 'guest', 'one at a time — ToS before the Host Agreement');
     assert.equal(A.nextOwed({ ...NONE, isHost: true }, { guest: [g] }), 'host');
@@ -128,7 +128,7 @@ test('POST with a stale version is refused', async () => {
     const { route, writes } = loadRoute();
     const res = await route.POST(post({ document: 'tradesperson', version: 'draft-2000-01-01' }));
     assert.equal(res.status, 400);
-    assert.match(res.body.error, /has been updated/);
+    assert.match(res.body.error, /was updated after/);
     assert.equal(writes.length, 0);
 });
 

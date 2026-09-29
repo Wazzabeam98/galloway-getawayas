@@ -1,4 +1,4 @@
-// THE HOST AGREEMENT — what a host accepts, on top of the Terms of Service,
+// THE HOST AGREEMENT — what a host accepts, on top of the Guest Terms,
 // when they first submit a holiday-let listing (lib/agreements.ts, key 'host').
 // The ONE copy: /terms/hosts renders it, and so does the listing flow's modal.
 //

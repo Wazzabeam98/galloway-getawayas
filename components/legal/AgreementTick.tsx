@@ -6,7 +6,7 @@ import { AGREEMENTS, AgreementKey } from '@/lib/agreements';
 import AgreementBody from '@/components/legal/AgreementBody';
 
 // THE TICK BOX — one line, "I agree to the <underlined title>.", used at every
-// point an agreement is accepted: account creation (Terms of Service), a host's
+// point an agreement is accepted: account creation (Guest Terms), a host's
 // first listing, the end of the provider and trade sign-ups, and the sign-in
 // prompt. The underlined title opens the full text in a panel; the panel links
 // to the document's own page for a new tab.

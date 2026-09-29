@@ -27,19 +27,19 @@ const QUIET_PATHS = ['/terms', '/privacy', '/auth', '/cancellation-policy'];
 
 const LINES: Record<AgreementKey, { fresh: string; changed: string }> = {
     guest: {
-        fresh: 'Before you carry on, please read and agree to our Terms of Service. They cover your account, bookings and how the site works.',
-        changed: 'We’ve updated our Terms of Service. Please read and agree to them to keep using Galloway Getaways.',
+        fresh: 'Before you carry on, please read and agree to our Guest Terms. They cover your account, bookings and how the site works.',
+        changed: 'We’ve updated our Guest Terms. Please read and agree to them to keep using Galloway Getaways.',
     },
     host: {
-        fresh: 'Hosting now has its own agreement, on top of our Terms of Service. Please read it and agree to keep hosting.',
+        fresh: 'Hosting now has its own agreement, on top of our Guest Terms. Please read it and agree to keep hosting.',
         changed: 'We’ve updated the Host Agreement. Please read it and agree to keep hosting.',
     },
     experience_provider: {
-        fresh: 'Offering experiences now has its own agreement, on top of our Terms of Service. Please read it and agree to keep your listing.',
+        fresh: 'Offering experiences now has its own agreement, on top of our Guest Terms. Please read it and agree to keep your listing.',
         changed: 'We’ve updated the Experience Provider Agreement. Please read it and agree to keep your listing.',
     },
     tradesperson: {
-        fresh: 'Taking jobs through us now has its own agreement, on top of our Terms of Service. Please read it and agree to keep your listing.',
+        fresh: 'Taking jobs through us now has its own agreement, on top of our Guest Terms. Please read it and agree to keep your listing.',
         changed: 'We’ve updated the Tradesperson Agreement. Please read it and agree to keep your listing.',
     },
 };

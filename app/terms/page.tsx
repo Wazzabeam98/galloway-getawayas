@@ -18,7 +18,7 @@ export default function TermsPage() {
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
             <h1 className="text-3xl font-bold text-slate-900 mb-3">Terms &amp; Conditions</h1>
             <p className="text-slate-600 mb-8 [text-wrap:pretty]">
-                Everyone with an account agrees to our Terms of Service. Hosts, experience providers and
+                Everyone with an account agrees to our Guest Terms. Hosts, experience providers and
                 tradespeople also agree to the one agreement for what they do, when they start doing it.
             </p>
             <ul className="divide-y divide-slate-200 border-y border-slate-200">

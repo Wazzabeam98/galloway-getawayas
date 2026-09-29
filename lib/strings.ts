@@ -45,7 +45,7 @@ export const GUEST_SCREEN_COPY = {
 
     // The finish screen: a full-width preview of what they're submitting, then the
     // provider terms as one line — a tickbox with the terms behind a link/modal.
-    // The terms TEXT lives in lib/providerTerms.ts (one source); only the UI chrome
+    // The terms TEXT lives in components/legal/agreements/text (one source); only the UI chrome
     // copy is here.
     finishSummaryHeading: 'What you’re submitting',
     finishSummaryCategory: 'Experience',   // fallback if the category has no label
