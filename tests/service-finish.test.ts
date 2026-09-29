@@ -26,7 +26,7 @@ const ROUTE = '@/app/api/services/finish/route';
 const NOW = Date.now();
 const days = (n: number) => new Date(NOW - n * 24 * 3600 * 1000).toISOString();
 
-function load(row: any | null, options: { createError?: string; insertError?: string } = {}) {
+function load(row: any | null, options: { createError?: string; insertError?: string; caller?: { id: string; email: string } | null; held?: boolean } = {}) {
     const inserted: Record<string, any[]> = {};
     const updates: any[] = [];
     const created: any[] = [];
@@ -41,6 +41,9 @@ function load(row: any | null, options: { createError?: string; insertError?: st
                 if (prop === 'then') {
                     if (table === 'service_skills') {
                         return (r: any) => r({ data: [{ id: 'sk-1', label: 'Sash windows' }], error: null });
+                    }
+                    if (table === 'service_providers' && options.held) {
+                        return (r: any) => r({ data: [{ id: 'prov-held' }], error: null });
                     }
                     return (r: any) => r({ data: null, error: null });
                 }
@@ -91,6 +94,10 @@ function load(row: any | null, options: { createError?: string; insertError?: st
 
     stubModule('@/lib/serviceSubmittedAlert', {
         announceSubmission: async (p: any) => { announced.push(p); return { ok: true, emailed: true }; },
+    });
+
+    stubModule('@/lib/signedInCaller', {
+        signedInCaller: async () => options.caller ?? null,
     });
 
     stubModule('@/lib/logError', {
@@ -332,4 +339,50 @@ test('a failed provider insert leaves the row unclaimed rather than lost', async
     assert.equal(res.status, 500);
     assert.equal(updates.find((u) => u.table === 'service_applications'), undefined);
     assert.ok(logged.some((l) => /service-finish-insert/.test(String(l.message))));
+});
+
+/* ------------------------------ signed in as the address: attach, don't create
+
+   Every sign-up now opens on the email-code step, so an applicant still holding
+   an old link can already have an account — the code step made it. Signed in
+   (verified) as the application's own address, the link attaches the
+   application to that account. Signed in as anybody else, it must not. */
+
+test('signed in as the application address: attached to that account, no new user, no password', async () => {
+    const { route, created, inserted, updates } = load(LIVE, { caller: { id: 'user-existing', email: 'Joiner@Example.com' } });
+    const res: any = await route.POST(call({ token: 'a-token' }));
+
+    assert.equal(res.status, 200);
+    assert.equal(created.length, 0, 'no second account');
+    assert.equal(inserted.service_providers[0].owner_id, 'user-existing');
+    assert.equal(inserted.profiles, undefined, 'an existing account keeps the profile it has');
+    assert.ok(updates.some((u) => u.table === 'service_applications' && u.patch.claimed_at), 'claimed, so single use');
+});
+
+test('signed in as somebody else: not attached to them, and the password route applies', async () => {
+    const { route, created, inserted } = load(LIVE, { caller: { id: 'user-other', email: 'someone@else.com' }, createError: 'User already registered' });
+    const res: any = await route.POST(call(GOOD));
+
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, 'account_exists');
+    assert.equal(created.length, 1);
+    assert.equal(inserted.service_providers, undefined, 'never written against the wrong account');
+});
+
+test('signed in as somebody else with no password: refused before anything is made', async () => {
+    const { route, created } = load(LIVE, { caller: { id: 'user-other', email: 'someone@else.com' } });
+    const res: any = await route.POST(call({ token: 'a-token' }));
+
+    assert.equal(res.status, 400);
+    assert.equal(created.length, 0);
+});
+
+test('an account that already holds this trade is told so, and the application stays unclaimed', async () => {
+    const { route, inserted, updates } = load(LIVE, { caller: { id: 'user-existing', email: 'joiner@example.com' }, held: true });
+    const res: any = await route.POST(call({ token: 'a-token' }));
+
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, 'already_applied');
+    assert.equal(inserted.service_providers, undefined);
+    assert.equal(updates.length, 0);
 });
