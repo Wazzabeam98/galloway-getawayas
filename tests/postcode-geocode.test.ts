@@ -175,7 +175,7 @@ test('publishing fills the coordinates from the postcode', async () => {
                 // The publish route also reads the host's profile for the payout
                 // gate; give this test host a completed payout account so it tests
                 // the coordinate fill, not the gate.
-                select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: table === 'profiles' ? { stripe_payouts_enabled: true } : listing, error: null }) }) }),
+                select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: table === 'profiles' ? { stripe_payouts_enabled: true, host_terms_version: require('../lib/hostTerms').HOST_TERMS_VERSION } : listing, error: null }) }) }),
                 update: (patch: any) => {
                     updates.push(patch);
                     return { eq: async () => ({ data: null, error: null }) };
@@ -328,7 +328,7 @@ async function runPublish(listing: any) {
     stubModule('@/lib/supabaseAdmin', { adminClient: () => ({ from: (table: string) => ({
         // Payout-enabled profile so the payout gate is satisfied and these cases
         // exercise the ≥5-photo rule, not the payout gate.
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: table === 'profiles' ? { stripe_payouts_enabled: true } : listing, error: null }) }) }),
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: table === 'profiles' ? { stripe_payouts_enabled: true, host_terms_version: require('../lib/hostTerms').HOST_TERMS_VERSION } : listing, error: null }) }) }),
         update: (patch: any) => { updates.push(patch); return { eq: async () => ({ data: null, error: null }) }; },
     }) }) });
     stubModule('@supabase/auth-helpers-nextjs', { createRouteHandlerClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: 'host-1' } } }) } }) });

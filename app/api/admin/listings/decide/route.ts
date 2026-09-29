@@ -209,7 +209,7 @@ async function tellTheHost(
     try {
         const { data: host } = await admin
             .from('profiles')
-            .select('email, full_name, preferred_name')
+            .select('email, full_name, preferred_name, stripe_payouts_enabled')
             .eq('id', listing.host_id)
             .maybeSingle();
 
@@ -224,6 +224,17 @@ async function tellTheHost(
         const FOOT = 'You are receiving this because you list a property on Galloway Getaways.';
 
         if (decision === 'approve') {
+            const listingUrl = SITE_URL + '/homes/' + encodeURIComponent(listing.id);
+            // Live and bookable now, whether or not payouts are set up — the
+            // Airbnb order. If they aren't, this is the first ask: what to do,
+            // why, and one button straight into setting it up. Their money is
+            // held until they do (app/api/cron/host-payouts), so nothing is lost
+            // in the meantime — and the email says exactly that.
+            const payoutAsk = host.stripe_payouts_enabled === true
+                ? ''
+                : '<p style="margin:24px 0 8px;font-size:16px;"><strong>Next: add a payout method</strong></p>'
+                + '<p style="margin:0 0 16px;font-size:16px;">So we can pay you for your bookings, tell us where to send your money. It takes about five minutes with Stripe, our payments partner. Until you do, we hold your payouts safely and send them as soon as it\u2019s done.</p>'
+                + button(SITE_URL + '/payouts/setup', 'Add a payout method');
             return await sendEmail(
                 to,
                 title + ' is live on Galloway Getaways',
@@ -231,7 +242,9 @@ async function tellTheHost(
                     `<p style="margin:0 0 16px;font-size:16px;">Hello ${name},</p>`
                     + `<p style="margin:0 0 16px;font-size:16px;"><strong>${title}</strong> has been approved and is now on the site. Guests can find it and book it from today.</p>`
                     + '<p style="margin:0 0 16px;font-size:16px;">You can change your prices, your calendar and your house rules whenever you like — those take effect straight away.</p>'
-                    + button(SITE_URL + '/dashboard', 'See your property'),
+                    + (payoutAsk
+                        ? payoutAsk + `<p style="margin:16px 0 0;font-size:14px;"><a href="${listingUrl}" style="color:#047857;">See your listing</a></p>`
+                        : button(listingUrl, 'See your listing')),
                     FOOT
                 )
             );

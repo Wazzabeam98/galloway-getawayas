@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { coordinatePatchFor } from '@/lib/postcodeGeocode';
 import { addressBlockerForPublish, NEW_LISTING_MIN_PHOTOS } from '@/lib/listingRules';
+import { HOST_TERMS_VERSION, hasAgreedToCurrentTerms, termsProblem } from '@/lib/hostTerms';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +47,10 @@ export async function POST(request: Request) {
 
         const body = await request.json();
         const listingId: string = body && body.listingId;
+        // The terms version the host ticked "I agree" to on this submit, if the
+        // box was shown to them (it is shown only when they have no current
+        // agreement on record).
+        const agreedTermsVersion: string | null = (body && typeof body.termsVersion === 'string') ? body.termsVersion : null;
 
         if (!listingId) {
             return NextResponse.json({ ok: false, error: 'Missing listing' }, { status: 400 });
@@ -101,37 +106,38 @@ export async function POST(request: Request) {
             );
         }
 
-        // A PAYOUT ACCOUNT, before the listing can take real money.
+        // THE HOST TERMS, before a listing is submitted for review.
         //
-        // Publishing used to gate only on title/price/address/photos, so a host
-        // could go fully live and take live-mode bookings with no connected
-        // Stripe account — their money then sat held while the payout cron
-        // skipped them silently (host-payouts/route.ts:221) and alerted only
-        // /admin/errors, never the host. A listing that can be booked must be one
-        // that can be paid.
+        // Payout setup used to sit here: a host could not submit until Stripe
+        // said payouts were on. That is not how Airbnb orders it, and it put a
+        // bank-details form between a new host and their first listing. The
+        // order now is list → submit → approved → live and bookable, and the
+        // host is asked to add a payout method after approval (the approval
+        // email, a dashboard banner, a reminder with each booking and before
+        // check-in). Their money waits safely until they do — the payout run
+        // holds a stay whose host has no payouts and pays it on the first run
+        // after Stripe enables them (app/api/cron/host-payouts).
         //
-        // Only the FIRST time live, matching the photo bar above — an
-        // already-published or paused ('hidden') listing has been through this and
-        // is left alone, so this never disturbs a live listing. `needsPayoutSetup`
-        // lets the wizard show a "set up payouts" prompt rather than a dead error;
-        // the listing is saved as a draft, so they lose nothing by leaving to set
-        // it up and coming back.
+        // What IS needed before submitting is the host's agreement to the terms,
+        // recorded — version and server time — on their profile. Only a first-
+        // time submission asks; a listing that has been live before was
+        // submitted (and agreed to) already.
+        let recordTerms = false;
         if (!everPublished) {
             const { data: hostProfile } = await admin
                 .from('profiles')
-                .select('stripe_payouts_enabled')
+                .select('host_terms_version')
                 .eq('id', user.id)
                 .maybeSingle();
-            if (!hostProfile || hostProfile.stripe_payouts_enabled !== true) {
+            const recorded = hostProfile ? hostProfile.host_terms_version : null;
+            const problem = termsProblem(recorded, agreedTermsVersion);
+            if (problem) {
                 return NextResponse.json(
-                    {
-                        ok: false,
-                        needsPayoutSetup: true,
-                        error: 'Set up how you get paid before your listing goes live. It takes a couple of minutes, and your listing is saved as a draft while you do — come straight back to publish it.',
-                    },
+                    { ok: false, needsTerms: true, termsVersion: HOST_TERMS_VERSION, error: problem },
                     { status: 400 }
                 );
             }
+            recordTerms = !hasAgreedToCurrentTerms(recorded);
         }
 
         // First time live waits for an owner; see THE REVIEW GATE above.
@@ -154,6 +160,23 @@ export async function POST(request: Request) {
 
         if (error) {
             return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+        }
+
+        // Recorded once the submission has gone through, so a refused submit
+        // records nothing. A failure here is logged rather than un-submitting
+        // the listing: the host did agree, and the box will simply be shown to
+        // them again next time.
+        if (recordTerms) {
+            const { error: termsError } = await admin
+                .from('profiles')
+                .update({ host_terms_version: HOST_TERMS_VERSION, host_terms_agreed_at: new Date().toISOString() })
+                .eq('id', user.id);
+            if (termsError) {
+                await logError('listings/publish: host terms agreement not recorded', termsError, {
+                    path: 'api/listings/publish',
+                    userId: user.id,
+                });
+            }
         }
 
         return NextResponse.json({ ok: true, status: nextStatus });
