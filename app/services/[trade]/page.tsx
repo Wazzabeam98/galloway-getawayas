@@ -81,6 +81,9 @@ interface Provider {
     trade: string;
     callout_fee: any;
     hourly_rate: any;
+    flat_fee: any;
+    provides_quote: boolean;
+    registration_number: string | null;
     callout_waived: boolean;
     does_gas: boolean;
     does_oil: boolean;

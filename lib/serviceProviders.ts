@@ -2684,7 +2684,14 @@ export interface ProviderDraft {
     callout_fee?: any;
     hourly_rate?: any;
     callout_waived?: boolean | null;
-    extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
+    // The unified pricing shape: a quote tick, a flat fee, and (gas/electrical)
+    // a free-text registration number. Declared here for the same reason as the
+    // cleaner's fields below — submitProblems hands the whole draft to
+    // pricingProblems, and an undeclared field is silently dropped en route.
+    provides_quote?: boolean | null;
+    flat_fee?: any;
+    registration_number?: string | null;
+    extras?: Record<string, { offered?: boolean; price?: any; notes?: any; quote?: boolean }> | null;
     does_gas?: boolean | null;
     does_oil?: boolean | null;
     registrations?: RegistrationRow[] | null;
