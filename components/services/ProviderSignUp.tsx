@@ -41,6 +41,7 @@ import {
     offerableSchemes,
     asksAboutSkills,
     calloutLine,
+    planTerms,
     groupForTrade,
     schemeLabel,
     schemeNumberLabel,
@@ -2709,11 +2710,12 @@ function ApplicationForm() {
     }, [isGuest, step, session]);
 
     const save = async (submit: boolean) => {
-        // Agreeing to the terms gates send for a guest — someone who won't agree
-        // should not go live. Checked before the account/validation branches so it
-        // applies whichever submit path they are on. Not a submitProblems field:
-        // it lives on the finish screen, so its own error shows there.
-        if (submit && isGuest && !termsAgreed) {
+        // Agreeing to the terms gates send for EVERY provider — a guest experience
+        // and a host trade alike; someone who won't agree should not go live.
+        // Checked before the account/validation branches so it applies whichever
+        // submit path they are on. Not a submitProblems field: it lives on the
+        // finish screen, so its own error shows there.
+        if (submit && !termsAgreed) {
             setTouchedSubmit(true);
             setTermsError(GUEST_SCREEN_COPY.termsGate);
             goToFirstProblem();
@@ -5147,8 +5149,8 @@ function ApplicationForm() {
                 {onStep('credentials') && (
                     <section className="mb-8 space-y-3">
                         {([
-                            ['emergency', doesEmergency, setDoesEmergency, 'I do emergency call-outs', 'Urgent jobs at short notice.'],
-                            ['scheduled', doesScheduled, setDoesScheduled, 'I do scheduled work', 'Booked-in jobs planned ahead.'],
+                            ['emergency', doesEmergency, setDoesEmergency, 'Emergency call-outs', 'Urgent jobs at short notice.'],
+                            ['scheduled', doesScheduled, setDoesScheduled, 'Scheduled work', 'Booked-in jobs planned ahead.'],
                         ] as const).map(([key, checked, set, label, hint]) => (
                             <label key={key} className={'flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition '
                                 + (checked ? 'border-emerald-600 bg-emerald-50/60 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
@@ -5837,10 +5839,17 @@ function ApplicationForm() {
                         hourlyRate.trim() ? '£' + hourlyRate.trim() + ' an hour' : '',
                         flatFee.trim() ? '£' + flatFee.trim() + ' a job' : '',
                     ].filter(Boolean).join(' · ') || '—';
+                const servicesVal = (skills || []).length ? skills.join(', ') : '—';
+                const availVal = [
+                    doesEmergency ? 'Emergency call-outs' : '',
+                    doesScheduled ? 'Scheduled work' : '',
+                ].filter(Boolean).join(' · ') || '—';
                 const facts: [string, string][] = [
                     ['Trade', tradeLabel(trade)],
                     ['Covers', coverageVal],
                     ['Charges', priceVal],
+                    ['Services', servicesVal],
+                    ['Availability', availVal],
                 ];
                 return (
                     <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
@@ -5910,6 +5919,46 @@ function ApplicationForm() {
                             </span>
                         </span>
                     </label>
+                </section>
+            )}
+
+            {/* The trade terms tick — the same shape as the guest one, and the same
+                shared modal/state (termsAgreed / termsModalOpen). What a trade is
+                agreeing to INCLUDES the subscription terms, so the plan line
+                (planTerms) sits right above the box, in the agreement, not tucked
+                away. Send is greyed until this is ticked (see the button's disabled
+                rule and the save() guard); the acceptance — version + timestamp —
+                is written to declarations exactly as the guest's is. */}
+            {onStep('finish') && !isGuest && !locked && (
+                <section className="mb-8">
+                    <p className="text-sm text-slate-600 rounded-xl bg-slate-50 border border-slate-200 p-3.5">
+                        {planTerms(trade)}
+                    </p>
+                    <div className="mt-4 flex items-start gap-3">
+                        <input
+                            id="agree-terms-trade"
+                            type="checkbox"
+                            checked={termsAgreed}
+                            onChange={(e) => { setTermsAgreed(e.target.checked); setTermsError(''); }}
+                            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 accent-emerald-600"
+                        />
+                        <label htmlFor="agree-terms-trade" className="text-sm text-slate-800">
+                            {GUEST_SCREEN_COPY.termsAgreePrefix}{' '}
+                            <button
+                                type="button"
+                                onClick={(e) => { e.preventDefault(); setTermsModalOpen(true); }}
+                                className="font-semibold text-emerald-700 underline hover:text-emerald-800"
+                            >
+                                {GUEST_SCREEN_COPY.termsLinkText}
+                            </button>, including the subscription terms above.
+                            <span className="mt-0.5 block text-xs text-slate-400">
+                                Version {PROVIDER_TERMS.version}
+                            </span>
+                        </label>
+                    </div>
+                    {termsError && (
+                        <p data-problem className="mt-2 text-sm text-rose-700">{termsError}</p>
+                    )}
                 </section>
             )}
 
@@ -6373,11 +6422,13 @@ function ApplicationForm() {
                         <button
                             type="button"
                             onClick={() => save(true)}
-                            // A guest must agree to the terms before send. The
-                            // save() guard enforces it too; disabling the button
-                            // makes it visible, with the agree box and its gate
-                            // line right above on the finish screen.
-                            disabled={saving || (isGuest && !termsAgreed)}
+                            // Every provider must agree to the terms before send —
+                            // a guest experience and a host trade alike. The save()
+                            // guard enforces it too; greying the button makes it
+                            // visible (matching how Next greys on the other steps),
+                            // with the agree box and its gate line right above on
+                            // the finish screen.
+                            disabled={saving || !termsAgreed}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >
                             <span className="block truncate">

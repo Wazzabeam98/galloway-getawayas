@@ -83,6 +83,10 @@ export type ProviderDashboardProps = {
     upcoming: DashboardUpcoming[];
     toAnswer: number;
     nextPayoutLabel?: string | null;
+    // Host trades only: the "Free until <date>" subscription line, and a rough
+    // demand tally at their OWN call-out fee (never money we hold or collect).
+    subscriptionLabel?: string | null;
+    calloutTally?: { count: number; fee: number; total: number } | null;
 };
 
 function StatusPill({ offPlatform, live }: { offPlatform: boolean; live: boolean }) {
@@ -124,6 +128,7 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
     const {
         businessName, tradeName, areaLabel, badge,
         offPlatform, live, editHref, providerId, enquiries, upcoming, toAnswer, nextPayoutLabel,
+        subscriptionLabel, calloutTally,
     } = props;
 
     return (
@@ -350,6 +355,29 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                                 You agree the price and take payment yourself — Galloway Getaways takes nothing from the
                                 job. No payouts to set up.
                             </p>
+
+                            {/* The subscription line — when the six months free runs to. */}
+                            {subscriptionLabel && (
+                                <div className="mt-4 border-t border-slate-100 pt-3">
+                                    <h4 className="font-bold text-[13px] text-slate-900">Your subscription</h4>
+                                    <p className="mt-1 text-[13px] font-semibold text-emerald-800">{subscriptionLabel}</p>
+                                </div>
+                            )}
+
+                            {/* A rough gauge of demand at their OWN call-out fee —
+                                explicitly not money we hold or collect. */}
+                            {calloutTally && (
+                                <div className="mt-4 border-t border-slate-100 pt-3">
+                                    <h4 className="font-bold text-[13px] text-slate-900">Enquiries so far</h4>
+                                    <p className="mt-1 text-[13px] text-slate-600">
+                                        <b className="text-slate-900">{calloutTally.count}</b> enquir{calloutTally.count === 1 ? 'y' : 'ies'} — that&rsquo;s{' '}
+                                        <b className="text-slate-900">£{calloutTally.total.toLocaleString('en-GB')}</b> at your £{calloutTally.fee} call-out.
+                                    </p>
+                                    <p className="mt-1 text-[12px] text-slate-400">
+                                        Your own figure — we don&rsquo;t hold or collect any of it.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">

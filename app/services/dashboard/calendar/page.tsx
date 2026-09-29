@@ -77,7 +77,7 @@ export default async function ProviderDashboardPage() {
     // half-finished draft for a second trade.
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, owner_paused, trial_ends_at, shape, fulfilment, photos')
+        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, owner_paused, trial_ends_at, approved_at, callout_fee, shape, fulfilment, photos')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -201,21 +201,39 @@ export default async function ProviderDashboardPage() {
         .eq('provider_id', provider.id)
         .order('sent_at', { ascending: false });
 
+    // The cottage each enquiry is about, for the request rows (title only — the
+    // property and the host's first name read on the card before it's accepted,
+    // the same shape as a host's own request-to-book; the phone stays held until
+    // the trade accepts).
+    const enqListingIds = Array.from(new Set((enquiryRows || []).map((e: any) => e.listing_id).filter(Boolean)));
+    const { data: enqListings } = enqListingIds.length
+        ? await admin.from('listings').select('id, title').in('id', enqListingIds)
+        : { data: [] as any[] };
+    const enqTitleById: Record<string, string> = {};
+    for (const l of enqListings || []) enqTitleById[l.id] = l.title || '';
+    // The host's first name — what a request-to-book shows, not the full name.
+    const firstNameOf = (n: string | null | undefined) => String(n || '').trim().split(/\s+/)[0] || '';
+    const enquirySub = (e: any) => [
+        e.listing_id ? enqTitleById[e.listing_id] : '',
+        firstNameOf(e.host_name),
+        prettyArea(e.area_key),
+    ].filter(Boolean).join(' · ');
+
     const today = todayKey();
 
     // Requests is only what still needs answering. The moment a job is
     // accepted it leaves here and moves to Upcoming work — an accepted job is
     // not a request any more. Declined/expired are done and drop off too.
-    const requests: DashboardEnquiry[] = (enquiryRows || [])
+    const needsReply = (enquiryRows || [])
         .filter((e: any) => e.status === 'sent' || e.status === 'viewed')
-        .map((e: any) => ({
+        .map((e: any): DashboardEnquiry => ({
             id: e.id,
             chip: 'new' as const,
-            chipLabel: 'New',
+            chipLabel: 'Needs a reply',
             title: e.summary,
             // "Asked for …", never "booked for".
             askedFor: requestedWhen(e),
-            sub: prettyArea(e.area_key),
+            sub: enquirySub(e),
             contactName: null,
             contactPhone: null,
             when: null,
@@ -223,7 +241,49 @@ export default async function ProviderDashboardPage() {
             answerHref: null,
         }));
 
-    const toAnswer = requests.length;
+    // Declined / expired / withdrawn ones stay on the board too, muted — so every
+    // enquiry that ever came in is accounted for, not silently dropped. (Accepted
+    // ones move to Upcoming work below, where the job has its own detail.) The
+    // most recent handful is enough; the full history isn't the point of the board.
+    const settled = (enquiryRows || [])
+        .filter((e: any) => e.status === 'declined' || e.status === 'expired' || e.status === 'withdrawn' || e.status === 'cancelled')
+        .slice(0, 6)
+        .map((e: any): DashboardEnquiry => ({
+            id: e.id,
+            chip: 'declined' as const,
+            chipLabel: e.status === 'declined' ? 'Declined' : e.status === 'withdrawn' ? 'Withdrawn' : e.status === 'cancelled' ? 'Cancelled' : 'Expired',
+            title: e.summary,
+            askedFor: requestedWhen(e),
+            sub: enquirySub(e),
+            contactName: null,
+            contactPhone: null,
+            when: null,
+            replyBy: null,
+            answerHref: null,
+        }));
+
+    const requests: DashboardEnquiry[] = [...needsReply, ...settled];
+    const toAnswer = needsReply.length;
+
+    // The subscription line — the date their six months free runs to. The trial
+    // clock starts at the first enquiry (trial_ends_at is set then), so before any
+    // enquiry it hasn't started; say so rather than inventing a date. London TZ so
+    // the day never slips across BST.
+    const trialEnd: string | null = provider.trial_ends_at || null;
+    const subscriptionLabel = offPlatform
+        ? (trialEnd
+            ? 'Free until ' + new Date(trialEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: LONDON })
+            : 'Free for six months from your first enquiry')
+        : null;
+
+    // The call-out tally — THEIR OWN figure, not money we hold. How many enquiries
+    // have come in, and what that is worth at their own call-out fee. Only shown
+    // for a trade that charges one; it is a rough gauge of demand, nothing more.
+    const calloutFee = Number(provider.callout_fee) || 0;
+    const enquiryTotal = (enquiryRows || []).length;
+    const calloutTally = (offPlatform && calloutFee > 0 && enquiryTotal > 0)
+        ? { count: enquiryTotal, fee: calloutFee, total: enquiryTotal * calloutFee }
+        : null;
 
     // Upcoming work: accepted jobs still ahead (or without a fixed day yet).
     // Each carries the cottage it is at and the host to ring — a tradesman can
@@ -290,6 +350,8 @@ export default async function ProviderDashboardPage() {
                 upcoming={upcoming}
                 toAnswer={toAnswer}
                 nextPayoutLabel={null}
+                subscriptionLabel={subscriptionLabel}
+                calloutTally={calloutTally}
             />
     );
 }
