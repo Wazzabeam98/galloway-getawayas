@@ -38,9 +38,10 @@ export interface CardListing {
      */
     amenities?: string[] | null;
     /**
-     * The ~110m public point. When present and the property is outside one of
-     * the main towns, the card shows "X miles from <nearest town>". Optional so
-     * a grid that doesn't select the columns simply omits the line.
+     * The ~110m public point. Two things read it: the search map's price pin,
+     * and — when the property is outside one of the main towns — the card's
+     * "X miles from <nearest town>" line. Optional, so a grid that doesn't
+     * select the columns simply omits both.
      */
     approx_latitude?: number | string | null;
     approx_longitude?: number | string | null;

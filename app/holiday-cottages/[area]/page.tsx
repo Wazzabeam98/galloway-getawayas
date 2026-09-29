@@ -7,6 +7,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { MapPin } from 'lucide-react';
 import ListingCard, { type CardListing } from '@/components/ListingCard';
+import TownSearch from '@/components/TownSearch';
 import { townKey } from '@/lib/places';
 import { AREAS, areaBySlug, hasCopy, type Area } from '@/config/areas';
 import { COVERAGE_TOWNS } from '@/lib/serviceProviders';
@@ -234,11 +235,7 @@ export default async function AreaPage({ params }: { params: { area: string } })
                     </h2>
 
                     {listings.length > 0 ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-                            {listings.map((listing) => (
-                                <ListingCard key={listing.id} listing={listing} />
-                            ))}
-                        </div>
+                        <TownSearch listings={listings} />
                     ) : (
                         /* Said plainly rather than dressed up. A page that
                            promises cottages and shows an empty grid is the

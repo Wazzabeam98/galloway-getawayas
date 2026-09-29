@@ -520,3 +520,38 @@
     animation: none;
   }
 }
+
+/* The search map (components/PriceMap): white price pills, and a full-bleed
+   mini-card in the click popup. The pill inverts to dark on hover or when its
+   card is hovered (.is-active), the Airbnb behaviour. */
+.pricemap-pill {
+  background: #fff;
+  color: #0f172a;
+  border-radius: 9999px;
+  padding: 4px 10px;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+}
+.pricemap-pill:hover,
+.pricemap-pill.is-active {
+  background: #0f172a;
+  color: #fff;
+  transform: scale(1.06);
+}
+.pricemap-popup .mapboxgl-popup-content {
+  padding: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.pricemap-popup .mapboxgl-popup-close-button {
+  font-size: 18px;
+  color: #0f172a;
+  padding: 2px 7px;
+}
