@@ -29,7 +29,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stubModule, clearModule, installAliases } from './helpers/stub';
+import { stubModule, clearModule, installAliases, updateChain } from './helpers/stub';
 
 installAliases();
 
@@ -84,13 +84,11 @@ function load(options: {
                     return chain;
                 },
                 update(patch: any) {
-                    return {
-                        eq: async (_c: string, id: string) => {
+                    return updateChain(async (id: string) => {
                             if (options.throwOn === table) throw new Error('boom in ' + table);
                             updates.push({ table, patch, id });
                             return fails(table, 'update');
-                        },
-                    };
+                    });
                 },
                 insert: async (row: any) => {
                     if (options.throwOn === table) throw new Error('boom in ' + table);
@@ -139,6 +137,7 @@ function load(options: {
     });
 
     clearModule('@/lib/supabaseAdmin');
+    clearModule('@/lib/settlePaidBooking');
     clearModule(ROUTE);
     const route = require('../app/api/stripe/webhook/route');
     return { route, reported, inserts, updates };

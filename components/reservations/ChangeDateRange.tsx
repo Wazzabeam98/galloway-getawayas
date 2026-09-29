@@ -133,6 +133,7 @@ export default function ChangeDateRange({
                 minDate={minDate}
                 disabledDates={disabledDates}
                 months={1}
+                weekStartsOn={1}
                 direction="vertical"
                 rangeColors={['#047857']}
                 showDateDisplay={false}

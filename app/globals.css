@@ -132,6 +132,32 @@
   padding: 0 0.5em 0.5em 0.5em !important;
 }
 
+/* 4b. The cottage booking calendar (the listing-page BookingWidget). The
+   default .rdrMonth above is a fixed 23em (~368px), but the sticky booking card
+   at lg is narrower than that, and the wrapper's overflow-hidden cropped the
+   overflow — so the seventh (Saturday) column fell off the right and the
+   calendar looked like a six-day week. Force the whole react-date-range chain to
+   the card's own width and spread the seven day cells evenly, exactly the fix
+   the change calendars already use. Scoped to .cottage-cal so no other calendar
+   is touched. */
+.cottage-cal .rdrDateRangePickerWrapper,
+.cottage-cal .rdrDateRangeWrapper,
+.cottage-cal .rdrCalendarWrapper,
+.cottage-cal .rdrMonths,
+.cottage-cal .rdrMonthsVertical,
+.cottage-cal .rdrMonth,
+.cottage-cal .rdrMonthAndYearWrapper,
+.cottage-cal .rdrWeekDays,
+.cottage-cal .rdrDays {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.cottage-cal .rdrMonth { padding: 0 0.25em 0.5em 0.25em !important; }
+.cottage-cal .rdrDateRangePickerWrapper,
+.cottage-cal .rdrMonths,
+.cottage-cal .rdrMonthsVertical { display: flex; }
+.cottage-cal .rdrDay { width: 14.2857% !important; }
+
 /* 5. Emerald selection colors.
    The range picker paints its edges with .rdrStartEdge/.rdrEndEdge/.rdrInRange;
    a SINGLE-date Calendar (the change-date sheet, the booking panel) marks its
@@ -493,4 +519,39 @@
   .animate-guest-swoosh {
     animation: none;
   }
+}
+
+/* The search map (components/PriceMap): white price pills, and a full-bleed
+   mini-card in the click popup. The pill inverts to dark on hover or when its
+   card is hovered (.is-active), the Airbnb behaviour. */
+.pricemap-pill {
+  background: #fff;
+  color: #0f172a;
+  border-radius: 9999px;
+  padding: 4px 10px;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+}
+.pricemap-pill:hover,
+.pricemap-pill.is-active {
+  background: #0f172a;
+  color: #fff;
+  transform: scale(1.06);
+}
+.pricemap-popup .mapboxgl-popup-content {
+  padding: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.pricemap-popup .mapboxgl-popup-close-button {
+  font-size: 18px;
+  color: #0f172a;
+  padding: 2px 7px;
 }

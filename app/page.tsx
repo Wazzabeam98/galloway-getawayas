@@ -1,5 +1,7 @@
 import HostReservations from '@/components/HostReservations';
-import { townKey } from '@/lib/places';
+import { townKey, publicArea } from '@/lib/places';
+import { getImageUrl } from '@/lib/utils';
+import PriceMap from '@/components/PriceMap';
 import { icalBlockedListingIds } from '@/lib/availability';
 import Hero from '@/components/base/Hero';
 import ComingSoonBanner from '@/components/base/ComingSoonBanner';
@@ -117,7 +119,7 @@ export default async function HomePage({
 
     let query = supabase
         .from('listings')
-        .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities')
+        .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude')
         .eq('status', 'published')
         .order('created_at', { ascending: false });
 
@@ -303,6 +305,35 @@ export default async function HomePage({
                         </p>
                     </div>
                 )}
+
+                {/* Every live property on one map — Airbnb's search map, under
+                    the grid rather than beside it here. A white price pin each,
+                    a mini card on tap that links to the listing. Street-level
+                    approx points only, zoom capped. Hidden while a search is on,
+                    like the sections below. */}
+                {!searching && (() => {
+                    const mapPoints = (data || [])
+                        .filter((l: any) => l.approx_latitude != null && l.approx_longitude != null)
+                        .map((l: any) => ({
+                            id: l.id,
+                            title: l.title,
+                            price: l.price_per_night,
+                            image: l.images && l.images[0] ? getImageUrl(l.images[0]) : null,
+                            area: publicArea(l.location),
+                            lat: Number(l.approx_latitude),
+                            lng: Number(l.approx_longitude),
+                            href: `/homes/${l.id}`,
+                        }));
+                    return mapPoints.length ? (
+                        <section className="mt-16 pt-10 border-t border-stone-200">
+                            <h2 className="text-2xl md:text-3xl font-bold text-stone-900">Where our places are</h2>
+                            <p className="text-stone-600 text-sm md:text-base mt-1 mb-6">
+                                Every property, with its nightly price on the pin — tap one for the place.
+                            </p>
+                            <PriceMap points={mapPoints} frameClassName="h-[440px] md:h-[560px]" />
+                        </section>
+                    ) : null;
+                })()}
 
                 {/* Experiences, alongside the properties. Below the grid so the
                     cottages lead, above the editorial so it reads as a second
