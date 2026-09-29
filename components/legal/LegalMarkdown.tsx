@@ -1,4 +1,5 @@
 import { Fragment, ReactNode } from 'react';
+import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 
 // Draws an agreement's markdown in the site's legal-page style (the same
 // headings and paragraph rhythm /terms has always used). Deliberately small: it
@@ -29,7 +30,11 @@ function inline(text: string, keyBase: string): ReactNode[] {
 }
 
 export default function LegalMarkdown({ source }: { source: string }) {
-    const blocks = source.replace(/\r\n/g, '\n').trim().split(/\n\s*\n/);
+    // The company details come from config/company.ts, the one place they live.
+    const filled = source
+        .replace(/\{\{COMPANY_NUMBER\}\}/g, COMPANY.number)
+        .replace(/\{\{REGISTERED_OFFICE\}\}/g, REGISTERED_OFFICE);
+    const blocks = filled.replace(/\r\n/g, '\n').trim().split(/\n\s*\n/);
     const out: ReactNode[] = [];
     let skippedTitle = false;
 

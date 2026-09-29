@@ -3,10 +3,15 @@
 // prompt all render this. To swap in the solicitor's wording: replace the text
 // between the backticks with the new markdown, then move this document's
 // `version` and `lastUpdated` in lib/agreements.ts.
+//
+// {{COMPANY_NUMBER}} and {{REGISTERED_OFFICE}} are filled in from
+// config/company.ts when the text is drawn — the company details are written
+// in that one place only (tests/company-details.test.ts). Otherwise the text
+// is the draft word for word.
 
 export const EXPERIENCE_PROVIDER_AGREEMENT = String.raw`# Experience Provider Agreement
 
-**Galloway Getaways Ltd** (company number SC899385), registered office 17b King Street, Castle Douglas, DG7 1AA ("we", "us", "Galloway Getaways") and you, the business listing an experience ("you", "the Provider").
+**Galloway Getaways Ltd** (company number {{COMPANY_NUMBER}}), registered office {{REGISTERED_OFFICE}} ("we", "us", "Galloway Getaways") and you, the business listing an experience ("you", "the Provider").
 
 Version: v1-DRAFT — to be dated on approval.
 
@@ -112,5 +117,5 @@ We may review your listing before it appears. **That review is not an endorsemen
 
 ---
 
-Galloway Getaways Ltd, 17b King Street, Castle Douglas, DG7 1AA. Registered in Scotland, company number SC899385.
+Galloway Getaways Ltd, {{REGISTERED_OFFICE}}. Registered in Scotland, company number {{COMPANY_NUMBER}}.
 `;
