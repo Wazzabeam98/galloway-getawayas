@@ -187,8 +187,11 @@ export default function PriceMap({
     }
 
     return (
-        <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <div ref={containerRef} className={`${frameClassName} w-full bg-slate-100 z-0`} />
+        <div className={`overflow-hidden rounded-2xl border border-slate-200 ${frameClassName}`}>
+            {/* The height lives on the wrapper (above), so an inner h-full works
+                whether the caller passes a fixed height or, on the phone's
+                full-screen map, h-full off a fixed-inset parent. */}
+            <div ref={containerRef} className="h-full w-full bg-slate-100 z-0" />
         </div>
     );
 }
