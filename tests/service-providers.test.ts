@@ -76,7 +76,11 @@ test('a non-slot category has no slot fulfilment default (its own fork or none)'
 const complete = {
     business_name: 'Solway Joinery',
     trade: 'joiner',
-    description: 'Repairs and fitted furniture for holiday cottages across the Stewartry.',
+    // A host trade no longer types a free-text description — its "about you" is
+    // the expertise hub, whose required field is the professional title. The
+    // stored description is derived from the hub. So a complete host application
+    // gives a title, not a paragraph.
+    professional_title: 'Joiner and kitchen fitter',
     contact_email: 'hello@solwayjoinery.test',
     audience: 'host',
     areaCount: 1,
@@ -94,9 +98,11 @@ test('each missing piece is named, and named once', () => {
     const problems = submitProblems({});
     const fields = problems.map((p: any) => p.field).sort();
 
-    // No trade means no pricing shape, so pricing has nothing to complain
-    // about yet — the trade problem stands in for it.
-    assert.deepEqual(fields, ['areas', 'audience', 'business_name', 'contact_email', 'description', 'trade']);
+    // No trade means no pricing shape, so pricing has nothing to complain about
+    // yet — the trade problem stands in for it. An empty draft is treated as a
+    // host trade (no guest sentinel), so its "about you" gate is the professional
+    // title, not a description.
+    assert.deepEqual(fields, ['areas', 'audience', 'business_name', 'contact_email', 'professional_title', 'trade']);
     assert.equal(new Set(fields).size, fields.length, 'no field should be reported twice');
 });
 
@@ -106,9 +112,15 @@ test('covering nowhere is a problem — that is how a provider reaches nobody', 
     assert.equal(problems[0].field, 'areas');
 });
 
-test('a one-word description is not a description', () => {
-    const problems = submitProblems({ ...complete, description: 'Cleaning.' });
-    assert.equal(problems.some((p: any) => p.field === 'description'), true);
+test('a host trade with no professional title is refused', () => {
+    // The host "about you" is the expertise hub now, and its one required field
+    // is the professional title. A blank title is what a missing description used
+    // to be — the thing that holds up an otherwise complete application.
+    const problems = submitProblems({ ...complete, professional_title: '' });
+    assert.equal(problems.some((p: any) => p.field === 'professional_title'), true);
+    // A single character is not a title; two or more is fine.
+    assert.equal(submitProblems({ ...complete, professional_title: 'x' }).some((p: any) => p.field === 'professional_title'), true);
+    assert.deepEqual(submitProblems({ ...complete, professional_title: 'Roofer' }), []);
 });
 
 test('an email without an @ is caught', () => {
