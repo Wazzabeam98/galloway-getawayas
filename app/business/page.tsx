@@ -23,10 +23,13 @@ export const metadata = {
 // All three tiles are held behind a "coming soon" state on PRODUCTION until the
 // host/provider terms are back from the solicitor. businessSignupsOpen() (read
 // on the SERVER here and handed to the client fork) decides it: held on prod
-// until BUSINESS_SIGNUPS_OPEN=true, always open on previews and local so the
+// until BUSINESS_SIGNUPS_OPEN is true (any case, spaces ignored), always open on previews and local so the
 // flows stay walkable. It is a front-door change only — the flows behind the
 // tiles, and every existing host and tradesman, are untouched — and flipping
 // the one flag brings all three tiles back together, no code change.
+
+// Read on every request, never frozen into a build (see register-interest).
+export const dynamic = 'force-dynamic';
 
 export default function BusinessPage() {
     return <HostFork signupsOpen={businessSignupsOpen()} />;

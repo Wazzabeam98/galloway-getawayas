@@ -5,6 +5,7 @@ import PriceMap from '@/components/PriceMap';
 import { icalBlockedListingIds } from '@/lib/availability';
 import Hero from '@/components/base/Hero';
 import ComingSoonBanner from '@/components/base/ComingSoonBanner';
+import { businessSignupsOpen } from '@/lib/serviceOrders';
 import UpcomingTrip from '@/components/UpcomingTrip';
 import UpcomingExperience from '@/components/UpcomingExperience';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -228,8 +229,9 @@ export default async function HomePage({
     return (
         <main className="min-h-screen bg-stone-50">
             {/* Opening soon: the one route in for hosts and trades while sign-up
-          sits behind the coming-soon tiles. Above the hero, seen first. */}
-            <ComingSoonBanner />
+          sits behind the coming-soon tiles. Above the hero, seen first. Follows
+          the same switch as the /business tiles, so it goes the moment they open. */}
+            {!businessSignupsOpen() && <ComingSoonBanner />}
 
             {/* Kirkcudbright Hero Banner */}
             <Hero />
