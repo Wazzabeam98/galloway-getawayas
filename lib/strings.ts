@@ -43,16 +43,6 @@ export const GUEST_SCREEN_COPY = {
     sectionDetails: 'Details',
     sectionFinish: 'Finish',
 
-    // The verify-email screen (g_verify) — the opening screen, where a guest signs
-    // in with a one-time code. Two fields: name and email.
-    // Name placeholder is DELIBERATELY EMPTY. An example name ("Rosa Muir") reads
-    // as a value already filled in rather than as a hint, and the "(optional)"
-    // label already says what the field is for. Leave it blank.
-    verifyNamePlaceholder: '',
-    // Email keeps an example: an address format reads unmistakably as a hint, not
-    // as a filled-in value.
-    verifyEmailPlaceholder: 'you@example.com',
-
     // The finish screen: a full-width preview of what they're submitting, then the
     // provider terms as one line — a tickbox with the terms behind a link/modal.
     // The terms TEXT lives in lib/providerTerms.ts (one source); only the UI chrome
