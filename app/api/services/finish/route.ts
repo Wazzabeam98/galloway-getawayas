@@ -5,7 +5,7 @@ import { announceSubmission } from '@/lib/serviceSubmittedAlert';
 import { audienceForTrade, tradeSubmitBlock } from '@/lib/serviceProviders';
 import { hasSlotCapacity } from '@/lib/serviceSlots';
 import { normaliseUnit, unitMultiplies } from '@/lib/serviceOrders';
-import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, pickColumns } from '@/lib/serviceApplications';
+import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, GUEST_CONTENT_KEYS, pickColumns } from '@/lib/serviceApplications';
 import { signedInCaller } from '@/lib/signedInCaller';
 
 export const dynamic = 'force-dynamic';
@@ -210,12 +210,18 @@ export async function POST(req: Request) {
         const { data: provider, error: rowError } = await admin
             .from('service_providers')
             .insert({
-                // Narrowed to real columns: the stored payload also carries the
-                // guest content answers (years, qualifications, what-to-expect…),
-                // which have no column yet and must not reach the insert. They
-                // stay in service_applications.payload until the guest_details
-                // column lands, then materialise from there.
+                // Narrowed to real columns. The stored payload also carries the
+                // About-you answers (years, professional title, qualifications,
+                // endorsements, what-to-expect…) as TOP-LEVEL keys; the
+                // guest_details column has since landed, so they materialise into
+                // it here rather than being dropped. This is what carries a trade
+                // applicant's expertise hub (and a guest's, on the rare unsigned
+                // path) onto the row. A truthy value only, so a blank object is
+                // stored as null.
                 ...pickColumns(incoming, PROVIDER_COLUMNS),
+                ...(Object.keys(pickColumns(incoming, GUEST_CONTENT_KEYS)).length
+                    ? { guest_details: pickColumns(incoming, GUEST_CONTENT_KEYS) }
+                    : {}),
                 owner_id: owner,
                 audience: audienceForTrade(row.trade),
                 trade: row.trade,

@@ -359,7 +359,10 @@ test('every host trade uses the same rule', () => {
 const complete = {
     business_name: 'Solway Joinery',
     trade: 'joiner',
-    description: 'Repairs and fitted furniture for holiday cottages across the Stewartry.',
+    // A host's "about you" gate is the professional title (the expertise hub),
+    // not a free-text description; supply it so pricing is the only thing left to
+    // test here.
+    professional_title: 'Joiner and kitchen fitter',
     contact_email: 'hello@solwayjoinery.test',
     audience: 'host',
     areaCount: 1,

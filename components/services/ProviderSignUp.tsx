@@ -814,8 +814,6 @@ function ApplicationForm() {
     // so closing there would make the chips untappable — the classic version
     // of this bug, where the thing vanishes as you reach for it.
     const [skillsListOpen, setSkillsListOpen] = useState(false);
-    // Whether the list is showing everything or the first handful.
-    const [allTagsOpen, setAllTagsOpen] = useState(false);
     // The coverage-region picker modal on the guest location screen.
     const [areaPickerOpen, setAreaPickerOpen] = useState(false);
     // The town+radius sub-flow on the tradesman location screen. editIndex null
@@ -1516,6 +1514,9 @@ function ApplicationForm() {
         business_name: businessName,
         trade,
         description,
+        // The host expertise hub's required field — its Next gate and the submit
+        // gate both read the professional title now, in place of a description.
+        professional_title: professionalTitle,
         contact_email: contactEmail,
         audience: audienceForTrade(trade),
         areaCount: areas.length,
@@ -1936,14 +1937,19 @@ function ApplicationForm() {
     // suggestSkills does the matching because it ranks exact, then
     // starts-with, then contains — a handyman half way through "brick" wants
     // Bricklaying at the top, not an alphabetical list of everything with
-    // those letters in it. The high limit is so "Show all" still governs how
-    // many appear, rather than the matcher quietly capping it at eight.
+    // those letters in it.
+    //
+    // The list is now search-only: there is no browse-the-whole-list state.
+    // Nothing shows until something is typed (the old "Tap any that fit" full
+    // list on focus is gone), and what shows is the existing services that
+    // match — the top few, no "Show all". A word that matches nothing offers
+    // "add your own". This matches the guest wizard's search rows.
     const matchingTags = skillTyped.trim() === ''
-        ? offerableTags
+        ? []
         : suggestSkills(allSkills, skillTyped, skills, 500)
             .filter((tag: any) => !tag.regulated_concept);
 
-    const tagsToShow = allTagsOpen ? matchingTags : matchingTags.slice(0, TAGS_SHOWN_CLOSED);
+    const tagsToShow = matchingTags.slice(0, TAGS_SHOWN_CLOSED);
 
     const typedConcept = conceptOf(skillTyped);
     const typedReason = skillTyped.trim() === '' ? null : reasonFor(skillTyped);
@@ -2140,13 +2146,22 @@ function ApplicationForm() {
             : whereMissing)
         : null;
 
+    // What a host trade needs before Next un-greys, phrased for a person. Every
+    // host step reads its first outstanding problem off stepProblems — the
+    // professional title on g_creds (a host-worded message), the name/coverage on
+    // the business step, a price on the prices step. Shown beside the greyed Next
+    // so a trade is never left at a dead button with no reason.
+    const hostStepMissing: string | null = !isGuest && !stepIsPicker && stepProblems.length > 0
+        ? stepProblems[0].message
+        : null;
+
     // The one thing missing on a required step, phrased for a person. Shown in
     // the footer beside the greyed Next so she knows exactly what to add.
     const stepMissing = guestExtraMissing
         ? guestExtraMissing
         : isGuest && !stepIsPicker && !stepIsOptional && stepProblems.length > 0
             ? stepProblems[0].message
-            : null;
+            : hostStepMissing;
 
     const markVisited = (key: StepKey) =>
         setVisited((prev) => (prev.indexOf(key) === -1 ? prev.concat([key]) : prev));
@@ -2911,8 +2926,21 @@ function ApplicationForm() {
     // migration to hold them — and are materialised to columns later, when the
     // guest_details column lands. Empty stays null so the stored object is clean.
     const guestContentFields = (): Record<string, string | string[] | null> => {
-        if (audienceForTrade(trade) !== 'guest') return {};
         const t = (v: string) => (String(v || '').trim() || null);
+        // A host trade now fills the SAME About-you hub as a guest — a years
+        // count, a professional title, qualifications and endorsements — so its
+        // row carries those in guest_details too (the column already exists; it is
+        // no longer guest-only). The guest-specific answers below (category, what
+        // to expect, dietary, max guests) have no meaning for a trade, so a host
+        // gets just the four profile fields.
+        if (audienceForTrade(trade) !== 'guest') {
+            return {
+                years_experience: t(yearsDoing),
+                professional_title: t(professionalTitle),
+                qualifications: t(qualifications),
+                recognition: t(recognition),
+            };
+        }
         return {
             // The category KEY the provider picked, persisted so an approved
             // provider knows its own sub-type. Everything that used to guess it
@@ -2933,6 +2961,20 @@ function ApplicationForm() {
             // writes slot_capacity, from the same state, so the two agree).
             max_guests: t(maxGuests),
         };
+    };
+
+    // The stored description column, per audience. The service_providers table
+    // has description NOT NULL and the trade shop card reads it, so a host row
+    // must always carry a non-empty one — but a host no longer types a free-text
+    // description (its "about you" is the hub). So it is DERIVED from the hub: the
+    // professional title, plus the qualifications when given. The title is the
+    // hub's one required field (submitProblems gates on it), so this is never
+    // empty at submit; the fallbacks are belt-and-braces. A guest keeps its own
+    // description (the "what to expect" field feeds it as before).
+    const contentDescription = (): string => {
+        if (audienceForTrade(trade) === 'guest') return description.trim();
+        const parts = [professionalTitle.trim(), qualifications.trim()].filter(Boolean);
+        return parts.join('. ') || businessName.trim() || 'Local trade';
     };
 
     // The listing title for a guest is now the Title (their Intro field), so it
@@ -2972,7 +3014,7 @@ function ApplicationForm() {
             trade,
             // The "Other" trade's typed name — the label they're listed under.
             ...(trade === 'other' && otherText.trim() ? { custom_label: otherText.trim() } : {}),
-            description: description.trim(),
+            description: contentDescription(),
             contact_email: contactEmail.trim(),
             contact_phone: contactPhone.trim() || null,
             sms_opt_out: smsOptOut,
@@ -2982,7 +3024,7 @@ function ApplicationForm() {
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
             dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
-            headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
+            headshot,
             photos,
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
@@ -3345,7 +3387,7 @@ function ApplicationForm() {
             business_name: title,
             trade,
             ...(trade === 'other' && otherText.trim() ? { custom_label: otherText.trim() } : {}),
-            description: description.trim(),
+            description: contentDescription(),
             contact_email: contactEmail.trim(),
             contact_phone: contactPhone.trim() || null,
             sms_opt_out: smsOptOut,
@@ -3355,12 +3397,14 @@ function ApplicationForm() {
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
             dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
-            headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
+            headshot,
             // The seven content answers now have a home on the row (the
             // guest_details jsonb column, 20260906143712), so the signed-in
             // wizard writes them here rather than only in the anonymous apply
             // payload. Null for a host trade, which has none of them.
-            guest_details: audienceForTrade(trade) === 'guest' ? guestContentFields() : null,
+            // Both audiences carry their About-you content in guest_details now:
+            // a guest's category/expertise/dietary, a host's four profile fields.
+            guest_details: guestContentFields(),
             photos,
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
@@ -4013,8 +4057,11 @@ function ApplicationForm() {
                     {/* A host trade's per-screen heading — the question, as a body
                         h1, the way the guest screens carry theirs (it used to live
                         in the modal header). The finish step has its own heading;
-                        the trade picker's h1 is rendered with its tiles below. */}
-                    {!isGuest && step !== 'finish' && step !== 'trade' && (
+                        the trade picker's h1 is rendered with its tiles below; and
+                        g_creds (the expertise hub) renders its OWN heading with the
+                        photo, so the generic step title is suppressed there — the
+                        same exclusion the guest branch below makes. */}
+                    {!isGuest && step !== 'finish' && step !== 'trade' && step !== 'g_creds' && (
                         <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl mb-8">
                             {stepMeta.title}
                         </h1>
@@ -4445,7 +4492,7 @@ function ApplicationForm() {
             <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
-                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length') ? ' flex-1 flex flex-col' : '')
+                + (step === 'g_you' || (isGuest && (step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')) ? ' flex-1 flex flex-col' : '')
                 /* Same fill on the made-to-order fork and the slot choice forks,
                    but desktop only — mobile keeps its natural top-down stack. */
                 + (guestMtoArea || guestSlotChoice ? ' sm:flex-1 sm:flex sm:flex-col' : '')}>
@@ -4530,35 +4577,13 @@ function ApplicationForm() {
                 {/* The trade chip is gone: it said what they picked, and the
                     modal header now says that on every step. */}
 
-                {/* HOST/TRADE only: the business description (their name is the
-                    standalone business step above). A guest is never asked this —
-                    there is no naming step at all now: the listing title is their
-                    account name (or a trading name they set in account settings),
-                    and "what happens" (Details) plus the item descriptions carry
-                    the rest. */}
-                {!isGuest && onStep('business') && (
-                <section className="mb-8">
-                    {/* The box was unlabelled — just a placeholder that vanished
-                        the moment you typed, leaving a paragraph with no title
-                        under the business name. The label names it and the line
-                        below says who reads it, so it is written for its reader. */}
-                    <label htmlFor="biz-description" className="block text-sm font-semibold text-slate-900 mb-1.5">Tell us about yourself</label>
-                    <p className="text-sm text-slate-500 mb-2">This is what hosts and guests read when deciding who to ask.</p>
-                    {/* Capped to a measure rather than the window: past about 70
-                        characters a line is harder to read. */}
-                    <textarea
-                        id="biz-description"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        rows={5}
-                        placeholder="What do you offer? Describe your business."
-                        className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-                    {problemFor('description') && (
-                        <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
-                    )}
-                </section>
-                )}
+                {/* The host's "Tell us about yourself" free-text description has
+                    moved off the business step and become the expertise hub
+                    (g_creds, "Tell hosts about yourself"): a profile photo, a
+                    professional title and optional qualifications/endorsements,
+                    the same hub a guest fills. The business step now carries only
+                    the name, coverage and contact. The stored `description` column
+                    is derived from the hub at submit (see the payloads). */}
 
                 {/* THE BOOKING SHAPE IS INFERRED, NEVER ASKED. The old "How do
                     guests get it?" screen made a sauna owner classify our internal
@@ -4574,7 +4599,7 @@ function ApplicationForm() {
                     safety in your hands" note lives inside that modal now, so the
                     hub itself stays clean. Built on the reusable HubRow /
                     SubFlowModal primitives, which later screens will want too. */}
-                {onStep('g_creds') && isGuest && (() => {
+                {onStep('g_creds') && (() => {
                     const titleFilled = professionalTitle.trim() !== '';
                     const titleSummary = professionalTitle.trim();
                     const qualsFilled = qualifications.trim() !== '';
@@ -4630,7 +4655,7 @@ function ApplicationForm() {
                                     className="hidden" onChange={uploadHeadshot} disabled={uploadingHeadshot} />
                             </div>
                             <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">
-                                {GUEST_SCREEN_COPY.expertiseHeading}
+                                {isGuest ? GUEST_SCREEN_COPY.expertiseHeading : 'Tell hosts about yourself'}
                             </h1>
                             <p className="mt-2 text-sm text-slate-500 [text-wrap:balance]">
                                 {GUEST_SCREEN_COPY.expertiseSubtext}
@@ -4653,11 +4678,12 @@ function ApplicationForm() {
                                 summary={titleSummary}
                                 onOpen={() => setExpertiseModal('title')}
                             />
-                            {/* Qualifications are only PROMPTED where a formal
-                                qualification genuinely matters — the physical-safety
-                                categories. Optional even there; not shown at all
-                                elsewhere. */}
-                            {catAsksQuals && (
+                            {/* Qualifications. For a guest, prompted only where a
+                                formal qualification genuinely matters (the
+                                physical-safety categories). For a host trade it is
+                                always offered — a certificate or a scheme is worth
+                                showing on any trade. Optional either way. */}
+                            {(catAsksQuals || !isGuest) && (
                                 <HubRow
                                     filled={qualsFilled}
                                     label={GUEST_SCREEN_COPY.qualsRowLabel}
@@ -5503,7 +5529,10 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
+                {/* The years opener — shared by both flows now. A host trade opens
+                    on this same counter, saved the same way (guest_details.
+                    years_experience). */}
+                {onStep('g_you') && (
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={YEARS_DEFAULT} size="lg" solid />
                 </section>
@@ -5882,38 +5911,27 @@ function ApplicationForm() {
                     </section>
                 )}
 
-                {/* Registration. Above the extras rather than among them,
-                    because it is not something they offer — it is what decides
-                    whether the listing may go up at all.
-
-                    An owner sees the answer on the listing, not after asking:
-                    somebody with a dead boiler needs to know which plumbers
-                    can legally touch it before they pick up the phone. */}
+                {/* Registration — one optional free-text number, no scheme name.
+                    Shown only for the trades a number means something for
+                    (electricians and plumbers/gas engineers). Never required: an
+                    applicant who hasn't got theirs to hand can still finish, and
+                    if they enter it hosts see it on the profile. The old "we check
+                    this before you go live" line is gone — it read as a gate the
+                    field never was. */}
                 {onStep('credentials') && (asksAboutFuel(trade) || trade === 'electrician') && (
                     <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                            Registration
-                        </h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            We check this before you go live, and owners can see it on your listing.
-                        </p>
-
-                        {/* One free-text registration number, not a scheme
-                            checklist — the applicant types their Gas Safe, OFTEC
-                            or Part P number, whichever their trade needs. */}
-                        <label htmlFor="reg-number" className="block text-sm font-medium text-slate-900 mb-1.5">
-                            {trade === 'electrician' ? 'Part P registration number' : 'Gas Safe / OFTEC registration number'}
+                        <label htmlFor="reg-number" className="block text-sm font-semibold text-slate-900 mb-1.5">
+                            Registration number <span className="font-normal text-slate-400">(optional)</span>
                         </label>
                         <input
                             id="reg-number"
                             type="text"
                             value={registrationNumber}
                             onChange={(e) => setRegistrationNumber(e.target.value)}
-                            placeholder={trade === 'electrician' ? 'e.g. NICEIC number' : 'e.g. Gas Safe number'}
                             className="w-full sm:w-72 rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
-                        <p className="text-xs text-slate-500 mt-3">
-                            Your number appears on your listing. These registers are public, so an owner can look you up themselves.
+                        <p className="text-xs text-slate-500 mt-2">
+                            If you add it, hosts can see it on your profile.
                         </p>
                     </section>
                 )}
@@ -6017,12 +6035,16 @@ function ApplicationForm() {
                             className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
 
-                        {skillsListOpen && (
+                        {/* Search-only: the list appears once something is typed
+                            and shows the existing services that match — no
+                            browse-everything list on focus, no "Show all". A word
+                            that matches nothing offers "add your own" below. */}
+                        {skillsListOpen && skillTyped.trim() !== '' && (
                             <div className="mt-3 md:max-w-sm">
                                 {tagsToShow.length > 0 && (
                                     <>
                                         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                                            {skillTyped.trim() === '' ? 'Tap any that fit' : 'Matching'}
+                                            Matching
                                         </p>
                                         <div className="flex flex-wrap gap-2">
                                             {tagsToShow.map((tag: any) => (
@@ -6039,37 +6061,6 @@ function ApplicationForm() {
                                         </div>
                                     </>
                                 )}
-
-                                {/* Once open it stays open, deliberately.
-                                    Closing on blur is the obvious thing and it
-                                    is wrong twice: blur fires before a chip's
-                                    click lands, so the chips become untappable,
-                                    and somebody adding four tags would have to
-                                    re-open the list between each one.
-
-                                    So there is a way out instead of a rule. */}
-                                <div className="flex items-center gap-4 mt-3">
-                                    {matchingTags.length > TAGS_SHOWN_CLOSED && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setAllTagsOpen(!allTagsOpen)}
-                                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline"
-                                        >
-                                            {allTagsOpen ? 'Show fewer' : 'Show all ' + matchingTags.length}
-                                        </button>
-                                    )}
-
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSkillsListOpen(false);
-                                            setAllTagsOpen(false);
-                                        }}
-                                        className="text-sm font-semibold text-slate-500 hover:text-slate-800 underline"
-                                    >
-                                        Hide the list
-                                    </button>
-                                </div>
 
                                 {/* The fallback, for the job that genuinely is
                                     not on the list. Offered last and looking
@@ -7288,7 +7279,17 @@ function ApplicationForm() {
                         is already in the panel above with the words about what
                         it does. */}
                     {!lastStep && step !== 'g_verify' && (step !== 'trade' || isGuest) && (() => {
-                        const disabled = isGuest && (
+                        // A host trade now greys Next until the step's required
+                        // details are filled, the same as the guest flow (it used
+                        // to leave Next live and show errors only after a press).
+                        // The shared About-you steps use the same rules as the
+                        // guest: g_you never gates (its shown number is the
+                        // answer), g_creds gates on the professional title.
+                        // Everything else on a host step comes through stepProblems.
+                        const disabled = !isGuest ? (
+                            step === 'g_creds' ? !professionalTitle.trim()
+                            : stepProblems.length > 0
+                        ) : (
                             step === 'trade' ? !guestGroup
                             : step === 'g_subtype' ? !guestCategory
                             // g_you has no gate: Next is enabled from load. The
@@ -7318,7 +7319,8 @@ function ApplicationForm() {
                             if (isGuest && step === 'g_subtype') return advanceFromSubtype();
                             // Pass the years screen without touching it: the shown
                             // number is the answer they accepted, so store it now.
-                            if (isGuest && step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
+                            // Both flows share this step, so it is not gated on isGuest.
+                            if (step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
                             // Same rule for max guests: an untouched pass stores
                             // the shown default; a loaded value is left as it is.
                             if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));

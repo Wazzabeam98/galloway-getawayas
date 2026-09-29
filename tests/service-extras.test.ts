@@ -269,7 +269,9 @@ test('extras are part of the one submit gate', () => {
     const base = {
         business_name: 'Solway Sparkle',
         trade: 'sponge',
-        description: 'Changeover cleans and deep cleans for holiday cottages across the Stewartry.',
+        // The host "about you" gate is the professional title now (the expertise
+        // hub), not a free-text description.
+        professional_title: 'Holiday-let cleaner',
         contact_email: 'hello@solwaysparkle.test',
         // Supplied the way the page supplies it — derived from the trade.
         audience: 'host',
