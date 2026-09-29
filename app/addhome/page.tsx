@@ -7,7 +7,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
-import AuthPanel from '@/components/auth/AuthPanel';
+import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
@@ -566,25 +566,27 @@ export default function AddHome() {
     }
 
     if (!session) {
+        // The shared first step every sign-up now opens on: email, a 6-digit
+        // code, signed in. It replaced a narrow "Create account / Log in" card
+        // asking for a name and a password twice. The name is asked inside the
+        // step only when the account has none; a password still works for an
+        // account that has one.
         return (
-            <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-6 px-4">
-                <Logo />
-                <div className="text-center">
-                    <h1 className="text-2xl font-bold text-slate-900">Become a host</h1>
-                    <p className="text-slate-600 max-w-md mt-1">
-                        Create your free Galloway Getaways account to list your place — or log in if you already have one.
-                    </p>
-                </div>
-                {/* Both flows on one screen with a clear switch. A brand-new host
-                    lands on "Create account"; the old gate showed a login-only
-                    box where a fresh email returned "Invalid login credentials". */}
-                <AuthPanel
-                    defaultMode="signup"
-                    next="/addhome"
-                    heading="Create your host account"
-                    subheading="It’s free to list. You only pay a commission when you get a booking."
-                />
-            </div>
+            <EmailFirstStep
+                eyebrow="List your place"
+                intro="Sign in or create your free host account. You only pay a commission when you get a booking."
+                exitHref="/business"
+                onSignedIn={(s) => {
+                    // A ?draft= link loads its draft only for a signed-in owner,
+                    // on load — so reload to open it now that they are one.
+                    if (searchParams?.get('draft')) {
+                        window.location.reload();
+                        return;
+                    }
+                    setSession(s);
+                    setUserName(s.user.user_metadata?.name || s.user.email?.split('@')[0] || 'Host');
+                }}
+            />
         );
     }
 
