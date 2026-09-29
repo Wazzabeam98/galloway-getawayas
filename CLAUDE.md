@@ -2,6 +2,56 @@
 
 Read this first, then `MAINTENANCE.md` for the technical traps.
 
+## How we work
+
+Follow this from the first message of every session.
+
+**Verification, scaled to the change.** Match the effort to the risk. Run the
+full test suite, the scenarios, or a local production build **only** when the
+change touches money — payments, payouts, refunds, commission, resolutions,
+webhooks, crons, or any file on the money-path fingerprint list
+(`WATCHED` in `scripts/scenario-report.cjs`). For everything else, run **only**
+the tests that cover the files you changed and let GitHub's checks run the rest.
+Never run the full suite twice in one job. Browser-check only the views you
+changed — one screenshot each, and 390px only when the layout changed. The
+pre-push hook enforces exactly this split (typecheck plus the changed files'
+tests, full suite and build only for money-path files).
+
+**Money-path guards are never touched.** Every money-path guard, fingerprint
+check and privacy guard stays exactly as it is.
+
+**Reports.** Five bullets, then a short "What Liam needs to do". No long tables,
+no transcripts.
+
+**Session areas** — so two sessions never edit one file:
+
+- **A** — trades, experiences and services.
+- **The readiness session** — host listings, onboarding and payouts.
+- **B** — reviews only, never edits.
+
+**Merging.** Merge your own PR yourself once GitHub's checks pass — never ask
+Liam to click merge. If it has gone behind master, merge master in and push
+first; if it conflicts, merge master in, resolve it, and merge. Apply any
+production SQL in Liam's Chrome and record it in the ledger **before** you
+merge. After merging anything he can see, tell him in one line what to walk on
+the live site.
+
+**Doing things in Liam's Chrome.** He is signed in to GitHub, Supabase and
+Stripe. When a job needs production SQL, a Supabase setting or a Stripe setting,
+do it there rather than handing him steps. If Chrome is in the background, say
+so and carry on with other work.
+
+**Standing rules.**
+
+- Follow Airbnb's behaviour, wording and look at every decision.
+- All user-facing dates are DD/MM/YYYY from the shared formatter, built from the
+  day key — never `toISOString`.
+- First names only.
+- Mirror every client-side validation rule as a server-side check, through one
+  shared helper.
+- Don't stop to check with Liam between steps: find out, fix it, walk it, and
+  report at the end.
+
 ## What it is
 
 A direct booking site for self-catering holiday properties in Dumfries &
