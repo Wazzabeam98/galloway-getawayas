@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { issueRefunds } from '@/lib/refundSpread';
 import { refundDue } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
+import { logMoneyFailure } from '@/lib/moneyAlert';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
 import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
             );
 
             if (issued.refundedPence <= 0) {
-                await logError(
+                await logMoneyFailure(
                     '[bookings/cancel] a guest cancelled but nothing could be refunded, '
                         + 'so the stay has been left as it is',
                     issued.failure || { booking_id: booking.id, due: amount },
@@ -154,7 +155,7 @@ export async function POST(request: Request) {
             // which. Silently writing the full figure here is how a guest ends
             // up recorded as made whole when they are short.
             if (issued.refundedPence < Math.round(amount * 100)) {
-                await logError(
+                await logMoneyFailure(
                     '[bookings/cancel] the guest is owed \u00A3' + amount.toFixed(2)
                         + ' but only \u00A3' + refundedNow.toFixed(2) + ' could be refunded',
                     issued.failure || { booking_id: booking.id, due: amount, sent: refundedNow },
@@ -195,7 +196,7 @@ export async function POST(request: Request) {
                 // The guest's money has already gone back, so failing to record
                 // it is the dangerous case — the booking then looks less
                 // refunded than it is and its refundable guard reads wrong.
-                await logError(
+                await logMoneyFailure(
                     '[bookings/cancel] refunded £' + refundedNow.toFixed(2)
                         + ' but could not record it against the booking',
                     refundWriteError || { booking_id: booking.id, amount: refundedNow },
@@ -206,7 +207,7 @@ export async function POST(request: Request) {
                     // Less was added than we asked to: the total hit what was
                     // paid because a concurrent refund took the headroom. The
                     // money left at Stripe, so a person has to reconcile it.
-                    await logError(
+                    await logMoneyFailure(
                         '[bookings/cancel] £' + refundedNow.toFixed(2) + ' was refunded but only £'
                             + round2(Number(applied.applied)).toFixed(2)
                             + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
@@ -225,7 +226,7 @@ export async function POST(request: Request) {
                 // are right (amount_refunded is what actually went back), and
                 // the shortfall is flagged for a person to settle.
                 if (round2(Number(applied.amount_paid)) !== round2(paid)) {
-                    await logError(
+                    await logMoneyFailure(
                         '[bookings/cancel] booking ' + booking.id + ': the amount paid changed from £'
                             + round2(paid).toFixed(2) + ' to £' + round2(Number(applied.amount_paid)).toFixed(2)
                             + ' while this cancellation was in flight (a balance charge landed underneath it), so '
@@ -328,7 +329,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, refunded: refundedNow });
     } catch (err: any) {
         console.error('[bookings/cancel]', err && err.message);
-        await logError('[bookings/cancel] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/cancel' });
+        await logMoneyFailure('[bookings/cancel] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/cancel' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not cancel' },
             { status: 500 }

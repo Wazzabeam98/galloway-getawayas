@@ -65,12 +65,22 @@ test('a first publish with no payout account is refused and nothing is published
     assert.deepEqual(updates, [], 'the listing is not set to published');
 });
 
-test('a first publish WITH a payout account goes live', async () => {
+// The approval gate: a first publish that passes every check waits for an
+// owner rather than going live. It must never be written as 'published'.
+test('a first publish WITH a payout account waits for approval, not live', async () => {
     const { route, updates } = loadPublish({ status: 'draft', payoutsEnabled: true });
     const res = await route.POST(post());
     assert.equal(res.body.ok, true);
+    assert.equal(res.body.status, 'pending_review');
+    assert.ok(updates.some((u) => u.table === 'listings' && u.patch.status === 'pending_review'), 'the listing is queued for review');
+    assert.ok(!updates.some((u) => u.table === 'listings' && u.patch.status === 'published'), 'and is not published');
+});
+
+test('a listing that has been live before is not queued again', async () => {
+    const { route, updates } = loadPublish({ status: 'hidden', payoutsEnabled: true });
+    const res = await route.POST(post());
     assert.equal(res.body.status, 'published');
-    assert.ok(updates.some((u) => u.table === 'listings' && u.patch.status === 'published'), 'the listing is published');
+    assert.ok(updates.some((u) => u.table === 'listings' && u.patch.status === 'published'));
 });
 
 test('an already-published listing is left alone even without a payout flag', async () => {

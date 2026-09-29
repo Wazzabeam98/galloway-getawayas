@@ -23,10 +23,16 @@ export const dynamic = 'force-dynamic';
 // server, not read from a cookie the caller could write. This route is the
 // authority on who owns the listing, so it cannot trust a forgeable id.
 //
-// WHERE THE REVIEW GATE WILL LIVE. When listings start waiting for approval,
-// this is the single place that changes: 'published' becomes 'pending_review',
-// and app/api/admin/listings/decide moves it the rest of the way. Nothing else
-// needs to know.
+// THE REVIEW GATE. A listing going live for the FIRST time does not go live:
+// it goes to 'pending_review', the host's dashboard says "Waiting for
+// approval", and an owner approves it at /admin/listings (one at a time or in
+// bulk), which moves it to 'published' and emails the host — see
+// app/api/admin/listings/decide. Signed out, a pending listing is not
+// readable: the listings_readable policy shows anonymous callers 'published'
+// rows only, and /homes/[id] shows only 'published' and 'hidden'.
+//
+// A listing that has been live before ('published', or 'hidden' by its host)
+// was approved once and is not queued again: re-saving it stays 'published'.
 export async function POST(request: Request) {
     let reporterId: string | null = null;
     try {
@@ -128,6 +134,9 @@ export async function POST(request: Request) {
             }
         }
 
+        // First time live waits for an owner; see THE REVIEW GATE above.
+        const nextStatus = everPublished ? 'published' : 'pending_review';
+
         const { error } = await admin
             .from('listings')
             // THE OTHER DOOR A POSTCODE COMES THROUGH.
@@ -140,14 +149,14 @@ export async function POST(request: Request) {
             //
             // Empty object when there is nothing to do, so this stays a single
             // update.
-            .update({ status: 'published', ...(await coordinatePatchFor(listing, {})) })
+            .update({ status: nextStatus, ...(await coordinatePatchFor(listing, {})) })
             .eq('id', listingId);
 
         if (error) {
             return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
         }
 
-        return NextResponse.json({ ok: true, status: 'published' });
+        return NextResponse.json({ ok: true, status: nextStatus });
     } catch (err: any) {
         console.error('[listings/publish]', err && err.message);
 

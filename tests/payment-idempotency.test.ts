@@ -22,7 +22,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stubModule, clearModule, installAliases } from './helpers/stub';
+import { stubModule, clearModule, installAliases, updateChain } from './helpers/stub';
 
 installAliases();
 
@@ -73,12 +73,10 @@ function load(options: { ledgerError?: any; booking?: any } = {}) {
                     return chain;
                 },
                 update(patch: any) {
-                    return {
-                        eq: async (_c: string, id: string) => {
+                    return updateChain(async (id: string) => {
                             updates.push({ table, patch, id });
                             return { data: null, error: null };
-                        },
-                    };
+                    });
                 },
                 insert: async (row: any) => {
                     inserts.push({ table, row });
@@ -122,6 +120,7 @@ function load(options: { ledgerError?: any; booking?: any } = {}) {
     });
 
     clearModule('@/lib/supabaseAdmin');
+    clearModule('@/lib/settlePaidBooking');
     clearModule(ROUTE);
     const route = require('../app/api/stripe/webhook/route');
     return { route, updates, inserts, reported };

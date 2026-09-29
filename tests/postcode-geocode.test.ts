@@ -211,7 +211,7 @@ test('publishing fills the coordinates from the postcode', async () => {
 
     assert.equal(res.body.ok, true);
     assert.equal(updates.length, 1, 'still one update, not two');
-    assert.equal(updates[0].status, 'published');
+    assert.equal(updates[0].status, 'pending_review', 'a first publish waits for approval');
     assert.equal(updates[0].latitude, 54.834305, 'the postcode was actually used');
     assert.equal(updates[0].longitude, -4.055713);
 });

@@ -303,8 +303,10 @@ export async function POST(request: Request) {
             customer_creation: keepCard ? 'always' : 'if_required',
             // Lands on a page that confirms the payment from the booking id
             // alone, so a session lost on the way back from Stripe never leaves
-            // a guest staring at a login screen.
-            success_url: SITE_URL + '/booking-confirmed/' + booking.id,
+            // a guest staring at a login screen. Stripe fills in the session id,
+            // which lets that page ask Stripe directly whether the payment went
+            // through when the webhook has not landed (lib/bookingPaymentReconcile).
+            success_url: SITE_URL + '/booking-confirmed/' + booking.id + '?session_id={CHECKOUT_SESSION_ID}',
             cancel_url: SITE_URL + '/homes/' + booking.listing_id + '?cancelled=1',
             line_items: [
                 {

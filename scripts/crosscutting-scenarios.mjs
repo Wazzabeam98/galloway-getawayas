@@ -492,6 +492,78 @@ async function main() {
     check('no guest is left silently short — any shortfall is surfaced', allNoSilentLoss);
     console.log('   observed: ' + orderings.join('  |  '));
 
+    /* ---- wh1: the lost webhook ---- */
+
+    scenario('wh1', 'A guest is charged and the webhook never arrives');
+
+    // The real money: a PaymentIntent carrying exactly the metadata the
+    // checkout route puts on one (payment_intent_data.metadata), paid with a
+    // test card. No webhook is sent — that is the failure being recovered.
+    const intent32 = await stripe.request('POST', '/payment_intents', {
+        amount: 30000, currency: 'gbp', payment_method: 'pm_card_visa',
+        payment_method_types: ['card'], confirm: 'true',
+        description: 'lost webhook test',
+        metadata: { booking_id: bookings.slost, kind: 'full' },
+    });
+    check('the guest really was charged', intent32.status === 'succeeded', intent32.status);
+
+    const before32 = await booking(bookings.slost);
+    check('with no webhook, the booking is still waiting on payment',
+        before32.status === 'pending_payment', before32.status);
+
+    const sweep = async () => {
+        const res = await fetch(SITE + '/api/cron/booking-payments', {
+            headers: { authorization: 'Bearer ' + env.CRON_SECRET },
+        });
+        return { status: res.status, body: await res.json().catch(() => ({})) };
+    };
+
+    const sweep1 = await sweep();
+    console.log('   reconcile → ' + sweep1.status + ' ' + JSON.stringify(sweep1.body));
+    const after32 = await booking(bookings.slost);
+    check('the reconcile cron confirms it', after32.status === 'confirmed', after32.status);
+    check('as paid in full, for what Stripe actually took',
+        after32.payment_status === 'paid' && round2(Number(after32.amount_paid)) === 300,
+        after32.payment_status + ' £' + after32.amount_paid);
+    check('linked to the payment at Stripe', after32.stripe_payment_intent_id === intent32.id,
+        String(after32.stripe_payment_intent_id));
+    const ledger32 = async () => (await paymentsFor(bookings.slost)).filter((p) => p.status === 'succeeded');
+    check('the payment is in the ledger once', (await ledger32()).length === 1,
+        String((await ledger32()).length));
+
+    // Run twice, then the webhook turns up late after all: nothing moves again.
+    const sweep2 = await sweep();
+    check('a second run recovers nothing', sweep2.body.recovered === 0, JSON.stringify(sweep2.body));
+    const late = await fetch(SITE + '/api/stripe/webhook', await signedWebhook({
+        id: 'evt_late_' + Date.now(),
+        type: 'checkout.session.completed',
+        data: { object: {
+            payment_status: 'paid', amount_total: 30000, payment_intent: intent32.id,
+            customer: null, client_reference_id: bookings.slost,
+            metadata: { booking_id: bookings.slost, kind: 'full' },
+        } },
+    }));
+    const lateBody = await late.json().catch(() => ({}));
+    check('the late webhook sees it is already settled', lateBody.already === true, JSON.stringify(lateBody));
+    check('and the ledger still holds one payment, not two', (await ledger32()).length === 1,
+        String((await ledger32()).length));
+    const final32 = await booking(bookings.slost);
+    check('amount paid is unchanged', round2(Number(final32.amount_paid)) === 300, String(final32.amount_paid));
+
+    // The confirmation page: a guest landing on it for a paid booking the
+    // webhook has not reached sees it confirmed, because the page asks Stripe.
+    await db.update('bookings', '?id=eq.' + bookings.slost, {
+        status: 'pending_payment', payment_status: 'unpaid', amount_paid: 0,
+        paid_at: null, confirmed_at: null,
+    });
+    await db.remove('payments', '?booking_id=eq.' + bookings.slost);
+    const pageRes = await fetch(SITE + '/booking-confirmed/' + bookings.slost);
+    const pageHtml = await pageRes.text();
+    check('the confirmation page checks Stripe itself and shows the payment',
+        /payment received/i.test(pageHtml), pageRes.status + '');
+    const viaPage = await booking(bookings.slost);
+    check('and the booking is confirmed by that visit', viaPage.status === 'confirmed', viaPage.status);
+
     /* ------------------------------------------------------------ summary */
 
     console.log('\n' + '='.repeat(64));
