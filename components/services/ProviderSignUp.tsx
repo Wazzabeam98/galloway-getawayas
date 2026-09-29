@@ -22,9 +22,6 @@ import {
     skillKey,
     suggestSkills,
     wouldCreateNew,
-    regulatedConceptFor,
-    schemesSatisfying,
-    blockedSkillReason,
 } from '@/lib/serviceSkills';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
@@ -33,7 +30,6 @@ import {
     audienceForTrade,
     extrasFor,
     extrasProblems,
-    imageryFor,
     initialsFor,
     showsTimeGuide,
     BUILDING_TYPES,
@@ -439,8 +435,10 @@ function ApplicationForm() {
     const [contactPhone, setContactPhone] = useState('');
     const [smsOptOut, setSmsOptOut] = useState(false);
     const [photos, setPhotos] = useState<string[]>([]);
+    // The logo column is no longer collected at sign-up (a trade's headshot from
+    // the About-you hub is its listing image now), but it is still LOADED and
+    // re-saved so a provider who set one under the old flow keeps it.
     const [logo, setLogo] = useState<string | null>(null);
-    const [uploadingLogo, setUploadingLogo] = useState(false);
     const [removing, setRemoving] = useState(false);
     const [confirmRemove, setConfirmRemove] = useState(false);
     const [buildingType, setBuildingType] = useState('');
@@ -1801,95 +1799,23 @@ function ApplicationForm() {
         setSkillTyped('');
     };
 
-    // What a tag needs, whether it came off the list or was typed. An existing
-    // tag carries its concept; a brand new one is matched on the words.
-    const conceptOf = (label: string): string | null => {
-        const key = skillKey(label);
-        if (!key) return null;
-
-        const known = allSkills.filter((x: any) => String(x.slug || '') === key.slug)[0];
-        if (known) return known.regulated_concept || null;
-
-        return regulatedConceptFor(key.slug);
-    };
-
-    // Whether THIS trade is ever asked for that registration. A handyman is
-    // asked for none of them, which is exactly why the message has to route
-    // rather than say "add your number" — there is no field here to add it to.
-    const asksForConcept = (concept: string | null): boolean => {
-        if (concept === 'electrical') return trade === 'electrician';
-        if (concept === 'gas' || concept === 'oil') return asksAboutFuel(trade);
-        return false;
-    };
-
-    const reasonFor = (label: string): string | null => {
-        const concept = conceptOf(label);
-        if (!concept) return null;
-        if (asksForConcept(concept) && registrations[schemesSatisfying(concept as any)[0]]) return null;
-
-        return blockedSkillReason(
-            { label: (skillKey(label) || { label }).label, regulated_concept: concept },
-            tradeLabel(trade).toLowerCase(),
-            asksForConcept(concept)
-        );
-    };
-
-    // Tags they are holding that will not appear. Not a scolding — mostly it
-    // is somebody who does the work and cannot prove it here.
-    const blockedHeld = skills
-        .map((label) => ({ label, reason: reasonFor(label) }))
-        .filter((x) => x.reason);
-
-    // The tags worth putting in front of somebody before they type.
+    // The type-ahead over the existing services. One list, search-only: nothing
+    // shows until something is typed, and what shows is the existing services
+    // that match — ranked exact, then starts-with, then contains (suggestSkills),
+    // so somebody half way through "electr" gets "Electrical testing" at the top.
     //
-    // This is the anti-fragmentation mechanism, and until now it was invisible:
-    // the copy says "pick from the list where you can" and the list only
-    // appeared once they had started typing — by which point they have already
-    // chosen their own wording and are typing "brick laying" past a
-    // "Bricklaying" they never saw. An instruction to pick from a list that is
-    // not on screen is not an instruction.
-    //
-    // Regulated tags are left out. A handyman cannot hold Gas Safe or Part P —
-    // the sign-up does not even ask them for a number — so offering "Boiler
-    // repair" as a tappable chip is offering something that comes straight back
-    // with "will not show" against it. They can still be typed, and reasonFor
-    // still explains itself when they are.
+    // We DON'T police what a trade lists any more: a regulated service (electrical,
+    // gas, oil) is offered like any other. The old filter that hid them was what
+    // made "electr" suggest nothing on the electrician, so a real service got
+    // typed in as somebody's own ("Eicr") past a list that would have had it.
+    // A word that matches nothing — and only then — offers "add your own".
     const TAGS_SHOWN_CLOSED = 12;
 
-    const heldCompact = skills.map((x) => (skillKey(x) || { compact: '' }).compact);
-
-    const offerableTags = (allSkills || []).filter((tag: any) =>
-        !tag.regulated_concept &&
-        heldCompact.indexOf((skillKey(String(tag.label)) || { compact: '' }).compact) === -1
-    );
-
-    // Typing FILTERS this list rather than replacing it with a different one.
-    //
-    // There used to be two lists — chips before typing, a dropdown after — and
-    // they behaved differently and looked different, so typing felt like
-    // leaving the list rather than narrowing it. One list, one set of rules:
-    // regulated tags are never in it, held tags are never in it, and what you
-    // type only decides which of the rest survive.
-    //
-    // suggestSkills does the matching because it ranks exact, then
-    // starts-with, then contains — a handyman half way through "brick" wants
-    // Bricklaying at the top, not an alphabetical list of everything with
-    // those letters in it.
-    //
-    // The list is now search-only: there is no browse-the-whole-list state.
-    // Nothing shows until something is typed (the old "Tap any that fit" full
-    // list on focus is gone), and what shows is the existing services that
-    // match — the top few, no "Show all". A word that matches nothing offers
-    // "add your own". This matches the guest wizard's search rows.
     const matchingTags = skillTyped.trim() === ''
         ? []
-        : suggestSkills(allSkills, skillTyped, skills, 500)
-            .filter((tag: any) => !tag.regulated_concept);
+        : suggestSkills(allSkills, skillTyped, skills, 500);
 
     const tagsToShow = matchingTags.slice(0, TAGS_SHOWN_CLOSED);
-
-    const typedConcept = conceptOf(skillTyped);
-    const typedReason = skillTyped.trim() === '' ? null : reasonFor(skillTyped);
 
     const bands = bandsFor(trade);
 
@@ -2231,7 +2157,12 @@ function ApplicationForm() {
         setOpenGroup('');
         markVisited('trade');
         router.replace('/services/join?trade=' + encodeURIComponent(key));
-        setStep('business');
+        // The first screen after the picker is the shared About-you opener (the
+        // years counter), the same as the guest flow — NOT the business step. The
+        // opening-step effect (keyed on the URL trade) resolves to g_you too; we
+        // set it here as well so there is no one-frame flash of the business step
+        // between the click and that effect landing.
+        setStep('g_you');
         scrollPanelToTop();
     };
 
@@ -2382,57 +2313,6 @@ function ApplicationForm() {
     };
 
 
-    // One row per circle. The town carries the coordinates, so a tradesperson
-    // picks a place and a distance rather than a latitude.
-    const uploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = (e.target.files || [])[0];
-        if (!file) return;
-
-        // The bucket will not take a file from somebody with no account, and
-        // a silent nothing looks like a broken button.
-        //
-        // The wording matters more than it looks. "Make an account first and
-        // you can add your logo — everything else is kept" reads as though the
-        // logo is the thing that is NOT kept, and somebody who has just picked
-        // a file hears that as losing it. It is not lost; it was never
-        // uploaded, and it can be added any time afterwards without redoing
-        // anything.
-        if (!session) {
-            // "Once your account exists" was written when an account was a
-            // separate errand. The same button makes it now, so this says when
-            // rather than what has to happen first — and it says the file has
-            // not gone anywhere, because somebody who has just picked one and
-            // seen nothing happen assumes it has.
-            toast.info('Your logo can go on as soon as this is sent — nothing has been lost, just pick it again then.', {
-                theme: 'colored',
-            });
-            e.target.value = '';
-            return;
-        }
-
-        setUploadingLogo(true);
-
-        try {
-            const ready = await compressImage(file);
-            const path = 'providers/logo-' + session.user.id + '-' + Date.now() + '.jpg';
-
-            const { error } = await supabase.storage
-                .from(Env.S3_BUCKET)
-                .upload(path, ready, { contentType: 'image/jpeg' });
-
-            if (error) {
-                toast.error(error.message, { theme: 'colored' });
-            } else {
-                setLogo(path);
-            }
-        } catch (err) {
-            toast.error('That image could not be read. Try a different one.', { theme: 'colored' });
-        }
-
-        setUploadingLogo(false);
-        // So the same file can be chosen again after a failure.
-        e.target.value = '';
-    };
 
     // A portrait for a guest-trade provider — the person a guest is letting into
     // the cottage. Kept apart from the work gallery (photos). Same owner-prefixed
@@ -3461,40 +3341,41 @@ function ApplicationForm() {
                     )}
 
                 {/* ---- the questions ---- */}
-                <div id="signup-panel" className={isGuest
-                    ? ('flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 '
-                        + (step === 'trade'
-                            /* Screen one sits lower with more air above it, and
-                               widens so the five cards sit on a single row. */
+                {/* ONE panel layout, keyed on the STEP, shared by both audiences —
+                    so a trade page and its guest equivalent can never sit in
+                    different positions or drift apart again. Only two screens
+                    differ by audience, and only because their CONTENT genuinely
+                    does: the picker (a five-card guest grid vs a host trade grid)
+                    and the finish screen (a full-width guest listing preview vs the
+                    host account panel). Every question screen — the shared years
+                    opener, the About-you hub, the business screens — resolves to
+                    the same class for both. */}
+                <div id="signup-panel" className={'flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 '
+                    + (step === 'trade'
+                        ? (isGuest
+                            /* Guest: sits lower with more air, and widens so the
+                               five category cards sit on a single row. */
                             ? 'max-w-5xl pt-20 pb-10 sm:pt-28 sm:pb-12'
-                            : step === 'g_subtype'
-                                ? 'max-w-3xl py-10 sm:py-12'
-                                /* The years opener is a flex column so its
-                                   stepper can centre in the space under the
-                                   question rather than sit high with a void. */
-                                : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')
-                                    ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
-                                    /* Finish is the widest content screen: it is a
-                                       full-width preview of the listing about to be
-                                       submitted, so it uses the space rather than
-                                       sitting in a half-width column. */
-                                    : step === 'finish'
-                                        ? 'max-w-6xl py-10 sm:py-12'
-                                        /* The made-to-order fork and the slot choice
-                                           forks centre their cards in the space on
-                                           desktop, like the steppers. */
-                                        : (guestMtoArea || guestSlotChoice)
-                                            ? 'max-w-2xl py-10 sm:py-12 sm:flex sm:flex-col'
-                                            : 'max-w-2xl py-10 sm:py-12'))
-                    /* Host trades now walk the same full-page column: the trade
-                       picker gets a wider centred space for its tiles, the rest a
-                       single-question column. */
-                    : ('flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 '
-                        + (step === 'trade'
-                            ? 'max-w-3xl pt-14 pb-10 sm:pt-16 sm:pb-12'
-                            : step === 'finish'
-                                ? 'max-w-3xl py-10 sm:py-12'
-                                : 'max-w-2xl py-10 sm:py-12'))}>
+                            : 'max-w-3xl pt-14 pb-10 sm:pt-16 sm:pb-12')
+                        : step === 'g_subtype'
+                            ? 'max-w-3xl py-10 sm:py-12'
+                            /* The centred-stepper screens are a flex column so the
+                               stepper centres in the space under the question rather
+                               than sitting high with a void. g_you is SHARED, so a
+                               host trade now gets exactly the guest's centred years
+                               layout. */
+                            : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')
+                                ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
+                                : step === 'finish'
+                                    /* Guest finish is a full-width listing preview;
+                                       a host's is the narrower account panel. */
+                                    ? (isGuest ? 'max-w-6xl py-10 sm:py-12' : 'max-w-3xl py-10 sm:py-12')
+                                    /* The made-to-order fork and the slot choice
+                                       forks centre their cards in the space on
+                                       desktop, like the steppers. */
+                                    : (guestMtoArea || guestSlotChoice)
+                                        ? 'max-w-2xl py-10 sm:py-12 sm:flex sm:flex-col'
+                                        : 'max-w-2xl py-10 sm:py-12')}>
                     {/* One big question a screen. The picker screens (group,
                         sub-type) and the years opener centre it — over the cards
                         for the pickers, over the big stepper for the years, both
@@ -3957,7 +3838,9 @@ function ApplicationForm() {
                     is"), beside the description, so they never answer it twice. */}
                 {onStep('business') && (
                     <section className="mb-8">
-                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
+                        {/* One question a screen now: just the name here. The
+                            "What's your business called?" heading is the step h1
+                            above, so the field needs no second label of its own. */}
                         <input
                             type="text"
                             value={businessName}
@@ -3977,58 +3860,12 @@ function ApplicationForm() {
                     photos over a phone signal in somebody's driveway is not
                     what should stand between a tradesman and the rest of the
                     questions. */}
-                {onStep('finish') && (imageryFor(trade) === 'logo' ? (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your logo</h2>
-                        <p className="text-sm text-slate-500 mb-3">
-                            Optional. If you have not got one we will show your initials.
-                            {!session && ' You can add one as soon as this is sent — it does not hold up your listing, and you will not have to fill anything in again.'}
-                        </p>
-
-                        <div className="flex items-center gap-4">
-                            <div className="w-20 h-20 shrink-0 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-xl font-semibold">
-                                {logo ? (
-                                    <img src={getImageUrl(logo)} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    initialsFor(businessName) || <Sparkles className="w-6 h-6" strokeWidth={1.5} />
-                                )}
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                                <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
-                                    <Plus className="w-4 h-4" />
-                                    {uploadingLogo ? 'Uploading…' : logo ? 'Replace' : 'Add a logo'}
-                                    <input
-                                        type="file"
-                                        accept="image/png, image/jpeg"
-                                        onChange={uploadLogo}
-                                        className="hidden"
-                                        disabled={uploadingLogo}
-                                    />
-                                </label>
-
-                                {logo && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setLogo(null)}
-                                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                        Remove
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </section>
-                ) : (
-                    // Guest trades have no separate gallery any more — the photos
-                    // ARE the menu items, added beside each price on the business
-                    // step. A guest picks the cake from the cake's own picture,
-                    // not from a strip that doesn't say which is which. So this
-                    // step shows nothing for them; the item photos and the
-                    // headshot are the whole of their imagery.
-                    null
-                ))}
+                {/* No separate logo step any more. A trade already adds a photo of
+                    themselves on "Tell hosts about yourself" (the g_creds headshot),
+                    and that photo is what a listing shows now — so a second "Add a
+                    logo" screen asked for an image we had already taken. A guest
+                    never had one (its photos ARE its menu items). Legacy logos still
+                    display as a fallback where a provider set one before. */}
 
                 {/* The trade chip is gone: it said what they picked, and the
                     modal header now says that on every step. */}
@@ -4176,7 +4013,11 @@ function ApplicationForm() {
                                     type="text"
                                     value={professionalTitle}
                                     onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
-                                    placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
+                                    /* The guest example ("Cold-water swimming
+                                       guide") is guest copy — it must not leak onto a
+                                       trade page. A trade just gets the field under
+                                       its "Your title" heading, no placeholder. */
+                                    placeholder={isGuest ? GUEST_SCREEN_COPY.titlePlaceholder : ''}
                                     className={bigInput}
                                 />
                                 <span className={counterField}>{professionalTitle.length}/40</span>
@@ -4197,7 +4038,9 @@ function ApplicationForm() {
                                     value={qualifications}
                                     onChange={(e) => setQualifications(e.target.value.slice(0, 150))}
                                     rows={4}
-                                    placeholder={GUEST_SCREEN_COPY.qualsPlaceholder}
+                                    /* Guest wording ("A guest chooses you on this")
+                                       stays off the trade page — empty for a trade. */
+                                    placeholder={isGuest ? GUEST_SCREEN_COPY.qualsPlaceholder : ''}
                                     className={bigArea + ' pr-12'}
                                 />
                                 <span className={counterField}>{qualifications.length}/150</span>
@@ -4878,7 +4721,11 @@ function ApplicationForm() {
                     years_experience). */}
                 {onStep('g_you') && (
                 <section className="flex-1 flex flex-col items-center justify-center">
-                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={YEARS_DEFAULT} size="lg" solid />
+                    {/* NOT solid: the suggested 5 shows greyed as a placeholder, not
+                        as a black already-answered value. The first press of + or −
+                        adopts it and turns it black; Next stays greyed until then
+                        (see the disabled logic in the footer). */}
+                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={YEARS_DEFAULT} size="lg" />
                 </section>
                 )}
 
@@ -5336,16 +5183,9 @@ function ApplicationForm() {
                                 {skills.map((label) => (
                                     <span
                                         key={label}
-                                        className={`inline-flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 text-sm ${
-                                            reasonFor(label)
-                                                ? 'border border-amber-300 bg-amber-50 text-amber-900'
-                                                : 'border border-slate-300 bg-slate-50 text-slate-900'
-                                        }`}
+                                        className="inline-flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 text-sm border border-slate-300 bg-slate-50 text-slate-900"
                                     >
                                         {label}
-                                        {reasonFor(label) && (
-                                            <span className="text-xs font-semibold">will not show</span>
-                                        )}
                                         <button
                                             type="button"
                                             onClick={() => setSkills(skills.filter((x) => x !== label))}
@@ -5406,26 +5246,24 @@ function ApplicationForm() {
                                     </>
                                 )}
 
-                                {/* The fallback, for the job that genuinely is
-                                    not on the list. Offered last and looking
-                                    different, so taking an existing tag stays
-                                    the easier of the two — that preference is
-                                    the whole anti-fragmentation mechanism. */}
-                                {skillIsNew && skillTyped.trim() !== '' && (
+                                {/* The fallback, for the job that genuinely is not
+                                    on the list. Offered ONLY when nothing matched —
+                                    when there are matches, taking one of them is the
+                                    only offer, so somebody can't split "Electrical
+                                    testing" by adding "Eicr" as their own past a list
+                                    that already had it. */}
+                                {skillIsNew && tagsToShow.length === 0 && skillTyped.trim() !== '' && (
                                     <button
                                         type="button"
                                         onClick={() => addSkill(skillTyped)}
-                                        className="block w-full text-left rounded-lg px-3 py-2 mt-3 text-sm text-emerald-800 bg-emerald-50 hover:bg-emerald-100"
+                                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-800 bg-emerald-50 hover:bg-emerald-100"
                                     >
                                         Add &ldquo;{(skillKey(skillTyped) || { label: skillTyped }).label}&rdquo; as a new one
                                     </button>
                                 )}
 
-                                {/* Typed something that matches nothing and is
-                                    not new either — it exists but is regulated
-                                    or already held. The panel below says which,
-                                    so this only has to stop the list looking
-                                    broken. */}
+                                {/* Typed something that matches nothing and isn't a
+                                    new tag either (an alias of one already held). */}
                                 {tagsToShow.length === 0 && !skillIsNew && skillTyped.trim() !== '' && (
                                     <p className="text-sm text-slate-500">
                                         Nothing matches that.
@@ -5434,35 +5272,11 @@ function ApplicationForm() {
                             </div>
                         )}
 
-                        {/* Said while they type, and again for anything they
-                            are already holding — because "boiler repair" is a
-                            reasonable thing for a handyman to think he can
-                            list, and finding out afterwards that it never
-                            appeared is the bad version of this.
-
-                            The valuable part is the routing, not the refusal.
-                            "Needs proof" tells somebody nothing: not what
-                            proof, not why, and not what to do instead. So it
-                            says which registration, that we do not ask this
-                            trade for it, and where the tag would show. */}
-                        {(typedReason || blockedHeld.length > 0) && (
-                            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 md:max-w-lg">
-                                {typedReason && (
-                                    <p className="text-sm text-amber-900">{typedReason}</p>
-                                )}
-
-                                {blockedHeld.map((x) => (
-                                    <p key={x.label} className="text-sm text-amber-900 mt-1 first:mt-0">
-                                        {x.reason}
-                                    </p>
-                                ))}
-
-                                <p className="text-xs text-amber-900/70 mt-2">
-                                    You can leave it on if you like &mdash; everything else you have added still
-                                    shows.
-                                </p>
-                            </div>
-                        )}
+                        {/* No "will not show" warning and nothing about Part P or
+                            competent-person schemes: we don't police what a trade
+                            lists. They pick the services they do; the search offers
+                            every matching one (regulated or not), and the listing
+                            shows what they chose. */}
                     </section>
                 )}
 
@@ -5643,7 +5457,7 @@ function ApplicationForm() {
                 )}
 
 
-                {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('business')) && (
+                {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('b_area')) && (
                 <section className={'mb-8'
                     /* Vertically centre the fork (and whatever it reveals below it)
                        in the space between the question and the footer on desktop.
@@ -5667,8 +5481,10 @@ function ApplicationForm() {
                                 many as they like. The single town-and-radius picker
                                 is gone. Stored the same way as the guest regions:
                                 the region label in service_areas with radius 0. */}
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Where do you cover?</h2>
-                            <p className="text-sm text-slate-500 mb-4">Pick the areas you work in — as many as you like.</p>
+                            {/* The "Where do you cover?" heading is the step h1
+                                above now (its own screen), so this is just the
+                                one-line hint under it. */}
+                            <p className="text-sm text-slate-500 mb-4 -mt-4">Pick the areas you work in — as many as you like.</p>
 
                             <div className="space-y-1 md:max-w-xl">
                                 {areas.map((a, i) => (
@@ -5971,14 +5787,15 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* Host/trade contact details (name/email/phone) live on the
-                    'business' step. A guest experience has no contact step: they
+                {/* Host/trade contact details (email/phone) are their own screen
+                    now — b_contact, the last of the three "Your business" screens.
+                    A guest experience has no contact step: they
                     signed in up front, so the account address is their contact
                     address (written from the session at submit), the phone lives
                     on their account profile, and the single responsibility
                     confirmation that replaced the old checks is folded onto the
                     finish screen below. So this section is host/trade only. */}
-                {audienceForTrade(trade) !== 'guest' && onStep('business') && (
+                {audienceForTrade(trade) !== 'guest' && onStep('b_contact') && (
                 <section className="mb-8 grid sm:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-slate-500 mb-2">
@@ -6033,6 +5850,56 @@ function ApplicationForm() {
             </fieldset>
 
 
+
+            {/* The finish screen for a host trade: a short recap of what they're
+                sending, so the last screen is their own listing rather than a blank
+                page with a Send button. The old finish carried a logo uploader
+                here; that's gone (the About-you headshot is the listing image now),
+                which would otherwise have left this screen empty — every applicant
+                reaches it signed in, so the signed-out account panel never shows. */}
+            {onStep('finish') && !isGuest && !locked && (() => {
+                const coverageVal = (areas || []).map((a) => a.town).filter(Boolean).join(', ') || '—';
+                const priceVal = provideQuote
+                    ? 'Priced per job'
+                    : [
+                        hourlyRate.trim() ? '£' + hourlyRate.trim() + ' an hour' : '',
+                        flatFee.trim() ? '£' + flatFee.trim() + ' a job' : '',
+                    ].filter(Boolean).join(' · ') || '—';
+                const facts: [string, string][] = [
+                    ['Trade', tradeLabel(trade)],
+                    ['Covers', coverageVal],
+                    ['Charges', priceVal],
+                ];
+                return (
+                    <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                        <div className="flex items-center gap-4">
+                            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-slate-100 flex items-center justify-center font-semibold text-slate-500">
+                                {headshot
+                                    ? <img src={getImageUrl(headshot)} alt="" className="h-full w-full object-cover" />
+                                    : (initialsFor(businessName) || <User className="h-6 w-6" strokeWidth={1.5} />)}
+                            </div>
+                            <div className="min-w-0">
+                                <p className="truncate text-lg font-semibold text-slate-900">{businessName || tradeLabel(trade)}</p>
+                                {professionalTitle.trim() && (
+                                    <p className="truncate text-[13px] text-slate-500">{professionalTitle.trim()}</p>
+                                )}
+                            </div>
+                        </div>
+                        <dl className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-3">
+                            {facts.map(([k, v]) => (
+                                <div key={k}>
+                                    <dt className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{k}</dt>
+                                    <dd className="text-sm text-slate-800">{v}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                        <p className="mt-4 text-sm text-slate-500">
+                            Send it and we will check it over — usually within a day — and email you when
+                            you are live. You can change anything until then.
+                        </p>
+                    </section>
+                );
+            })()}
 
             {/* The finish screen for a guest: a full-width PREVIEW of what they're
                 submitting — cover photo, name, category, price, coverage, and what
@@ -6394,7 +6261,7 @@ function ApplicationForm() {
                     )}
                     {stepIsOptional && (
                         <p className="text-sm text-slate-400 pr-1">
-                            {step === 'g_creds' ? GUEST_SCREEN_COPY.expertiseFootnote : 'Optional — you can skip this'}
+                            {step === 'g_creds' && isGuest ? GUEST_SCREEN_COPY.expertiseFootnote : 'Optional — you can skip this'}
                         </p>
                     )}
 
@@ -6416,14 +6283,17 @@ function ApplicationForm() {
                         // guest: g_you never gates (its shown number is the
                         // answer), g_creds gates on the professional title.
                         // Everything else on a host step comes through stepProblems.
-                        const disabled = !isGuest ? (
+                        const disabled =
+                            // The years opener gates on a touch, both flows: the
+                            // shown 5 is a suggestion, not an answer, so Next stays
+                            // greyed until they press + or − (which fills yearsDoing).
+                            step === 'g_you' ? !yearsDoing.trim()
+                            : !isGuest ? (
                             step === 'g_creds' ? !professionalTitle.trim()
                             : stepProblems.length > 0
                         ) : (
                             step === 'trade' ? !guestGroup
                             : step === 'g_subtype' ? !guestCategory
-                            // g_you has no gate: Next is enabled from load. The
-                            // shown number is the accepted answer, stored on Next.
                             : step === 'g_creds' ? !professionalTitle.trim()
                             // The listing needs a name — it is the h1 and the card.
                             : step === 'g_title' ? !listingTitle.trim()
