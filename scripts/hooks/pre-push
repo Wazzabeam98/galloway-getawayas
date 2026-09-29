@@ -1,10 +1,15 @@
 #!/bin/sh
-# Run the two gates before anything leaves this machine.
+# The local gate before anything leaves this machine, scaled to the change: the
+# full suite and build for a money-path change, a typecheck plus the changed
+# files' tests for everything else. See "VERIFICATION, SCALED TO THE CHANGE"
+# below, and the "How we work" section of CLAUDE.md, which this hook matches.
 #
 # WHY IT EXISTS ALONGSIDE CI. GitHub catches everything, but it catches it two
 # minutes after the push and only if somebody looks. This says no while the
 # change is still in front of you. It also means a red run on master is rarer,
-# which matters because a red cross is easy to scroll past.
+# which matters because a red cross is easy to scroll past. GitHub still runs
+# the whole suite on every push, so the light path here never lowers the bar —
+# it just stops paying the full cost twice for a change that was never at risk.
 #
 # It does NOT cover the work done by pasting whole files into GitHub's web
 # editor — that never touches this machine. That path is covered by the branch
@@ -53,7 +58,55 @@ if ! command -v npm > /dev/null 2>&1; then
     exit 1
 fi
 
-echo "pre-push: running the tests…"
+# VERIFICATION, SCALED TO THE CHANGE.
+#
+# Most changes are not money. Running the whole suite and a full production
+# build on a copy-tweak or a UI screen is two minutes spent proving something
+# that was never at risk, and GitHub's checks run the whole lot on every push
+# anyway. So this gate matches its effort to the change:
+#
+#   * touches the MONEY PATH  -> the full suite AND a full build, exactly as
+#                                before. This is the one place correctness beats
+#                                speed, so nothing is skipped.
+#   * everything else         -> a typecheck (which is what a build's type gate
+#                                really is) plus only the tests that cover the
+#                                files you changed. GitHub runs the rest.
+#
+# The money-path list is not duplicated here: it is read from
+# scripts/scenario-report.cjs (WATCHED), the same list the scenario-coverage
+# fingerprint guard uses, so the two can never disagree. A few extra path
+# patterns (crons, Stripe, and the money words) are added on top so a NEW money
+# file that is not yet on WATCHED still gets the full gate — this errs towards
+# doing MORE for money, never less.
+
+# What this push actually changes, against master. A new branch with no
+# merge-base still resolves (git falls back to the root), and a failure to work
+# it out drops through to the full gate rather than skipping anything.
+base=$(git merge-base origin/master HEAD 2>/dev/null || true)
+if [ -n "$base" ]; then
+    changed=$(git diff --name-only "$base"..HEAD 2>/dev/null || true)
+else
+    changed=$(git diff --name-only HEAD 2>/dev/null || true)
+fi
+
+# The money-path files, read from the one list that defines them.
+watched=$(node -e "try{process.stdout.write(require('./scripts/scenario-report.cjs').WATCHED.join('\n'))}catch(e){}" 2>/dev/null || true)
+
+money=0
+if [ -z "$changed" ]; then
+    # Couldn't tell what changed — take the safe side and run the full gate.
+    money=1
+else
+    for f in $changed; do
+        # On the WATCHED list?
+        if printf '%s\n' "$watched" | grep -qxF -- "$f"; then money=1; break; fi
+        # Or unmistakably money by where it lives / what it is named.
+        case "$f" in
+            app/api/cron/*|app/api/stripe/*|scripts/*scenarios*|scripts/seed-payments.mjs|scripts/money-path-checks.mjs) money=1; break ;;
+            *payout*|*refund*|*commission*|*resolution*|*webhook*|*clawback*|*settle*|*payment*|*hostDebt*|*payoutSource*) money=1; break ;;
+        esac
+    done
+fi
 
 # Compiled tests from another branch survive a branch switch. tsc writes into
 # .test-build and never cleans it, so a test file that exists on one branch and
@@ -61,39 +114,117 @@ echo "pre-push: running the tests…"
 # has is invisible in a way a failure never is.
 rm -rf .test-build
 
-if ! npm test > /tmp/gg-pre-push-test.log 2>&1; then
-    echo >&2
-    echo "pre-push: TESTS FAILED — nothing was pushed." >&2
-    echo >&2
-    tail -n 30 /tmp/gg-pre-push-test.log >&2
-    echo >&2
-    echo "  full log: /tmp/gg-pre-push-test.log" >&2
-    exit 1
+if [ "$money" = "1" ]; then
+    echo "pre-push: money-path change — running the full suite…"
+
+    if ! npm test > /tmp/gg-pre-push-test.log 2>&1; then
+        echo >&2
+        echo "pre-push: TESTS FAILED — nothing was pushed." >&2
+        echo >&2
+        tail -n 30 /tmp/gg-pre-push-test.log >&2
+        echo >&2
+        echo "  full log: /tmp/gg-pre-push-test.log" >&2
+        exit 1
+    fi
+
+    echo "pre-push: running the build…"
+
+    # npm test and npm run build are not the same check, and the suite is the
+    # weaker of the two: tsconfig.test.json sets "strict": false and names route
+    # files one at a time, so it compiles code next build refuses and ignores
+    # most of app/api entirely.
+    #
+    # Build into a THROWAWAY distDir, not `.next`. This is a compile-only gate —
+    # its output is never served — but `.next` is what a running `next dev`
+    # serves from, and overwriting it mid-session stamps that server with a build
+    # id its chunks no longer match (404s until restarted). NEXT_DIST_DIR keeps
+    # the full build gate while leaving the dev server's `.next` untouched.
+    if ! NEXT_DIST_DIR=.next-verify npm run build > /tmp/gg-pre-push-build.log 2>&1; then
+        echo >&2
+        echo "pre-push: BUILD FAILED — nothing was pushed." >&2
+        echo >&2
+        grep -iE "type error|error:|Failed to compile" /tmp/gg-pre-push-build.log | head -n 20 >&2
+        echo >&2
+        echo "  full log: /tmp/gg-pre-push-build.log" >&2
+        exit 1
+    fi
+
+    echo "pre-push: money-path suite and build are green."
+else
+    echo "pre-push: no money-path files — typecheck plus the changed files' tests…"
+
+    # The typecheck is what a build's type gate really is, minus the bundling.
+    # It covers the whole app, so a type error anywhere a changed file reaches is
+    # still caught; the full build itself is left to GitHub.
+    #
+    # tsconfig.json also SEES the test files, but they are not written to its
+    # rules (tsconfig.test.json turns strict off and sets its own target/lib for
+    # them). So a strict error inside tests/ here is noise, not a real failure —
+    # the tests are typechecked properly by the tsconfig.test.json compile below.
+    # Fail only on errors OUTSIDE tests/.
+    npx tsc --noEmit -p tsconfig.json > /tmp/gg-pre-push-typecheck.log 2>&1 || true
+    app_type_errors=$(grep -E "error TS" /tmp/gg-pre-push-typecheck.log | grep -v "^tests/" || true)
+    if [ -n "$app_type_errors" ]; then
+        echo >&2
+        echo "pre-push: TYPECHECK FAILED — nothing was pushed." >&2
+        echo >&2
+        printf '%s\n' "$app_type_errors" | head -n 20 >&2
+        echo >&2
+        echo "  full log: /tmp/gg-pre-push-typecheck.log" >&2
+        exit 1
+    fi
+
+    # The tests that cover the changed files. A changed test runs itself; a
+    # changed source file runs the tests that name it (its module stem, or its
+    # folder for a route.ts / page.tsx whose own basename says nothing). Imperfect
+    # on purpose — GitHub's checks run the whole suite; this only has to catch the
+    # obvious break while the change is still in front of you.
+    if ! npx tsc -p tsconfig.test.json > /tmp/gg-pre-push-typecheck.log 2>&1; then
+        echo >&2
+        echo "pre-push: TEST TYPECHECK FAILED — nothing was pushed." >&2
+        echo >&2
+        grep -E "error TS" /tmp/gg-pre-push-typecheck.log | head -n 20 >&2
+        exit 1
+    fi
+
+    run_tests=""
+    for f in $changed; do
+        case "$f" in
+            tests/*.test.ts)
+                run_tests="$run_tests .test-build/${f%.ts}.js" ;;
+            *.ts|*.tsx)
+                stem=$(basename "$f"); stem="${stem%.*}"
+                case "$stem" in
+                    route|page|index|layout) stem=$(basename "$(dirname "$f")") ;;
+                esac
+                if [ -n "$stem" ]; then
+                    for m in $(grep -rlF -- "$stem" tests 2>/dev/null | grep '\.test\.ts$'); do
+                        run_tests="$run_tests .test-build/${m%.ts}.js"
+                    done
+                fi ;;
+        esac
+    done
+    run_tests=$(printf '%s\n' $run_tests | sort -u | grep -v '^$' || true)
+
+    if [ -z "$run_tests" ]; then
+        echo "pre-push: no local test covers the changed files — typecheck only; GitHub runs the suite."
+    else
+        count=$(printf '%s\n' "$run_tests" | wc -l | tr -d ' ')
+        echo "pre-push: running $count test file(s) that cover the change…"
+        # shellcheck disable=SC2086
+        if ! node --test $run_tests > /tmp/gg-pre-push-test.log 2>&1; then
+            echo >&2
+            echo "pre-push: TESTS FAILED — nothing was pushed." >&2
+            echo >&2
+            tail -n 30 /tmp/gg-pre-push-test.log >&2
+            echo >&2
+            echo "  full log: /tmp/gg-pre-push-test.log" >&2
+            exit 1
+        fi
+    fi
+
+    echo "pre-push: typecheck and the changed files' tests are green."
 fi
-
-echo "pre-push: running the build…"
-
-# npm test and npm run build are not the same check, and the suite is the
-# weaker of the two: tsconfig.test.json sets "strict": false and names route
-# files one at a time, so it compiles code next build refuses and ignores most
-# of app/api entirely.
-#
-# Build into a THROWAWAY distDir, not `.next`. This is a compile-only gate — its
-# output is never served — but `.next` is what a running `next dev` serves from,
-# and overwriting it mid-session stamps that server with a build id its chunks
-# no longer match (404s until restarted). NEXT_DIST_DIR keeps the full build
-# gate while leaving the dev server's `.next` untouched.
-if ! NEXT_DIST_DIR=.next-verify npm run build > /tmp/gg-pre-push-build.log 2>&1; then
-    echo >&2
-    echo "pre-push: BUILD FAILED — nothing was pushed." >&2
-    echo >&2
-    grep -iE "type error|error:|Failed to compile" /tmp/gg-pre-push-build.log | head -n 20 >&2
-    echo >&2
-    echo "  full log: /tmp/gg-pre-push-build.log" >&2
-    exit 1
-fi
-
-echo "pre-push: tests and build are green."
 
 # ---------------------------------------------------------------------------
 # AND A WORD ABOUT MIGRATIONS, WHICH IS A WARNING AND NEVER A REFUSAL.

@@ -2691,6 +2691,9 @@ export interface ProviderDraft {
     provides_quote?: boolean | null;
     flat_fee?: any;
     registration_number?: string | null;
+    // The host expertise hub's required field — the professional title, which for
+    // a host trade stands in for the old free-text description in the submit gate.
+    professional_title?: string | null;
     extras?: Record<string, { offered?: boolean; price?: any; notes?: any; quote?: boolean }> | null;
     does_gas?: boolean | null;
     does_oil?: boolean | null;
@@ -2797,11 +2800,27 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'trade', message: 'Choose the trade that fits best.' });
     }
 
-    if (description.length < MIN_DESCRIPTION) {
-        problems.push({
-            field: 'description',
-            message: 'Say a bit more about what you do — at least a sentence or two.',
-        });
+    // A guest describes the experience (the g_expect "what to expect" field
+    // becomes the description) and is held to a sentence or two. A host trade no
+    // longer has a free-text description at all — its "about you" is the expertise
+    // hub (a professional title, plus optional qualifications and endorsements),
+    // the same hub the guest fills — so the host is held to the title instead,
+    // and its description is derived from the hub at submit.
+    if (audienceForTrade(draft.trade || '') === 'guest') {
+        if (description.length < MIN_DESCRIPTION) {
+            problems.push({
+                field: 'description',
+                message: 'Say a bit more about what you do — at least a sentence or two.',
+            });
+        }
+    } else {
+        const title = String((draft as any).professional_title || '').trim();
+        if (title.length < 2) {
+            problems.push({
+                field: 'professional_title',
+                message: 'Add your title — a host reads it as your credential.',
+            });
+        }
     }
 
     // A host/trade types the address we reach them on. A guest experience does
@@ -2888,16 +2907,52 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
     for (const problem of pricingProblems(draft)) problems.push(problem);
     for (const problem of extrasProblems(draft)) problems.push(problem);
 
-    // Restricted work needs its number before it can be sent, not before it
-    // goes live — otherwise the first time somebody hears they need one is
-    // after a decline, which is a slower way of saying the same thing.
-    for (const problem of registrationProblems(draft, draft.registrations)) problems.push(problem);
+    // Registration is no longer a submit gate. The sign-up now collects a single
+    // OPTIONAL free-text "Registration number" (electricians and plumbers/gas
+    // engineers only) instead of a per-scheme picker, so there is no scheme for
+    // requiredSchemes to insist on — an applicant who hasn't got their number to
+    // hand can still finish, and adding it just shows it on their profile.
+    // registrationProblems / requiredSchemes stay for any existing per-scheme
+    // rows and the admin side; they are simply not part of the sign-up gate.
 
     return problems;
 }
 
 export function canSubmit(draft: ProviderDraft): boolean {
     return submitProblems(draft).length === 0;
+}
+
+// The server-side wall on submitting a HOST trade for review, expressed against
+// a stored service_providers ROW (not the wizard draft). It re-checks the two
+// rules the wizard already enforces in the browser — a non-empty description,
+// and at least one way to price the job (a quote tick, an hourly rate or a flat
+// fee) — so a listing cannot reach 'pending_review' without them however it was
+// posted. Returns the reason to refuse, or null when the row may be submitted.
+//
+// A guest experience (audience 'guest') prices per menu item and its description
+// is the what-to-expect field, a different shape with its own gate, so it is
+// exempt here. This mirrors the SQL in submit_service_provider() one-for-one; if
+// either rule changes, change both.
+export function tradeSubmitBlock(row: {
+    audience?: string | null;
+    description?: any;
+    provides_quote?: any;
+    hourly_rate?: any;
+    flat_fee?: any;
+}): string | null {
+    if (String(row.audience || '') === 'guest') return null;
+
+    if (String(row.description || '').trim() === '') {
+        return 'This trade listing needs a description before it can be submitted.';
+    }
+
+    const num = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? 0 : Number(v);
+    const hasPrice = row.provides_quote === true || num(row.hourly_rate) > 0 || num(row.flat_fee) > 0;
+    if (!hasPrice) {
+        return 'This trade listing needs a way to price the job (a quote, an hourly rate or a flat fee) before it can be submitted.';
+    }
+
+    return null;
 }
 
 // Distance between two points on the earth, in miles. Used to decide whether a

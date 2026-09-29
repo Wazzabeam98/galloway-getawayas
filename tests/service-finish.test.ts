@@ -121,6 +121,9 @@ const PAYLOAD = {
         description: 'Second fix and sash windows.',
         contact_email: 'joiner@example.com',
         callout_fee: 45,
+        // A way to price the job, required to submit (tradeSubmitBlock). A
+        // call-out fee is optional on top and is not a price on its own.
+        provides_quote: true,
     },
     areas: [{ label: 'Kirkcudbright', centre_lat: 54.8, centre_lng: -4.05, radius_miles: 10 }],
     registrations: [{ scheme: 'gas_safe', number: '123456' }],
@@ -270,6 +273,37 @@ test('the trade decides the audience, not the payload', async () => {
     await route.POST(call(GOOD));
 
     assert.notEqual(inserted.service_providers[0].audience, 'guest');
+});
+
+/* ---------------------------------------- the trade submit wall (server side)
+
+   The wizard already refuses a trade with no description or no way to price; the
+   finish route is the anonymous submit path, so it re-checks the same two rules
+   before it makes an account or writes a row. A guest experience is exempt (it
+   prices per item). See tests/trade-submit-guard.test.ts for the rule itself. */
+
+test('a trade with no way to price is refused, and no account or row is made', async () => {
+    const { route, created, inserted } = load({
+        ...LIVE,
+        payload: { ...PAYLOAD, provider: { ...PAYLOAD.provider, provides_quote: false, hourly_rate: null, flat_fee: null } },
+    });
+    const res: any = await route.POST(call(GOOD));
+
+    assert.equal(res.status, 400);
+    assert.equal(res.body.ok, false);
+    assert.equal((created || []).length, 0, 'no orphan account when the submit is refused');
+    assert.equal((inserted.service_providers || []).length, 0, 'nothing reaches the queue');
+});
+
+test('a trade with a blank description is refused', async () => {
+    const { route, inserted } = load({
+        ...LIVE,
+        payload: { ...PAYLOAD, provider: { ...PAYLOAD.provider, description: '   ' } },
+    });
+    const res: any = await route.POST(call(GOOD));
+
+    assert.equal(res.status, 400);
+    assert.equal((inserted.service_providers || []).length, 0);
 });
 
 /* ------------------------------------------------------------- refusals */

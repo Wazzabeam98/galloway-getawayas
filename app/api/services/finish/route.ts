@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceSubmission } from '@/lib/serviceSubmittedAlert';
-import { audienceForTrade } from '@/lib/serviceProviders';
+import { audienceForTrade, tradeSubmitBlock } from '@/lib/serviceProviders';
 import { hasSlotCapacity } from '@/lib/serviceSlots';
 import { normaliseUnit, unitMultiplies } from '@/lib/serviceOrders';
-import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, pickColumns } from '@/lib/serviceApplications';
+import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, GUEST_CONTENT_KEYS, pickColumns } from '@/lib/serviceApplications';
 import { signedInCaller } from '@/lib/signedInCaller';
 
 export const dynamic = 'force-dynamic';
@@ -101,6 +101,28 @@ export async function POST(req: Request) {
         }
 
         // ------------------------------------------------------------------
+        // The submit wall, before the account is made (no orphan user when it
+        // fires, like the capacity guard above). The same two rules the sign-up
+        // wizard enforces (submitProblems / pricingProblems): a host trade needs a
+        // description and a way to price the job — a quote tick, an hourly rate or
+        // a flat fee. A guest experience prices per item and is exempt.
+        // tradeSubmitBlock is the shared rule; the signed-in path enforces the
+        // same in the database, via submit_service_provider(). Audience comes from
+        // the trade, never the payload, so a crafted audience cannot skip it.
+        // ------------------------------------------------------------------
+        const submitBlock = tradeSubmitBlock({
+            audience: audienceForTrade(row.trade),
+            description: incoming.description,
+            provides_quote: incoming.provides_quote,
+            hourly_rate: incoming.hourly_rate,
+            flat_fee: incoming.flat_fee,
+        });
+        if (submitBlock) {
+            await logError('service-finish-invalid-trade', { application: row.id, reason: submitBlock });
+            return NextResponse.json({ ok: false, error: submitBlock }, { status: 400 });
+        }
+
+        // ------------------------------------------------------------------
         // The account — theirs already, or made now.
         // ------------------------------------------------------------------
         const caller = await signedInCaller();
@@ -188,12 +210,18 @@ export async function POST(req: Request) {
         const { data: provider, error: rowError } = await admin
             .from('service_providers')
             .insert({
-                // Narrowed to real columns: the stored payload also carries the
-                // guest content answers (years, qualifications, what-to-expect…),
-                // which have no column yet and must not reach the insert. They
-                // stay in service_applications.payload until the guest_details
-                // column lands, then materialise from there.
+                // Narrowed to real columns. The stored payload also carries the
+                // About-you answers (years, professional title, qualifications,
+                // endorsements, what-to-expect…) as TOP-LEVEL keys; the
+                // guest_details column has since landed, so they materialise into
+                // it here rather than being dropped. This is what carries a trade
+                // applicant's expertise hub (and a guest's, on the rare unsigned
+                // path) onto the row. A truthy value only, so a blank object is
+                // stored as null.
                 ...pickColumns(incoming, PROVIDER_COLUMNS),
+                ...(Object.keys(pickColumns(incoming, GUEST_CONTENT_KEYS)).length
+                    ? { guest_details: pickColumns(incoming, GUEST_CONTENT_KEYS) }
+                    : {}),
                 owner_id: owner,
                 audience: audienceForTrade(row.trade),
                 trade: row.trade,
