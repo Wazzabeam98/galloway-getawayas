@@ -593,10 +593,11 @@ test('every subscription trade gets the same treatment, not just the plumber', a
         .map((t: any) => t.key)
         .filter((trade: string) => planForTrade(trade) === 'subscription');
 
-    // Nine: every host trade but cleaning (waste joined the subscription on
-    // 28 September 2026). Not a list of names -- service-providers.test.ts owns
-    // the rule, and this only needs to know that it is exercising all of them.
-    assert.equal(subscription.length, 9, 'every subscription trade, not a sample');
+    // Ten: every host trade but cleaning (waste joined the subscription on
+    // 28 September 2026), plus the "Other" catch-all trade. Not a list of
+    // names -- service-providers.test.ts owns the rule, and this only needs to
+    // know that it is exercising all of them.
+    assert.equal(subscription.length, 10, 'every subscription trade, not a sample');
 
     for (const trade of subscription) {
         // The electrician needs a checked Part P scheme before anything else

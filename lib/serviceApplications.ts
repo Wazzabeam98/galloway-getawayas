@@ -67,6 +67,7 @@ export const PROVIDER_COLUMNS = [
     'business_name', 'trade', 'description', 'contact_email', 'contact_phone', 'sms_opt_out',
     'audience', 'photos', 'logo', 'does_gas', 'does_oil',
     'callout_fee', 'hourly_rate', 'callout_waived',
+    'provides_quote', 'flat_fee', 'registration_number',
     'pricing_choice', 'billable_hourly_rate', 'covered_bands',
     'experience_price',
     'provider_name', 'based_line', 'headshot',

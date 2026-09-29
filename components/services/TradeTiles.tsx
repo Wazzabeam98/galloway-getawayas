@@ -83,6 +83,11 @@ interface TileProps {
     // A link, or a button. Exactly one.
     href?: string;
     onClick?: () => void;
+
+    // Visible but not joinable — a greyed tile with a "Coming soon" chip and no
+    // click. Used on the sign-up list for cleaning, which stays on the page so
+    // hosts see it is coming without being able to sign up under it yet.
+    comingSoon?: boolean;
 }
 
 const SHELL =
@@ -90,11 +95,21 @@ const SHELL =
     + 'hover:border-emerald-700 hover:bg-emerald-50/40 '
     + 'focus:outline-none focus:ring-2 focus:ring-emerald-700';
 
-export function TradeTile({ icon, tradeKey, groupKey, label, hint, href, onClick }: TileProps) {
+export function TradeTile({ icon, tradeKey, groupKey, label, hint, href, onClick, comingSoon }: TileProps) {
     const Icon = icon
         || (groupKey ? GROUP_ICONS[groupKey] : null)
         || (tradeKey ? TRADE_ICONS[tradeKey] : null)
         || Sparkles;
+
+    if (comingSoon) {
+        return (
+            <div aria-disabled className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left cursor-not-allowed">
+                <Icon className="w-7 h-7 text-slate-400 mb-3" strokeWidth={1.5} />
+                <span className="block font-semibold text-slate-500">{label}</span>
+                <span className="mt-1 inline-block rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-500">Coming soon</span>
+            </div>
+        );
+    }
 
     const inner = (
         <>

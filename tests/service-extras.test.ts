@@ -274,7 +274,8 @@ test('extras are part of the one submit gate', () => {
         // Supplied the way the page supplies it — derived from the trade.
         audience: 'host',
         areaCount: 1,
-        prices: { beds_1_2: { price: '60' } },
+        // The one pricing gate now: a quote, an hourly rate, or a flat fee.
+        provides_quote: true,
     };
 
     assert.deepEqual(submitProblems(base), []);
