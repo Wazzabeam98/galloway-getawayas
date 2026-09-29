@@ -38,6 +38,7 @@
     "app/api/services/finish/route.ts",
     "app/api/services/resend-verification/route.ts",
     "app/api/health/route.ts",
+    "app/api/health/flags/route.ts",
     "app/api/stripe/refund/route.ts",
     "app/api/bookings/cancel/route.ts",
     "app/api/bookings/host-refund/route.ts",
