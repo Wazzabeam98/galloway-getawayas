@@ -48,9 +48,19 @@ export function guestExperiencesOpen(): boolean {
 // them (/addhome, /services/join, /services/join?trade=guest) are untouched, and
 // so is every existing host and tradesman — none of their routes read this.
 //
-// Releasing is ONE step for all three: set BUSINESS_SIGNUPS_OPEN=true on
-// Production (a redeploy binds it, same as GUEST_EXPERIENCES_OPEN above). All
-// three tiles read this one flag, so they come back together.
+// Releasing is ONE step: set BUSINESS_SIGNUPS_OPEN=true on Production (a
+// redeploy binds it, same as GUEST_EXPERIENCES_OPEN above). All three tiles,
+// the homepage "Coming soon · Register your interest" bar and /register-interest
+// read this one flag, so they all change together.
+//
+// READ TOLERANTLY (29 September 2026). Set to "true" twice on Production and
+// redeployed, the tiles stayed shut: the check was `=== 'true'`, so a value
+// typed as "True", with a trailing space or newline, or pasted with its quotes,
+// read as closed — and a Sensitive variable cannot be read back to see which.
+// Case, surrounding whitespace and one pair of surrounding quotes are now
+// ignored. Anything else still means closed, which stays the safe direction.
+// /api/health/flags says whether the variable is set and how it reads, without
+// the value.
 //
 // Held on PRODUCTION only — previews and local always return open, so the whole
 // of each flow stays walkable while the terms are outstanding. Defaulting to
@@ -59,7 +69,13 @@ export function guestExperiencesOpen(): boolean {
 // ever leave a preview more open, never expose production before the terms land.
 export function businessSignupsOpen(): boolean {
     if (process.env.VERCEL_ENV !== 'production') return true;
-    return process.env.BUSINESS_SIGNUPS_OPEN === 'true';
+    return flagIsTrue(process.env.BUSINESS_SIGNUPS_OPEN);
+}
+
+/** "true" in any case, with surrounding whitespace or one pair of quotes. */
+export function flagIsTrue(value: string | null | undefined): boolean {
+    const v = String(value == null ? '' : value).trim().replace(/^(['"])(.*)\1$/, '$2').trim().toLowerCase();
+    return v === 'true';
 }
 
 // ---------------------------------------------------------------------------
