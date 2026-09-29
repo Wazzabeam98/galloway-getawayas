@@ -12,6 +12,7 @@ import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
 import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
+import { COMPANY } from '@/config/company';
 import type { Metadata } from 'next';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
@@ -95,14 +96,27 @@ export default function RootLayout({
   const organisationSchema = {
     '@context': 'https://schema.org',
     '@type': 'LodgingBusiness',
-    name: 'Galloway Getaways',
+    // The legal identity, matching Companies House — the trading name rides
+    // along as alternateName so a search for "Galloway Getaways" still ties up.
+    name: COMPANY.name,
+    legalName: COMPANY.name,
+    alternateName: 'Galloway Getaways',
+    identifier: {
+      '@type': 'PropertyValue',
+      propertyID: 'Companies House company number',
+      value: COMPANY.number,
+    },
     description:
       'Self catering holiday cottages and apartments across Dumfries & Galloway, Scotland.',
     url: SITE_URL,
     logo: `${SITE_URL}/icon.svg`,
     image: `${SITE_URL}/images/hero-1.jpg`,
+    // The registered office.
     address: {
       '@type': 'PostalAddress',
+      streetAddress: COMPANY.registeredOffice[0],
+      addressLocality: COMPANY.registeredOffice[1],
+      postalCode: COMPANY.registeredOffice[2],
       addressRegion: 'Dumfries & Galloway',
       addressCountry: 'GB',
     },
