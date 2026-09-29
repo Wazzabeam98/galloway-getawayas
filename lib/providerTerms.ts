@@ -21,6 +21,8 @@
 // banner says so; it stays off production until reviewed terms are ready.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { COMPANY, COMPANY_SENTENCE } from '@/config/company';
+
 export const PROVIDER_TERMS_VERSION = 'draft-2026-09-07';
 
 export interface TermsSection {
@@ -47,9 +49,7 @@ export const PROVIDER_TERMS: ProviderTerms = {
         {
             heading: 'Who we are',
             body: [
-                'Galloway Getaways is operated by Galloway Getaways Ltd, a company registered in '
-                + 'Scotland (company number SC899385), registered office 17b King Street, Castle '
-                + 'Douglas, DG7 1AA, contactable at hello@gallowaygetaways.co.uk.',
+                `Galloway Getaways is operated by ${COMPANY_SENTENCE}, contactable at ${COMPANY.email}.`,
             ],
         },
         {
