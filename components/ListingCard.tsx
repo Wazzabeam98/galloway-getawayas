@@ -4,6 +4,7 @@ import ListingImage from '@/components/ListingImage';
 import { cardBadges } from '@/lib/listingRules';
 import { publicArea } from '@/lib/places';
 import { hasPublicScore } from '@/lib/reviews';
+import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
 
 // One property card, used by the home page grid and by the area pages.
 //
@@ -36,7 +37,12 @@ export interface CardListing {
      * already tick — see cardBadges in lib/listingRules.ts.
      */
     amenities?: string[] | null;
-    /** The ~110m public point, for the search map's price pin. Optional. */
+    /**
+     * The ~110m public point. Two things read it: the search map's price pin,
+     * and — when the property is outside one of the main towns — the card's
+     * "X miles from <nearest town>" line. Optional, so a grid that doesn't
+     * select the columns simply omits both.
+     */
     approx_latitude?: number | string | null;
     approx_longitude?: number | string | null;
 }
@@ -48,6 +54,7 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
     // and the cap live in lib/listingRules.ts; which icon draws which is the
     // only part of it that belongs to the card.
     const badges = cardBadges(listing.amenities);
+    const near = nearestTown(listing.location, listing.approx_latitude, listing.approx_longitude);
 
     return (
         <Link href={`/homes/${listing.id}`} className="group flex flex-col space-y-2">
@@ -112,6 +119,9 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
             </div>
 
             <p className="text-sm text-stone-500 truncate">{publicArea(listing.location)}</p>
+            {near && (
+                <p className="text-xs text-stone-400 truncate -mt-1">{nearestTownLabel(near)}</p>
+            )}
             <p className="text-sm font-semibold text-stone-900">
                 £{listing.price_per_night} <span className="font-normal text-stone-500">night</span>
             </p>

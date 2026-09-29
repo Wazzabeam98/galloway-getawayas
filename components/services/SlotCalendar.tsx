@@ -10,7 +10,8 @@ import type { Tick } from '@/lib/slotDay';
 
 export interface DayShape { ticks: Tick[]; booked: number; added: number; free: number; dayOff: boolean }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Monday-first, like every calendar on the site.
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const pad = (n: number) => String(n).padStart(2, '0');
 const keyOf = (y: number, m0: number, d: number) => `${y}-${pad(m0 + 1)}-${pad(d)}`;
@@ -36,7 +37,8 @@ export default function SlotCalendar({
     const [ty, tm] = [Number(todayIso.slice(0, 4)), Number(todayIso.slice(5, 7)) - 1];
     const [view, setView] = useState({ y: ty, m: tm });
     const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
-    const leading = dowOf(view.y, view.m, 1);
+    // Monday-first: shift Sunday (0) to the end so the blanks line up under Mon.
+    const leading = (dowOf(view.y, view.m, 1) + 6) % 7;
     const atFirstMonth = view.y === ty && view.m === tm;
     const cells: (string | null)[] = [];
     for (let i = 0; i < leading; i++) cells.push(null);

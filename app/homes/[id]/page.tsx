@@ -17,6 +17,8 @@ import ShowAllReviews from '@/components/ShowAllReviews';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
+import { plural } from '@/lib/plural';
+import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
 import { areaForTownKey, areaBySlug, hasCopy } from '@/config/areas';
 import ListingCard, { CardListing } from '@/components/ListingCard';
 import PropertyMap from '@/components/PropertyMap';
@@ -24,6 +26,7 @@ import HouseRules from '@/components/HouseRules';
 import ShowMoreText from '@/components/ShowMoreText';
 import AmenityList from '@/components/AmenityList';
 import MobileBookingBar from '@/components/MobileBookingBar';
+import AreaExperiences from '@/components/AreaExperiences';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Clock } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
@@ -431,7 +434,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     if (nearbyKeys.size) {
         const { data: candidates } = await supabase
             .from('listings')
-            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities')
+            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude')
             .eq('status', 'published')
             .neq('id', home.id)
             .order('created_at', { ascending: false })
@@ -592,8 +595,15 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         </h2>
 
                         <p className='mt-1 text-slate-600'>
-                            {home.max_guests} guests · {home.bedrooms} bedrooms · {home.beds} beds · {home.bathrooms} bathrooms
+                            {plural(home.max_guests, 'guest')} · {plural(home.bedrooms, 'bedroom')} · {plural(home.beds, 'bed')} · {plural(home.bathrooms, 'bathroom')}
                         </p>
+                        {(() => {
+                            // Only for a cottage outside our main towns — see lib/nearestTown.
+                            const near = nearestTown(home.location, home.approx_latitude, home.approx_longitude);
+                            return near ? (
+                                <p className='mt-1 text-sm text-slate-500'>{nearestTownLabel(near)}</p>
+                            ) : null;
+                        })()}
 
                         <div className='flex items-center gap-3 mt-5 pt-5 border-t'>
                             <div className='w-11 h-11 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center font-semibold flex-shrink-0'>
@@ -865,6 +875,17 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     </div>
                 </section>
             )}
+
+            {/* Experiences a guest on THIS stay could have — based in the town or
+                covering this point. Self-gates to nothing while the feature is
+                dormant or nothing matches. */}
+            <AreaExperiences
+                lat={home.approx_latitude != null ? Number(home.approx_latitude) : null}
+                lng={home.approx_longitude != null ? Number(home.approx_longitude) : null}
+                townLabel={area?.name || null}
+                intro={`Local chefs, bakers, saunas and guides who come to ${area?.name || 'this area'} — add one to your stay.`}
+            />
+
             <MobileBookingBar
                 pricePerNight={home.price_per_night}
                 label={home.instant_book === true ? 'Reserve' : 'Request to book'}

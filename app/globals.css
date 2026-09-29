@@ -132,6 +132,32 @@
   padding: 0 0.5em 0.5em 0.5em !important;
 }
 
+/* 4b. The cottage booking calendar (the listing-page BookingWidget). The
+   default .rdrMonth above is a fixed 23em (~368px), but the sticky booking card
+   at lg is narrower than that, and the wrapper's overflow-hidden cropped the
+   overflow — so the seventh (Saturday) column fell off the right and the
+   calendar looked like a six-day week. Force the whole react-date-range chain to
+   the card's own width and spread the seven day cells evenly, exactly the fix
+   the change calendars already use. Scoped to .cottage-cal so no other calendar
+   is touched. */
+.cottage-cal .rdrDateRangePickerWrapper,
+.cottage-cal .rdrDateRangeWrapper,
+.cottage-cal .rdrCalendarWrapper,
+.cottage-cal .rdrMonths,
+.cottage-cal .rdrMonthsVertical,
+.cottage-cal .rdrMonth,
+.cottage-cal .rdrMonthAndYearWrapper,
+.cottage-cal .rdrWeekDays,
+.cottage-cal .rdrDays {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.cottage-cal .rdrMonth { padding: 0 0.25em 0.5em 0.25em !important; }
+.cottage-cal .rdrDateRangePickerWrapper,
+.cottage-cal .rdrMonths,
+.cottage-cal .rdrMonthsVertical { display: flex; }
+.cottage-cal .rdrDay { width: 14.2857% !important; }
+
 /* 5. Emerald selection colors.
    The range picker paints its edges with .rdrStartEdge/.rdrEndEdge/.rdrInRange;
    a SINGLE-date Calendar (the change-date sheet, the booking panel) marks its

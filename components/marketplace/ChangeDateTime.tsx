@@ -256,6 +256,7 @@ export default function ChangeDateTime({ orderId, shape, className, endpoint: en
                                                     minDate={minDate}
                                                     maxDate={maxDate}
                                                     disabledDates={disabledDates}
+                                                    weekStartsOn={1}
                                                     color="#047857"
                                                     preventSnapRefocus
                                                     dayContentRenderer={renderDay}
