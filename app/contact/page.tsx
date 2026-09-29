@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Mail, MapPin, Clock } from 'lucide-react';
+import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 
 export const metadata: Metadata = {
     title: 'Contact Us',
@@ -78,9 +79,11 @@ export default function ContactPage() {
                     <MapPin className="w-5 h-5 text-emerald-700 mb-2" strokeWidth={1.5} />
                     <div className="font-semibold text-slate-900 text-sm mb-1">Where we are</div>
                     <p className="text-sm text-slate-600">
-                        Galloway Getaways Ltd, registered in Scotland.
+                        {COMPANY.name}, registered in {COMPANY.registeredIn}.
                         <br />
-                        Company number SC899385.
+                        Company number {COMPANY.number}.
+                        <br />
+                        Registered office: {REGISTERED_OFFICE}.
                     </p>
                 </div>
             </div>
