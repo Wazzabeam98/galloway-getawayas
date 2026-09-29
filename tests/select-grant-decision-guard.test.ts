@@ -91,6 +91,8 @@ const TABLES: TableDecision[] = [
             'trading_name', 'welcome_message', 'welcome_message_enabled',
         ]),
         revoked: {
+            host_terms_agreed_at: 'host terms acceptance record; written and read by the server only (publish route), never by the browser',
+            host_terms_version: 'host terms acceptance record; written and read by the server only (publish route), never by the browser',
             anonymised_at: 'audit tombstone — when the account was anonymised; server/admin only, no user or public read',
             email: 'private contact detail — not public',
             phone: 'private contact detail — not public',
