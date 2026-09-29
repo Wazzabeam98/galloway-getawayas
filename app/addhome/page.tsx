@@ -303,7 +303,15 @@ export default function AddHome() {
     // never overwritten from an old tab. Returns the draft id, or null on failure.
     const draftIdRef = useRef<string | null>(null);
     draftIdRef.current = draftId;
-    const writeDraft = async (): Promise<string | null> => {
+    // One write at a time. Without this, a slow first save (the INSERT) still
+    // in flight when the next autosave fires would insert a second draft.
+    const writeLock = useRef<Promise<unknown>>(Promise.resolve());
+    const writeDraft = (): Promise<string | null> => {
+        const run = writeLock.current.then(() => writeDraftNow(), () => writeDraftNow());
+        writeLock.current = run;
+        return run;
+    };
+    const writeDraftNow = async (): Promise<string | null> => {
         const uid = session?.user?.id;
         if (!uid) return null;
         const fields = draftFields();
@@ -517,8 +525,12 @@ export default function AddHome() {
             // allowed to submit it. A draft that fails to submit is still saved.
             const fields = draftFields();
 
-            const { data: saved, error: listingErr } = draftId
-                ? await supabase.from('listings').update(fields).eq('id', draftId).select('id').single()
+            // Let any autosave still in flight land first, so this write is
+            // the last word and the draft id is settled.
+            await writeLock.current.catch(() => null);
+            const currentDraftId = draftIdRef.current;
+            const { data: saved, error: listingErr } = currentDraftId
+                ? await supabase.from('listings').update(fields).eq('id', currentDraftId).select('id').single()
                 : await supabase.from('listings').insert({ host_id: user.data.user.id, ...fields }).select('id').single();
 
             if (listingErr) {
@@ -527,7 +539,7 @@ export default function AddHome() {
                 return;
             }
 
-            const listingId = saved?.id || draftId;
+            const listingId = saved?.id || currentDraftId;
 
             const publishRes = await fetch('/api/listings/publish', {
                 method: 'POST',
