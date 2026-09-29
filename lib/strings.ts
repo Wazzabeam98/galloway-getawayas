@@ -68,14 +68,6 @@ export const GUEST_SCREEN_COPY = {
     finishWroteExpect: 'What to expect',
     finishWroteQuals: 'Qualifications',
     finishWroteDietary: 'Dietary',
-    // The agree line beneath the preview: a tickbox with the terms behind a link
-    // that opens them in a modal. Required to send — someone who won't agree
-    // shouldn't be listed. No scroll gate in the modal: it's the opportunity to
-    // read; forcing a scroll is friction, not consent.
-    termsAgreePrefix: 'I have read and agree to the',
-    termsLinkText: 'provider terms and conditions',
-    termsGate: 'Agree to the provider terms and conditions before you send.',
-    termsModalClose: 'Close',
 
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
     // of subtext, then rows that each open their own single-field sub-flow modal.
