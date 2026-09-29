@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { compressImage } from '@/lib/compressImage';
 import { generateRandomNumber, getImageUrl } from '@/lib/utils';
-import { schemeLabel } from '@/lib/serviceProviders';
+import { schemeLabel, asksAboutFuel } from '@/lib/serviceProviders';
 import Env from '@/config/Env';
 import { Check, Plus, X, ShieldCheck, ShieldAlert, Loader2 } from 'lucide-react';
 
@@ -24,11 +24,16 @@ type Area = { id: string; label: string; radius_miles: number };
 type Registration = { scheme: string; number: string; verified: boolean };
 type Provider = {
     id: string;
+    trade: string;
     business_name: string;
     description: string;
     hourly_rate: number | null;
     callout_fee: number | null;
     photos: string[];
+    contact_email: string;
+    contact_phone: string;
+    sms_opt_out: boolean;
+    registration_number: string;
 };
 
 const card = 'rounded-2xl border border-slate-200 bg-white p-4 sm:p-5';
@@ -65,6 +70,15 @@ export default function ProviderBusinessEditor({
     const [areas, setAreas] = useState<Area[]>(initialAreas);
     const [photos, setPhotos] = useState<string[]>(provider.photos);
     const [regs, setRegs] = useState<Registration[]>(initialRegs);
+    // Contact + registration moved here from the sign-up wizard: the email we
+    // reach them on (defaulted to their account email at sign-up, editable here),
+    // an optional phone and the don't-text tick, and the free-text registration
+    // number (shown only for the trades a number means something for).
+    const [contactEmail, setContactEmail] = useState(provider.contact_email);
+    const [contactPhone, setContactPhone] = useState(provider.contact_phone);
+    const [smsOptOut, setSmsOptOut] = useState(provider.sms_opt_out);
+    const [registrationNumber, setRegistrationNumber] = useState(provider.registration_number);
+    const asksRegistration = asksAboutFuel(provider.trade) || provider.trade === 'electrician';
 
     function addSkill() {
         const t = newSkill.trim();
@@ -126,6 +140,12 @@ export default function ProviderBusinessEditor({
                     description: description,
                     hourly_rate: numOrNull(hourly),
                     callout_fee: numOrNull(callout),
+                    contact_email: contactEmail.trim(),
+                    contact_phone: contactPhone.trim() || null,
+                    sms_opt_out: smsOptOut,
+                    // Only the trades a number means something for write it; the
+                    // rest never show the field so it stays null.
+                    ...(asksRegistration ? { registration_number: registrationNumber.trim() || null } : {}),
                 })
                 .eq('id', provider.id);
             if (pErr) throw pErr;
@@ -352,6 +372,41 @@ export default function ProviderBusinessEditor({
                     </div>
                 )}
                 <p className="mt-2 text-[12px] text-slate-400">Regulated work (gas, oil, electrical) only shows to hosts once your matching registration is verified.</p>
+            </section>
+
+            {/* Contact + registration number — moved here from the sign-up wizard.
+                The email is the one we reach them on about jobs; the phone is
+                optional; neither goes on the public listing. The registration
+                number (for the trades it applies to) DOES show on the profile. */}
+            <section className={card}>
+                <h2 className={heading}>Contact{asksRegistration ? ' & registration' : ''}</h2>
+                <p className="text-[13px] text-slate-500 mt-0.5">How we reach you about jobs. Your email and phone never go on your public listing.</p>
+
+                <div className="mt-3 space-y-3">
+                    <div>
+                        <label htmlFor="pbe-email" className={labelCls}>Email we reach you on</label>
+                        <input id="pbe-email" type="email" className={inputCls} value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+                    </div>
+                    <div>
+                        <label htmlFor="pbe-phone" className={labelCls}>Phone <span className="font-normal text-slate-400">(optional)</span></label>
+                        <input id="pbe-phone" className={inputCls} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+                    </div>
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                        <input type="checkbox" className="mt-1" checked={smsOptOut} onChange={(e) => setSmsOptOut(e.target.checked)} />
+                        <span className="text-sm text-slate-700">
+                            Don&rsquo;t text me — email only
+                            <span className="block text-xs text-slate-500">You will still get every enquiry, just not as quickly.</span>
+                        </span>
+                    </label>
+
+                    {asksRegistration && (
+                        <div className="pt-1">
+                            <label htmlFor="pbe-reg" className={labelCls}>Registration number <span className="font-normal text-slate-400">(optional)</span></label>
+                            <input id="pbe-reg" className={inputCls} value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} />
+                            <p className="mt-1.5 text-[12px] text-slate-400">If you add it, hosts see it on your profile.</p>
+                        </div>
+                    )}
+                </div>
             </section>
 
             {/* One save for the fields above, skills included */}

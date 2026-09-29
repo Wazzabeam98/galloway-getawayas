@@ -787,7 +787,14 @@ function ApplicationForm() {
     const [registrations, setRegistrations] = useState<Record<string, string>>({});
     // The single free-text registration number for gas & electrical trades,
     // replacing the pre-filled scheme checklist. A string for the same reason.
+    // NOT asked at sign-up any more (a trade without their number to hand would
+    // abandon) — it is loaded and re-saved here so an existing value survives, and
+    // it is entered/edited in account settings, where hosts then see it.
     const [registrationNumber, setRegistrationNumber] = useState('');
+    // The two availability tick boxes on "What you do" — both optional, both
+    // selectable. They show on the trade's profile and hosts can filter on them.
+    const [doesEmergency, setDoesEmergency] = useState(false);
+    const [doesScheduled, setDoesScheduled] = useState(false);
 
     // No trade yet is not an error and no longer a redirect: it is step one,
     // which is on this screen. The trade still travels in the query string
@@ -848,7 +855,7 @@ function ApplicationForm() {
                     // provider_name was retired with the "Your name" field), and
                     // selecting a column the authenticated role can't read 403s
                     // the whole load. They stay revoked.
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, provides_quote, flat_fee, registration_number, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, slot_min_people, declarations, guest_details, fulfilment')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, provides_quote, flat_fee, registration_number, does_gas, does_oil, does_emergency, does_scheduled, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, slot_min_people, declarations, guest_details, fulfilment')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -890,6 +897,8 @@ function ApplicationForm() {
                     setStatus(existing.status || 'draft');
                     setDoesGas(existing.does_gas === true);
                     setDoesOil(existing.does_oil === true);
+                    setDoesEmergency(existing.does_emergency === true);
+                    setDoesScheduled(existing.does_scheduled === true);
                     setReviewNote(existing.review_note || null);
                     setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
                     setHourlyRate(existing.hourly_rate === null || existing.hourly_rate === undefined ? '' : String(existing.hourly_rate));
@@ -1217,6 +1226,8 @@ function ApplicationForm() {
             if (d.smsOptOut) setSmsOptOut(!!d.smsOptOut);
             if (d.doesGas !== undefined) setDoesGas(d.doesGas === true);
             if (d.doesOil !== undefined) setDoesOil(d.doesOil === true);
+            if (d.doesEmergency !== undefined) setDoesEmergency(d.doesEmergency === true);
+            if (d.doesScheduled !== undefined) setDoesScheduled(d.doesScheduled === true);
             if (d.registrations) setRegistrations(d.registrations);
             if (d.calloutWaived !== undefined) setCalloutWaived(d.calloutWaived === true);
             if (Array.isArray(d.skills)) setSkills(d.skills);
@@ -1370,7 +1381,7 @@ function ApplicationForm() {
                     businessName, description, contactEmail, contactPhone, smsOptOut,
                     prices, extras, calloutFee, hourlyRate, areas,
                     pricingChoice, billableHourlyRate, coveredBands,
-                    doesGas, doesOil, registrations, calloutWaived, skills,
+                    doesGas, doesOil, doesEmergency, doesScheduled, registrations, calloutWaived, skills,
                     // Photos and the logo are storage paths, not files — they
                     // are already uploaded by this point, so the path is the
                     // whole of what there is to keep. Leaving them out meant
@@ -1409,7 +1420,7 @@ function ApplicationForm() {
         businessName, description, contactEmail, contactPhone, smsOptOut,
         prices, extras, calloutFee, hourlyRate, areas,
         pricingChoice, billableHourlyRate, coveredBands,
-        doesGas, doesOil, registrations, calloutWaived, skills,
+        doesGas, doesOil, doesEmergency, doesScheduled, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
         items, providerName, headshot, dietaryNote, dietaryOptions,
         yearsDoing, listingTitle, professionalTitle, qualifications, recognition,
@@ -2756,6 +2767,9 @@ function ApplicationForm() {
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
             does_oil: asksAboutFuel(trade) ? doesOil : false,
+            // The two availability ticks from "What you do" — host trades only.
+            does_emergency: audienceForTrade(trade) === 'host' ? doesEmergency : false,
+            does_scheduled: audienceForTrade(trade) === 'host' ? doesScheduled : false,
             // A call-out fee is optional on both models — a roofer who turns
             // out for a leak charges one even though the re-slate is quoted.
             // The hourly rate belongs only to the trades that actually bill by
@@ -3271,11 +3285,28 @@ function ApplicationForm() {
                     the right. Below lg the rail is hidden and the section name
                     rides as an eyebrow at the top of each screen instead. A host
                     trade keeps its single column (`contents` adds no wrapper). */}
-                <div className="flex-1 flex min-h-0 overflow-hidden">
+                <div className="relative flex-1 flex min-h-0 overflow-hidden">
+                    {/* When collapsed the rail folds to zero width — no strip of
+                        icons left behind to push the question column off-centre — and
+                        this floating chevron is how it comes back. Its twin is the
+                        rail's own "Collapse" button, visible only when open. Because
+                        the rail and the right-hand spacer are always the same width,
+                        the centred column sits dead centre in either state, so
+                        collapsing never moves it. */}
+                    {currentSection && flowSections.length > 0 && railCollapsed && (
+                        <button
+                            type="button"
+                            onClick={toggleRail}
+                            aria-label="Expand sections"
+                            className="hidden lg:flex absolute left-3 top-4 z-10 h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:text-slate-800"
+                        >
+                            <ChevronRight className="h-5 w-5" />
+                        </button>
+                    )}
                     {currentSection && flowSections.length > 0 && (
                         <nav aria-label="Sections"
-                            className={'hidden lg:flex shrink-0 flex-col overflow-y-auto border-r border-slate-100 py-12 transition-[width] duration-300 ease-out '
-                                + (railCollapsed ? 'w-16 px-2' : 'w-72 px-6')}>
+                            className={'hidden lg:flex shrink-0 flex-col overflow-y-auto overflow-x-hidden border-r transition-[width] duration-300 ease-out '
+                                + (railCollapsed ? 'w-0 px-0 py-0 border-transparent' : 'w-72 px-6 py-12 border-slate-100')}>
                             <div className={'flex flex-col ' + (railCollapsed ? 'gap-1' : 'gap-0.5')}>
                                 {flowSections.map((sec) => {
                                     const st = sectionStatus(sec);
@@ -3399,7 +3430,12 @@ function ApplicationForm() {
                         photo, so the generic step title is suppressed there — the
                         same exclusion the guest branch below makes. */}
                     {!isGuest && step !== 'finish' && step !== 'trade' && step !== 'g_creds' && (
-                        <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl mb-8">
+                        <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
+                            /* The years opener is one centred column — eyebrow,
+                               heading and counter together — exactly like the guest
+                               years screen (same mb-10 + text-center). Every other
+                               host screen is a left-aligned form. */
+                            + (step === 'g_you' ? 'mb-10 text-center' : 'mb-8')}>
                             {stepMeta.title}
                         </h1>
                     )}
@@ -5102,28 +5138,32 @@ function ApplicationForm() {
                     </section>
                 )}
 
-                {/* Registration — one optional free-text number, no scheme name.
-                    Shown only for the trades a number means something for
-                    (electricians and plumbers/gas engineers). Never required: an
-                    applicant who hasn't got theirs to hand can still finish, and
-                    if they enter it hosts see it on the profile. The old "we check
-                    this before you go live" line is gone — it read as a gate the
-                    field never was. */}
-                {onStep('credentials') && (asksAboutFuel(trade) || trade === 'electrician') && (
-                    <section className="mb-8">
-                        <label htmlFor="reg-number" className="block text-sm font-semibold text-slate-900 mb-1.5">
-                            Registration number <span className="font-normal text-slate-400">(optional)</span>
-                        </label>
-                        <input
-                            id="reg-number"
-                            type="text"
-                            value={registrationNumber}
-                            onChange={(e) => setRegistrationNumber(e.target.value)}
-                            className="w-full sm:w-72 rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                        <p className="text-xs text-slate-500 mt-2">
-                            If you add it, hosts can see it on your profile.
-                        </p>
+                {/* Availability — two optional ticks, both selectable, at the top of
+                    "What you do". They show on the trade's profile and hosts filter
+                    on them when browsing. The registration number no longer lives on
+                    this page: a trade without their number to hand would abandon, so
+                    it moved to account settings, where they add it later and hosts
+                    then see it on the profile. */}
+                {onStep('credentials') && (
+                    <section className="mb-8 space-y-3">
+                        {([
+                            ['emergency', doesEmergency, setDoesEmergency, 'I do emergency call-outs', 'Urgent jobs at short notice.'],
+                            ['scheduled', doesScheduled, setDoesScheduled, 'I do scheduled work', 'Booked-in jobs planned ahead.'],
+                        ] as const).map(([key, checked, set, label, hint]) => (
+                            <label key={key} className={'flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition '
+                                + (checked ? 'border-emerald-600 bg-emerald-50/60 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
+                                <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => set(e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-emerald-600"
+                                />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-slate-900">{label}</span>
+                                    <span className="block text-[13px] text-slate-500">{hint}</span>
+                                </span>
+                            </label>
+                        ))}
                     </section>
                 )}
 
@@ -5161,22 +5201,10 @@ function ApplicationForm() {
                     thing before the usual one. */}
                 {onStep('credentials') && hasSkills && (
                     <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                            What services do you cover?
+                        {/* One short instruction, no paragraph of explanation. */}
+                        <h2 className="text-sm font-semibold text-slate-900 mb-4">
+                            Add the jobs you take on
                         </h2>
-                        <p className="text-sm text-slate-500 mb-1.5">
-                            The jobs you take on. Start typing and pick from the list, or add your own if
-                            it isn&apos;t there.
-                        </p>
-                        {/* Not small print. "Pick from the list" is the whole
-                            anti-fragmentation mechanism: somebody offered
-                            "gutter cleaning" takes it, and somebody who reads past
-                            this types "gutters" and splits the tag. It is
-                            an instruction, so it is weighted like one. */}
-                        <p className="text-sm font-medium text-slate-800 mb-4">
-                            Pick from the list where you can &mdash; it is how owners looking for that job
-                            find you.
-                        </p>
 
                         {skills.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-3">
@@ -5787,66 +5815,10 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* Host/trade contact details (email/phone) are their own screen
-                    now — b_contact, the last of the three "Your business" screens.
-                    A guest experience has no contact step: they
-                    signed in up front, so the account address is their contact
-                    address (written from the session at submit), the phone lives
-                    on their account profile, and the single responsibility
-                    confirmation that replaced the old checks is folded onto the
-                    finish screen below. So this section is host/trade only. */}
-                {audienceForTrade(trade) !== 'guest' && onStep('b_contact') && (
-                <section className="mb-8 grid sm:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-2">
-                            Email for us to reach you on
-                        </label>
-                        <input
-                            value={contactEmail}
-                            onChange={(e) => setContactEmail(e.target.value)}
-                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                        {problemFor('contact_email') && (
-                            <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('contact_email')!.message}</p>
-                        )}
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-2">
-                            Phone <span className="text-slate-400">(optional)</span>
-                        </label>
-                        <input
-                            value={contactPhone}
-                            onChange={(e) => setContactPhone(e.target.value)}
-                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-
-                        {/* One short line, not a policy paragraph. The opt-out sits
-                            with it so a mobile number isn't removed to avoid texts. */}
-                        <p className="text-sm text-slate-500 mt-2">
-                            A mobile only gets a text for an owner’s emergency; everything else is email.
-                        </p>
-
-                        <label className="flex items-start gap-2.5 mt-3 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={smsOptOut}
-                                onChange={(e) => setSmsOptOut(e.target.checked)}
-                                className="mt-1"
-                            />
-                            <span className="text-sm text-slate-700">
-                                Don&rsquo;t text me — email only
-                                <span className="block text-xs text-slate-500">
-                                    You will still get every enquiry, just not as quickly.
-                                </span>
-                            </span>
-                        </label>
-                    </div>
-
-                    <p className="sm:col-span-2 text-sm text-slate-500">
-                        Neither goes on your listing — we use them to reach you about your work.
-                    </p>
-                </section>
-                )}
+                {/* There is no contact step any more. The email we reach a trade on
+                    is the one they signed in with (set from the session, editable
+                    later in account settings); the optional phone and the don't-text
+                    tick moved to the finish screen below. */}
             </fieldset>
 
 
@@ -5900,6 +5872,46 @@ function ApplicationForm() {
                     </section>
                 );
             })()}
+
+            {/* Optional phone and the don't-text tick, on the finish screen now
+                (they used to be their own contact step). The email we reach them on
+                is the account email — shown here, not asked, and changed later in
+                account settings. Neither the phone nor the email goes on the public
+                listing. */}
+            {onStep('finish') && !isGuest && !locked && (
+                <section className="mb-8">
+                    <h2 className="text-sm font-semibold text-slate-900 mb-1">How we reach you</h2>
+                    <p className="text-sm text-slate-500 mb-4">
+                        We will email{' '}
+                        <strong className="text-slate-900">{contactEmail.trim() || 'your account address'}</strong>{' '}
+                        about jobs — change it any time in your account. A phone is optional and never
+                        goes on your listing.
+                    </p>
+                    <label htmlFor="finish-phone" className="block text-xs font-medium text-slate-500 mb-2">
+                        Phone <span className="text-slate-400">(optional)</span>
+                    </label>
+                    <input
+                        id="finish-phone"
+                        value={contactPhone}
+                        onChange={(e) => setContactPhone(e.target.value)}
+                        className="w-full sm:max-w-sm rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+                    <label className="flex items-start gap-2.5 mt-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={smsOptOut}
+                            onChange={(e) => setSmsOptOut(e.target.checked)}
+                            className="mt-1"
+                        />
+                        <span className="text-sm text-slate-700">
+                            Don&rsquo;t text me — email only
+                            <span className="block text-xs text-slate-500">
+                                You will still get every enquiry, just not as quickly.
+                            </span>
+                        </span>
+                    </label>
+                </section>
+            )}
 
             {/* The finish screen for a guest: a full-width PREVIEW of what they're
                 submitting — cover photo, name, category, price, coverage, and what
@@ -6203,7 +6215,7 @@ function ApplicationForm() {
                 {currentSection && flowSections.length > 0 && (
                     <div aria-hidden
                         className={'hidden lg:block shrink-0 transition-[width] duration-300 ease-out '
-                            + (railCollapsed ? 'w-16' : 'w-72')} />
+                            + (railCollapsed ? 'w-0' : 'w-72')} />
                 )}
                 </div>{/* /the two-column body (rail + questions) */}
 

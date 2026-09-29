@@ -36,7 +36,7 @@ const PROVIDER_WRITABLE = new Set([
     'audience', 'based_line', 'billable_hourly_rate', 'business_name', 'callout_fee',
     'callout_waived', 'collection_postcode', 'collection_street', 'collection_town',
     'contact_email', 'contact_phone', 'covered_bands', 'custom_label', 'declarations',
-    'description', 'dietary_note', 'does_gas', 'does_oil', 'exclusive_per_date',
+    'description', 'dietary_note', 'does_emergency', 'does_gas', 'does_oil', 'does_scheduled', 'exclusive_per_date',
     'experience_price', 'flat_fee', 'fulfilment', 'guest_details', 'headshot', 'hourly_rate',
     'lead_time_days', 'logo', 'owner_id', 'photos', 'pricing_choice', 'provider_name',
     'provides_quote', 'registration_number',

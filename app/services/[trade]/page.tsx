@@ -80,6 +80,8 @@ interface Provider {
     description: string;
     logo: string | null;
     headshot: string | null;
+    does_emergency: boolean;
+    does_scheduled: boolean;
     trade: string;
     callout_fee: any;
     hourly_rate: any;
@@ -101,6 +103,10 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
     const [manualTown, setManualTown] = useState<string | null>(null);
     const [listingId, setListingId] = useState('');
     const [choosing, setChoosing] = useState(false);
+    // Two optional availability filters (a trade sets these on its "What you do"
+    // step). Both off by default; each narrows to trades that do that kind of work.
+    const [filterEmergency, setFilterEmergency] = useState(false);
+    const [filterScheduled, setFilterScheduled] = useState(false);
     const [providers, setProviders] = useState<Provider[]>([]);
     const [areas, setAreas] = useState<any[]>([]);
     const [prices, setPrices] = useState<any[]>([]);
@@ -173,7 +179,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
 
             const { data: rows } = await supabase
                 .from('service_providers')
-                .select('id, business_name, description, logo, headshot, trade, callout_fee, hourly_rate, callout_waived, provides_quote, flat_fee, registration_number, does_gas, does_oil')
+                .select('id, business_name, description, logo, headshot, trade, callout_fee, hourly_rate, callout_waived, provides_quote, flat_fee, registration_number, does_gas, does_oil, does_emergency, does_scheduled')
                 .eq('trade', trade)
                 .eq('status', 'approved')
                 // OUT OF THE SHOP WINDOW WHEN THEY HAVE NOT PAID.
@@ -255,8 +261,12 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                 },
                 row.regs
             ).length === 0)
+            // The two availability filters, each an AND: turned on, it keeps only
+            // trades that said they do that kind of work.
+            .filter((row) => !filterEmergency || row.provider.does_emergency)
+            .filter((row) => !filterScheduled || row.provider.does_scheduled)
             .sort((a, b) => a.distance - b.distance);
-    }, [providers, areas, registrations, extras, point, trade]);
+    }, [providers, areas, registrations, extras, point, trade, filterEmergency, filterScheduled]);
 
     if (isGuestTrade) {
         // Redirecting (effect above). A quiet holding line rather than the host
@@ -370,6 +380,30 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                 </div>
             )}
 
+            {/* Availability filters — narrow to trades that do emergency call-outs
+                and/or scheduled work. Both toggles, both can be on at once. */}
+            {point && !choosing && (
+                <div className="mt-5 flex flex-wrap gap-2">
+                    {([
+                        ['Emergency call-outs', filterEmergency, setFilterEmergency] as const,
+                        ['Scheduled work', filterScheduled, setFilterScheduled] as const,
+                    ]).map(([label, on, set]) => (
+                        <button
+                            key={label}
+                            type="button"
+                            onClick={() => set((v: boolean) => !v)}
+                            aria-pressed={on}
+                            className={'rounded-full border px-4 py-2 text-sm font-medium transition '
+                                + (on
+                                    ? 'border-emerald-600 bg-emerald-600 text-white'
+                                    : 'border-slate-300 text-slate-700 hover:border-slate-500')}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {loading && <p className="text-slate-500 mt-8">Loading…</p>}
 
             {/* THE EMPTY STATE IS THE COMMON CASE ON DAY ONE.
@@ -456,11 +490,36 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                                         </p>
                                     ))}
 
+                                    {/* The self-reported registration number the trade adds in
+                                        account settings — shown plainly (not the "checked by us"
+                                        badge, which is a verified scheme registration). */}
+                                    {provider.registration_number && (
+                                        <p className="text-sm text-slate-600 mt-2">
+                                            Registration no. {provider.registration_number}
+                                        </p>
+                                    )}
+
                                     {availability.length > 0 && (
                                         <p className="text-sm text-slate-600 flex items-center gap-1.5 mt-2">
                                             <Clock className="w-4 h-4" strokeWidth={1.75} />
                                             {availability.map((e) => e.label).join(' · ')}
                                         </p>
+                                    )}
+
+                                    {/* The two availability ticks the trade set on sign-up. */}
+                                    {(provider.does_emergency || provider.does_scheduled) && (
+                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                            {provider.does_emergency && (
+                                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                                                    Emergency call-outs
+                                                </span>
+                                            )}
+                                            {provider.does_scheduled && (
+                                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                                                    Scheduled work
+                                                </span>
+                                            )}
+                                        </div>
                                     )}
 
                                     <button

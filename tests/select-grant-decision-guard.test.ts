@@ -43,7 +43,7 @@ const TABLES: TableDecision[] = [
             'approved_at', 'approved_digest', 'audience', 'billable_hourly_rate', 'business_name',
             'callout_fee', 'callout_waived', 'changes_pending_at', 'covered_bands',
             'created_at', 'custom_label', 'declarations', 'declined_at', 'description', 'dietary_note',
-            'does_gas', 'does_oil', 'flat_fee', 'guest_details', 'headshot', 'hourly_rate', 'id', 'kind',
+            'does_emergency', 'does_gas', 'does_oil', 'does_scheduled', 'flat_fee', 'guest_details', 'headshot', 'hourly_rate', 'id', 'kind',
             'fulfilment', 'lead_time_days', 'logo', 'notify_user_ids', 'owner_id', 'photos', 'plan', 'pricing_choice',
             'provides_quote', 'registration_number',
             'review_note', 'shape', 'slot_capacity', 'slot_length_minutes', 'slot_min_people',

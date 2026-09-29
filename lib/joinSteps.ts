@@ -44,7 +44,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // with no context still sees the old trade/business/finish, and no host trade
 // ever gains one. See stepApplies.
 export type StepKey =
-    | 'trade' | 'g_subtype' | 'business' | 'b_area' | 'b_contact'
+    | 'trade' | 'g_subtype' | 'business' | 'b_area'
     | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
@@ -134,7 +134,6 @@ const ALL_STEPS: Step[] = [
     // the one "Your business" rail section (TRADE_SECTIONS). See stepApplies.
     { key: 'business', label: 'Business', title: 'What’s your business called?' },
     { key: 'b_area', label: 'Coverage', title: 'Where do you cover?' },
-    { key: 'b_contact', label: 'Contact', title: 'How do we reach you?' },
     // Made-to-order only: the notice period, its own single-question screen before
     // the delivery areas (a big stepper, like the years/guests screens). The other
     // shapes carry their "when" inside g_area (a slot's schedule) or not at all.
@@ -197,7 +196,10 @@ const ALL_STEPS: Step[] = [
     // of the capability lists that now sit here; the registration numbers keep
     // their own heading inside it, which is honest, because being registered is
     // a fact about what you are allowed to do.
-    { key: 'credentials', label: 'What you do', title: 'What you do' },
+    // The rail/eyebrow says the section ("What you do"); the on-screen heading has
+    // to be a DIFFERENT question, the way every guest page's heading differs from
+    // its section eyebrow — otherwise the same words show twice, as eyebrow and h1.
+    { key: 'credentials', label: 'What you do', title: 'What kind of work do you do?' },
     { key: 'prices', label: 'Prices', title: 'What you charge' },
     { key: 'finish', label: 'Finish', title: 'Photos and your account' },
 ];
@@ -230,12 +232,13 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
         return true;
     }
 
-    // The other two screens of the host 'business' section — coverage and
-    // contact — are host-only. A guest carries its coverage on g_area and its
-    // contact on the account, so neither ever appears for them; every host trade
-    // has both. (They sit outside the GUEST_STEP_KEYS gate below, which would
-    // otherwise let the trailing `return true` hand them to a guest.)
-    if (step === 'b_area' || step === 'b_contact') {
+    // The coverage screen of the host 'business' section is host-only. A guest
+    // carries its coverage on g_area, so it never appears for them; every host
+    // trade has it. (It sits outside the GUEST_STEP_KEYS gate below, which would
+    // otherwise let the trailing `return true` hand it to a guest.) There is no
+    // separate contact screen any more — the email is the one they signed in with,
+    // and the optional phone / don't-text tick moved to the finish screen.
+    if (step === 'b_area') {
         return audienceForTrade(key) === 'host';
     }
 
@@ -457,7 +460,7 @@ const TRADE_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     // One section, three screens — the same shape as the guest "About you"
     // (years + expertise) or "Location" (several screens): the name, then the
     // coverage, then the contact details, one question a screen.
-    { key: 'business', label: 'Your business', steps: ['business', 'b_area', 'b_contact'] },
+    { key: 'business', label: 'Your business', steps: ['business', 'b_area'] },
     { key: 'credentials', label: 'What you do', steps: ['credentials'] },
     { key: 'prices', label: 'What you charge', steps: ['prices'] },
     { key: 'finish', label: 'Finish', steps: ['finish'] },
@@ -569,11 +572,11 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     // 'description' has moved off the business step: a host's "about you" is now
     // the expertise hub (g_creds), whose required field is the professional
     // title. The old single business step is split one question a screen: the
-    // name here, the coverage on b_area, the contact on b_contact — so a greyed
-    // Next and "go to first problem" each land on the screen that owns the field.
+    // name here and the coverage on b_area — so a greyed Next and "go to first
+    // problem" each land on the screen that owns the field. (There is no contact
+    // screen; the email is the account's and maps to finish as a fallback below.)
     business: ['business_name'],
     b_area: ['areas', 'availability'],
-    b_contact: ['contact_email'],
     credentials: ['registration_'],
     prices: [
         'prices', 'price_', 'hours_', 'hourly_rate', 'callout_fee', 'extra_price_',
@@ -604,7 +607,11 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_area: [],
     g_slot_length: [],
     g_slot_hours: [],
-    finish: [],
+    // The email is taken from the account they signed in with (not asked), so a
+    // contact_email problem can only mean the session carried no address; it lands
+    // on the finish screen, the last thing before submit, rather than the contact
+    // step that no longer exists.
+    finish: ['contact_email'],
 };
 
 // The guest field→step map. Only the fields submitProblems can actually raise

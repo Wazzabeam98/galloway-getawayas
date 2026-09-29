@@ -45,40 +45,39 @@ const keys = (trade: string) => stepsFor(trade).map((s: any) => s.key);
 // --- which steps exist ------------------------------------------------------
 
 test('every host trade opens on the About-you screens now', () => {
-    // The trades sign-up now opens on the same years counter and expertise hub as
-    // the guest experience, so every host trade gains g_you and g_creds at the
-    // front — before the business screens. The old single business step is itself
-    // split one question a screen (name → coverage → contact), the same shape as
-    // the guest experience, so with the credentials step (the services search) the
-    // cleaner is a nine-step flow.
+    // The trades sign-up opens on the same years counter and expertise hub as the
+    // guest experience, so every host trade gains g_you and g_creds at the front —
+    // before the business screens. The old single business step is split one
+    // question a screen: the name, then the coverage (b_area). There is no separate
+    // contact screen — the email is the account's, and the phone moved to finish —
+    // so with the credentials step (the services search) the cleaner is eight steps.
     assert.deepEqual(keys('sponge'),
-        ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'b_contact', 'credentials', 'prices', 'finish']);
-    assert.equal(stepCount('sponge'), 9);
+        ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'credentials', 'prices', 'finish']);
+    assert.equal(stepCount('sponge'), 8);
 
     assert.equal(stepNumber('sponge', 'g_you'), 2);
     assert.equal(stepNumber('sponge', 'g_creds'), 3);
     assert.equal(stepNumber('sponge', 'business'), 4);
     assert.equal(stepNumber('sponge', 'b_area'), 5);
-    assert.equal(stepNumber('sponge', 'b_contact'), 6);
-    assert.equal(stepNumber('sponge', 'finish'), 9);
+    assert.equal(stepNumber('sponge', 'finish'), 8);
 });
 
-test('a plumber sees all nine', () => {
+test('a plumber sees all eight', () => {
     assert.deepEqual(keys('plumber'),
-        ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'b_contact', 'credentials', 'prices', 'finish']);
-    assert.equal(stepCount('plumber'), 9);
-    assert.equal(stepNumber('plumber', 'finish'), 9);
+        ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'credentials', 'prices', 'finish']);
+    assert.equal(stepCount('plumber'), 8);
+    assert.equal(stepNumber('plumber', 'finish'), 8);
 });
 
 test('the joiner, roofer and painter open on About-you too', () => {
     // Their capability lists sit on the credentials step; the About-you screens
-    // (years, expertise hub) open the flow the same as every trade, and the three
-    // business screens (name, coverage, contact) follow.
+    // (years, expertise hub) open the flow the same as every trade, and the two
+    // business screens (name, coverage) follow.
     for (const trade of ['joiner', 'roofer', 'painter']) {
         assert.deepEqual(keys(trade),
-            ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'b_contact', 'credentials', 'prices', 'finish'],
-            trade + ' has all nine');
-        assert.equal(stepCount(trade), 9);
+            ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'credentials', 'prices', 'finish'],
+            trade + ' has all eight');
+        assert.equal(stepCount(trade), 8);
     }
 });
 
@@ -163,7 +162,7 @@ test('the cleaner now has the credentials step for the services search', () => {
     assert.equal(pricedOfferingsFor('sponge').length > 0, true);
     assert.equal(stepApplies('credentials', 'sponge'), true, 'the services-search step');
     assert.deepEqual(keys('sponge'),
-        ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'b_contact', 'credentials', 'prices', 'finish']);
+        ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'credentials', 'prices', 'finish']);
 });
 
 test('the guest trades have no prices step either, so they see four', () => {
@@ -205,21 +204,20 @@ test('the last step is the same one for everybody, whatever they skipped', () =>
 
 // --- moving about -----------------------------------------------------------
 
-test('next moves through the three business screens then credentials → prices', () => {
-    // The business section is three screens now (name → coverage → contact), and
-    // every host trade has the credentials step, so Next walks all of them rather
-    // than skipping to prices.
+test('next moves through the two business screens then credentials → prices', () => {
+    // The business section is two screens now (name → coverage), and every host
+    // trade has the credentials step, so Next walks all of them rather than
+    // skipping to prices.
     assert.equal(nextStep('sponge', 'business'), 'b_area');
-    assert.equal(nextStep('sponge', 'b_area'), 'b_contact');
-    assert.equal(nextStep('sponge', 'b_contact'), 'credentials');
-    assert.equal(nextStep('plumber', 'b_contact'), 'credentials');
+    assert.equal(nextStep('sponge', 'b_area'), 'credentials');
+    assert.equal(nextStep('plumber', 'b_area'), 'credentials');
     assert.equal(nextStep('sponge', 'credentials'), 'prices');
 });
 
 test('back is the way in reversed', () => {
     assert.equal(previousStep('sponge', 'prices'), 'credentials');
     assert.equal(previousStep('plumber', 'prices'), 'credentials');
-    assert.equal(previousStep('sponge', 'b_contact'), 'b_area');
+    assert.equal(previousStep('sponge', 'credentials'), 'b_area');
     assert.equal(previousStep('sponge', 'b_area'), 'business');
 });
 
@@ -300,9 +298,10 @@ test('problems are sliced by step, not shown all at once', () => {
         { field: 'extra_price_clean_oven', message: 'e' },
     ];
 
-    // The business section is three screens now: the name owns business_name, the
-    // coverage screen owns areas, the contact screen owns contact_email — so each
-    // problem lands on its own screen rather than piling onto one business step.
+    // The business section is two screens now: the name owns business_name and the
+    // coverage screen owns areas, so each problem lands on its own screen rather
+    // than piling onto one business step. contact_email is no longer asked (it is
+    // the account email), so it is not in this set.
     assert.deepEqual(problemsOnStep(problems, 'business').map((p: any) => p.field),
         ['business_name']);
     assert.deepEqual(problemsOnStep(problems, 'b_area').map((p: any) => p.field),
@@ -312,8 +311,10 @@ test('problems are sliced by step, not shown all at once', () => {
     assert.deepEqual(problemsOnStep(problems, 'prices').map((p: any) => p.field),
         ['price_beds_1_2', 'extra_price_clean_oven']);
 
-    // Nothing is validated on the last step. The tick box is its own thing and
-    // the photos are optional, so arriving there should never be refused.
+    // The photos/tick are optional and none of the fields in this set map to
+    // finish, so arriving there is not refused. (contact_email now maps to finish
+    // as a defensive fallback, but the account always supplies it, so it is empty
+    // here.)
     assert.deepEqual(problemsOnStep(problems, 'finish'), []);
 });
 
