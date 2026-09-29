@@ -1,14 +1,17 @@
 import Link from 'next/link';
 import { COMPANY_SENTENCE } from '@/config/company';
 
-// The full Terms & Conditions — ONE copy. The /terms page renders it, and so
-// does the "I agree to the terms and conditions" panel at the end of the
-// holiday-let sign-up, so what a host agrees to is exactly what /terms says.
+// THE TERMS OF SERVICE — the general terms every account accepts when it is
+// made (lib/agreements.ts, key 'guest'). The ONE copy: /terms/guests renders
+// it, and so do the sign-up tick box's modal and the sign-in prompt.
 //
-// Change the wording here, then move TERMS_LAST_UPDATED / HOST_TERMS_VERSION in
-// lib/hostTerms.ts: every host who agreed to the old version is asked to agree
-// again the next time they submit a listing.
-export default function TermsBody() {
+// This is the old /terms text with its "If you are a host" section moved out
+// word for word into HostAgreement.tsx (the sections after it renumbered).
+//
+// To change the wording: edit this file, then move `version` and `lastUpdated`
+// for 'guest' in lib/agreements.ts. Everyone is asked to accept the new version
+// the next time they sign in.
+export default function GuestTerms() {
     return (
         <div className="text-slate-700 space-y-4">
             <h2 className="text-xl font-bold text-slate-900 pt-4">1. Who we are</h2>
@@ -86,33 +89,14 @@ export default function TermsBody() {
                 , which forms part of these terms.
             </p>
 
-            <h2 className="text-xl font-bold text-slate-900 pt-4">7. If you are a host</h2>
-            <p>
-                You are responsible for your property, for the accuracy of your listing, and for
-                meeting your legal obligations. That includes holding a valid short-term let licence
-                where one is required in Scotland and displaying the licence number on your listing,
-                having appropriate insurance, meeting fire and gas safety requirements, and paying any
-                tax due on your income.
-            </p>
-            <p>
-                You appoint us as your agent to market your listing, take bookings and collect payment
-                from guests on your behalf. We charge a commission of 10% of the accommodation price,
-                which we deduct before remitting the balance to you. Payouts are released after the
-                guest has checked in.
-            </p>
-            <p>
-                You must honour confirmed bookings. Cancelling on a guest at short notice causes real
-                disruption, and repeated cancellations may result in your listings being removed.
-            </p>
-
-            <h2 className="text-xl font-bold text-slate-900 pt-4">8. Guest conduct</h2>
+            <h2 className="text-xl font-bold text-slate-900 pt-4">7. Guest conduct</h2>
             <p>
                 Please treat the property as you would your own, respect the house rules and the number
                 of guests booked for, and leave it in a reasonable state. Hosts may charge for damage
                 beyond ordinary wear and tear.
             </p>
 
-            <h2 className="text-xl font-bold text-slate-900 pt-4">9. Guest experiences</h2>
+            <h2 className="text-xl font-bold text-slate-900 pt-4">8. Guest experiences</h2>
             <p>
                 Some local providers offer experiences you can book around your stay, such as a
                 private chef, a sauna, a cake or a photographer. The experience is provided by that
@@ -130,7 +114,7 @@ export default function TermsBody() {
                 own legal obligations, such as food hygiene registration and insurance.
             </p>
 
-            <h2 className="text-xl font-bold text-slate-900 pt-4">10. Tradespeople</h2>
+            <h2 className="text-xl font-bold text-slate-900 pt-4">9. Tradespeople</h2>
             <p>
                 We introduce hosts and guests to local tradespeople for jobs such as plumbing,
                 electrical work and joinery. When you are introduced to a tradesperson, any contract
@@ -145,14 +129,14 @@ export default function TermsBody() {
                 quality, suitability, qualifications or credentials.
             </p>
 
-            <h2 className="text-xl font-bold text-slate-900 pt-4">11. Reviews</h2>
+            <h2 className="text-xl font-bold text-slate-900 pt-4">10. Reviews</h2>
             <p>
                 Reviews may only be left by people who have completed a booking. Reviews must be honest
                 and based on your own experience. We may remove reviews that are abusive,
                 discriminatory, or clearly not about the stay or service.
             </p>
 
-            <h2 className="text-xl font-bold text-slate-900 pt-4">12. Our responsibility</h2>
+            <h2 className="text-xl font-bold text-slate-900 pt-4">11. Our responsibility</h2>
             <p>
                 We take reasonable care to run the platform properly, but we do not own or inspect the
                 properties listed, we do not deliver the experiences, and we do not carry out the jobs,
@@ -165,26 +149,26 @@ export default function TermsBody() {
                 negligence, for fraud, or for anything else that cannot be limited under UK law.
             </p>
 
-            <h2 className="text-xl font-bold text-slate-900 pt-4">13. Suspending accounts</h2>
+            <h2 className="text-xl font-bold text-slate-900 pt-4">12. Suspending accounts</h2>
             <p>
                 We may suspend or close an account that breaches these terms, is used fraudulently, or
                 puts guests, hosts or providers at risk.
             </p>
 
-            <h2 className="text-xl font-bold text-slate-900 pt-4">14. Changes</h2>
+            <h2 className="text-xl font-bold text-slate-900 pt-4">13. Changes</h2>
             <p>
                 We may update these terms from time to time. The version in force when you make a
                 booking is the one that applies to it.
             </p>
 
-            <h2 className="text-xl font-bold text-slate-900 pt-4">15. Law</h2>
+            <h2 className="text-xl font-bold text-slate-900 pt-4">14. Law</h2>
             <p>
                 These terms are governed by the law of Scotland, and the Scottish courts have
                 jurisdiction. If you live elsewhere in the UK, you keep the right to bring a claim in
                 your local courts.
             </p>
 
-            <h2 className="text-xl font-bold text-slate-900 pt-4">16. Complaints</h2>
+            <h2 className="text-xl font-bold text-slate-900 pt-4">15. Complaints</h2>
             <p>
                 If something has gone wrong, email{' '}
                 <a href="mailto:support@gallowaygetaways.co.uk" className="text-emerald-700 underline">
