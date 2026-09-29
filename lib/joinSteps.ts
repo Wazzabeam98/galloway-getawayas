@@ -44,7 +44,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // with no context still sees the old trade/business/finish, and no host trade
 // ever gains one. See stepApplies.
 export type StepKey =
-    | 'trade' | 'g_subtype' | 'g_verify' | 'business'
+    | 'trade' | 'g_subtype' | 'business'
     | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
@@ -57,8 +57,8 @@ export type StepKey =
 // real photos step (g_photos). There is NO naming step: a guest experience is a
 // person, so the listing title is their account name (or a trading name they set
 // later in account settings), derived at submit — never asked. The name itself
-// is captured at the account step (the g_verify gate), which is account
-// information; a guest never sees the standalone 'business' step.
+// is captured by the shared email-first sign-in (EmailFirstStep), which is
+// account information; a guest never sees the standalone 'business' step.
 // Airbnb's host-an-experience sequence (Sep 2026): sub-type, then About you
 // (years, expertise), then Location straight after — it matters more for us than
 // for them, a chef in Carlisle should learn we only cover Dumfries & Galloway
@@ -68,7 +68,7 @@ export type StepKey =
 // on the finish screen) and no contact step (a guest signs in up front, so the
 // account address is the contact address, and the phone lives on the profile).
 const GUEST_STEP_KEYS: StepKey[] = [
-    'g_verify', 'g_subtype',
+    'g_subtype',
     // g_slot_hours stays in this registry — it is what marks it a GUEST step and
     // gates it away from host trades (stepApplies returns false for non-guests on
     // a listed key). It is retired for guests too, by its case returning false and
@@ -84,13 +84,6 @@ export interface StepContext {
     group?: string | null;
     category?: string | null;
     shape?: string | null;
-    // Whether a verified session already exists. The guest flow now signs the
-    // applicant in up front (email OTP), right after the category pick, so the
-    // rest of the wizard runs authenticated — photos upload, everything saves to
-    // the database, and the finish screen is a real submit. The verify step
-    // (g_verify) only exists while there is NO session: a returning applicant
-    // who is already signed in never sees it.
-    hasSession?: boolean;
     // What a slot provider offers: 'private' (the whole session for one group),
     // 'shared' (several people join, per person), 'both' (either — each time sold
     // as whichever books first), null = not yet answered. The per-person MINIMUM
@@ -120,12 +113,6 @@ export interface Step {
 }
 
 const ALL_STEPS: Step[] = [
-    // The verify-your-email gate is the guest's FIRST screen — before the
-    // category picker, before anything. Picking "Host a guest experience" on
-    // the fork lands them here; nothing comes before the account. Guest-only
-    // and off once a session exists, so a host trade still opens on 'trade' and
-    // a returning applicant skips straight past. See stepApplies / openingStep.
-    { key: 'g_verify', label: 'Account', title: 'Verify your email to carry on' },
     { key: 'trade', label: 'Trade', title: 'What do you do?' },
     // A guest's second screen: the narrower choices under the group they picked
     // (Airbnb's "How would you describe your experience?"). Off for 'other'.
@@ -270,13 +257,6 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // is alone under its group, so it goes straight to the business step.
             case 'g_subtype':
                 return !!ctx.group && ctx.group !== 'other';
-            // The verify-your-email gate — the guest's FIRST screen, before the
-            // category picker. Every guest passes through it EXCEPT one who is
-            // already signed in (a returning applicant). No category or shape
-            // gate, because it runs before either is picked: making the account
-            // is the same question whatever they go on to list.
-            case 'g_verify':
-                return !ctx.hasSession;
             // g_you (years) and g_creds (the expertise hub) are handled ABOVE this
             // block, because they are shared with the host trades — for a guest
             // they follow guestAsksExpertise (shown for everyone except a
@@ -582,7 +562,6 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     // description, contact_email, areas — move off 'business' for a guest). Empty
     // for now: the component does not yet drive these steps, so nothing maps here.
     g_subtype: [],
-    g_verify: [],
     g_you: [],
     // The expertise hub's one required field, for a host trade: the professional
     // title. (A guest's g_creds gates on the title in the form directly, not via
@@ -699,19 +678,12 @@ export interface OpeningState {
     hydrated: boolean;
     // A draft was found and has already decided where they are.
     restored: boolean;
-    // The application has been sent. Nothing may move them off the screen that
-    // says so.
-    lodged: boolean;
     // The trade from the URL. Empty means step one has not been answered.
     trade: string;
     // A guest arrives with trade='guest' already in the URL, but the category is
     // the guest's version of step one and is not yet answered. When true, open on
     // the picker (the category grid) rather than skipping it as an answered trade.
     guestNeedsCategory?: boolean;
-    // Whether a verified session already exists. A guest with none opens on the
-    // verify gate — the first screen, before the category picker. Nothing comes
-    // before the account.
-    hasSession?: boolean;
     // The guest's chosen category. Decides their first content screen: the
     // About-you opener (g_you) for a category that asks about expertise, else
     // Location (g_area), which every guest has. Without it a category that skips
@@ -723,17 +695,7 @@ export interface OpeningState {
 export function openingStep(state: OpeningState): StepKey | null {
     if (!state.hydrated) return null;
 
-    // First, and before `restored`: sending clears the draft, so a lodged
-    // application is never also a restored one, and the order has to say which
-    // wins if that ever stops being true.
-    if (state.lodged) return 'finish';
-
     if (state.restored) return null;
-
-    // A guest who is not signed in opens on the verify gate — the first screen,
-    // before the category picker. This is ahead of the category check below: the
-    // account comes before anything they might pick.
-    if (audienceForTrade(state.trade) === 'guest' && !state.hasSession) return 'g_verify';
 
     // A guest whose trade is set but whose category is not has still not
     // answered step one — the category grid is their picker. Send them to it.
@@ -758,9 +720,8 @@ export function openingStep(state: OpeningState): StepKey | null {
 export function openingVisited(state: OpeningState): StepKey[] | null {
     const step = openingStep(state);
     if (step === null) return null;
-    // The verify gate and the trade picker are both the first thing a person
-    // sees on their respective flows, so nothing is behind them yet.
-    if (step === 'g_verify' || step === 'trade') return [];
-    if (step === 'finish') return stepsFor(state.trade).map((s) => s.key);
+    // The trade picker is the first thing a person sees, so nothing is behind
+    // it yet.
+    if (step === 'trade') return [];
     return ['trade'];
 }

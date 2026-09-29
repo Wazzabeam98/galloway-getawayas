@@ -1,9 +1,9 @@
 // How often a stranger may make the site send an email.
 //
-// /api/services/apply has no auth gate and cannot have one: a tradesman has no
-// account until this route makes them one. Every call creates a real Supabase
-// auth user and asks Supabase to email it, and the project's outbound mail is
-// a single shared allowance. A loop against that address takes down password
+// The limiter was built for /api/services/apply (since removed — sign-up now
+// opens on an email-code step), a public route where every call asked Supabase
+// to send an email, and the project's outbound mail is a single shared
+// allowance. A loop against such a route takes down password
 // resets FOR THE WHOLE SITE. That, not the junk rows, is what these limits are
 // for, and it is why the global one is the half that matters: a per-IP limit
 // is bypassed by picking another address, and a cap on the total is not.
@@ -163,41 +163,6 @@ test('no headers at all still gives a usable key', () => {
     // accident and the per-IP limit becomes a second global one.
     assert.equal(callerAddress(new Headers()), 'unknown');
 });
-
-/* ---------------------------------------------------- the route actually uses it */
-
-test('services/apply is gated before it creates anything', () => {
-    const fs = require('fs');
-    const path = require('path');
-    const raw = fs.readFileSync(
-        path.resolve(__dirname, '..', '..', 'app/api/services/apply/route.ts'), 'utf8'
-    );
-    const code = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-
-    assert.match(code, /withinLimits/, 'the route is ungated again');
-
-    // THIS ROUTE NO LONGER MAKES AN ACCOUNT AT ALL, and that is worth pinning
-    // here rather than only in service-apply.test.ts. Creating a Supabase auth
-    // user from an unauthenticated public form is what let a stranger squat
-    // somebody's address; the account is now made by /api/services/finish,
-    // when the emailed link proves the address. If createUser ever comes back
-    // to this file, the squat comes back with it.
-    assert.doesNotMatch(
-        code, /createUser/,
-        'services/apply must not create an auth user — that is what /finish is for'
-    );
-
-    // The limit still has to come before the expensive, irreversible half.
-    // That used to be the account; it is now the email, which spends the same
-    // shared outbound allowance every password reset on the site draws on.
-    assert.ok(
-        code.indexOf('withinLimits') < code.indexOf('sendEmail'),
-        'the limit has to be checked BEFORE the email goes, or it has already been spent'
-    );
-    assert.match(code, /GLOBAL_KEY/, 'the site-wide cap is the half that protects the mail allowance');
-    assert.match(code, /429/);
-});
-
 
 /* ------------------------------ the other two public routes it now guards */
 
