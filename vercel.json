@@ -33,6 +33,10 @@
       "schedule": "5 * * * *"
     },
     {
+      "path": "/api/cron/payout-reminders",
+      "schedule": "40 * * * *"
+    },
+    {
       "path": "/api/cron/needs-reply",
       "schedule": "30 * * * *"
     },
