@@ -2900,6 +2900,39 @@ export function canSubmit(draft: ProviderDraft): boolean {
     return submitProblems(draft).length === 0;
 }
 
+// The server-side wall on submitting a HOST trade for review, expressed against
+// a stored service_providers ROW (not the wizard draft). It re-checks the two
+// rules the wizard already enforces in the browser — a non-empty description,
+// and at least one way to price the job (a quote tick, an hourly rate or a flat
+// fee) — so a listing cannot reach 'pending_review' without them however it was
+// posted. Returns the reason to refuse, or null when the row may be submitted.
+//
+// A guest experience (audience 'guest') prices per menu item and its description
+// is the what-to-expect field, a different shape with its own gate, so it is
+// exempt here. This mirrors the SQL in submit_service_provider() one-for-one; if
+// either rule changes, change both.
+export function tradeSubmitBlock(row: {
+    audience?: string | null;
+    description?: any;
+    provides_quote?: any;
+    hourly_rate?: any;
+    flat_fee?: any;
+}): string | null {
+    if (String(row.audience || '') === 'guest') return null;
+
+    if (String(row.description || '').trim() === '') {
+        return 'This trade listing needs a description before it can be submitted.';
+    }
+
+    const num = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? 0 : Number(v);
+    const hasPrice = row.provides_quote === true || num(row.hourly_rate) > 0 || num(row.flat_fee) > 0;
+    if (!hasPrice) {
+        return 'This trade listing needs a way to price the job (a quote, an hourly rate or a flat fee) before it can be submitted.';
+    }
+
+    return null;
+}
+
 // Distance between two points on the earth, in miles. Used to decide whether a
 // provider covers a property — listings already carry latitude and longitude
 // for the map, so there is nothing to geocode.
