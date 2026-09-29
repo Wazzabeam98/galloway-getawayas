@@ -16,6 +16,8 @@ import {
     tidyEmail,
     verifyCode,
 } from '@/lib/emailCodeSignIn';
+import { agreementProblem, versionForTick } from '@/lib/agreements';
+import AgreementTick, { fetchAgreementStatus, holdAgreementGate, recordAgreement } from '@/components/legal/AgreementTick';
 
 /**
  * The shared first step of every sign-up: "What's your email?".
@@ -27,7 +29,9 @@ import {
  *   email    — the address, then "Continue", with Continue with Google beneath
  *   code     — the 6-digit code we emailed; resend; or "use your password"
  *   password — for an account that already has one (still works, always)
- *   name     — only if the account has no name yet (a new one never does)
+ *   name     — only if the account has no name yet (a new one never does),
+ *              and/or hasn't agreed to the Terms of Service: Airbnb's "Finish
+ *              signing up" — the name, and the tick box, on one screen
  *
  * Whoever is already signed in never sees any of this — the page mounting it
  * decides that, and should render its own flow straight away.
@@ -72,7 +76,16 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
     const [notice, setNotice] = useState('');
     const [wait, setWait] = useState(0);
     const [session, setSession] = useState<any>(null);
+    // The last screen asks for whichever of these the account is missing.
+    const [askName, setAskName] = useState(true);
+    const [askTerms, setAskTerms] = useState(false);
+    const [termsTicked, setTermsTicked] = useState(false);
+    const [termsError, setTermsError] = useState('');
     const firstField = useRef<HTMLInputElement>(null);
+
+    // This screen asks for the Terms of Service itself, so the site-wide
+    // sign-in prompt stays out of the way while it is up.
+    useEffect(() => holdAgreementGate(), []);
 
     useEffect(() => {
         firstField.current?.focus();
@@ -98,12 +111,20 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
         }
     };
 
-    // Signed in. Ask for a name only if the account has none.
+    // Signed in. Ask for a name only if the account has none, and for the
+    // Terms of Service only if it hasn't agreed to the current version — a new
+    // account never has either.
     const afterSignIn = async (s: any) => {
         setSession(s);
-        const { data: prof } = await supabase
-            .from('profiles').select('full_name').eq('id', s.user.id).maybeSingle();
-        if (needsName(prof?.full_name)) {
+        const [{ data: prof }, status] = await Promise.all([
+            supabase.from('profiles').select('full_name').eq('id', s.user.id).maybeSingle(),
+            fetchAgreementStatus(),
+        ]);
+        const wantName = needsName(prof?.full_name);
+        const wantTerms = !!(status && status.documents.guest && !status.documents.guest.agreed);
+        if (wantName || wantTerms) {
+            setAskName(wantName);
+            setAskTerms(wantTerms);
             setBusy(false);
             go('name');
             return;
@@ -191,21 +212,37 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
     const submitName = async (e?: FormEvent) => {
         e?.preventDefault();
         const full = name.trim();
-        if (!full) {
+        if (askName && !full) {
             setError('Enter your name.');
+            return;
+        }
+        // The same rule /api/agreements applies to the record below.
+        const termsMsg = askTerms ? agreementProblem('guest', null, versionForTick('guest', termsTicked)) : null;
+        if (termsMsg) {
+            setTermsError(termsMsg);
             return;
         }
         setBusy(true);
         setError('');
-        const { error: err } = await supabase.from('profiles').update({ full_name: full }).eq('id', session.user.id);
-        if (err) {
-            setBusy(false);
-            setError('We couldn’t save your name. Check your connection and try again.');
-            return;
+        if (askName) {
+            const { error: err } = await supabase.from('profiles').update({ full_name: full }).eq('id', session.user.id);
+            if (err) {
+                setBusy(false);
+                setError('We couldn’t save your name. Check your connection and try again.');
+                return;
+            }
+            // Mirror it onto the auth user too, which is where the rest of the
+            // page reads a greeting name from before the profile is loaded.
+            await supabase.auth.updateUser({ data: { name: full } });
         }
-        // Mirror it onto the auth user too, which is where the rest of the
-        // page reads a greeting name from before the profile is loaded.
-        await supabase.auth.updateUser({ data: { name: full } });
+        if (askTerms) {
+            const failed = await recordAgreement('guest', 'signup');
+            if (failed) {
+                setBusy(false);
+                setTermsError(failed);
+                return;
+            }
+        }
         onSignedIn(session);
     };
 
@@ -213,7 +250,7 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
         screen === 'email' ? 'What’s your email?'
             : screen === 'code' ? 'Enter your code'
                 : screen === 'password' ? 'Log in with your password'
-                    : 'What’s your name?';
+                    : askName ? (askTerms ? 'Finish signing up' : 'What’s your name?') : 'One more thing';
 
     const backButton = 'inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition';
 
@@ -372,23 +409,38 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
 
                     {screen === 'name' && (
                         <>
-                            <p className="mb-8 text-slate-600 [text-wrap:pretty]">You’re signed in. This is the name guests and our team will see on your account.</p>
+                            <p className="mb-8 text-slate-600 [text-wrap:pretty]">
+                                {askName
+                                    ? 'You’re signed in. This is the name guests and our team will see on your account.'
+                                    : 'You’re signed in. Before you carry on, please read and agree to our Terms of Service.'}
+                            </p>
                             <form onSubmit={submitName} className="space-y-4" noValidate>
-                                <div>
-                                    <label htmlFor="efs-name" className="mb-2 block text-xs font-medium text-slate-500">Full name</label>
-                                    <input
-                                        ref={firstField}
-                                        id="efs-name"
-                                        type="text"
-                                        autoComplete="name"
-                                        value={name}
-                                        onChange={(e) => setName(e.target.value)}
-                                        className={INPUT}
-                                    />
-                                </div>
+                                {askName && (
+                                    <div>
+                                        <label htmlFor="efs-name" className="mb-2 block text-xs font-medium text-slate-500">Full name</label>
+                                        <input
+                                            ref={firstField}
+                                            id="efs-name"
+                                            type="text"
+                                            autoComplete="name"
+                                            value={name}
+                                            onChange={(e) => setName(e.target.value)}
+                                            className={INPUT}
+                                        />
+                                    </div>
+                                )}
                                 {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-                                <button type="submit" disabled={busy || !name.trim()} className={PRIMARY}>
-                                    {busy ? 'Saving…' : 'Continue'}
+                                {askTerms && (
+                                    <AgreementTick
+                                        doc="guest"
+                                        id="efs-agree-guest"
+                                        checked={termsTicked}
+                                        onChange={(v) => { setTermsTicked(v); setTermsError(''); }}
+                                        error={termsError}
+                                    />
+                                )}
+                                <button type="submit" disabled={busy || (askName && !name.trim())} className={PRIMARY}>
+                                    {busy ? 'Saving…' : askTerms ? 'Agree and continue' : 'Continue'}
                                 </button>
                             </form>
                         </>

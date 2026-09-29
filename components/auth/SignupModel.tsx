@@ -21,6 +21,8 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { useRouter } from 'next/navigation';
 import SocialSignUp from './SocialSignUp';
+import AgreementTick, { recordAgreement } from '@/components/legal/AgreementTick';
+import { AGREEMENTS, agreementProblem, versionForTick } from '@/lib/agreements';
 
 
 const SignupModel = () => {
@@ -37,6 +39,11 @@ const SignupModel = () => {
     // the screen and gone in five seconds, while the person is looking at a
     // box in the middle of the screen wondering why nothing happened.
     const [failure, setFailure] = useState<string>('');
+
+    // The Terms of Service, ticked as the account is made — the shared rule
+    // (lib/agreements) decides whether it may go ahead, as /api/agreements does.
+    const [termsTicked, setTermsTicked] = useState<boolean>(false);
+    const [termsError, setTermsError] = useState<string>('');
 
     const supabase = createClientComponentClient();
     const router = useRouter();
@@ -71,6 +78,8 @@ const SignupModel = () => {
 
     const closeAndReset = () => {
         setOpen(false);
+        setTermsTicked(false);
+        setTermsError('');
         setSentTo('');
         setResending(false);
         setFailure('');
@@ -78,6 +87,11 @@ const SignupModel = () => {
     };
 
     const onSubmit = async (payload: registerType) => {
+        const termsMsg = agreementProblem('guest', null, versionForTick('guest', termsTicked));
+        if (termsMsg) {
+            setTermsError(termsMsg);
+            return;
+        }
         setLoading(true);
         setFailure('');
 
@@ -92,6 +106,11 @@ const SignupModel = () => {
                 options: {
                     data: {
                         name: payload.name,
+                        // The version they ticked. With email confirmation on
+                        // there is no session yet to record it with, so
+                        // /api/agreements records it the first time they are
+                        // signed in rather than asking again.
+                        agreed_guest_terms_version: AGREEMENTS.guest.version,
                     },
                     // Without this the confirmation link goes to the Site URL —
                     // the home page — where nothing exists to turn it into a
@@ -143,6 +162,9 @@ const SignupModel = () => {
                 if (profileError) {
                     console.error('Profile insertion error:', profileError.message);
                 }
+
+                // Signed in already: record the tick now.
+                await recordAgreement('guest', 'signup');
 
                 setLoading(false);
                 closeAndReset();
@@ -301,6 +323,16 @@ const SignupModel = () => {
                                     <Label htmlFor='cpassword'>Confirm Password</Label>
                                     <Input id='cpassword' type='password' placeholder='Repeat password' {...register('passwordConfirm')} />
                                     <span className='text-red-400'>{errors.passwordConfirm?.message}</span>
+                                </div>
+                                <div className='mt-5'>
+                                    <AgreementTick
+                                        doc='guest'
+                                        id='signup-agree-guest'
+                                        open='tab'
+                                        checked={termsTicked}
+                                        onChange={(v) => { setTermsTicked(v); setTermsError(''); }}
+                                        error={termsError}
+                                    />
                                 </div>
                                 <div className='mt-5'>
                                     <Button className='w-full bg-brand' disabled={loading}>

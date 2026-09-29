@@ -1,10 +1,11 @@
 // The provider terms shown on the finish screen of the guest-experience sign-up,
 // and the version stamp recorded with every acceptance.
 //
-// SINGLE SOURCE. The finish screen renders exactly what is here; nothing else
-// holds the terms text. Swapping in a revised version later is a change to THIS
-// ONE FILE: replace `sections`, and bump `PROVIDER_TERMS_VERSION` so the stamp on
-// every new acceptance reflects the text they actually agreed to.
+// SINGLE SOURCE. This is the Experience Provider Agreement's wording
+// (lib/agreements.ts, key 'experience_provider'); /terms/experience-providers and
+// the sign-up's tick box both render exactly what is here. Swapping in a revised
+// version later: replace `sections` here, and move `version` / `lastUpdated` for
+// 'experience_provider' in lib/agreements.ts — PROVIDER_TERMS_VERSION follows it.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // SOURCE + SCOPE. The text below is drawn from TERMS-DRAFT-FOR-SOLICITOR.md
@@ -22,8 +23,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { COMPANY, COMPANY_SENTENCE } from '@/config/company';
+import { AGREEMENTS } from './agreements';
 
-export const PROVIDER_TERMS_VERSION = 'draft-2026-09-07';
+export const PROVIDER_TERMS_VERSION = AGREEMENTS.experience_provider.version;
 
 export interface TermsSection {
     heading: string;
@@ -41,7 +43,7 @@ export interface ProviderTerms {
 
 export const PROVIDER_TERMS: ProviderTerms = {
     version: PROVIDER_TERMS_VERSION,
-    title: 'Provider terms and conditions',
+    title: AGREEMENTS.experience_provider.title,
     draftNotice:
         'DRAFT — prepared 7 September 2026 for legal review and not yet reviewed by a '
         + 'solicitor. A formal provider agreement is still to be finalised; this wording may change.',

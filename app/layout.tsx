@@ -10,6 +10,7 @@ import ChromeGate from '@/components/base/ChromeGate';
 import { ToastContainer } from 'react-toastify';
 import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
+import AgreementGate from '@/components/legal/AgreementGate';
 import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import { COMPANY } from '@/config/company';
@@ -150,6 +151,9 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <Toast />
         </Suspense>
+        {/* The sign-in prompt for a missing or out-of-date agreement — one
+            document at a time (lib/agreements.ts). */}
+        <AgreementGate />
         {/* Vercel Web Analytics — privacy-friendly visitor and page-view trends.
             It only reports once deployed on Vercel with Analytics switched on for
             the project; locally it no-ops. */}
