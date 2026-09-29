@@ -26,7 +26,7 @@ export default async function EditBusinessPage() {
 
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status')
+        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -105,11 +105,16 @@ export default async function EditBusinessPage() {
             <ProviderBusinessEditor
                 provider={{
                     id: provider.id,
+                    trade: provider.trade,
                     business_name: provider.business_name || '',
                     description: provider.description || '',
                     hourly_rate: provider.hourly_rate,
                     callout_fee: provider.callout_fee,
                     photos: provider.photos || [],
+                    contact_email: provider.contact_email || '',
+                    contact_phone: provider.contact_phone || '',
+                    sms_opt_out: !!provider.sms_opt_out,
+                    registration_number: provider.registration_number || '',
                 }}
                 skills={skills}
                 serviceGroups={serviceGroups}
