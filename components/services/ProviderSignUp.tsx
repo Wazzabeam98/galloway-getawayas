@@ -4030,8 +4030,11 @@ function ApplicationForm() {
                     {/* A host trade's per-screen heading — the question, as a body
                         h1, the way the guest screens carry theirs (it used to live
                         in the modal header). The finish step has its own heading;
-                        the trade picker's h1 is rendered with its tiles below. */}
-                    {!isGuest && step !== 'finish' && step !== 'trade' && (
+                        the trade picker's h1 is rendered with its tiles below; and
+                        g_creds (the expertise hub) renders its OWN heading with the
+                        photo, so the generic step title is suppressed there — the
+                        same exclusion the guest branch below makes. */}
+                    {!isGuest && step !== 'finish' && step !== 'trade' && step !== 'g_creds' && (
                         <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl mb-8">
                             {stepMeta.title}
                         </h1>
