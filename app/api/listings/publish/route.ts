@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { coordinatePatchFor } from '@/lib/postcodeGeocode';
 import { addressBlockerForPublish, NEW_LISTING_MIN_PHOTOS } from '@/lib/listingRules';
 import { HOST_TERMS_VERSION, hasAgreedToCurrentTerms, termsProblem } from '@/lib/hostTerms';
+import { recordAcceptance } from '@/lib/agreementRecords';
 
 export const dynamic = 'force-dynamic';
 
@@ -167,10 +168,10 @@ export async function POST(request: Request) {
         // the listing: the host did agree, and the box will simply be shown to
         // them again next time.
         if (recordTerms) {
-            const { error: termsError } = await admin
-                .from('profiles')
-                .update({ host_terms_version: HOST_TERMS_VERSION, host_terms_agreed_at: new Date().toISOString() })
-                .eq('id', user.id);
+            // Both records at once: agreement_acceptances (the registry's
+            // store, read by the sign-in prompt) and profiles.host_terms_*
+            // (read above on the next submit).
+            const { error: termsError } = await recordAcceptance(admin, user.id, 'host', 'listing_publish');
             if (termsError) {
                 await logError('listings/publish: host terms agreement not recorded', termsError, {
                     path: 'api/listings/publish',
