@@ -3,7 +3,7 @@
 //
 // These mirror the wording shown in the listing editor.
 
-import { londonDayKey, shiftDayKey, ukLongDate, daysBetweenKeys } from './dayKey';
+import { londonDayKey, shiftDayKey, ukDate, daysBetweenKeys } from './dayKey';
 
 export type PolicyKey = 'Flexible' | 'Moderate' | 'Limited' | 'Firm';
 
@@ -73,8 +73,13 @@ export function refundFraction(
     return 0;
 }
 
+// A user-facing date, DD/MM/YYYY — the one format the site shows. Taken as the
+// London calendar day of the instant and formatted from that key, so a date
+// built at UTC midnight (new Date('2026-10-09')) reads the 9th whatever zone
+// the server or the browser runs in, instead of slipping a day behind UTC.
 export function formatUk(date: Date): string {
-    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    if (!date || isNaN(date.getTime())) return '';
+    return ukDate(londonDayKey(date));
 }
 
 
@@ -108,7 +113,7 @@ export function cancellationSummary(
     if (todayKey <= untilKey) {
         return {
             kind: 'free',
-            headline: 'Free cancellation until ' + ukLongDate(untilKey),
+            headline: 'Free cancellation until ' + ukDate(untilKey),
             detail: 'Cancel before then and you get everything back.',
         };
     }

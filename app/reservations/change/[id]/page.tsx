@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { checkListing } from '@/lib/access';
 import { displayName, capitializeFirst } from '@/lib/utils';
-import { ukLongDate } from '@/lib/dayKey';
+import { ukDate } from '@/lib/dayKey';
 import { round2, whoAnswers, refundSplit } from '@/lib/bookingChange';
 import ChangeRequestActions from '@/components/reservations/ChangeRequestActions';
 import { formatGBP } from '@/lib/formatMoney';
@@ -103,8 +103,8 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
                 <div className="mt-5 space-y-3">
                     {datesChanged && (
                         <Diff label="Dates"
-                            from={ukLongDate(String(chg.old_check_in)) + ' → ' + ukLongDate(String(chg.old_check_out))}
-                            to={ukLongDate(String(chg.new_check_in)) + ' → ' + ukLongDate(String(chg.new_check_out))} />
+                            from={ukDate(String(chg.old_check_in)) + ' → ' + ukDate(String(chg.old_check_out))}
+                            to={ukDate(String(chg.new_check_in)) + ' → ' + ukDate(String(chg.new_check_out))} />
                     )}
                     {guestsChanged && (
                         <Diff label="Guests"

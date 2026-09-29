@@ -7,6 +7,7 @@ import { loadTripsList, type TripItem, type TripStay, type TripExperience } from
 import TripsMap from '@/components/TripsMap';
 import { CalendarDays, Users, MapPin, ChevronRight, ShoppingBag } from 'lucide-react';
 import { whenLabel } from '@/components/marketplace/present';
+import { ukDate } from '@/lib/dayKey';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,8 +17,7 @@ export const dynamic = 'force-dynamic';
 // single column on phone. Built in the card family the rest of the site uses.
 
 function fmtDay(key: string): string {
-    try { return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' }).format(new Date(key + 'T12:00:00Z')); }
-    catch { return key; }
+    return ukDate(key) || key;
 }
 function partyLabel(n: number | null): string {
     if (!n || n < 1) return '';
