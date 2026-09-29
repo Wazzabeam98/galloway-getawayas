@@ -44,30 +44,36 @@ const keys = (trade: string) => stepsFor(trade).map((s: any) => s.key);
 
 // --- which steps exist ------------------------------------------------------
 
-test('every host trade sees the same five steps now', () => {
-    // The credentials step ("What you do" — the services search) is on every
-    // host trade now, so the old four-step cleaner is a five-step one.
-    assert.deepEqual(keys('sponge'), ['trade', 'business', 'credentials', 'prices', 'finish']);
-    assert.equal(stepCount('sponge'), 5);
+test('every host trade opens on the About-you screens now', () => {
+    // The trades sign-up now opens on the same years counter and expertise hub as
+    // the guest experience, so every host trade gains g_you and g_creds at the
+    // front — before the business step. With the credentials step (the services
+    // search) on every trade too, the cleaner is a seven-step flow.
+    assert.deepEqual(keys('sponge'),
+        ['trade', 'g_you', 'g_creds', 'business', 'credentials', 'prices', 'finish']);
+    assert.equal(stepCount('sponge'), 7);
 
-    assert.equal(stepNumber('sponge', 'credentials'), 3);
-    assert.equal(stepNumber('sponge', 'prices'), 4);
-    assert.equal(stepNumber('sponge', 'finish'), 5);
+    assert.equal(stepNumber('sponge', 'g_you'), 2);
+    assert.equal(stepNumber('sponge', 'g_creds'), 3);
+    assert.equal(stepNumber('sponge', 'business'), 4);
+    assert.equal(stepNumber('sponge', 'finish'), 7);
 });
 
-test('a plumber sees all five', () => {
-    assert.deepEqual(keys('plumber'), ['trade', 'business', 'credentials', 'prices', 'finish']);
-    assert.equal(stepCount('plumber'), 5);
-    assert.equal(stepNumber('plumber', 'finish'), 5);
+test('a plumber sees all seven', () => {
+    assert.deepEqual(keys('plumber'),
+        ['trade', 'g_you', 'g_creds', 'business', 'credentials', 'prices', 'finish']);
+    assert.equal(stepCount('plumber'), 7);
+    assert.equal(stepNumber('plumber', 'finish'), 7);
 });
 
-test('the joiner, roofer and painter went from four steps to five', () => {
-    // Approved as the correction rather than the cost: their capability lists
-    // were on a step headed "What you charge" where they set no price.
+test('the joiner, roofer and painter open on About-you too', () => {
+    // Their capability lists sit on the credentials step; the About-you screens
+    // (years, expertise hub) open the flow the same as every trade.
     for (const trade of ['joiner', 'roofer', 'painter']) {
-        assert.deepEqual(keys(trade), ['trade', 'business', 'credentials', 'prices', 'finish'],
-            trade + ' has all five');
-        assert.equal(stepCount(trade), 5);
+        assert.deepEqual(keys(trade),
+            ['trade', 'g_you', 'g_creds', 'business', 'credentials', 'prices', 'finish'],
+            trade + ' has all seven');
+        assert.equal(stepCount(trade), 7);
     }
 });
 
@@ -151,7 +157,8 @@ test('the cleaner now has the credentials step for the services search', () => {
     assert.deepEqual(capabilityFor('sponge'), []);
     assert.equal(pricedOfferingsFor('sponge').length > 0, true);
     assert.equal(stepApplies('credentials', 'sponge'), true, 'the services-search step');
-    assert.deepEqual(keys('sponge'), ['trade', 'business', 'credentials', 'prices', 'finish']);
+    assert.deepEqual(keys('sponge'),
+        ['trade', 'g_you', 'g_creds', 'business', 'credentials', 'prices', 'finish']);
 });
 
 test('the guest trades have no prices step either, so they see four', () => {
@@ -432,7 +439,9 @@ test('a restored draft decides for itself', () => {
 });
 
 test('a trade in the URL means step one is already answered', () => {
-    assert.equal(openingStep({ hydrated: true, restored: false, lodged: false, trade: 'joiner' }), 'business');
+    // A host trade opens on the About-you years counter now (g_you), the same
+    // opener the guest flow uses — not the business step.
+    assert.equal(openingStep({ hydrated: true, restored: false, lodged: false, trade: 'joiner' }), 'g_you');
     assert.equal(openingStep({ hydrated: true, restored: false, lodged: false, trade: '' }), 'trade');
 });
 
@@ -811,16 +820,22 @@ test('the something-else group skips the sub-type screen but is asked its shape'
     );
 });
 
-test('the guest split never touches a host trade', () => {
+test('the guest-only split never touches a host trade', () => {
     const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
     // A guest context passed to a plumber changes nothing about the plumber.
     assert.deepEqual(
         stepsFor('plumber', ctx).map((s: any) => s.key),
         stepsFor('plumber').map((s: any) => s.key),
     );
-    for (const k of ['g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_capacity', 'g_menu', 'g_title', 'g_expect', 'g_photos', 'g_area']) {
+    // The genuinely guest-only steps stay off for a host trade. g_you and g_creds
+    // are NO LONGER in this list — the years opener and the expertise hub are
+    // shared, and a host trade now has both.
+    for (const k of ['g_subtype', 'g_verify', 'g_capacity', 'g_menu', 'g_title', 'g_expect', 'g_photos', 'g_area']) {
         assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
     }
+    // And the shared About-you screens ARE on for the host trade.
+    assert.equal(stepApplies('g_you', 'plumber', ctx), true, 'g_you is on for a host trade');
+    assert.equal(stepApplies('g_creds', 'plumber', ctx), true, 'g_creds is on for a host trade');
 });
 
 test('guest movement and the last step honour the context', () => {
@@ -901,11 +916,12 @@ test('the pickers and the name step sit before the rail, in no section', () => {
 test('a host trade now has its own rail; a guest with no context has none yet', () => {
     // A host trade walks the full-page wizard too, so it gets the trade rail
     // (TRADE_SECTIONS), filtered to the steps this trade actually has. It starts
-    // with the business section and ends with finish.
+    // with the About-you section (years + expertise hub, shared with the guest
+    // flow) and ends with finish.
     const trade = sectionsFor('plumber', { group: 'x', category: 'y', shape: null });
     const keys = trade.map((s) => s.key);
     assert.ok(keys.length > 0, 'a host trade has sections');
-    assert.equal(keys[0], 'business');
+    assert.equal(keys[0], 'about');
     assert.equal(keys[keys.length - 1], 'finish');
 
     // A guest needs a context before the rail can be drawn (the flow branches on
