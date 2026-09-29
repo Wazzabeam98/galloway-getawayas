@@ -74,15 +74,15 @@ test('a non-slot category has no slot fulfilment default (its own fork or none)'
 });
 
 const complete = {
-    business_name: 'Solway Sparkle',
-    trade: 'sponge',
-    description: 'Changeover cleans and deep cleans for holiday cottages across the Stewartry.',
-    contact_email: 'hello@solwaysparkle.test',
+    business_name: 'Solway Joinery',
+    trade: 'joiner',
+    description: 'Repairs and fitted furniture for holiday cottages across the Stewartry.',
+    contact_email: 'hello@solwayjoinery.test',
     audience: 'host',
     areaCount: 1,
-    // A banded trade has to price at least one band before it can be sent.
-    // See tests/service-pricing.test.ts for the rule itself.
-    prices: { beds_1_2: { price: '60' } },
+    // Every trade needs a way to price now: a quote, an hourly rate or a flat
+    // fee. See tests/service-pricing.test.ts for the rule itself.
+    provides_quote: true,
 };
 
 test('a complete application can be sent', () => {
@@ -218,15 +218,15 @@ test('the one exception is the one named, and it is a real host trade', () => {
     }
 });
 
-test('nine host trades pay a subscription and one pays commission', () => {
+test('ten host trades pay a subscription and one pays commission', () => {
     // The count, stated plainly, so a trade quietly changing sides shows up as
-    // a number rather than as nothing. Waste moved to the subscription, so the
-    // split is nine to one now, not eight to two.
+    // a number rather than as nothing. "Something else" (other) joined on the
+    // subscription, so the split is ten to one now.
     const host = HOST_TRADES as unknown as string[];
     const subscription = host.filter((t) => planForTrade(t) === 'subscription');
     const commission = host.filter((t) => planForTrade(t) === 'commission');
 
-    assert.equal(subscription.length, 9);
+    assert.equal(subscription.length, 10);
     assert.deepEqual(commission.sort(), ['sponge']);
 });
 
@@ -280,9 +280,10 @@ test('every trade has a plan, and the guest trades are all commission', () => {
     }
 
     // The trap in "quoted trades go on the subscription": pricingModelFor
-    // returns 'quoted' for all four of these as well, so deriving the plan
-    // from it would have put a cake baker on £20 a month.
-    for (const trade of ['chef', 'cake', 'basket', 'other']) {
+    // returns 'quoted' for these as well, so deriving the plan from it would
+    // have put a cake baker on £20 a month. ("Other" is a host trade and does
+    // pay the subscription — it is exercised in the host-plan tests above.)
+    for (const trade of ['chef', 'cake', 'basket']) {
         assert.equal(planForTrade(trade), 'commission', trade + ' sells through the site');
         assert.equal(pricingModelFor(trade), 'quoted',
             trade + ' is quoted, which is exactly why the plan is not read off the pricing model');

@@ -150,64 +150,37 @@ const draft = (over: any = {}) => ({
     callout_waived: false, ...over,
 });
 
-test('an hourly cleaner is accepted with no band prices at all', () => {
-    // The rule that would otherwise refuse her for ever: price at least one
-    // size.
-    const problems = pricingProblems(draft({
-        kind: 'in_house', pricing_choice: 'hourly',
-        billable_hourly_rate: '18', covered_bands: ['beds_1_2'],
-    }));
+// The band/hourly split for cleaning is gone: there are no bedroom bands on the
+// sign-up form any more, and every trade shares one pricing gate — quote, or an
+// hourly rate, or a flat fee. Cleaning itself is coming-soon and never reaches
+// the form, so these cases now assert the unified gate on the same fixture the
+// file has always used.
+
+test('an hourly rate alone is accepted, with no bands anywhere', () => {
+    const problems = pricingProblems(draft({ hourly_rate: '18' }));
 
     assert.deepEqual(problems, []);
 });
 
-test('a banded cleaner still has to price a size', () => {
-    const problems = pricingProblems(draft({ kind: 'external', pricing_choice: 'bands' }));
-
-    assert.equal(problems.some((p: any) => p.field === 'prices'), true,
-        'the banded rule is untouched');
-});
-
-test('an hourly cleaner without a rate is refused', () => {
-    const problems = pricingProblems(draft({
-        kind: 'in_house', pricing_choice: 'hourly', covered_bands: ['beds_1_2'],
-    }));
-
-    assert.equal(problems.some((p: any) => p.field === 'billable_hourly_rate'), true);
-});
-
-test('an hourly cleaner who names no sizes is refused rather than hidden', () => {
-    // Left to itself this is the silent failure: a complete-looking listing
-    // that appears in no search. So it is a problem on the form instead.
-    const problems = pricingProblems(draft({
-        kind: 'in_house', pricing_choice: 'hourly', billable_hourly_rate: '18', covered_bands: [],
-    }));
-
-    assert.equal(problems.some((p: any) => p.field === 'covered_bands'), true);
-});
-
-test('an external cleaner on hourly is validated as hourly, not banded', () => {
-    // The inverse of what this asserted before the gate came off. She is not
-    // held to "price at least one size" any more, because she prices none.
-    const problems = pricingProblems(draft({
-        kind: 'external', pricing_choice: 'hourly', billable_hourly_rate: '18',
-        covered_bands: ['beds_1_2'],
-    }));
+test('a flat fee alone is accepted', () => {
+    const problems = pricingProblems(draft({ flat_fee: '90' }));
 
     assert.deepEqual(problems, []);
 });
 
-test('a non-cleaner sending pricing_choice hourly is still validated as banded', () => {
-    // The half of the old rule that stands. There is no path where the form
-    // accepts a rate the database would then refuse: the check constraint says
-    // hourly is cleaning, and this says the same thing one layer up.
-    const problems = pricingProblems(draft({
-        trade: 'droplet', pricing_choice: 'hourly', billable_hourly_rate: '18',
-        covered_bands: ['beds_1_2'],
-    }));
+test('a draft that names no way to price is refused', () => {
+    // The silent failure the band rule used to catch, now caught by the one
+    // gate: a listing that tells a host nothing about the price is a problem on
+    // the form, not a provider who appears in no search.
+    const problems = pricingProblems(draft());
 
-    assert.equal(problems.some((p: any) => p.field === 'prices'), true,
-        'held to the banded rules, rate or no rate');
+    assert.equal(problems.some((p: any) => p.field === 'prices'), true);
+});
+
+test('ticking "I provide a quote" is a way to price on its own', () => {
+    const problems = pricingProblems(draft({ provides_quote: true }));
+
+    assert.deepEqual(problems, []);
 });
 
 // --- the arithmetic ---------------------------------------------------------
