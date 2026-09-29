@@ -5757,12 +5757,19 @@ function ApplicationForm() {
                 {/* What you charge — one shape for every trade. Tick "I provide
                     a quote", or give an hourly rate or a flat fee; a call-out fee
                     is optional on top. A row is valid with a quote, an hourly rate
-                    or a flat fee. No bedroom or plot-size bands any more. */}
+                    or a flat fee. No bedroom or plot-size bands any more.
+
+                    Window cleaning is the one exception: a window cleaner quotes
+                    the job (the price turns on the property, which the bands used
+                    to stand in for), so it shows only the quote tick and an
+                    optional call-out fee — no hourly rate or flat fee. */}
                 {onStep('prices') && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">What you charge</h2>
                         <p className="text-sm text-slate-500 mb-4">
-                            Tick &ldquo;I provide a quote&rdquo;, or give an hourly rate or a flat fee. Add a call-out fee if you charge one.
+                            {trade === 'droplet'
+                                ? <>Tick &ldquo;I provide a quote&rdquo;. Add a call-out fee if you charge one.</>
+                                : <>Tick &ldquo;I provide a quote&rdquo;, or give an hourly rate or a flat fee. Add a call-out fee if you charge one.</>}
                         </p>
 
                         <label className="flex items-start gap-2.5 mb-5 text-sm text-slate-800">
@@ -5779,6 +5786,7 @@ function ApplicationForm() {
                         </label>
 
                         <div className="grid sm:grid-cols-2 gap-4 md:max-w-xl">
+                            {trade !== 'droplet' && (
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">
                                     Hourly rate <span className="font-normal text-slate-400">(optional)</span>
@@ -5792,6 +5800,8 @@ function ApplicationForm() {
                                     <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('hourly_rate')!.message}</p>
                                 )}
                             </div>
+                            )}
+                            {trade !== 'droplet' && (
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">
                                     Flat fee <span className="font-normal text-slate-400">(optional)</span>
@@ -5805,6 +5815,7 @@ function ApplicationForm() {
                                     <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('flat_fee')!.message}</p>
                                 )}
                             </div>
+                            )}
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">
                                     Call-out fee <span className="font-normal text-slate-400">(optional)</span>
@@ -5835,7 +5846,11 @@ function ApplicationForm() {
                         </div>
 
                         {problemFor('prices') && (
-                            <p data-problem className="text-sm text-rose-700 mt-3">{problemFor('prices')!.message}</p>
+                            <p data-problem className="text-sm text-rose-700 mt-3">
+                                {trade === 'droplet'
+                                    ? 'Tick “I provide a quote”.'
+                                    : problemFor('prices')!.message}
+                            </p>
                         )}
                     </section>
                 )}
