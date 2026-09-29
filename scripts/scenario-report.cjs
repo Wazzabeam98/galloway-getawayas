@@ -39,6 +39,11 @@ const WATCHED = [
     'app/api/stripe/refund/route.ts',
     'app/api/stripe/checkout/route.ts',
     'app/api/stripe/webhook/route.ts',
+    // The cottage payment settle, shared by the webhook, the reconcile cron
+    // and the success page.
+    'lib/settlePaidBooking.ts',
+    'lib/bookingPaymentReconcile.ts',
+    'app/api/cron/booking-payments/route.ts',
     'app/api/bookings/cancel/route.ts',
     'app/api/bookings/host-refund/route.ts',
     'lib/clawback.ts',

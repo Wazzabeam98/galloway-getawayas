@@ -16,7 +16,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stubModule, clearModule, installAliases } from './helpers/stub';
+import { stubModule, clearModule, installAliases, updateChain } from './helpers/stub';
 
 installAliases();
 
@@ -108,7 +108,7 @@ function loadWebhook(instantBook: boolean) {
                     };
                     return chain;
                 },
-                update() { return { eq: async () => ({ data: null, error: null }) }; },
+                update() { return updateChain(async () => ({ data: null, error: null })); },
                 insert: async () => ({ data: null, error: null }),
             };
         },
@@ -145,6 +145,7 @@ function loadWebhook(instantBook: boolean) {
 
     clearModule('@/lib/bookingEmails');
     clearModule('@/lib/supabaseAdmin');
+    clearModule('@/lib/settlePaidBooking');
     clearModule(ROUTE);
     const route = require('../app/api/stripe/webhook/route');
     return { route, sent };

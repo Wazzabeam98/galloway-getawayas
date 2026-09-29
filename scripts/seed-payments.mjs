@@ -667,6 +667,10 @@ async function main() {
     // 28 — flipped between states to see what the confirmation page says.
     const s28 = await unpaidOn(listingPrice, 's28', 150, 3, 300);
 
+    // 'slost' — paid at Stripe, and the webhook never arrives. Instant book, so a
+    // recovery confirms it outright.
+    const slost = await unpaidOn(listingPrice, 'slost', 160, 3, 300);
+
     /* ----------------------------------- change money (shortenings / move) */
     // For scripts/change-scenarios.mjs. Each carries a frozen nightly_breakdown
     // so a shortening credits the dropped nights at what was paid, and each sits
@@ -754,7 +758,7 @@ async function main() {
         },
         bookings: {
             s01: s01.id, s02: s02.id, s04: s04.id, s05: s05.id, s06: s06.id,
-            s25: s25.id, s26: s26.id, s27a: s27a.id, s27b: s27b.id, s28: s28.id,
+            s25: s25.id, s26: s26.id, s27a: s27a.id, s27b: s27b.id, s28: s28.id, slost: slost.id,
             s03: s03.id, s07: s07.id, s11: s11.id, s29: s29.id,
             s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id, s31: s31.id,
             s32: raceBookings[0].id, s33: raceBookings[1].id, s34: raceBookings[2].id,

@@ -6,6 +6,7 @@ import { issueRefunds } from '@/lib/refundSpread';
 import { clawBackPayout } from '@/lib/clawback';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { logMoneyFailure } from '@/lib/moneyAlert';
 import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
         );
 
         if (issued.refundedPence <= 0) {
-            await logError(
+            await logMoneyFailure(
                 '[bookings/host-refund] a host asked to refund \u00A3' + amount.toFixed(2)
                     + ' and nothing could be sent back',
                 issued.failure || { booking_id: booking.id, due: amount },
@@ -131,7 +132,7 @@ export async function POST(request: Request) {
         const refundedNow = round2(issued.refundedPence / 100);
 
         if (issued.refundedPence < Math.round(amount * 100)) {
-            await logError(
+            await logMoneyFailure(
                 '[bookings/host-refund] \u00A3' + amount.toFixed(2) + ' was asked for but only \u00A3'
                     + refundedNow.toFixed(2) + ' could be refunded',
                 issued.failure || { booking_id: booking.id, due: amount, sent: refundedNow },
@@ -166,7 +167,7 @@ export async function POST(request: Request) {
             // The money has already gone back, so failing to record it is the
             // dangerous case — the booking then looks less refunded than it is
             // and its refundable guard reads wrong on the next refund.
-            await logError(
+            await logMoneyFailure(
                 '[bookings/host-refund] refunded ' + formatGBP(refundedNow)
                     + ' but could not record it against the booking',
                 refundWriteError || { booking_id: booking.id, amount: refundedNow },
@@ -176,7 +177,7 @@ export async function POST(request: Request) {
             // Less was added than we asked to: the total hit what was paid
             // because a concurrent refund took the headroom. The money left at
             // Stripe, so a person has to reconcile it.
-            await logError(
+            await logMoneyFailure(
                 '[bookings/host-refund] ' + formatGBP(refundedNow) + ' was refunded but only '
                     + formatGBP(Number(applied.applied))
                     + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
@@ -225,7 +226,7 @@ export async function POST(request: Request) {
         });
     } catch (err: any) {
         console.error('[bookings/host-refund]', err && err.message);
-        await logError('[bookings/host-refund] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/host-refund' });
+        await logMoneyFailure('[bookings/host-refund] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/host-refund' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not process the refund' },
             { status: 500 }

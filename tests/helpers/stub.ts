@@ -77,3 +77,38 @@ export function fakeSupabase(handlers: Record<string, any>) {
         },
     };
 }
+
+// A stand-in for `admin.from(t).update(patch)` that behaves like the real
+// builder: the write happens once, on the first `.eq`, and the result can be
+// awaited straight away or narrowed further with more `.eq`s and a
+// `.select(...)`. `run` is the fake write; with `.select` and no error, the
+// written row comes back (as `[{ id }]`) unless `run` gave data of its own —
+// which is how a compare-and-set that matched nothing is simulated
+// (`data: []`).
+// `run` also receives every further `.eq(column, value)` filter, so a fake can
+// honour a guard only when the code under test actually asks for it.
+export function updateChain(run: (id: any, filters: Array<[string, any]>) => Promise<{ data: any; error: any }>) {
+    return {
+        eq(_column: string, id: any) {
+            const filters: Array<[string, any]> = [];
+            let pending: Promise<{ data: any; error: any }> | null = null;
+            const once = () => (pending = pending || Promise.resolve().then(() => run(id, filters)));
+            const chain: any = {
+                eq: (column: string, value: any) => { filters.push([column, value]); return chain; },
+                in: () => chain,
+                is: () => chain,
+                select: () => ({
+                    then(resolve: any, reject: any) {
+                        return once().then(
+                            (r) => ({ ...r, data: r.error ? null : (r.data ?? [{ id }]) }),
+                        ).then(resolve, reject);
+                    },
+                }),
+                then(resolve: any, reject: any) {
+                    return once().then(resolve, reject);
+                },
+            };
+            return chain;
+        },
+    };
+}

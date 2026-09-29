@@ -6,6 +6,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { refundDue } from '@/lib/cancellation';
 import { clawBackPayout } from '@/lib/clawback';
 import { logError } from '@/lib/logError';
+import { logMoneyFailure } from '@/lib/moneyAlert';
 import { issueRefunds } from '@/lib/refundSpread';
 import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
 import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
@@ -146,7 +147,7 @@ export async function POST(request: Request) {
         const refunds = issued.refunds;
 
         if (!charges.length) {
-            await logError(
+            await logMoneyFailure(
                 '[stripe/refund] a refund is due but no charge behind the booking could be read, '
                     + 'so nothing was sent back',
                 { booking_id: booking.id, due: amount },
@@ -175,7 +176,7 @@ export async function POST(request: Request) {
         const amountRefundedNow = round2(issued.refundedPence / 100);
 
         if (issued.refundedPence < Math.round(amount * 100)) {
-            await logError(
+            await logMoneyFailure(
                 '[stripe/refund] the guest is owed \u00A3' + amount.toFixed(2)
                     + ' but only \u00A3' + amountRefundedNow.toFixed(2) + ' could be refunded',
                 issued.failure || { booking_id: booking.id, due: amount, sent: amountRefundedNow },
@@ -200,7 +201,7 @@ export async function POST(request: Request) {
                 });
 
                 if (penaltyError) {
-                    await logError('refund: a cancellation penalty was not added to what the host owes', penaltyError, {
+                    await logMoneyFailure('refund: a cancellation penalty was not added to what the host owes', penaltyError, {
                         path: 'api/stripe/refund',
                         userId: booking.host_id,
                     });
@@ -237,7 +238,7 @@ export async function POST(request: Request) {
         // to record it is the dangerous one — it is the case that used to be
         // silent, and it must not be swallowed.
         if (refundWriteError || !applied) {
-            await logError('[stripe/refund] refunded but could not record it against the booking', refundWriteError || { booking_id: booking.id, amount: amountRefundedNow }, {
+            await logMoneyFailure('[stripe/refund] refunded but could not record it against the booking', refundWriteError || { booking_id: booking.id, amount: amountRefundedNow }, {
                 path: 'stripe/refund',
                 userId: user.id,
             });
@@ -256,7 +257,7 @@ export async function POST(request: Request) {
             // Less was added than we asked to: the total hit what was paid
             // because a concurrent refund took the headroom. The money left at
             // Stripe, so a person has to reconcile it.
-            await logError(
+            await logMoneyFailure(
                 '[stripe/refund] £' + amountRefundedNow.toFixed(2) + ' was refunded but only £'
                     + round2(Number(applied.applied)).toFixed(2)
                     + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
@@ -353,7 +354,7 @@ export async function POST(request: Request) {
         });
     } catch (err: any) {
         console.error('[stripe/refund]', err && err.message);
-        await logError('[stripe/refund] ' + ((err && err.message) || 'failed'), err, { path: 'stripe/refund' });
+        await logMoneyFailure('[stripe/refund] ' + ((err && err.message) || 'failed'), err, { path: 'stripe/refund' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Refund failed' },
             { status: 500 }

@@ -4,6 +4,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { refundDue } from '@/lib/cancellation';
 import { londonDayKey } from '@/lib/dayKey';
 import { logError } from '@/lib/logError';
+import { logMoneyFailure, alertDirectorsNow } from '@/lib/moneyAlert';
 import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 import {
     sendEmail,
@@ -336,7 +337,7 @@ export async function GET(request: Request) {
             // never presented and nothing is wrong with it. Our fault, our
             // problem — it goes to /admin/errors instead.
             if (booking.stripe_customer_id && booking.stripe_payment_method_id && !attemptRowId) {
-                await logError(
+                await logMoneyFailure(
                     'balance-charges: could not record an attempt for booking ' + booking.id
                         + ', so the balance was not charged',
                     null,
@@ -446,7 +447,7 @@ export async function GET(request: Request) {
                 // claim and the next run would re-charge under a fresh key,
                 // which is the second charge the audit found.
                 if (bookingPaidError) {
-                    await logError(
+                    await logMoneyFailure(
                         'balance-charges: charged £' + amount + ' for booking ' + booking.id
                             + ' but could not mark it paid; left the attempt open so the next run replays the same charge',
                         bookingPaidError,
@@ -517,7 +518,7 @@ export async function GET(request: Request) {
                                 stripe_payment_intent_id: succeededIntentId,
                             });
 
-                            await logError(
+                            await logMoneyFailure(
                                 'balance-charges: charged the balance for booking ' + booking.id
                                     + ' but it was no longer live (cancelled mid-charge); refunded £'
                                     + amount + ' at Stripe',
@@ -530,7 +531,7 @@ export async function GET(request: Request) {
                             // else will retry it. Surfaced as loudly as the code
                             // can: the replay key is in the message so a person
                             // can return it without minting a second refund.
-                            await logError(
+                            await logMoneyFailure(
                                 'balance-charges: URGENT — charged £' + amount + ' for booking '
                                     + booking.id + ' which was cancelled mid-charge, and the reconciling '
                                     + 'refund FAILED. The money is held and owed back to the guest. Replay '
@@ -544,7 +545,7 @@ export async function GET(request: Request) {
                     } else {
                         // succeeded with no intent id is not meant to happen;
                         // record the anomaly rather than pass over it silently.
-                        await logError(
+                        await logMoneyFailure(
                             'balance-charges: booking ' + booking.id + ' was cancelled mid-charge but '
                                 + 'no charge intent was recorded, so nothing could be reconciled',
                             null,
@@ -671,9 +672,38 @@ export async function GET(request: Request) {
                 );
             }
 
+            // The directors hear about it now, not in tomorrow's digest: the
+            // guest has been given a deadline, and a host is relying on money
+            // that has not arrived.
+            await alertDirectorsNow({
+                headline: 'A balance payment failed — £' + amount.toFixed(2),
+                lines: [
+                    'The balance for a stay at ' + listing.title + ' could not be taken (attempt '
+                        + attemptNumber + '). The guest has been emailed a link to pay and told the booking is cancelled if it is not paid within '
+                        + leftText + '.',
+                ],
+                facts: {
+                    booking: booking.id,
+                    check_in: booking.check_in,
+                    reason: failureMessage,
+                    payment_intent: failedIntentId,
+                },
+                link: SITE_URL + '/dashboard/bookings/' + booking.id,
+                linkLabel: 'Open the booking',
+            });
+
             failed++;
         } catch (err: any) {
             console.error('[cron/balance-charges]', booking.id, err && err.message);
+            // Was console-only: a booking whose balance run threw mid-way was
+            // nobody's alarm. Whether the card was charged is unknown from
+            // here, which is exactly why a person needs to look.
+            await logMoneyFailure(
+                'balance-charges: the balance run failed part-way for booking ' + booking.id
+                    + ' — check in Stripe whether the card was charged',
+                { booking_id: booking.id, message: (err && err.message) || String(err) },
+                { path: '/api/cron/balance-charges', userId: booking.guest_id }
+            );
             failed++;
         }
     }
