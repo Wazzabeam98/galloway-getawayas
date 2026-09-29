@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Instagram, Facebook } from 'lucide-react';
 import { SOCIAL } from '@/config/social';
+import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 import { GooseMark } from '@/components/base/Logo';
 
 const Footer = () => {
@@ -63,7 +64,9 @@ const Footer = () => {
 
                 <div className="border-t pt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <p className="text-xs text-slate-500">
-                        &copy; {year} Galloway Getaways Ltd. Registered in Scotland.
+                        &copy; {year} {COMPANY.name}. Registered in {COMPANY.registeredIn}, company number {COMPANY.number}.
+                        <br className="hidden sm:block" />{' '}
+                        Registered office: {REGISTERED_OFFICE}.
                     </p>
                     <div className="flex items-center gap-4">
                         {/* Icons only, no labels. The aria-label is not a

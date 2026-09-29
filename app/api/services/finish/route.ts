@@ -6,6 +6,7 @@ import { audienceForTrade } from '@/lib/serviceProviders';
 import { hasSlotCapacity } from '@/lib/serviceSlots';
 import { normaliseUnit, unitMultiplies } from '@/lib/serviceOrders';
 import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, GUEST_CONTENT_KEYS, pickColumns } from '@/lib/serviceApplications';
+import { signedInCaller } from '@/lib/signedInCaller';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,8 +27,17 @@ export const dynamic = 'force-dynamic';
 //   expired            past LINK_DAYS; the page offers a new one, this does not
 //   already claimed    the link is single-use; a replay makes nothing
 //   account exists     the address gained an account between applying and
-//                      finishing. Making a second one is impossible and
-//                      overwriting the first would be a takeover.
+//                      finishing, and the caller is NOT signed in as it.
+//                      Making a second one is impossible and overwriting the
+//                      first would be a takeover.
+//
+// SIGNED IN AS THE ADDRESS. Since every sign-up opens on the email-code step,
+// an applicant still holding an old link can easily have an account by the
+// time they open it — the code step made it. If the caller is signed in
+// (verified with getUser) as the very address the application was made from,
+// the application is attached to THAT account: no new user, no password. Both
+// halves have proved the same address, so neither is a takeover. Signed in as
+// somebody else, it is refused like any other account-exists.
 //
 // The first three answer identically on purpose. A caller holding a token that
 // does not work should not learn WHICH kind of not-working it is — that is the
@@ -47,12 +57,6 @@ export async function POST(req: Request) {
         const password = String(body.password || '');
 
         if (!token) return NextResponse.json(UNUSABLE, { status: 400 });
-        if (password.length < 8) {
-            return NextResponse.json({
-                ok: false,
-                error: 'Passwords need at least 8 characters.',
-            }, { status: 400 });
-        }
 
         const admin = adminClient();
 
@@ -97,47 +101,84 @@ export async function POST(req: Request) {
         }
 
         // ------------------------------------------------------------------
-        // The account.
+        // The account — theirs already, or made now.
         // ------------------------------------------------------------------
-        const { data: made, error: userError } = await admin.auth.admin.createUser({
-            email: row.email,
-            password,
-            email_confirm: true,
-            user_metadata: { name: row.name || row.business_name },
-        });
+        const caller = await signedInCaller();
+        const callerOwnsAddress = !!caller
+            && caller.email.trim().toLowerCase() === String(row.email || '').trim().toLowerCase();
 
-        if (userError || !made || !made.user) {
-            const message = String((userError && userError.message) || '');
+        let owner: string;
 
-            // Told plainly here, and only here. This is somebody holding a
-            // valid link to their own address, so there is no oracle in
-            // answering them — they have already proved the address is theirs.
-            if (/already|registered|exists/i.test(message)) {
+        if (callerOwnsAddress) {
+            owner = caller!.id;
+
+            // One business per trade. If they have already set this trade up
+            // on their account (through the wizard, after signing in), a second
+            // row would collide — say so rather than fail on the insert. The
+            // application stays unclaimed, so nothing is lost.
+            const { data: held } = await admin
+                .from('service_providers')
+                .select('id')
+                .eq('owner_id', owner)
+                .eq('trade', row.trade)
+                .limit(1);
+            if (held && held.length) {
                 return NextResponse.json({
                     ok: false,
-                    code: 'account_exists',
-                    error: 'You already have an account on this address. Sign in and your application will be waiting.',
+                    code: 'already_applied',
+                    error: 'Your account already has an application for this. Open it from your account to carry on.',
                 }, { status: 409 });
             }
+        } else {
+            if (password.length < 8) {
+                return NextResponse.json({
+                    ok: false,
+                    error: 'Passwords need at least 8 characters.',
+                }, { status: 400 });
+            }
 
-            await logError('service-finish-create-user', { application: row.id, message });
-            return NextResponse.json({
-                ok: false,
-                error: 'We could not make your account. Nothing has been lost — try again in a moment.',
-            }, { status: 500 });
+            const { data: made, error: userError } = await admin.auth.admin.createUser({
+                email: row.email,
+                password,
+                email_confirm: true,
+                user_metadata: { name: row.name || row.business_name },
+            });
+
+            if (userError || !made || !made.user) {
+                const message = String((userError && userError.message) || '');
+
+                // Told plainly here, and only here. This is somebody holding a
+                // valid link to their own address, so there is no oracle in
+                // answering them — they have already proved the address is theirs.
+                // The page answers this by signing them in with an emailed code
+                // and sending the link again, which lands in the branch above.
+                if (/already|registered|exists/i.test(message)) {
+                    return NextResponse.json({
+                        ok: false,
+                        code: 'account_exists',
+                        error: 'You already have an account on this address. Sign in and your application will be added to it.',
+                    }, { status: 409 });
+                }
+
+                await logError('service-finish-create-user', { application: row.id, message });
+                return NextResponse.json({
+                    ok: false,
+                    error: 'We could not make your account. Nothing has been lost — try again in a moment.',
+                }, { status: 500 });
+            }
+
+            owner = made.user.id;
+
+            // full_name is the PERSON's name (row.name), or blank — never the
+            // business name. business_name belongs on service_providers; the
+            // shared profile the whole site reads for bylines and messages must
+            // not carry it. Only for an account made here — an existing account
+            // keeps the profile it has.
+            await admin.from('profiles').upsert(
+                { id: owner, email: row.email, full_name: row.name || null, is_host: false },
+                { onConflict: 'id' }
+            );
         }
-
-        const owner = made.user.id;
-
-        // full_name is the PERSON's name (row.name), or blank — never the
-        // business name. business_name belongs on service_providers; the shared
-        // profile the whole site reads for bylines and messages must not carry
-        // it. Nothing on production has run this flow, so there is nothing to
-        // repair — this just stops it happening to the first real applicant.
-        await admin.from('profiles').upsert(
-            { id: owner, email: row.email, full_name: row.name || null, is_host: false },
-            { onConflict: 'id' }
-        );
 
         // ------------------------------------------------------------------
         // The application itself. Status and submitted_at are set here rather

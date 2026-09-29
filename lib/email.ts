@@ -8,6 +8,7 @@
 
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { logError } from '@/lib/logError';
+import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 
 export const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -170,8 +171,9 @@ export function emailLayout(
         '</td></tr>' +
 
         '<tr><td style="background-color:#f9fafb;border-top:1px solid #e5e7eb;padding:22px 32px;color:#6b7280;font-size:12px;line-height:1.7;">' +
-        '<strong style="color:#374151;">Galloway Getaways Ltd</strong><br>' +
-        'Dumfries &amp; Galloway, Scotland &middot; Company number SC899385<br>' +
+        '<strong style="color:#374151;">' + escapeHtml(COMPANY.name) + '</strong><br>' +
+        'Registered in ' + escapeHtml(COMPANY.registeredIn) + ' &middot; Company number ' + escapeHtml(COMPANY.number) + '<br>' +
+        'Registered office: ' + escapeHtml(REGISTERED_OFFICE) + '<br>' +
         '<a href="' + SITE_URL + '" style="color:#047857;text-decoration:none;">gallowaygetaways.co.uk</a>' +
         '&nbsp;&middot;&nbsp;' +
         '<a href="mailto:' + REPLY_TO + '" style="color:#047857;text-decoration:none;">' + REPLY_TO + '</a>' +

@@ -28,6 +28,7 @@ import {
     blockedSkillReason,
 } from '@/lib/serviceSkills';
 import LoginModel from '@/components/auth/LoginModel';
+import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 import {
     tradeLabel,
@@ -3845,6 +3846,32 @@ function ApplicationForm() {
                     Try again
                 </button>
             </div>
+        );
+    }
+
+    // EVERY SIGN-UP OPENS THE SAME WAY: "What's your email?", a 6-digit code,
+    // signed in — the shared first step the holiday-let sign-up opens on too.
+    //
+    // It replaced two different starts: the guest wizard's own g_verify screen,
+    // and a trade applying signed out and being emailed a verification link
+    // AFTER submitting (/api/services/apply). The address is now proved before
+    // anything is typed, so a trade saves through the ordinary signed-in path
+    // and there is no link to wait for. Links already sent under the old flow
+    // still work — /services/join/finish/[token] is untouched, and attaches the
+    // application to the account if the code step has since made one.
+    //
+    // A full reload once signed in, so load() runs again as the owner and the
+    // wizard opens exactly as it does for any returning signed-in applicant.
+    if (!session) {
+        return (
+            <EmailFirstStep
+                eyebrow={isGuest ? 'Host a guest experience' : 'Offer a service'}
+                intro={isGuest
+                    ? 'Sign in or create your free account to set up your experience. Everything you add is saved to your account as you go.'
+                    : 'Sign in or create your free account to set up your business. Everything you add is saved to your account as you go.'}
+                exitHref="/business"
+                onSignedIn={() => window.location.reload()}
+            />
         );
     }
 

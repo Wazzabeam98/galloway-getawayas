@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { COMPANY_SENTENCE } from '@/config/company';
 
 export const metadata: Metadata = {
     title: 'Terms & Conditions',
@@ -16,9 +17,7 @@ export default function TermsPage() {
             <div className="text-slate-700 space-y-4">
                 <h2 className="text-xl font-bold text-slate-900 pt-4">1. Who we are</h2>
                 <p>
-                    Galloway Getaways is operated by Galloway Getaways Ltd, a company registered in
-                    Scotland (company number SC899385), registered office 17b King Street, Castle
-                    Douglas, DG7 1AA. You can reach us at{' '}
+                    Galloway Getaways is operated by {COMPANY_SENTENCE}. You can reach us at{' '}
                     <a href="mailto:hello@gallowaygetaways.co.uk" className="text-emerald-700 underline">
                         hello@gallowaygetaways.co.uk
                     </a>
