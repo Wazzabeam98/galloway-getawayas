@@ -44,7 +44,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // with no context still sees the old trade/business/finish, and no host trade
 // ever gains one. See stepApplies.
 export type StepKey =
-    | 'trade' | 'g_subtype' | 'g_verify' | 'business'
+    | 'trade' | 'g_subtype' | 'g_verify' | 'business' | 'b_area' | 'b_contact'
     | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
@@ -140,7 +140,14 @@ const ALL_STEPS: Step[] = [
     // the named sections (see GUEST_SECTIONS / TRADE_SECTIONS).
     { key: 'g_you', label: 'You', title: GUEST_SCREEN_COPY.yearsQuestion },
     { key: 'g_creds', label: 'Expertise', title: GUEST_SCREEN_COPY.expertiseHeading },
-    { key: 'business', label: 'Business', title: 'Your business' },
+    // The host 'business' section, split one question a screen the way the guest
+    // experience is — a name screen, a coverage screen, a contact screen — rather
+    // than four questions crammed onto one page. All three are host-only (a guest
+    // carries its name on the account and its coverage on g_area), grouped under
+    // the one "Your business" rail section (TRADE_SECTIONS). See stepApplies.
+    { key: 'business', label: 'Business', title: 'What’s your business called?' },
+    { key: 'b_area', label: 'Coverage', title: 'Where do you cover?' },
+    { key: 'b_contact', label: 'Contact', title: 'How do we reach you?' },
     // Made-to-order only: the notice period, its own single-question screen before
     // the delivery areas (a big stepper, like the years/guests screens). The other
     // shapes carry their "when" inside g_area (a slot's schedule) or not at all.
@@ -234,6 +241,15 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
     if (step === 'business') {
         if (audienceForTrade(key) === 'guest' && ctx) return false;
         return true;
+    }
+
+    // The other two screens of the host 'business' section — coverage and
+    // contact — are host-only. A guest carries its coverage on g_area and its
+    // contact on the account, so neither ever appears for them; every host trade
+    // has both. (They sit outside the GUEST_STEP_KEYS gate below, which would
+    // otherwise let the trailing `return true` hand them to a guest.)
+    if (step === 'b_area' || step === 'b_contact') {
+        return audienceForTrade(key) === 'host';
     }
 
     // The About-you screens (the years opener and the expertise hub) are the
@@ -458,7 +474,10 @@ const TRADE_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     // About you comes first, the same as the guest rail: the years opener and the
     // "Tell hosts about yourself" expertise hub, shared with the guest flow.
     { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
-    { key: 'business', label: 'Your business', steps: ['business'] },
+    // One section, three screens — the same shape as the guest "About you"
+    // (years + expertise) or "Location" (several screens): the name, then the
+    // coverage, then the contact details, one question a screen.
+    { key: 'business', label: 'Your business', steps: ['business', 'b_area', 'b_contact'] },
     { key: 'credentials', label: 'What you do', steps: ['credentials'] },
     { key: 'prices', label: 'What you charge', steps: ['prices'] },
     { key: 'finish', label: 'Finish', steps: ['finish'] },
@@ -569,8 +588,12 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     trade: ['trade', 'audience'],
     // 'description' has moved off the business step: a host's "about you" is now
     // the expertise hub (g_creds), whose required field is the professional
-    // title. The business step keeps the name, contact and coverage.
-    business: ['business_name', 'contact_email', 'areas', 'availability'],
+    // title. The old single business step is split one question a screen: the
+    // name here, the coverage on b_area, the contact on b_contact — so a greyed
+    // Next and "go to first problem" each land on the screen that owns the field.
+    business: ['business_name'],
+    b_area: ['areas', 'availability'],
+    b_contact: ['contact_email'],
     credentials: ['registration_'],
     prices: [
         'prices', 'price_', 'hours_', 'hourly_rate', 'callout_fee', 'extra_price_',

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { londonDayKey } from '@/lib/dayKey';
+import { getImageUrl } from '@/lib/utils';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { ShieldCheck, MapPin, Clock } from 'lucide-react';
@@ -78,6 +79,7 @@ interface Provider {
     business_name: string;
     description: string;
     logo: string | null;
+    headshot: string | null;
     trade: string;
     callout_fee: any;
     hourly_rate: any;
@@ -171,7 +173,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
 
             const { data: rows } = await supabase
                 .from('service_providers')
-                .select('id, business_name, description, logo, trade, callout_fee, hourly_rate, callout_waived, provides_quote, flat_fee, registration_number, does_gas, does_oil')
+                .select('id, business_name, description, logo, headshot, trade, callout_fee, hourly_rate, callout_waived, provides_quote, flat_fee, registration_number, does_gas, does_oil')
                 .eq('trade', trade)
                 .eq('status', 'approved')
                 // OUT OF THE SHOP WINDOW WHEN THEY HAVE NOT PAID.
@@ -397,11 +399,14 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                     return (
                         <div key={provider.id} className="rounded-2xl border border-slate-300 p-5">
                             <div className="flex items-start gap-4">
-                                {provider.logo ? (
+                                {provider.headshot || provider.logo ? (
+                                    // The trade's own photo from "Tell hosts about
+                                    // yourself" is the listing image now; a legacy
+                                    // logo is the fallback where one was set before.
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
-                                        src={provider.logo}
-                                        alt={`${provider.business_name} logo`}
+                                        src={provider.headshot ? getImageUrl(provider.headshot) : provider.logo!}
+                                        alt={provider.business_name}
                                         className="w-14 h-14 rounded-xl object-cover border border-slate-200"
                                     />
                                 ) : (

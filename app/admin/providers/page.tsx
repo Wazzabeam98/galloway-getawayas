@@ -289,7 +289,7 @@ export default async function AdminProviders() {
                         {waiting.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p), items: itemsFor(p.id) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.headshot ? getImageUrl(p.headshot) : (p.logo ? getImageUrl(p.logo) : null), initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p), items: itemsFor(p.id) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
@@ -324,7 +324,7 @@ export default async function AdminProviders() {
                                 provider={{
                                     ...p,
                                     tradeLabel: tradeLabel(p.trade),
-                                    logoUrl: p.logo ? getImageUrl(p.logo) : null,
+                                    logoUrl: p.headshot ? getImageUrl(p.headshot) : (p.logo ? getImageUrl(p.logo) : null),
                                     initials: initialsFor(p.business_name),
                                     changedFields: changedFields(p).map(fieldLabel),
                                     calloutLine: calloutLine(p.callout_fee, p.callout_waived),
@@ -364,7 +364,7 @@ export default async function AdminProviders() {
                         {rest.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p), items: itemsFor(p.id) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.headshot ? getImageUrl(p.headshot) : (p.logo ? getImageUrl(p.logo) : null), initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p), items: itemsFor(p.id) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
