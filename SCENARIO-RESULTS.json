@@ -1,7 +1,7 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-09-28T20:21:13.691Z",
+      "ranAt": "2026-09-29T09:46:44.342Z",
       "target": "http://localhost:3000",
       "passed": 7,
       "failed": 0,
@@ -52,7 +52,7 @@
       ]
     },
     "refund": {
-      "ranAt": "2026-09-28T20:22:31.786Z",
+      "ranAt": "2026-09-29T09:48:03.599Z",
       "target": "http://localhost:3000",
       "passed": 8,
       "failed": 0,
@@ -109,7 +109,7 @@
       ]
     },
     "balance": {
-      "ranAt": "2026-09-28T20:23:39.371Z",
+      "ranAt": "2026-09-29T09:49:04.616Z",
       "target": "http://localhost:3000",
       "passed": 8,
       "failed": 0,
@@ -166,9 +166,9 @@
       ]
     },
     "crosscutting": {
-      "ranAt": "2026-09-28T20:26:27.522Z",
+      "ranAt": "2026-09-29T09:51:55.021Z",
       "target": "http://localhost:3000",
-      "passed": 7,
+      "passed": 8,
       "failed": 0,
       "untestable": 0,
       "scenarios": [
@@ -213,11 +213,17 @@
           "title": "A guest cancel racing the balance charge stays consistent, whichever wins",
           "status": "passed",
           "failedChecks": []
+        },
+        {
+          "number": "wh1",
+          "title": "A guest is charged and the webhook never arrives",
+          "status": "passed",
+          "failedChecks": []
         }
       ]
     },
     "change": {
-      "ranAt": "2026-09-28T20:24:56.502Z",
+      "ranAt": "2026-09-29T09:50:14.695Z",
       "target": "http://localhost:3000",
       "passed": 6,
       "failed": 0,
@@ -262,15 +268,18 @@
       ]
     }
   },
-  "updatedAt": "2026-09-28T20:26:27.522Z",
+  "updatedAt": "2026-09-29T09:51:55.021Z",
   "fingerprint": {
-    "app/api/cron/host-payouts/route.ts": "6f592c9618305ff9",
-    "app/api/cron/balance-charges/route.ts": "b9dde47e622af8ff",
-    "app/api/stripe/refund/route.ts": "ebc289ec7eb9f5fd",
-    "app/api/stripe/checkout/route.ts": "c5c97369a009b5f9",
-    "app/api/stripe/webhook/route.ts": "57e15ce065d78aa5",
-    "app/api/bookings/cancel/route.ts": "ee1ea9bc1df7989d",
-    "app/api/bookings/host-refund/route.ts": "896fc2efde76efb8",
+    "app/api/cron/host-payouts/route.ts": "8dfc0dc200e0cc2e",
+    "app/api/cron/balance-charges/route.ts": "15cd14065f417fa9",
+    "app/api/stripe/refund/route.ts": "bb0a763dd46f233c",
+    "app/api/stripe/checkout/route.ts": "b366772ee9c2fcba",
+    "app/api/stripe/webhook/route.ts": "5f2448c449f335f3",
+    "lib/settlePaidBooking.ts": "a04cc4b546d33f67",
+    "lib/bookingPaymentReconcile.ts": "ab21bb02f3adbf0c",
+    "app/api/cron/booking-payments/route.ts": "88ec284847e39a4c",
+    "app/api/bookings/cancel/route.ts": "425d1b16803c4111",
+    "app/api/bookings/host-refund/route.ts": "b27ec84c9e4fb175",
     "lib/clawback.ts": "433a71f34f8888b3",
     "lib/payoutSource.ts": "b00c942802e9f678",
     "lib/payoutTiming.ts": "5c9fe4cce4f9d03c",
@@ -290,11 +299,11 @@
     "app/api/bookings/resolutions/route.ts": "da1da258081f142f",
     "app/api/bookings/resolutions/respond/route.ts": "907c8533d6489e58",
     "app/api/bookings/resolutions/host-decide/route.ts": "aec631c035c6c142",
-    "scripts/seed-payments.mjs": "23bf2167edc831cb",
+    "scripts/seed-payments.mjs": "f14f2648316024f5",
     "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
     "scripts/refund-scenarios.mjs": "e26d179dc89d7a68",
     "scripts/balance-scenarios.mjs": "cd9d045653faf651",
     "scripts/change-scenarios.mjs": "fedc558161c3c6fe",
-    "scripts/crosscutting-scenarios.mjs": "d96b8581a8be7672"
+    "scripts/crosscutting-scenarios.mjs": "24d89c436a1a18b5"
   }
 }
