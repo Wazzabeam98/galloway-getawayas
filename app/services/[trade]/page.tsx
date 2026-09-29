@@ -168,7 +168,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
 
             const { data: rows } = await supabase
                 .from('service_providers')
-                .select('id, business_name, description, logo, trade, callout_fee, hourly_rate, callout_waived, does_gas, does_oil')
+                .select('id, business_name, description, logo, trade, callout_fee, hourly_rate, callout_waived, provides_quote, flat_fee, registration_number, does_gas, does_oil')
                 .eq('trade', trade)
                 .eq('status', 'approved')
                 // OUT OF THE SHOP WINDOW WHEN THEY HAVE NOT PAID.
@@ -419,19 +419,23 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                                         <p className="text-sm text-slate-600 mt-2">{provider.description}</p>
                                     )}
 
-                                    {/* His own published figures. Not a quote — nothing here
-                                        computes a total, because nothing here takes a cut. */}
-                                    {(price || provider.hourly_rate) && (
-                                        <p className="text-sm font-semibold text-slate-900 mt-3">
-                                            {[price, provider.hourly_rate ? '£' + provider.hourly_rate + ' an hour' : '']
-                                                .filter(Boolean)
-                                                .join(' · ')}
-                                        </p>
-                                    )}
+                                    {/* His own published figures — what he entered at
+                                        sign-up. Not a quote — nothing here computes a
+                                        total, because nothing here takes a cut. */}
+                                    {(() => {
+                                        const parts = [
+                                            provider.hourly_rate ? '£' + provider.hourly_rate + ' an hour' : '',
+                                            provider.flat_fee ? '£' + provider.flat_fee + ' a job' : '',
+                                            price || '',
+                                        ].filter(Boolean);
+                                        return parts.length > 0 ? (
+                                            <p className="text-sm font-semibold text-slate-900 mt-3">{parts.join(' · ')}</p>
+                                        ) : null;
+                                    })()}
 
-                                    {pricingModelFor(trade) === 'quoted' && (
+                                    {provider.provides_quote && (
                                         <p className="text-xs text-slate-500 mt-1">
-                                            Bigger jobs are quoted after a look.
+                                            Priced by quote — {provider.business_name} prices the job after a look.
                                         </p>
                                     )}
 

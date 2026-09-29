@@ -349,6 +349,18 @@ export default function EnquiryForm({
         );
     }
 
+    // The call-out fee, shown to the host BEFORE they request a visit. A waived
+    // fee comes off if the job goes ahead; an unwaived one is charged whatever
+    // happens — so the host knows what a visit costs before asking for one.
+    const calloutFeeNotice = (() => {
+        const fee = Number(provider && provider.callout_fee);
+        if (!(fee > 0)) return null;
+        const shown = Number.isInteger(fee) ? String(fee) : fee.toFixed(2);
+        return provider.callout_waived
+            ? '£' + shown + ' call-out — waived if you go ahead.'
+            : '£' + shown + ' call-out — charged even if you don’t go ahead.';
+    })();
+
     const footer = step === 1 ? (
         <button
             onClick={next}
@@ -358,20 +370,25 @@ export default function EnquiryForm({
             Next
         </button>
     ) : (
-        <div className="flex items-center gap-3">
-            <button
-                onClick={() => setStep(1)}
-                className="rounded-xl border border-slate-300 px-4 py-3 text-slate-700 font-semibold"
-            >
-                Back
-            </button>
-            <button
-                onClick={send}
-                disabled={sending || (emergency && !canDoEmergency)}
-                className="flex-1 rounded-xl bg-emerald-700 px-4 py-3 text-white font-semibold disabled:opacity-50"
-            >
-                {sending ? 'Sending…' : clash ? 'Send anyway' : 'Send to ' + provider.business_name}
-            </button>
+        <div>
+            {calloutFeeNotice && (
+                <p className="mb-2.5 text-center text-xs font-medium text-slate-600">{calloutFeeNotice}</p>
+            )}
+            <div className="flex items-center gap-3">
+                <button
+                    onClick={() => setStep(1)}
+                    className="rounded-xl border border-slate-300 px-4 py-3 text-slate-700 font-semibold"
+                >
+                    Back
+                </button>
+                <button
+                    onClick={send}
+                    disabled={sending || (emergency && !canDoEmergency)}
+                    className="flex-1 rounded-xl bg-emerald-700 px-4 py-3 text-white font-semibold disabled:opacity-50"
+                >
+                    {sending ? 'Sending…' : clash ? 'Send anyway' : 'Send to ' + provider.business_name}
+                </button>
+            </div>
         </div>
     );
 

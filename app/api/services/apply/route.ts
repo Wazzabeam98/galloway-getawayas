@@ -69,7 +69,7 @@ const AREA_COLUMNS = ['label', 'centre_lat', 'centre_lng', 'radius_miles'];
 // A slot's weekly opening hours and days off. provider_id is stamped at /finish.
 const AVAILABILITY_COLUMNS = ['day_of_week', 'open_time', 'close_time'];
 const BLOCK_COLUMNS = ['blocked_date'];
-const EXTRA_COLUMNS = ['extra_key', 'offered', 'price', 'notes'];
+const EXTRA_COLUMNS = ['extra_key', 'offered', 'price', 'notes', 'quote'];
 const PRICE_COLUMNS = ['band_key', 'price', 'typical_hours'];
 // A guest trade's menu — one item for a chef, many for a baker. Whitelisted like
 // the rest; provider_id is stamped when the payload is materialised at /finish,

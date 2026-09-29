@@ -27,6 +27,11 @@ export const TRADES = [
     { key: 'roofer', label: 'Roofer' },
     { key: 'painter', label: 'Painter & decorator' },
     { key: 'handyman', label: 'Handyman' },
+    // "Something else" — a host trade the applicant types themselves when theirs
+    // isn't on the list (a chimney sweep, a locksmith, a pest controller). The
+    // typed name is stored in custom_label; this key just says "a host trade,
+    // shape unknown", so it takes the plain host steps and the flat pricing.
+    { key: 'other', label: 'Other' },
     // A guest experience — a private chef, a baker, a wild-swimming guide, a
     // whisky tasting, anyone offering something to guests staying nearby. There
     // is no preset list of these and no category the applicant picks: they
@@ -57,6 +62,7 @@ export function tradeLabel(key: string): string {
 export const HOST_TRADES = [
     'sponge', 'bin', 'trees', 'droplet',
     'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
+    'other',
 ] as const;
 // One guest trade now, not a preset list. Everyone offering something to guests
 // is 'guest'; what kind of thing they offer is the owner-assigned category, not
@@ -1414,8 +1420,12 @@ export interface PricingDraft {
     trade?: string | null;
     prices?: Record<string, { price?: any; typical_hours?: any }> | null;
     callout_fee?: any;
+    callout_waived?: boolean | null;
     // Display only, maintenance trades. Never multiplied by anything.
     hourly_rate?: any;
+    // The unified pricing for every trade: a quote tick and an optional flat fee.
+    provides_quote?: boolean | null;
+    flat_fee?: any;
     extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
 
     // The per-hour route, cleaning and in-house only. `kind` is here because
@@ -1434,90 +1444,32 @@ export interface PricingDraft {
 // band is blank and the provider would reach nobody.
 export function pricingProblems(draft: PricingDraft): Problem[] {
     const problems: Problem[] = [];
-    const model = pricingModelFor(String(draft.trade || ''));
 
-    // The hourly rate is the one that is load-bearing: for a trade that bills
-    // by the hour it IS the price, and a listing without it tells a host
-    // nothing.
-    //
-    // The call-out fee is optional, and used to be compulsory. Plenty of
-    // handymen charge an hourly rate with no call-out at all, or a day rate —
-    // so requiring it made them invent a number to get past the form, which is
-    // the same fault as asking a roofer to price a re-slate by the hour. An
-    // invented number is worse than a missing one, because a host can hold
-    // them to it.
-    if (model === 'callout_hourly') {
-        const hourly = Number(draft.hourly_rate);
+    // One rule for every trade now. There are no bedroom or plot-size bands: a
+    // provider either quotes the job after a look, or gives an hourly rate, or a
+    // flat fee. A call-out fee is optional on top. Cleaning is coming-soon and
+    // never reaches this, so the old in-house hourly exception is gone with it.
+    const num = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? null : Number(v);
+    const hourly = num((draft as any).hourly_rate);
+    const flat = num((draft as any).flat_fee);
+    const callout = num((draft as any).callout_fee);
+    const quote = (draft as any).provides_quote === true;
 
-        if (!(hourly > 0)) {
-            problems.push({ field: 'hourly_rate', message: 'Add your hourly rate.' });
-        }
-        return problems;
+    // A figure that IS given has to be a real, positive amount — a host can hold
+    // a provider to a number they typed.
+    if (hourly !== null && !(hourly > 0)) {
+        problems.push({ field: 'hourly_rate', message: 'That is not an hourly rate. Leave it blank if you do not charge one.' });
+    }
+    if (flat !== null && !(flat > 0)) {
+        problems.push({ field: 'flat_fee', message: 'That is not a flat fee. Leave it blank if you do not charge one.' });
+    }
+    if (callout !== null && !(callout > 0)) {
+        problems.push({ field: 'callout_fee', message: 'That is not a call-out fee. Leave it blank if you do not charge one.' });
     }
 
-    if (model !== 'bands') return problems;
-
-    // The hourly cleaner. She sets no band prices, so the "price at least one
-    // size" rule below would refuse her for ever — and she needs two answers
-    // the banded route gets for free: what she charges, and which house sizes
-    // she will take.
-    //
-    // pricingChoiceFor reads the permission as well as the value, so a row
-    // carrying 'hourly' that is no longer in-house falls back to bands and is
-    // validated as a banded cleaner. There is no path where the form accepts a
-    // rate the database would then refuse.
-    if (pricingChoiceFor(draft) === 'hourly') {
-        const rate = Number((draft as any).billable_hourly_rate);
-
-        if (!(rate > 0)) {
-            problems.push({ field: 'billable_hourly_rate', message: 'Add your hourly rate.' });
-        }
-
-        const covered = Array.isArray((draft as any).covered_bands)
-            ? (draft as any).covered_bands
-            : [];
-
-        if (covered.length === 0) {
-            problems.push({
-                field: 'covered_bands',
-                message: 'Tick the house sizes you will take, so owners with those properties can find you.',
-            });
-        }
-
-        return problems;
-    }
-
-    const bands = bandsFor(String(draft.trade || ''));
-    const prices = draft.prices || {};
-    let priced = 0;
-
-    for (const band of bands) {
-        const entry = prices[band.key] || {};
-        const raw = entry.price;
-
-        if (raw === undefined || raw === null || String(raw).trim() === '') continue;
-
-        const price = Number(raw);
-        if (!(price > 0)) {
-            problems.push({ field: 'price_' + band.key, message: 'That is not a price. Leave it blank if you do not cover it.' });
-            continue;
-        }
-        priced++;
-
-        const hoursRaw = entry.typical_hours;
-        if (hoursRaw !== undefined && hoursRaw !== null && String(hoursRaw).trim() !== '') {
-            const hours = Number(hoursRaw);
-            if (!(hours > 0)) {
-                problems.push({ field: 'hours_' + band.key, message: 'Hours have to be a number, or left blank.' });
-            }
-        }
-    }
-
-    if (priced === 0) {
-        problems.push({
-            field: 'prices',
-            message: 'Price at least one size — a provider who prices nothing reaches nobody.',
-        });
+    // And at least one way to price the work, so a listing tells a host something.
+    if (!quote && !(hourly && hourly > 0) && !(flat && flat > 0)) {
+        problems.push({ field: 'prices', message: 'Tick “I provide a quote”, or give an hourly rate or a flat fee.' });
     }
 
     return problems;
@@ -2376,13 +2328,14 @@ export function asksAboutFuel(trade: string): boolean {
 // joinery; both are already described by their trade and their offerings, so
 // a tag box is a blank field to fill in for no gain.
 //
-// A handyman is the case where the trade name genuinely does not say what he
-// does — bricklaying, fencing, dyking — and where a host would otherwise have
-// no way to know without asking.
-//
-// This was briefly on all six. It was friction on five of them.
+// Now EVERY host trade is asked what services it covers, as a searchable list
+// that offers an existing entry first and only creates a new one when nothing
+// matches (the anti-fragmentation mechanism). It replaced the pre-filled
+// per-trade capability checklist: a roofer, a gardener and a "something else"
+// all describe their own work rather than tick a list somebody wrote for them.
+// Guests keep their own flow and never see this.
 export function asksAboutSkills(trade: string): boolean {
-    return trade === 'handyman';
+    return audienceForTrade(trade) === 'host';
 }
 
 export interface RegistrationDraft {

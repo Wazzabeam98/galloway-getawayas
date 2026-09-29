@@ -477,6 +477,12 @@ function ApplicationForm() {
     // list rather than out of the form.
     const [openGroup, setOpenGroup] = useState<string>('');
 
+    // The "Other" trade: a name they type when their trade isn't listed. Stored
+    // as trade='other' with the typed name in custom_label, so the rest of the
+    // wizard treats it as an ordinary host trade.
+    const [otherOpen, setOtherOpen] = useState<boolean>(false);
+    const [otherText, setOtherText] = useState<string>('');
+
     // What they already have, for step one. One business per trade, so this is
     // a list of what they hold plus what is left.
     const [mine, setMine] = useState<any[]>([]);
@@ -769,7 +775,7 @@ function ApplicationForm() {
     const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
-    const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
+    const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string; quote?: boolean }>>({});
     const [gateOpen, setGateOpen] = useState<Record<string, boolean | null>>({});
     // Which bands have the optional time guide showing. Open where one is
     // already set, so a returning provider sees what they typed.
@@ -785,6 +791,10 @@ function ApplicationForm() {
     const [calloutFee, setCalloutFee] = useState('');
     const [hourlyRate, setHourlyRate] = useState('');
     const [calloutWaived, setCalloutWaived] = useState(false);
+    // The unified pricing for every trade: a quote tick, an optional flat fee,
+    // and the hourly/call-out fees above. Valid when quote OR hourly OR flat.
+    const [provideQuote, setProvideQuote] = useState(false);
+    const [flatFee, setFlatFee] = useState('');
 
     // Skills tags. Held as labels rather than ids, because a tag they typed
     // before signing in does not have an id yet — the route settles all of
@@ -828,6 +838,9 @@ function ApplicationForm() {
     // Keyed by scheme. Strings, because a registration number is not a number
     // — Gas Safe numbers have leading zeros that Number() would eat.
     const [registrations, setRegistrations] = useState<Record<string, string>>({});
+    // The single free-text registration number for gas & electrical trades,
+    // replacing the pre-filled scheme checklist. A string for the same reason.
+    const [registrationNumber, setRegistrationNumber] = useState('');
 
     // No trade yet is not an error and no longer a redirect: it is step one,
     // which is on this screen. The trade still travels in the query string
@@ -888,7 +901,7 @@ function ApplicationForm() {
                     // provider_name was retired with the "Your name" field), and
                     // selecting a column the authenticated role can't read 403s
                     // the whole load. They stay revoked.
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, slot_min_people, declarations, guest_details, fulfilment')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, provides_quote, flat_fee, registration_number, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, slot_min_people, declarations, guest_details, fulfilment')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -934,6 +947,9 @@ function ApplicationForm() {
                     setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
                     setHourlyRate(existing.hourly_rate === null || existing.hourly_rate === undefined ? '' : String(existing.hourly_rate));
                     setCalloutWaived(existing.callout_waived === true);
+                    setProvideQuote(existing.provides_quote === true);
+                    setFlatFee(existing.flat_fee === null || existing.flat_fee === undefined ? '' : String(existing.flat_fee));
+                    setRegistrationNumber(existing.registration_number || '');
                     setKind(existing.kind || 'external');
                     setPricingChoice(existing.pricing_choice === 'hourly' ? 'hourly' : 'bands');
                     setBillableHourlyRate(
@@ -1097,15 +1113,16 @@ function ApplicationForm() {
 
                     const { data: extraRows } = await supabase
                         .from('service_provider_extras')
-                        .select('extra_key, offered, price, notes')
+                        .select('extra_key, offered, price, notes, quote')
                         .eq('provider_id', existing.id);
 
-                    const loadedExtras: Record<string, { offered: boolean; price: string; notes: string }> = {};
+                    const loadedExtras: Record<string, { offered: boolean; price: string; notes: string; quote?: boolean }> = {};
                     for (const row of extraRows || []) {
                         loadedExtras[row.extra_key] = {
                             offered: row.offered === true,
                             price: row.price === null || row.price === undefined ? '' : String(row.price),
                             notes: row.notes || '',
+                            quote: row.quote === true,
                         };
                     }
                     setExtras(loadedExtras);
@@ -1505,6 +1522,8 @@ function ApplicationForm() {
         callout_fee: calloutFee,
         hourly_rate: hourlyRate,
         callout_waived: calloutWaived,
+        provides_quote: provideQuote,
+        flat_fee: flatFee,
         extras,
         does_gas: doesGas,
         does_oil: doesOil,
@@ -1745,11 +1764,11 @@ function ApplicationForm() {
         || gatedGroups.length > 0
         || extrasIn('reimbursed').length > 0;
 
-    const extraOf = (key: string) => extras[key] || { offered: false, price: '', notes: '' };
-    const setExtra = (key: string, field: 'offered' | 'price' | 'notes', value: any) =>
+    const extraOf = (key: string) => extras[key] || { offered: false, price: '', notes: '', quote: false };
+    const setExtra = (key: string, field: 'offered' | 'price' | 'notes' | 'quote', value: any) =>
         setExtras((prev) => ({
             ...prev,
-            [key]: Object.assign({ offered: false, price: '', notes: '' }, prev[key] || {}, { [field]: value }),
+            [key]: Object.assign({ offered: false, price: '', notes: '', quote: false }, prev[key] || {}, { [field]: value }),
         }));
 
     // One headed block of tick boxes.
@@ -2950,6 +2969,8 @@ function ApplicationForm() {
             // trades under the business name they typed.
             business_name: audienceForTrade(trade) === 'guest' ? title : businessName.trim(),
             trade,
+            // The "Other" trade's typed name — the label they're listed under.
+            ...(trade === 'other' && otherText.trim() ? { custom_label: otherText.trim() } : {}),
             description: description.trim(),
             contact_email: contactEmail.trim(),
             contact_phone: contactPhone.trim() || null,
@@ -2965,14 +2986,18 @@ function ApplicationForm() {
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
             does_oil: asksAboutFuel(trade) ? doesOil : false,
+            // One pricing shape for every trade: quote / hourly / flat, with an
+            // optional call-out fee. The old bands columns are written null so an
+            // existing row's bands are cleared when it re-saves.
             callout_fee: calloutFee.trim() !== '' ? Number(calloutFee) : null,
-            hourly_rate: model === 'callout_hourly' && hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
+            hourly_rate: hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
             callout_waived: calloutFee.trim() !== '' ? calloutWaived : false,
-            pricing_choice: trade === 'sponge' ? (hourlyAllowed && pricingChoice === 'hourly' ? 'hourly' : 'bands') : null,
-            billable_hourly_rate: hourlyAllowed && pricingChoice === 'hourly' && billableHourlyRate.trim() !== ''
-                ? Number(billableHourlyRate)
-                : null,
-            covered_bands: hourlyAllowed && pricingChoice === 'hourly' ? coveredBands : [],
+            provides_quote: provideQuote,
+            flat_fee: flatFee.trim() !== '' ? Number(flatFee) : null,
+            registration_number: (asksAboutFuel(trade) || trade === 'electrician') ? (registrationNumber.trim() || null) : null,
+            pricing_choice: null,
+            billable_hourly_rate: null,
+            covered_bands: [],
             updated_at: now.toISOString(),
         };
 
@@ -2984,17 +3009,19 @@ function ApplicationForm() {
             .filter((extra) => {
                 const entry = extraOf(extra.key);
                 if (extra.type === 'priced') {
-                    return String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                    return entry.quote === true || (String(entry.price).trim() !== '' && Number(entry.price) > 0);
                 }
                 return entry.offered;
             })
             .map((extra) => {
                 const entry = extraOf(extra.key);
-                const priced = extra.type === 'priced' && String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                const byQuote = extra.type === 'priced' && entry.quote === true;
+                const priced = extra.type === 'priced' && !byQuote && String(entry.price).trim() !== '' && Number(entry.price) > 0;
                 return {
                     extra_key: extra.key,
                     offered: true,
                     price: priced ? Number(entry.price) : null,
+                    quote: byQuote,
                     notes: String(entry.notes || '').trim() || null,
                     updated_at: now.toISOString(),
                 };
@@ -3316,6 +3343,7 @@ function ApplicationForm() {
             owner_id: active.user.id,
             business_name: title,
             trade,
+            ...(trade === 'other' && otherText.trim() ? { custom_label: otherText.trim() } : {}),
             description: description.trim(),
             contact_email: contactEmail.trim(),
             contact_phone: contactPhone.trim() || null,
@@ -3342,20 +3370,16 @@ function ApplicationForm() {
             // the hour, and is cleared otherwise so a provider who switches
             // trade does not carry a stale rate.
             callout_fee: calloutFee.trim() !== '' ? Number(calloutFee) : null,
-            hourly_rate: model === 'callout_hourly' && hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
+            hourly_rate: hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
             callout_waived: calloutFee.trim() !== '' ? calloutWaived : false,
-
-            // Cleaning and in-house only, and cleared to the banded shape
-            // otherwise. `kind` is never sent — it is not the applicant's to
-            // set, and the database check would refuse an hourly row that is
-            // not in-house anyway. Sending the cleared values rather than
-            // omitting them is what stops a provider who was switched back to
-            // external keeping a live rate nothing validates any more.
-            pricing_choice: trade === 'sponge' ? (hourlyAllowed && pricingChoice === 'hourly' ? 'hourly' : 'bands') : null,
-            billable_hourly_rate: hourlyAllowed && pricingChoice === 'hourly' && billableHourlyRate.trim() !== ''
-                ? Number(billableHourlyRate)
-                : null,
-            covered_bands: hourlyAllowed && pricingChoice === 'hourly' ? coveredBands : [],
+            provides_quote: provideQuote,
+            flat_fee: flatFee.trim() !== '' ? Number(flatFee) : null,
+            registration_number: (asksAboutFuel(trade) || trade === 'electrician') ? (registrationNumber.trim() || null) : null,
+            // Bands are gone; the old columns are written null so a re-saved row
+            // clears them.
+            pricing_choice: null,
+            billable_hourly_rate: null,
+            covered_bands: [],
             updated_at: now.toISOString(),
         };
 
@@ -3490,24 +3514,26 @@ function ApplicationForm() {
         const extraRows = tradeExtras
             .filter((extra) => {
                 const entry = extraOf(extra.key);
-                // A priced extra says yes by having a price. Nothing else to
-                // agree or disagree with, and a blank is a no.
+                // A priced extra says yes by having a price OR by ticking "I
+                // provide a quote". A blank with no quote is a no.
                 if (extra.type === 'priced') {
-                    return String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                    return entry.quote === true || (String(entry.price).trim() !== '' && Number(entry.price) > 0);
                 }
                 return entry.offered;
             })
             .map((extra) => {
                 const entry = extraOf(extra.key);
-                const priced = extra.type === 'priced' && String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                const byQuote = extra.type === 'priced' && entry.quote === true;
+                const priced = extra.type === 'priced' && !byQuote && String(entry.price).trim() !== '' && Number(entry.price) > 0;
                 return {
                     provider_id: id,
                     extra_key: extra.key,
                     offered: true,
-                    // Null for a toggle, and null for a reimbursed one: the
-                    // amount is whatever the receipt says, weeks later. It is
-                    // paid host to provider directly and never through us.
+                    // Null for a toggle, a reimbursed one, or one priced by quote:
+                    // the amount is whatever the receipt says, weeks later, or is
+                    // quoted per job. Paid host to provider directly, never through us.
                     price: priced ? Number(entry.price) : null,
+                    quote: byQuote,
                     notes: String(entry.notes || '').trim() || null,
                     updated_at: now.toISOString(),
                 };
@@ -4236,7 +4262,12 @@ function ApplicationForm() {
                     );
                 }
 
-                const entries = pickerEntries(mine, 'host');
+                // One flat list of every trade — no "Maintenance & repairs"
+                // folder. Cleaning stays in the list but as a "Coming soon" tile
+                // (visible, not selectable). An "Other" tile lets someone whose
+                // trade isn't listed type their own.
+                const claimedKeys = mine.map((x: any) => String(x.trade || ''));
+                const flat = tradesFor('host').filter((t) => t.key !== 'other' && claimedKeys.indexOf(t.key) === -1);
                 // Coming-soon trades are not joinable, so they do not count as
                 // trades still "left" to sign up for — keeps the picker grid and
                 // the "signed up for everything" line agreeing.
@@ -4284,7 +4315,7 @@ function ApplicationForm() {
                             </div>
                         )}
 
-                        {entries.length > 0 && (
+                        {(flat.length > 0 || true) && (
                             <>
                                 {mine.length > 0 && (
                                     <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
@@ -4292,18 +4323,26 @@ function ApplicationForm() {
                                     </h2>
                                 )}
                                 <TradeTileGrid>
-                                    {entries.map((entry) => (
-                                        <TradeTile
-                                            key={entry.kind + ':' + entry.key}
-                                            tradeKey={entry.kind === 'trade' ? entry.key : undefined}
-                                            groupKey={entry.kind === 'group' ? entry.key : undefined}
-                                            label={entry.label}
-                                            hint={entry.kind === 'group' ? entry.hint : undefined}
-                                            onClick={() =>
-                                                entry.kind === 'group' ? setOpenGroup(entry.key) : chooseTrade(entry.key)
-                                            }
-                                        />
+                                    {flat.map((t) => (
+                                        isTradeComingSoon(t.key) ? (
+                                            <TradeTile key={t.key} tradeKey={t.key} label={t.label} comingSoon />
+                                        ) : (
+                                            <TradeTile
+                                                key={t.key}
+                                                tradeKey={t.key}
+                                                label={t.label}
+                                                onClick={() => chooseTrade(t.key)}
+                                            />
+                                        )
                                     ))}
+                                    {/* Their trade isn't on the list — they type it. */}
+                                    <TradeTile
+                                        key="__other"
+                                        tradeKey="other"
+                                        label="Something else"
+                                        hint="Tell us your trade"
+                                        onClick={() => setOtherOpen(true)}
+                                    />
                                 </TradeTileGrid>
                             </>
                         )}
@@ -4311,6 +4350,24 @@ function ApplicationForm() {
                         {left.length === 0 && mine.length > 0 && (
                             <p className="text-sm text-slate-500">You have signed up for every trade we cover.</p>
                         )}
+
+                        <SubFlowModal
+                            open={otherOpen}
+                            title="What's your trade?"
+                            onClose={() => setOtherOpen(false)}
+                            saveLabel="Continue"
+                            saveDisabled={!otherText.trim()}
+                            onSave={() => { setOtherOpen(false); chooseTrade('other'); }}
+                        >
+                            <input
+                                type="text"
+                                value={otherText}
+                                onChange={(e) => setOtherText(e.target.value)}
+                                placeholder="e.g. Chimney sweep, Locksmith, Pest control"
+                                className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                            />
+                            <p className="mt-2 text-sm text-slate-500">We&apos;ll list you under this — you can change it later.</p>
+                        </SubFlowModal>
                     </div>
                 );
             })()}
@@ -4458,7 +4515,7 @@ function ApplicationForm() {
                         the moment you typed, leaving a paragraph with no title
                         under the business name. The label names it and the line
                         below says who reads it, so it is written for its reader. */}
-                    <label htmlFor="biz-description" className="block text-sm font-semibold text-slate-900 mb-1.5">What you do</label>
+                    <label htmlFor="biz-description" className="block text-sm font-semibold text-slate-900 mb-1.5">Tell us about yourself</label>
                     <p className="text-sm text-slate-500 mb-2">This is what hosts and guests read when deciding who to ask.</p>
                     {/* Capped to a measure rather than the window: past about 70
                         characters a line is harder to read. */}
@@ -5697,376 +5754,73 @@ function ApplicationForm() {
                     Deliberately not saved anywhere: there is no column for
                     them on a provider and there should not be one, so the
                     panel says so rather than quietly losing what is typed. */}
-                {onStep('prices') && trade === 'droplet' && (
+                {/* What you charge — one shape for every trade. Tick "I provide
+                    a quote", or give an hourly rate or a flat fee; a call-out fee
+                    is optional on top. A row is valid with a quote, an hourly rate
+                    or a flat fee. No bedroom or plot-size bands any more. */}
+                {onStep('prices') && (
                     <section className="mb-8">
-                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
-                            <div className="flex items-start justify-between gap-3 mb-1">
-                                <h2 className="text-sm font-semibold text-slate-900">About the property</h2>
-                                <span className="shrink-0 text-xs font-semibold text-slate-500 bg-slate-200 rounded-full px-2.5 py-1">
-                                    Preview
-                                </span>
-                            </div>
-                            <p className="text-sm text-slate-500 mb-5">
-                                The owner will answer these, not you. Shown here so you can see what you
-                                will be given before you price a job. Nothing here is saved yet.
-                            </p>
-
-                            {/* Not two equal halves: the pane count is a ten-rem box and the
-                                building types are four short words that want one line.
-                                An even split gave the buttons 416px when they need 463,
-                                so the last one wrapped with space beside it. */}
-                            <div className="md:grid md:grid-cols-[1fr_auto] md:gap-6 md:items-start">
-                            <div className="mb-5 md:mb-0">
-                                <div className="text-sm font-semibold text-slate-900 mb-2">What kind of building</div>
-                                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                                    {BUILDING_TYPES.map((b) => {
-                                        const on = buildingType === b.key;
-                                        return (
-                                            <button
-                                                key={b.key}
-                                                type="button"
-                                                onClick={() => setBuildingType(on ? '' : b.key)}
-                                                aria-pressed={on}
-                                                className={`rounded-xl border px-3 py-2.5 text-sm text-left transition ${
-                                                    on
-                                                        ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900'
-                                                        : 'border-slate-300 text-slate-700 hover:border-slate-400 bg-white'
-                                                }`}
-                                            >
-                                                {b.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label htmlFor="panes" className="block text-sm font-semibold text-slate-900 mb-2">
-                                    Number of panes
-                                </label>
-                                <input
-                                    id="panes"
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={panes}
-                                    onChange={(e) => setPanes(e.target.value)}
-                                    placeholder="24"
-                                    className="w-full sm:max-w-[10rem] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                />
-                            </div>
-                            </div>
-                        </div>
-                    </section>
-                )}
-
-                {/* What they charge. Driven by the trade rather than by a
-                    choice, so two cleaners are always comparable and a host is
-                    never asked to weigh a price against a rate. */}
-                {/* The either/or, and the first thing on the prices step for
-                    a cleaner. Every cleaner sees it, a public applicant
-                    included — the in-house gate came off on 29 Aug 2026. What
-                    it costs is written down in lib/serviceProviders.ts above
-                    offersHourlyChoice: an external cleaner on hourly has no
-                    knowable total at acceptance, so her commission cannot be
-                    computed there. Deferred to enquiries, where the hours are
-                    agreed, and nothing is on a live money path yet. */}
-                {onStep('prices') && hourlyAllowed && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">How do you charge?</h2>
-                        <p className="text-sm text-slate-500 mb-3">
-                            One or the other. You can change it later.
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">What you charge</h2>
+                        <p className="text-sm text-slate-500 mb-4">
+                            Tick &ldquo;I provide a quote&rdquo;, or give an hourly rate or a flat fee. Add a call-out fee if you charge one.
                         </p>
 
-                        <div className="flex flex-wrap gap-2">
-                            {[
-                                { key: 'bands', label: 'A price per clean' },
-                                { key: 'hourly', label: 'A price per hour' },
-                            ].map((option) => (
-                                <button
-                                    key={option.key}
-                                    type="button"
-                                    onClick={() => setPricingChoice(option.key as 'bands' | 'hourly')}
-                                    aria-pressed={pricingChoice === option.key}
-                                    className={`rounded-full border px-5 py-2.5 text-sm font-semibold transition ${
-                                        pricingChoice === option.key
-                                            ? 'border-emerald-700 bg-emerald-700 text-white'
-                                            : 'border-slate-300 text-slate-700 hover:border-slate-500'
-                                    }`}
-                                >
-                                    {option.label}
-                                </button>
-                            ))}
-                        </div>
-                    </section>
-                )}
-
-                {/* The hourly half: what she charges, and which sizes she will
-                    take. The second question is not optional dressing — a
-                    blank band means "I do not cover this", so without an
-                    explicit answer an hourly cleaner would drop out of every
-                    band-filtered list at once and look like nobody had
-                    searched for her. */}
-                {onStep('prices') && onHourly && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your hourly rate</h2>
-                        <p className="text-sm text-slate-500 mb-3">
-                            What you charge for an hour of cleaning.
-                        </p>
-
-                        <div className="flex items-center gap-2 md:max-w-xs">
-                            <span className="text-slate-500">&pound;</span>
+                        <label className="flex items-start gap-2.5 mb-5 text-sm text-slate-800">
                             <input
-                                type="text"
-                                inputMode="decimal"
-                                value={billableHourlyRate}
-                                onChange={(e) => setBillableHourlyRate(e.target.value)}
-                                placeholder="18"
-                                className="w-full min-w-0 rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                type="checkbox"
+                                checked={provideQuote}
+                                onChange={(e) => setProvideQuote(e.target.checked)}
+                                className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
                             />
-                            <span className="text-sm text-slate-500 whitespace-nowrap">an hour</span>
-                        </div>
-                        {problemFor('billable_hourly_rate') && (
-                            <p data-problem className="text-sm text-rose-700 mt-1.5">
-                                {problemFor('billable_hourly_rate')!.message}
-                            </p>
-                        )}
+                            <span>
+                                <span className="font-semibold">I provide a quote</span>
+                                <span className="block text-slate-500">You&apos;ll price the job after a look, so there&apos;s no set price up front.</span>
+                            </span>
+                        </label>
 
-                        <h3 className="text-sm font-semibold text-slate-900 mt-6 mb-1.5">
-                            Which sizes will you take?
-                        </h3>
-                        <p className="text-sm text-slate-500 mb-3">
-                            Owners search by the size of the property. Leave one off and you will not be
-                            shown for it.
-                        </p>
-
-                        <div className="space-y-2">
-                            {bands.map((band) => {
-                                const on = coveredBands.indexOf(band.key) !== -1;
-
-                                return (
-                                    <label
-                                        key={band.key}
-                                        className={`flex items-center gap-3 rounded-xl border p-3.5 cursor-pointer transition ${
-                                            on ? 'border-emerald-700 bg-emerald-50/40' : 'border-slate-300'
-                                        }`}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={on}
-                                            onChange={() =>
-                                                setCoveredBands(on
-                                                    ? coveredBands.filter((b) => b !== band.key)
-                                                    : [...coveredBands, band.key])
-                                            }
-                                            className="w-4 h-4 rounded border-slate-300 shrink-0"
-                                        />
-                                        <span className="text-sm font-medium text-slate-900">{band.label}</span>
-                                    </label>
-                                );
-                            })}
-                        </div>
-                        {problemFor('covered_bands') && (
-                            <p data-problem className="text-sm text-rose-700 mt-2">
-                                {problemFor('covered_bands')!.message}
-                            </p>
-                        )}
-                    </section>
-                )}
-
-                {onStep('prices') && model === 'bands' && !onHourly && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your prices</h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            Leave blank any size you do not cover.
-                        </p>
-
-                        <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
-                            {bands.map((band) => {
-                                const entry = prices[band.key] || { price: '', typical_hours: '' };
-                                const priceProblem = problemFor('price_' + band.key);
-                                const hoursProblem = problemFor('hours_' + band.key);
-
-                                return (
-                                    <div key={band.key} className="rounded-xl border border-slate-300 p-3.5">
-                                        <div className="text-sm font-medium text-slate-900 mb-2.5">{band.label}</div>
-
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 mb-1">Price per visit</label>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-slate-500">&pound;</span>
-                                                <input
-                                                    type="text"
-                                                    inputMode="decimal"
-                                                    value={entry.price}
-                                                    onChange={(e) => setBand(band.key, 'price', e.target.value)}
-                                                    placeholder="Leave blank if you do not cover this"
-                                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                />
-                                            </div>
-                                            {priceProblem && (
-                                                <p data-problem className="text-xs text-rose-700 mt-1">{priceProblem.message}</p>
-                                            )}
-
-                                            {/* Optional, and the single biggest
-                                                thing on the page for the least
-                                                it does — so it is a link until
-                                                somebody wants it. */}
-                                            {!showsTimeGuide(trade) ? null : hoursOpen[band.key] ? (
-                                                <div className="mt-2.5">
-                                                    <label className="block text-xs font-semibold text-slate-500 mb-1">
-                                                        Usually takes
-                                                    </label>
-                                                    <div className="flex items-center gap-2">
-                                                        <input
-                                                            type="text"
-                                                            inputMode="decimal"
-                                                            value={entry.typical_hours}
-                                                            onChange={(e) => setBand(band.key, 'typical_hours', e.target.value)}
-                                                            placeholder="2"
-                                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                        />
-                                                        <span className="text-sm text-slate-500 whitespace-nowrap">hours</span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setBand(band.key, 'typical_hours', '');
-                                                                setHoursOpen((prev) => ({ ...prev, [band.key]: false }));
-                                                            }}
-                                                            aria-label="Remove the time guide"
-                                                            className="shrink-0 w-8 h-8 rounded-full border border-slate-300 flex items-center justify-center text-slate-500"
-                                                        >
-                                                            <X className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    </div>
-                                                    {hoursProblem && (
-                                                        <p data-problem className="text-xs text-rose-700 mt-1">{hoursProblem.message}</p>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setHoursOpen((prev) => ({ ...prev, [band.key]: true }))}
-                                                    className="mt-2 text-xs font-semibold text-emerald-700 hover:text-emerald-800 underline"
-                                                >
-                                                    Add a time guide
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        {entry.price && Number(entry.price) > 0 && (
-                                            <p className="text-xs text-slate-500 mt-2.5">
-                                                Shows as &ldquo;&pound;{entry.price} per visit
-                                                {entry.typical_hours && Number(entry.typical_hours) > 0
-                                                    ? ', usually about ' + entry.typical_hours + ' hours'
-                                                    : ''}
-                                                &rdquo;
-                                            </p>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {problemFor('prices') && (
-                            <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('prices')!.message}</p>
-                        )}
-
-                        {/* Beside the number it governs, not a section away.
-                            This is the one a provider will argue about later. */}
-                        <p className="text-sm text-slate-600 mt-3">
-                            <strong className="font-semibold text-slate-900">Your price is the most you can charge.</strong>
-                        </p>
-
-                    </section>
-                )}
-
-                {onStep('prices') && trade === 'droplet' && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Other ways to price</h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            Fill in whichever you actually use and leave the rest blank. We are asking
-                            window cleaners which of these fits before we settle on one.
-                        </p>
-
-                        <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4 md:items-start">
-                            <div className="rounded-xl border border-slate-300 p-4">
-                                <h3 className="text-sm font-semibold text-slate-900 mb-3">
-                                    Call-out plus a rate per pane
-                                </h3>
-                                <div className="space-y-2.5">{priceRows('pane_flat')}</div>
-                            </div>
-
-                            <div className="rounded-xl border border-slate-300 p-4">
-                                <h3 className="text-sm font-semibold text-slate-900 mb-1">
-                                    A rate per pane, by storey
-                                </h3>
-                                <p className="text-sm text-slate-500 mb-3">
-                                    For where the ladder work is what costs.
-                                </p>
-                                <div className="space-y-2.5">{priceRows('pane_storey')}</div>
-                            </div>
-
-                        </div>
-                    </section>
-                )}
-
-                {/* Rates, for the trades that cannot be sized in advance.
-                    Two shapes behind one section:
-
-                      callout_hourly  turn up, diagnose, charge for the time.
-                      quoted          look at it, then say what it costs.
-
-                    The quoted trades used to be asked for an hourly rate as
-                    well, which no roofer has for a re-slate — so the number
-                    would have been invented to get past the form, and an
-                    invented number is one a host can hold them to. */}
-                {onStep('prices') && isCallout && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your rates</h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            {model === 'callout_hourly'
-                                ? 'A repair cannot be sized in advance, so this is an hourly rate — with a call-out fee on top if you charge one — rather than a price per property size.'
-                                : 'This work is quoted once you have seen it, so there is nothing to set here beyond a call-out fee if you charge one.'}
-                        </p>
-
-                        <div className="grid sm:grid-cols-2 gap-4">
+                        <div className="grid sm:grid-cols-2 gap-4 md:max-w-xl">
                             <div>
-                                {/* Optional on both models, so the label says
-                                    so on both. It read as required for the
-                                    hourly trades while behaving optional,
-                                    which is the worst of the three. */}
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">
-                                    Call-out fee
-                                    <span className="font-normal text-slate-400"> (optional)</span>
+                                    Hourly rate <span className="font-normal text-slate-400">(optional)</span>
                                 </label>
                                 <div className="flex items-center gap-2">
                                     <span className="text-slate-500">&pound;</span>
-                                    {/* No placeholder and no suggested amount.
-                                        If every roofer showed the same figure
-                                        it would read as a platform charge
-                                        rather than as their own price. */}
-                                    <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={calloutFee}
-                                        onChange={(e) => setCalloutFee(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                    />
+                                    <input type="text" inputMode="decimal" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                </div>
+                                {problemFor('hourly_rate') && (
+                                    <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('hourly_rate')!.message}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                    Flat fee <span className="font-normal text-slate-400">(optional)</span>
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">&pound;</span>
+                                    <input type="text" inputMode="decimal" value={flatFee} onChange={(e) => setFlatFee(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                </div>
+                                {problemFor('flat_fee') && (
+                                    <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('flat_fee')!.message}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                    Call-out fee <span className="font-normal text-slate-400">(optional)</span>
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">&pound;</span>
+                                    <input type="text" inputMode="decimal" value={calloutFee} onChange={(e) => setCalloutFee(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
                                 </div>
                                 {problemFor('callout_fee') && (
                                     <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('callout_fee')!.message}</p>
                                 )}
-
-                                {/* Their offer, not our rule. Only worth asking
-                                    once there is a fee for it to apply to. */}
                                 {calloutFee.trim() !== '' && (
                                     <label className="flex items-start gap-2.5 mt-2.5 text-sm text-slate-800">
-                                        <input
-                                            type="checkbox"
-                                            checked={calloutWaived}
-                                            onChange={(e) => setCalloutWaived(e.target.checked)}
-                                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
-                                        />
+                                        <input type="checkbox" checked={calloutWaived} onChange={(e) => setCalloutWaived(e.target.checked)}
+                                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0" />
                                         <span>
                                             Waived if the job goes ahead
                                             {calloutLine(calloutFee, calloutWaived) && (
@@ -6078,26 +5832,11 @@ function ApplicationForm() {
                                     </label>
                                 )}
                             </div>
-
-                            {model === 'callout_hourly' && (
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-500 mb-1">Hourly rate</label>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-slate-500">&pound;</span>
-                                        <input
-                                            type="text"
-                                            inputMode="decimal"
-                                            value={hourlyRate}
-                                            onChange={(e) => setHourlyRate(e.target.value)}
-                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                        />
-                                    </div>
-                                    {problemFor('hourly_rate') && (
-                                        <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('hourly_rate')!.message}</p>
-                                    )}
-                                </div>
-                            )}
                         </div>
+
+                        {problemFor('prices') && (
+                            <p data-problem className="text-sm text-rose-700 mt-3">{problemFor('prices')!.message}</p>
+                        )}
                     </section>
                 )}
 
@@ -6117,125 +5856,23 @@ function ApplicationForm() {
                             We check this before you go live, and owners can see it on your listing.
                         </p>
 
-                        {asksAboutFuel(trade) && (
-                            <div className="space-y-2 mb-4">
-                                <label className="flex items-start gap-2.5 text-sm text-slate-800">
-                                    <input
-                                        type="checkbox"
-                                        checked={doesGas}
-                                        onChange={(e) => setDoesGas(e.target.checked)}
-                                        className="mt-0.5 w-4 h-4 rounded border-slate-300"
-                                    />
-                                    <span>
-                                        Gas Safe registered
-                                        <span className="block text-slate-500">
-                                            Boilers, hobs and fires on mains gas or LPG.
-                                        </span>
-                                    </span>
-                                </label>
-
-                                <label className="flex items-start gap-2.5 text-sm text-slate-800">
-                                    <input
-                                        type="checkbox"
-                                        checked={doesOil}
-                                        onChange={(e) => setDoesOil(e.target.checked)}
-                                        className="mt-0.5 w-4 h-4 rounded border-slate-300"
-                                    />
-                                    <span>
-                                        OFTEC registered
-                                        <span className="block text-slate-500">
-                                            Oil boilers, burners and tanks.
-                                        </span>
-                                    </span>
-                                </label>
-                            </div>
-                        )}
-
-                        {/* An electrician chooses their scheme; there is no
-                            such thing as a Part P number, only membership of
-                            one of these. A plumber gets no choice — the work
-                            they ticked decides which body it has to be. */}
-                        {trade === 'electrician' && (
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-slate-900 mb-1.5">
-                                    Which competent person scheme are you with?
-                                </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                    {PART_P_SCHEMES.map((scheme) => {
-                                        const chosen = String(registrations[scheme] || '') !== ''
-                                            || (registrations[scheme] === '' && scheme in registrations);
-                                        return (
-                                            <button
-                                                key={scheme}
-                                                type="button"
-                                                onClick={() => {
-                                                    // One scheme at a time: the
-                                                    // others are cleared, so a
-                                                    // number left behind from a
-                                                    // change of mind is never
-                                                    // sent for checking.
-                                                    const next: Record<string, string> = {};
-                                                    for (const key of Object.keys(registrations)) {
-                                                        if (!isPartP(key)) next[key] = registrations[key];
-                                                    }
-                                                    next[scheme] = registrations[scheme] || '';
-                                                    setRegistrations(next);
-                                                }}
-                                                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-                                                    chosen
-                                                        ? 'border-emerald-700 bg-emerald-50 text-emerald-900'
-                                                        : 'border-slate-300 text-slate-700 hover:border-slate-500'
-                                                }`}
-                                            >
-                                                {schemeLabel(scheme)}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                {problemFor('registration_part_p') && (
-                                    <p data-problem className="text-xs text-rose-700 mt-1.5">
-                                        {problemFor('registration_part_p')!.message}
-                                    </p>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="space-y-3">
-                            {showableSchemes
-                                .filter((scheme) => !isPartP(scheme) || scheme in registrations)
-                                .map((scheme) => (
-                                    <div key={scheme}>
-                                        <label
-                                            htmlFor={'reg-' + scheme}
-                                            className="block text-sm font-medium text-slate-900 mb-1.5"
-                                        >
-                                            {schemeNumberLabel(scheme)}
-                                        </label>
-                                        <input
-                                            id={'reg-' + scheme}
-                                            type="text"
-                                            inputMode="numeric"
-                                            value={registrations[scheme] || ''}
-                                            onChange={(e) =>
-                                                setRegistrations({ ...registrations, [scheme]: e.target.value })
-                                            }
-                                            className="w-full sm:w-64 rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                        />
-                                        {problemFor('registration_' + scheme) && (
-                                            <p data-problem className="text-xs text-rose-700 mt-1">
-                                                {problemFor('registration_' + scheme)!.message}
-                                            </p>
-                                        )}
-                                    </div>
-                                ))}
-                        </div>
-
-                        {showableSchemes.length > 0 && (
-                            <p className="text-xs text-slate-500 mt-3">
-                                Your number appears on your listing. These registers are public, so an owner
-                                can look you up themselves — which is rather the point of it.
-                            </p>
-                        )}
+                        {/* One free-text registration number, not a scheme
+                            checklist — the applicant types their Gas Safe, OFTEC
+                            or Part P number, whichever their trade needs. */}
+                        <label htmlFor="reg-number" className="block text-sm font-medium text-slate-900 mb-1.5">
+                            {trade === 'electrician' ? 'Part P registration number' : 'Gas Safe / OFTEC registration number'}
+                        </label>
+                        <input
+                            id="reg-number"
+                            type="text"
+                            value={registrationNumber}
+                            onChange={(e) => setRegistrationNumber(e.target.value)}
+                            placeholder={trade === 'electrician' ? 'e.g. NICEIC number' : 'e.g. Gas Safe number'}
+                            className="w-full sm:w-72 rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+                        <p className="text-xs text-slate-500 mt-3">
+                            Your number appears on your listing. These registers are public, so an owner can look you up themselves.
+                        </p>
                     </section>
                 )}
 
@@ -6263,22 +5900,8 @@ function ApplicationForm() {
                     Split per entry rather than per trade: the electrician's
                     EICR fee and the roofer's one priced entry stay with the
                     prices, because those genuinely are prices. */}
-                {onStep('credentials') && capability.length > 0 && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                            {hasFaults ? 'What do you get called out for?' : 'What do you take on?'}
-                        </h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            {hasFaults
-                                ? 'All optional, but this is how owners find you. Somebody with a problem searches for the problem, not for a trade.'
-                                : 'All optional. Owners compare on these, so it is worth saying yes to what you actually do.'}
-                        </p>
-
-                        {toggleBlock('faults', groupLabel('faults'))}
-                        {toggleBlock('planned', groupLabel('planned'))}
-                        {toggleBlock('availability', groupLabel('availability'))}
-                    </section>
-                )}
+                {/* The pre-filled per-trade capability checklist has been
+                    replaced by the search below, which every trade now gets. */}
 
                 {/* Skills sit UNDER the tick boxes above, not over them.
                     The standard set is the common case for every handyman;
@@ -6288,16 +5911,16 @@ function ApplicationForm() {
                 {onStep('credentials') && hasSkills && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                            What else can you turn your hand to?
+                            What services do you cover?
                         </h2>
                         <p className="text-sm text-slate-500 mb-1.5">
-                            The things that do not fit a tick box &mdash; bricklaying, fencing, laying slabs,
-                            dyking.
+                            The jobs you take on. Start typing and pick from the list, or add your own if
+                            it isn&apos;t there.
                         </p>
                         {/* Not small print. "Pick from the list" is the whole
                             anti-fragmentation mechanism: somebody offered
-                            "bricklaying" takes it, and somebody who reads past
-                            this types "brick laying" and splits the tag. It is
+                            "gutter cleaning" takes it, and somebody who reads past
+                            this types "gutters" and splits the tag. It is
                             an instruction, so it is weighted like one. */}
                         <p className="text-sm font-medium text-slate-800 mb-4">
                             Pick from the list where you can &mdash; it is how owners looking for that job
@@ -6546,21 +6169,37 @@ function ApplicationForm() {
                                                                     {extra.label}
                                                                 </label>
                                                                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                                    <span className="text-slate-500">&pound;</span>
-                                                                    <input
-                                                                        id={'rate-' + extra.key}
-                                                                        type="text"
-                                                                        inputMode="decimal"
-                                                                        value={entry.price}
-                                                                        onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
-                                                                        placeholder={perUnit ? '8' : '25'}
-                                                                        className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                                    />
-                                                                    {perUnit && (
-                                                                        <span className="text-sm text-slate-500 whitespace-nowrap">per bed</span>
+                                                                    {entry.quote ? (
+                                                                        <span className="text-sm text-slate-500">Priced by quote</span>
+                                                                    ) : (
+                                                                        <>
+                                                                            <span className="text-slate-500">&pound;</span>
+                                                                            <input
+                                                                                id={'rate-' + extra.key}
+                                                                                type="text"
+                                                                                inputMode="decimal"
+                                                                                value={entry.price}
+                                                                                onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
+                                                                                placeholder={perUnit ? '8' : '25'}
+                                                                                className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                                            />
+                                                                            {perUnit && (
+                                                                                <span className="text-sm text-slate-500 whitespace-nowrap">per job</span>
+                                                                            )}
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             </div>
+                                                            {/* Each extra can be priced by quote instead of a set figure. */}
+                                                            <label className="mt-1.5 ml-0 flex items-center gap-2 text-xs text-slate-600">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={!!entry.quote}
+                                                                    onChange={(e) => setExtra(extra.key, 'quote', e.target.checked)}
+                                                                    className="w-3.5 h-3.5 rounded border-slate-300"
+                                                                />
+                                                                I provide a quote for this
+                                                            </label>
                                                             {problem && (
                                                                 <p data-problem className="text-xs text-rose-700 mt-1">{problem.message}</p>
                                                             )}
@@ -6645,26 +6284,22 @@ function ApplicationForm() {
                         load and re-save exactly as before. */}
                     {!isGuest && (
                         <>
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1.5">{HOST_LOCATION_COPY.heading}</h2>
-                            <p className="text-sm text-slate-500 mb-4">{HOST_LOCATION_COPY.subtext}</p>
+                            {/* Host trades now pick coverage as REGIONS — the same
+                                model as the guest experience sign-up ("All of
+                                Dumfries and Galloway" or a named region), pick as
+                                many as they like. The single town-and-radius picker
+                                is gone. Stored the same way as the guest regions:
+                                the region label in service_areas with radius 0. */}
+                            <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Where do you cover?</h2>
+                            <p className="text-sm text-slate-500 mb-4">Pick the areas you work in — as many as you like.</p>
 
                             <div className="space-y-1 md:max-w-xl">
                                 {areas.map((a, i) => (
-                                    <HubRow
-                                        key={i}
-                                        filled
-                                        label={a.town}
-                                        prompt=""
-                                        summary={HOST_LOCATION_COPY.rowWithin + ' ' + Number(a.radius_miles) + ' ' + HOST_LOCATION_COPY.radiusSuffix}
-                                        onOpen={() => openHostArea(i)}
-                                    />
+                                    <HubRow key={i} filled label={a.town} prompt="" summary={regionHintFor(a.town)} onOpen={() => setAreaPickerOpen(true)} />
                                 ))}
-                                <HubRow
-                                    filled={false}
-                                    label={HOST_LOCATION_COPY.addRow}
-                                    prompt={HOST_LOCATION_COPY.addPrompt}
-                                    onOpen={() => openHostArea(null)}
-                                />
+                                {!areasHasAll && (
+                                    <HubRow filled={false} label="Add an area" prompt="Pick the regions you cover" onOpen={() => setAreaPickerOpen(true)} />
+                                )}
                             </div>
 
                             {problemFor('areas') && (
@@ -6672,46 +6307,30 @@ function ApplicationForm() {
                             )}
 
                             <SubFlowModal
-                                open={areaModalOpen}
-                                title={HOST_LOCATION_COPY.modalTitle}
-                                onClose={() => setAreaModalOpen(false)}
-                                saveLabel={GUEST_SCREEN_COPY.save}
-                                saveDisabled={!areaDraftTown.trim()}
-                                onSave={saveHostArea}
-                                onRemove={areaEditIndex !== null ? removeHostArea : undefined}
+                                open={areaPickerOpen}
+                                title="Where do you cover?"
+                                onClose={() => setAreaPickerOpen(false)}
+                                saveLabel={GUEST_SCREEN_COPY.locationPickerDone}
+                                saveDisabled={areas.length === 0}
                             >
-                                <div className="mx-auto w-full max-w-md">
-                                    <label className="mb-2 block text-xs font-medium text-slate-500">{HOST_LOCATION_COPY.townLabel}</label>
-                                    <div className="space-y-2">
-                                        {COVERAGE_TOWNS.map((t) => {
-                                            const on = areaDraftTown === t.label;
-                                            return (
-                                                <button key={t.key} type="button" onClick={() => setAreaDraftTown(t.label)} aria-pressed={on}
-                                                    className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
-                                                        + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
-                                                    <span className={'flex h-5 w-5 flex-none items-center justify-center rounded-full border transition '
-                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
-                                                        <Check className="h-3 w-3" strokeWidth={3} />
-                                                    </span>
-                                                    <span className="font-semibold text-slate-900">{t.label}</span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-
-                                    <label className="mb-2 mt-6 block text-xs font-medium text-slate-500">{HOST_LOCATION_COPY.radiusLabel}</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {[5, 10, 15, 20, 30, 50].map((m) => {
-                                            const on = Number(areaDraftRadius) === m;
-                                            return (
-                                                <button key={m} type="button" onClick={() => setAreaDraftRadius(m)} aria-pressed={on}
-                                                    className={'rounded-full border px-4 py-2 text-sm font-semibold transition '
-                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-emerald-400')}>
-                                                    {m} {HOST_LOCATION_COPY.radiusSuffix}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                <div className="mx-auto w-full max-w-md space-y-2">
+                                    {GUEST_REGIONS.map((r) => {
+                                        const on = regionPicked(r.label);
+                                        return (
+                                            <button key={r.key} type="button" onClick={() => toggleRegion(r)} aria-pressed={on}
+                                                className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                    + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
+                                                <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
+                                                    + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                    <Check className="h-4 w-4" strokeWidth={3} />
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="block font-semibold text-slate-900">{r.label}</span>
+                                                    <span className="block text-sm text-slate-500">{r.hint}</span>
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </SubFlowModal>
                         </>
