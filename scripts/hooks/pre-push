@@ -191,7 +191,13 @@ else
     for f in $changed; do
         case "$f" in
             tests/*.test.ts)
-                run_tests="$run_tests .test-build/${f%.ts}.js" ;;
+                # `$changed` lists DELETED files too (it has to: deleting a
+                # money-path file must still trip the full gate above). A test
+                # this push deletes has nothing to run — .test-build was just
+                # rebuilt from the tests that remain, so its .js is gone, and
+                # handing node the missing path fails the whole push with
+                # "Could not find …". Only a test that still exists runs itself.
+                if [ -f "$f" ]; then run_tests="$run_tests .test-build/${f%.ts}.js"; fi ;;
             *.ts|*.tsx)
                 stem=$(basename "$f"); stem="${stem%.*}"
                 case "$stem" in
