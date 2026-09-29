@@ -34,7 +34,7 @@ const {
 } = require('@/lib/joinSteps');
 
 const {
-    TRADES, submitProblems, planForTrade,
+    TRADES, submitProblems, planForTrade, audienceForTrade,
     capabilityFor, pricedOfferingsFor, showsRates, extrasFor, bandsFor,
     asksAboutFuel, asksAboutSkills, offerableSchemes,
     guestAsksExpertise, guestAsksQualifications, guestYearsRequired,
@@ -44,17 +44,15 @@ const keys = (trade: string) => stepsFor(trade).map((s: any) => s.key);
 
 // --- which steps exist ------------------------------------------------------
 
-test('a cleaner sees four steps, and the missing one is not counted', () => {
-    // The example the whole rule comes from. No registration number, no
-    // skills, so no third step at all.
-    assert.deepEqual(keys('sponge'), ['trade', 'business', 'prices', 'finish']);
-    assert.equal(stepCount('sponge'), 4);
+test('every host trade sees the same five steps now', () => {
+    // The credentials step ("What you do" — the services search) is on every
+    // host trade now, so the old four-step cleaner is a five-step one.
+    assert.deepEqual(keys('sponge'), ['trade', 'business', 'credentials', 'prices', 'finish']);
+    assert.equal(stepCount('sponge'), 5);
 
-    // And the numbering closes up behind it. This is the part an indicator
-    // gets wrong: "step 4 of 5" on the last page of four.
-    assert.equal(stepNumber('sponge', 'prices'), 3);
-    assert.equal(stepNumber('sponge', 'finish'), 4);
-    assert.equal(stepNumber('sponge', 'credentials'), 0, 'a step she does not have has no number');
+    assert.equal(stepNumber('sponge', 'credentials'), 3);
+    assert.equal(stepNumber('sponge', 'prices'), 4);
+    assert.equal(stepNumber('sponge', 'finish'), 5);
 });
 
 test('a plumber sees all five', () => {
@@ -73,32 +71,30 @@ test('the joiner, roofer and painter went from four steps to five', () => {
     }
 });
 
-test('the "what you do" step is exactly the six maintenance trades', () => {
+test('the "what you do" step is on every host trade now', () => {
     const withCredentials = TRADES
         .map((t: any) => t.key)
         .filter((trade: string) => stepApplies('credentials', trade));
 
-    // It was three: the electrician for Part P, the plumber for gas and oil,
-    // the handyman for skills. It is six now, because the capability lists
-    // moved here off the prices step — the joiner, roofer and painter give no
-    // registration and no skills but carry nine to sixteen capability entries
-    // each, which were filed under "What you charge" where they set no price.
+    // Every host trade gets the credentials step now — it carries the services
+    // search that replaced the per-trade capability checklist. Guests keep their
+    // own flow and are not on this step.
     assert.deepEqual(withCredentials.sort(),
-        ['electrician', 'handyman', 'joiner', 'painter', 'plumber', 'roofer']);
+        ['bin', 'droplet', 'electrician', 'handyman', 'joiner', 'other', 'painter', 'plumber', 'roofer', 'sponge', 'trees']);
 });
 
-test('registration and skills are never asked of the same trade', () => {
-    // Why the step is not called "Registration". The electrician and plumber
-    // give numbers, the handyman gives skills, and nobody does both — so a
-    // step titled Registration was wrong for the handyman every single time,
-    // not merely sometimes.
+test('gas and electrical trades are asked for a registration number as well as services', () => {
+    // The old rule was "registration OR skills, never both". It is both now: a
+    // plumber gives a Gas Safe number AND lists the services it covers; an
+    // electrician the same. Every host trade lists its services; gas and
+    // electrical additionally give a registration number.
     for (const trade of TRADES.map((t: any) => t.key)) {
-        const hasRegistration = asksAboutFuel(trade)
-            || offerableSchemes({ trade, does_gas: true, does_oil: true }).length > 0;
-
-        assert.equal(hasRegistration && asksAboutSkills(trade), false,
-            trade + ' is asked for registration or skills, never both');
+        if (audienceForTrade(trade) === 'host') {
+            assert.equal(asksAboutSkills(trade), true, trade + ' lists its services');
+        }
     }
+    assert.equal(asksAboutFuel('plumber'), true, 'a plumber gives a registration number');
+    assert.equal(asksAboutFuel('roofer'), false, 'a roofer does not');
 });
 
 test('capability sits on the step somebody can see it on, not with the prices', () => {
@@ -148,20 +144,21 @@ test('the joiner, roofer and painter still have a prices step for the call-out f
     }
 });
 
-test('the cleaner keeps her two toggles beside her prices rather than gaining a step', () => {
-    // `about` is not capability. Two tick boxes -- own equipment, reports
-    // damage with photos -- that read correctly next to her laundry and hot
-    // tub prices, and would otherwise be a fifth step carrying nothing else.
+test('the cleaner now has the credentials step for the services search', () => {
+    // She has no pre-filled capability list (that was `about`, two tick boxes
+    // that stay with her prices), but she still lists her services on the
+    // credentials step like every other host trade.
     assert.deepEqual(capabilityFor('sponge'), []);
     assert.equal(pricedOfferingsFor('sponge').length > 0, true);
-    assert.equal(stepApplies('credentials', 'sponge'), false, 'no step gained');
-    assert.deepEqual(keys('sponge'), ['trade', 'business', 'prices', 'finish']);
+    assert.equal(stepApplies('credentials', 'sponge'), true, 'the services-search step');
+    assert.deepEqual(keys('sponge'), ['trade', 'business', 'credentials', 'prices', 'finish']);
 });
 
 test('the guest trades have no prices step either, so they see four', () => {
     // A chef quotes per job and has no extras to offer. A step containing one
-    // heading and nothing under it is the thing this rule is against.
-    for (const trade of ['chef', 'cake', 'basket', 'other']) {
+    // heading and nothing under it is the thing this rule is against. ('other'
+    // is a HOST trade now — "something else" — so it is not in this list.)
+    for (const trade of ['chef', 'cake', 'basket']) {
         assert.deepEqual(keys(trade), ['trade', 'business', 'finish'], trade + ' has three steps');
         assert.equal(stepCount(trade), 3);
     }
@@ -196,15 +193,16 @@ test('the last step is the same one for everybody, whatever they skipped', () =>
 
 // --- moving about -----------------------------------------------------------
 
-test('next skips the step a cleaner does not have', () => {
-    // The bug this is against: Next landing on a blank panel between the
-    // business and the prices.
-    assert.equal(nextStep('sponge', 'business'), 'prices');
+test('next moves business → credentials → prices for every host trade', () => {
+    // Every host trade has the credentials step now, so Next always goes through
+    // it rather than skipping to prices.
+    assert.equal(nextStep('sponge', 'business'), 'credentials');
     assert.equal(nextStep('plumber', 'business'), 'credentials');
+    assert.equal(nextStep('sponge', 'credentials'), 'prices');
 });
 
-test('back skips it too, so the way out is the way in reversed', () => {
-    assert.equal(previousStep('sponge', 'prices'), 'business');
+test('back is the way in reversed', () => {
+    assert.equal(previousStep('sponge', 'prices'), 'credentials');
     assert.equal(previousStep('plumber', 'prices'), 'credentials');
 });
 
@@ -234,10 +232,10 @@ test('somebody comes back to the step they left', () => {
 });
 
 test('a step that no longer exists lands on the last one that does', () => {
-    // Left on the registration step as a plumber, came back having changed
-    // trade to cleaner. The step is gone. Landing on a blank panel or throwing
-    // are both worse than landing where their work actually got to.
-    assert.equal(resolveStep('sponge', 'credentials'), 'finish');
+    // Left on a guest location step, came back having changed to a host trade.
+    // That step is not in a host flow. Landing on a blank panel or throwing are
+    // both worse than landing where their work actually got to.
+    assert.equal(resolveStep('sponge', 'g_area'), 'finish');
 });
 
 test('a draft with no step and no trade starts at the beginning', () => {
@@ -340,21 +338,21 @@ test('a problem on a step this trade skips is not lost silently', () => {
     }
 });
 
-test('a subscription trade is not asked for a price it does not set', () => {
-    // Crossing the two models: these three are on the subscription and set no
-    // band prices, so their prices step is extras and a call-out fee only.
+test('a subscription trade that prices by quote is not held up on the prices step', () => {
+    // These three are on the subscription and typically quote per job. With the
+    // quote ticked they set no number and the prices step is satisfied.
     for (const trade of ['roofer', 'joiner', 'painter']) {
         assert.equal(planForTrade(trade), 'subscription');
         const problems = submitProblems({
             business_name: 'A Firm', trade,
             description: 'Long enough a description to pass the length check on the form itself.',
-            contact_email: 'a@b.test', audience: 'host', areaCount: 1, prices: {},
-            callout_fee: '', hourly_rate: '', callout_waived: false, extras: {},
+            contact_email: 'a@b.test', audience: 'host', areaCount: 1,
+            provides_quote: true, callout_fee: '', hourly_rate: '', callout_waived: false, extras: {},
             does_gas: false, does_oil: false, registrations: [],
         });
 
         assert.deepEqual(problemsOnStep(problems, 'prices'), [],
-            trade + ' is not held up over a price it never sets');
+            trade + ' prices by quote, so nothing is required on the prices step');
     }
 });
 

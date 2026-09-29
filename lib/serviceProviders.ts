@@ -769,6 +769,9 @@ const TRADE_PLANS: Record<string, ProviderPlan> = {
     painter: 'subscription',
     trees: 'subscription',
     droplet: 'subscription',
+    // "Something else" — a typed-in host trade — is on the subscription like
+    // every other host trade but cleaning.
+    other: 'subscription',
 
     // Waste is on the subscription, on the same terms as every other host trade
     // (decision, 28 September 2026): the free period then £20 a month, and no
@@ -1445,10 +1448,17 @@ export interface PricingDraft {
 export function pricingProblems(draft: PricingDraft): Problem[] {
     const problems: Problem[] = [];
 
-    // One rule for every trade now. There are no bedroom or plot-size bands: a
-    // provider either quotes the job after a look, or gives an hourly rate, or a
-    // flat fee. A call-out fee is optional on top. Cleaning is coming-soon and
-    // never reaches this, so the old in-house hourly exception is gone with it.
+    // One rule for every trade a host hires now. There are no bedroom or
+    // plot-size bands: a provider either quotes the job after a look, or gives an
+    // hourly rate, or a flat fee. A call-out fee is optional on top. Cleaning is
+    // coming-soon and never reaches this, so the old in-house hourly exception is
+    // gone with it.
+    //
+    // Guest experiences price per menu item, not here, and an application with no
+    // trade yet has no pricing shape to complain about — both fall outside this
+    // gate, which is why it applies only once the trade is a host one.
+    if (audienceForTrade(String(draft.trade || '')) !== 'host') return problems;
+
     const num = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? null : Number(v);
     const hourly = num((draft as any).hourly_rate);
     const flat = num((draft as any).flat_fee);
