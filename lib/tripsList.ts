@@ -6,6 +6,7 @@
 
 import { getImageUrl } from '@/lib/utils';
 import { londonDayKey } from '@/lib/dayKey';
+import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
 
 export interface TripExperience {
@@ -73,20 +74,30 @@ function foodItemsOf(o: any): number | null {
     return Number.isFinite(q) && q > 0 ? q : null;
 }
 
+function pinOf(b: any, l: any, axis: 'lat' | 'lng'): number | null {
+    const exact = bookingReleasesPrivateData(b);
+    const v = axis === 'lat'
+        ? (exact ? l.latitude : l.approx_latitude)
+        : (exact ? l.longitude : l.approx_longitude);
+    return v != null ? Number(v) : null;
+}
+
 export async function loadTripsList(admin: { from: (t: string) => any }, userId: string): Promise<TripsList> {
     const today = londonDayKey();
 
     // Stays — the account's own bookings, with their listing.
     const { data: bookings } = await admin
         .from('bookings')
-        .select('id, listing_id, check_in, check_out, guests, adults, children, status')
+        .select('id, listing_id, check_in, check_out, guests, adults, children, status, payment_status')
         .eq('guest_id', userId)
-        .neq('status', 'cancelled');
+        // An abandoned checkout (never paid) or one that timed out is not a
+        // trip — it would sit in Upcoming looking like a booking.
+        .not('status', 'in', '(cancelled,pending_payment,expired)');
     const stayRows = bookings || [];
 
     const listingIds = Array.from(new Set(stayRows.map((b: any) => b.listing_id).filter(Boolean)));
     const { data: listings } = listingIds.length
-        ? await admin.from('listings').select('id, title, images, location, latitude, longitude').in('id', listingIds)
+        ? await admin.from('listings').select('id, title, images, location, latitude, longitude, approx_latitude, approx_longitude').in('id', listingIds)
         : { data: [] };
     const listingById = new Map<string, any>((listings || []).map((l: any) => [l.id, l]));
 
@@ -168,8 +179,11 @@ export async function loadTripsList(admin: { from: (t: string) => any }, userId:
             checkIn: String(b.check_in).slice(0, 10),
             checkOut: String(b.check_out).slice(0, 10),
             guests: b.guests ?? null,
-            lat: l.latitude != null ? Number(l.latitude) : null,
-            lng: l.longitude != null ? Number(l.longitude) : null,
+            // The exact pin is private data, released on the same rule as the
+            // address; anything short of a paid, confirmed stay gets the
+            // approximate point the public listing page shows.
+            lat: pinOf(b, l, 'lat'),
+            lng: pinOf(b, l, 'lng'),
             experiences: exps,
             sortKey: String(b.check_in).slice(0, 10),
         };
