@@ -10,7 +10,22 @@
 // the whole of it is state: what they have typed, which step they are on, and
 // a draft written to local storage on every keystroke.
 
+import type { Metadata } from 'next';
 import ProviderSignUp from '@/components/services/ProviderSignUp';
+
+// The layout's title ("Join as a trade") is right for a tradesperson, but the
+// guest-experience sign-up runs on this same route with ?trade=guest, and a
+// host setting up a food tour was seeing their browser tab say "Join as a
+// trade". The trade is in the URL, so the title can follow it.
+export function generateMetadata({ searchParams }: { searchParams?: { trade?: string } }): Metadata {
+    if (searchParams?.trade === 'guest') {
+        return {
+            title: 'Host a guest experience',
+            description: 'Offer an experience to guests staying across Dumfries & Galloway.',
+        };
+    }
+    return {};
+}
 
 export default function JoinPage() {
     return <ProviderSignUp />;
