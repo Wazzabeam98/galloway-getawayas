@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { logError } from '@/lib/logError';
 import { sendEmailToAll, recipients, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { RETENTION_DAYS, daysWaiting } from '@/lib/serviceApplications';
+import { cronRunOverdue } from '@/lib/cronHeartbeat';
+import { alertDirectorsNow } from '@/lib/moneyAlert';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -141,6 +143,34 @@ export async function GET(request: Request) {
         // been set up yet, not that a scheduled test was missed.
     } catch (e) {
         await logError('error-digest: could not read the restore drill log', e, {
+            path: '/api/cron/error-digest',
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // THE SUBSCRIPTION-CRON WATCHDOG.
+    //
+    // The daily service-subscription run has no charge-retry, so if it stops
+    // firing nobody is ever delisted and the failure is silent. It stamps a
+    // heartbeat (cron_runs) on every finish; here — in the one email that is
+    // guaranteed to run daily — we check that heartbeat and alert the directors
+    // now if it is overdue or its last run failed. Defensive: never lets a
+    // watchdog problem take the digest down.
+    // ------------------------------------------------------------------
+    try {
+        const subCron = await cronRunOverdue('service-subscriptions');
+        if (subCron.overdue) {
+            await alertDirectorsNow({
+                headline: 'The subscription billing run may have stopped',
+                lines: [
+                    'The daily service-subscription cron ' + subCron.reason + '.',
+                    'While it is not running, trials never end and non-payers keep their free listing — there is no charge-retry to make this obvious.',
+                ],
+                facts: { 'last run': subCron.ranAt || 'never' },
+            });
+        }
+    } catch (e) {
+        await logError('error-digest: could not check the subscription cron heartbeat', e, {
             path: '/api/cron/error-digest',
         });
     }
