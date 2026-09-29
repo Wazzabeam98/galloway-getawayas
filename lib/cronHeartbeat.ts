@@ -64,7 +64,13 @@ export async function cronRunOverdue(
     maxAgeHours = 26
 ): Promise<{ overdue: boolean; reason: string; ranAt: string | null }> {
     const row = await lastCronRun(job);
-    if (!row) return { overdue: true, reason: 'has never recorded a run', ranAt: null };
+    // No row yet is NOT treated as overdue: it means the job has never stamped a
+    // heartbeat — a freshly deployed watchdog, before the job's first run — and
+    // alarming on that would cry wolf on every deploy. The watchdog's real catch
+    // is a job that WAS running and stopped (its row goes stale, below), plus the
+    // failed-run alert the job raises itself. A read failure returns null too and
+    // is already logged in lastCronRun.
+    if (!row) return { overdue: false, reason: '', ranAt: null };
     if (!row.ok) return { overdue: true, reason: 'its last run failed', ranAt: row.ran_at };
     const ageMs = Date.now() - new Date(row.ran_at).getTime();
     if (ageMs > maxAgeHours * 3600 * 1000) {
