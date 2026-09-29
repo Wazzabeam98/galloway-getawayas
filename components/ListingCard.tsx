@@ -36,6 +36,9 @@ export interface CardListing {
      * already tick — see cardBadges in lib/listingRules.ts.
      */
     amenities?: string[] | null;
+    /** The ~110m public point, for the search map's price pin. Optional. */
+    approx_latitude?: number | string | null;
+    approx_longitude?: number | string | null;
 }
 
 export default function ListingCard({ listing }: { listing: CardListing }) {
