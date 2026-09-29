@@ -47,6 +47,8 @@ interface Props {
     exitHref: string;
     // Called once the person is signed in and, if needed, named.
     onSignedIn: (session: any) => void;
+    // Pre-fills the address, where the page already knows it (an emailed link).
+    initialEmail?: string;
 }
 
 const INPUT = 'w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-700';
@@ -58,10 +60,10 @@ const LINK = 'font-semibold text-slate-900 underline underline-offset-2 hover:te
 // beats letting the press fail.
 const RESEND_WAIT_SECONDS = 60;
 
-export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn }: Props) {
+export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, initialEmail = '' }: Props) {
     const supabase = createClientComponentClient();
     const [screen, setScreen] = useState<Screen>('email');
-    const [email, setEmail] = useState('');
+    const [email, setEmail] = useState(initialEmail);
     const [code, setCode] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
