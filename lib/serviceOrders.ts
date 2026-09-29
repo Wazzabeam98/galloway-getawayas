@@ -29,7 +29,15 @@ import { commissionRateFor } from '@/lib/serviceProviders';
 // as a click.
 //
 // Flipping it takes a redeploy to bind on Vercel — see MAINTENANCE.md.
+//
+// Held on PRODUCTION only. Previews and local always return open, the same as
+// businessSignupsOpen below, so the whole guest-experiences surface — the home
+// and town-page sections, the browse pages — stays walkable on a preview while
+// the feature is still gated for real visitors. Defaulting to held on prod
+// (absent, or anything but 'true') is the safe direction: a preview can only
+// ever be more open than production, never expose it early.
 export function guestExperiencesOpen(): boolean {
+    if (process.env.VERCEL_ENV !== 'production') return true;
     return process.env.GUEST_EXPERIENCES_OPEN === 'true';
 }
 

@@ -459,6 +459,8 @@ export default function BookingWidget({
                     maxDate={maxBookableDate}
                     disabledDates={disabledDates}
                     months={1}
+                    // Monday-first, like every calendar on the site (and the UK).
+                    weekStartsOn={1}
                     direction="vertical"
                     rangeColors={['#047857']}
                     showDateDisplay={false}
@@ -602,9 +604,9 @@ export default function BookingWidget({
             {loadingSession ? (
                 <div className="text-center text-sm text-slate-400 py-2">Loading...</div>
             ) : !session ? (
-                <div className="text-center">
-                    <p className="text-sm text-slate-500 mb-2">Log in to request this booking</p>
-                    <LoginModel />
+                <div>
+                    <p className="text-sm text-slate-500 mb-2 text-center">Log in to request this booking</p>
+                    <LoginModel variant="button" />
                 </div>
             ) : (
                 <button

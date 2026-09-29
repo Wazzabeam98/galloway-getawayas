@@ -216,11 +216,16 @@ test('expiry is the window added to creation', () => {
 
 // --- the launch switch -------------------------------------------------------
 
-test('guest experiences are closed unless the env var is exactly "true"', () => {
-    const prev = process.env.GUEST_EXPERIENCES_OPEN;
+test('guest experiences: gated by the exact env var on PRODUCTION only, open elsewhere', () => {
+    const prevFlag = process.env.GUEST_EXPERIENCES_OPEN;
+    const prevEnv = process.env.VERCEL_ENV;
     try {
+        // On production the switch is the env var, and only the exact string
+        // "true" opens it — the safe direction for a launch held behind terms.
+        process.env.VERCEL_ENV = 'production';
+
         delete process.env.GUEST_EXPERIENCES_OPEN;
-        assert.equal(guestExperiencesOpen(), false, 'absent is closed');
+        assert.equal(guestExperiencesOpen(), false, 'absent is closed on production');
 
         process.env.GUEST_EXPERIENCES_OPEN = 'false';
         assert.equal(guestExperiencesOpen(), false);
@@ -232,10 +237,22 @@ test('guest experiences are closed unless the env var is exactly "true"', () => 
         assert.equal(guestExperiencesOpen(), false);
 
         process.env.GUEST_EXPERIENCES_OPEN = 'true';
-        assert.equal(guestExperiencesOpen(), true, 'the one value that opens it');
+        assert.equal(guestExperiencesOpen(), true, 'the one value that opens production');
+
+        // Off production — a preview or local — it is always open, whatever the
+        // env var says, so the whole surface stays walkable while it is still
+        // gated for real visitors (the same rule as businessSignupsOpen).
+        process.env.VERCEL_ENV = 'preview';
+        delete process.env.GUEST_EXPERIENCES_OPEN;
+        assert.equal(guestExperiencesOpen(), true, 'open on a preview even with the flag unset');
+
+        delete process.env.VERCEL_ENV;
+        assert.equal(guestExperiencesOpen(), true, 'open locally (no VERCEL_ENV)');
     } finally {
-        if (prev === undefined) delete process.env.GUEST_EXPERIENCES_OPEN;
-        else process.env.GUEST_EXPERIENCES_OPEN = prev;
+        if (prevFlag === undefined) delete process.env.GUEST_EXPERIENCES_OPEN;
+        else process.env.GUEST_EXPERIENCES_OPEN = prevFlag;
+        if (prevEnv === undefined) delete process.env.VERCEL_ENV;
+        else process.env.VERCEL_ENV = prevEnv;
     }
 });
 
