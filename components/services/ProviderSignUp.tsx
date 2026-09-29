@@ -406,6 +406,10 @@ const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
     details: ListChecks,
     experience: Sparkles,
     finish: Flag,
+    // Host-trade sections (TRADE_SECTIONS) reuse the same icon set.
+    business: User,
+    credentials: ListChecks,
+    prices: Tag,
 };
 
 function ApplicationForm() {
@@ -3794,27 +3798,23 @@ function ApplicationForm() {
            header and the buttons stay put while the questions move — on a
            phone that means the way forward is always under your thumb and
            never below the fold. */
-        <div className={isGuest
-            ? 'fixed inset-0 z-[60] flex flex-col bg-white'
-            : 'fixed inset-0 z-[60] flex md:items-center md:justify-center md:p-6 bg-white md:bg-slate-900/40'}>
-            {/* A guest gets a full-page takeover (no card, no dimmed backdrop,
-                no site header behind it) matching /addhome and the fork; a trade
-                keeps the centred modal it always had. */}
-            <div className={isGuest
-                ? 'flex flex-col w-full h-full bg-white overflow-hidden'
-                : 'flex flex-col w-full h-full bg-white md:h-auto md:max-h-[90vh] md:w-full md:rounded-2xl md:shadow-xl overflow-hidden md:max-w-3xl'
-            }>
+        <div className="fixed inset-0 z-[60] flex flex-col bg-white">
+            {/* One full-page takeover for everyone — a guest experience and a
+                host trade now share the same wizard (no card, no dimmed backdrop),
+                matching /addhome and the fork. */}
+            <div className="flex flex-col w-full h-full bg-white overflow-hidden">
 
-                {isGuest ? (
-                    /* Guest takeover top bar — Back top-left, brand, a way out.
-                       No step count and no per-screen segments any more: the
-                       flow is named sections now (the left rail on wide screens,
-                       the section eyebrow at the top of each screen on a phone),
-                       so a "Step 5 of 12" here would be the very thing they
-                       replace. */
-                    <div className="shrink-0 border-b border-slate-100 px-4 sm:px-8">
-                        <div className="flex h-16 items-center justify-between gap-3">
-                            {(position > 1 || openGroup) ? (
+                {/* Takeover top bar — Back top-left, brand, close top-right. No
+                    step count or per-screen segments: the flow is named sections
+                    (the left rail on wide screens, the section eyebrow at the top
+                    of each screen on a phone), the same for a guest and a trade. */}
+                <div className="shrink-0 border-b border-slate-100 px-4 sm:px-8">
+                    <div className="flex h-16 items-center justify-between gap-3">
+                        {/* Guests keep Back top-left; a trade's Back lives in the
+                            footer (both its buttons at the bottom), so a spacer here
+                            keeps the brand centred. */}
+                        {isGuest ? (
+                            (position > 1 || openGroup) ? (
                                 <button type="button" onClick={goBack} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
                                     <ChevronLeft className="w-5 h-5" /> Back
                                 </button>
@@ -3822,104 +3822,24 @@ function ApplicationForm() {
                                 <Link href="/business" className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
                                     <ChevronLeft className="w-5 h-5" /> Back
                                 </Link>
-                            )}
-                            <span className="text-sm font-bold tracking-tight text-slate-900">Galloway Getaways</span>
-                            <Link href="/business" aria-label="Close" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition">
-                                <X className="w-5 h-5" />
-                            </Link>
-                        </div>
-                    </div>
-                ) : (
-                <div className="shrink-0 border-b border-slate-200 px-4 sm:px-6 pt-4 pb-3">
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                            <h1 className="text-lg sm:text-xl font-bold text-slate-900 truncate">
-                                {stepMeta.title}
-                            </h1>
-                            {/* `chosen`, not `trade`: the trade state defaults
-                                to 'sponge' so the rest of the form has
-                                something to work from, and reading it here put
-                                "Cleaning" under the heading of somebody who had
-                                not picked anything yet. */}
-                            <p className="text-xs text-slate-500 mt-0.5 truncate">
-                                {chosen
-                                    ? tradeLabel(trade)
-                                    : 'Get work from holiday lets across Dumfries & Galloway.'}
-                            </p>
-                        </div>
-
-                        <Link
-                            href="/business"
-                            aria-label="Close"
-                            className="shrink-0 w-9 h-9 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-500"
-                        >
+                            )
+                        ) : (
+                            <span className="w-9" aria-hidden />
+                        )}
+                        <span className="text-sm font-bold tracking-tight text-slate-900">Galloway Getaways</span>
+                        <Link href="/business" aria-label="Close" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition">
                             <X className="w-5 h-5" />
                         </Link>
                     </div>
-
-                    {/* THE STEP INDICATOR.
-                        Built from stepsFor(trade), so it counts only the steps
-                        this trade actually has. A cleaner has no registration
-                        number and no skills, so she sees four dots and "Step 2
-                        of 4" — not five with one that never arrives.
-
-                        The dots carry the count on a phone and the labels
-                        appear when there is room for them; a label under every
-                        dot at 375px is four words fighting for sixty pixels. */}
-                    <div className="mt-3.5">
-                        {/* Nothing is drawn until a trade is picked, for the
-                            same reason no total is announced: how many steps
-                            there are depends on the answer to the step they
-                            are looking at. Four segments here would be the
-                            cleaner's count shown to a plumber, and it would
-                            grow by one under him the moment he tapped. */}
-                        {chosen && (
-                        <div className="flex items-center gap-1.5" role="list" aria-label={'Step ' + position + ' of ' + total}>
-                            {steps.map((s, i) => {
-                                const done = i + 1 < position;
-                                const here = s.key === step;
-
-                                return (
-                                    <div key={s.key} role="listitem" className="flex-1 min-w-0">
-                                        <div
-                                            className={`h-1.5 rounded-full transition-colors ${
-                                                here ? 'bg-emerald-700' : done ? 'bg-emerald-300' : 'bg-slate-200'
-                                            }`}
-                                        />
-                                        <span
-                                            className={`hidden sm:flex items-center gap-1 text-[11px] mt-1.5 truncate ${
-                                                here ? 'font-semibold text-slate-900' : 'text-slate-500'
-                                            }`}
-                                        >
-                                            {done && <Check className="w-3 h-3 text-emerald-700 shrink-0" />}
-                                            <span className="truncate">{s.label}</span>
-                                        </span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        )}
-
-                        {/* No total until a trade is picked. How many steps
-                            there are depends on the trade — a cleaner has four
-                            and a plumber five — so announcing a number here
-                            would be a guess, and one that changes under them
-                            the moment they tap a card. */}
-                        <p className={(chosen ? 'sm:hidden ' : '') + 'text-[11px] text-slate-500' + (chosen ? ' mt-1.5' : '')}>
-                            {chosen ? 'Step ' + position + ' of ' + total + ' · ' + stepMeta.label : 'Step 1 of a few — it depends what you do'}
-                        </p>
-                    </div>
                 </div>
-
-                )}
 
                 {/* For a guest, a two-column body on wide screens: the named-
                     section rail on the left, the scrolling question column on
                     the right. Below lg the rail is hidden and the section name
                     rides as an eyebrow at the top of each screen instead. A host
                     trade keeps its single column (`contents` adds no wrapper). */}
-                <div className={isGuest ? 'flex-1 flex min-h-0 overflow-hidden' : 'contents'}>
-                    {isGuest && currentSection && flowSections.length > 0 && (
+                <div className="flex-1 flex min-h-0 overflow-hidden">
+                    {currentSection && flowSections.length > 0 && (
                         <nav aria-label="Sections"
                             className={'hidden lg:flex shrink-0 flex-col overflow-y-auto border-r border-slate-100 py-12 transition-[width] duration-300 ease-out '
                                 + (railCollapsed ? 'w-16 px-2' : 'w-72 px-6')}>
@@ -4013,7 +3933,15 @@ function ApplicationForm() {
                                         : (guestMtoArea || guestSlotChoice)
                                             ? 'max-w-2xl py-10 sm:py-12 sm:flex sm:flex-col'
                                             : 'max-w-2xl py-10 sm:py-12'))
-                    : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
+                    /* Host trades now walk the same full-page column: the trade
+                       picker gets a wider centred space for its tiles, the rest a
+                       single-question column. */
+                    : ('flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 '
+                        + (step === 'trade'
+                            ? 'max-w-3xl pt-14 pb-10 sm:pt-16 sm:pb-12'
+                            : step === 'finish'
+                                ? 'max-w-3xl py-10 sm:py-12'
+                                : 'max-w-2xl py-10 sm:py-12'))}>
                     {/* One big question a screen. The picker screens (group,
                         sub-type) and the years opener centre it — over the cards
                         for the pickers, over the big stepper for the years, both
@@ -4023,11 +3951,25 @@ function ApplicationForm() {
                         section — the mobile stand-in for the rail, and a quiet
                         anchor on desktop too. The pickers (trade, g_subtype)
                         have no section, so it shows nothing there. */}
-                    {isGuest && currentSection && (
+                    {currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
                             + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length' || step === 'g_title') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
+                    )}
+                    {/* A host trade's per-screen heading — the question, as a body
+                        h1, the way the guest screens carry theirs (it used to live
+                        in the modal header). The finish step has its own heading;
+                        the trade picker's h1 is rendered with its tiles below. */}
+                    {!isGuest && step !== 'finish' && step !== 'trade' && (
+                        <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl mb-8">
+                            {stepMeta.title}
+                        </h1>
+                    )}
+                    {!isGuest && step === 'trade' && (
+                        <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl mb-8 text-center">
+                            {stepMeta.title}
+                        </h1>
                     )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
@@ -7608,7 +7550,7 @@ function ApplicationForm() {
                     Without it the panel centres in the rail-left-only space and the
                     whole column slides by half the rail's width change every time
                     the rail collapses/expands. Hidden below lg, like the rail. */}
-                {isGuest && currentSection && flowSections.length > 0 && (
+                {currentSection && flowSections.length > 0 && (
                     <div aria-hidden
                         className={'hidden lg:block shrink-0 transition-[width] duration-300 ease-out '
                             + (railCollapsed ? 'w-16' : 'w-72')} />

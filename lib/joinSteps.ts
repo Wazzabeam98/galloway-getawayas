@@ -432,6 +432,19 @@ const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'finish', label: GUEST_SCREEN_COPY.sectionFinish, steps: ['finish'] },
 ];
 
+// The host-trade sections, the left-rail equivalent of GUEST_SECTIONS. A trade
+// walks the same full-page wizard now, so its steps group into named sections
+// too. The `trade` picker is pre-rail (like the guest pickers) — the flow
+// branches on it — so it belongs to no section. A section whose only step
+// doesn't apply to a given trade drops out (sectionsFor filters by stepApplies),
+// e.g. a cleaner with no separate credentials step.
+const TRADE_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
+    { key: 'business', label: 'Your business', steps: ['business'] },
+    { key: 'credentials', label: 'What you do', steps: ['credentials'] },
+    { key: 'prices', label: 'What you charge', steps: ['prices'] },
+    { key: 'finish', label: 'Finish', steps: ['finish'] },
+];
+
 export interface FlowSection {
     key: string;
     label: string;
@@ -441,14 +454,16 @@ export interface FlowSection {
     firstStep: StepKey;
 }
 
-// The sections this guest actually walks, in order, each carrying only the
-// steps that apply. Empty for a host trade or a guest with no context (the
-// rail is guest-only) — callers fall back to the old indicator in that case.
+// The sections this applicant actually walks, in order, each carrying only the
+// steps that apply. Guests use GUEST_SECTIONS (and need a context); a host trade
+// uses TRADE_SECTIONS. Empty only for a guest with no context yet.
 export function sectionsFor(trade: string, ctx?: StepContext): FlowSection[] {
-    if (audienceForTrade(String(trade || '')) !== 'guest' || !ctx) return [];
+    const isGuest = audienceForTrade(String(trade || '')) === 'guest';
+    if (isGuest && !ctx) return [];
+    const catalogue = isGuest ? GUEST_SECTIONS : TRADE_SECTIONS;
     const present = stepsFor(trade, ctx).map((s) => s.key);
     const out: FlowSection[] = [];
-    for (const sec of GUEST_SECTIONS) {
+    for (const sec of catalogue) {
         const steps = sec.steps.filter((k) => present.indexOf(k) !== -1);
         if (steps.length > 0) out.push({ key: sec.key, label: sec.label, steps, firstStep: steps[0] });
     }
@@ -456,9 +471,11 @@ export function sectionsFor(trade: string, ctx?: StepContext): FlowSection[] {
 }
 
 // The section a given step sits in, or null for the pre-rail pickers. Used for
-// the eyebrow at the top of each screen.
+// the eyebrow at the top of each screen. Searches the trade sections first for a
+// host step and the guest sections for a guest step; 'finish' is shared and
+// resolves to the same "Finish" label either way.
 export function sectionForStep(step: StepKey): { key: string; label: string } | null {
-    for (const sec of GUEST_SECTIONS) {
+    for (const sec of [...TRADE_SECTIONS, ...GUEST_SECTIONS]) {
         if (sec.steps.indexOf(step) !== -1) return { key: sec.key, label: sec.label };
     }
     return null;

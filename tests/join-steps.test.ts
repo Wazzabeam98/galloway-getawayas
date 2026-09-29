@@ -900,8 +900,17 @@ test('the pickers and the name step sit before the rail, in no section', () => {
     assert.equal(sectionForStep('g_creds').key, 'about');
 });
 
-test('a host trade has no rail', () => {
-    // The rail is guest-only. A plumber (or a guest with no context) gets none.
-    assert.deepEqual(sectionsFor('plumber', { group: 'x', category: 'y', shape: null }), []);
+test('a host trade now has its own rail; a guest with no context has none yet', () => {
+    // A host trade walks the full-page wizard too, so it gets the trade rail
+    // (TRADE_SECTIONS), filtered to the steps this trade actually has. It starts
+    // with the business section and ends with finish.
+    const trade = sectionsFor('plumber', { group: 'x', category: 'y', shape: null });
+    const keys = trade.map((s) => s.key);
+    assert.ok(keys.length > 0, 'a host trade has sections');
+    assert.equal(keys[0], 'business');
+    assert.equal(keys[keys.length - 1], 'finish');
+
+    // A guest needs a context before the rail can be drawn (the flow branches on
+    // the category first); without one it is still empty.
     assert.deepEqual(sectionsFor('guest'), []);
 });
