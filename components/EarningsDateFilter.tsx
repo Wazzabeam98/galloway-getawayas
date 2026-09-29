@@ -65,6 +65,7 @@ export default function EarningsDateFilter({ from, to, basePath = '/dashboard/ea
                                 onChange={(rk: RangeKeyDict) => setRange(rk.selection)}
                                 moveRangeOnFirstSelection={false}
                                 months={1}
+                                weekStartsOn={1}
                                 direction="vertical"
                                 rangeColors={['#047857']}
                                 showMonthAndYearPickers={true}
