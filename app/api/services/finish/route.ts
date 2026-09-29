@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceSubmission } from '@/lib/serviceSubmittedAlert';
-import { audienceForTrade } from '@/lib/serviceProviders';
+import { audienceForTrade, tradeSubmitBlock } from '@/lib/serviceProviders';
 import { hasSlotCapacity } from '@/lib/serviceSlots';
 import { normaliseUnit, unitMultiplies } from '@/lib/serviceOrders';
 import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, pickColumns } from '@/lib/serviceApplications';
@@ -98,6 +98,28 @@ export async function POST(req: Request) {
                     error: 'We couldn’t create this listing: a per-person session needs a set number of people, and this one has none. Please set it up again.',
                 }, { status: 400 });
             }
+        }
+
+        // ------------------------------------------------------------------
+        // The submit wall, before the account is made (no orphan user when it
+        // fires, like the capacity guard above). The same two rules the sign-up
+        // wizard enforces (submitProblems / pricingProblems): a host trade needs a
+        // description and a way to price the job — a quote tick, an hourly rate or
+        // a flat fee. A guest experience prices per item and is exempt.
+        // tradeSubmitBlock is the shared rule; the signed-in path enforces the
+        // same in the database, via submit_service_provider(). Audience comes from
+        // the trade, never the payload, so a crafted audience cannot skip it.
+        // ------------------------------------------------------------------
+        const submitBlock = tradeSubmitBlock({
+            audience: audienceForTrade(row.trade),
+            description: incoming.description,
+            provides_quote: incoming.provides_quote,
+            hourly_rate: incoming.hourly_rate,
+            flat_fee: incoming.flat_fee,
+        });
+        if (submitBlock) {
+            await logError('service-finish-invalid-trade', { application: row.id, reason: submitBlock });
+            return NextResponse.json({ ok: false, error: submitBlock }, { status: 400 });
         }
 
         // ------------------------------------------------------------------
