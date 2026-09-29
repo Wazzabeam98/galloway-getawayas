@@ -4,7 +4,6 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
@@ -14,7 +13,7 @@ import {
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
-import { getImageUrl, generateRandomNumber, backfillName, firstName } from '@/lib/utils';
+import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
 import { buildStreetAddress } from '@/lib/address';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
 import { slotOfferingFromUnits, offeringHasShared, type SlotOffering } from '@/lib/serviceSlots';
@@ -27,7 +26,6 @@ import {
     schemesSatisfying,
     blockedSkillReason,
 } from '@/lib/serviceSkills';
-import LoginModel from '@/components/auth/LoginModel';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 import {
@@ -60,7 +58,6 @@ import {
     submitProblems,
     statusSummary,
     submitStatusPatch,
-    planTerms,
     pricingModelFor,
     offersHourlyChoice,
     pickerEntries,
@@ -432,11 +429,6 @@ function ApplicationForm() {
     const [session, setSession] = useState<any>(null);
 
     const [providerId, setProviderId] = useState<string | null>(null);
-    // Set only on the unauthenticated path, where a press lodges an
-    // application rather than making an account. A provider row does not exist
-    // yet — that happens when the emailed link is opened — so this is the
-    // handle the resend button uses, and it is deliberately not providerId.
-    const [applicationId, setApplicationId] = useState<string | null>(null);
     const [status, setStatus] = useState('draft');
     const [reviewNote, setReviewNote] = useState<string | null>(null);
 
@@ -487,17 +479,6 @@ function ApplicationForm() {
     // What they already have, for step one. One business per trade, so this is
     // a list of what they hold plus what is left.
     const [mine, setMine] = useState<any[]>([]);
-    // Set when they pressed a button that needs an account. The account panel
-    // appears, and the press is replayed once they are in.
-    const [wantsToSave, setWantsToSave] = useState<null | boolean>(null);
-
-    // The account, made from what they have already typed rather than behind a
-    // door. A tradesman who has just filled in a whole form and is then asked
-    // to go and register somewhere else has been asked to do the work twice.
-    const [acctPassword, setAcctPassword] = useState('');
-    const [acctBusy, setAcctBusy] = useState(false);
-    const [acctError, setAcctError] = useState('');
-    const [acctConsent, setAcctConsent] = useState(false);
     // The provider terms agreement on the finish screen (it replaced the single
     // responsibility tickbox, which replaced the per-category checks). `termsAgreed`
     // is the agree box; on submit it is recorded in the `declarations` jsonb as
@@ -514,37 +495,6 @@ function ApplicationForm() {
     // loaded into state when the finish screen is reached. The title itself is
     // now the Title field (professionalTitle), computed inline.
     const [summaryByline, setSummaryByline] = useState('');
-    const [checkYourEmail, setCheckYourEmail] = useState(false);
-
-    // The verify-your-email gate (g_verify). A guest signs in up front with a
-    // one-time code, so the rest of the wizard runs authenticated. `otpEmail` is
-    // the address; `otpSent` flips once a code is on its way and reveals the
-    // code field; `otpCode` is what they type back; `otpBusy`/`otpError` drive
-    // the button and the message. Verifying makes (or signs into) the account,
-    // which is the anti-squatting point: no session exists until the code proves
-    // they receive mail at that address.
-    const [otpName, setOtpName] = useState('');
-    const [otpEmail, setOtpEmail] = useState('');
-    const [otpSent, setOtpSent] = useState(false);
-    const [otpCode, setOtpCode] = useState('');
-    const [otpBusy, setOtpBusy] = useState(false);
-    const [otpError, setOtpError] = useState('');
-    // The application is in. Not "an email is on its way and you must come
-    // back" — that shape is gone; see lodgeApplication.
-    const [lodged, setLodged] = useState(false);
-    // The address already has an account. Its own state rather than a line of
-    // error text, because it is not a validation message — it is a fork, and it
-    // needs to be as visible as the success panel it was being mistaken for.
-    const [accountExists, setAccountExists] = useState(false);
-    // Whether the confirmation email was actually accepted for delivery. The
-    // panel used to say it had been sent regardless, which is a promise the
-    // applicant then waits on for ever.
-    const [verificationEmailed, setVerificationEmailed] = useState(true);
-    const [resending, setResending] = useState(false);
-    const [resendSaid, setResendSaid] = useState('');
-    // For somebody who has been here before. Not the default, because most
-    // people arriving at this point have no account.
-    const [showSignIn, setShowSignIn] = useState(false);
     const [areas, setAreas] = useState<AreaRow[]>([]);
 
     const [saving, setSaving] = useState(false);
@@ -884,7 +834,7 @@ function ApplicationForm() {
                 // able to see what they are signing up for, and fill it in,
                 // before being asked for anything.
                 if (!session) {
-                    restoreDraft(null);
+                    restoreDraft();
                     return;
                 }
 
@@ -1161,9 +1111,7 @@ function ApplicationForm() {
                 } else {
                     // Signed in, nothing saved for this trade — so anything
                     // they typed before signing in is still the newest thing.
-                    // Pass the freshly-fetched session so the restore knows they
-                    // are signed in (the state hasn't updated within this run).
-                    restoreDraft(session);
+                    restoreDraft();
                     setContactEmail((prev) => prev || session.user.email || '');
                 }
 
@@ -1201,17 +1149,14 @@ function ApplicationForm() {
         // time this runs on hydrate, restoreDraft has already put back any saved
         // category, so this reads the real answer.
         const guestNeedsCategory = audienceForTrade(tradeFromUrl) === 'guest' && !guestCategory && !providerId;
-        // A guest with no session opens on the verify gate, before the picker.
-        // Session is set inside the same load() that flips `hydrated`, so it is
-        // already known by the time this runs.
-        const openState = { hydrated, restored, lodged, trade: tradeFromUrl, guestNeedsCategory, hasSession: !!session, category: guestCategory };
+        const openState = { hydrated, restored, trade: tradeFromUrl, guestNeedsCategory, category: guestCategory };
         const opening = openingStep(openState);
         if (opening === null) return;
 
         setStep(opening);
         setVisited(openingVisited(openState) || []);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hydrated, restored, lodged, tradeFromUrl]);
+    }, [hydrated, restored, tradeFromUrl]);
 
     // ONE SOURCE OF TRUTH FOR THE TRADE.
     //
@@ -1254,10 +1199,7 @@ function ApplicationForm() {
     // a cleaner.
     const chosen = tradeFromUrl !== '';
 
-    // `sessionArg` is passed by load() because the component `session` state has
-    // not updated yet inside that same synchronous run — reading it here would
-    // see a stale null and mis-resolve a signed-in user onto the verify gate.
-    const restoreDraft = (sessionArg: any = null) => {
+    const restoreDraft = () => {
         // Nothing has been picked, so there is no draft to come back to: the
         // key would be the empty one, and the only thing ever written under it
         // is the blank form. Restoring that told a first-time visitor "we kept
@@ -1384,12 +1326,7 @@ function ApplicationForm() {
             const restoreTrade = d.trade || tradeFromUrl;
             const restoreCtx: StepContext | undefined =
                 audienceForTrade(restoreTrade) === 'guest'
-                    // hasSession MUST be carried here, not just in the opening
-                    // context: without it the verify-email gate (g_verify) counts
-                    // as a live step during restore, and a signed-in applicant
-                    // with any saved draft is resolved onto the email screen they
-                    // should never see. A signed-in user has no g_verify step.
-                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null), fulfilment: d.fulfilment }
+                    ? { category: d.guestCategory, shape: d.shape, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null), fulfilment: d.fulfilment }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
@@ -1989,7 +1926,7 @@ function ApplicationForm() {
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
         isGuest
-            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotOffer, fulfilment }
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, slotOffer, fulfilment }
             : undefined;
 
     const problemFor = (field: string) => {
@@ -2715,124 +2652,7 @@ function ApplicationForm() {
         });
     };
 
-    // Making the account out of what they have already typed.
-    //
-    // Their contact email is the account email: asking for a second address at
-    // the end of a form that already has one is asking a question we know the
-    // answer to. The password is the only new thing, and the tick box is the
-    // consent — an account should not appear because somebody pressed Save.
-    const createAccount = async (): Promise<any> => {
-        const email = contactEmail.trim();
-
-        if (!email || email.indexOf('@') === -1) {
-            setAcctError('Add an email address above — that is the one your account will use.');
-            return null;
-        }
-
-        if (acctPassword.length < 8) {
-            setAcctError('Pick a password of at least 8 characters.');
-            return null;
-        }
-
-        if (!acctConsent) {
-            setAcctError('Tick the box and we will make your account.');
-            return null;
-        }
-
-        setAcctBusy(true);
-        setAcctError('');
-
-        try {
-            // signUp returns Supabase's own errors but THROWS anything else —
-            // a dropped connection, a 5xx, a CORS refusal. Without this catch
-            // the throw escapes and the button sits there having said nothing.
-            const { data, error } = await supabaseEmailFlow().auth.signUp({
-                email: email,
-                password: acctPassword,
-                options: {
-                    // The PERSON's name, never the business. full_name is the
-                    // shared personal field the whole site reads for bylines,
-                    // messages and trip cards, so the business name must never
-                    // reach it. Blank when we have no personal name (a trade, or
-                    // a guest who skipped "Your name") — the trigger then seeds an
-                    // empty full_name rather than something wrong.
-                    data: providerName.trim() ? { name: providerName.trim() } : {},
-                    // Straight back to this form, with the trade, so a
-                    // confirmed address lands on the thing they were doing
-                    // rather than on the home page.
-                    emailRedirectTo: window.location.origin
-                        + '/auth/callback?next='
-                        + encodeURIComponent('/services/join/apply?trade=' + tradeFromUrl),
-                },
-            });
-
-            setAcctBusy(false);
-
-            if (error) {
-                const message = String(error.message || '');
-                setAcctError(
-                    /already/i.test(message)
-                        ? 'There is already an account on that address. Sign in below and we will save this to it.'
-                        : message || 'That did not work.'
-                );
-                if (/already/i.test(message)) setShowSignIn(true);
-                return null;
-            }
-
-            // With email confirmation switched on, signUp returns a user and
-            // NO session — so nothing can be written yet. The form is already
-            // in local storage and the link comes back here, so this is a
-            // pause rather than a loss, but it has to be SAID: silently doing
-            // nothing looks exactly like a broken button.
-            if (!data.session) {
-                setCheckYourEmail(true);
-                return null;
-            }
-
-            // Only reachable with email confirmation switched OFF. The
-            // email-flow client keeps no session of its own, so hand it to the
-            // auth-helpers client, which owns the cookies the rest of the site
-            // reads — including the update immediately below, which needs to be
-            // authenticated as this user for the row policy to allow it.
-            await supabase.auth.setSession(data.session);
-
-            // UPDATE, NOT UPSERT — see components/auth/SignupModel.tsx for
-            // why. The row already exists; the upsert needed SELECT on email
-            // and had been failing since 20260828234003.
-            //
-            // full_name is seeded from the PERSON's name if we have one, never
-            // the business. The trigger already wrote it from the signUp metadata
-            // above; this is belt-and-braces for the personal name, and a no-op
-            // when there is none rather than a write of the business name.
-            const personalName = providerName.trim();
-            if (personalName) {
-                await supabase.from('profiles')
-                    .update({ full_name: personalName })
-                    .eq('id', data.session.user.id);
-            }
-
-            setSession(data.session);
-            return data.session;
-        } catch (err: any) {
-            setAcctBusy(false);
-            setAcctError('Something went wrong making your account. Try again.');
-            return null;
-        }
-    };
-
-    // The rows this application is made of, built in one place.
-    //
-    // There are two ways they get written and they must not drift. A signed-in
-    // provider writes them straight from the browser under RLS. A FIRST
-    // application has no session — the account is made in the same breath — so
-    // it posts them to /api/services/apply, which writes them on behalf of the
-    // account it has just created.
-    //
-    // Same shapes, same rules, one definition. `owner_id` is deliberately not
-    // here: the browser knows it, the route decides it, and neither should be
-    // taking the other's word for it.
-    // The guest-experience columns, shared by both write paths so they can't
-    // drift. All are a starting point the owner confirms at review:
+    // The guest-experience columns. All are a starting point the owner confirms at review:
     //   - custom_label: the picked category's guest-facing word. Seeded only
     //     while the row is not yet approved, so the owner's confirmed label at
     //     review is never overwritten by a later applicant edit. "Something else"
@@ -2917,14 +2737,9 @@ function ApplicationForm() {
         };
     };
 
-    // The Airbnb-shaped content answers, for the APPLICATION PAYLOAD ONLY.
-    //
-    // Deliberately NOT part of guestProviderFields: that is spread into the
-    // signed-in column write as well, and none of these six has a column yet, so
-    // sending them there would fail the insert. They ride only in the apply
-    // route's jsonb payload (service_applications.payload), which needs no
-    // migration to hold them — and are materialised to columns later, when the
-    // guest_details column lands. Empty stays null so the stored object is clean.
+    // The Airbnb-shaped content answers, written to the guest_details jsonb
+    // column (not spread into the row like guestProviderFields). Empty stays null
+    // so the stored object is clean.
     const guestContentFields = (): Record<string, string | string[] | null> => {
         const t = (v: string) => (String(v || '').trim() || null);
         // A host trade now fills the SAME About-you hub as a guest — a years
@@ -3002,320 +2817,6 @@ function ApplicationForm() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isGuest, step, session]);
 
-    const applicationRows = (now: Date, title: string) => {
-        const provider: any = {
-            ...guestProviderFields(),
-            // The content answers ride only here, in the application payload —
-            // never in the signed-in column write (they have no columns yet).
-            ...guestContentFields(),
-            // A guest's title is their Title (the Intro field), passed in; a host
-            // trades under the business name they typed.
-            business_name: audienceForTrade(trade) === 'guest' ? title : businessName.trim(),
-            trade,
-            // The "Other" trade's typed name — the label they're listed under.
-            ...(trade === 'other' && otherText.trim() ? { custom_label: otherText.trim() } : {}),
-            description: contentDescription(),
-            contact_email: contactEmail.trim(),
-            contact_phone: contactPhone.trim() || null,
-            sms_opt_out: smsOptOut,
-            audience: audienceForTrade(trade),
-            // Who they are — a guest trade only. A guest is choosing someone to
-            // come into their cottage, so the listing carries a bit of the
-            // person. Null for a host trade, where a logo and a trade say enough.
-            provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
-            dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
-            headshot,
-            photos,
-            logo,
-            does_gas: asksAboutFuel(trade) ? doesGas : false,
-            does_oil: asksAboutFuel(trade) ? doesOil : false,
-            // One pricing shape for every trade: quote / hourly / flat, with an
-            // optional call-out fee. The old bands columns are written null so an
-            // existing row's bands are cleared when it re-saves.
-            callout_fee: calloutFee.trim() !== '' ? Number(calloutFee) : null,
-            hourly_rate: hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
-            callout_waived: calloutFee.trim() !== '' ? calloutWaived : false,
-            provides_quote: provideQuote,
-            flat_fee: flatFee.trim() !== '' ? Number(flatFee) : null,
-            registration_number: (asksAboutFuel(trade) || trade === 'electrician') ? (registrationNumber.trim() || null) : null,
-            pricing_choice: null,
-            billable_hourly_rate: null,
-            covered_bands: [],
-            updated_at: now.toISOString(),
-        };
-
-        const registrations_ = showableSchemes
-            .map((scheme) => ({ scheme, number: String(registrations[scheme] || '').trim() }))
-            .filter((r) => r.number !== '');
-
-        const extras_ = tradeExtras
-            .filter((extra) => {
-                const entry = extraOf(extra.key);
-                if (extra.type === 'priced') {
-                    return entry.quote === true || (String(entry.price).trim() !== '' && Number(entry.price) > 0);
-                }
-                return entry.offered;
-            })
-            .map((extra) => {
-                const entry = extraOf(extra.key);
-                const byQuote = extra.type === 'priced' && entry.quote === true;
-                const priced = extra.type === 'priced' && !byQuote && String(entry.price).trim() !== '' && Number(entry.price) > 0;
-                return {
-                    extra_key: extra.key,
-                    offered: true,
-                    price: priced ? Number(entry.price) : null,
-                    quote: byQuote,
-                    notes: String(entry.notes || '').trim() || null,
-                    updated_at: now.toISOString(),
-                };
-            });
-
-        const prices_ = model === 'bands'
-            ? bandsFor(trade)
-                .filter((band) => {
-                    const entry = prices[band.key];
-                    return entry && String(entry.price).trim() !== '' && Number(entry.price) > 0;
-                })
-                .map((band) => {
-                    const entry = prices[band.key];
-                    const hours = String(entry.typical_hours || '').trim();
-                    return {
-                        band_key: band.key,
-                        price: Number(entry.price),
-                        typical_hours: hours === '' || !(Number(hours) > 0) ? null : Number(hours),
-                        updated_at: now.toISOString(),
-                    };
-                })
-            : [];
-
-        const areas_ = areas.map((a) => {
-            const town = COVERAGE_TOWNS.filter((t) => t.label === a.town)[0];
-            return {
-                label: a.town,
-                centre_lat: town ? town.lat : 0,
-                centre_lng: town ? town.lng : 0,
-                radius_miles: a.radius_miles,
-            };
-        });
-
-        // The menu, for a guest trade. Only rows with a name and a real price;
-        // everyone names their items now, so a nameless row is an empty one and
-        // drops out, and a half-filled form does not create a phantom item.
-        const items_ = audienceForTrade(trade) === 'guest'
-            ? items
-                .map((it, i) => ({
-                    name: String(it.name || '').trim(),
-                    description: String(it.description || '').trim() || null,
-                    price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    // A slot keeps each item's OWN unit — flat for a private hire,
-                    // person for a shared table — so 'both' can carry two.
-                    unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
-                    image: it.image || null,
-                    sort_order: i,
-                    active: true,
-                }))
-                .filter((r) => r.name && r.price !== null && Number(r.price) > 0)
-            : [];
-
-        return {
-            provider,
-            registrations: registrations_,
-            extras: extras_,
-            prices: prices_,
-            areas: areas_,
-            items: items_,
-            skills: hasSkills ? skills : [],
-            // Weekly hours no longer come from the wizard — set in the listing
-            // editor's Availability section after create.
-            slotAvailability: [],
-        };
-    };
-
-    // The whole application, in one request, for somebody who has no account
-    // yet. See app/api/services/apply/route.ts for why it cannot be done from
-    // here: there is no session to write under until the email is confirmed,
-    // and waiting for that is what lost applications.
-    // Ask again for the confirmation email. Takes the application id, never an
-    // address — see app/api/services/resend-verification/route.ts for why that
-    // distinction is the whole design.
-    const askAgainForEmail = async () => {
-        setResending(true);
-        setResendSaid('');
-        try {
-            const res = await fetch('/api/services/resend-verification', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ applicationId }),
-            });
-            const out = await res.json().catch(() => ({}));
-
-            if (out.sent) setResendSaid('Sent. Give it a minute or two, and check the spam folder.');
-            else if (out.wait) setResendSaid('One is already on its way — try again in ' + out.wait + ' seconds.');
-            else if (out.capped) setResendSaid('That is as many as we can send today. Email us and we will sort it out.');
-            else setResendSaid('We could not send it just now. Your application is still with us either way.');
-        } catch (err) {
-            setResendSaid('We could not reach the site. Your application is still with us either way.');
-        }
-        setResending(false);
-    };
-
-    // The verify-your-email gate. Send a one-time code, then verify it. Uses the
-    // MAIN client (not supabaseEmailFlow, which is deliberately session-less for
-    // the lodge flow) so verifyOtp writes a real session the rest of the wizard
-    // reads.
-    const sendOtp = async () => {
-        const email = otpEmail.trim();
-        if (!email || email.indexOf('@') === -1) {
-            setOtpError('Enter the email address we should send your code to.');
-            return;
-        }
-        setOtpBusy(true);
-        setOtpError('');
-        // shouldCreateUser makes the account on first verify; a returning
-        // applicant is signed into their existing one by the same code. Either
-        // way nothing exists until the code is entered — the anti-squatting
-        // point the old emailed-link flow was built around, kept.
-        const { error } = await supabase.auth.signInWithOtp({
-            email,
-            // The PERSON's name, captured here at the account step — it is
-            // account information, and it becomes the listing title (a guest
-            // experience is a person, not a business). Supabase writes it to
-            // raw_user_meta_data on account creation, and the add_profile_for_new_user
-            // trigger copies it into profiles.full_name. Only applied when the
-            // account is CREATED — a returning applicant keeps their existing name.
-            options: { shouldCreateUser: true, data: { name: otpName.trim() } },
-        });
-        setOtpBusy(false);
-        if (error) {
-            setOtpError(error.message);
-            return;
-        }
-        setOtpSent(true);
-    };
-
-    const verifyOtp = async () => {
-        const email = otpEmail.trim();
-        const token = otpCode.trim();
-        if (!token) {
-            setOtpError('Enter the code from your email.');
-            return;
-        }
-        setOtpBusy(true);
-        setOtpError('');
-        const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-        setOtpBusy(false);
-        if (error || !data.session) {
-            setOtpError((error && error.message) || 'That code did not work. Check it and try again.');
-            return;
-        }
-        // Signed in. A NEW account already has the typed name (Supabase applied
-        // the sign-up metadata on creation). A RETURNING one does not — the
-        // metadata is ignored for an existing user — so if that account has no
-        // name yet, fill it from what they typed. backfillName never overwrites
-        // an existing name and never writes an empty one, so this is a no-op for
-        // everyone but the returning-with-no-name case it exists to close.
-        const { data: prof } = await supabase
-            .from('profiles').select('full_name').eq('id', data.session.user.id).maybeSingle();
-        const fill = backfillName(prof?.full_name, otpName);
-        if (fill) {
-            await supabase.from('profiles')
-                .update({ full_name: fill }).eq('id', data.session.user.id);
-        }
-
-        // The address they verified is the one to reach them on, so it pre-fills
-        // the contact field. Then move to the category picker — verify is the
-        // first screen now, so the picker is what comes next. Done in the same
-        // action, because setting the session drops g_verify from the flow and we
-        // must not be left standing on a step that no longer exists.
-        setSession(data.session);
-        if (!contactEmail.trim()) setContactEmail(email);
-        setStep('trade');
-        scrollPanelToTop();
-    };
-
-    const lodgeApplication = async () => {
-        const email = contactEmail.trim();
-        setAccountExists(false);
-
-        // No password gate here any more. This press does not make an account:
-        // it lodges the application and emails a link, and the password is
-        // chosen on the page that link opens — which is the only point at which
-        // anybody has shown they can receive mail at this address.
-        if (!email || email.indexOf('@') === -1) {
-            setAcctError('Add an email address above — that is the one we will send your link to.');
-            return;
-        }
-        if (!acctConsent) {
-            setAcctError('Tick the box and we will send you your link.');
-            return;
-        }
-
-        setSaving(true);
-        setAcctError('');
-
-        // A guest's business_name is now the LISTING title (g_title) — the name of
-        // the experience — not their professional title, which rides in
-        // guest_details and shows as a credential. A host trades under the business
-        // name they typed.
-        const title = audienceForTrade(trade) === 'guest' ? listingTitle.trim() : businessName.trim();
-        const rows = applicationRows(new Date(), title);
-
-        try {
-            const res = await fetch('/api/services/apply', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email,
-                    // The applicant's own name (never the business) — it becomes
-                    // profiles.full_name when the account is made at /finish. Null
-                    // when we have none, so full_name is left blank, not wrong.
-                    name: providerName.trim() || null,
-                    ...rows,
-                }),
-            });
-
-            const out = await res.json().catch(() => ({}));
-            setSaving(false);
-
-            if (!res.ok || !out.ok) {
-                // There is no account_exists fork any more, because the route
-                // no longer answers that question. "There is already an account
-                // on that address" is an oracle any stranger could query for
-                // any address, so both cases now return the same thing and the
-                // difference is carried in the email — which only its owner can
-                // read. Somebody who already has an account gets a message
-                // telling them to sign in.
-                setAcctError(out.error || 'That did not work. Try again.');
-                return;
-            }
-
-            // It is in. Nothing to come back and press.
-            //
-            // ORDER AND STEP MATTER HERE, and getting them wrong is what made a
-            // successful application look like a failed one.
-            //
-            // `setRestored(false)` used to be in this list, to clear the "your
-            // details have been saved" banner. It also un-did the one condition
-            // holding the open-on-this-step effect back, so that effect ran
-            // again and put them on step two — of a form now locked, with no
-            // confirmation anywhere, because the panel that says "your
-            // application is in" only renders on the finish step.
-            //
-            // A successful send and a failed one therefore looked identical:
-            // both ended on step two. The step is now pinned to finish and
-            // `lodged` holds that effect off for good.
-            forgetDraft();
-            setApplicationId(out.applicationId);
-            setLodged(true);
-            setVerificationEmailed(out.verificationEmailed !== false);
-            setStep('finish');
-            scrollPanelToTop();
-        } catch (err: any) {
-            setSaving(false);
-            setAcctError('We could not reach the site. Check your connection and try again.');
-        }
-    };
-
     const save = async (submit: boolean) => {
         // Agreeing to the terms gates send for a guest — someone who won't agree
         // should not go live. Checked before the account/validation branches so it
@@ -3329,40 +2830,6 @@ function ApplicationForm() {
         }
 
         let active: any = session;
-
-        // No detour. The details they have entered make the account, and the
-        // same press that makes it saves the form — rather than sending
-        // somebody who has just filled in twenty fields off to register
-        // elsewhere and hope their work is still here when they get back.
-        //
-        // What they typed is in local storage on every keystroke regardless,
-        // so any route out of this page is survivable.
-        if (!session) {
-            setWantsToSave(submit);
-            if (submit) setTouchedSubmit(true);
-
-            // Still gate on the form being right. Making an account for
-            // somebody whose application cannot be sent is the worst order to
-            // do these two things in.
-            if (submit && problems.length) {
-                goToFirstProblem();
-                return;
-            }
-
-            // ONE PRESS. The account is made and the application is lodged in
-            // the same request, by /api/services/apply.
-            //
-            // It used to make the account here, find no session — because
-            // confirmation is on and signUp returns none — and stop, leaving
-            // the applicant a screen asking them to open a link, come back, and
-            // press send again. Anything that went wrong in between lost the
-            // lot, silently, because no row had been written to lose.
-            //
-            // Verification still happens; it just does not hold the application
-            // up. The row is in the queue before they have opened their inbox.
-            await lodgeApplication();
-            return;
-        }
 
         if (submit) {
             setTouchedSubmit(true);
@@ -3816,17 +3283,6 @@ function ApplicationForm() {
             toast.success('Saved.', { theme: 'colored' });
         }
     };
-
-    // Signed in after pressing a button that needed it: carry on where they
-    // left off rather than making them find the button again.
-    useEffect(() => {
-        if (session && wantsToSave !== null && !saving) {
-            const submit = wantsToSave;
-            setWantsToSave(null);
-            save(submit);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [session, wantsToSave]);
 
     if (loading) {
         return <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-slate-500">Loading…</div>;
@@ -5417,118 +4873,6 @@ function ApplicationForm() {
                     down to zero (a business started this year has none and we'd
                     still take them), and it shows a suggestion but stores nothing
                     until touched — the same rule as the where-and-when counts. */}
-                {/* VERIFY YOUR EMAIL — the account gate, straight after the
-                    category pick. A one-time code, so the rest of the wizard runs
-                    signed in: photos upload, everything saves to the database, and
-                    the finish screen is a real submit. No password here — the code
-                    is the proof, and it is what stops anyone building on an address
-                    they don't control. */}
-                {onStep('g_verify') && isGuest && (
-                <section className="mb-8 md:max-w-md">
-                    <p className="text-slate-600 [text-wrap:pretty]">
-                        We’ll email you a code to confirm this address. Enter it and you’re in —
-                        everything you add from here is saved to your account as you go.
-                    </p>
-
-                    <div className="mt-8 space-y-5">
-                        <div>
-                            <label htmlFor="otp-name" className="block text-xs font-medium text-slate-500 mb-2">
-                                Your name <span className="text-slate-400">(optional)</span>
-                            </label>
-                            {/* Captured here, at the account step, because it is
-                                account information — it becomes your listing title,
-                                since a guest experience is a person, not a business.
-                                Not asked again later in the flow. */}
-                            <input
-                                id="otp-name"
-                                type="text"
-                                autoComplete="name"
-                                value={otpName}
-                                onChange={(e) => setOtpName(e.target.value)}
-                                disabled={otpSent}
-                                placeholder={GUEST_SCREEN_COPY.verifyNamePlaceholder}
-                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="otp-email" className="block text-xs font-medium text-slate-500 mb-2">
-                                Your email
-                            </label>
-                            <input
-                                id="otp-email"
-                                type="email"
-                                inputMode="email"
-                                autoComplete="email"
-                                value={otpEmail}
-                                onChange={(e) => setOtpEmail(e.target.value)}
-                                disabled={otpSent}
-                                placeholder={GUEST_SCREEN_COPY.verifyEmailPlaceholder}
-                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
-                            />
-                        </div>
-
-                        {!otpSent ? (
-                            <button
-                                type="button"
-                                onClick={sendOtp}
-                                // Email alone unlocks the code. The name must not
-                                // block a stranger on the first screen — it's the
-                                // cheapest place to give up. Blank is no worse than
-                                // before; it's captured at creation when given, and
-                                // can be set later otherwise.
-                                disabled={otpBusy || !otpEmail.trim()}
-                                className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
-                                    + (otpBusy || !otpEmail.trim()
-                                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                        : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
-                            >
-                                {otpBusy ? 'Sending…' : 'Email me a code'}
-                            </button>
-                        ) : (
-                            <>
-                                <div>
-                                    <label htmlFor="otp-code" className="block text-xs font-medium text-slate-500 mb-2">
-                                        The code we emailed you
-                                    </label>
-                                    <input
-                                        id="otp-code"
-                                        type="text"
-                                        inputMode="numeric"
-                                        autoComplete="one-time-code"
-                                        value={otpCode}
-                                        onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))}
-                                        placeholder="123456"
-                                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-2xl tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                    />
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={verifyOtp}
-                                    disabled={otpBusy || !otpCode.trim()}
-                                    className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
-                                        + (otpBusy || !otpCode.trim()
-                                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                            : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
-                                >
-                                    {otpBusy ? 'Checking…' : 'Verify and carry on'}
-                                </button>
-                                <p className="text-sm text-slate-500">
-                                    No code yet? Check spam, or{' '}
-                                    <button type="button" onClick={sendOtp} disabled={otpBusy}
-                                        className="font-semibold text-emerald-700 hover:text-emerald-800 underline disabled:opacity-60">
-                                        send another
-                                    </button>.
-                                </p>
-                            </>
-                        )}
-
-                        {otpError && (
-                            <p data-problem className="text-sm text-rose-700">{otpError}</p>
-                        )}
-                    </div>
-                </section>
-                )}
-
                 {/* The years opener — shared by both flows now. A host trade opens
                     on this same counter, saved the same way (guest_details.
                     years_experience). */}
@@ -6690,99 +6034,6 @@ function ApplicationForm() {
 
 
 
-            {/* The account, inline, made out of what they have already typed.
-                This was a login wall: a tradesman filled in the whole form and
-                then met a door. Now the last field on the form is a password
-                and the button that sends it also makes the account.
-
-                No second email box. Their contact address is the account
-                address — asking again is asking a question we know the answer
-                to, and two addresses that can disagree is a support problem
-                waiting to happen. */}
-            {onStep('finish') && !session && !lodged && (
-                <div className="rounded-2xl border border-slate-300 p-5 mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                        Where we will send your link
-                    </h2>
-                    {/* NO PASSWORD FIELD HERE ANY MORE, and that is the change.
-                        This press used to create a real account from a public
-                        form, so a stranger could type your address in and you
-                        had an account you never made — you could not sign up
-                        later, and you got a confirmation email you never asked
-                        for. The password now belongs on the page the emailed
-                        link opens, because that is the first moment anybody has
-                        shown they can receive mail at this address. */}
-                    <p className="text-sm text-slate-500 mb-4">
-                        We will email{' '}
-                        <strong className="text-slate-900">{contactEmail.trim() || 'the address above'}</strong>{' '}
-                        a link. Open it, pick a password, and your application goes to us. Everything
-                        you have typed is saved either way.
-                    </p>
-
-                    {/* What it costs, beside the tick box that agrees to it.
-                        Nothing on the site said this before — the model lived
-                        in conversations — and this is the one moment somebody
-                        is agreeing to something, so it is the one place it has
-                        to appear. Worded by lib/serviceProviders.ts planTerms,
-                        so this and the approval email cannot differ. */}
-                    <p className="text-sm text-slate-600 mt-4 rounded-xl bg-slate-50 border border-slate-200 p-3.5">
-                        {planTerms(trade)}
-                    </p>
-
-                    <label className="flex items-start gap-2.5 mt-3 text-sm text-slate-800">
-                        <input
-                            type="checkbox"
-                            checked={acctConsent}
-                            onChange={(e) => { setAcctConsent(e.target.checked); setAcctError(''); }}
-                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
-                        />
-                        <span>I am happy for you to email me a link</span>
-                    </label>
-
-                    {acctError && (
-                        <p data-problem className="text-sm text-rose-700 mt-2">{acctError}</p>
-                    )}
-
-                    {/* Offered, not imposed. Somebody who has been here before
-                        should not be made to invent a second account, but most
-                        people at this point have none — so it is a link rather
-                        than half the panel. */}
-                    {!showSignIn ? (
-                        <button
-                            type="button"
-                            onClick={() => setShowSignIn(true)}
-                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline mt-4"
-                        >
-                            I already have an account
-                        </button>
-                    ) : (
-                        <div data-signin className="mt-4 pt-4 border-t border-slate-200">
-                            <p className="text-sm text-slate-600 mb-3">
-                                Sign in and we will save this straight to your account. Nothing you have
-                                typed is lost.
-                            </p>
-                            <LoginModel />
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Email confirmation is on, so signUp gave us a user and no
-                session and nothing can be written yet. Saying so matters: a
-                button that silently does nothing looks broken, and the form is
-                safe in local storage whether or not they believe us. */}
-            {/* It is lodged. The email is a separate errand, and it says so:
-                nothing about the application is waiting on it. The old panel
-                here asked them to open a link, come back, and press send — and
-                if anything went wrong in between, the application had never
-                been written at all. */}
-            {/* The address already has an account. Deliberately the same
-                weight as the success panel: the two were being confused, and
-                the one that means "nothing was sent" cannot be the quieter of
-                them. Both ways forward are here — signing in is offered right
-                below, and changing the address is a button rather than an
-                instruction, because the field is two steps back and telling
-                somebody to go and find it is how they give up. */}
             {/* The finish screen for a guest: a full-width PREVIEW of what they're
                 submitting — cover photo, name, category, price, coverage, and what
                 they wrote — so their last impression after ten screens is their own
@@ -6791,7 +6042,7 @@ function ApplicationForm() {
                 REQUIRED to send — the save() guard and the gated button both hold
                 on `termsAgreed`; the acceptance (version + timestamp) is recorded
                 in the declarations jsonb (guestProviderFields). */}
-            {onStep('finish') && isGuest && !locked && !lodged && (() => {
+            {onStep('finish') && isGuest && !locked && (() => {
                 const catLabel = guestCategoryByKey(guestCategory)?.label || GUEST_SCREEN_COPY.finishSummaryCategory;
                 const priceVal = (items || [])
                     .filter((i) => String(i.price || '').trim())
@@ -7013,148 +6264,28 @@ function ApplicationForm() {
                 </div>
             )}
 
-            {onStep('finish') && accountExists && !lodged && (
-                <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-5 mb-8">
-                    <p className="font-semibold text-amber-900">
-                        Nothing has been sent — that address already has an account.
-                    </p>
-                    <p className="text-sm text-amber-900/90 mt-1.5">
-                        <strong className="font-semibold">{contactEmail.trim()}</strong> is already
-                        registered here. Your application is still on this page and nothing has been
-                        lost. Two ways on:
-                    </p>
-                    <div className="flex flex-wrap gap-3 mt-4">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setAccountExists(false);
-                                setShowSignIn(true);
-                                setStep('finish');
-                                // The sign-in block is below; put them at it.
-                                setTimeout(() => {
-                                    const el = document.querySelector('[data-signin]');
-                                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                }, 50);
-                            }}
-                            className="rounded-full bg-amber-700 hover:bg-amber-800 text-white px-5 py-2.5 text-sm font-semibold transition"
-                        >
-                            Sign in and send it from that account
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setAccountExists(false);
-                                setShowSignIn(false);
-                                // The email lives on the business step. Take
-                                // them to it rather than describing where it is.
-                                setStep('business');
-                                scrollPanelToTop();
-                            }}
-                            className="rounded-full border border-amber-600 px-5 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100 transition"
-                        >
-                            Use a different address
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {onStep('finish') && lodged && (
-                <div className="rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5 mb-8">
-                    <p className="font-semibold text-emerald-900">Saved. One step left.</p>
-                    <p className="text-sm text-emerald-900/80 mt-1">
-                        Everything you typed is with us — the work you cover, your areas, your prices.
-                        Nothing here is lost whatever happens next.
-                    </p>
-                    {audienceForTrade(trade) === 'guest' && (
-                        <p className="text-sm text-emerald-900/80 mt-3">
-                            A person reads what you described and decides whether it’s a fit for guests,
-                            and what category it takes. That’s ours to do — your listing is with us and
-                            we’ll be in touch.
-                        </p>
-                    )}
-                    {verificationEmailed ? (
-                        <p className="text-sm text-emerald-900/80 mt-3">
-                            We have sent a link to <strong>{contactEmail.trim()}</strong>. Open it, pick a
-                            password, and your application goes straight to us — usually answered within{' '}
-                            {REVIEW_WITHIN_HOURS} hours. The link works for 14 days, and if you miss it we
-                            will send another.
-                        </p>
-                    ) : (
-                        /* The send was refused. Saying "we have sent a link"
-                           here would have them watching an inbox for something
-                           that was never accepted — and the application, which
-                           IS in, is the part that matters. */
-                        <p className="text-sm text-amber-900 mt-3 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
-                            We could not send the link to <strong>{contactEmail.trim()}</strong> just
-                            now — so do not sit waiting for one. Everything you typed is saved and we
-                            can see it. Press the button below to try again, or leave it with us and we
-                            will chase you ourselves.
-                        </p>
-                    )}
-
-                    {/* Offered whether or not the first one went. "It says it
-                        sent but nothing arrived" is at least as common as a
-                        refusal, and both have the same answer. It asks for the
-                        email belonging to THIS application — there is nowhere
-                        to type an address, which is what keeps it from being a
-                        way to mail somebody else. */}
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
-                        <button
-                            type="button"
-                            onClick={askAgainForEmail}
-                            disabled={resending}
-                            className="rounded-full border border-emerald-700 px-5 py-2.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 transition disabled:opacity-60"
-                        >
-                            {resending ? 'Sending…' : 'Send the confirmation email again'}
-                        </button>
-                        {resendSaid && (
-                            <span className="text-sm text-emerald-900/80">{resendSaid}</span>
-                        )}
-                    </div>
-                </div>
-            )}
-
             {/* "Save and finish later" now lives in the footer, on the same line
                 as the send button (see the footer below). What stays here is the
-                live-business note, and — signed out — the reassurance that the
-                form is safe on the device. The block renders only when it has
-                something to say, so an empty divider never shows. */}
-            {onStep('finish') && !locked && !lodged && (status === 'approved' || !session) && (
+                live-business note. The block renders only when it has something
+                to say, so an empty divider never shows. */}
+            {onStep('finish') && !locked && status === 'approved' && (
                 <div className="border-t border-slate-200 pt-6">
-                    {status === 'approved' ? (
-                        <>
-                            <p className="text-sm text-slate-600 mb-4">
-                                You will stay live while we look. Changing your{' '}
-                                <strong className="font-semibold text-slate-800">
-                                    business name, category, description, logo, or who you sell to
-                                </strong>{' '}
-                                means we check it again and email you — your listing stays up the whole
-                                time. Contact details and the areas you cover change straight away, with
-                                nothing to wait for.
-                            </p>
-                        </>
-                    ) : (
-                        <div className="flex flex-wrap items-center gap-3">
-                            {/* Signed out there is nowhere to save TO, so instead
-                                of a button this says what actually happens: the
-                                form is in this browser and will be here when they
-                                come back. */}
-                            {(
-                                <p className="text-sm text-slate-500">
-                                    Everything you have typed stays on this device, so you can close
-                                    this and come back to it.
-                                </p>
-                            )}
-                        </div>
-                    )}
-
+                    <p className="text-sm text-slate-600 mb-4">
+                        You will stay live while we look. Changing your{' '}
+                        <strong className="font-semibold text-slate-800">
+                            business name, category, description, logo, or who you sell to
+                        </strong>{' '}
+                        means we check it again and email you — your listing stays up the whole
+                        time. Contact details and the areas you cover change straight away, with
+                        nothing to wait for.
+                    </p>
                 </div>
             )}
 
             {/* Only a draft, and only one they have actually started. Its own
                 block (not nested in the note above), so a signed-in returning
                 draft can still remove it. */}
-            {onStep('finish') && !locked && !lodged && status === 'draft' && providerId && (
+            {onStep('finish') && !locked && status === 'draft' && providerId && (
                 <div className="mt-8 pt-6 border-t border-slate-200">
                     {!confirmRemove ? (
                         <button
@@ -7241,10 +6372,9 @@ function ApplicationForm() {
 
                     {/* "Save and finish later" sits at the left of the footer on
                         the finish step, on the same line as the send button, rather
-                        than floating in the content where it was easy to miss. Only
-                        when signed in (there is somewhere to save to) and not a live
-                        business re-applying. */}
-                    {onStep('finish') && !locked && !lodged && status !== 'approved' && session && (
+                        than floating in the content where it was easy to miss. Not
+                        for a live business re-applying. */}
+                    {onStep('finish') && !locked && status !== 'approved' && (
                         <button
                             type="button"
                             onClick={() => save(false)}
@@ -7278,7 +6408,7 @@ function ApplicationForm() {
                         The last step has no Next either -- it has send, which
                         is already in the panel above with the words about what
                         it does. */}
-                    {!lastStep && step !== 'g_verify' && (step !== 'trade' || isGuest) && (() => {
+                    {!lastStep && (step !== 'trade' || isGuest) && (() => {
                         // A host trade now greys Next until the step's required
                         // details are filled, the same as the guest flow (it used
                         // to leave Next live and show errors only after a press).
@@ -7355,8 +6485,7 @@ function ApplicationForm() {
                         to press was the only one they had to go looking for.
 
                         `min-w-0` and the truncating label are what stop it
-                        colliding with Back at 375: "Save and email me a link" is
-                        the longest label the form has, and the two buttons plus
+                        colliding with Back at 375: the two buttons plus
                         their padding do not fit a phone otherwise. */}
                     {lastStep && !locked && (
                         <button
@@ -7366,22 +6495,15 @@ function ApplicationForm() {
                             // save() guard enforces it too; disabling the button
                             // makes it visible, with the agree box and its gate
                             // line right above on the finish screen.
-                            disabled={saving || acctBusy || (isGuest && !termsAgreed)}
+                            disabled={saving || (isGuest && !termsAgreed)}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >
                             <span className="block truncate">
                                 {status === 'approved'
                                     ? (saving ? 'Saving…' : 'Save changes')
-                                    : acctBusy
-                                        ? 'Saving…'
-                                        : saving
-                                            ? 'Sending…'
-                                            : session
-                                                ? 'Send for review'
-                                                /* Not "create account" any more: this press
-                                                   creates nothing. It saves the application and
-                                                   emails a link. */
-                                                : 'Save and email me a link'}
+                                    : saving
+                                        ? 'Sending…'
+                                        : 'Send for review'}
                             </span>
                         </button>
                     )}

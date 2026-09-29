@@ -392,107 +392,45 @@ test('no trade gets a prices step only for entries that never render', () => {
 // ---------------------------------------------------------------------------
 // Which step the form opens on
 // ---------------------------------------------------------------------------
-//
-// This rule was a useEffect, and it turned a working application into one that
-// looked broken. A successful send cleared `restored` to take the "your details
-// have been saved" banner down; that released the only condition holding the
-// rule back, it ran again, and it moved the applicant to the business step. The
-// panel confirming the application only renders on the finish step, so nobody
-// ever saw it — and a sent application and a refused one ended on the same
-// screen.
-//
-// Indistinguishable success is the thing this flow exists to prevent, so the
-// rule is tested rather than inferred from a dependency array.
-
-test('a lodged application is never moved off the screen that says so', () => {
-    // The regression, stated directly. Every combination that used to move
-    // them, with `lodged` true.
-    for (const restored of [true, false]) {
-        for (const trade of ['joiner', 'sponge', '']) {
-            assert.equal(
-                openingStep({ hydrated: true, restored, lodged: true, trade }),
-                'finish',
-                `lodged must win: restored=${restored} trade=${trade || 'none'}`
-            );
-        }
-    }
-});
-
-test('clearing the restored banner cannot move a lodged applicant', () => {
-    // The exact transition that caused it: lodged, and `restored` going from
-    // true to false underneath.
-    const before = openingStep({ hydrated: true, restored: true, lodged: true, trade: 'joiner' });
-    const after = openingStep({ hydrated: true, restored: false, lodged: true, trade: 'joiner' });
-
-    assert.equal(before, 'finish');
-    assert.equal(after, 'finish', 'the banner going away is not a reason to move them');
-});
-
 test('nothing moves before the load has finished', () => {
-    assert.equal(openingStep({ hydrated: false, restored: false, lodged: false, trade: 'joiner' }), null);
-    assert.equal(openingStep({ hydrated: false, restored: false, lodged: true, trade: 'joiner' }), null);
+    assert.equal(openingStep({ hydrated: false, restored: false, trade: 'joiner' }), null);
 });
 
 test('a restored draft decides for itself', () => {
     // resolveStep put them somewhere from the draft. This must not overrule it.
-    assert.equal(openingStep({ hydrated: true, restored: true, lodged: false, trade: 'joiner' }), null);
+    assert.equal(openingStep({ hydrated: true, restored: true, trade: 'joiner' }), null);
 });
 
 test('a trade in the URL means step one is already answered', () => {
     // A host trade opens on the About-you years counter now (g_you), the same
     // opener the guest flow uses — not the business step.
-    assert.equal(openingStep({ hydrated: true, restored: false, lodged: false, trade: 'joiner' }), 'g_you');
-    assert.equal(openingStep({ hydrated: true, restored: false, lodged: false, trade: '' }), 'trade');
+    assert.equal(openingStep({ hydrated: true, restored: false, trade: 'joiner' }), 'g_you');
+    assert.equal(openingStep({ hydrated: true, restored: false, trade: '' }), 'trade');
 });
 
 test('what counts as seen matches where they land', () => {
     // The step they open on shows its own errors; steps ahead stay quiet.
-    assert.deepEqual(openingVisited({ hydrated: true, restored: false, lodged: false, trade: '' }), []);
-    assert.deepEqual(openingVisited({ hydrated: true, restored: false, lodged: false, trade: 'joiner' }), ['trade']);
-    assert.equal(openingVisited({ hydrated: true, restored: true, lodged: false, trade: 'joiner' }), null);
-
-    // A lodged application has been through all of them.
-    const seen = openingVisited({ hydrated: true, restored: false, lodged: true, trade: 'joiner' });
-    assert.equal(Array.isArray(seen) && seen.indexOf('finish') !== -1, true);
+    assert.deepEqual(openingVisited({ hydrated: true, restored: false, trade: '' }), []);
+    assert.deepEqual(openingVisited({ hydrated: true, restored: false, trade: 'joiner' }), ['trade']);
+    assert.equal(openingVisited({ hydrated: true, restored: true, trade: 'joiner' }), null);
 });
 
-test('a guest with no session opens on the verify gate, before the picker', () => {
-    // The account moved to the very front. Trade ('guest') is in the URL, but
-    // with no session the first screen is g_verify — ahead of the category
-    // picker, whatever else is or isn't answered.
+test('a guest opens on the picker if no category, else the first content screen', () => {
+    // They open on the category picker (no category yet) or straight on the content.
     assert.equal(
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
-        'g_verify',
-    );
-    assert.equal(
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false }),
-        'g_verify',
-        'still the gate first, even with a category already picked',
-    );
-    // Nothing is behind the gate when they land on it.
-    assert.deepEqual(
-        openingVisited({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
-        [],
-    );
-});
-
-test('a signed-in guest skips the gate — the picker if no category, else the first content screen', () => {
-    // A returning applicant, already signed in: the gate is behind them, so they
-    // open on the category picker (no category yet) or straight on the content.
-    assert.equal(
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true, hasSession: true }),
+        openingStep({ hydrated: true, restored: false, trade: 'guest', guestNeedsCategory: true }),
         'trade',
     );
     assert.equal(
         // First content screen is the About-you opener for an expertise category.
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true, category: 'chef' }),
+        openingStep({ hydrated: true, restored: false, trade: 'guest', guestNeedsCategory: false, category: 'chef' }),
         'g_you',
     );
     assert.equal(
         // A sauna skips the expertise screens, so it opens on Location (g_area) —
         // its where-and-when step, which holds the weekly schedule — never g_you,
         // a step it does not have. This is the returning-sauna reorder fix.
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true, category: 'sauna' }),
+        openingStep({ hydrated: true, restored: false, trade: 'guest', guestNeedsCategory: false, category: 'sauna' }),
         'g_area',
     );
 });
@@ -511,12 +449,9 @@ test('a guest with no context still sees the old three steps', () => {
     assert.deepEqual(stepsFor('guest').map((s: any) => s.key), ['trade', 'business', 'finish']);
 });
 
-// The rebuilt flow, reordered to Airbnb's sequence and with the account gate
-// moved to the VERY FRONT (Sep 2026). g_verify — the verify-your-email gate that
-// makes the account — is the first screen of all, before the category picker:
-// picking "Host a guest experience" on the fork lands them straight on it, and
-// nothing comes before the account. Then the picker ('trade' group grid),
-// g_subtype, and the content: About you (g_you, g_creds), Location (g_area)
+// The rebuilt flow, reordered to Airbnb's sequence (Sep 2026). The account is
+// made before the wizard renders at all (the shared email-first sign-in), so the
+// flow opens on the picker ('trade' group grid), then g_subtype, and the content: About you (g_you, g_creds), Location (g_area)
 // straight after, Photos (g_photos) BEFORE the writing, Pricing (g_menu),
 // Details (g_expect), and the Finish screen (the account). The booking shape is
 // inferred from the category and never a step; availability folds into g_area;
@@ -527,11 +462,9 @@ test('a guest with no context still sees the old three steps', () => {
 // guest signs in up front, so the account address is the contact address, and
 // the phone lives on the profile) and NO checks step (the per-category checks
 // collapsed to one responsibility confirmation folded onto the finish screen).
-// So an anonymous applicant with a sub-type walks these keys — g_verify
-// leading, because they have no session yet. A signed-in applicant skips
-// g_verify (see the test below).
+// So an applicant with a sub-type walks these keys.
 const TEN = [
-    'g_verify', 'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
+    'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
     'g_menu', 'g_title', 'g_expect', 'finish',
 ];
 
@@ -550,35 +483,6 @@ test('a chef (food, comes to them) walks the flow, with a capacity step, and nev
     // The old "how do guests get it?" screen is gone — the shape is inferred.
     assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a chef sets a largest group');
-});
-
-test('the verify gate leads the flow for an anonymous applicant and is gone once signed in', () => {
-    // The account moved to the very front: an applicant with no session verifies
-    // their email before the category picker, and everything after runs
-    // authenticated. A returning applicant who is already signed in never sees it.
-    const anon = { group: 'food', category: 'chef', shape: 'comes_to_you' };
-    assert.equal(stepApplies('g_verify', 'guest', anon), true, 'anonymous applicant must verify');
-    assert.equal(gkeys(anon).indexOf('g_verify'), 0, 'the gate is the very first screen, before the picker');
-
-    const signedIn = { ...anon, hasSession: true };
-    assert.equal(stepApplies('g_verify', 'guest', signedIn), false, 'a signed-in applicant skips it');
-    assert.equal(gkeys(signedIn).indexOf('g_verify'), -1, 'the gate is not in a signed-in flow');
-    // Everything else is unchanged — the signed-in flow is the thirteen (plus
-    // the chef's capacity step) minus g_verify.
-    assert.deepEqual(gkeys(signedIn), withCapacity(TEN).filter((k) => k !== 'g_verify'));
-});
-
-test('a signed-in applicant is never resolved onto the verify gate by a restored draft', () => {
-    // The bug: the restore path resolved a saved step with a context that left
-    // hasSession out, so g_verify counted as a live step and a signed-in user
-    // with any draft landed on the email screen. With the session carried, the
-    // gate is not a step for them, so a draft saved on it resolves to a real one.
-    const signedIn = { group: 'food', category: 'chef', shape: 'comes_to_you', hasSession: true };
-    assert.equal(stepsFor('guest', signedIn).some((s: any) => s.key === 'g_verify'), false);
-    assert.notEqual(resolveStep('guest', 'g_verify', signedIn), 'g_verify');
-    // Anonymous is unchanged — the gate is still a real step it can rest on.
-    const anon = { group: 'food', category: 'chef', shape: 'comes_to_you' };
-    assert.equal(resolveStep('guest', 'g_verify', anon), 'g_verify');
 });
 
 test('a cake maker (made to order) gets the years and expertise screens too', () => {
@@ -613,7 +517,7 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
 // `expertise` is true for every slot category except the sauna, which skips the
 // years and expertise screens.
 const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean; perItemDuration?: boolean; mixed?: boolean } = {}) => {
-    const keys = ['g_verify', 'trade', 'g_subtype'];
+    const keys = ['trade', 'g_subtype'];
     if (opts.expertise !== false) keys.push('g_you', 'g_creds');
     if (opts.fork) keys.push('g_slot_where');
     keys.push('g_area');
@@ -816,7 +720,7 @@ test('the something-else group skips the sub-type screen but is asked its shape'
     // g_shape sits between About-you and the location step.
     assert.deepEqual(
         gkeys(ctx),
-        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_shape', 'g_area', 'g_photos', 'g_menu', 'g_title', 'g_expect', 'finish'],
+        ['trade', 'g_you', 'g_creds', 'g_shape', 'g_area', 'g_photos', 'g_menu', 'g_title', 'g_expect', 'finish'],
     );
 });
 
@@ -830,7 +734,7 @@ test('the guest-only split never touches a host trade', () => {
     // The genuinely guest-only steps stay off for a host trade. g_you and g_creds
     // are NO LONGER in this list — the years opener and the expertise hub are
     // shared, and a host trade now has both.
-    for (const k of ['g_subtype', 'g_verify', 'g_capacity', 'g_menu', 'g_title', 'g_expect', 'g_photos', 'g_area']) {
+    for (const k of ['g_subtype', 'g_capacity', 'g_menu', 'g_title', 'g_expect', 'g_photos', 'g_area']) {
         assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
     }
     // And the shared About-you screens ARE on for the host trade.
@@ -902,9 +806,6 @@ test('the pickers and the name step sit before the rail, in no section', () => {
     // category mid-flow and invalidate everything after it.
     assert.equal(sectionForStep('trade'), null);
     assert.equal(sectionForStep('g_subtype'), null);
-    // The verify-email gate is pre-rail too — the rail begins once the account
-    // exists, at About you.
-    assert.equal(sectionForStep('g_verify'), null);
     // The name step (g_about) sits right after the sub-type, before the rail
     // begins — it belongs to no section, like the pickers it follows.
     assert.equal(sectionForStep('g_about'), null);
