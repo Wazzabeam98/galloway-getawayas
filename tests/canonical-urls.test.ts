@@ -67,7 +67,11 @@ test('every indexable public page sets a canonical of its own', () => {
         'app/privacy/page.tsx': 'privacy',
         'app/cancellation-policy/page.tsx': 'cancellation policy',
         'app/services/page.tsx': 'the trade directory',
-        'app/services/[trade]/layout.tsx': 'one trade',
+        // Not app/services/[trade]/layout.tsx any more. /services/<trade> is a
+        // permanent redirect to /services?trade=<trade>, so the layout now wraps
+        // only the provider profiles, which are noindex. Its old canonical named
+        // /services/<trade> — a URL that only redirects — so it was removed
+        // rather than kept; see the test below.
         'app/homes/[id]/page.tsx': 'one listing',
         'app/holiday-cottages/[area]/page.tsx': 'one area',
     };
@@ -97,4 +101,10 @@ test('the pages with no canonical are the ones that are noindexed', () => {
         assert.ok(!/canonical/.test(body), rel + ' now sets a canonical — is it indexable?');
         assert.match(body, /index:\s*false/, rel + ' has no canonical and is not noindex');
     }
+});
+
+test('the trade layout does not name a per-trade URL as canonical', () => {
+    // /services/<trade> only redirects now. A canonical pointing at it would
+    // tell Google the profile pages under it are really a redirect.
+    assert.ok(!/canonical/.test(code('app/services/[trade]/layout.tsx')));
 });

@@ -10,6 +10,7 @@ import {
     registrationVerified,
     registrationExpired,
     audienceForTrade,
+    tradeListHref,
 } from '@/lib/serviceProviders';
 import { visibleInDirectory } from '@/lib/serviceSubscription';
 import PhotoGallery from '@/components/PhotoGallery';
@@ -48,12 +49,14 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
         .maybeSingle();
 
     // Not found, not a trade, the wrong trade's URL, or not publicly visible
-    // (pre-approval, or delisted for non-payment) → back to the directory.
+    // (pre-approval, or delisted for non-payment) → back to the directory,
+    // straight to the filtered list — not /services/<trade>, which is itself a
+    // redirect and would make this two hops.
     if (!provider
         || audienceForTrade(provider.trade) === 'guest'
         || provider.trade !== params.trade
         || !visibleInDirectory(provider)) {
-        redirect('/services/' + encodeURIComponent(params.trade));
+        redirect(tradeListHref(params.trade));
     }
 
     const [{ data: areas }, { data: extraRows }, { data: skillLinks }, { data: regs }] = await Promise.all([
@@ -97,7 +100,9 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
     if (priceLine || callout) facts.push({ icon: <Wrench className="h-5 w-5 text-slate-500" aria-hidden />, label: 'Charges', value: [priceLine, callout].filter(Boolean).join(' · ') });
     if (availability.length) facts.push({ icon: <Clock className="h-5 w-5 text-slate-500" aria-hidden />, label: 'Availability', value: availability.join(' · ') });
 
-    const backHref = '/services/' + encodeURIComponent(provider.trade);
+    // Back to the one list, pre-filtered to this trade. The per-trade page is
+    // gone; trade is a filter now.
+    const backHref = '/services?trade=' + encodeURIComponent(provider.trade);
     const photos: string[] = Array.isArray(provider.photos) ? provider.photos : [];
 
     return (
@@ -204,11 +209,10 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                     <div className="lg:col-span-1">
                         <div className="lg:sticky lg:top-24 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
                             <p className="text-sm text-slate-600">
-                                Send {provider.business_name} the job and they&rsquo;ll come back to you. You agree the
-                                price and pay them directly — nothing goes through Galloway Getaways.
+                                Just ask if they&rsquo;re free or could come and take a look — no job details needed yet.
                             </p>
                             <Link
-                                href={backHref + '?ask=' + provider.id}
+                                href={'/services?ask=' + provider.id + '&trade=' + encodeURIComponent(provider.trade)}
                                 className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800"
                             >
                                 Ask {provider.business_name} <ArrowRight className="h-4 w-4" strokeWidth={2.2} />
