@@ -825,7 +825,7 @@ export const SUBSCRIPTION_MONTHLY = 20;
 //
 // It is stamped when the FIRST ENQUIRY IS SENT to him, not when he is
 // approved. A tradesman approved in September who hears nothing until January
-// should not burn his free ninety days waiting for the site to find him work.
+// should not burn his free six months waiting for the site to find him work.
 // What is being sold is the lead, so the lead is what starts the clock.
 //
 // It is the enquiry being SENT rather than answered, which is a smaller rule
@@ -833,7 +833,7 @@ export const SUBSCRIPTION_MONTHLY = 20;
 // three endings and all three would start it, so every enquiry starts it, and
 // the only question left is the date — sent, or settled. The gap between those
 // is bounded by the expiry windows in lib/serviceEnquiries.ts: twenty minutes
-// for an emergency, five days at the very most. Five days against ninety is
+// for an emergency, five days at the very most. Five days against six months is
 // noise, and stamping at the send is one write in one place that cannot be
 // gamed by sitting on the email.
 //
@@ -927,7 +927,7 @@ export function trialState(provider: any, now?: Date): TrialState {
     return ends > (now || new Date()).getTime() ? 'running' : 'ended';
 }
 
-// Whether this enquiry should start his ninety days.
+// Whether this enquiry should start his six-month trial.
 //
 // Pure, so the rule is testable without a database and is stated once. The
 // caller does the write, and does it guarded on the column still being null so
