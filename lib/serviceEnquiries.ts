@@ -268,6 +268,36 @@ export function windowByKey(key: string) {
     return TIME_WINDOWS.filter((w) => w.key === String(key || ''))[0] || null;
 }
 
+// Do two jobs' time windows on the SAME day overlap?
+//
+// This is the whole of the soft clash rule: a trade who already has a job in a
+// window is WARNED before taking a second in it, never blocked (a trade can
+// often fit two small jobs in a morning, and a job is an asked-for window, not a
+// fixed slot — so a hard lock would be wrong more often than right). It is used
+// both to warn at the accept and to mark a clashing day on the calendar.
+//
+// An open window ("any time that day", stored as null from/to) overlaps every
+// other window on that day — someone free "any time" clashes with everything.
+// Two timed windows overlap on the usual half-open rule: a start before the
+// other's end, and vice versa. The caller checks the day; this checks the time.
+export function windowsClash(
+    a: { window_from?: string | null; window_to?: string | null },
+    b: { window_from?: string | null; window_to?: string | null },
+): boolean {
+    const af = a.window_from, at = a.window_to, bf = b.window_from, bt = b.window_to;
+    if (!af || !at || !bf || !bt) return true;      // an open window overlaps anything
+    return af < bt && bf < at;                       // half-open interval overlap
+}
+
+// The short window phrase for a warning ("that morning", "between 8am and 11am").
+// A dateless / open window reads "that day". Reuses prettyTime so it matches the
+// rest of the trade side.
+export function windowPhrase(row: { window_from?: string | null; window_to?: string | null }): string {
+    const from = prettyTime(row.window_from);
+    const to = prettyTime(row.window_to);
+    return (from && to) ? 'between ' + from + ' and ' + to : 'that day';
+}
+
 // Which urgencies carry a date. Only planned work: an emergency is happening
 // now by definition, and "soon" is the answer of somebody who does not have a
 // date in mind and should not be made to invent one.

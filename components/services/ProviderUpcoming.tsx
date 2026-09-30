@@ -87,6 +87,7 @@ function toCardData(r: ProviderReservation): ReservationCardData {
         // A trade's still-to-answer request carries Accept / Decline on the card
         // itself. Gone the moment it is accepted (needsReply goes false).
         requestActions: isTrade && r.needsReply ? { enquiryId: r.id } : null,
+        clashWarning: r.clashWarning ?? null,
         // An accepted, still-upcoming trade job (status 'Accepted', not the past
         // 'Completed') offers ask-for-another-day / call-it-off.
         jobActions: isTrade && r.status.label === 'Accepted'

@@ -33,10 +33,14 @@ export default function TradeCalendar({
     providerId,
     jobs,
     blockedDays,
+    clashDays = [],
 }: {
     providerId: string;
     jobs: CalendarJob[];
     blockedDays: string[];
+    // Days where two accepted jobs overlap in the same window — flagged amber, not
+    // blocked (a soft double-book the trade chose to take).
+    clashDays?: string[];
 }) {
     const router = useRouter();
     const [month, setMonth] = useState<Date>(startOfMonth(new Date()));
@@ -50,6 +54,7 @@ export default function TradeCalendar({
         for (const j of jobs) (m[j.dayKey] = m[j.dayKey] || []).push(j);
         return m;
     }, [jobs]);
+    const clashSet = useMemo(() => new Set(clashDays), [clashDays]);
 
     const days = useMemo(() => eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) }), [month]);
     const leadingBlanks = useMemo(() => (getDay(startOfMonth(month)) + 6) % 7, [month]);
@@ -126,9 +131,13 @@ export default function TradeCalendar({
                     const dayJobs = jobsByDay[key] || [];
                     const hasWork = !isPast && dayJobs.length > 0;
                     const isBlocked = blocked.has(key);
+                    const isClash = hasWork && clashSet.has(key);
                     const title = hasWork
-                        ? dayJobs.map((j) => `${j.hostFirst}: ${j.title} — asked for ${j.window}`).join('\n')
+                        ? (isClash ? 'Two jobs in the same window — check you can do both.\n' : '')
+                            + dayJobs.map((j) => `${j.hostFirst}: ${j.title} — asked for ${j.window}`).join('\n')
                         : isBlocked ? 'Day off — click to put the day back' : (!isPast ? 'Click to take the day off' : '');
+                    // A day with work reads as busy; two overlapping jobs flag amber.
+                    const busyLabel = dayJobs.length > 1 ? `${dayJobs.length} jobs` : (dayJobs[0] ? dayJobs[0].hostFirst : '');
                     return (
                         <button
                             key={key}
@@ -138,13 +147,14 @@ export default function TradeCalendar({
                             title={title}
                             className={`relative aspect-square rounded-xl border-2 p-1.5 flex flex-col items-start justify-between text-left transition ${
                                 isPast ? 'opacity-30 cursor-not-allowed border-slate-100' :
+                                isClash ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-400 ring-offset-1' :
                                 hasWork ? 'border-emerald-600 bg-emerald-50' :
                                 isBlocked ? 'border-slate-300 bg-slate-100 text-slate-400' :
                                 'border-slate-200 hover:border-slate-400'
                             }`}
                         >
                             {hasWork && (
-                                <span className="absolute top-1 right-1 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm">
+                                <span className={`absolute top-1 right-1 z-10 flex h-4 w-4 items-center justify-center rounded-full text-white shadow-sm ${isClash ? 'bg-amber-500' : 'bg-emerald-600'}`}>
                                     <Wrench className="h-2.5 w-2.5" />
                                 </span>
                             )}
@@ -152,7 +162,9 @@ export default function TradeCalendar({
                                 {format(day, 'd')}
                             </span>
                             {hasWork ? (
-                                <span className="w-full truncate text-[9px] font-medium text-emerald-900">{dayJobs[0].hostFirst}</span>
+                                <span className={`w-full truncate text-[9px] font-medium ${isClash ? 'text-amber-900' : 'text-emerald-900'}`}>
+                                    {isClash ? 'Busy · check' : busyLabel}
+                                </span>
                             ) : isBlocked ? (
                                 <span className="text-[9px]">Day off</span>
                             ) : null}
@@ -173,6 +185,10 @@ export default function TradeCalendar({
                     <div className="flex items-center gap-1.5">
                         <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600"><Wrench className="h-2.5 w-2.5 text-white" /></span>
                         Work asked for
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500"><Wrench className="h-2.5 w-2.5 text-white" /></span>
+                        Two jobs, same window — check
                     </div>
                     <div className="flex items-center gap-1.5">
                         <span className="h-3 w-3 rounded bg-slate-100 border border-slate-300" /> Day off
