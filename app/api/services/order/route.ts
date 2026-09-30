@@ -21,6 +21,7 @@ import { hasUkPostcode, extractUkPostcode } from '@/lib/postcode';
 import { deliveryReach, type ReachDecision } from '@/lib/postcodeGeocode';
 import { outOfReachMessage } from '@/lib/deliveryReachMessage';
 import { packageNoticeRecord, packageNoticeMetadata } from '@/lib/packageNotice';
+import { agreementProblem, anonGuestTermsRecord, anonGuestTermsMetadata } from '@/lib/agreements';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,6 +89,11 @@ export async function POST(request: Request) {
         const typedName: string = (body && body.guestName ? String(body.guestName) : '').slice(0, 120).trim();
         const typedEmail: string = (body && body.guestEmail ? String(body.guestEmail) : '').slice(0, 200).trim().toLowerCase();
         const typedPhone: string = (body && body.guestPhone ? String(body.guestPhone) : '').slice(0, 40).trim();
+        // The Guest Terms version an anonymous booker ticked at checkout — proved
+        // by the wall below and carried into the order's metadata. Ignored when
+        // signed in (recorded through /api/agreements before this POST).
+        const submittedGuestTerms: string | null =
+            body && typeof body.guestTermsVersion === 'string' ? body.guestTermsVersion : null;
 
         // A made-to-order CART sends `items` instead of a single `itemId`.
         const hasCart = Array.isArray(body && body.items) && body.items.length > 0;
@@ -111,9 +117,25 @@ export async function POST(request: Request) {
             if (!verdict.ok) {
                 return NextResponse.json({ ok: false, error: 'That’s a lot of attempts in a short time. Try again shortly.' }, { status: 429 });
             }
+            // THE GUEST TERMS WALL for an anonymous booker — the same rule the
+            // browser's disabled button and /api/agreements apply (lib/agreements).
+            // A signed-in guest is recorded through /api/agreements before this
+            // POST; an anonymous one has no account yet, so the acceptance rides on
+            // the order's metadata and is proved here. A missing or stale tick is
+            // refused before any Stripe session is created.
+            const termsProblem = agreementProblem('guest', null, submittedGuestTerms);
+            if (termsProblem) {
+                return NextResponse.json({ ok: false, needsAgreement: true, document: 'guest', error: termsProblem }, { status: 400 });
+            }
         }
 
         const admin = adminClient();
+        // The checkout time an anonymous booker ticked the Guest Terms, stamped
+        // once and carried in whichever session metadata this request builds
+        // (cart or single item). Server time, never the browser's clock.
+        const guestTermsMeta = anonGuestTermsMetadata(
+            anonGuestTermsRecord(anonymous ? submittedGuestTerms : null, new Date().toISOString()),
+        );
 
         // The booking (against-a-stay only) is the guest's own, and it is where the
         // dates, the place and the guest count come from — never the browser.
@@ -275,6 +297,7 @@ export async function POST(request: Request) {
                 item_name: summaryName,
                 item_unit: 'order',
                 ...packageNoticeMetadata(packageNoticeC),
+                ...guestTermsMeta,
             };
             const stripeLines = lines.map((l) => ({
                 quantity: l.qty,
@@ -588,6 +611,7 @@ export async function POST(request: Request) {
             unit_price: String(unitPrice),
             quantity: String(quantity),
             ...packageNoticeMetadata(packageNotice),
+            ...guestTermsMeta,
         };
 
         const checkout = await stripeRequest('POST', '/checkout/sessions', {

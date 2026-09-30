@@ -202,3 +202,53 @@ export function nextRoleOwed(
 export function currentFrom(key: AgreementKey, versions: string[] | undefined): string | null {
     return (versions || []).filter((v) => hasAgreed(key, v))[0] || null;
 }
+
+// AN ANONYMOUS BOOKER'S GUEST TERMS, carried on the order until an account exists.
+//
+// A guest buying a standalone experience without signing in ticks the Guest
+// Terms at checkout, but has no account to record them against until the webhook
+// mints one from the Stripe payer email after payment. So the acceptance — the
+// version they were shown and the checkout time they ticked it — is stamped on
+// the order (service_orders.guest_terms_*), written against the account the
+// moment it is minted, and kept on the order itself if that account is never
+// minted, so we can always show what they agreed to.
+//
+// The version is the one the browser sent, which the route's agreementProblem
+// wall has already proved is the current one (a missing or stale tick is refused
+// before the order). The time is the server's checkout time, never the browser's
+// clock and never the later account-creation time.
+export interface AnonGuestTerms {
+    guest_terms_version: string;
+    guest_terms_accepted_at: string;
+}
+
+// The order columns, from the accepted version and the server's checkout time.
+// {} when there is no acceptance to carry (a signed-in or already-agreed booker),
+// so a spread of it names no column.
+export function anonGuestTermsRecord(
+    version: string | null | undefined,
+    acceptedAtIso: string,
+): AnonGuestTerms | Record<string, never> {
+    return version ? { guest_terms_version: version, guest_terms_accepted_at: acceptedAtIso } : {};
+}
+
+// A request/cart order row is built in the webhook from the Stripe session, so
+// the acceptance travels in the session metadata as strings — empty when absent.
+export function anonGuestTermsMetadata(
+    rec: AnonGuestTerms | Record<string, never>,
+): { guest_terms_version: string; guest_terms_accepted_at: string } {
+    const r = rec as AnonGuestTerms;
+    return {
+        guest_terms_version: r.guest_terms_version || '',
+        guest_terms_accepted_at: r.guest_terms_accepted_at || '',
+    };
+}
+
+// And back out of the metadata into the order columns — {} when absent, so the
+// insert (and the acceptance record) skip it exactly as for a signed-in order.
+export function anonGuestTermsFromMetadata(md: any): AnonGuestTerms | Record<string, never> {
+    const version = md && typeof md.guest_terms_version === 'string' ? md.guest_terms_version : '';
+    const acceptedAt = md && typeof md.guest_terms_accepted_at === 'string' ? md.guest_terms_accepted_at : '';
+    if (!version || !acceptedAt) return {};
+    return { guest_terms_version: version, guest_terms_accepted_at: acceptedAt };
+}

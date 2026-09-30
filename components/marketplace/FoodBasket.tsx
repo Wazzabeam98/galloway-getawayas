@@ -13,6 +13,7 @@ import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
 import PackageNotice from '@/components/marketplace/PackageNotice';
 import { AddressParts } from '@/components/address/AddressLookup';
 import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
+import { AGREEMENTS } from '@/lib/agreements';
 
 // A delivery address the guest has chosen for this order, and where it came from:
 // typed/searched (an ad-hoc or edited address), saved (picked from their account
@@ -76,17 +77,22 @@ export default function FoodBasket({
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [mobileOpen, setMobileOpen] = useState(false);
-    // The Guest Terms, when this signed-in guest still owes them — a tick above
-    // the order button, held until ticked, recorded before the order.
-    const [needsGuestTerms, setNeedsGuestTerms] = useState(false);
+    // The Guest Terms — a tick above the order button, held until ticked. A
+    // signed-in guest who owes them records here before the order; an anonymous
+    // standalone booker (no account yet — it is minted from the Stripe payer email
+    // after payment) always ticks and carries the version on the order, recorded
+    // against the account when it is minted.
+    const anonymous = standalone && !signedIn;
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(anonymous);
     const [guestTicked, setGuestTicked] = useState(false);
     useEffect(() => {
+        if (anonymous) { setNeedsGuestTerms(true); return; }
         let cancelled = false;
         fetchAgreementStatus().then((st) => {
             if (!cancelled) setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
         });
         return () => { cancelled = true; };
-    }, []);
+    }, [anonymous]);
 
     // The earliest date is today plus the provider's notice period. It's one
     // provider-level setting, so every item in the basket shares it; when items can
@@ -145,11 +151,18 @@ export default function FoodBasket({
         if (!date) { setError('Pick a ' + deliverWord + ' date.'); return; }
         if (needsAddress && !chosen) { setError('Add a delivery address.'); return; }
         setBusy(true);
-        // The Guest Terms, recorded before the order when they are owed.
+        // The Guest Terms, when owed. Signed in and owes → record now, against
+        // their account. Anonymous → carry the ticked version on the order
+        // (guestTermsVersion below), recorded against the account when it is minted.
+        let guestTermsVersion: string | undefined;
         if (needsGuestTerms) {
-            const failed = await recordAgreement('guest', 'experience_checkout');
-            if (failed) { setError(failed); setBusy(false); return; }
-            setNeedsGuestTerms(false);
+            if (anonymous) {
+                guestTermsVersion = AGREEMENTS.guest.version;
+            } else {
+                const failed = await recordAgreement('guest', 'experience_checkout');
+                if (failed) { setError(failed); setBusy(false); return; }
+                setNeedsGuestTerms(false);
+            }
         }
         try {
             const trimmedAllergy = [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '');
@@ -161,6 +174,7 @@ export default function FoodBasket({
                     fulfilment: delivers ? 'delivery' : 'collection',
                     serviceAddress: needsAddress ? chosen!.line : undefined,
                     allergy: trimmedAllergy,
+                    guestTermsVersion,
                 }),
             });
             const d = await res.json();

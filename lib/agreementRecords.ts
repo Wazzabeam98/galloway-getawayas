@@ -62,21 +62,29 @@ export async function roleFacts(admin: any, userId: string): Promise<RoleFacts> 
     };
 }
 
-// Record one acceptance of the CURRENT version. Idempotent: the table is unique
-// on (user, document, version), so accepting twice records once. The caller has
-// already checked agreementProblem — this does not decide anything.
+// Record one acceptance. Idempotent: the table is unique on (user, document,
+// version), so accepting twice records once. The caller has already checked
+// agreementProblem — this does not decide anything.
+//
+// `opts` lets an already-known acceptance be recorded as it happened rather than
+// as of now: the anonymous experience-checkout path proved and stamped the
+// version and the tick time on the order before any account existed, and records
+// them here against the account the moment it is minted (so the acceptance is the
+// guest's real tick time, not when the account was created). Left off, it records
+// the current version at the current time — every other caller.
 export async function recordAcceptance(
     admin: any,
     userId: string,
     key: AgreementKey,
     source: string,
+    opts?: { version?: string; acceptedAt?: string },
 ): Promise<{ error: any }> {
-    const version = AGREEMENTS[key].version;
-    const now = new Date().toISOString();
+    const version = (opts && opts.version) || AGREEMENTS[key].version;
+    const acceptedAt = (opts && opts.acceptedAt) || new Date().toISOString();
     const { error } = await admin
         .from('agreement_acceptances')
         .upsert(
-            { user_id: userId, document: key, version, accepted_at: now, source },
+            { user_id: userId, document: key, version, accepted_at: acceptedAt, source },
             { onConflict: 'user_id,document,version', ignoreDuplicates: true },
         );
     if (error) return { error };
@@ -86,9 +94,34 @@ export async function recordAcceptance(
     if (key === 'host') {
         const { error: profErr } = await admin
             .from('profiles')
-            .update({ host_terms_version: version, host_terms_agreed_at: now })
+            .update({ host_terms_version: version, host_terms_agreed_at: acceptedAt })
             .eq('id', userId);
         if (profErr) return { error: profErr };
     }
     return { error: null };
+}
+
+// Record an anonymous booker's Guest Terms acceptance against the account the
+// moment it is minted from their paid order. The version and the checkout time
+// they ticked are carried on the order (service_orders.guest_terms_*, or the
+// same pair read out of the Stripe session metadata for the request/cart path);
+// this writes them against the new account so the acceptance is the guest's real
+// tick time, not when the account was created.
+//
+// A no-op with no version (a signed-in order, or one placed before this shipped)
+// or no account. The fact is never lost: even if this write fails it stays on the
+// order, and a missing record is caught by the sign-in prompt at next sign-in.
+export async function recordOrderGuestTerms(
+    admin: any,
+    userId: string | null | undefined,
+    order: { guest_terms_version?: string | null; guest_terms_accepted_at?: string | null } | null | undefined,
+): Promise<{ error: any }> {
+    const version = order && order.guest_terms_version;
+    const acceptedAt = (order && order.guest_terms_accepted_at) || undefined;
+    if (!userId || !version) return { error: null };
+    try {
+        return await recordAcceptance(admin, userId, 'guest', 'experience_checkout_anon', { version, acceptedAt });
+    } catch (error) {
+        return { error };
+    }
 }

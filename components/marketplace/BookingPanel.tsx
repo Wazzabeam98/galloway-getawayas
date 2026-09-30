@@ -13,6 +13,7 @@ import DatePreview from '@/components/marketplace/DatePreview';
 import { RequestBookingDialog, RequestDatePreview, type RequestBookArgs } from '@/components/marketplace/RequestBooking';
 import { useRequestBooking } from '@/components/marketplace/RequestBookingContext';
 import { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
+import { AGREEMENTS } from '@/lib/agreements';
 
 interface PanelItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -75,16 +76,23 @@ const maxKey = (a: string, b: string) => (a > b ? a : b);
 //     comes-to-you chef asks for an address.
 // Both shapes are compact — price, cancellation, a "Show dates" button and a few
 // suggested days — with the picking (guest count, calendar, time) in the dialog.
-export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdults, cottageChildren, standalone: standaloneProp, provider }: {
+export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdults, cottageChildren, standalone: standaloneProp, signedIn, provider }: {
     bookingId?: string; checkIn?: string; checkOut?: string; cottageGuests?: number;
     cottageAdults?: number | null; cottageChildren?: number | null;
     stay?: { title: string | null; town: string | null };
     standalone?: boolean;
+    // False on the public browse page when nobody is signed in — an anonymous
+    // standalone checkout. Omitted (against a stay), the booker is always signed
+    // in, so it defaults to signed-in.
+    signedIn?: boolean;
     provider: PanelProvider;
 }) {
     const isSlot = provider.shape === 'slot';
     const isComesToYou = provider.shape === 'comes_to_you';
     const standalone = standaloneProp ?? !bookingId;
+    // An anonymous standalone checkout: no account yet — it is minted from the
+    // Stripe payer email after payment. Against a stay is always signed in.
+    const anonymous = standalone && signedIn === false;
     const [open, setOpen] = useState(false);
     const [initialDate, setInitialDate] = useState<string | null>(null);
     // The option chosen on the listing (via ChooseMenu) — locks the dialog to it
@@ -94,27 +102,32 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     // Does this guest still owe the Guest Terms? Booking an experience is a
-    // checkout too, so — like a stay — they accept the Guest Terms here, in the
-    // dialog above the Book button, rather than through a sign-in pop-up. Null
-    // (signed out) leaves it off; the acceptance is recorded before the order.
-    const [needsGuestTerms, setNeedsGuestTerms] = useState(false);
+    // checkout too, so — like a stay — they accept them here, in the dialog above
+    // the Book button, rather than through a sign-in pop-up. A signed-in guest who
+    // owes them records here before the order; an anonymous booker has no account
+    // to record against yet, so they always tick and the version rides on the
+    // order to be recorded when the account is minted.
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(anonymous);
     useEffect(() => {
+        if (anonymous) { setNeedsGuestTerms(true); return; }
         let cancelled = false;
         fetchAgreementStatus().then((st) => {
             if (!cancelled) setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
         });
         return () => { cancelled = true; };
-    }, []);
+    }, [anonymous]);
 
-    // Record the Guest Terms (version + server time) before the order is created,
-    // so a guest who reaches payment has agreed to them. Returns true to stop the
-    // booking when the record fails.
-    async function blockOnGuestTerms(): Promise<boolean> {
-        if (!needsGuestTerms) return false;
+    // The Guest Terms step before an order is created. A signed-in guest who owes
+    // them records them now (against their account); an anonymous one carries the
+    // ticked version on the order, so this returns the fields to add to the POST
+    // body. Returns null to STOP the booking when a signed-in record fails.
+    async function guestTermsForOrder(): Promise<{ guestTermsVersion?: string } | null> {
+        if (!needsGuestTerms) return {};
+        if (anonymous) return { guestTermsVersion: AGREEMENTS.guest.version };
         const failed = await recordAgreement('guest', 'experience_checkout');
-        if (failed) { setError(failed); setBusy(false); return true; }
+        if (failed) { setError(failed); setBusy(false); return null; }
         setNeedsGuestTerms(false);
-        return false;
+        return {};
     }
 
     const declaredSessions = provider.declaredSessions || [];
@@ -156,7 +169,8 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
 
     async function bookSlot(args: BookArgs) {
         setBusy(true); setError(null);
-        if (await blockOnGuestTerms()) return;
+        const gt = await guestTermsForOrder();
+        if (!gt) return;
         try {
             const res = await fetch('/api/services/slots/book', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -164,6 +178,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                     providerId: provider.id, itemId: args.itemId, bookingId, sessionDate: args.date, sessionTime: args.time,
                     quantity: args.quantity, attendees: args.attendees,
                     adults: args.adults, children: args.children, allergy: args.allergy,
+                    ...gt,
                 }),
             });
             const d = await res.json();
@@ -249,7 +264,8 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
         const perPerson = unitMultiplies(it.unit);
         const kids = childrenAllowed(provider.minAge ?? null) ? args.children : 0;
         setBusy(true); setError(null);
-        if (await blockOnGuestTerms()) return;
+        const gt = await guestTermsForOrder();
+        if (!gt) return;
         try {
             const res = await fetch('/api/services/order', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -260,6 +276,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                         : { quantity: perPerson ? Math.max(1, args.adults + kids) : 1 }),
                     serviceAddress: needsAddress ? args.address : undefined,
                     allergy: provider.isFood ? args.allergy : '',
+                    ...gt,
                 }),
             });
             const d = await res.json();
