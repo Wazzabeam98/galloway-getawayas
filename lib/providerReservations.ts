@@ -16,7 +16,7 @@ import { requestedWhen, windowsClash, windowPhrase } from '@/lib/serviceEnquirie
 import { groupLabel } from '@/lib/bookingDisplay';
 import { formatGBP } from '@/lib/formatMoney';
 import { getImageUrl, displayName } from '@/lib/utils';
-import { londonDayKey, shiftDayKey, ukDate } from '@/lib/dayKey';
+import { londonDayKey, shiftDayKey, ukDate, ukWeekday } from '@/lib/dayKey';
 
 export type ReservationKind = 'slot' | 'comes_to_you' | 'made_to_order' | 'trade';
 
@@ -85,6 +85,16 @@ export interface ProviderReservation {
     // A soft clash warning on a still-to-answer request: another accepted job in
     // the same window that day. A warning, not a block — the trade can accept anyway.
     clashWarning?: string | null;
+    // A trade job's WHEN, broken into the same three lines the host's check-in
+    // card uses — weekday, date, time — so the card renders a structured WHEN
+    // card (not a wordy "Asked for …, between …" sentence). Null time means the
+    // owner named no window; null date means no day is fixed yet.
+    whenWeekday?: string | null;
+    whenDate?: string | null;
+    whenTime?: string | null;
+    // Which folder on the trade Enquiries page this belongs in: a request still to
+    // answer, an accepted job, a declined request, or anything else finished (past).
+    folder?: 'reply' | 'accepted' | 'declined' | 'past';
 }
 
 // Structural mirror of ProviderCancellationCard's data (kept here so the server
@@ -146,6 +156,21 @@ export function whereForOrder(o: any, provider: any): WhereField | null {
     // made_to_order (bakery etc.)
     if (loc.comesToCottage) return o.service_address ? 'Deliver to ' + o.service_address : 'For delivery';
     return 'For collection';
+}
+
+// Where a trade job is, for the reservation card: the cottage/property name with
+// its address beneath. A trade needs the full street address to decide whether to
+// take the job, so it is shown from the first — before accepting, not only after
+// (Liam, round six: "a trade needs to know where the job is before deciding").
+// This is a job address the intended trade is entitled to, not a guest's private
+// detail, so there is no pre-accept town-only wall the way a stay withholds the
+// address until it is confirmed.
+export function whereForTradeJob(listing: any): WhereField {
+    if (!listing) return 'the property';
+    const town = townFromLocation(listing.location);
+    const full = [listing.street_address, town, listing.postcode]
+        .map((x: any) => String(x || '').trim()).filter(Boolean).join(', ') || listing.location || null;
+    return { line: listing.title || 'the property', sub: full || town };
 }
 
 // The provider's own cancellation terms, phrased for the reservation card: a
@@ -359,18 +384,14 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
         const hostFirst = String(e.host_name || '').trim().split(' ')[0] || 'the owner';
         const isAccepted = e.status === 'accepted';
 
-        // THE ADDRESS WALL. A trade needs the full address to attend, but only
-        // once they have accepted — before that, the town is all they get, the
-        // same way a guest sees only the area until their stay is confirmed. The
-        // town comes from the public part of the address; the street + postcode
-        // (the private listing columns) are put in the payload ONLY for an
-        // accepted job, so a still-to-answer or declined request can never carry
-        // the street.
-        const town = l ? townFromLocation(l.location) : null;
-        const fullAddress = l
-            ? ([l.street_address, town, l.postcode].map((x: any) => String(x || '').trim()).filter(Boolean).join(', ') || l.location || null)
-            : null;
-        const whereSub = isAccepted ? (fullAddress || town) : town;
+        // The job's WHEN, split into the host card's three lines rather than the old
+        // "Asked for …, between …" sentence: weekday, date, time. The time is the
+        // asked-for window, or "Any time that day" when the owner named none; a
+        // dateless request leaves them all null so the card shows a plain line.
+        const wp = windowPhrase(e);
+        const whenTime = dateKey ? (wp === 'that day' ? 'Any time that day' : wp) : null;
+        const whenWeekday = dateKey ? (ukWeekday(dateKey) || null) : null;
+        const whenDate = dateKey ? (ukDate(dateKey) || null) : null;
 
         // The status pill, in the reservation-page family.
         const status: { label: string; tone: StatusTone } =
@@ -398,18 +419,15 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             photoUrl: (l && Array.isArray(l.images) && l.images[0]) ? getImageUrl(String(l.images[0])) : null,
             groupLabel: e.host_name || 'The property owner',
             partyLabel: null,
-            whereLabel: l ? { line: l.title || 'the property', sub: whereSub } : 'the property',
+            whereLabel: whereForTradeJob(l),
             note: null,
             allergy: null,
             status,
+            // A trade job is paid off-platform, so there is no money through us to
+            // show. The old "reply to the owner, then agree the price" note was a
+            // card of its own; it earned no card and is gone (Liam, round six).
             money: null,
-            moneyNote: needsReply
-                ? 'A request to answer — reply to the owner, then agree the price and take payment directly.'
-                : mode === 'past'
-                    ? (isAccepted
-                        ? 'A past job — you agreed the price and took payment directly; nothing was billed through Galloway Getaways.'
-                        : 'This request ended without a job.')
-                    : 'Agree the price and take payment directly — this job isn’t billed through Galloway Getaways.',
+            moneyNote: null,
             phone: e.host_phone || null,
             messageHref: '/messages?e=' + e.id,
             needsReply,
@@ -424,6 +442,12 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             // A soft clash: another accepted job in the same window that day. Only
             // on a still-to-answer request (the moment the trade decides).
             clashWarning: needsReply ? clashFor(e) : null,
+            whenWeekday,
+            whenDate,
+            whenTime,
+            folder: mode === 'reply' ? 'reply'
+                : mode === 'upcoming' ? 'accepted'
+                    : e.status === 'declined' ? 'declined' : 'past',
         };
     };
 

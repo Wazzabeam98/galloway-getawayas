@@ -6,13 +6,13 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { tradeLabel } from '@/lib/serviceProviders';
-import { ukDate } from '@/lib/dayKey';
 import ProviderUpcoming from '@/components/services/ProviderUpcoming';
 import { loadProviderReservations } from '@/lib/providerReservations';
 
 export const metadata = {
-    // A trade thinks "requests", a host thinks "bookings"; both land here.
-    title: 'Requests',
+    // A trade's home for every enquiry — the four folders below. A guest provider
+    // lands on the same page worded as their reservations.
+    title: 'Enquiries',
     robots: { index: false, follow: false },
 };
 
@@ -60,21 +60,14 @@ export default async function ProviderReservationsPage() {
     const { reservations, past, summary } = await loadProviderReservations(admin, provider);
 
     const isTrade = provider.audience !== 'guest';
-    // A trade is "Listed" the moment they are approved (they are paid off-platform,
-    // so there is no payout to connect); the pill reads the same as the one the old
-    // dashboard showed. The subscription line is their six-month free date, in
-    // DD/MM/YYYY from the shared formatter, and says so honestly before the clock
-    // has started (it starts on their first enquiry).
-    const offPlatform = provider.plan === 'subscription';
-    const trialEnd: string | null = provider.trial_ends_at || null;
-    const subscriptionLabel = isTrade && offPlatform
-        ? (trialEnd ? 'Free until ' + ukDate(trialEnd) : 'Free for six months from your first enquiry')
-        : null;
 
     // The page heading reads like a host's dashboard: the section name (the top
     // bar already greets them by first name), with the business name as the quiet
     // line beneath — not a big business-name H1 competing with "Welcome, Ewan".
-    const heading = isTrade ? 'Requests' : 'Your reservations';
+    // Subscription state ("Free until …") and the "Listed" pill used to sit here;
+    // they belong to the business, not to this inbox, so they moved to Your
+    // listing (round six).
+    const heading = isTrade ? 'Enquiries' : 'Your reservations';
 
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-24">
@@ -88,27 +81,23 @@ export default async function ProviderReservationsPage() {
                         <span className="text-slate-300"> · </span>
                         {tradeLabel(provider.trade)}
                     </p>
-                    {subscriptionLabel && (
-                        <p className="mt-1 text-sm font-semibold text-emerald-700">{subscriptionLabel}</p>
-                    )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    {isTrade && offPlatform && (
-                        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                            Listed · hosts can find you
-                        </span>
-                    )}
-                    <Link href="/services/dashboard/calendar" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                        Calendar
-                    </Link>
-                    <Link href="/services/dashboard/edit" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                        Your listing
-                    </Link>
-                </div>
+                {/* A trade's in-page nav duplicated the account menu (Calendar, Your
+                    listing), so it is gone — the menu is the one place to move
+                    around. A guest provider keeps its quick links. */}
+                {!isTrade && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Link href="/services/dashboard/calendar" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                            Calendar
+                        </Link>
+                        <Link href="/services/dashboard/edit" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                            Your listing
+                        </Link>
+                    </div>
+                )}
             </div>
 
-            <ProviderUpcoming reservations={reservations} past={past} summary={summary} title={isTrade ? null : 'Upcoming reservations'} />
+            <ProviderUpcoming reservations={reservations} past={past} summary={summary} title={isTrade ? null : 'Upcoming reservations'} folders={isTrade} />
         </div>
     );
 }
