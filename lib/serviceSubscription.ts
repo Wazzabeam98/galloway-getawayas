@@ -4,7 +4,7 @@
 //
 // THE SHAPE OF THE PROBLEM
 //
-// Nobody has a card on file until day ninety. The trial is granted at the
+// Nobody has a card on file until the end of the six-month trial. The trial is granted at the
 // first enquiry (see trialEndsAt in lib/serviceProviders.ts) and the card is
 // asked for near the end of it, which means the reminders are not a courtesy —
 // they are the entire mechanism by which anybody ever pays. If the emails do
@@ -13,7 +13,7 @@
 // WHY THE LADDER IS SHAPED LIKE THIS
 //
 // One email that asks for nothing before any email that asks for something. A
-// tradesman who has had ninety free days and then gets a bill out of nowhere
+// tradesman who has had six free months and then gets a bill out of nowhere
 // is a tradesman who leaves; the thirty-day note costs nothing and makes the
 // fourteen-day ask expected rather than a surprise.
 //
