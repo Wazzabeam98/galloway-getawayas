@@ -79,6 +79,9 @@ export interface ProviderReservation {
     pendingChange: string | null;    // a date/time change awaiting an answer
     pendingChangeBy: 'guest' | 'provider' | null;  // who proposed it
     cancellation: ReservationCancellation | null;
+    // A trade's accepted job carries the day it is on and any day it has already
+    // proposed, so the card can offer "ask for a different day" / "call it off".
+    proposedDate?: string | null;
 }
 
 // Structural mirror of ProviderCancellationCard's data (kept here so the server
@@ -388,6 +391,7 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             pendingChange: null,
             pendingChangeBy: null,
             cancellation: null,
+            proposedDate: e.proposed_date || null,
         };
     };
 
