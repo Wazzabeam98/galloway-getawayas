@@ -165,7 +165,9 @@ test('a requested date always reads as asked for, never as booked', () => {
 
     assert.ok(line);
     assert.ok(line!.startsWith('Asked for'), 'it is a request: ' + line);
-    assert.ok(/thursday/i.test(line!), 'names the day: ' + line);
+    // DD/MM/YYYY from the shared formatter (lib/dayKey.ukDate) — the one numeric
+    // date format the UI uses, not a locale "weekday day month".
+    assert.ok(line!.indexOf('03/09/2026') !== -1, 'names the day as DD/MM/YYYY: ' + line);
     assert.ok(line!.indexOf('11am') !== -1 && line!.indexOf('3pm') !== -1, line!);
 
     for (const word of ['Booked', 'Confirmed', 'Scheduled', 'Appointment']) {

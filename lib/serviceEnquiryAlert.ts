@@ -769,3 +769,54 @@ function formatDay(value: any): string {
         weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
     });
 }
+
+// ---------------------------------------------------------------------------
+// A REMINDER, THE DAY BEFORE AN ACCEPTED JOB
+// ---------------------------------------------------------------------------
+//
+// A host gets nudged before a stay; a trade should get nudged before a job they
+// have accepted. This is that email — the job, the day the owner asked for, and
+// the owner's name and number (released on the accept, so safe to repeat here),
+// with a link into the thread. Sent by /api/cron/service-job-reminders the day
+// before the job.
+//
+// Still "asked for", never "booked" — nothing here holds the window; the trade
+// agreed the day with the owner directly. It is a reminder of that agreement,
+// not a claim the platform made one.
+export async function announceUpcomingJob(enquiry: any, provider: any, listing: any): Promise<AlertResult> {
+    const result: AlertResult = { ok: true, provider: false, host: false, admins: [] };
+    if (!provider || !provider.contact_email) return { ...result, skipped: 'no provider email' };
+    if (isAutomatedTestAddress(provider.contact_email)) return { ...result, skipped: 'automated test address' };
+
+    const ref = escapeHtml(String(enquiry.reference || ''));
+    const asked = requestedWhen(enquiry) || 'the day you agreed';
+    const where = String((listing && listing.location) || enquiry.area_key || 'the property');
+    const subject = 'Reminder — a job tomorrow (' + String(enquiry.reference) + ')';
+
+    const rows = jobRows(enquiry, listing);
+    const hostName = String(enquiry.host_name || '').trim();
+    if (hostName) rows.push({ label: 'Owner', value: escapeHtml(hostName) });
+    if (enquiry.host_phone) rows.push({ label: 'Their number', value: escapeHtml(String(enquiry.host_phone)) });
+
+    const opening = '<p style="margin:0 0 16px;font-size:16px;">A quick reminder: you have a job '
+        + '<strong>tomorrow</strong> at ' + escapeHtml(where) + '. ' + escapeHtml(asked) + '.</p>'
+        + '<p style="margin:0 0 16px;font-size:14px;color:#6b7280;">This is the day the owner asked for and you '
+        + 'accepted — you agree the exact time with them directly.</p>';
+
+    const actions = button(SITE_URL + '/messages?e=' + String(enquiry.id), 'Open the job');
+
+    result.provider = await sendEmail(
+        String(provider.contact_email),
+        subject,
+        emailLayout(
+            opening + summaryBlock(enquiry) + detailRows(rows) + actions,
+            'You accepted this job through Galloway Getaways. Reference ' + ref + '.',
+            undefined,
+            NEUTRAL_SUBTITLE
+        )
+    );
+    if (!result.provider) {
+        await logError('service-job-reminder-email', { enquiry: String(enquiry.id), to: String(provider.contact_email) });
+    }
+    return result;
+}

@@ -193,7 +193,9 @@ async function seed() {
         approved_at: now.toISOString(),
         plan: 'subscription',
         commission_rate: 0,
-        trial_ends_at: new Date(now.getTime() + 90 * 24 * 3600 * 1000).toISOString(),
+        // Six calendar months, matching lib/serviceProviders.trialEndsAt — not the
+        // ninety days this used to hard-code (which showed three months too early).
+        trial_ends_at: (() => { const d = new Date(now.getTime()); d.setMonth(d.getMonth() + 6); return d; })().toISOString(),
         callout_fee: 45,
         hourly_rate: 55,
         callout_waived: true,

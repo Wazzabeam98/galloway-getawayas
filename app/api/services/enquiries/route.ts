@@ -319,7 +319,7 @@ export async function POST(req: Request) {
         // every enquiry starts it and only the date is in question. The most
         // an answer can be behind the send is the expiry window — twenty
         // minutes on an emergency, five days at the outside — and five days
-        // against ninety is not worth three code paths that have to agree.
+        // against six months is not worth three code paths that have to agree.
         // Stamping here also cannot be gamed by ignoring the email.
         //
         // ONLY IF IT ACTUALLY WENT. `alert.provider` is false when sendEmail

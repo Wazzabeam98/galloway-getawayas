@@ -14,6 +14,7 @@ import { getImageUrl } from '@/lib/utils'
 import MessagesLink from './MessagesLink'
 import MenuUnreadDot from './MenuUnreadDot'
 import BookingsLink from './BookingsLink'
+import RequestsLink from './RequestsLink'
 
 const itemClass = 'hover:bg-slate-200 rounded-md p-2 cursor-pointer';
 
@@ -65,7 +66,7 @@ const NavMenu = ({
                     aria-label='Your account and menu'
                     className='flex items-center gap-2 border p-1.5 pl-3 rounded-full cursor-pointer hover:shadow-md transition'
                 >
-                    <MenuUnreadDot enabled={session != null} host={isHost} />
+                    <MenuUnreadDot enabled={session != null} host={isHost} provider={isProvider && !isGuestProvider} />
                     {session != null ? (
                         <div className='w-8 h-8 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0'>
                             {avatarUrl ? (
@@ -136,45 +137,52 @@ const NavMenu = ({
                                    (A provider who is also a host still gets the
                                    full host menu in host mode, above.) */
                                 <>
-                                    {/* A provider thinks in terms of their listing,
-                                        not "their business" or "their profile" — the
-                                        editor is the thing they come here to change.
-                                        /services/dashboard/edit is the one edit door:
-                                        it forks a guest to the sectioned listing editor
-                                        and a trade to the business editor. */}
-                                    <li className={itemClass}>
-                                        <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
-                                            Your listing
-                                        </Link>
-                                    </li>
-                                    {/* A provider's incoming reservations, labelled for
-                                        what they're doing (providing), not "trips". Their
-                                        own travel stays reachable as "Your trips" below. */}
-                                    <li className={itemClass}>
-                                        <Link href='/services/dashboard'>Your reservations</Link>
-                                    </li>
-                                    <li className={itemClass}>
-                                        <Link href='/services/dashboard/calendar'>Calendar</Link>
-                                    </li>
                                     {isGuestProvider ? (
-                                        /* Booked-and-paid through us: money and the
-                                           bookings diary, not an enquiry inbox they
-                                           don't have. Earnings sits after the Calendar
-                                           and before Messages, the same place it sits
-                                           in the host's menu. */
-                                        <li className={itemClass}>
-                                            <Link href='/services/dashboard/earnings'>Earnings</Link>
-                                        </li>
+                                        /* A guest-experience provider is booked and paid
+                                           through us: their listing, their reservations,
+                                           the calendar, then Earnings. */
+                                        <>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
+                                                    Your listing
+                                                </Link>
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard'>Your reservations</Link>
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/calendar'>Calendar</Link>
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/earnings'>Earnings</Link>
+                                            </li>
+                                        </>
                                     ) : (
-                                        <li className={itemClass}>
-                                            <Link href='/services/dashboard#requests'>Enquiries</Link>
-                                        </li>
+                                        /* A trade's menu, in a host's shape: Requests,
+                                           Calendar, Your listing. "Your reservations" and
+                                           "Enquiries" used to be two names for the one
+                                           screen; they are one line now — Requests —
+                                           carrying the count of enquiries still to answer,
+                                           the same green badge a host's reservations line
+                                           gets. */
+                                        <>
+                                            <li className={itemClass}>
+                                                <RequestsLink className='font-semibold text-emerald-800' />
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/calendar'>Calendar</Link>
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/edit'>Your listing</Link>
+                                            </li>
+                                        </>
                                     )}
                                     {/* A provider's messages are their job/booking
                                         threads — a home they can navigate to so a
-                                        thread is never a lost email. */}
+                                        thread is never a lost email. The count is the
+                                        same badge the host gets. */}
                                     <li className={itemClass}>
-                                        <Link href='/messages'>Messages</Link>
+                                        <MessagesLink />
                                     </li>
                                     {/* A provider is a traveller too: their own
                                         stays and booked experiences, one place. */}

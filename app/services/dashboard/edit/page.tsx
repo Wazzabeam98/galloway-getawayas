@@ -50,9 +50,12 @@ export default async function EditBusinessPage() {
         redirect('/services/dashboard/listing');
     }
 
+    // Coverage is regions now (round two) — a service_areas row per region, the
+    // region name in `label`. The editor renders the region picker, so we just
+    // need the current labels.
     const { data: areas } = await admin
         .from('service_areas')
-        .select('id, label, radius_miles')
+        .select('label')
         .eq('provider_id', provider.id)
         .order('created_at', { ascending: true });
 
@@ -91,7 +94,7 @@ export default async function EditBusinessPage() {
     }
 
     return (
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-24">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-24">
             <Link href="/services/dashboard" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
                 <ArrowLeft className="w-4 h-4" /> Back to your business
             </Link>
@@ -118,7 +121,7 @@ export default async function EditBusinessPage() {
                 }}
                 skills={skills}
                 serviceGroups={serviceGroups}
-                areas={(areas || []).map((a) => ({ id: a.id, label: a.label || '', radius_miles: Number(a.radius_miles) }))}
+                regions={(areas || []).map((a: any) => a.label || '').filter(Boolean)}
                 registrations={(registrations || []).map((r: any) => ({
                     scheme: r.scheme,
                     number: r.number || '',

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { londonDayKey } from '@/lib/dayKey';
 import { getImageUrl } from '@/lib/utils';
 import Link from 'next/link';
@@ -125,6 +125,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
     // have. So send them where they can act: their trips if they are signed in
     // with a stay coming up, otherwise the cottages.
     const router = useRouter();
+    const searchParams = useSearchParams();
     const isGuestTrade = audienceForTrade(trade) === 'guest';
 
     useEffect(() => {
@@ -267,6 +268,18 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
             .filter((row) => !filterScheduled || row.provider.does_scheduled)
             .sort((a, b) => a.distance - b.distance);
     }, [providers, areas, registrations, extras, point, trade, filterEmergency, filterScheduled]);
+
+    // Deep link from a trade's profile page: ?ask=<providerId> opens that trade's
+    // enquiry as soon as it's in the list, so "Ask {business}" over there lands on
+    // the same form here (the host's cottage and details are to hand on this page).
+    // Fires once; a provider not in the current results (out of area) is ignored.
+    const askId = searchParams?.get('ask') || '';
+    const [askOpened, setAskOpened] = useState(false);
+    useEffect(() => {
+        if (!askId || askOpened || asking) return;
+        const row = shown.find((r) => r.provider.id === askId);
+        if (row) { setAsking(row.provider); setAskOpened(true); }
+    }, [askId, askOpened, asking, shown]);
 
     if (isGuestTrade) {
         // Redirecting (effect above). A quiet holding line rather than the host
@@ -450,7 +463,11 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                                 )}
 
                                 <div className="flex-1 min-w-0">
-                                    <h2 className="font-bold text-slate-900">{provider.business_name}</h2>
+                                    <h2 className="font-bold text-slate-900">
+                                        <Link href={`/services/${trade}/${provider.id}`} className="hover:underline">
+                                            {provider.business_name}
+                                        </Link>
+                                    </h2>
 
                                     <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-0.5">
                                         <MapPin className="w-3.5 h-3.5" strokeWidth={1.75} />

@@ -5189,8 +5189,8 @@ function ApplicationForm() {
                 {onStep('credentials') && (
                     <section className="mb-8 space-y-3">
                         {([
-                            ['emergency', doesEmergency, setDoesEmergency, 'I do emergency call-outs', 'Urgent jobs at short notice.'],
-                            ['scheduled', doesScheduled, setDoesScheduled, 'I do scheduled work', 'Booked-in jobs planned ahead.'],
+                            ['emergency', doesEmergency, setDoesEmergency, 'Emergency call-outs', 'Urgent jobs at short notice.'],
+                            ['scheduled', doesScheduled, setDoesScheduled, 'Scheduled work', 'Booked-in jobs planned ahead.'],
                         ] as const).map(([key, checked, set, label, hint]) => (
                             <label key={key} className={'flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition '
                                 + (checked ? 'border-emerald-600 bg-emerald-50/60 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
@@ -5879,10 +5879,17 @@ function ApplicationForm() {
                         hourlyRate.trim() ? '£' + hourlyRate.trim() + ' an hour' : '',
                         flatFee.trim() ? '£' + flatFee.trim() + ' a job' : '',
                     ].filter(Boolean).join(' · ') || '—';
+                const servicesVal = (skills || []).length ? skills.join(', ') : '—';
+                const availVal = [
+                    doesEmergency ? 'Emergency call-outs' : '',
+                    doesScheduled ? 'Scheduled work' : '',
+                ].filter(Boolean).join(' · ') || '—';
                 const facts: [string, string][] = [
                     ['Trade', tradeLabel(trade)],
                     ['Covers', coverageVal],
                     ['Charges', priceVal],
+                    ['Services', servicesVal],
+                    ['Availability', availVal],
                 ];
                 return (
                     <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
@@ -6367,10 +6374,11 @@ function ApplicationForm() {
                         <button
                             type="button"
                             onClick={() => save(true)}
-                            // A guest must agree to the terms before send. The
-                            // save() guard enforces it too; disabling the button
-                            // makes it visible, with the agree box and its gate
-                            // line right above on the finish screen.
+                            // Every provider must agree to their role's agreement
+                            // before send. The save() guard enforces it too; greying
+                            // the button makes it visible (matching how Next greys on
+                            // the other steps), with the agree box right above on the
+                            // finish screen.
                             disabled={saving || (needsAgreementTick && !termsAgreed)}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >

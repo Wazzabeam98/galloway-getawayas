@@ -25,6 +25,8 @@ import CancellationPolicyCard from '@/components/dashboard/reservation/Cancellat
 import ProviderManageSheet, { type ManageData } from '@/components/services/ProviderManageSheet';
 import GuestManageSheet, { type GuestManageData } from '@/components/marketplace/GuestManageSheet';
 import ProviderCancellationCard, { type CancellationCardData } from '@/components/services/ProviderCancellationCard';
+import EnquiryActions from '@/components/services/EnquiryActions';
+import UpcomingJobActions from '@/components/services/UpcomingJobActions';
 
 // The "Where" value: a plain line, or a name with an address beneath it.
 export type WhereField = string | { line: string; sub?: string | null };
@@ -98,6 +100,13 @@ export interface ReservationCardData {
     // `manage`. Exactly one of the two is ever set — a viewer is a provider or a
     // guest — so each party sees only its own actions.
     guestManage: GuestManageData | null;
+    // A trade's still-to-answer request: Accept / Decline, on the request itself
+    // wherever the card is shown. Set only for an unanswered enquiry the viewing
+    // trade owns; absent/null once it is accepted or declined.
+    requestActions?: { enquiryId: string } | null;
+    // A trade's accepted, still-upcoming job: ask the owner for a different day,
+    // or call the job off. Absent for a request still to answer and for past work.
+    jobActions?: { enquiryId: string; preferredDate: string | null; proposedDate: string | null } | null;
 
     // ---- Stay-only fields (a cottage booking). Absent on an experience. ----
     stay?: StayField | null;                 // renders the split check-in/out cards
@@ -147,6 +156,16 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                 status={r.status}
                 size={size}
             />
+
+            {/* A trade's request to answer — Accept / Decline on the request
+                itself, not tucked away on another page. Sits directly under the
+                header so it is the first thing the trade acts on. */}
+            {r.requestActions && (
+                <div className={lifted + ' flex flex-wrap items-center justify-between gap-3'}>
+                    <div className="text-sm font-semibold text-slate-900">Reply to this request</div>
+                    <EnquiryActions enquiryId={r.requestActions.enquiryId} />
+                </div>
+            )}
 
             {/* Check-in / check-out for a stay; the experience's when/where otherwise. */}
             {r.stay ? (
@@ -318,6 +337,13 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
 
             {r.manage && <ProviderManageSheet data={r.manage} />}
             {r.guestManage && <GuestManageSheet data={r.guestManage} />}
+            {r.jobActions && (
+                <UpcomingJobActions
+                    enquiryId={r.jobActions.enquiryId}
+                    preferredDate={r.jobActions.preferredDate}
+                    proposedDate={r.jobActions.proposedDate}
+                />
+            )}
 
             {(r.messageHref || r.phone) && (
                 <div className="flex gap-2">

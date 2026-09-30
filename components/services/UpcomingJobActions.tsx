@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarClock, XCircle, Loader2, Clock } from 'lucide-react';
+import { ukDate } from '@/lib/dayKey';
 
 // Amend or cancel an accepted job, from the tradesman's Upcoming work.
 //
@@ -21,8 +22,8 @@ export default function UpcomingJobActions({
     const [error, setError] = useState('');
 
     function prettyDate(d: string) {
-        const dt = new Date(d + 'T12:00:00Z');
-        return isNaN(dt.getTime()) ? d : dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'Europe/London' });
+        // DD/MM/YYYY from the shared formatter — the one date format the UI uses.
+        return ukDate(d) || d;
     }
 
     async function propose() {
