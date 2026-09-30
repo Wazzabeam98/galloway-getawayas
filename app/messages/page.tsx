@@ -928,7 +928,9 @@ export default function MessagesInboxPage() {
                 whenLabel: rez.whenLabel || '',
                 itemName: rez.itemName || c.item || '',
                 status: rez.status || null,
-                when: { heading: rez.whenHeading || 'When', value: rez.whenLabel || '' },
+                // whenValue feeds the fact card; whenLabel (often emptied for a
+                // trade job) is the header subline, so the asked-for line reads once.
+                when: { heading: rez.whenHeading || 'When', value: rez.whenValue ?? rez.whenLabel ?? '' },
                 where: rez.where ?? null,
                 note: rez.note ?? null,
                 allergy: rez.allergy ?? null,
@@ -945,6 +947,9 @@ export default function MessagesInboxPage() {
                 // The guest's mirror of the Manage sheet — change/cancel from the
                 // thread. The route sets exactly one of manage / guestManage.
                 guestManage: rez.guestManage ?? null,
+                // A trade's Accept / Decline on a still-to-answer request, in the
+                // thread too (set only by the enquiry route, for the provider).
+                requestActions: rez.requestActions ?? null,
             };
             return (
                 <div className="h-full overflow-y-auto p-5">

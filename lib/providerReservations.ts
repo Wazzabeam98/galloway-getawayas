@@ -11,7 +11,7 @@
 
 import { orderNet, orderReference } from '@/lib/serviceOrders';
 import { orderLocation } from '@/lib/orderLocation';
-import { whenLabel, timeLabel, dateLabel, cancellationSentence } from '@/components/marketplace/present';
+import { whenLabel, timeLabel, dateLabel, cancellationSentence, townFromLocation } from '@/components/marketplace/present';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { groupLabel } from '@/lib/bookingDisplay';
 import { formatGBP } from '@/lib/formatMoney';
@@ -87,6 +87,10 @@ export interface ReservationCancellation { headline: string; summary: string; la
 
 export interface ProviderReservationsResult {
     reservations: ProviderReservation[];
+    // Past work — completed, declined and expired jobs — behind a Past/Upcoming
+    // toggle, the way a host gets Past reservations. Empty for a guest provider
+    // (whose past orders are not surfaced here).
+    past: ProviderReservation[];
     summary: { today: number; thisWeek: number; needsReply: number };
 }
 
@@ -281,7 +285,7 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
         // held, awaiting confirm).
         needsReply: rows.filter((o: any) => o.status === 'authorised').length,
     };
-    return { reservations, summary };
+    return { reservations, past: [], summary };
 }
 
 async function loadTradeReservations(admin: any, provider: any, today: string, tomorrow: string, weekEnd: string): Promise<ProviderReservationsResult> {
@@ -294,19 +298,58 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
     // Accepted jobs still ahead, plus requests still to answer (needs a reply).
     const accepted = (enquiries || []).filter((e: any) => e.status === 'accepted' && (!e.preferred_date || String(e.preferred_date).slice(0, 10) >= today));
     const toAnswer = (enquiries || []).filter((e: any) => e.status === 'sent' || e.status === 'viewed');
-    const relevant = [...toAnswer, ...accepted];
+    // Past work — a host's "Past reservations": accepted jobs whose day has gone,
+    // and the requests that ended without a job (declined / expired / withdrawn /
+    // cancelled). Most recent first, and only a recent window of the settled ones.
+    const doneStatuses = new Set(['declined', 'expired', 'withdrawn', 'cancelled']);
+    const pastAccepted = (enquiries || []).filter((e: any) => e.status === 'accepted' && e.preferred_date && String(e.preferred_date).slice(0, 10) < today);
+    const pastSettled = (enquiries || []).filter((e: any) => doneStatuses.has(e.status));
+    const pastRows = [...pastAccepted, ...pastSettled]
+        .sort((a: any, b: any) => String(b.preferred_date || b.sent_at || '').localeCompare(String(a.preferred_date || a.sent_at || '')))
+        .slice(0, 20);
+
+    const relevant = [...toAnswer, ...accepted, ...pastRows];
 
     const listingIds = Array.from(new Set(relevant.map((e: any) => e.listing_id).filter(Boolean)));
     const listings: Record<string, any> = {};
     if (listingIds.length) {
-        const { data: ls } = await admin.from('listings').select('id, title, location, images').in('id', listingIds);
+        // street_address + postcode are the private columns; they only ever reach
+        // the trade AFTER they accept (see the address wall in mapEnquiry). Read
+        // under the service role here; the gate is what we put in the payload.
+        const { data: ls } = await admin.from('listings').select('id, title, location, images, street_address, postcode').in('id', listingIds);
         (ls || []).forEach((l: any) => { listings[l.id] = l; });
     }
 
-    const mapEnquiry = (e: any, needsReply: boolean): ProviderReservation => {
+    const mapEnquiry = (e: any, mode: 'reply' | 'upcoming' | 'past'): ProviderReservation => {
+        const needsReply = mode === 'reply';
         const dateKey = e.preferred_date ? String(e.preferred_date).slice(0, 10) : '';
         const l = e.listing_id ? listings[e.listing_id] : null;
         const hostFirst = String(e.host_name || '').trim().split(' ')[0] || 'the owner';
+        const isAccepted = e.status === 'accepted';
+
+        // THE ADDRESS WALL. A trade needs the full address to attend, but only
+        // once they have accepted — before that, the town is all they get, the
+        // same way a guest sees only the area until their stay is confirmed. The
+        // town comes from the public part of the address; the street + postcode
+        // (the private listing columns) are put in the payload ONLY for an
+        // accepted job, so a still-to-answer or declined request can never carry
+        // the street.
+        const town = l ? townFromLocation(l.location) : null;
+        const fullAddress = l
+            ? ([l.street_address, town, l.postcode].map((x: any) => String(x || '').trim()).filter(Boolean).join(', ') || l.location || null)
+            : null;
+        const whereSub = isAccepted ? (fullAddress || town) : town;
+
+        // The status pill, in the reservation-page family.
+        const status: { label: string; tone: StatusTone } =
+            mode === 'reply' ? { label: 'New request', tone: 'wait' }
+                : mode === 'upcoming' ? { label: 'Accepted', tone: 'ok' }
+                    : isAccepted ? { label: 'Completed', tone: 'ok' }
+                        : e.status === 'declined' ? { label: 'Declined', tone: 'over' }
+                            : e.status === 'withdrawn' ? { label: 'Withdrawn', tone: 'over' }
+                                : e.status === 'cancelled' ? { label: 'Cancelled', tone: 'over' }
+                                    : { label: 'Expired', tone: 'over' };
+
         return {
             id: e.id,
             kind: 'trade' as const,
@@ -323,16 +366,18 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             photoUrl: (l && Array.isArray(l.images) && l.images[0]) ? getImageUrl(String(l.images[0])) : null,
             groupLabel: e.host_name || 'The property owner',
             partyLabel: null,
-            whereLabel: l ? (l.title || 'the property') : 'the property',
+            whereLabel: l ? { line: l.title || 'the property', sub: whereSub } : 'the property',
             note: null,
             allergy: null,
-            status: needsReply
-                ? { label: 'New request', tone: 'wait' as StatusTone }
-                : { label: 'Accepted', tone: 'ok' as StatusTone },
+            status,
             money: null,
             moneyNote: needsReply
                 ? 'A request to answer — reply to the owner, then agree the price and take payment directly.'
-                : 'Agree the price and take payment directly — this job isn’t billed through Galloway Getaways.',
+                : mode === 'past'
+                    ? (isAccepted
+                        ? 'A past job — you agreed the price and took payment directly; nothing was billed through Galloway Getaways.'
+                        : 'This request ended without a job.')
+                    : 'Agree the price and take payment directly — this job isn’t billed through Galloway Getaways.',
             phone: e.host_phone || null,
             messageHref: '/messages?e=' + e.id,
             needsReply,
@@ -347,14 +392,15 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
     };
 
     const reservations: ProviderReservation[] = [
-        ...toAnswer.map((e: any) => mapEnquiry(e, true)),
-        ...accepted.map((e: any) => mapEnquiry(e, false)),
+        ...toAnswer.map((e: any) => mapEnquiry(e, 'reply')),
+        ...accepted.map((e: any) => mapEnquiry(e, 'upcoming')),
     ];
+    const past: ProviderReservation[] = pastRows.map((e: any) => mapEnquiry(e, 'past'));
 
     const summary = {
         today: reservations.filter((r) => r.dateKey === today).length,
         thisWeek: reservations.filter((r) => r.dateKey >= today && r.dateKey <= weekEnd).length,
         needsReply: (enquiries || []).filter((e: any) => e.status === 'sent' || e.status === 'viewed').length,
     };
-    return { reservations, summary };
+    return { reservations, past, summary };
 }

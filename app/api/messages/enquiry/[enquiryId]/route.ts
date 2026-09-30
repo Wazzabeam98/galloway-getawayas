@@ -7,6 +7,7 @@ import { enquiryThreadContext } from '@/lib/enquiryThreads';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 import { displayName, getImageUrl } from '@/lib/utils';
+import { townFromLocation } from '@/components/marketplace/present';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 
@@ -49,10 +50,20 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
 
         let cottage: string | null = null;
         let cottageImage: string | null = null;
+        let cottageTown: string | null = null;
+        let cottageFull: string | null = null;
         if (ctx.enquiry.listing_id) {
-            const { data: l } = await admin.from('listings').select('title, images').eq('id', ctx.enquiry.listing_id).maybeSingle();
+            // street_address + postcode are the private columns — read here under
+            // the service role, but only put in the payload once the job is
+            // accepted (the address wall below), so a still-to-answer request can
+            // never carry the street.
+            const { data: l } = await admin.from('listings').select('title, images, location, street_address, postcode').eq('id', ctx.enquiry.listing_id).maybeSingle();
             cottage = (l && l.title) || null;
             cottageImage = (l && Array.isArray(l.images) && l.images[0]) ? getImageUrl(String(l.images[0])) : null;
+            cottageTown = l ? townFromLocation(l.location) : null;
+            cottageFull = l
+                ? ([l.street_address, cottageTown, l.postcode].map((x: any) => String(x || '').trim()).filter(Boolean).join(', ') || l.location || null)
+                : null;
         }
 
         // Host name/avatar (provider view) and host phone (released on accept), for
@@ -85,23 +96,36 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
                 ? 'A request to answer — reply to the owner, then agree the price and take payment directly.'
                 : 'Agree the price and take payment directly — this job isn’t billed through Galloway Getaways.';
 
+        // THE ADDRESS WALL, mirrored here. The trade sees the town until they
+        // accept, the full address after; the host sees their own property in
+        // full. Off the accept for the provider, the town is all that is in the
+        // payload.
+        const whereSub = (accepted || ctx.isHost) ? (cottageFull || cottageTown) : cottageTown;
+        const askedFor = requestedWhen(ctx.enquiry) || 'A date still to agree';
+
         const reservation = {
             reference: ctx.enquiry.reference,
             avatarUrl: ctx.isHost ? null : hostAvatar,
             initial: (ctx.isHost ? business : hostFirst).slice(0, 1).toUpperCase(),
             photoUrl: cottageImage,
             heading: ctx.isHost ? business : hostName,
-            whenLabel: requestedWhen(ctx.enquiry) || 'A date still to agree',
+            // Empty header subline — the asked-for line reads once, in the "Asked
+            // for" fact card (whenValue), not again beneath the header.
+            whenLabel: '',
+            whenValue: askedFor,
             itemName: ctx.enquiry.summary || 'Job',
             status: statusPill,
             whenHeading: 'Asked for',
-            where: cottage || 'the property',
+            where: cottage ? { line: cottage, sub: whereSub } : 'the property',
             note: null,
             allergy: null,
             money: null,
             moneyNote,
             phone: (!ctx.isHost && accepted && eRow && eRow.host_phone) ? eRow.host_phone : null,
             personFirst: ctx.isHost ? business.split(' ')[0] : hostFirst,
+            // Accept / Decline on the request itself, for the provider, in the
+            // thread too — not only on a separate page.
+            requestActions: (!ctx.isHost && needsReply) ? { enquiryId: params.enquiryId } : null,
         };
 
         return NextResponse.json({
