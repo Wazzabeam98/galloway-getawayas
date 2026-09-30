@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { formatGBP } from '@/lib/formatMoney';
+import { ukDate } from '@/lib/dayKey';
 
 // The "Are you sure?" step of cancelling a stay — the one confirm panel the
 // trips card AND the home upcoming-trip card both use, so the two can't drift
@@ -18,8 +19,7 @@ import { formatGBP } from '@/lib/formatMoney';
 // agree.
 
 function fmtDay(s: string): string {
-    const d = new Date(String(s).slice(0, 10) + 'T00:00:00');
-    return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    return ukDate(s) || s;
 }
 
 export default function CancelBookingConfirm({

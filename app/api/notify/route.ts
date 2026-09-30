@@ -237,20 +237,26 @@ export async function POST(request: Request) {
             let heading = '';
             let intro = '';
 
+            // The refund has already gone back by the time this is sent — the
+            // refund route moves the money before the booking closes — so say
+            // how much, here. There is no separate refund email for a host's
+            // decline or cancellation; this is the one the guest gets.
+            const paidIn = Number(booking.amount_paid || 0);
+            const refunded = Number(booking.amount_refunded || 0);
+            const refundLine = refunded > 0
+                ? ' Everything you paid &mdash; &pound;' + formatGBPAmount(refunded) + ' &mdash; has been refunded to your card. It usually takes five to ten days to appear.'
+                : paidIn > 0 ? '' : ' Nothing was charged.';
+
             if (booking.status === 'declined') {
                 heading = 'Your booking request wasn&rsquo;t accepted';
-                intro = 'Unfortunately the host can&rsquo;t take your booking at ' + listingTitle + ' for these dates. Nothing has been charged, and there are other places to stay across Dumfries &amp; Galloway.';
+                intro = 'Unfortunately the host can&rsquo;t take your booking at ' + listingTitle + ' for these dates.' + refundLine + ' There are other places to stay across Dumfries &amp; Galloway.';
             } else if (booking.status === 'cancelled') {
                 heading = 'Your booking has been cancelled';
-                intro = 'Your booking at ' + listingTitle + ' has been cancelled by the host. If you have questions about this, reply to this email and we&rsquo;ll help.';
+                intro = 'Your booking at ' + listingTitle + ' has been cancelled by the host.' + refundLine + ' If you have questions about this, reply to this email and we&rsquo;ll help.';
             } else {
                 return NextResponse.json({ ok: true, skipped: 'no email for this status' });
             }
 
-            // Declined and cancelled carry no money rows — a declined booking
-            // was never charged, and a host cancellation is followed by its own
-            // refund email. The confirmed case, with the paid / still-to-pay /
-            // free-cancellation figures, is handled by guestBookedEmail above.
             const html = emailLayout(
                 '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">' + heading + '</h1>' +
                 '<p style="margin:0;">Hi ' + guestFirst + ' &mdash; ' + intro + '</p>' +
@@ -259,7 +265,7 @@ export async function POST(request: Request) {
                     { label: 'Dates', value: nights },
                     ...(arrivalLine ? [{ label: 'Times', value: escapeHtml(arrivalLine + '.') }] : []),
                     { label: 'Guests', value: String(booking.guests || 1) },
-                    { label: 'Total', value: '&pound;' + formatGBPAmount(Number(booking.total_price || 0)) },
+                    ...(refunded > 0 ? [{ label: 'Refunded', value: '&pound;' + formatGBPAmount(refunded) }] : []),
                 ]) +
                 button(SITE_URL + '/trips', 'View your trip'),
                 "You're receiving this because you have a booking with Galloway Getaways. Booking emails can't be switched off."

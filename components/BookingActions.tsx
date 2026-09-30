@@ -5,7 +5,9 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { formatGBP } from '@/lib/formatMoney';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-import { displayName } from '@/lib/utils';
+import { firstName } from '@/lib/utils';
+import { ukDate } from '@/lib/dayKey';
+import { fillPlaceholders, usesLockboxCode } from '@/lib/scheduledMessages';
 import { notify } from '@/lib/notify';
 import { resolveTemplate } from '@/lib/messageTemplates';
 import { bookingsChanged } from '@/components/base/usePendingCount';
@@ -173,31 +175,32 @@ export default function BookingActions({
                 .eq('id', booking.listing_id)
                 .single();
 
-            // First name only, to match how {guest_name} renders elsewhere.
-            const fullGuestName = displayName(guest, 'there');
-            const guestName = fullGuestName.split(' ')[0] || 'there';
-            const formatDate = (value: string | null) => {
-                if (!value) return '';
-                const d = new Date(value);
-                return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-            };
+            // A welcome that carries the door code is left to the scheduled
+            // job, which holds it until the arrival window opens — a browser
+            // can't read the code, and shouldn't send it early if it could.
+            if (usesLockboxCode(body)) return;
 
-            body = body
-                .split('{guest_name}').join(guestName)
-                .split('{listing}').join(listing?.title || 'your stay')
-                .split('{check_in}').join(formatDate(booking.check_in))
-                .split('{check_out}').join(formatDate(booking.check_out));
+            // Claim it BEFORE writing, the same way the scheduled job does, so
+            // the job running in the same minute can't send a second copy.
+            const { error: claimError } = await supabase.from('sent_scheduled_messages').insert({
+                booking_id: bookingId,
+                template_type: 'booking_confirmation',
+            });
+            if (claimError) return;
+
+            // First name only, to match how {guest_name} renders elsewhere.
+            body = fillPlaceholders(body, {
+                guestName: firstName(guest, 'there'),
+                listing: listing?.title || 'your stay',
+                checkIn: ukDate(booking.check_in),
+                checkOut: ukDate(booking.check_out),
+            });
 
             await supabase.from('messages').insert({
                 booking_id: bookingId,
                 sender_id: session.user.id,
                 recipient_id: booking.guest_id,
                 body: body,
-            });
-
-            await supabase.from('sent_scheduled_messages').insert({
-                booking_id: bookingId,
-                template_type: 'booking_confirmation',
             });
         } catch (err) {
             console.error('Welcome message could not be sent:', err);

@@ -30,6 +30,7 @@ import { logMoneyFailure } from '@/lib/moneyAlert';
 import { sendEmail, emailLayout, escapeHtml, formatDate, button, detailRows, SITE_URL } from '@/lib/email';
 import { stripeRequest } from '@/lib/stripe';
 import { displayName } from '@/lib/utils';
+import { rateFor, netOfFee } from '@/lib/fees';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 import { guestBookedEmail, guestRequestReceivedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
@@ -91,7 +92,7 @@ export async function settlePaidBookingSession(
 
     const { data: booking } = await admin
         .from('bookings')
-        .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, guest_id, check_in, check_out, host_id')
+        .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, guest_id, check_in, check_out, host_id, commission_rate')
         .eq('id', bookingId)
         .maybeSingle();
 
@@ -206,7 +207,7 @@ export async function settlePaidBookingSession(
     if (booking) {
         const { data: listing } = await admin
             .from('listings')
-            .select('instant_book, title, check_in_time, check_in_end_time, check_out_time, cancellation_policy')
+            .select('instant_book, title, check_in_time, check_in_end_time, check_out_time, cancellation_policy, commission_rate')
             .eq('id', booking.listing_id)
             .maybeSingle();
         listingRow = listing || null;
@@ -470,6 +471,13 @@ export async function settlePaidBookingSession(
                 checkOut: booking.check_out,
                 guests: booking.guests || 1,
                 total: Number(booking.total_price || 0),
+                // What the host is paid, as on their reservations list — the
+                // guest's total less the frozen commission (else the listing's).
+                hostEarns: netOfFee(
+                    Number(booking.total_price || 0),
+                    booking.commission_rate !== null && booking.commission_rate !== undefined
+                        ? Number(booking.commission_rate) : rateFor(listingRow),
+                ),
                 instant,
                 bookingId: booking.id,
             });

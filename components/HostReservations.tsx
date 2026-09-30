@@ -5,7 +5,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { getImageUrl, displayName } from '@/lib/utils';
+import { getImageUrl, firstName } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
 import { accessibleListings } from '@/lib/access';
 import { contactNumberVisible } from '@/lib/stayWindow';
@@ -103,7 +103,7 @@ export default async function HostReservations() {
     const guestNameMap: Record<string, string> = {};
     const guestPhoneMap: Record<string, string | null> = {};
     (guests || []).forEach((g) => {
-        guestNameMap[g.id] = displayName(g, 'Guest');
+        guestNameMap[g.id] = firstName(g, 'Guest');
         guestPhoneMap[g.id] = g.phone || null;
     });
 

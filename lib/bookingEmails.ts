@@ -167,7 +167,7 @@ export function guestRequestReceivedEmail(input: GuestRequestReceivedInput): { s
     const paid = round2(Number(input.amountPaid || 0));
 
     const heading = 'Request received';
-    const intro = 'Thanks ' + guestFirst + ' &mdash; we&rsquo;ve taken your payment and passed your'
+    const intro = 'We&rsquo;ve taken your payment and passed your'
         + ' request on to the host of ' + listingTitle + '. Your dates are held for you, but the'
         + ' stay isn&rsquo;t confirmed until the host says yes.';
 
@@ -206,6 +206,9 @@ export interface HostNewBookingInput {
     checkOut: string;
     guests: number | string;
     total: number;
+    // What the host is paid (total less commission). Shown as "You earn" in
+    // place of the guest's total, as Airbnb's host email does.
+    hostEarns?: number;
     instant: boolean;
     bookingId: string;
 }
@@ -231,7 +234,9 @@ export function hostNewBookingEmail(input: HostNewBookingInput): { subject: stri
             { label: 'Guest', value: guestFirst },
             { label: 'Dates', value: nights },
             { label: 'Guests', value: String(input.guests || 1) },
-            { label: 'Total', value: '&pound;' + formatGBPAmount(Number(input.total || 0)) },
+            input.hostEarns !== undefined
+                ? { label: 'You earn', value: '&pound;' + formatGBPAmount(Number(input.hostEarns)) }
+                : { label: 'Total', value: '&pound;' + formatGBPAmount(Number(input.total || 0)) },
         ]) +
         button(SITE_URL + '/dashboard/bookings/' + input.bookingId, input.instant ? 'View the booking' : 'Review this request'),
         "You're receiving this because you host on Galloway Getaways. Booking emails can't be switched off."
