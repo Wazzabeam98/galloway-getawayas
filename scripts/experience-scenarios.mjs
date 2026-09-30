@@ -277,6 +277,7 @@ async function resetSeed() {
 
     const providers = await db.select('service_providers', '?select=id&owner_id=in.' + ids);
     for (const p of providers) {
+        await db.remove('service_order_refunds', '?provider_id=eq.' + p.id);
         await db.remove('service_orders', '?provider_id=eq.' + p.id);
         await db.remove('slot_sessions', '?provider_id=eq.' + p.id);
         await db.remove('slot_availability', '?provider_id=eq.' + p.id);
@@ -466,6 +467,11 @@ async function main() {
 
     const guestCookie = await asUser('guest');
     const ownerCookie = await asUser('owner');
+    // A director, for the admin refund (scenarios 25–29). is_admin is set with
+    // the service key, as the journeys seeder does.
+    const director = await createUser('director', 'Exp Director');
+    await db.update('profiles', '?id=eq.' + director.id, { is_admin: true });
+    const adminCookie = await asUser('director');
 
     // The routes check auth BEFORE the flag, so an unauthenticated probe is
     // uninformative (always 401). Probe as the signed-in guest: a 403 now means
@@ -1155,9 +1161,9 @@ async function main() {
     }
 
     // A confirmed per-person chef order for `qty` on `serviceDate`, £55/head.
-    async function confirmedChefOrder(serviceDate, qty) {
+    async function confirmedChefOrder(serviceDate, qty, pm) {
         const total = 55 * qty;
-        const pi = await guestPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+        const pi = await guestPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id }, ...(pm ? { pm } : {}) });
         const base = sessionForServiceOrder({ pi: pi.id, total, provider: chef, guest, booking, serviceDate, item: chefPerson });
         await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'person', unit_price: '55', quantity: String(qty), adults: String(qty), children: '0' } });
         const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + serviceDate + '&order=created_at.desc&limit=1'))[0];
@@ -1492,6 +1498,161 @@ async function main() {
         check('STRIPE: the £99 payout was reversed in full', tr && tr.amount_reversed === 9900, tr && ('reversed ' + tr.amount_reversed));
         check('APP: the reversal is recorded on the order, nothing owed', Number(row.payout_reversed) === 99 && Number(row.payout_clawback_owed) === 0 && row.status === 'refunded',
             'reversed £' + row.payout_reversed + ' owed £' + row.payout_clawback_owed + ' ' + row.status);
+    }
+
+
+    /* ================================ 25–29. THE ADMIN REFUND (30 Sep 2026) */
+    // An admin refunding all or part of an order from /admin/experience-orders,
+    // against real Stripe: before the payout run the money comes from what we
+    // hold and the provider is paid only on what is left; after it, the
+    // provider's share is clawed back — and what their balance can't cover is
+    // owed and the directors told. Legacy direct orders refund the old way.
+    const REASON = 'Scenario: the provider could not deliver what was booked.';
+    const adminRefund = (orderId, amount, expectedRefunded) =>
+        postRoute('/api/admin/experience-orders/refund', adminCookie, { orderId, amount, reason: REASON, expectedRefunded });
+    const refundRows = (orderId) => db.select('service_order_refunds', '?select=*&order_id=eq.' + orderId + '&order=created_at.asc');
+
+    scenario('25', 'Admin full refund BEFORE payout: refunded from the money we hold, the order refunded, and the payout run pays the provider nothing');
+    {
+        const { order, pi } = await confirmedChefOrder(dayOffset(-5), 2);
+        const denied = await postRoute('/api/admin/experience-orders/refund', ownerCookie, { orderId: order.id, amount: 110, reason: REASON, expectedRefunded: 0 });
+        check('a non-admin (the provider) is refused and nothing moves', denied.status === 403 && Number((await chargeOf(pi.id)).amount_refunded) === 0, 'HTTP ' + denied.status);
+        const shortReason = await postRoute('/api/admin/experience-orders/refund', adminCookie, { orderId: order.id, amount: 110, reason: 'sorry', expectedRefunded: 0 });
+        check('a reason under the minimum is refused before any money moves', shortReason.status === 400 && (await refundRows(order.id)).length === 0, 'HTTP ' + shortReason.status);
+        const tooMuch = await adminRefund(order.id, 110.01, 0);
+        check('more than was paid is refused (capped from Stripe, not the browser)', tooMuch.status === 400, 'HTTP ' + tooMuch.status + ' ' + JSON.stringify(tooMuch.body).slice(0, 100));
+
+        const res = await adminRefund(order.id, 110, 0);
+        check('the admin refund succeeds', res.status === 200 && res.body.ok && res.body.status === 'refunded' && res.body.afterPayout === false,
+            'HTTP ' + res.status + ' ' + JSON.stringify(res.body).slice(0, 160));
+        const charge = await chargeOf(pi.id);
+        const refunds = await refundsFor(pi.id);
+        check('STRIPE: the guest has the full £110 back, as a plain refund (no transfer to reverse)',
+            Number(charge.amount_refunded) === 11000 && refunds.length === 1 && !refunds[0].transfer_reversal && !charge.transfer,
+            'refunded=' + charge.amount_refunded + ' refunds=' + refunds.length);
+        const [row] = await refundRows(order.id);
+        check('STRIPE: the refund carries the audit row id, and the key was built from it',
+            refunds[0].metadata && refunds[0].metadata.admin_refund_request === (row && row.id), refunds[0].metadata && refunds[0].metadata.admin_refund_request);
+        const after = await orderRow(order.id);
+        check('APP: the order is refunded, amount_refunded £110', after.status === 'refunded' && Number(after.amount_refunded) === 110,
+            after.status + ' £' + after.amount_refunded);
+        check('AUDIT: who, what, why, when, flow, before payout, the Stripe refund id',
+            row && row.status === 'succeeded' && row.admin_id === director.id && Number(row.amount) === 110 && row.reason === REASON
+                && row.funds_flow === 'held' && row.after_payout === false && row.stripe_refund_id === refunds[0].id && !!row.completed_at,
+            JSON.stringify(row).slice(0, 220));
+        const run = await runPayouts();
+        const group = await transfersFor(order.id);
+        const settled = await orderRow(order.id);
+        check('the payout run sends the provider nothing — no transfer, never paid out',
+            run.status === 200 && group.length === 0 && !settled.payout_transfer_id, 'transfers=' + group.length + ' payout=' + settled.payout_amount);
+    }
+
+    scenario('26', 'Admin PART refund before payout (a double click sends one refund): the payout run pays the remainder less our fee');
+    {
+        const { order, pi } = await confirmedChefOrder(dayOffset(-6), 2);
+        // Two clicks at once, same amount, same page.
+        const [a, b] = await Promise.all([adminRefund(order.id, 30, 0), adminRefund(order.id, 30, 0)]);
+        const statuses = [a.status, b.status].sort();
+        const refunds = await refundsFor(pi.id);
+        check('a double click refunds ONCE — one 200, one refused, one refund at Stripe',
+            statuses[0] === 200 && statuses[1] === 409 && refunds.length === 1 && refunds[0].amount === 3000,
+            'HTTP ' + statuses.join('/') + ' refunds=' + refunds.length);
+        // A late second click from the same stale page is refused too.
+        const late = await adminRefund(order.id, 30, 0);
+        check('a late click from the stale page is refused (the refunded figure moved)', late.status === 409 && (await refundsFor(pi.id)).length === 1, 'HTTP ' + late.status);
+        const mid = await orderRow(order.id);
+        check('APP: still confirmed, £30 recorded as refunded', mid.status === 'confirmed' && Number(mid.amount_refunded) === 30, mid.status + ' £' + mid.amount_refunded);
+        await runPayouts();
+        const paid = await orderRow(order.id);
+        const tr = paid.payout_transfer_id ? await stripe.request('GET', '/transfers/' + paid.payout_transfer_id) : null;
+        check('the payout run pays £72 — the £80 left less our £8 fee on it', Number(paid.payout_amount) === 72 && tr && tr.amount === 7200,
+            '£' + paid.payout_amount + ' transfer=' + (tr && tr.amount));
+    }
+
+    scenario('27', 'Admin PART refund after payout: the guest is refunded and the provider\'s share of it is clawed back');
+    {
+        const { order, pi } = await confirmedChefOrder(dayOffset(-7), 2);
+        await runPayouts();
+        const paid = await orderRow(order.id);
+        check('paid out £99 first', Number(paid.payout_amount) === 99 && !!paid.payout_transfer_id, '£' + paid.payout_amount);
+        const res = await adminRefund(order.id, 30, 0);
+        check('the admin refund succeeds, after payout', res.status === 200 && res.body.ok && res.body.afterPayout === true && res.body.status === 'confirmed',
+            'HTTP ' + res.status + ' ' + JSON.stringify(res.body).slice(0, 160));
+        const charge = await chargeOf(pi.id);
+        const tr = await stripe.request('GET', '/transfers/' + paid.payout_transfer_id);
+        const row = await orderRow(order.id);
+        const [audit] = await refundRows(order.id);
+        check('STRIPE: the guest has £30 back', Number(charge.amount_refunded) === 3000, String(charge.amount_refunded));
+        check('STRIPE: £27 of the £99 payout reversed — what the provider would not have been paid (£99 − £72)', tr.amount_reversed === 2700, 'reversed ' + tr.amount_reversed);
+        check('APP: payout_reversed £27, nothing owed, still confirmed', Number(row.payout_reversed) === 27 && Number(row.payout_clawback_owed) === 0 && row.status === 'confirmed',
+            'reversed £' + row.payout_reversed + ' owed £' + row.payout_clawback_owed);
+        check('AUDIT: after payout, the reversal id and £27 recorded', audit && audit.after_payout === true && Number(audit.reversed) === 27 && !!audit.reversal_id && Number(audit.shortfall) === 0,
+            JSON.stringify(audit).slice(0, 200));
+    }
+
+    scenario('28', 'Admin full refund after payout with the provider\'s balance empty: the shortfall is owed on the order and the directors are told');
+    {
+        // Paid with a card whose funds are available at once, so the payout's
+        // money is in the provider's AVAILABLE balance — where draining it to
+        // their bank leaves nothing to pull back (a transfer still pending on
+        // the charge's clock is always reachable; see lib/clawback.ts).
+        const { order, pi } = await confirmedChefOrder(dayOffset(-8), 2, 'pm_card_bypassPending');
+        await runPayouts();
+        const paid = await orderRow(order.id);
+        check('paid out £99 first', Number(paid.payout_amount) === 99 && !!paid.payout_transfer_id, '£' + paid.payout_amount);
+        const bal = await connectedBalance(account);
+        if (bal.available > 0) {
+            await stripe.request('POST', '/payouts', { amount: Math.round(bal.available * 100), currency: 'gbp' }, { account });
+        }
+        const drained = await connectedBalance(account);
+        check('the provider\'s available Stripe balance is empty before the refund', drained.available <= 0, '£' + drained.available + ' available');
+        const since = new Date(Date.now() - 1000).toISOString();
+        const res = await adminRefund(order.id, 110, 0);
+        check('the guest is still refunded in full', res.status === 200 && res.body.ok && res.body.status === 'refunded' && Number(res.body.shortfall) === 99,
+            'HTTP ' + res.status + ' ' + JSON.stringify(res.body).slice(0, 160));
+        const charge = await chargeOf(pi.id);
+        const tr = await stripe.request('GET', '/transfers/' + paid.payout_transfer_id);
+        const row = await orderRow(order.id);
+        const [audit] = await refundRows(order.id);
+        check('STRIPE: the guest has the full £110 back', Number(charge.amount_refunded) === 11000, String(charge.amount_refunded));
+        check('STRIPE: nothing reversed from an empty balance (the account is never driven negative)', tr.amount_reversed === 0 && (await connectedBalance(account)).available >= 0,
+            'reversed ' + tr.amount_reversed);
+        check('APP: £99 owed on the order (payout_clawback_owed), order refunded', Number(row.payout_clawback_owed) === 99 && row.status === 'refunded',
+            'owed £' + row.payout_clawback_owed + ' ' + row.status);
+        check('AUDIT: the shortfall recorded against the refund', audit && Number(audit.shortfall) === 99 && audit.after_payout === true, JSON.stringify(audit).slice(0, 200));
+        const alerts = await db.select('error_log', '?select=message,detail,created_at&created_at=gte.' + encodeURIComponent(since) + '&message=like.*could%20not%20be%20pulled%20back*');
+        check('the director alert path fired (logMoneyFailure → alertDirectorsNow), naming the order',
+            alerts.some((a) => String(a.detail || '').indexOf(order.id) >= 0), alerts.length + ' alert row(s)');
+    }
+
+    scenario('29', 'Admin PART refund of a legacy direct order: the old way — our fee back and the provider\'s transfer reversed in proportion');
+    {
+        const total = 110;
+        const serviceDate = dayOffset(-9);
+        const pi = await legacyDestinationPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+        const base = sessionForServiceOrder({ pi: pi.id, total, provider: chef, guest, booking, serviceDate, item: chefPerson, legacy: true });
+        await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'person', unit_price: '55', quantity: '2', adults: '2', children: '0' } });
+        const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + serviceDate + '&order=created_at.desc&limit=1'))[0];
+        await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'confirm' });
+        await settledCharge(pi.id, { needTransfer: true });
+        const res = await adminRefund(order.id, 55, 0);
+        check('the admin refund succeeds on a direct order', res.status === 200 && res.body.ok && res.body.status === 'confirmed', 'HTTP ' + res.status + ' ' + JSON.stringify(res.body).slice(0, 160));
+        let ch = null, tr = null, fee = null;
+        for (let i = 0; i < 12; i++) {
+            ch = await chargeOf(pi.id);
+            tr = ch && ch.transfer ? await stripe.request('GET', '/transfers/' + ch.transfer).catch(() => null) : null;
+            fee = ch && ch.application_fee ? await stripe.request('GET', '/application_fees/' + ch.application_fee).catch(() => null) : null;
+            if (ch && Number(ch.amount_refunded) === 5500 && tr && tr.amount_reversed > 0) break;
+            await sleep(2000);
+        }
+        check('STRIPE: £55 back to the guest, half the transfer reversed, half our fee returned',
+            ch && Number(ch.amount_refunded) === 5500 && tr && tr.amount_reversed === Math.round(tr.amount / 2) && fee && fee.amount_refunded === 550,
+            'refunded=' + (ch && ch.amount_refunded) + ' reversed=' + (tr && tr.amount_reversed) + '/' + (tr && tr.amount) + ' fee_refunded=' + (fee && fee.amount_refunded));
+        const [audit] = await refundRows(order.id);
+        check('AUDIT: direct flow, the transfer reversal id recorded', audit && audit.funds_flow === 'direct' && !!audit.reversal_id, JSON.stringify(audit).slice(0, 200));
+        const after = await orderRow(order.id);
+        check('APP: still confirmed, £55 refunded, never paid out by us', after.status === 'confirmed' && Number(after.amount_refunded) === 55 && !after.paid_out_at,
+            after.status + ' £' + after.amount_refunded);
     }
 
     /* ----------------------------------------------------------------- write + sum */

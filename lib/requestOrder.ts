@@ -8,7 +8,7 @@ import {
 } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
-import { LTA_NOTICE_VERSION } from '@/lib/linkedTravelNotice';
+import { ltaNoticeRecord } from '@/lib/linkedTravelNotice';
 import { orderFieldsFromMetadata } from '@/lib/experienceFunds';
 import { packageNoticeFromMetadata } from './packageNotice';
 
@@ -153,11 +153,11 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             booking_id: md.booking_id || null,
             // A stay-linked experience checkout shows the guest the linked-travel-
             // arrangement notice above the pay button, so record which wording they
-            // saw and when, against the order. Null for a standalone order (no
-            // stay), which never shows the notice.
-            ...(md.booking_id
-                ? { lta_notice_version: LTA_NOTICE_VERSION, lta_notice_shown_at: nowIso }
-                : {}),
+            // saw and when, against the order. Nothing for a standalone order (no
+            // stay), which never shows the notice — nor where the order route
+            // decided the package notice applied (carried in the metadata), which
+            // is shown instead (lib/linkedTravelNotice ltaNoticeRecord).
+            ...ltaNoticeRecord(!!md.booking_id, !!packageNoticeFromMetadata(md).package_notice_version, nowIso),
             // The package notice, if the order route decided at checkout that it
             // applied (lib/packageNotice) — carried in the server-written metadata.
             ...packageNoticeFromMetadata(md),

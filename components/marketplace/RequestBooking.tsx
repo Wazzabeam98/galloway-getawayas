@@ -501,7 +501,7 @@ export function RequestBookingDialog({
                                     </div>
                                 </details>
                             )}
-                            <LinkedTravelNotice show={!!hasStay} />
+                            <LinkedTravelNotice show={!!hasStay} date={date} />
                             <PackageNotice date={date} />
                             <button type="button" onClick={submit} disabled={busy || !canBook}
                                 className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">

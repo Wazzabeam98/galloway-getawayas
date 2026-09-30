@@ -180,11 +180,64 @@ export function refundBody(order: { funds_flow?: string | null; stripe_payment_i
 // past booking, a stay cancelled after the experience date — the guest's money
 // comes back from us and the provider's payout is clawed back after it.
 export async function refundExperienceOrder(admin: any, order: any, idempotencyKey: string): Promise<any> {
-    const refund = await stripeRequest('POST', '/refunds', refundBody(order), idempotencyKey);
-    if (fundsFlowOf(order) === 'held' && order.payout_transfer_id) {
-        await clawBackExperiencePayout(admin, order, (refund && refund.id) || idempotencyKey);
-    }
+    const { refund } = await issueExperienceRefund(admin, order, idempotencyKey);
     return refund;
+}
+
+// The one refund path for an experience order, full or part. refundExperienceOrder
+// above is this with no amount; the admin refund route passes an amount (in
+// pence), metadata for the trail, and how much of a made payout to claw back
+// (clawbackDue below) so a part refund recovers only the provider's share of it.
+//
+//   direct              refund_application_fee + reverse_transfer: Stripe hands
+//                       back our fee and pulls the provider's share back in the
+//                       same proportion, in the same call.
+//   held, not paid out  a plain refund from the money we hold; the payout run
+//                       later pays the provider only on what is left.
+//   held, paid out      the refund, then the payout clawed back through
+//                       clawBackExperiencePayout (shortfall → owed + directors).
+export async function issueExperienceRefund(
+    admin: any,
+    order: any,
+    idempotencyKey: string,
+    opts: { amountPence?: number; metadata?: Record<string, string>; clawbackPounds?: number } = {}
+): Promise<{ refund: any; clawback: { reversed: number; owed: number; failed: number; reversalId: string | null } | null }> {
+    const body: Record<string, any> = refundBody(order);
+    if (opts.amountPence !== undefined) body.amount = Math.round(opts.amountPence);
+    if (opts.metadata) body.metadata = opts.metadata;
+    const refund = await stripeRequest('POST', '/refunds', body, idempotencyKey);
+    let clawback = null;
+    if (fundsFlowOf(order) === 'held' && order.payout_transfer_id) {
+        clawback = await clawBackExperiencePayout(admin, order, (refund && refund.id) || idempotencyKey, opts.clawbackPounds);
+    }
+    return { refund, clawback };
+}
+
+// How much of a made payout a refund should take back, in pounds: what the
+// provider still holds of it less what the payout run WOULD have paid them had
+// this refund landed first (providerSharePence on what the guest has left in).
+// So a part refund after payout leaves the provider exactly where a part refund
+// before payout would have — our fee on the refunded part is ours to give up,
+// just as refund_application_fee gives it up on a direct order. A full refund
+// takes back everything still outstanding.
+export function clawbackDue(input: {
+    amountPence: number;
+    refundedAfterPence: number;
+    platformFeePence?: number | null;
+    commissionRate?: number | null;
+    payoutAmount?: number | null;
+    payoutReversed?: number | null;
+    payoutClawbackOwed?: number | null;
+}): number {
+    const outstanding = Math.round((Number(input.payoutAmount || 0) - Number(input.payoutReversed || 0) - Number(input.payoutClawbackOwed || 0)) * 100);
+    if (outstanding <= 0) return 0;
+    const shouldHave = providerSharePence({
+        amountPence: input.amountPence,
+        refundedPence: input.refundedAfterPence,
+        platformFeePence: input.platformFeePence,
+        commissionRate: input.commissionRate,
+    });
+    return Math.max(0, outstanding - shouldHave) / 100;
 }
 
 // Pull back what we paid a provider for an order that has since been refunded.
@@ -199,11 +252,15 @@ export async function refundExperienceOrder(admin: any, order: any, idempotencyK
 export async function clawBackExperiencePayout(
     admin: any,
     order: any,
-    reference: string
-): Promise<{ reversed: number; owed: number; failed: number }> {
+    reference: string,
+    // How much to take back, in pounds (clawbackDue). Omitted: everything not
+    // yet reversed — a full refund, as every caller before the admin refund.
+    cap?: number
+): Promise<{ reversed: number; owed: number; failed: number; reversalId: string | null }> {
     const r2 = (n: number) => Math.round(n * 100) / 100;
-    const remaining = r2(Number(order.payout_amount || 0) - Number(order.payout_reversed || 0));
-    if (!order.payout_transfer_id || remaining <= 0) return { reversed: 0, owed: 0, failed: 0 };
+    const unreversed = r2(Number(order.payout_amount || 0) - Number(order.payout_reversed || 0));
+    const remaining = cap === undefined ? unreversed : r2(Math.max(0, Math.min(unreversed, Number(cap) || 0)));
+    if (!order.payout_transfer_id || remaining <= 0) return { reversed: 0, owed: 0, failed: 0, reversalId: null };
 
     const { data: prov } = await admin
         .from('service_providers')
@@ -215,22 +272,24 @@ export async function clawBackExperiencePayout(
         ? await reversibleFrom(prov.stripe_account_id, order.payout_transfer_id)
         : { reachable: null, fullyReversed: false };
 
-    if (reversible.fullyReversed) return { reversed: 0, owed: 0, failed: 0 };
+    if (reversible.fullyReversed) return { reversed: 0, owed: 0, failed: 0, reversalId: null };
 
     const fundable = reversible.reachable === null
         ? remaining
         : r2(Math.max(0, Math.min(remaining, reversible.reachable)));
     let shortfall = r2(remaining - fundable);
     let reversed = 0;
+    let reversalId: string | null = null;
 
     try {
         if (fundable > 0) {
-            await stripeRequest(
+            const reversal = await stripeRequest(
                 'POST',
                 '/transfers/' + order.payout_transfer_id + '/reversals',
                 { amount: Math.round(fundable * 100), metadata: { service_order_id: order.id, reason: 'refund after payout' } },
                 'exp-clawback-' + order.id + '-' + reference
             );
+            reversalId = (reversal && reversal.id) || null;
             reversed = fundable;
         }
     } catch (err: any) {
@@ -240,7 +299,7 @@ export async function clawBackExperiencePayout(
                 { order_id: order.id, transfer_id: order.payout_transfer_id, amount: remaining, message: err && err.message },
                 { path: 'lib/experienceFunds' }
             );
-            return { reversed: 0, owed: 0, failed: remaining };
+            return { reversed: 0, owed: 0, failed: remaining, reversalId: null };
         }
         shortfall = remaining;
     }
@@ -268,5 +327,5 @@ export async function clawBackExperiencePayout(
         );
     }
 
-    return { reversed, owed: shortfall, failed: 0 };
+    return { reversed, owed: shortfall, failed: 0, reversalId };
 }

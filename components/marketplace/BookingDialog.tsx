@@ -466,7 +466,7 @@ export default function BookingDialog({
                         {/* Footer: total + one CTA → Stripe Checkout */}
                         <div className="border-t border-slate-100 px-5 py-4">
                             {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
-                            <LinkedTravelNotice show={!!hasStay} />
+                            <LinkedTravelNotice show={!!hasStay} date={selected ? selected.date : null} />
                             <PackageNotice date={selected ? selected.date : null} />
                             <div className="flex items-center justify-between gap-3">
                                 <div className="text-sm text-slate-600">
