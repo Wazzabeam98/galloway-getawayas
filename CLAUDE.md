@@ -201,6 +201,24 @@ If you add a seed, give it a new domain and do not reuse one above. The trade
 logins for walking the trade side are `seed-joiner@gallowaytrade.test` and
 `seed-plumber@gallowaytrade.test` (password in the seed script).
 
+### Liam's own account is never wiped — not by any seed, reset or runner
+
+`liamworrall18@hotmail.com` on TEST is Liam's real account, not a seed account:
+he uses it to walk the host side (Millburn Cottage), the admin side, and the
+guest side the experience seed places orders on. **No seed, scenario, e2e reset
+or ad-hoc script may delete it, delete its profile row, or change its password
+or email.** Seeds may still place bookings/orders on it and set flags on it.
+
+This is enforced, not just asked: `scripts/protectedAccounts.cjs` holds the
+protected list, and `scripts/seed-lib.mjs`'s `db.auth`/`db.rest` plus every
+runner with its own auth fetch wrapper call `guardFetch` first, so the request
+is refused before it is sent. `tests/protected-accounts.test.ts` proves the
+refusal and fails the build if a script calls the auth admin API through its own
+fetch without `guardFetch`. If you write a new script that deletes users, use
+`supabaseClient` from seed-lib or call `guardFetch` — never a bare fetch. Never
+reset his password from a script; to sign in as him from tooling, mint a magic
+link (`scripts/_login-url.mjs`).
+
 ## House rules for this codebase
 
 - **every change goes to master through a pull request.**
