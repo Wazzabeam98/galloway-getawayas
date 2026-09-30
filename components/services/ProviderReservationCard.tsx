@@ -17,7 +17,7 @@
 // money as one card that opens the full breakdown; booked date + reference; then
 // View the listing and Manage reservation.
 
-import { MessageSquare, Phone, LogIn, LogOut, KeyRound, Wifi, ExternalLink } from 'lucide-react';
+import { MessageSquare, Phone, LogIn, LogOut, KeyRound, Wifi, ExternalLink, AlertTriangle } from 'lucide-react';
 import ReservationHeader from '@/components/dashboard/reservation/ReservationHeader';
 import type { StatusTone } from '@/components/dashboard/reservation/ReservationStatusPill';
 import MoneyCards, { type MoneyCardsData } from '@/components/dashboard/reservation/MoneyCards';
@@ -104,6 +104,9 @@ export interface ReservationCardData {
     // wherever the card is shown. Set only for an unanswered enquiry the viewing
     // trade owns; absent/null once it is accepted or declined.
     requestActions?: { enquiryId: string } | null;
+    // A soft clash warning shown above Accept / Decline: they already have a job
+    // in this window that day. A heads-up, not a block.
+    clashWarning?: string | null;
     // A trade's accepted, still-upcoming job: ask the owner for a different day,
     // or call the job off. Absent for a request still to answer and for past work.
     jobActions?: { enquiryId: string; preferredDate: string | null; proposedDate: string | null } | null;
@@ -161,9 +164,17 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                 itself, not tucked away on another page. Sits directly under the
                 header so it is the first thing the trade acts on. */}
             {r.requestActions && (
-                <div className={lifted + ' flex flex-wrap items-center justify-between gap-3'}>
-                    <div className="text-sm font-semibold text-slate-900">Reply to this request</div>
-                    <EnquiryActions enquiryId={r.requestActions.enquiryId} />
+                <div className={lifted + ' space-y-3'}>
+                    {r.clashWarning && (
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-600" strokeWidth={2} />
+                            <span>{r.clashWarning}</span>
+                        </div>
+                    )}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-slate-900">Reply to this request</div>
+                        <EnquiryActions enquiryId={r.requestActions.enquiryId} />
+                    </div>
                 </div>
             )}
 

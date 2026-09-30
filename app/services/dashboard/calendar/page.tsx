@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { requestedWhen } from '@/lib/serviceEnquiries';
+import { requestedWhen, windowsClash } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 import TradeCalendar from '@/components/services/TradeCalendar';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
@@ -148,18 +148,34 @@ export default async function ProviderDashboardPage() {
         .eq('provider_id', provider.id)
         .eq('status', 'accepted');
     const firstNameOf = (n: string | null | undefined) => String(n || '').trim().split(/\s+/)[0] || 'the owner';
-    const jobs = (acceptedRows || [])
-        .filter((e: any) => e.preferred_date)
-        .map((e: any) => {
-            const rw = requestedWhen(e);
-            const window = rw ? rw.replace(/^Asked for [^,]+,\s*/, '') : 'a time to agree';
-            return {
-                dayKey: String(e.preferred_date).slice(0, 10),
-                title: e.summary || 'Job',
-                window,
-                hostFirst: firstNameOf(e.host_name),
-            };
-        });
+    const datedJobs = (acceptedRows || []).filter((e: any) => e.preferred_date);
+    const jobs = datedJobs.map((e: any) => {
+        const rw = requestedWhen(e);
+        const window = rw ? rw.replace(/^Asked for [^,]+,\s*/, '') : 'a time to agree';
+        return {
+            dayKey: String(e.preferred_date).slice(0, 10),
+            title: e.summary || 'Job',
+            window,
+            hostFirst: firstNameOf(e.host_name),
+        };
+    });
+
+    // Days where two accepted jobs overlap in the same window — the soft double-
+    // book, made visible. Never blocked; the calendar just flags it amber.
+    const byDay: Record<string, any[]> = {};
+    for (const e of datedJobs) {
+        const k = String(e.preferred_date).slice(0, 10);
+        (byDay[k] = byDay[k] || []).push(e);
+    }
+    const clashDays = Object.keys(byDay).filter((k) => {
+        const list = byDay[k];
+        for (let i = 0; i < list.length; i++) {
+            for (let j = i + 1; j < list.length; j++) {
+                if (windowsClash(list[i], list[j])) return true;
+            }
+        }
+        return false;
+    });
 
     // Days already taken off (future), from the shared whole-day block table.
     const { data: blocks } = await admin
@@ -191,7 +207,7 @@ export default async function ProviderDashboardPage() {
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
-                <TradeCalendar providerId={provider.id} jobs={jobs} blockedDays={blockedDays} />
+                <TradeCalendar providerId={provider.id} jobs={jobs} blockedDays={blockedDays} clashDays={clashDays} />
             </div>
         </div>
     );

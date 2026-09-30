@@ -950,6 +950,7 @@ export default function MessagesInboxPage() {
                 // A trade's Accept / Decline on a still-to-answer request, in the
                 // thread too (set only by the enquiry route, for the provider).
                 requestActions: rez.requestActions ?? null,
+                clashWarning: rez.clashWarning ?? null,
             };
             return (
                 <div className="h-full overflow-y-auto p-5">

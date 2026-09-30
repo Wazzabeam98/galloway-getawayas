@@ -12,7 +12,7 @@
 import { orderNet, orderReference } from '@/lib/serviceOrders';
 import { orderLocation } from '@/lib/orderLocation';
 import { whenLabel, timeLabel, dateLabel, cancellationSentence, townFromLocation } from '@/components/marketplace/present';
-import { requestedWhen } from '@/lib/serviceEnquiries';
+import { requestedWhen, windowsClash, windowPhrase } from '@/lib/serviceEnquiries';
 import { groupLabel } from '@/lib/bookingDisplay';
 import { formatGBP } from '@/lib/formatMoney';
 import { getImageUrl, displayName } from '@/lib/utils';
@@ -82,6 +82,9 @@ export interface ProviderReservation {
     // A trade's accepted job carries the day it is on and any day it has already
     // proposed, so the card can offer "ask for a different day" / "call it off".
     proposedDate?: string | null;
+    // A soft clash warning on a still-to-answer request: another accepted job in
+    // the same window that day. A warning, not a block — the trade can accept anyway.
+    clashWarning?: string | null;
 }
 
 // Structural mirror of ProviderCancellationCard's data (kept here so the server
@@ -322,6 +325,23 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
 
     const relevant = [...toAnswer, ...accepted, ...pastRows];
 
+    // Accepted jobs that still lie ahead, grouped by the day they are on, so a
+    // still-to-answer request can be checked for a soft clash — a job already
+    // taken in the same window on the same day. Warn, never block (see
+    // windowsClash): the trade decides whether they can fit both.
+    const acceptedByDate: Record<string, any[]> = {};
+    for (const a of accepted) {
+        const k = a.preferred_date ? String(a.preferred_date).slice(0, 10) : '';
+        if (k) (acceptedByDate[k] = acceptedByDate[k] || []).push(a);
+    }
+    const clashFor = (e: any): string | null => {
+        const k = e.preferred_date ? String(e.preferred_date).slice(0, 10) : '';
+        if (!k) return null;                          // a dateless request can't clash
+        const others = (acceptedByDate[k] || []).filter((a: any) => a.id !== e.id && windowsClash(e, a));
+        if (!others.length) return null;
+        return 'You already have a job ' + windowPhrase(e) + ' on this day. You can still take this one — agree the timing with both owners.';
+    };
+
     const listingIds = Array.from(new Set(relevant.map((e: any) => e.listing_id).filter(Boolean)));
     const listings: Record<string, any> = {};
     if (listingIds.length) {
@@ -401,6 +421,9 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             pendingChangeBy: null,
             cancellation: null,
             proposedDate: e.proposed_date || null,
+            // A soft clash: another accepted job in the same window that day. Only
+            // on a still-to-answer request (the moment the trade decides).
+            clashWarning: needsReply ? clashFor(e) : null,
         };
     };
 
