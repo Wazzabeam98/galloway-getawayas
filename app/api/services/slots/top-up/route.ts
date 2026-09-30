@@ -1,3 +1,4 @@
+import { heldChargeMetadata, heldOrderFields } from '@/lib/experienceFunds';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -273,6 +274,7 @@ export async function POST(request: Request) {
                 item_unit: unit,
                 price: deltaTotal,
                 commission_rate: pricing.commissionRate,
+                ...heldOrderFields(pricing),
                 status: 'holding',
                 item_id: order.item_id,
                 item_name: itemName,
@@ -315,14 +317,11 @@ export async function POST(request: Request) {
                         message: 'Galloway Getaways takes this payment on behalf of ' + business + '. We are the booking agent, not the provider of the experience.',
                     },
                 },
-                // The provider stays merchant of record; commission on the delta
-                // as on the original.
+                // Commission on the delta as on the original. A platform charge,
+                // held by us and paid out with the session (lib/experienceFunds).
                 payment_intent_data: {
-                    on_behalf_of: provider.stripe_account_id,
-                    application_fee_amount: pricing.applicationFeePence,
-                    transfer_data: { destination: provider.stripe_account_id },
                     description: 'Galloway experience — added places · ' + business + ' · ' + itemName,
-                    metadata: { kind: 'slot_order', order_id: child.id, parent_order_id: order.id, provider_id: provider.id },
+                    metadata: { kind: 'slot_order', order_id: child.id, parent_order_id: order.id, provider_id: provider.id, ...heldChargeMetadata(pricing) },
                 },
                 success_url: SITE_URL + '/experiences/order/' + order.id + '?added=1',
                 cancel_url: SITE_URL + '/experiences/order/' + order.id + '?added=cancelled',

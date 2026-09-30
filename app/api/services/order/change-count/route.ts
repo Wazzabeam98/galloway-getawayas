@@ -1,3 +1,4 @@
+import { heldChargeMetadata, heldOrderFields } from '@/lib/experienceFunds';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -107,6 +108,7 @@ async function startIncreaseRequest(
         guests: Math.max(1, child.attendees), attendees: child.unit === 'flat' ? Math.max(1, child.attendees) : null,
         quantity: Math.max(1, child.quantity), adults: child.adults, children: child.children,
         unit_price: child.unitPrice, item_unit: child.unit, price: child.price, commission_rate: pricing.commissionRate,
+        ...heldOrderFields(pricing),
         status: 'holding', item_id: order.item_id, item_name: itemName, item_description: order.item_description || '',
         provider_business_name: business, guest_name: order.guest_name, guest_email: order.guest_email, guest_phone: order.guest_phone,
         expires_at: new Date(Date.now() + SLOT_HOLD_MINUTES * 60 * 1000).toISOString(), created_at: nowIso,
@@ -119,11 +121,10 @@ async function startIncreaseRequest(
                 product_data: { name: child.lineName + ' · ' + String(order.service_date).slice(0, 10),
                     description: 'Extra places requested from ' + business + '. Your card is only held until they accept; Galloway Getaways takes the payment on their behalf and is not the provider.' } } }],
             payment_intent_data: {
+                // A platform charge: captured to us on accept, paid out after the date.
                 capture_method: 'manual',
-                on_behalf_of: provider.stripe_account_id, application_fee_amount: pricing.applicationFeePence,
-                transfer_data: { destination: provider.stripe_account_id },
                 description: 'Galloway experience — extra places (request) · ' + business + ' · ' + itemName,
-                metadata: { kind: 'change_request', order_id: row.id, parent_order_id: order.id, provider_id: provider.id },
+                metadata: { kind: 'change_request', order_id: row.id, parent_order_id: order.id, provider_id: provider.id, ...heldChargeMetadata(pricing) },
             },
             success_url: SITE_URL + '/experiences/order/' + order.id + '?requested=1',
             cancel_url: SITE_URL + '/experiences/order/' + order.id + '?requested=cancelled',

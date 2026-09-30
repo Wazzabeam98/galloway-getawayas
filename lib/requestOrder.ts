@@ -9,6 +9,7 @@ import {
 import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
 import { LTA_NOTICE_VERSION } from '@/lib/linkedTravelNotice';
+import { orderFieldsFromMetadata } from '@/lib/experienceFunds';
 
 // Builds the 'authorised' service order for a REQUEST-shape guest experience
 // (a chef/baker/masseur booked against a stay) from a completed Checkout
@@ -182,6 +183,10 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             children: md.children ? (parseInt(md.children, 10) || 0) : null,
             price: Number(cs.amount_total || 0) / 100,
             commission_rate: Number(md.commission_rate) || 0.10,
+            // Which way the money went — 'held' (a platform charge, paid out the
+            // day after the date) when the session says so; a session from before
+            // that change is a destination charge and stays 'direct'.
+            ...orderFieldsFromMetadata(md),
             // An all-standard cart is paid and confirmed at once; everything else is
             // held as a request until the provider answers.
             status: (isCart && instant) ? 'confirmed' : 'authorised',

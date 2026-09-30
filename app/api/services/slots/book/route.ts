@@ -1,3 +1,4 @@
+import { heldChargeMetadata, heldOrderFields } from '@/lib/experienceFunds';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -606,6 +607,9 @@ export async function POST(request: Request) {
                 item_unit: unit,
                 price: total,
                 commission_rate: pricing.commissionRate,
+                // A platform charge, held by us until the day after the session
+                // (lib/experienceFunds) — written with the row, before Checkout.
+                ...heldOrderFields(pricing),
                 status: 'holding',
                 item_id: item.id,
                 item_name: itemName,
@@ -653,12 +657,11 @@ export async function POST(request: Request) {
                     },
                 },
                 // Instant: captured on payment, not held. The slot IS the confirmation.
+                // A platform charge — the money is held by us and paid to the
+                // provider the day after the session (lib/experienceFunds).
                 payment_intent_data: {
-                    on_behalf_of: provider.stripe_account_id,
-                    application_fee_amount: pricing.applicationFeePence,
-                    transfer_data: { destination: provider.stripe_account_id },
                     description: 'Galloway experience — ' + business + ' · ' + itemName,
-                    metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: standalone ? '' : booking.id },
+                    metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: standalone ? '' : booking.id, ...heldChargeMetadata(pricing) },
                 },
                 // Land on the booking itself — a real confirmation with what
                 // happens next and an add-to-calendar — not a banner on /trips.
