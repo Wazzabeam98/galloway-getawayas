@@ -58,7 +58,16 @@ function toCardData(r: ProviderReservation): ReservationCardData {
         whenLabel: isTrade ? '' : r.whenLabel,
         itemName: r.title,
         status: r.status,
-        when: { heading: r.whenHeading, value: r.whenLabel },
+        // A trade job gets a structured WHEN card (weekday / date / time), the same
+        // shape a host's check-in card uses — set when a day is fixed. With no day
+        // yet it falls back to a plain "When" fact card reading "A date still to
+        // agree", never the old doubled "Asked for … Asked for …" sentence.
+        when: isTrade
+            ? { heading: 'When', value: r.whenDate || 'A date still to agree' }
+            : { heading: r.whenHeading, value: r.whenLabel },
+        whenCell: isTrade && r.whenDate
+            ? { heading: 'When', weekday: r.whenWeekday || '', dateLabel: r.whenDate, timeLabel: r.whenTime || null }
+            : null,
         where: r.whereLabel,
         note: r.note,
         allergy: r.allergy,
@@ -128,11 +137,129 @@ function SummaryChips({ s, filter, onPick }: { s: { today: number; thisWeek: num
     );
 }
 
+// The trade Enquiries page organises every enquiry into four folders — the shape
+// a host's reservations take — instead of the three counters (Today / This week /
+// Needs a reply) that told a trade nothing. Each folder is a bucket the model
+// already sorts an enquiry into (r.folder).
+type FolderKey = 'reply' | 'accepted' | 'declined' | 'past';
+const FOLDERS: { key: FolderKey; label: string }[] = [
+    { key: 'reply', label: 'Needs a reply' },
+    { key: 'accepted', label: 'Accepted' },
+    { key: 'declined', label: 'Declined' },
+    { key: 'past', label: 'Past' },
+];
+
+// The list rail row — shared by both the folder view and the chips view.
+function ListRow({ r, active, onClick }: { r: ProviderReservation; active: boolean; onClick: () => void }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={'flex w-full items-center gap-3 rounded-2xl border bg-white p-3 text-left transition hover:border-slate-300 '
+                + (active ? 'border-emerald-600 ring-1 ring-emerald-600 lg:border-emerald-600' : 'border-slate-200')}
+        >
+            <AvatarOverPhoto r={r} />
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                    {r.needsReply && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Needs a reply</span>}
+                    {r.soon && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-900">{r.soon}</span>}
+                    <span className="truncate text-[13px] text-slate-500">
+                        {r.kind === 'trade' ? (r.dateKey && r.dateKey !== '9999-12-31' ? ukDate(r.dateKey) : '') : r.whenLabel}
+                    </span>
+                </div>
+                <div className="mt-0.5 truncate text-sm font-semibold text-slate-900">{r.groupLabel}</div>
+                <div className="truncate text-[13px] text-slate-500">{r.title}</div>
+            </div>
+            <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+        </button>
+    );
+}
+
+// The trade Enquiries view: four folders, then the shared list + reservation card.
+function FolderView({ reservations, past }: { reservations: ProviderReservation[]; past: ProviderReservation[] }) {
+    const buckets: Record<FolderKey, ProviderReservation[]> = { reply: [], accepted: [], declined: [], past: [] };
+    for (const r of [...reservations, ...past]) buckets[(r.folder as FolderKey) || 'past'].push(r);
+
+    // Open on the first folder that has something in it, in folder order — a trade
+    // signing in lands on what needs them, not an empty tab.
+    const firstWith = FOLDERS.find((f) => buckets[f.key].length)?.key ?? 'reply';
+    const [folder, setFolder] = useState<FolderKey>(firstWith);
+    const [mobileOpen, setMobileOpen] = useState(false);
+
+    const list = buckets[folder];
+    const [selectedId, setSelectedId] = useState<string | null>(list[0]?.id ?? null);
+    const selected = list.find((r) => r.id === selectedId) || list[0] || null;
+
+    const pick = (f: FolderKey) => {
+        setFolder(f);
+        setSelectedId(buckets[f][0]?.id ?? null);
+        setMobileOpen(false);
+    };
+
+    return (
+        <section id="upcoming" className="space-y-4">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+                {FOLDERS.map((f) => {
+                    const n = buckets[f.key].length;
+                    const active = folder === f.key;
+                    const amber = f.key === 'reply' && n > 0;
+                    return (
+                        <button
+                            key={f.key}
+                            type="button"
+                            onClick={() => pick(f.key)}
+                            aria-pressed={active}
+                            className={'inline-flex flex-none items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition '
+                                + (active
+                                    ? 'border-slate-900 bg-slate-900 text-white'
+                                    : amber
+                                        ? 'border-amber-300 bg-amber-50 text-amber-900 hover:border-amber-400'
+                                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300')}
+                        >
+                            {f.label}
+                            <span className={'rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none '
+                                + (active ? 'bg-white/20 text-white' : amber ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-600')}>
+                                {n}
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+
+            {list.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
+                    {folder === 'reply' ? 'Nothing to reply to right now.'
+                        : folder === 'accepted' ? 'No accepted jobs coming up.'
+                            : folder === 'declined' ? 'You haven’t declined anything.'
+                                : 'Nothing here yet.'}
+                </div>
+            ) : (
+                <div className="grid gap-4 lg:grid-cols-[20rem_1fr]">
+                    <div className={(mobileOpen ? 'hidden ' : '') + 'lg:block space-y-2'}>
+                        {list.map((r) => (
+                            <ListRow key={r.id} r={r} active={!!selected && r.id === selected.id} onClick={() => { setSelectedId(r.id); setMobileOpen(true); }} />
+                        ))}
+                    </div>
+                    {selected && (
+                        <div className={(mobileOpen ? '' : 'hidden ') + 'lg:block'}>
+                            <button type="button" onClick={() => setMobileOpen(false)} className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 lg:hidden">
+                                <ArrowLeft className="h-4 w-4" /> All enquiries
+                            </button>
+                            <ReservationCard r={selected} />
+                        </div>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
 export default function ProviderUpcoming({
     reservations,
     past = [],
     summary,
     title = 'Upcoming reservations',
+    folders = false,
 }: {
     reservations: ProviderReservation[];
     past?: ProviderReservation[];
@@ -140,7 +267,11 @@ export default function ProviderUpcoming({
     // The section heading. Null hides it — the trade Requests page owns its own
     // H1, so it passes null rather than repeat a title beneath it.
     title?: string | null;
+    // The trade Enquiries page groups everything into folders instead of the
+    // counters + Upcoming/Past toggle a guest provider keeps.
+    folders?: boolean;
 }) {
+    if (folders) return <FolderView reservations={reservations} past={past} />;
     const [filter, setFilter] = useState<Filter>('all');
     const [mobileOpen, setMobileOpen] = useState(false);
     // Upcoming vs Past work — the host's Past/Upcoming reservations toggle. Only

@@ -17,7 +17,7 @@
 // money as one card that opens the full breakdown; booked date + reference; then
 // View the listing and Manage reservation.
 
-import { MessageSquare, Phone, LogIn, LogOut, KeyRound, Wifi, ExternalLink, AlertTriangle } from 'lucide-react';
+import { MessageSquare, Phone, LogIn, LogOut, KeyRound, Wifi, ExternalLink, AlertTriangle, CalendarClock } from 'lucide-react';
 import ReservationHeader from '@/components/dashboard/reservation/ReservationHeader';
 import type { StatusTone } from '@/components/dashboard/reservation/ReservationStatusPill';
 import MoneyCards, { type MoneyCardsData } from '@/components/dashboard/reservation/MoneyCards';
@@ -76,6 +76,11 @@ export interface ReservationCardData {
     itemName: string;                // what they booked / the job
     status: { label: string; tone: StatusTone } | null;
     when: { heading: string; value: string };
+    // A structured WHEN card (weekday / date / time on their own lines), the same
+    // shape as the host's check-in card. When set it replaces the plain one-line
+    // `when` fact card — used by a trade job so its date reads like a host's, not
+    // as an "Asked for …, between …" sentence. Falls back to `when` when null.
+    whenCell?: StayDayCell | null;
     // A plain line, or a name with an address beneath it — the latter for a
     // provider looking at a booking held at their own venue, where the useful
     // answer is their listing/venue name and, if we hold it, the address.
@@ -216,7 +221,9 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                 </div>
             ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <FactCard heading={r.when.heading}>{r.when.value}</FactCard>
+                    {r.whenCell
+                        ? <DayCard cell={r.whenCell} icon={CalendarClock} />
+                        : <FactCard heading={r.when.heading}>{r.when.value}</FactCard>}
                     {r.where && (
                         <FactCard heading="Where">
                             {typeof r.where === 'string' ? r.where : (

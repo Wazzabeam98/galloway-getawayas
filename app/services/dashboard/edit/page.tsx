@@ -9,7 +9,8 @@ import { tradeLabel, offeringsFor, EXTRA_GROUPS, audienceForTrade } from '@/lib/
 
 const groupLabel = (key: string): string =>
     (EXTRA_GROUPS.find((g) => g.key === key) as any)?.label || key;
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ukDate } from '@/lib/dayKey';
 import ProviderBusinessEditor from '@/components/services/ProviderBusinessEditor';
 
 export const metadata = {
@@ -26,7 +27,7 @@ export default async function EditBusinessPage() {
 
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number')
+        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number, plan, trial_ends_at')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -104,6 +105,32 @@ export default async function EditBusinessPage() {
             <p className="mt-1.5 text-sm text-slate-500">
                 Everything hosts see about {provider.business_name} — {tradeLabel(provider.trade)} — in one place.
             </p>
+
+            {/* Business status — the "Listed" pill and the free-subscription line
+                that used to sit on the enquiries inbox. They describe the business,
+                so they live here, with a link to see the profile a host sees (the
+                way a host previews a listing). */}
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+                {provider.plan === 'subscription' && (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        Listed · hosts can find you
+                    </span>
+                )}
+                {provider.plan === 'subscription' && (
+                    <span className="text-sm font-semibold text-emerald-700">
+                        {provider.trial_ends_at ? 'Free until ' + ukDate(provider.trial_ends_at) : 'Free for six months from your first enquiry'}
+                    </span>
+                )}
+                <a
+                    href={`/services/${encodeURIComponent(provider.trade)}/${provider.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-4 py-1.5 text-sm font-semibold text-slate-700 hover:border-slate-500"
+                >
+                    <ExternalLink className="h-4 w-4" /> View your public profile
+                </a>
+            </div>
 
             <ProviderBusinessEditor
                 provider={{

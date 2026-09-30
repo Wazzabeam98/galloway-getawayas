@@ -187,23 +187,16 @@ export default async function ProviderDashboardPage() {
 
     return (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-24">
-            <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">Calendar</h1>
-                    <p className="mt-1 text-sm text-slate-500">
-                        {provider.business_name}
-                        <span className="text-slate-300"> · </span>
-                        {tradeLabel(provider.trade)}
-                    </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <Link href="/services/dashboard" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                        Requests
-                    </Link>
-                    <Link href="/services/dashboard/edit" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                        Your listing
-                    </Link>
-                </div>
+            {/* No in-page nav here: Enquiries and Your listing both live in the
+                account menu, and repeating them was the duplication round six
+                removed. */}
+            <div className="mb-6">
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">Calendar</h1>
+                <p className="mt-1 text-sm text-slate-500">
+                    {provider.business_name}
+                    <span className="text-slate-300"> · </span>
+                    {tradeLabel(provider.trade)}
+                </p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">

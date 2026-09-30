@@ -43,7 +43,20 @@ export default function TradeCalendar({
     clashDays?: string[];
 }) {
     const router = useRouter();
-    const [month, setMonth] = useState<Date>(startOfMonth(new Date()));
+    const todayKey = format(new Date(), 'yyyy-MM-dd');
+    // Every day that has work, soonest first — used to open the calendar on the
+    // month the work is actually in (not an empty current month) and to point at
+    // the next month with work when this one is empty.
+    const workDayKeys = useMemo(
+        () => jobs.map((j) => j.dayKey).filter((k) => k >= todayKey).sort(),
+        [jobs, todayKey],
+    );
+    // Open on the first month that has work; fall back to this month when there is
+    // none. A trade whose jobs are all in October lands on October, not on an
+    // empty September reading "No work asked for this month yet".
+    const [month, setMonth] = useState<Date>(() =>
+        workDayKeys.length ? startOfMonth(new Date(workDayKeys[0] + 'T12:00:00')) : startOfMonth(new Date()),
+    );
     const [busyDay, setBusyDay] = useState<string | null>(null);
     const [error, setError] = useState('');
     // Optimistic local view of the blocked set, so a click paints at once.
@@ -104,6 +117,10 @@ export default function TradeCalendar({
     }
 
     const jobDaysThisMonth = days.filter((d) => (jobsByDay[format(d, 'yyyy-MM-dd')] || []).length).length;
+    // The first day with work in a month after the one on screen, so an empty
+    // month can point the trade at where their jobs actually are.
+    const monthKey = format(month, 'yyyy-MM');
+    const nextWorkKey = workDayKeys.find((k) => k.slice(0, 7) > monthKey) || null;
 
     return (
         <div>
@@ -177,9 +194,22 @@ export default function TradeCalendar({
 
             <div className="mt-6 border-t pt-5">
                 <div className="mb-4 text-xs text-slate-500">
-                    {jobDaysThisMonth > 0
-                        ? `${jobDaysThisMonth} day${jobDaysThisMonth === 1 ? '' : 's'} with work asked for this month`
-                        : 'No work asked for this month yet'}
+                    {jobDaysThisMonth > 0 ? (
+                        `${jobDaysThisMonth} day${jobDaysThisMonth === 1 ? '' : 's'} with work asked for this month`
+                    ) : nextWorkKey ? (
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                            No work asked for this month.
+                            <button
+                                type="button"
+                                onClick={() => setMonth(startOfMonth(new Date(nextWorkKey + 'T12:00:00')))}
+                                className="font-semibold text-emerald-700 underline hover:text-emerald-800"
+                            >
+                                Next work is in {format(new Date(nextWorkKey + 'T12:00:00'), 'MMMM yyyy')} →
+                            </button>
+                        </span>
+                    ) : (
+                        'No work asked for yet'
+                    )}
                 </div>
                 <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
                     <div className="flex items-center gap-1.5">
