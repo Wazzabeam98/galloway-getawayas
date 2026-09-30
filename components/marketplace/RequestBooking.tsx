@@ -14,6 +14,7 @@ import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { hasUkPostcode } from '@/lib/postcode';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
 import TravelAddressModal from '@/components/marketplace/TravelAddressModal';
+import AgreementTick from '@/components/legal/AgreementTick';
 import type { AddressParts } from '@/components/address/AddressLookup';
 
 export interface RequestItem {
@@ -94,11 +95,15 @@ export interface RequestBookArgs {
 // month heading opens the full month grid), each day expanding to its times.
 export function RequestBookingDialog({
     who, items, minAge, isFood, needsAddress, calDays, timesByDate, providerMax, prefillAdults, prefillChildren,
-    initialDate, lockedItemId, hasStay, busy, error, onBook, onClose,
+    initialDate, lockedItemId, hasStay, needsGuestTerms, busy, error, onBook, onClose,
 }: {
     who: string;
     // True when booked against a confirmed stay — gates the linked-travel notice.
     hasStay?: boolean;
+    // True when this guest still owes the Guest Terms — a one-line tick above the
+    // Send request button, which is held until it is ticked (the panel records the
+    // acceptance before the order).
+    needsGuestTerms?: boolean;
     items: RequestItem[];
     minAge?: number | null;
     isFood?: boolean;
@@ -121,6 +126,9 @@ export function RequestBookingDialog({
     const ordered = useMemo(() => [...items].sort((a, b) => a.price - b.price), [items]);
     const initialItem = (lockedItemId && ordered.find((i) => i.id === lockedItemId)) || ordered[0] || null;
     const [itemId, setItemId] = useState<string>(initialItem?.id || '');
+    // The Guest Terms tick, when this guest still owes them — the Send button is
+    // held until it is ticked (the panel records the acceptance before the order).
+    const [guestTicked, setGuestTicked] = useState(false);
     // Start at the chosen item's own minimum so the total reads the item's floor
     // from the first paint (the per-guest dinner opens at its minimum of 2, £110),
     // never a stale £55-for-one or the group item's price, before it's topped up.
@@ -503,7 +511,18 @@ export function RequestBookingDialog({
                             )}
                             <LinkedTravelNotice show={!!hasStay} date={date} />
                             <PackageNotice date={date} />
-                            <button type="button" onClick={submit} disabled={busy || !canBook}
+                            {needsGuestTerms && (
+                                <div className="mb-3">
+                                    <AgreementTick
+                                        doc="guest"
+                                        id="request-dialog-agree-guest"
+                                        checked={guestTicked}
+                                        onChange={setGuestTicked}
+                                        open="tab"
+                                    />
+                                </div>
+                            )}
+                            <button type="button" onClick={submit} disabled={busy || !canBook || (!!needsGuestTerms && !guestTicked)}
                                 className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
                                 {busy ? 'Sending…' : 'Send request'}
                             </button>
