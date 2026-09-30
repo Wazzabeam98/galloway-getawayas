@@ -30,7 +30,11 @@ test('the four owner reads still go through listing_private, not listings', () =
     const readers: [string, RegExp][] = [
         ['app/edit-listing/[id]/page.tsx', /from\('listing_private'\)\s*\.select\('\*'\)/],
         ['app/account/page.tsx', /from\('listing_private'\)\.select\('\*'\)\.eq\('host_id'/],
-        ['app/services/[trade]/page.tsx', /from\('listing_private'\)/],
+        // The trade directory loads the host's own cottages (to attach an
+        // enquiry to one). It moved out of the per-trade page — now a redirect —
+        // into this component, which must keep reading through listing_private so
+        // the base table's revoked lat/lng stay owner-only.
+        ['components/services/TradeDirectory.tsx', /from\('listing_private'\)/],
     ];
     for (const [file, re] of readers) {
         assert.match(read(file), re,

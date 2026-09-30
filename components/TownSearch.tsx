@@ -37,7 +37,7 @@ export default function TownSearch({ listings }: { listings: CardListing[] }) {
 
     return (
         <>
-            <div className={hasMap ? 'lg:grid lg:grid-cols-[1fr_minmax(360px,420px)] lg:gap-8 lg:items-start' : ''}>
+            <div className={hasMap ? 'lg:grid lg:grid-cols-[3fr_2fr] lg:gap-8 lg:items-start' : ''}>
                 <div className={'grid grid-cols-1 gap-x-6 gap-y-10 ' + (hasMap ? 'sm:grid-cols-2' : 'sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4')}>
                     {listings.map((l) => (
                         <div
@@ -51,12 +51,18 @@ export default function TownSearch({ listings }: { listings: CardListing[] }) {
                 </div>
 
                 {hasMap && (
-                    <div className="hidden lg:block lg:sticky lg:top-24">
+                    // The map is ~40% of the width and stays a full viewport tall,
+                    // pinned as the cards scroll — Airbnb's search layout. self-start
+                    // keeps the sticky item from stretching to the taller cards
+                    // column (which would stop it sticking); the height is measured
+                    // from the sticky offset so the map fills the screen rather than
+                    // ending partway down the list.
+                    <div className="hidden lg:block lg:sticky lg:top-24 lg:self-start">
                         <PriceMap
                             points={points}
                             highlightId={hoveredId}
                             onHover={setHoveredId}
-                            frameClassName="h-[calc(100vh-8rem)]"
+                            frameClassName="h-[calc(100vh-7rem)]"
                         />
                     </div>
                 )}
