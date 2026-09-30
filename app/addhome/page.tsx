@@ -6,10 +6,10 @@ import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash, X } from 'lucide-react';
+import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
-import TermsBody from '@/components/legal/TermsBody';
-import { HOST_TERMS_VERSION } from '@/lib/hostTerms';
+import AgreementTick from '@/components/legal/AgreementTick';
+import { agreementProblem, versionForTick } from '@/lib/agreements';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
@@ -57,7 +57,6 @@ export default function AddHome() {
     // readable); null until known. The agree box shows only when they haven't.
     const [termsOnRecord, setTermsOnRecord] = useState<boolean | null>(null);
     const [termsTicked, setTermsTicked] = useState(false);
-    const [termsOpen, setTermsOpen] = useState(false);
     // Autosave: 'idle' until the first save, then saving / saved / error.
     const [autosave, setAutosave] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
@@ -502,9 +501,12 @@ export default function AddHome() {
         // The terms, before anything is submitted — the same rule the server
         // enforces (lib/hostTerms). Only asked of a host with no current
         // agreement on record.
-        if (termsOnRecord !== true && !termsTicked) {
-            setFormError('Please agree to the terms and conditions to continue.');
-            return;
+        if (termsOnRecord !== true) {
+            const termsMsg = agreementProblem('host', null, versionForTick('host', termsTicked));
+            if (termsMsg) {
+                setFormError(termsMsg);
+                return;
+            }
         }
 
         setSubmitting(true);
@@ -544,7 +546,7 @@ export default function AddHome() {
             const publishRes = await fetch('/api/listings/publish', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId, termsVersion: termsOnRecord === true ? undefined : HOST_TERMS_VERSION }),
+                body: JSON.stringify({ listingId, termsVersion: termsOnRecord === true ? undefined : versionForTick('host', termsTicked) }),
             });
             const publishBody = await publishRes.json().catch(() => ({}));
 
@@ -1147,28 +1149,14 @@ export default function AddHome() {
                             the current version on record. Ticking it and publishing
                             records the version and time against them (server-side,
                             in /api/listings/publish). The underlined link opens the
-                            full terms — the same text as /terms. */}
+                            full Host Agreement (/terms/hosts). */}
                         {termsOnRecord === false && (
                             <div className="mb-4">
-                                <div className="flex items-start gap-3">
-                                    <input
-                                        id="agree-host-terms"
-                                        type="checkbox"
-                                        checked={termsTicked}
-                                        onChange={(e) => { setTermsTicked(e.target.checked); setFormError(''); }}
-                                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
-                                    />
-                                    <label htmlFor="agree-host-terms" className="text-sm text-slate-800">
-                                        I agree to the{' '}
-                                        <button
-                                            type="button"
-                                            onClick={(e) => { e.preventDefault(); setTermsOpen(true); }}
-                                            className="font-semibold text-slate-900 underline hover:text-emerald-800"
-                                        >
-                                            terms and conditions
-                                        </button>.
-                                    </label>
-                                </div>
+                                <AgreementTick
+                                    doc="host"
+                                    checked={termsTicked}
+                                    onChange={(v) => { setTermsTicked(v); setFormError(''); }}
+                                />
                             </div>
                         )}
 
@@ -1180,30 +1168,6 @@ export default function AddHome() {
                             {submitting ? 'Publishing...' : 'Publish listing'}
                         </button>
                     </form>
-                )}
-
-                {/* The full terms — the same text as /terms — in a panel, opened
-                    from the underlined link on the agree line. */}
-                {termsOpen && (
-                    <div
-                        className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-900/40 sm:items-center sm:p-6"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label="Terms and conditions"
-                        onClick={() => setTermsOpen(false)}
-                    >
-                        <div className="flex max-h-[85vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
-                                <h3 className="text-base font-bold text-slate-900">Terms and conditions</h3>
-                                <button type="button" onClick={() => setTermsOpen(false)} aria-label="Close" className="rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800">
-                                    <X className="h-5 w-5" />
-                                </button>
-                            </div>
-                            <div className="overflow-y-auto px-5 py-5 text-sm sm:px-6">
-                                <TermsBody />
-                            </div>
-                        </div>
-                    </div>
                 )}
 
                 {formError && step !== TOTAL_STEPS && <p className="text-red-600 text-sm mt-6">{formError}</p>}
