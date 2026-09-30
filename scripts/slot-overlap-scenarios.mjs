@@ -68,9 +68,8 @@ async function payFor(total, account, orderId, providerId, bookingId) {
     const { amountPence, feePence } = priceParts(total);
     return stripe.request('POST', '/payment_intents', {
         amount: amountPence, currency: 'gbp', payment_method: 'pm_card_visa', payment_method_types: ['card'],
-        confirm: 'true', on_behalf_of: account, application_fee_amount: feePence,
-        transfer_data: { destination: account }, description: TAG,
-        metadata: { kind: 'slot_order', order_id: orderId, provider_id: providerId, booking_id: bookingId },
+        confirm: 'true', description: TAG,
+        metadata: { funds_flow: 'held', platform_fee_pence: String(feePence), kind: 'slot_order', order_id: orderId, provider_id: providerId, booking_id: bookingId },
     });
 }
 async function postWebhook(order, pi, guestEmail) {

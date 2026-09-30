@@ -61,15 +61,15 @@ function priceParts(total) {
     const net = Math.round((total - commission) * 100) / 100;
     return { amountPence, feePence: amountPence - Math.round(net * 100) };
 }
-// The guest's payment: a real immediate-capture destination charge, exactly the
-// fields the slot route's Checkout would create.
+// The guest's payment: a real immediate-capture PLATFORM charge (held by us and
+// paid to the provider the day after — lib/experienceFunds), exactly the fields
+// the slot route's Checkout now creates.
 async function payFor(total, account, orderId, providerId, bookingId) {
     const { amountPence, feePence } = priceParts(total);
     const pi = await stripe.request('POST', '/payment_intents', {
         amount: amountPence, currency: 'gbp', payment_method: 'pm_card_visa', payment_method_types: ['card'],
-        confirm: 'true', on_behalf_of: account, application_fee_amount: feePence,
-        transfer_data: { destination: account }, description: TAG,
-        metadata: { kind: 'slot_order', order_id: orderId, provider_id: providerId, booking_id: bookingId },
+        confirm: 'true', description: TAG,
+        metadata: { funds_flow: 'held', platform_fee_pence: String(feePence), kind: 'slot_order', order_id: orderId, provider_id: providerId, booking_id: bookingId },
     });
     return pi;
 }
@@ -80,7 +80,7 @@ async function chargeOf(piId) {
 }
 async function settledCharge(piId, tries = 10) {
     let ch = null;
-    for (let i = 0; i < tries; i++) { ch = await chargeOf(piId); if (ch && ch.transfer) return ch; await sleep(2000); }
+    for (let i = 0; i < tries; i++) { ch = await chargeOf(piId); if (ch && ch.captured) return ch; await sleep(2000); }
     return ch;
 }
 async function postWebhook(order, pi, guestEmail) {

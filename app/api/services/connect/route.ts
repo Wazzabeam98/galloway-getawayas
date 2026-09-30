@@ -104,9 +104,11 @@ export async function POST(request: Request) {
                 default_currency: 'gbp',
                 business_type: 'individual',
                 capabilities: {
-                    // card_payments so the provider can be the merchant of
-                    // record on a guest's charge (on_behalf_of); transfers so
-                    // the money can reach them.
+                    // transfers so the money can reach them — the payout run
+                    // transfers each held order's share. card_payments was for
+                    // the old destination charge (on_behalf_of the provider,
+                    // before 30 Sep 2026); still requested so an account made
+                    // either side of that change looks the same.
                     transfers: { requested: 'true' },
                     card_payments: { requested: 'true' },
                 },
