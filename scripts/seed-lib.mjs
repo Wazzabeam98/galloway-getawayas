@@ -59,6 +59,10 @@ import { TEST_PROJECT_REF } from './target.cjs';
 
 export { TEST_PROJECT_REF };
 
+// Real accounts no seed may delete or lock out — see scripts/protectedAccounts.cjs.
+import protectedAccounts from './protectedAccounts.cjs';
+export const { PROTECTED_EMAILS, isProtectedEmail, guardFetch } = protectedAccounts;
+
 // Everything the seeder creates carries one of these, so a reset can find it
 // again and nothing else is ever touched.
 export const SEED_DOMAIN = 'gallowayseed.test';
@@ -169,6 +173,7 @@ export function supabaseClient(env) {
     const headers = { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' };
 
     async function rest(method, pathAndQuery, body, prefer) {
+        await protectedAccounts.guardFetch(base, headers, method, pathAndQuery, body);
         const res = await fetch(base + '/rest/v1' + pathAndQuery, {
             method,
             headers: prefer ? { ...headers, Prefer: prefer } : headers,
@@ -181,6 +186,7 @@ export function supabaseClient(env) {
     }
 
     async function auth(method, endpoint, body) {
+        await protectedAccounts.guardFetch(base, headers, method, endpoint, body);
         const res = await fetch(base + '/auth/v1' + endpoint, {
             method,
             headers,

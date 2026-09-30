@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 // @ts-ignore — CommonJS, shared with the runners and with the guard.
 import { TEST_PROJECT_REF } from '../scripts/target.cjs';
+import { guardFetch } from '../scripts/protectedAccounts.cjs';
 
 export { TEST_PROJECT_REF };
 
@@ -62,6 +63,9 @@ async function api(path: string, init: any = {}) {
         Authorization: `Bearer ${SERVICE_KEY}`,
         'Content-Type': 'application/json',
     };
+    // Refuses to delete or lock out a protected real account (protectedAccounts.cjs).
+    await guardFetch(SUPABASE_URL, headers, init.method || 'GET', path,
+        typeof init.body === 'string' ? JSON.parse(init.body) : init.body);
     const res = await fetch(SUPABASE_URL + path, { ...init, headers: { ...headers, ...(init.headers || {}) } });
     const text = await res.text();
     try { return { status: res.status, body: JSON.parse(text) }; }

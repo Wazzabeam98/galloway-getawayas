@@ -30,7 +30,7 @@
 // Usage:
 //   node scripts/write-side-allowed.mjs --target prod
 
-import { loadEnv } from './seed-lib.mjs';
+import { loadEnv, guardFetch } from './seed-lib.mjs';
 
 const PROD_REF = 'hviwjxigqivjfhmhpjiy';
 const TEST_REF = 'yefoqcabuijcowoqewtc';
@@ -77,6 +77,7 @@ async function asUser(token, method, path, body, prefer) {
 }
 
 async function svcRest(method, path, body) {
+    await guardFetch(URL_BASE, { apikey: SERVICE, Authorization: 'Bearer ' + SERVICE, 'Content-Type': 'application/json' }, method, path, body);
     const res = await fetch(URL_BASE + '/rest/v1' + path, {
         method,
         headers: {
@@ -92,6 +93,7 @@ async function svcRest(method, path, body) {
 }
 
 async function adminAuth(method, endpoint, body) {
+    await guardFetch(URL_BASE, { apikey: SERVICE, Authorization: 'Bearer ' + SERVICE, 'Content-Type': 'application/json' }, method, endpoint, body);
     const res = await fetch(URL_BASE + '/auth/v1' + endpoint, {
         method,
         headers: { apikey: SERVICE, Authorization: 'Bearer ' + SERVICE, 'Content-Type': 'application/json' },
