@@ -14,6 +14,8 @@ import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
 import { quoteBooking, dateKey } from '@/lib/pricing';
 import { plural } from '@/lib/plural';
+import { agreementProblem, versionForTick } from '@/lib/agreements';
+import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 
 interface Props {
     listingId: string;
@@ -208,6 +210,14 @@ export default function BookingWidget({
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [requested, setRequested] = useState(false);
+    // The Guest Terms are accepted at a guest's FIRST stay checkout, not forced
+    // on them the moment they make an account. `needsGuestTerms` is set from
+    // /api/agreements once we know who is signed in; the tick shows above the
+    // pay button until they accept, and the acceptance is recorded (version +
+    // server time) before the booking is created.
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(false);
+    const [guestTicked, setGuestTicked] = useState(false);
+    const [guestTermsError, setGuestTermsError] = useState('');
 
     const maxBookableDate = (() => {
         const map: Record<string, number> = { '3 months': 3, '6 months': 6, '9 months': 9, '12 months': 12 };
@@ -220,6 +230,13 @@ export default function BookingWidget({
             const { data: { session } } = await supabase.auth.getSession();
             setSession(session);
             setLoadingSession(false);
+
+            // Does this guest still owe the Guest Terms? If so, they accept them
+            // here, at checkout, rather than through a sign-in pop-up.
+            if (session?.user) {
+                const st = await fetchAgreementStatus();
+                setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
+            }
 
             const { data: existing } = await supabase
                 // Busy nights, not bookings. A stranger can read no row of `bookings` at
@@ -341,8 +358,22 @@ export default function BookingWidget({
             return;
         }
 
+        // The Guest Terms, if this is their first booking. The same rule
+        // /api/agreements applies to the record below.
+        if (needsGuestTerms) {
+            const problem = agreementProblem('guest', null, versionForTick('guest', guestTicked));
+            if (problem) { setGuestTermsError(problem); return; }
+        }
+
         setSubmitting(true);
         try {
+            // Record the Guest Terms acceptance before anything is booked, so a
+            // guest who reaches payment has agreed to them.
+            if (needsGuestTerms) {
+                const failed = await recordAgreement('guest', 'stay_checkout');
+                if (failed) { setGuestTermsError(failed); return; }
+                setNeedsGuestTerms(false);
+            }
             // Instant Book can carry requirements the guest has to meet.
             //
             // Verified ID is deliberately NOT checked here. Nothing in the site
@@ -609,10 +640,23 @@ export default function BookingWidget({
                     <LoginModel variant="button" />
                 </div>
             ) : (
+                <>
+                {needsGuestTerms && (
+                    <div className="mb-3">
+                        <AgreementTick
+                            doc="guest"
+                            id="booking-agree-guest"
+                            checked={guestTicked}
+                            onChange={(v) => { setGuestTicked(v); setGuestTermsError(''); }}
+                            error={guestTermsError}
+                            open="tab"
+                        />
+                    </div>
+                )}
                 <button
                     type="button"
                     onClick={handleRequest}
-                    disabled={submitting || nights <= 0}
+                    disabled={submitting || nights <= 0 || (needsGuestTerms && !guestTicked)}
                     className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                 >
                     {submitting
@@ -621,6 +665,7 @@ export default function BookingWidget({
                             ? 'Secure your dates for ' + formatGBP(dueNow)
                             : (instantBook ? 'Reserve' : 'Request to book')}
                 </button>
+                </>
             )}
             <p className="text-xs text-slate-400 text-center mt-3">
                 {instantBook

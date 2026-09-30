@@ -12,13 +12,18 @@ import AgreementTick, {
     recordAgreement,
 } from '@/components/legal/AgreementTick';
 
-// THE SIGN-IN PROMPT. Anyone signed in who owes an agreement — the Terms of
-// Service for everyone; the Host, Experience Provider or Tradesperson Agreement
-// for someone already in that role — is shown ONE document here, the next one
-// owed, and can't use the site behind it until they agree. It is how accounts
-// that could never tick a box are caught: everyone who signed up before the
-// agreements existed, Google sign-ups, the guest accounts made at checkout, and
-// anyone whose recorded version is out of date after a wording change.
+// THE SIGN-IN PROMPT — for ROLE agreements only. Someone already in a role (a
+// host, an experience provider, a tradesperson) whose recorded version is out of
+// date after a wording change is shown that document here and can't use the site
+// behind it until they agree.
+//
+// It NO LONGER shows the Guest Terms. Those used to be forced here on the next
+// page load for any account without them, which meant they fired mid-sign-up,
+// straight after the email code, before someone had done anything. They are now
+// taken where they belong: at the end of the provider/trade sign-up (with the
+// role agreement) and at a guest's first stay checkout. So this gate reads the
+// `nextRole` the server computes, never `next` — a sign-up is never interrupted
+// by a legal pop-up.
 //
 // Never shown on the agreements' own pages (so the text can be read in a new
 // tab), on /privacy, or during the auth callback.
@@ -61,7 +66,9 @@ export default function AgreementGate() {
         if (!session) { setOwed(null); return; }
         const status = await fetchAgreementStatus();
         if (agreementGateHeld()) { setOwed(null); return; }
-        const next = status ? status.next : null;
+        // Role agreements only — the Guest Terms are taken at sign-up and at
+        // first stay checkout, never as a prompt here.
+        const next = status ? status.nextRole : null;
         setOwed(next);
         setEarlier(!!(next && status && status.documents[next] && status.documents[next].earlier));
         setTicked(false);
