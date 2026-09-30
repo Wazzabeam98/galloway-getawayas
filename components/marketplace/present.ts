@@ -54,14 +54,24 @@ function isRadiusLabel(label: string): boolean {
     return /\s+and\s+\d+(?:\.\d+)?\s*miles?$/i.test(String(label || '').trim());
 }
 
-/** The regions a provider covers, with any radius label dropped. Null when
- *  nothing named is left. */
-export function namedRegions(p: MpProvider): string | null {
-    const named = (p.areas || []).filter(Boolean).filter((a) => !isRadiusLabel(a));
+/** Format covered-region labels as a line — "A", "A & B", "A, B & C" — with any
+ *  legacy "town and N miles" radius label dropped and duplicates removed. Null when
+ *  nothing named is left. The region picker replaced the radius model, so this is
+ *  the single reader of coverage for both the marketplace card and the trade
+ *  profile — never a radius, never the same region twice. */
+export function regionCoverageLine(labels: (string | null | undefined)[]): string | null {
+    const named = Array.from(new Set(labels.map((a) => String(a || '').trim()).filter(Boolean)))
+        .filter((a) => !isRadiusLabel(a));
     if (!named.length) return null;
     if (named.length === 1) return named[0];
     if (named.length === 2) return named[0] + ' & ' + named[1];
     return named.slice(0, -1).join(', ') + ' & ' + named[named.length - 1];
+}
+
+/** The regions a provider covers, with any radius label dropped. Null when
+ *  nothing named is left. */
+export function namedRegions(p: MpProvider): string | null {
+    return regionCoverageLine(p.areas || []);
 }
 
 /** True for a provider that travels to the guest rather than sitting at one

@@ -74,6 +74,10 @@ export interface ReservationCardData {
     heading: string;                 // "Liam's group of 2"
     whenLabel: string;               // the date & time, per kind
     itemName: string;                // what they booked / the job
+    // A trade job's summary, shown as its own weighted block under the header —
+    // the most important thing on the enquiry, not a grey subline. Null for a stay
+    // or an experience, where the header subline already carries the item.
+    jobHeadline?: string | null;
     status: { label: string; tone: StatusTone } | null;
     when: { heading: string; value: string };
     // A structured WHEN card (weekday / date / time on their own lines), the same
@@ -164,6 +168,16 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                 status={r.status}
                 size={size}
             />
+
+            {/* The job — the whole point of a trade enquiry, so it leads the card
+                as its own block rather than sitting as grey text under the owner's
+                name. */}
+            {r.jobHeadline && (
+                <div className={lifted}>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">The job</div>
+                    <div className="mt-1 text-base font-semibold leading-snug text-slate-900">{r.jobHeadline}</div>
+                </div>
+            )}
 
             {/* A trade's request to answer — Accept / Decline on the request
                 itself, not tucked away on another page. Sits directly under the
@@ -371,7 +385,7 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                         </a>
                     )}
                     {r.phone && (
-                        <a href={'tel:' + r.phone} className={'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500' + (r.messageHref ? '' : ' flex-1')}>
+                        <a href={'tel:' + r.phone} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500">
                             <Phone className="h-4 w-4" /> Call
                         </a>
                     )}

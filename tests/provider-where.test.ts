@@ -86,3 +86,12 @@ test('a trade job with only a town falls back to the town under the name', () =>
 test('a trade job with no listing reads as the property', () => {
     assert.equal(whereForTradeJob(null), 'the property');
 });
+
+test('a trade job with no listing shows the area the owner named, not the placeholder', () => {
+    assert.equal(
+        whereForTradeJob(null, 'Kirkcudbright, Dumfries and Galloway'),
+        'Kirkcudbright, Dumfries and Galloway',
+    );
+    // A blank area still falls back to the placeholder rather than an empty line.
+    assert.equal(whereForTradeJob(null, '   '), 'the property');
+});
