@@ -121,7 +121,8 @@ export default async function UpcomingTrip() {
     // wrote it and never prints a negative day count.
     const { phase, daysUntilCheckIn } = stayCountdown(booking, now);
     const headline =
-        phase === 'during' ? 'You’re here'
+        phase === 'during' && String(booking.check_out).slice(0, 10) === londonDayKey(now) ? 'You check out today'
+        : phase === 'during' ? 'You’re here'
             : phase === 'today' ? 'You arrive today'
                 : phase === 'tomorrow' ? 'You arrive tomorrow'
                     : 'You arrive in ' + daysUntilCheckIn + ' days';

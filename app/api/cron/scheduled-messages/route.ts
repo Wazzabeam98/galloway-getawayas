@@ -1,7 +1,8 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { logError } from '@/lib/logError';
-import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import { londonDayKey, shiftDayKey, ukDate } from '@/lib/dayKey';
+import { arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
 import { displayName } from '@/lib/utils';
 import {
     timingFor,
@@ -35,14 +36,9 @@ export const maxDuration = 60;
 // record that it was sent and the thing preventing a second send are one
 // object, so they cannot disagree.
 
+// DD/MM/YYYY from the day key, the one date format the site shows.
 function formatDate(value: string): string {
-    const parts = String(value).split('T')[0].split('-');
-    const d = new Date(
-        parseInt(parts[0], 10),
-        parseInt(parts[1], 10) - 1,
-        parseInt(parts[2], 10)
-    );
-    return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    return ukDate(value);
 }
 
 // THE FLOOR: the guest gets the address and arrival time whether or not the
@@ -75,6 +71,9 @@ async function checkInFallbackPass(
             .from('bookings')
             .select('id, host_id, guest_id, listing_id, check_in, check_out, status')
             .eq('status', 'confirmed')
+            // Confirmed is not the same as paid — a host can confirm an unpaid
+            // row. Nothing carrying the address or the way in goes to one.
+            .in('payment_status', ['paid', 'deposit_paid'])
             .gte('check_in', todayKey)
             .lte('check_in', horizonKey);
 
@@ -291,6 +290,9 @@ export async function GET(request: Request) {
             .select(COLUMNS)
             .in('host_id', hostIds)
             .eq('status', 'confirmed')
+            // Confirmed is not the same as paid — a host can confirm an unpaid
+            // row. Nothing carrying the address or the way in goes to one.
+            .in('payment_status', ['paid', 'deposit_paid'])
             .gte('check_out', from)
             .lte('check_in', to);
 
@@ -324,6 +326,7 @@ export async function GET(request: Request) {
                 .select(COLUMNS)
                 .in('host_id', hostIds)
                 .eq('status', 'confirmed')
+                .in('payment_status', ['paid', 'deposit_paid'])
                 .gte('confirmed_at', acceptedSince);
 
             if (recentError) {
@@ -422,6 +425,15 @@ export async function GET(request: Request) {
                 if (!template) continue;
 
                 if (!isDue(timingFor(template, booking, listing), now)) {
+                    continue;
+                }
+
+                // The door code only travels inside the arrival window — the
+                // same three days the arrival page reveals it in. A check-in
+                // message timed earlier that carries {lockbox_code} waits,
+                // unclaimed, and goes out on the first run once the window
+                // opens, rather than handing a code out a fortnight early.
+                if (usesLockboxCode(template.body) && !arrivalSecretsWindowOpen(booking, now)) {
                     continue;
                 }
 

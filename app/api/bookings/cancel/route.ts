@@ -6,7 +6,9 @@ import { issueRefunds } from '@/lib/refundSpread';
 import { refundDue } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
 import { logMoneyFailure } from '@/lib/moneyAlert';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, formatDate, SITE_URL } from '@/lib/email';
+import { firstName } from '@/lib/utils';
+import { londonDayKey } from '@/lib/dayKey';
 import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
 import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, check_in, status, payment_status, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -62,12 +64,10 @@ export async function POST(request: Request) {
 
         // A stay that has started can't be called off from here — that's a
         // conversation with the host, not a button.
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const checkIn = new Date(booking.check_in);
-        checkIn.setHours(0, 0, 0, 0);
-
-        if (checkIn.getTime() <= today.getTime()) {
+        // Compared as London calendar days: the server runs in UTC, and
+        // between midnight and 1am BST on check-in day it used to still say
+        // "tomorrow" and let the cancel through.
+        if (String(booking.check_in).slice(0, 10) <= londonDayKey()) {
             return NextResponse.json(
                 {
                     ok: false,
@@ -307,6 +307,45 @@ export async function POST(request: Request) {
             await logError(
                 '[bookings/cancel] the guest cancellation receipt could not be sent',
                 receiptErr,
+                { path: 'bookings/cancel', userId: user.id }
+            );
+        }
+
+        // THE HOST IS TOLD TOO.
+        //
+        // A guest cancelling changed nothing the host could see except the
+        // booking quietly turning grey — their dates were open again and nobody
+        // said so. Airbnb sends the host "Reservation cancelled"; so do we.
+        // First name only, through the guest's privacy switch. No money line:
+        // what the host keeps shows on their reservation once the payout runs.
+        // Best-effort, like the receipt above.
+        try {
+            const [{ data: hostUser }, { data: guestProfile }, { data: hx }] = await Promise.all([
+                admin.auth.admin.getUserById(booking.host_id),
+                admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', booking.guest_id).maybeSingle(),
+                admin.from('listings').select('title').eq('id', booking.listing_id).maybeSingle(),
+            ]);
+            const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
+            if (hostEmail) {
+                const guestFirst = escapeHtml(firstName(guestProfile, 'Your guest'));
+                const hostTitle = escapeHtml((hx && hx.title) || 'your listing');
+                await sendEmail(
+                    hostEmail,
+                    'Reservation cancelled — ' + ((hx && hx.title) || 'Galloway Getaways'),
+                    emailLayout(
+                        '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">Reservation cancelled</h1>'
+                        + '<p style="margin:0 0 16px;">' + guestFirst + ' has cancelled their stay at <strong>' + hostTitle
+                        + '</strong> from ' + escapeHtml(formatDate(booking.check_in)) + ' to ' + escapeHtml(formatDate(booking.check_out))
+                        + '. Those dates are open on your calendar again.</p>'
+                        + button(SITE_URL + '/dashboard/bookings/' + booking.id, 'View the reservation'),
+                        "You're receiving this because you host on Galloway Getaways. Booking emails can't be switched off."
+                    )
+                );
+            }
+        } catch (hostMailErr: any) {
+            await logError(
+                '[bookings/cancel] the host was not told about the cancellation',
+                hostMailErr,
                 { path: 'bookings/cancel', userId: user.id }
             );
         }

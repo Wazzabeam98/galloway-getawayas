@@ -19,6 +19,7 @@ import { childrenAllowed } from '@/lib/guestAges';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { LTA_NOTICE_VERSION } from '@/lib/linkedTravelNotice';
+import { packageNoticeRecord } from '@/lib/packageNotice';
 import { displayName } from '@/lib/utils';
 import { withinLimits, callerAddress } from '@/lib/rateLimit';
 
@@ -553,6 +554,11 @@ export async function POST(request: Request) {
             guestEmail = (prof && prof.email) || user.email || null;
         }
 
+        // The package notice (lib/packageNotice): re-decided here from the signed-in
+        // guest's own confirmed, paid stays and the session date — never from
+        // anything the browser sent. Null (nothing recorded) when it doesn't apply.
+        const packageNotice = user ? await packageNoticeRecord(admin, user.id, sessionDate, nowIso) : null;
+
         // The holding order — created HERE, not in the webhook, because the seat
         // is already taken and the hold must exist to be swept if unpaid.
         const { data: order, error: orderErr } = await admin.from('service_orders')
@@ -570,6 +576,7 @@ export async function POST(request: Request) {
                 ...(standalone
                     ? {}
                     : { lta_notice_version: LTA_NOTICE_VERSION, lta_notice_shown_at: nowIso }),
+                ...(packageNotice || {}),
                 // The buyer's contact, for the provider — written here for a
                 // standalone order (the webhook writes it for the against-a-stay one).
                 guest_name: standalone ? guestName : undefined,

@@ -70,12 +70,12 @@ test('a blocked session is never offered', () => {
 // database value leaks into an email).
 test('whenLabel formats a date and time, and degrades gracefully', () => {
     const dt = whenLabel('2026-10-05', '14:00');
-    assert.match(dt, /October 2026 at 2pm/);
+    assert.match(dt, /05\/10\/2026 at 2pm/, 'DD/MM/YYYY, the site-wide date format');
     assert.doesNotMatch(dt, /2026-10-05/, 'no raw ISO date');
     assert.doesNotMatch(dt, /14:00/, 'no raw 24h time');
-    assert.match(whenLabel('2026-10-05', '14:00:00'), /October 2026 at 2pm/, 'trims seconds');
+    assert.match(whenLabel('2026-10-05', '14:00:00'), /05\/10\/2026 at 2pm/, 'trims seconds');
     const dateOnly = whenLabel('2026-10-05', null);
-    assert.match(dateOnly, /October 2026/, 'a date with no time is just the formatted date');
+    assert.match(dateOnly, /05\/10\/2026/, 'a date with no time is just the formatted date');
     assert.doesNotMatch(dateOnly, / at /, 'no time, so no "at"');
     assert.equal(whenLabel(null, '14:00'), 'the booked time', 'no date is unusable');
 });
@@ -92,13 +92,13 @@ test('the provider move email names BOTH the old and the new time', () => {
     });
 
     // Subject carries the change, formatted the human way (not raw ISO).
-    assert.match(mail.subject, /October 2026 at 6pm/);
-    assert.match(mail.subject, /October 2026 at 8pm/);
+    assert.match(mail.subject, /05\/10\/2026 at 6pm/);
+    assert.match(mail.subject, /12\/10\/2026 at 8pm/);
     assert.doesNotMatch(mail.subject, /2026-10-05|18:00/, 'no raw date/time in subject');
 
     // Body names both, labelled Was / Now, and the item and party size.
-    assert.match(mail.html, /October 2026 at 6pm/, 'old time in body');
-    assert.match(mail.html, /October 2026 at 8pm/, 'new time in body');
+    assert.match(mail.html, /05\/10\/2026 at 6pm/, 'old time in body');
+    assert.match(mail.html, /12\/10\/2026 at 8pm/, 'new time in body');
     assert.match(mail.html, /Was/);
     assert.match(mail.html, /Now/);
     assert.match(mail.html, /Evening sauna session/);

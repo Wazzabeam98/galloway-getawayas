@@ -13,6 +13,9 @@ import FoodMenu from '@/components/marketplace/FoodMenu';
 import FoodBasket from '@/components/marketplace/FoodBasket';
 import { RequestBookingProvider } from '@/components/marketplace/RequestBookingContext';
 import ChooseMenu from '@/components/marketplace/ChooseMenu';
+import { PackageStaysProvider } from '@/components/marketplace/PackageNotice';
+import { loadStayWindows } from '@/lib/packageNotice';
+import { londonDayKey } from '@/lib/dayKey';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,11 +48,15 @@ export default async function PublicListingPage({ params }: { params: { provider
     const who = p.byline || p.business_name;
     const here = `/experiences/browse/${params.providerId}`;
     const reviews = await loadExperienceReviews(admin, p.id, user?.id ?? null);
+    // The guest's own confirmed, paid stays, as dates only — the checkout draws
+    // the package notice when the picked day falls inside one (lib/packageNotice).
+    const packageStays = await loadStayWindows(admin, user?.id, londonDayKey());
 
     // A made-to-order listing reads like a food-ordering site: the MENU leads the
     // page (photos, prices) and the sidebar is a BASKET, both sharing one cart.
     if (p.shape === 'made_to_order') {
         return (
+            <PackageStaysProvider stays={packageStays}>
             <FoodCartProvider items={p.items}>
                 <ExperienceListingBody
                     p={p}
@@ -60,6 +67,7 @@ export default async function PublicListingPage({ params }: { params: { provider
                     panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} standalone providerId={p.id} signedIn={!!user} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} />}
                 />
             </FoodCartProvider>
+            </PackageStaysProvider>
         );
     }
 
@@ -124,5 +132,9 @@ export default async function PublicListingPage({ params }: { params: { provider
         />
     );
 
-    return isComesToYou ? <RequestBookingProvider>{body}</RequestBookingProvider> : body;
+    return (
+        <PackageStaysProvider stays={packageStays}>
+            {isComesToYou ? <RequestBookingProvider>{body}</RequestBookingProvider> : body}
+        </PackageStaysProvider>
+    );
 }

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
-import { ukLongDate } from '@/lib/dayKey';
+import { ukDate } from '@/lib/dayKey';
 import { publicArea } from '@/lib/places';
 import { formatGBP } from '@/lib/formatMoney';
 import { recoverBookingPayment } from '@/lib/bookingPaymentReconcile';
@@ -180,7 +180,7 @@ export default async function BookingConfirmed({
                                 Free cancellation
                             </div>
                             <div className="text-slate-800">
-                                Until {ukLongDate(cancel.freeUntilKey)}
+                                Until {ukDate(cancel.freeUntilKey)}
                             </div>
                         </div>
                     );

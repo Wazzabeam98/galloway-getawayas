@@ -100,3 +100,22 @@ export function stayCountdown(
 
     return { phase, daysUntilCheckIn };
 }
+
+// How many days before check-in the way in (door code, wifi password) starts
+// to show. One number, read by every surface that reveals it — the arrival
+// page, the message thread and the scheduled check-in message — so none of
+// them can drift into its own idea of "close enough".
+export const ARRIVAL_SECRETS_LEAD_DAYS = 3;
+
+// Is the way in showable today? From ARRIVAL_SECRETS_LEAD_DAYS before check-in
+// until the end of checkout day, and not after: a code that stays on a former
+// guest's screen for ever is a key to the cottage they no longer need. This is
+// the TIME half only — callers must also pass bookingReleasesPrivateData (paid,
+// confirmed), which is the half that stops an unpaid planted row using it.
+export function arrivalSecretsWindowOpen(
+    b: { check_in: string; check_out: string },
+    now: Date,
+): boolean {
+    const { phase, daysUntilCheckIn } = stayCountdown(b, now);
+    return phase !== 'over' && daysUntilCheckIn <= ARRIVAL_SECRETS_LEAD_DAYS;
+}

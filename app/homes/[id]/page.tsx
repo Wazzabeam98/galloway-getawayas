@@ -7,7 +7,7 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { capitializeFirst, displayName, getImageUrl, formatTime } from '@/lib/utils';
+import { capitializeFirst, getImageUrl, formatTime, firstName } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
@@ -285,7 +285,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
             .select('full_name, preferred_name, show_full_name, avatar_url, created_at, host_bio, stripe_payouts_enabled')
             .eq('id', home.host_id)
             .maybeSingle();
-        hostName = displayName(hostProfile, 'your host');
+        hostName = firstName(hostProfile, 'your host');
         hostAvatar = hostProfile?.avatar_url || null;
         hostBio = (hostProfile?.host_bio || '').trim() || null;
         // When they joined — the tenure line a guest looks for on a page
@@ -389,7 +389,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         // (see the host block above). The name is resolved server-side and the
         // list renders a first name only.
         const { data: reviewers } = await adminClient().from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds);
-        (reviewers || []).forEach((p) => { reviewerNames[p.id] = displayName(p, 'Guest'); });
+        (reviewers || []).forEach((p) => { reviewerNames[p.id] = firstName(p, 'Guest'); });
     }
 
     const { data: { user: viewer } } = await supabase.auth.getUser();
