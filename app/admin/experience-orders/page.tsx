@@ -37,11 +37,15 @@ function payoutLine(o: any): string {
     return 'Held — pays out ' + ukDate(shiftDayKey(String(o.service_date).slice(0, 10), 1));
 }
 
-export default async function AdminExperienceOrders() {
+export default async function AdminExperienceOrders({ searchParams }: { searchParams?: { order?: string } }) {
     await requireAdmin();
     const admin = adminClient();
 
-    const { data } = await admin
+    // ?order=<id> shows that one order — how an "added guests" link reaches an
+    // order that isn't among the latest 100 below.
+    const only = typeof searchParams?.order === 'string' && /^[0-9a-f-]{36}$/i.test(searchParams.order) ? searchParams.order : null;
+
+    let query = admin
         .from('service_orders')
         .select('id, parent_order_id, provider_id, guest_id, status, cancel_ack, service_date, price, amount_refunded, item_name, provider_business_name, guest_name, stripe_payment_intent_id, funds_flow, paid_out_at, payout_amount, payout_transfer_id, payout_reversed, payout_clawback_owed, created_at')
         .not('stripe_payment_intent_id', 'is', null)
@@ -49,6 +53,8 @@ export default async function AdminExperienceOrders() {
         .order('service_date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(100);
+    if (only) query = query.eq('id', only);
+    const { data } = await query;
     // A cancel before payment has no money on it; only a walk-away (cancel_ack) does.
     const orders = (data || []).filter((o: any) => o.status !== 'cancelled' || o.cancel_ack);
 
@@ -76,11 +82,28 @@ export default async function AdminExperienceOrders() {
     const adminById: Record<string, string> = {};
     (admins || []).forEach((p: any) => { adminById[p.id] = adminName(p, 'An admin'); });
 
+    // Added-guests orders hang off their parent with their own payment, so a
+    // refund of the parent never touches them (Liam's decision, 30/09/2026) —
+    // each is refunded on its own row. The parent lists them so none is missed.
+    const { data: extraRows } = orderIds.length
+        ? await admin.from('service_orders')
+            .select('id, parent_order_id, status, cancel_ack, price, amount_refunded, created_at')
+            .in('parent_order_id', orderIds)
+            .not('stripe_payment_intent_id', 'is', null)
+            .in('status', ['confirmed', 'cancelled', 'refunded'])
+            .order('created_at', { ascending: true })
+        : { data: [] };
+    const extrasByParent: Record<string, any[]> = {};
+    // The same money rule as the list: a cancel before payment carries nothing.
+    (extraRows || []).filter((x: any) => x.status !== 'cancelled' || x.cancel_ack).forEach((x: any) => { (extrasByParent[x.parent_order_id] = extrasByParent[x.parent_order_id] || []).push(x); });
+    const orderHref = (id: string) => '/admin/experience-orders?order=' + id + '#order-' + id;
+
     return (
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
             <Link href="/admin" className="text-sm text-slate-500 hover:underline">&larr; Owner tools</Link>
 
             <h1 className="text-2xl font-bold text-slate-900 mt-4 mb-1">Experience orders</h1>
+            {only && <Link href="/admin/experience-orders" className="inline-block mb-2 text-sm text-emerald-700 hover:underline">Show all orders</Link>}
             <p className="text-sm text-slate-500 mb-8">
                 Paid experience bookings, latest date first. Refund all or part of one: before the
                 payout run it comes from the money we hold and the provider is paid only on what is
@@ -99,7 +122,7 @@ export default async function AdminExperienceOrders() {
                         const history = refundsByOrder[o.id] || [];
                         const guest = nameById[o.guest_id] || String(o.guest_name || '').trim() || 'Guest';
                         return (
-                            <div key={o.id} className="border border-slate-200 rounded-2xl p-5">
+                            <div key={o.id} id={'order-' + o.id} className="border border-slate-200 rounded-2xl p-5 scroll-mt-6">
                                 <div className="flex items-baseline justify-between gap-4 flex-wrap">
                                     <div className="font-semibold text-slate-900">
                                         {o.provider_business_name || 'Experience'}
@@ -109,7 +132,9 @@ export default async function AdminExperienceOrders() {
                                 </div>
                                 <div className="text-[13px] text-slate-500 mt-0.5">
                                     {orderReference(o.id)} · {ukDate(o.service_date)} · {guest}
-                                    {o.parent_order_id ? ' · added guests' : ''}
+                                    {o.parent_order_id ? (
+                                        <> · added guests to <Link href={orderHref(o.parent_order_id)} className="text-emerald-700 hover:underline">{orderReference(o.parent_order_id)}</Link></>
+                                    ) : null}
                                 </div>
                                 <div className="text-[13px] text-slate-500 mt-2">
                                     {statusLabel(o)}{refunded > 0 ? ' · ' + formatGBP(refunded) + ' refunded' : ''}
@@ -128,6 +153,25 @@ export default async function AdminExperienceOrders() {
                                             </li>
                                         ))}
                                     </ul>
+                                )}
+
+                                {(extrasByParent[o.id] || []).length > 0 && (
+                                    <div className="mt-3 rounded-xl bg-slate-50 px-4 py-3">
+                                        <div className="text-[13px] font-semibold text-slate-700">Added guests on this order</div>
+                                        <ul className="mt-1 space-y-0.5">
+                                            {(extrasByParent[o.id] || []).map((x: any) => (
+                                                <li key={x.id} className="text-[13px] text-slate-600">
+                                                    <Link href={orderHref(x.id)} className="text-emerald-700 hover:underline">{orderReference(x.id)}</Link>
+                                                    {' · '}{formatGBP(x.price || 0)}
+                                                    {Number(x.amount_refunded || 0) > 0 ? ' · ' + formatGBP(x.amount_refunded) + ' refunded' : ''}
+                                                    {' · '}{statusLabel(x)}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <p className="mt-1 text-[13px] text-slate-500">
+                                            Each was paid separately, so refunding this order doesn&apos;t refund them &mdash; refund each one on its own.
+                                        </p>
+                                    </div>
                                 )}
 
                                 {orderIsRefundable(o) && refundable > 0 && (
