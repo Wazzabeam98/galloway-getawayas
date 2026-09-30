@@ -23,6 +23,7 @@ import { ChevronLeft, ChevronRight, Wrench } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export interface CalendarJob {
+    id: string;           // the enquiry id — clicking the day opens it
     dayKey: string;       // yyyy-mm-dd (the day asked for)
     title: string;        // the job summary
     window: string;       // "8am to 11am" / "any time"
@@ -111,8 +112,17 @@ export default function TradeCalendar({
         }
     }
 
-    function onDayClick(key: string, isPast: boolean, hasWork: boolean) {
-        if (isPast || hasWork) return;   // never block a day you already have work on
+    function onDayClick(key: string, isPast: boolean) {
+        if (isPast) return;
+        const dayJobs = jobsByDay[key] || [];
+        if (dayJobs.length > 0) {
+            // A day with work opens that enquiry — the way a host opens a booking
+            // from their calendar. It lands on the Requests page's Accepted folder
+            // with the enquiry selected (both jobs of a clash day are there too).
+            router.push('/services/dashboard?enquiry=' + encodeURIComponent(dayJobs[0].id));
+            return;
+        }
+        // A free day is the trade's own diary — click to take it off.
         toggleBlock(key, blocked.has(key));
     }
 
@@ -152,20 +162,19 @@ export default function TradeCalendar({
                     const title = hasWork
                         ? (isClash ? 'Two jobs in the same window — check you can do both.\n' : '')
                             + dayJobs.map((j) => `${j.hostFirst}: ${j.title} — asked for ${j.window}`).join('\n')
+                            + '\nClick to open.'
                         : isBlocked ? 'Day off — click to put the day back' : (!isPast ? 'Click to take the day off' : '');
-                    // A day with work reads as busy; two overlapping jobs flag amber.
-                    const busyLabel = dayJobs.length > 1 ? `${dayJobs.length} jobs` : (dayJobs[0] ? dayJobs[0].hostFirst : '');
                     return (
                         <button
                             key={key}
                             type="button"
                             disabled={isPast || busyDay === key}
-                            onClick={() => onDayClick(key, isPast, hasWork)}
+                            onClick={() => onDayClick(key, isPast)}
                             title={title}
-                            className={`relative aspect-square rounded-xl border-2 p-1.5 flex flex-col items-start justify-between text-left transition ${
+                            className={`relative aspect-square overflow-hidden rounded-xl border-2 p-1 sm:p-1.5 flex flex-col items-start justify-start gap-0.5 text-left transition ${
                                 isPast ? 'opacity-30 cursor-not-allowed border-slate-100' :
-                                isClash ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-400 ring-offset-1' :
-                                hasWork ? 'border-emerald-600 bg-emerald-50' :
+                                isClash ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-400 ring-offset-1 hover:bg-amber-100' :
+                                hasWork ? 'border-emerald-600 bg-emerald-50 hover:bg-emerald-100' :
                                 isBlocked ? 'border-slate-300 bg-slate-100 text-slate-400' :
                                 'border-slate-200 hover:border-slate-400'
                             }`}
@@ -175,15 +184,50 @@ export default function TradeCalendar({
                                     <Wrench className="h-2.5 w-2.5" />
                                 </span>
                             )}
-                            <span className={`text-xs font-semibold ${isBlocked ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                            <span className={`text-xs font-semibold ${isBlocked ? 'text-slate-400 line-through' : hasWork ? (isClash ? 'text-amber-900' : 'text-emerald-900') : 'text-slate-800'}`}>
                                 {format(day, 'd')}
                             </span>
+                            {/* A job day reads like a host's booking day, filled out:
+                                the owner's name, the time window they asked for, and
+                                (for a single job) a short job title. Two jobs on a day
+                                show both, and keep the amber clash treatment. */}
                             {hasWork ? (
-                                <span className={`w-full truncate text-[9px] font-medium ${isClash ? 'text-amber-900' : 'text-emerald-900'}`}>
-                                    {isClash ? 'Busy · check' : busyLabel}
+                                <span className="mt-0.5 w-full min-w-0 leading-tight">
+                                    {/* A phone's square can't hold two jobs with their
+                                        windows, so a multi-job day reads "2 jobs" there
+                                        (the amber ring still marks a clash) and opens
+                                        both on tap. A single job shows the name. */}
+                                    {dayJobs.length >= 2 && (
+                                        <span className={`sm:hidden block truncate text-[9px] font-semibold ${isClash ? 'text-amber-900' : 'text-emerald-900'}`}>
+                                            {dayJobs.length} jobs
+                                        </span>
+                                    )}
+                                    {/* Wider cells show every job in full: the name, the
+                                        window they asked for, and (for a single job) a
+                                        short title — matching a host's booking cell. */}
+                                    <span className={dayJobs.length >= 2 ? 'hidden sm:block space-y-0.5' : 'block space-y-0.5'}>
+                                        {dayJobs.slice(0, 2).map((j) => (
+                                            <span key={j.id} className="block min-w-0">
+                                                <span className={`block truncate text-[9px] sm:text-[10px] font-semibold ${isClash ? 'text-amber-900' : 'text-emerald-900'}`}>
+                                                    {j.hostFirst}
+                                                </span>
+                                                <span className={`hidden sm:block truncate text-[9px] ${isClash ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                                    {j.window}
+                                                </span>
+                                                {dayJobs.length === 1 && (
+                                                    <span className="hidden sm:block truncate text-[9px] text-slate-500">{j.title}</span>
+                                                )}
+                                            </span>
+                                        ))}
+                                        {dayJobs.length > 2 && (
+                                            <span className={`block text-[9px] font-semibold ${isClash ? 'text-amber-800' : 'text-emerald-800'}`}>
+                                                +{dayJobs.length - 2} more
+                                            </span>
+                                        )}
+                                    </span>
                                 </span>
                             ) : isBlocked ? (
-                                <span className="text-[9px]">Day off</span>
+                                <span className="mt-auto text-[9px]">Day off</span>
                             ) : null}
                         </button>
                     );
