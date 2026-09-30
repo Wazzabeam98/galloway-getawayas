@@ -13,17 +13,27 @@ export function setMode(mode: 'host' | 'travel') {
 const ModeSwitch = ({
     mode,
     className = '',
+    workHref = '/dashboard',
+    workLabel = 'hosting',
 }: {
     mode: 'host' | 'travel';
     className?: string;
+    // The "working" side of the switch. An accommodation host's is their
+    // listings ('/dashboard', "hosting"); a service or experience provider's is
+    // their provider dashboard ('/services/dashboard', "providing"). The one
+    // 'host'/'travel' cookie carries both — a provider's "host" mode is their
+    // providing side — so this is the same switch, told where its work lives and
+    // what to call it, not a second mechanism.
+    workHref?: string;
+    workLabel?: string;
 }) => {
     const router = useRouter();
 
-    // Switching to hosting sends you to your listings; switching back to
-    // travelling sends you to the homepage, same as Airbnb.
+    // Switching to the working side sends you to that dashboard; switching back
+    // to travelling sends you to the homepage, same as Airbnb.
     const goHost = () => {
         setMode('host');
-        router.push('/dashboard');
+        router.push(workHref);
         router.refresh();
     };
 
@@ -48,7 +58,7 @@ const ModeSwitch = ({
             onClick={mode === 'host' ? goTravel : goHost}
             className={`${focusClass} ${className || 'text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition text-slate-800'}`}
         >
-            {mode === 'host' ? 'Switch to travelling' : 'Switch to hosting'}
+            {mode === 'host' ? 'Switch to travelling' : `Switch to ${workLabel}`}
         </button>
     );
 };
