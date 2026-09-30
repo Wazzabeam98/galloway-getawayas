@@ -12,12 +12,15 @@
 // service_enquiries — some accepted and coming up, some still to answer — and
 // that is what makes their Reservations page worth looking at.
 //
-// The owner account lives on @gallowayexp.test, the same reserved domain the
-// experience seeders use, so it is torn down with them and never emails anyone.
-// The enquiries are sent BY Liam's real account (the property owner asking for
-// help) against his own listings, so signing in as the plumber shows real names
-// and real cottages, and signing in as Liam shows the other side of the same
-// jobs.
+// The owner account lives on @gallowaytrade.test — the trade seeds' OWN reserved
+// domain, kept separate from the experience seeders' @gallowayexp.test. The
+// experience seed resets by deleting every user on ITS domain, so a trade account
+// on that domain was wiped whenever the experience seed ran; each seed owns a
+// distinct domain (as the passport seed does against the payments seed). Do not
+// move it back. The enquiries are sent BY Liam's real account (the property owner
+// asking for help) against his own listings, so signing in as the plumber shows
+// real names and real cottages, and signing in as Liam shows the other side of
+// the same jobs.
 //
 // USAGE
 //   node scripts/seed-trade-provider.mjs
@@ -25,7 +28,7 @@
 
 import { loadEnv, supabaseClient, TEST_PROJECT_REF } from './seed-lib.mjs';
 
-const SEED_DOMAIN = 'gallowayexp.test';
+const SEED_DOMAIN = 'gallowaytrade.test';
 const OWNER_EMAIL = 'seed-trade@' + SEED_DOMAIN;
 const LIAM_EMAIL = 'liamworrall18@hotmail.com';
 

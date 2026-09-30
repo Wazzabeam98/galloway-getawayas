@@ -176,6 +176,31 @@ Three things bite every single session on the MacBook:
   so payments succeed at Stripe while the site still shows the booking as
   unconfirmed. It looks like a bug in the webhook and is not.
 
+## Seeds each own a separate email address domain — do not share one
+
+Every seed script tears its own accounts down and rebuilds them, and some do it
+by **deleting every user on their `@…​.test` domain** (the experience seed is the
+clearest: `scripts/seed-experiences.mjs` deletes all `@gallowayexp.test` users on
+reset). So two seeds that share a domain **wipe each other's accounts** — the
+trade logins kept vanishing because `seed-trades-parity` sat on the experience
+seed's `@gallowayexp.test`, and running the experience seed deleted them.
+
+The rule: **each seed gets its own reserved `.test` domain, and clears only that
+domain (or only the exact accounts it owns).** Current domains, keep them
+distinct:
+
+- `@gallowayexp.test` — the experience seeds and experience scenarios (deletes the
+  whole domain on reset; nothing else may live here)
+- `@gallowaytrade.test` — the trade seeds (`seed-trades-parity`, `seed-trade-provider`)
+- `@gallowayseed.test` — the payments seed
+- `@gallowaypassport.test` — the passport seed
+- `@gallowaywalk.test` — the enquiry-walkthrough seed
+- `@gallowayreview.test` — the review-row seed
+
+If you add a seed, give it a new domain and do not reuse one above. The trade
+logins for walking the trade side are `seed-joiner@gallowaytrade.test` and
+`seed-plumber@gallowaytrade.test` (password in the seed script).
+
 ## House rules for this codebase
 
 - **every change goes to master through a pull request.**

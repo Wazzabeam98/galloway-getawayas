@@ -65,6 +65,11 @@ async function wipeExperiences() {
     await db.remove('bookings', '?stripe_payment_intent_id=eq.' + ISLA_PAST_STAY_PI).catch(() => {});
     // This seed's own owner accounts (so a re-run is clean). Never Liam, never
     // other domains' accounts.
+    //
+    // THIS IS A DOMAIN-WIDE DELETE: every user on @gallowayexp.test goes. That is
+    // why nothing else may share this domain — a trade account that lived here was
+    // wiped whenever this seed ran (fixed by moving the trade seeds to
+    // @gallowaytrade.test). Keep @gallowayexp.test for the experience seeds alone.
     const users = await db.auth('GET', '/admin/users?per_page=200');
     for (const u of (users.users || [])) {
         if ((u.email || '').endsWith('@' + SEED_DOMAIN)) await db.auth('DELETE', '/admin/users/' + u.id).catch(() => {});
