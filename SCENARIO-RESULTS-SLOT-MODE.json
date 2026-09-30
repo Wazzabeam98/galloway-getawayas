@@ -1,9 +1,9 @@
 {
-  "ranAt": "2026-09-12T13:46:50.293Z",
-  "target": "http://localhost:3190",
-  "account": "acct_1UB72uA4n4otlrBz",
-  "passed": 3,
-  "failed": 0,
+  "ranAt": "2026-09-30T07:26:34.268Z",
+  "target": "http://localhost:3800",
+  "account": "acct_1U6iMxAJfMhUsIVc",
+  "passed": 2,
+  "failed": 1,
   "scenarios": [
     {
       "number": "1",
@@ -26,8 +26,8 @@
         },
         {
           "desc": "the message says the time is a shared table",
-          "ok": true,
-          "detail": "That time is already a shared table — choose another for a private hire."
+          "ok": false,
+          "detail": "That time already has others joining — pick another to book it privately."
         },
         {
           "desc": "the shared seat is untouched (still 1, still shared)",
@@ -40,7 +40,7 @@
           "detail": "captured=true refunded=0"
         }
       ],
-      "status": "passed"
+      "status": "failed"
     },
     {
       "number": "2",
@@ -69,7 +69,7 @@
         {
           "desc": "the same time now takes a SHARED booking (reopened as either)",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1T8ypNEXpVjUl2TjPgt7KEBWluyxP99YthLzgxr"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a15aBflY9Z8IVa7TwgwHzEcF3UmTsgPZNjwkY0gq"
         },
         {
           "desc": "the session re-established as a shared table (private=false, capacity 8)",

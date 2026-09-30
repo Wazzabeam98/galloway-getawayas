@@ -1,7 +1,7 @@
 {
-  "ranAt": "2026-09-14T09:03:57.665Z",
-  "target": "http://localhost:3190",
-  "account": "acct_1UFVhiAQQUL0pK8w",
+  "ranAt": "2026-09-30T07:27:30.447Z",
+  "target": "http://localhost:3800",
+  "account": "acct_1U6iMxAJfMhUsIVc",
   "passed": 5,
   "failed": 0,
   "scenarios": [
@@ -98,7 +98,7 @@
         {
           "desc": "with reset 0, the 60 then the back-to-back 30 both succeed",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1X9ZN8AhQKDxN1VYu5W"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1E7z6HwZ7IkH8TuH77m"
         },
         {
           "desc": "the 60-min session froze the 30-minute reset",
@@ -140,7 +140,7 @@
         {
           "desc": "the rejection is the no-overlap exclusion constraint (23P01)",
           "ok": true,
-          "detail": "POST /slot_sessions: {\"code\":\"23P01\",\"details\":\"Key (provider_id, session_date, block_minutes)=(c265c80a-882e-48ec-833a-"
+          "detail": "POST /slot_sessions: {\"code\":\"23P01\",\"details\":\"Key (provider_id, session_date, block_minutes)=(e2012231-b078-453c-b9f4-"
         },
         {
           "desc": "no overlapping session row exists after the refusal",
