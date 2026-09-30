@@ -331,7 +331,7 @@ export async function announceResponse(
 
         const next = accepted
             ? ''
-            : button(SITE_URL + '/services/' + String(enquiry.trade || ''), 'See who else covers you');
+            : button(SITE_URL + '/services?trade=' + String(enquiry.trade || ''), 'See who else covers you');
 
         result.host = await sendEmail(
             String(enquiry.host_email),
@@ -429,7 +429,7 @@ export async function announceExpiry(
                         ? ' opened your enquiry but has not answered.'
                         : ' has not answered your enquiry.')
                     + ' We would try somebody else rather than wait any longer.</p>'
-                    + button(SITE_URL + '/services/' + String(enquiry.trade || ''), 'See who else covers you'),
+                    + button(SITE_URL + '/services?trade=' + String(enquiry.trade || ''), 'See who else covers you'),
                 'You are receiving this because you asked a tradesman for help through Galloway Getaways.',
                 undefined,
                 NEUTRAL_SUBTITLE
@@ -679,7 +679,7 @@ export async function announceCancellation(
                         + escapeHtml(trade) + ' work at <strong>' + escapeHtml(place) + '</strong> on '
                         + escapeHtml(dateText) + '. You’ll need to arrange someone else.</p>'
                         + reasonRow + soonLine
-                        + button(SITE_URL + '/services/' + String(enquiry.trade || ''), 'Find someone else who covers you'),
+                        + button(SITE_URL + '/services?trade=' + String(enquiry.trade || ''), 'Find someone else who covers you'),
                     'You are receiving this because a tradesman you asked through Galloway Getaways has cancelled. Reference ' + ref + '.',
                     undefined,
                     NEUTRAL_SUBTITLE

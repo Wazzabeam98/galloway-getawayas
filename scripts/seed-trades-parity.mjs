@@ -109,7 +109,13 @@ const TRADES = [
         does_gas: false,
         does_oil: false,
         registration_number: null,
-        area: { label: 'Wigtown and 25 miles', centre_lat: 54.8676, centre_lng: -4.4419, radius_miles: 25 },
+        // Coverage as REGIONS, the way the live sign-up stores it now (a region
+        // label with a zero radius) — so the /services area filter can match on
+        // it. Baird's description says the Machars and the Stewartry.
+        areas: [
+            { label: 'The Machars', centre_lat: 0, centre_lng: 0, radius_miles: 0 },
+            { label: 'The Stewartry', centre_lat: 0, centre_lng: 0, radius_miles: 0 },
+        ],
         extras: ['joiner_doors_windows', 'joiner_flooring', 'joiner_kitchens', 'joiner_stairs'],
         guest_details: {
             years_experience: '20',
@@ -131,7 +137,10 @@ const TRADES = [
         does_gas: false,
         does_oil: false,
         registration_number: 'SNIPEF 20915',
-        area: { label: 'Kirkcudbright and 20 miles', centre_lat: 54.8362, centre_lng: -4.0530, radius_miles: 20 },
+        // Region coverage (see the note on Baird): Solway works the Stewartry.
+        areas: [
+            { label: 'The Stewartry', centre_lat: 0, centre_lng: 0, radius_miles: 0 },
+        ],
         extras: ['plumb_leak', 'plumb_blocked_toilet', 'plumb_no_hot_water', 'plumb_bathrooms'],
         guest_details: {
             years_experience: '15',
@@ -149,20 +158,38 @@ async function usersByEmail() {
     return map;
 }
 
+// One-time migration cleanup. Before the trade seeds got their own domain, the
+// joiner and plumber lived on the experience seed's @gallowayexp.test, and the
+// domain move left those old rows behind — so "Baird Joinery" (and "Solway
+// Plumbing") showed up TWICE in the directory, once from each domain. These are
+// the exact legacy logins to sweep; they are named individually rather than by
+// domain so this never touches an experience-seed account that rightly lives on
+// @gallowayexp.test.
+const LEGACY_EMAILS = ['seed-joiner@gallowayexp.test', 'seed-plumber@gallowayexp.test'];
+
+async function removeOwner(u, email) {
+    const providers = await db.select('service_providers', '?owner_id=eq.' + u.id + '&select=id');
+    for (const p of providers) {
+        await db.remove('service_enquiries', '?provider_id=eq.' + p.id);
+        await db.remove('service_areas', '?provider_id=eq.' + p.id);
+        await db.remove('service_provider_extras', '?provider_id=eq.' + p.id);
+        await db.remove('service_provider_registrations', '?provider_id=eq.' + p.id);
+    }
+    await db.remove('service_providers', '?owner_id=eq.' + u.id);
+    await db.auth('DELETE', '/admin/users/' + u.id);
+    console.log('  removed ' + email);
+}
+
 async function clear() {
     const map = await usersByEmail();
     for (const t of TRADES) {
         const u = map[t.email];
-        if (!u) continue;
-        const providers = await db.select('service_providers', '?owner_id=eq.' + u.id + '&select=id');
-        for (const p of providers) {
-            await db.remove('service_enquiries', '?provider_id=eq.' + p.id);
-            await db.remove('service_areas', '?provider_id=eq.' + p.id);
-            await db.remove('service_provider_extras', '?provider_id=eq.' + p.id);
-        }
-        await db.remove('service_providers', '?owner_id=eq.' + u.id);
-        await db.auth('DELETE', '/admin/users/' + u.id);
-        console.log('  removed ' + t.email);
+        if (u) await removeOwner(u, t.email);
+    }
+    // Sweep the stale duplicates left on the old domain by the historic move.
+    for (const email of LEGACY_EMAILS) {
+        const u = map[email];
+        if (u) await removeOwner(u, email + ' (legacy duplicate)');
     }
 }
 
@@ -212,7 +239,7 @@ async function seedOne(t, liam, listings, photoKeys) {
         { user_id: owner, document: 'guest', version: AGREEMENT_VERSION, accepted_at: now.toISOString(), source: 'seed' },
     ]);
 
-    await db.insert('service_areas', [{ provider_id: provider.id, ...t.area }]);
+    await db.insert('service_areas', t.areas.map((a) => ({ provider_id: provider.id, ...a })));
     await db.insert('service_provider_extras', t.extras.map((key) => ({ provider_id: provider.id, extra_key: key, offered: true })));
 
     if (!liam) return { provider, sent: 0 };
