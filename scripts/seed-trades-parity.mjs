@@ -231,6 +231,17 @@ async function seedOne(t, liam, listings, photoKeys) {
             urgency: 'soon', preferred_date: dateKey(inDays(2)), window_from: '08:00', window_to: '11:00',
             sent_at: inDays(-1).toISOString(), expires_at: inDays(3).toISOString(), reference: reference(),
         },
+        {
+            // A still-to-answer request on the SAME day as the accepted job above
+            // (inDays(4)) with an overlapping morning window, so the soft clash
+            // warning shows on the request card every time this seed runs — no
+            // need to set one up by hand. Planned, so it carries a date.
+            ...base, status: 'sent',
+            listing_id: pick(2)?.id || null, area_key: pick(2)?.location || '',
+            summary: t.trade === 'joiner' ? 'Ease a warped back door that won’t latch' : 'Bleed the radiators — three upstairs aren’t heating',
+            urgency: 'planned', preferred_date: dateKey(inDays(4)), window_from: '10:00', window_to: '13:00',
+            sent_at: inDays(-1).toISOString(), expires_at: inDays(6).toISOString(), reference: reference(),
+        },
     ];
     for (const r of rows) await db.insert('service_enquiries', [r]);
     return { provider, sent: rows.filter((r) => r.status === 'sent').length };
