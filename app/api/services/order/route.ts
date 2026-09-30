@@ -19,6 +19,7 @@ import { withinLimits, callerAddress } from '@/lib/rateLimit';
 import { hasUkPostcode, extractUkPostcode } from '@/lib/postcode';
 import { deliveryReach, type ReachDecision } from '@/lib/postcodeGeocode';
 import { outOfReachMessage } from '@/lib/deliveryReachMessage';
+import { packageNoticeRecord, packageNoticeMetadata } from '@/lib/packageNotice';
 
 export const dynamic = 'force-dynamic';
 
@@ -240,6 +241,9 @@ export async function POST(request: Request) {
             const businessC = prov.business_name || 'Your order';
             const cartMeta = wanted.map((w: any) => w.id + ':' + w.qty).join(',');
             const summaryName = lines.length === 1 && lines[0].qty === 1 ? lines[0].name : (businessC + ' order');
+            // The package notice, decided here on the server (lib/packageNotice) and
+            // carried to the order row in the session metadata — never from the browser.
+            const packageNoticeC = user ? await packageNoticeRecord(admin, user.id, dateKey(whenC), new Date().toISOString()) : null;
             const mdC: Record<string, string> = {
                 kind: 'service_order',
                 provider_id: providerId,
@@ -263,6 +267,7 @@ export async function POST(request: Request) {
                 allergy: allergy,
                 item_name: summaryName,
                 item_unit: 'order',
+                ...packageNoticeMetadata(packageNoticeC),
             };
             const stripeLines = lines.map((l) => ({
                 quantity: l.qty,
@@ -541,6 +546,9 @@ export async function POST(request: Request) {
         // 500-char Stripe metadata limits either way, so this adds no new risk
         // over what the session already carried. One object, so the two can
         // never drift.
+        // The package notice, decided here on the server (lib/packageNotice) and
+        // carried to the order row in the metadata — never from the browser.
+        const packageNotice = user ? await packageNoticeRecord(admin, user.id, dateKey(when), new Date().toISOString()) : null;
         const orderMetadata: Record<string, string> = {
             kind: 'service_order',
             provider_id: provider.id,
@@ -570,6 +578,7 @@ export async function POST(request: Request) {
             item_unit: unit,
             unit_price: String(unitPrice),
             quantity: String(quantity),
+            ...packageNoticeMetadata(packageNotice),
         };
 
         const checkout = await stripeRequest('POST', '/checkout/sessions', {
