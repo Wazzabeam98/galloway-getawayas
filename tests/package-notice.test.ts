@@ -197,3 +197,49 @@ test('the order routes decide from the session user, never from the request body
         assert.doesNotMatch(src, /body\s*\[\s*['"]package/i, rel + ' reads no package field from the body');
     }
 });
+
+// ---- one notice, not two ----------------------------------------------------
+//
+// Where the package notice applies, the linked-travel notice stands down — on
+// the page AND in what the order records. Where it doesn't, the linked-travel
+// notice is exactly as before: shown and recorded on every stay-linked checkout.
+
+const { linkedTravelNoticeApplies, ltaNoticeRecord, LTA_NOTICE_VERSION } = require('../lib/linkedTravelNotice');
+
+test('the linked-travel notice shows on a stay-linked checkout unless the package notice applies', () => {
+    assert.equal(linkedTravelNoticeApplies(true, false), true, 'stay-linked, no covering stay: as before');
+    assert.equal(linkedTravelNoticeApplies(true, true), false, 'both would show: the package notice alone');
+    assert.equal(linkedTravelNoticeApplies(false, false), false, 'standalone: never');
+    assert.equal(linkedTravelNoticeApplies(false, true), false);
+    assert.deepEqual(ltaNoticeRecord(true, false, 'T'), { lta_notice_version: LTA_NOTICE_VERSION, lta_notice_shown_at: 'T' });
+    assert.deepEqual(ltaNoticeRecord(true, true, 'T'), {});
+    assert.deepEqual(ltaNoticeRecord(false, false, 'T'), {});
+});
+
+test('a stay-linked request order with a covering stay records the package notice and NOT the linked-travel one', async () => {
+    const row = await insertFor({
+        booking_id: 'booking-1', standalone: '',
+        ...packageNoticeMetadata({ package_notice_version: PACKAGE_NOTICE_VERSION, package_notice_shown_at: '2026-09-30T10:00:00.000Z' }),
+    });
+    assert.equal(row.package_notice_version, PACKAGE_NOTICE_VERSION);
+    assert.equal(row.lta_notice_version, undefined, 'the guest was not shown it, so it is not recorded');
+    assert.equal(row.lta_notice_shown_at, undefined);
+});
+
+test('a stay-linked request order without a covering stay still records the linked-travel notice', async () => {
+    const row = await insertFor({ booking_id: 'booking-1', standalone: '', ...packageNoticeMetadata(null) });
+    assert.equal(row.lta_notice_version, LTA_NOTICE_VERSION);
+    assert.equal(row.package_notice_version, undefined);
+});
+
+test('the slot route and the checkout components use the same one-notice rule', () => {
+    const slot = fs.readFileSync(path.join(ROOT, 'app/api/services/slots/book/route.ts'), 'utf8');
+    assert.match(slot, /ltaNoticeRecord\(!standalone, !!packageNotice, nowIso\)/);
+    assert.doesNotMatch(slot, /lta_notice_version:/, 'no second, unconditional recording');
+    const lta = fs.readFileSync(path.join(ROOT, 'components/marketplace/LinkedTravelNotice.tsx'), 'utf8');
+    assert.match(lta, /linkedTravelNoticeApplies\(show, packageApplies\)/);
+    for (const c of ['BookingDialog', 'RequestBooking', 'FoodBasket']) {
+        const src = fs.readFileSync(path.join(ROOT, 'components/marketplace/' + c + '.tsx'), 'utf8');
+        assert.match(src, /<LinkedTravelNotice show=\{[^}]+\} date=\{/, c + ' passes the picked date');
+    }
+});

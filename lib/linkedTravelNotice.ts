@@ -33,3 +33,33 @@ export const LTA_NOTICE_FULL =
     + 'goes wrong with the experience itself, your agreement is with the provider, '
     + 'though we will help you reach them. Your stay is a separate booking with your '
     + 'host, and cancelling or changing one does not affect the other.';
+
+// WHICH NOTICE, WHEN BOTH COULD SHOW.
+//
+// A stay-linked checkout used to show this notice every time — and, since the
+// package notice (lib/packageNotice.ts) arrived, both lines together whenever
+// the experience date fell inside the guest's own confirmed, paid stay. Two
+// notices saying overlapping things is one too many: where the package notice
+// applies it is the more specific statement, so it is shown ALONE. Everywhere
+// else this notice behaves exactly as before.
+//
+// One rule for both halves: the checkout components ask it whether to DRAW the
+// line, and the routes that create the order ask it whether to RECORD
+// lta_notice_* — so an order never records a notice its guest was not shown.
+// `packageNoticeApplies` on the server is the route's own decision
+// (packageNoticeRecord), never anything the browser sent.
+export function linkedTravelNoticeApplies(stayLinked: boolean, packageNoticeApplies: boolean): boolean {
+    return !!stayLinked && !packageNoticeApplies;
+}
+
+// The columns an order-creating route writes for this notice: the version and
+// the server's time when the guest was shown it, or nothing when they weren't.
+export function ltaNoticeRecord(
+    stayLinked: boolean,
+    packageNoticeApplies: boolean,
+    nowIso: string,
+): { lta_notice_version: string; lta_notice_shown_at: string } | Record<string, never> {
+    return linkedTravelNoticeApplies(stayLinked, packageNoticeApplies)
+        ? { lta_notice_version: LTA_NOTICE_VERSION, lta_notice_shown_at: nowIso }
+        : {};
+}
