@@ -74,6 +74,10 @@ export interface ReservationCardData {
     heading: string;                 // "Liam's group of 2"
     whenLabel: string;               // the date & time, per kind
     itemName: string;                // what they booked / the job
+    // The job in the owner's words, given its own section with weight — the most
+    // important thing on a trade card. Null on an experience (the item name sits
+    // in the header there instead).
+    job?: string | null;
     status: { label: string; tone: StatusTone } | null;
     when: { heading: string; value: string };
     // A structured WHEN card (weekday / date / time on their own lines), the same
@@ -164,6 +168,16 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                 status={r.status}
                 size={size}
             />
+
+            {/* The job in the owner's words — its own section, weighted, because it
+                is the thing the trade is actually deciding on. Sits right under the
+                header, above Accept / Decline. */}
+            {r.job && (
+                <div className={lifted}>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">The job</div>
+                    <div className="mt-1.5 whitespace-pre-line text-base font-medium leading-snug text-slate-900">{r.job}</div>
+                </div>
+            )}
 
             {/* A trade's request to answer — Accept / Decline on the request
                 itself, not tucked away on another page. Sits directly under the
@@ -363,15 +377,18 @@ export default function ProviderReservationCard({ r, size = 'lg' }: { r: Reserva
                 />
             )}
 
+            {/* Message + Call as an equal pair of pills — the same shape and size
+                the host reservation page gives its pair, rather than one full-width
+                button beside a small one. */}
             {(r.messageHref || r.phone) && (
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                     {r.messageHref && (
-                        <a href={r.messageHref} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">
+                        <a href={r.messageHref} className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800">
                             <MessageSquare className="h-4 w-4" /> Message {r.personFirst}
                         </a>
                     )}
                     {r.phone && (
-                        <a href={'tel:' + r.phone} className={'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500' + (r.messageHref ? '' : ' flex-1')}>
+                        <a href={'tel:' + r.phone} className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:border-slate-500">
                             <Phone className="h-4 w-4" /> Call
                         </a>
                     )}

@@ -56,7 +56,10 @@ function toCardData(r: ProviderReservation): ReservationCardData {
         // subline is emptied here (the job stays as the second subline); the list
         // row now shows a short date, not the full sentence.
         whenLabel: isTrade ? '' : r.whenLabel,
-        itemName: r.title,
+        // A trade's job moves out of the header subline into its own weighted
+        // "The job" section below; an experience keeps its item name in the header.
+        itemName: isTrade ? '' : r.title,
+        job: isTrade ? r.title : null,
         status: r.status,
         // A trade job gets a structured WHEN card (weekday / date / time), the same
         // shape a host's check-in card uses — set when a day is fixed. With no day
@@ -158,7 +161,19 @@ function ListRow({ r, active, onClick }: { r: ProviderReservation; active: boole
             className={'flex w-full items-center gap-3 rounded-2xl border bg-white p-3 text-left transition hover:border-slate-300 '
                 + (active ? 'border-emerald-600 ring-1 ring-emerald-600 lg:border-emerald-600' : 'border-slate-200')}
         >
-            <AvatarOverPhoto r={r} />
+            {/* A trade enquiry leads with the property owner's headshot (their
+                initial when we hold no photo), the way the host and guest cards do —
+                not a generic icon. An experience keeps the item photo + avatar. */}
+            {r.kind === 'trade' ? (
+                <span className="h-14 w-14 flex-none overflow-hidden rounded-full">
+                    {r.avatarUrl
+                        // eslint-disable-next-line @next/next/no-img-element
+                        ? <img src={r.avatarUrl} alt="" className="h-full w-full object-cover ring-1 ring-slate-200" />
+                        : <span className="flex h-full w-full items-center justify-center rounded-full bg-slate-100 text-lg font-semibold text-slate-500">{initials(r.personName)}</span>}
+                </span>
+            ) : (
+                <AvatarOverPhoto r={r} />
+            )}
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                     {r.needsReply && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Needs a reply</span>}

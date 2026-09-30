@@ -370,11 +370,22 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
     const listingIds = Array.from(new Set(relevant.map((e: any) => e.listing_id).filter(Boolean)));
     const listings: Record<string, any> = {};
     if (listingIds.length) {
-        // street_address + postcode are the private columns; they only ever reach
-        // the trade AFTER they accept (see the address wall in mapEnquiry). Read
-        // under the service role here; the gate is what we put in the payload.
-        const { data: ls } = await admin.from('listings').select('id, title, location, images, street_address, postcode').in('id', listingIds);
+        // A trade is entitled to the full job address to decide whether to take it
+        // (whereForTradeJob, Liam round six), so the private columns are read here.
+        // host_id lets us show the property owner's own headshot on the card, the
+        // way a host's booking shows the guest's.
+        const { data: ls } = await admin.from('listings').select('id, title, location, images, street_address, postcode, host_id').in('id', listingIds);
         (ls || []).forEach((l: any) => { listings[l.id] = l; });
+    }
+
+    // The property owners' headshots, so the enquiry card leads with the owner's
+    // own image (falling back to their initial) rather than a generic icon — the
+    // same treatment the host and guest cards use.
+    const hostIds = Array.from(new Set(Object.values(listings).map((l: any) => l && l.host_id).filter(Boolean)));
+    const hostAvatars: Record<string, string | null> = {};
+    if (hostIds.length) {
+        const { data: hosts } = await admin.from('profiles').select('id, avatar_url').in('id', hostIds);
+        (hosts || []).forEach((p: any) => { hostAvatars[p.id] = p.avatar_url ? getImageUrl(String(p.avatar_url)) : null; });
     }
 
     const mapEnquiry = (e: any, mode: 'reply' | 'upcoming' | 'past'): ProviderReservation => {
@@ -415,7 +426,9 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             whenHeading: 'Asked for',
             personName: e.host_name || 'The owner',
             personFirst: hostFirst,
-            avatarUrl: null,
+            // The property owner's own headshot (null → the card falls back to
+            // their initial), so the card leads with a face, not a calendar icon.
+            avatarUrl: (l && l.host_id && hostAvatars[l.host_id]) || null,
             photoUrl: (l && Array.isArray(l.images) && l.images[0]) ? getImageUrl(String(l.images[0])) : null,
             groupLabel: e.host_name || 'The property owner',
             partyLabel: null,
