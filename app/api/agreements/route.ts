@@ -12,6 +12,7 @@ import {
     hasAgreed,
     isAgreementKey,
     nextOwed,
+    nextRoleOwed,
 } from '@/lib/agreements';
 import { recordAcceptance, recordedAgreements, roleFacts } from '@/lib/agreementRecords';
 
@@ -64,7 +65,17 @@ export async function GET() {
             const agreed = !!currentFrom(key, recorded[key]);
             documents[key] = { version: AGREEMENTS[key].version, agreed, earlier: !agreed && (recorded[key] || []).length > 0 };
         }
-        return NextResponse.json({ ok: true, documents, next: nextOwed(roles, recorded) });
+        // `next` is the next document owed at all (Guest Terms first) — kept for
+        // callers that still want it. `nextRole` is what the sign-in prompt now
+        // shows: the next ROLE agreement owed, never the Guest Terms, which are
+        // taken at the end of sign-up and at first stay checkout instead of as a
+        // mid-sign-up interrupt.
+        return NextResponse.json({
+            ok: true,
+            documents,
+            next: nextOwed(roles, recorded),
+            nextRole: nextRoleOwed(roles, recorded),
+        });
     } catch (err: any) {
         await logError('agreements: status could not be read', err, { path: 'api/agreements', userId: user.id });
         return NextResponse.json({ ok: false, error: 'Could not check your agreements.' }, { status: 500 });

@@ -177,6 +177,27 @@ export function nextOwed(
     return null;
 }
 
+// The next ROLE agreement owed (host / experience provider / tradesperson),
+// never the Guest Terms. This is what the sign-in prompt now uses: the Guest
+// Terms are taken at the end of the provider/trade sign-up (with the role
+// agreement) and at a guest's first stay checkout, so they are no longer shown
+// as a mid-sign-up interrupt. A role agreement, by contrast, is only ever owed
+// by someone already in that role — an updated wording, say — so it is still
+// right to prompt for it. Null when no role agreement is owed.
+export function nextRoleOwed(
+    roles: RoleFacts,
+    recorded: Partial<Record<AgreementKey, string[]>>,
+): AgreementKey | null {
+    const owed = requiredAgreements(roles);
+    for (const key of AGREEMENT_ORDER) {
+        if (key === 'guest') continue;
+        if (owed.indexOf(key) === -1) continue;
+        const versions = recorded[key] || [];
+        if (!versions.some((v) => hasAgreed(key, v))) return key;
+    }
+    return null;
+}
+
 // The version recorded for a document that counts as current, if any.
 export function currentFrom(key: AgreementKey, versions: string[] | undefined): string | null {
     return (versions || []).filter((v) => hasAgreed(key, v))[0] || null;

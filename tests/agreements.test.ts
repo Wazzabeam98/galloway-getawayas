@@ -70,6 +70,21 @@ test('the sign-in prompt: Guest Terms first, then only the role agreements the a
         'a host agreement does not stand in for a trade one');
 });
 
+test('the sign-in prompt shows ROLE agreements only — never the Guest Terms', () => {
+    const g = A.AGREEMENTS.guest.version;
+    const t = A.AGREEMENTS.tradesperson.version;
+    // A plain account owing only the Guest Terms is NOT prompted here — the Guest
+    // Terms are taken at the end of sign-up and at first stay checkout instead.
+    assert.equal(A.nextRoleOwed(NONE, {}), null, 'guest terms are not a sign-in prompt');
+    assert.equal(A.nextRoleOwed(NONE, { guest: [g] }), null);
+    // A role agreement is still prompted (e.g. an updated wording), and does not
+    // wait behind the Guest Terms the way nextOwed makes it.
+    assert.equal(A.nextRoleOwed({ ...NONE, isTradesperson: true }, {}), 'tradesperson',
+        'a role agreement is owed even when the Guest Terms are not on record');
+    assert.equal(A.nextRoleOwed({ ...NONE, isTradesperson: true }, { tradesperson: [t] }), null);
+    assert.equal(A.nextRoleOwed({ ...NONE, isHost: true }, { host: ['old'] }), 'host', 'a stale role version is owed again');
+});
+
 /* ------------------------------------------------------------ the route */
 
 const ROUTE = '@/app/api/agreements/route';

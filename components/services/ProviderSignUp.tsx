@@ -486,6 +486,13 @@ function ApplicationForm() {
     // see the save() guard and the gated button. `termsError` is the gate message.
     const [termsAgreed, setTermsAgreed] = useState(false);
     const [termsError, setTermsError] = useState('');
+    // The Guest Terms tick, alongside the role agreement on the finish screen.
+    // A provider is a user of the site too, so they accept the Guest Terms here —
+    // at the end of sign-up, with the role agreement — rather than being stopped
+    // by the sign-in prompt mid-sign-up. Only shown when they have not already
+    // accepted the current version.
+    const [guestAgreed, setGuestAgreed] = useState(false);
+    const [guestTermsError, setGuestTermsError] = useState('');
     // Which agreements this account already has on record at the current
     // version (from /api/agreements; null until known). A guest experience asks
     // for the Experience Provider Agreement, a trade for the Tradesperson
@@ -1859,6 +1866,10 @@ function ApplicationForm() {
     // record. Unknown (null) counts as not on record — the server decides.
     const needsAgreementTick = status !== 'approved'
         && !(agreementsOnRecord && agreementsOnRecord[agreementDoc]);
+    // The Guest Terms are taken here too — the end of sign-up — for anyone who
+    // has not already accepted the current version.
+    const needsGuestTick = status !== 'approved'
+        && !(agreementsOnRecord && agreementsOnRecord.guest);
 
     // What they have already agreed to — asked once signed in, and again when
     // the sign-in prompt records something (AGREEMENTS_CHANGED).
@@ -2741,6 +2752,15 @@ function ApplicationForm() {
         // Checked before the account/validation branches so it applies whichever
         // submit path they are on. Not a submitProblems field: it lives on the
         // finish screen, so its own error shows there.
+        if (submit && needsGuestTick) {
+            const guestMsg = agreementProblem('guest', null, versionForTick('guest', guestAgreed));
+            if (guestMsg) {
+                setTouchedSubmit(true);
+                setGuestTermsError(guestMsg);
+                goToFirstProblem();
+                return;
+            }
+        }
         if (submit && needsAgreementTick) {
             const termsMsg = agreementProblem(agreementDoc, null, versionForTick(agreementDoc, termsAgreed));
             if (termsMsg) {
@@ -2881,6 +2901,14 @@ function ApplicationForm() {
             // The agreement first: recorded (version + server time) through the
             // one route, which refuses it unticked; submit_service_provider()
             // then refuses a submit with no acceptance on record.
+            if (needsGuestTick) {
+                const failedGuest = await recordAgreement('guest', isGuest ? 'experience_signup' : 'trade_signup');
+                if (failedGuest) {
+                    setSaving(false);
+                    setGuestTermsError(failedGuest);
+                    return;
+                }
+            }
             if (needsAgreementTick) {
                 const failed = await recordAgreement(agreementDoc, isGuest ? 'experience_signup' : 'trade_signup');
                 if (failed) {
@@ -5962,8 +5990,20 @@ function ApplicationForm() {
                 </section>
             )}
 
-            {/* The Tradesperson Agreement, the last thing before Send — the same
-                one-line tick box every agreement uses (lib/agreements). */}
+            {/* The agreements, the last thing before Send — the Guest Terms (which
+                every account accepts) and the Tradesperson Agreement on top, each
+                the same one-line tick box (lib/agreements). Taken here, at the end
+                of sign-up, rather than as a pop-up part-way through it. */}
+            {onStep('finish') && !isGuest && !locked && needsGuestTick && (
+                <section className="mb-4">
+                    <AgreementTick
+                        doc="guest"
+                        checked={guestAgreed}
+                        onChange={(v) => { setGuestAgreed(v); setGuestTermsError(''); }}
+                        error={guestTermsError}
+                    />
+                </section>
+            )}
             {onStep('finish') && !isGuest && !locked && needsAgreementTick && (
                 <section className="mb-8">
                     <AgreementTick
@@ -6128,10 +6168,22 @@ function ApplicationForm() {
                         </div>
                     </div>
 
-                    {/* The agreement, one line: a tickbox with the Experience
-                        Provider Agreement behind an underlined link. */}
-                    {needsAgreementTick && (
+                    {/* The agreements, one line each: the Guest Terms (which every
+                        account accepts) and the Experience Provider Agreement on
+                        top, each behind an underlined link. Taken here, at the end
+                        of sign-up, not as a pop-up part-way through it. */}
+                    {needsGuestTick && (
                         <div className="mt-6">
+                            <AgreementTick
+                                doc="guest"
+                                checked={guestAgreed}
+                                onChange={(v) => { setGuestAgreed(v); setGuestTermsError(''); }}
+                                error={guestTermsError}
+                            />
+                        </div>
+                    )}
+                    {needsAgreementTick && (
+                        <div className={needsGuestTick ? 'mt-3' : 'mt-6'}>
                             <AgreementTick
                                 doc="experience_provider"
                                 checked={termsAgreed}
@@ -6379,7 +6431,7 @@ function ApplicationForm() {
                             // the button makes it visible (matching how Next greys on
                             // the other steps), with the agree box right above on the
                             // finish screen.
-                            disabled={saving || (needsAgreementTick && !termsAgreed)}
+                            disabled={saving || (needsGuestTick && !guestAgreed) || (needsAgreementTick && !termsAgreed)}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >
                             <span className="block truncate">

@@ -159,13 +159,19 @@ export function agreementGateHeld(): boolean {
 // What the signed-in account has agreed to. null while unknown (or signed out).
 export async function fetchAgreementStatus(): Promise<null | {
     documents: Record<AgreementKey, { version: string; agreed: boolean; earlier: boolean }>;
+    // The next document owed at all (Guest Terms first).
     next: AgreementKey | null;
+    // The next ROLE agreement owed, never the Guest Terms — what the sign-in
+    // prompt shows now that the Guest Terms are taken at sign-up and checkout.
+    nextRole: AgreementKey | null;
 }> {
     try {
         const res = await fetch('/api/agreements', { cache: 'no-store' });
         if (!res.ok) return null;
         const body = await res.json();
-        return body && body.ok ? { documents: body.documents, next: body.next } : null;
+        return body && body.ok
+            ? { documents: body.documents, next: body.next, nextRole: body.nextRole ?? null }
+            : null;
     } catch {
         return null;
     }
