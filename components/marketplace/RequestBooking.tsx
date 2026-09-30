@@ -7,6 +7,7 @@ import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrd
 import { hasExtraGuests, partyPrice, partyCeiling, extraGuestsLine } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
 import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
+import PackageNotice from '@/components/marketplace/PackageNotice';
 import { prettyTime } from '@/lib/offeredTimes';
 import { itemPriceLabel, dateLabel, dayHeadingLabel, monthYearLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
@@ -501,6 +502,7 @@ export function RequestBookingDialog({
                                 </details>
                             )}
                             <LinkedTravelNotice show={!!hasStay} />
+                            <PackageNotice date={date} />
                             <button type="button" onClick={submit} disabled={busy || !canBook}
                                 className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
                                 {busy ? 'Sending…' : 'Send request'}

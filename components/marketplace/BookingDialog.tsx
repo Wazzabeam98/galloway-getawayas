@@ -7,6 +7,7 @@ import { optionAvailability, seatConfig } from '@/lib/serviceSlots';
 import { unitMultiplies, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { childrenAllowed } from '@/lib/guestAges';
 import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
+import PackageNotice from '@/components/marketplace/PackageNotice';
 import { itemPriceLabel, timeLabel, monthYearLabel, dayHeadingLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
@@ -466,6 +467,7 @@ export default function BookingDialog({
                         <div className="border-t border-slate-100 px-5 py-4">
                             {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
                             <LinkedTravelNotice show={!!hasStay} />
+                            <PackageNotice date={selected ? selected.date : null} />
                             <div className="flex items-center justify-between gap-3">
                                 <div className="text-sm text-slate-600">
                                     {selected
