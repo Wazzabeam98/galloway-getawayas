@@ -115,6 +115,23 @@ export function isTradeComingSoon(trade: string): boolean {
     return (COMING_SOON_TRADES as readonly string[]).indexOf(String(trade || '')) !== -1;
 }
 
+// Where a trade's list lives now that there is no page per trade: the one list
+// at /services, filtered to that trade. A guest experience is not a host trade,
+// so it goes to the cottages (an experience is booked against a stay); a
+// coming-soon trade has nobody to show, so it lands on the unfiltered list.
+//
+// Every "send them back to the trade's list" goes through this, so it is one
+// hop — never to /services/<trade>, which is itself only a redirect. The
+// permanent redirects in next.config.js spell the same answers out by hand
+// (config cannot import TypeScript); tests/old-services-routes.test.ts holds
+// the two together.
+export function tradeListHref(trade: string): string {
+    const key = String(trade || '');
+    if (audienceForTrade(key) === 'guest') return '/';
+    if (isTradeComingSoon(key)) return '/services';
+    return '/services?trade=' + encodeURIComponent(key);
+}
+
 // ---------------------------------------------------------------------------
 // GUEST CATEGORIES — the picker a guest provider starts from.
 //

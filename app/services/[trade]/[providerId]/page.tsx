@@ -10,6 +10,7 @@ import {
     registrationVerified,
     registrationExpired,
     audienceForTrade,
+    tradeListHref,
 } from '@/lib/serviceProviders';
 import { visibleInDirectory } from '@/lib/serviceSubscription';
 import PhotoGallery from '@/components/PhotoGallery';
@@ -48,12 +49,14 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
         .maybeSingle();
 
     // Not found, not a trade, the wrong trade's URL, or not publicly visible
-    // (pre-approval, or delisted for non-payment) → back to the directory.
+    // (pre-approval, or delisted for non-payment) → back to the directory,
+    // straight to the filtered list — not /services/<trade>, which is itself a
+    // redirect and would make this two hops.
     if (!provider
         || audienceForTrade(provider.trade) === 'guest'
         || provider.trade !== params.trade
         || !visibleInDirectory(provider)) {
-        redirect('/services/' + encodeURIComponent(params.trade));
+        redirect(tradeListHref(params.trade));
     }
 
     const [{ data: areas }, { data: extraRows }, { data: skillLinks }, { data: regs }] = await Promise.all([

@@ -184,6 +184,13 @@ export default function TradeDirectory() {
                 Local trades who cover holiday lets across Dumfries &amp; Galloway. See who they
                 are and what they charge, then ask one — you agree the job with them directly.
             </p>
+            {/* The host is the one paying, so the host is the one who needs telling.
+                Trades pay a flat subscription; nothing is taken per job (see the
+                tradesperson agreement). This line was on /services/property until
+                that page became a redirect. */}
+            <p className="mt-2 max-w-2xl text-sm text-slate-500">
+                We take nothing from what you pay them.
+            </p>
 
             {/* The filter bar — the property search's own look: a white lifted
                 bar with labelled fields. Area on the left, trade on the right. */}

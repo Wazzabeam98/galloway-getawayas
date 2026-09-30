@@ -4,7 +4,6 @@ import Env from '@/config/Env';
 import { logError } from '@/lib/logError';
 import { AREAS, hasCopy } from '@/config/areas';
 import { townKey } from '@/lib/places';
-import { SHOP_TRADES } from '@/lib/serviceProviders';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -82,18 +81,11 @@ export async function GET() {
         { loc: `${SITE_URL}/cancellation-policy`, lastmod: now, changefreq: 'yearly', priority: '0.4' },
     ];
 
-    // The real trade pages — one per enquirable trade (SHOP_TRADES), the same
-    // seven that carry Service structured data and stay indexable. The three
-    // "Not this one yet" placeholders and /services/guest are noindex (see
-    // app/services/[trade]/layout.tsx) and deliberately left out. Static, so
-    // they are added to every return path below, including the DB-error ones.
-    const tradePages: Entry[] = SHOP_TRADES.map((trade) => ({
-        loc: `${SITE_URL}/services/${trade}`,
-        lastmod: now,
-        changefreq: 'weekly',
-        priority: '0.6',
-    }));
-    const knownPages = staticPages.concat(tradePages);
+    // No /services/<trade> entries. There is no page per trade any more — trade
+    // is a filter on the one list at /services, and the old per-trade URLs are
+    // permanent redirects (next.config.js). A sitemap naming a redirect is a
+    // sitemap that disagrees with the site. /services itself is listed above.
+    const knownPages = staticPages;
 
     const headers = {
         'Content-Type': 'application/xml; charset=utf-8',
