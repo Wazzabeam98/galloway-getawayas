@@ -1,3 +1,4 @@
+import { refundExperienceOrder } from '@/lib/experienceFunds';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, price, slot_session_id, stripe_payment_intent_id, provider_business_name, guest_email, parent_order_id')
+            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, price, slot_session_id, stripe_payment_intent_id, provider_business_name, guest_email, parent_order_id, funds_flow, platform_fee, paid_out_at, payout_amount, payout_transfer_id, payout_reversed, payout_clawback_owed')
             .eq('id', orderId)
             .maybeSingle();
 
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
         const settleChildren = async (kind: 'refund' | 'forfeit') => {
             const { data: kids } = await admin
                 .from('service_orders')
-                .select('id, parent_order_id, status, quantity, slot_session_id, stripe_payment_intent_id, price')
+                .select('id, provider_id, parent_order_id, status, quantity, slot_session_id, stripe_payment_intent_id, price, funds_flow, platform_fee, paid_out_at, payout_amount, payout_transfer_id, payout_reversed, payout_clawback_owed')
                 .eq('parent_order_id', order.id)
                 .in('status', ['confirmed', 'holding', 'authorised']);
             // Belt-and-braces: only a genuine child of THIS order.
@@ -99,17 +100,18 @@ export async function POST(request: Request) {
                     };
                     if (kid.status === 'confirmed' && kid.stripe_payment_intent_id) {
                         if (kind === 'refund') {
-                            await stripeRequest('POST', '/refunds',
-                                { payment_intent: kid.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' },
-                                'refund-' + kid.id);
+                            await refundExperienceOrder(admin, kid, 'refund-' + kid.id);
                             const { data: moved } = await admin.from('service_orders')
                                 .update({ status: 'refunded', cancelled_at: now.toISOString() })
                                 .eq('id', kid.id).eq('status', 'confirmed').select('id');
                             if (moved && moved.length) await releaseKid();
                         } else {
                             // forfeit — the payment stays with the provider; the seat reopens.
+                            // The walk-away is recorded on the child too, so the
+                            // payout run knows this cancelled row's money is still
+                            // the provider's to be paid (a held order).
                             const { data: moved } = await admin.from('service_orders')
-                                .update({ status: 'cancelled', cancelled_at: now.toISOString() })
+                                .update({ status: 'cancelled', cancelled_at: now.toISOString(), cancel_ack: { amount: Number(kid.price) || 0, currency: 'gbp', refunded: 0, note: 'Added places, cancelled with the booking inside the cancellation window — not refunded.', at: now.toISOString(), status_before: 'confirmed', parent_order_id: order.id } })
                                 .eq('id', kid.id).eq('status', 'confirmed').select('id');
                             if (moved && moved.length) await releaseKid();
                         }
@@ -169,9 +171,7 @@ export async function POST(request: Request) {
                 if (!canTransition('confirmed', 'refunded')) {
                     return NextResponse.json({ ok: false, error: 'That can’t be cancelled.' }, { status: 409 });
                 }
-                await stripeRequest('POST', '/refunds',
-                    { payment_intent: order.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' },
-                    'refund-' + order.id);
+                await refundExperienceOrder(admin, order, 'refund-' + order.id);
                 const { data: refunded } = await admin.from('service_orders')
                     .update({ status: 'refunded', cancelled_at: now.toISOString() })
                     .eq('id', order.id).eq('status', 'confirmed').select('id');
@@ -233,7 +233,9 @@ export async function POST(request: Request) {
             }
 
             // WALK AWAY: cancel with no refund. The provider keeps the payment and
-            // gets the date back; no Stripe act, because the money stays put. Store
+            // gets the date back; no Stripe act, because the money stays put — for
+            // a held order it is still paid to the provider by the payout run the
+            // day after the date, which reads cancel_ack as "kept, not refunded". Store
             // exactly what the guest was shown, as the record if it is ever disputed.
             if (mode === 'forfeit') {
                 if (!canTransition('confirmed', 'cancelled')) {

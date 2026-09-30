@@ -22,11 +22,11 @@ export const metadata = {
 // an experience genuinely differs:
 //   * paid per ORDER, not per stay;
 //   * OCCUPANCY is seats filled in a session, not nights booked;
-//   * money is a Stripe DESTINATION CHARGE — the provider's 90% lands in their
-//     OWN Stripe balance at payment and Stripe pays them out on their own
-//     schedule, so there is no platform payout ledger to build an
-//     awaiting/already-paid table from. That table is replaced with a short
-//     "how you're paid" note rather than a fabricated schedule.
+//   * money is HELD by us until the day after the booking, then the provider's
+//     share is transferred by /api/cron/experience-payouts — the same rhythm as
+//     a host paid the day after check-in (orders before 30/09/2026 were
+//     destination charges, paid at capture). The "how you're paid" note says
+//     that plainly.
 // Every figure shown is the provider's take (their 90%), via orderNet.
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -162,16 +162,17 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
                 <MonthlyTrendChart months={months} />
             </div>
 
-            {/* No platform payout schedule for experiences: the money is a Stripe
-                destination charge, so it settles to the provider's OWN balance and
-                Stripe pays it out. Say that plainly rather than fake a table. */}
+            {/* How the money reaches the provider: taken on their behalf (they are
+                the seller, named on the guest's statement), held by us, released
+                the day after the booking, then Stripe to their bank. */}
             <div className="border rounded-2xl p-6 mb-10">
                 <h2 className="font-bold text-slate-900 mb-2">How you're paid</h2>
                 <p className="text-sm text-slate-600">
-                    Each booking is paid straight into your own Stripe account — you&rsquo;re the merchant, and Galloway
-                    Getaways takes its {effectivePercent}% as a fee at the time. Your share lands in your Stripe balance
-                    as soon as the guest pays, and Stripe pays it out to your bank on your account&rsquo;s own schedule.
-                    There&rsquo;s no waiting on us to release it.
+                    You&rsquo;re the seller: each booking is taken in your name, and your business is what the guest sees on
+                    their card statement. We hold the guest&rsquo;s payment until the booking has happened, then send you your share &mdash;
+                    what they paid, less our {effectivePercent}% fee &mdash; the day after. Stripe then pays it into your
+                    bank, which usually takes about a week. If a booking is cancelled and refunded before then, the
+                    refund comes from the money we hold.
                 </p>
             </div>
 
@@ -218,7 +219,7 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
             </div>
 
             <p className="text-xs text-slate-400 mt-6">
-                All figures on this page are your share, after the {effectivePercent}% Galloway fee. Money settles straight to your Stripe account.
+                All figures on this page are your share, after the {effectivePercent}% Galloway fee. We send your share the day after each booking.
             </p>
         </div>
     );

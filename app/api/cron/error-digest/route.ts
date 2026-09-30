@@ -175,6 +175,27 @@ export async function GET(request: Request) {
         });
     }
 
+    // The same watchdog for the experience payout run: it is what pays every
+    // provider their held money, and a run that has stopped looks exactly like
+    // a quiet day until a provider asks where their money is.
+    try {
+        const payCron = await cronRunOverdue('experience-payouts');
+        if (payCron.overdue) {
+            await alertDirectorsNow({
+                headline: 'The experience payout run may have stopped',
+                lines: [
+                    'The daily experience-payouts cron ' + payCron.reason + '.',
+                    'While it is not running, providers are not paid the money we hold for them.',
+                ],
+                facts: { 'last run': payCron.ranAt || 'never' },
+            });
+        }
+    } catch (e) {
+        await logError('error-digest: could not check the experience payout cron heartbeat', e, {
+            path: '/api/cron/error-digest',
+        });
+    }
+
     const drillHtml = !drillAlert ? '' : (
         '<div style="border:1px solid #fecaca;background:#fef2f2;border-radius:8px;padding:12px 14px;margin:0 0 16px;">'
         + '<p style="margin:0 0 6px;font-size:16px;font-weight:700;color:#b91c1c;">'

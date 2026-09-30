@@ -1,3 +1,4 @@
+import { refundExperienceOrder } from '@/lib/experienceFunds';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -14,10 +15,12 @@ export const dynamic = 'force-dynamic';
 // captured, decline and the hold is released untaken.
 //
 // CAPTURE ON CONFIRM. The money moves here and nowhere else on the happy path —
-// the guest's card was only held at request. Confirm captures it (and with it
-// our application fee and the transfer to the provider, both already set on the
-// authorised PaymentIntent). Decline cancels the authorisation and no money is
-// taken.
+// the guest's card was only held at request. Confirm captures it. For a 'held'
+// order (every order from 30 Sep 2026) the captured money sits with us until the
+// day after the experience, when the experience-payouts run pays the provider;
+// for an older 'direct' order the capture also carries our application fee and
+// the transfer to the provider, both set on the PaymentIntent back then. Decline
+// cancels the authorisation and no money is taken.
 //
 // The Stripe act happens BEFORE the status is written, so an order can never
 // read 'confirmed' while the money is still only held, nor 'declined' while a
@@ -115,7 +118,7 @@ export async function POST(request: Request) {
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, provider_id, status, shape, slot_session_id, quantity, stripe_payment_intent_id, guest_email, guest_name, service_date, service_time, price, provider_business_name, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, exclusive_per_date')
+            .select('id, provider_id, status, shape, slot_session_id, quantity, stripe_payment_intent_id, guest_email, guest_name, service_date, service_time, price, provider_business_name, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, exclusive_per_date, funds_flow, platform_fee, paid_out_at, payout_amount, payout_transfer_id, payout_reversed, payout_clawback_owed')
             .eq('id', orderId)
             .maybeSingle();
 
@@ -198,12 +201,10 @@ export async function POST(request: Request) {
                     { status: 409 }
                 );
             }
-            await stripeRequest(
-                'POST',
-                '/refunds',
-                { payment_intent: order.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' },
-                'refund-' + order.id
-            );
+            // The right refund for the order's flow: from the money we hold
+            // (and, if already paid out, the payout clawed back), or for an older
+            // direct order, our fee returned and the transfer reversed.
+            await refundExperienceOrder(admin, order, 'refund-' + order.id);
             const { data: refunded } = await admin
                 .from('service_orders')
                 // A full refund records the FULL amount in amount_refunded, so

@@ -19,6 +19,7 @@ import { sendEmail, emailLayout, escapeHtml, formatDate, NEUTRAL_SUBTITLE } from
 import { logError } from './logError';
 import { stripeRequest } from './stripe';
 import { formatGBP } from './formatMoney';
+import { refundExperienceOrder, fundsFlowOf, ORDER_FUNDS_COLUMNS } from './experienceFunds';
 
 // Tell both sides — the guest that their dinner went back with the stay, and the
 // provider that a booking they were counting on is off and the money reversed,
@@ -58,7 +59,12 @@ async function tellAboutStayCancel(admin: any, order: any): Promise<void> {
                 emailLayout(
                     '<p style="margin:0 0 16px;font-size:16px;">The guest booked with you for <strong>' + date
                     + '</strong> has had their stay cancelled, so this booking is off — please don’t turn up. They have been refunded '
-                    + escapeHtml(amount) + ' in full, and that amount has been reversed from your account.</p>',
+                    + escapeHtml(amount) + ' in full'
+                    // A held order that has not been paid out never reached the
+                    // provider, so there is nothing to take back from them.
+                    + (fundsFlowOf(order) === 'held' && !order.payout_transfer_id
+                        ? '. Nothing had been paid to you for it yet, so nothing comes out of your account.</p>'
+                        : ', and that amount has been reversed from your account.</p>'),
                     'You’re receiving this because you offer experiences on Galloway Getaways.',
                     undefined, NEUTRAL_SUBTITLE
                 )
@@ -71,7 +77,7 @@ export async function cancelStayExperienceOrders(admin: any, bookingId: string):
     try {
         const { data: liveOrders } = await admin
             .from('service_orders')
-            .select('id, status, stripe_payment_intent_id, guest_email, service_date, price, provider_id, provider_business_name, slot_session_id, quantity')
+            .select('id, status, stripe_payment_intent_id, guest_email, service_date, price, provider_id, provider_business_name, slot_session_id, quantity, ' + ORDER_FUNDS_COLUMNS)
             .eq('booking_id', bookingId)
             .in('status', ['authorised', 'confirmed']);
 
@@ -98,7 +104,7 @@ export async function cancelStayExperienceOrders(admin: any, bookingId: string):
         const cancelTopUps = async (parentId: string) => {
             const { data: kids } = await admin
                 .from('service_orders')
-                .select('id, parent_order_id, status, stripe_payment_intent_id, slot_session_id, quantity')
+                .select('id, provider_id, parent_order_id, status, stripe_payment_intent_id, slot_session_id, quantity, ' + ORDER_FUNDS_COLUMNS)
                 .eq('parent_order_id', parentId)
                 .in('status', ['confirmed', 'holding']);
             // Belt-and-braces: only a genuine child of THIS parent (the query
@@ -107,7 +113,7 @@ export async function cancelStayExperienceOrders(admin: any, bookingId: string):
                 try {
                     if (kid.status === 'confirmed') {
                         if (!kid.stripe_payment_intent_id) continue;
-                        await stripeRequest('POST', '/refunds', { payment_intent: kid.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' }, 'refund-' + kid.id);
+                        await refundExperienceOrder(admin, kid, 'refund-' + kid.id);
                         const { data: moved } = await admin.from('service_orders').update({ status: 'refunded', cancelled_at: new Date().toISOString() }).eq('id', kid.id).eq('status', 'confirmed').select('id');
                         if (moved && moved.length) await releaseSeat(kid);
                     } else {
@@ -127,7 +133,7 @@ export async function cancelStayExperienceOrders(admin: any, bookingId: string):
                     await stripeRequest('POST', '/payment_intents/' + o.stripe_payment_intent_id + '/cancel', undefined, 'cancel-' + o.id);
                     await admin.from('service_orders').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', o.id).eq('status', 'authorised');
                 } else {
-                    await stripeRequest('POST', '/refunds', { payment_intent: o.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' }, 'refund-' + o.id);
+                    await refundExperienceOrder(admin, o, 'refund-' + o.id);
                     // Only release the seat when this call is the one that moved
                     // the order off 'confirmed' — so a retry or a race with a
                     // direct cancel cannot double-decrement.

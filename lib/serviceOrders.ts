@@ -464,8 +464,9 @@ export function orderReference(orderId: string | null | undefined): string {
 }
 
 // The money split for ONE order: what the guest paid net of any refund, our 10%
-// fee on it, and the provider's take. The provider's money is the 90% that lands
-// directly in their own Stripe balance (destination charge). Shared so the
+// fee on it, and the provider's take — the 90% we pay them the day after the
+// booking (or, for an order before 30/09/2026, that landed in their Stripe
+// balance at payment; see lib/experienceFunds). Shared so the
 // calendar panel, the earnings page and anywhere else read the SAME numbers.
 // NOTE commission_rate here is a FRACTION (0.10), not a percent.
 export function orderNet(
