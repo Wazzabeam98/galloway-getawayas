@@ -30,6 +30,7 @@ import {
     hasExpired,
     needsDate,
     requestedWhen,
+    windowsClash,
     enquiryProblems,
     enquiryReference,
     offersEmergency,
@@ -183,6 +184,25 @@ test('no window is a real answer, and no date says nothing at all', () => {
     // something failed to load.
     assert.equal(requestedWhen({}), null);
     assert.equal(requestedWhen({ preferred_date: 'not a date' }), null);
+});
+
+// The soft clash rule behind the accept warning and the calendar's amber flag.
+// A warning only — the caller never blocks — so the rule just has to be honest
+// about when two windows actually overlap.
+test('two windows clash only when they truly overlap', () => {
+    const morning = { window_from: '08:00', window_to: '12:00' };
+    const changeover = { window_from: '11:00', window_to: '15:00' };
+    const afternoon = { window_from: '12:00', window_to: '17:00' };
+    const anyTime = { window_from: null, window_to: null };
+
+    // Overlapping windows clash.
+    assert.equal(windowsClash(morning, changeover), true);
+    assert.equal(windowsClash(morning, morning), true);
+    // Adjacent (one ends where the next begins) do NOT clash — half-open.
+    assert.equal(windowsClash(morning, afternoon), false);
+    // An open "any time that day" clashes with anything on the day.
+    assert.equal(windowsClash(anyTime, afternoon), true);
+    assert.equal(windowsClash(morning, anyTime), true);
 });
 
 test('only planned work is made to name a day', () => {

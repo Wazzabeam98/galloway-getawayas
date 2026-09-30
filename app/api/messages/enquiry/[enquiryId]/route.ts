@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { enquiryThreadContext } from '@/lib/enquiryThreads';
-import { requestedWhen } from '@/lib/serviceEnquiries';
+import { requestedWhen, windowsClash, windowPhrase } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 import { displayName, getImageUrl } from '@/lib/utils';
 import { townFromLocation } from '@/components/marketplace/present';
@@ -90,6 +90,24 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
                     : status === 'declined' ? { label: 'Declined', tone: 'over' }
                         : { label: String(status), tone: 'over' };
 
+        // A soft clash warning for the trade on a still-to-answer request: another
+        // accepted job in the same window that day. Warn, never block.
+        let clashWarning: string | null = null;
+        if (!ctx.isHost && needsReply && ctx.enquiry.preferred_date && ctx.provider && ctx.provider.id) {
+            const day = String(ctx.enquiry.preferred_date).slice(0, 10);
+            const { data: sameDay } = await admin
+                .from('service_enquiries')
+                .select('id, window_from, window_to')
+                .eq('provider_id', ctx.provider.id)
+                .eq('status', 'accepted')
+                .eq('preferred_date', day);
+            const clashes = (sameDay || []).some((a: any) => a.id !== ctx.enquiry.id && windowsClash(ctx.enquiry, a));
+            if (clashes) {
+                clashWarning = 'You already have a job ' + windowPhrase(ctx.enquiry)
+                    + ' on this day. You can still take this one — agree the timing with both owners.';
+            }
+        }
+
         const moneyNote = ctx.isHost
             ? 'Agreed and paid directly — this job isn’t billed through Galloway Getaways.'
             : needsReply
@@ -126,6 +144,7 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
             // Accept / Decline on the request itself, for the provider, in the
             // thread too — not only on a separate page.
             requestActions: (!ctx.isHost && needsReply) ? { enquiryId: params.enquiryId } : null,
+            clashWarning,
         };
 
         return NextResponse.json({
