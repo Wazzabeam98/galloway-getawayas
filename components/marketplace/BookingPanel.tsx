@@ -12,6 +12,7 @@ import BookingDialog, { type BookArgs, type DialogOpenSession } from '@/componen
 import DatePreview from '@/components/marketplace/DatePreview';
 import { RequestBookingDialog, RequestDatePreview, type RequestBookArgs } from '@/components/marketplace/RequestBooking';
 import { useRequestBooking } from '@/components/marketplace/RequestBookingContext';
+import { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 
 interface PanelItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -92,6 +93,29 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
     const [lockedItemId, setLockedItemId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Does this guest still owe the Guest Terms? Booking an experience is a
+    // checkout too, so — like a stay — they accept the Guest Terms here, in the
+    // dialog above the Book button, rather than through a sign-in pop-up. Null
+    // (signed out) leaves it off; the acceptance is recorded before the order.
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        fetchAgreementStatus().then((st) => {
+            if (!cancelled) setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
+        });
+        return () => { cancelled = true; };
+    }, []);
+
+    // Record the Guest Terms (version + server time) before the order is created,
+    // so a guest who reaches payment has agreed to them. Returns true to stop the
+    // booking when the record fails.
+    async function blockOnGuestTerms(): Promise<boolean> {
+        if (!needsGuestTerms) return false;
+        const failed = await recordAgreement('guest', 'experience_checkout');
+        if (failed) { setError(failed); setBusy(false); return true; }
+        setNeedsGuestTerms(false);
+        return false;
+    }
 
     const declaredSessions = provider.declaredSessions || [];
     // The provider's notice period is the earliest a date can be picked — for a
@@ -132,6 +156,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
 
     async function bookSlot(args: BookArgs) {
         setBusy(true); setError(null);
+        if (await blockOnGuestTerms()) return;
         try {
             const res = await fetch('/api/services/slots/book', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -224,6 +249,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
         const perPerson = unitMultiplies(it.unit);
         const kids = childrenAllowed(provider.minAge ?? null) ? args.children : 0;
         setBusy(true); setError(null);
+        if (await blockOnGuestTerms()) return;
         try {
             const res = await fetch('/api/services/order', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -295,6 +321,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                         prefillAdults={cottageAdults}
                         prefillChildren={cottageChildren}
                         hasStay={!standalone}
+                        needsGuestTerms={needsGuestTerms}
                         busy={busy}
                         error={error}
                         onBook={bookSlot}
@@ -351,6 +378,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                     initialDate={initialDate}
                     lockedItemId={lockedItemId}
                     hasStay={!standalone}
+                    needsGuestTerms={needsGuestTerms}
                     busy={busy}
                     error={error}
                     onBook={bookRequest}

@@ -12,6 +12,7 @@ import DeliveryAddressModal, { SavedAddressResult } from '@/components/marketpla
 import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
 import PackageNotice from '@/components/marketplace/PackageNotice';
 import { AddressParts } from '@/components/address/AddressLookup';
+import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 
 // A delivery address the guest has chosen for this order, and where it came from:
 // typed/searched (an ad-hoc or edited address), saved (picked from their account
@@ -75,6 +76,17 @@ export default function FoodBasket({
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [mobileOpen, setMobileOpen] = useState(false);
+    // The Guest Terms, when this signed-in guest still owes them — a tick above
+    // the order button, held until ticked, recorded before the order.
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(false);
+    const [guestTicked, setGuestTicked] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        fetchAgreementStatus().then((st) => {
+            if (!cancelled) setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
+        });
+        return () => { cancelled = true; };
+    }, []);
 
     // The earliest date is today plus the provider's notice period. It's one
     // provider-level setting, so every item in the basket shares it; when items can
@@ -133,6 +145,12 @@ export default function FoodBasket({
         if (!date) { setError('Pick a ' + deliverWord + ' date.'); return; }
         if (needsAddress && !chosen) { setError('Add a delivery address.'); return; }
         setBusy(true);
+        // The Guest Terms, recorded before the order when they are owed.
+        if (needsGuestTerms) {
+            const failed = await recordAgreement('guest', 'experience_checkout');
+            if (failed) { setError(failed); setBusy(false); return; }
+            setNeedsGuestTerms(false);
+        }
         try {
             const trimmedAllergy = [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '');
             const res = await fetch('/api/services/order', {
@@ -152,7 +170,7 @@ export default function FoodBasket({
         setBusy(false);
     }
 
-    const canSend = !busy && lines.length > 0 && !!date && !(needsAddress && !chosen);
+    const canSend = !busy && lines.length > 0 && !!date && !(needsAddress && !chosen) && !(needsGuestTerms && !guestTicked);
 
     // The card content — the same whether it sits in the desktop sidebar or the
     // mobile sheet.
@@ -320,6 +338,17 @@ export default function FoodBasket({
                 {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
                 <LinkedTravelNotice show={!standalone} date={date} />
                 <PackageNotice date={date} />
+                {needsGuestTerms && (
+                    <div className="mb-3">
+                        <AgreementTick
+                            doc="guest"
+                            id="food-basket-agree-guest"
+                            checked={guestTicked}
+                            onChange={setGuestTicked}
+                            open="tab"
+                        />
+                    </div>
+                )}
                 <button type="button" onClick={send} disabled={!canSend}
                     className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
                     {busy ? 'Sending…' : (hasCustom ? `Send order request · ${formatGBP(total)}` : `Place order & pay · ${formatGBP(total)}`)}

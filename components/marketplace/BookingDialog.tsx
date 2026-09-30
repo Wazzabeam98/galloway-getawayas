@@ -12,6 +12,7 @@ import { itemPriceLabel, timeLabel, monthYearLabel, dayHeadingLabel } from '@/co
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
 import TravelAddressModal from '@/components/marketplace/TravelAddressModal';
+import AgreementTick from '@/components/legal/AgreementTick';
 import type { AddressParts } from '@/components/address/AddressLookup';
 
 export interface DialogItem { id: string; name: string; price: number; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; }
@@ -35,9 +36,13 @@ interface Offering {
 // Selecting a slot and pressing Book goes straight to Stripe Checkout — the panel's
 // onBook does the POST + redirect; no contact is collected here (Checkout does that).
 export default function BookingDialog({
-    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, minAge, initialDate, prefillAdults, prefillChildren, hasStay, busy, error, onBook, onClose,
+    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, minAge, initialDate, prefillAdults, prefillChildren, hasStay, needsGuestTerms, busy, error, onBook, onClose,
 }: {
     who: string;
+    // True when this guest still owes the Guest Terms — a one-line tick above the
+    // Book button, which is held until it is ticked. The panel records the
+    // acceptance before the order (see the note by onBook).
+    needsGuestTerms?: boolean;
     // True when this checkout is booked against a confirmed stay: the linked-
     // travel-arrangement notice shows only then, never for a standalone booking.
     hasStay?: boolean;
@@ -75,6 +80,9 @@ export default function BookingDialog({
     // any provider; a stable sort keeps the provider's own order for equal prices.
     const orderedItems = useMemo(() => [...items].sort((a, b) => a.price - b.price), [items]);
     const [itemId, setItemId] = useState<string>(orderedItems[0]?.id || '');
+    // The Guest Terms tick, when this guest still owes them — the Book button is
+    // held until it is ticked (the panel records the acceptance before the order).
+    const [guestTicked, setGuestTicked] = useState(false);
     // The party as an adults/children SPLIT (Airbnb's Adults 13+ / Children 4-12).
     // `people` — the total — is what everything downstream reads, so the capacity
     // and pricing logic below is untouched; only how the total is entered changed.
@@ -468,13 +476,24 @@ export default function BookingDialog({
                             {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
                             <LinkedTravelNotice show={!!hasStay} date={selected ? selected.date : null} />
                             <PackageNotice date={selected ? selected.date : null} />
+                            {needsGuestTerms && (
+                                <div className="mb-3">
+                                    <AgreementTick
+                                        doc="guest"
+                                        id="booking-dialog-agree-guest"
+                                        checked={guestTicked}
+                                        onChange={setGuestTicked}
+                                        open="tab"
+                                    />
+                                </div>
+                            )}
                             <div className="flex items-center justify-between gap-3">
                                 <div className="text-sm text-slate-600">
                                     {selected
                                         ? <><span className="font-semibold text-slate-900">{formatGBP(lineTotal)}</span> total</>
                                         : <span className="text-slate-400">Pick a time</span>}
                                 </div>
-                                <button type="button" onClick={submit} disabled={!canBook || busy}
+                                <button type="button" onClick={submit} disabled={!canBook || busy || (!!needsGuestTerms && !guestTicked)}
                                     className="rounded-xl bg-emerald-700 px-6 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
                                     {busy ? 'Starting…' : 'Book'}
                                 </button>

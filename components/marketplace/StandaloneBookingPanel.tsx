@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { priceParts, cancellationBadge } from '@/components/marketplace/present';
 import BookingDialog, { type BookArgs } from '@/components/marketplace/BookingDialog';
 import DatePreview from '@/components/marketplace/DatePreview';
+import { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 
 interface PanelItem { id: string; name: string; price: number; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
@@ -31,6 +32,19 @@ export default function StandaloneBookingPanel({ provider }: {
     const [initialDate, setInitialDate] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // A signed-in guest who still owes the Guest Terms accepts them here, in the
+    // dialog above the Book button, before the order. A brand-new guest booking
+    // anonymously has no account yet — their account is minted from the Stripe
+    // payer email after payment — so there is nothing to record against and the
+    // tick stays off for them (status is null when signed out).
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        fetchAgreementStatus().then((st) => {
+            if (!cancelled) setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
+        });
+        return () => { cancelled = true; };
+    }, []);
 
     const declaredSessions = provider.declaredSessions || [];
     // The cheapest option, per-person where that's the unit — "From £15 / guest".
@@ -42,6 +56,13 @@ export default function StandaloneBookingPanel({ provider }: {
 
     async function book(args: BookArgs) {
         setBusy(true); setError(null);
+        // Record the Guest Terms before the order, when they are owed and there is
+        // an account to record against.
+        if (needsGuestTerms) {
+            const failed = await recordAgreement('guest', 'experience_checkout');
+            if (failed) { setError(failed); setBusy(false); return; }
+            setNeedsGuestTerms(false);
+        }
         try {
             const res = await fetch('/api/services/slots/book', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -108,6 +129,7 @@ export default function StandaloneBookingPanel({ provider }: {
                     isFood={provider.isFood}
                     minAge={provider.minAge}
                     initialDate={initialDate}
+                    needsGuestTerms={needsGuestTerms}
                     busy={busy}
                     error={error}
                     onBook={book}
