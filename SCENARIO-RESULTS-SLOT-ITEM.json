@@ -1,7 +1,7 @@
 {
-  "ranAt": "2026-09-12T14:02:37.437Z",
-  "target": "http://localhost:3190",
-  "passed": 3,
+  "ranAt": "2026-09-30T08:49:06.008Z",
+  "target": "http://localhost:3900",
+  "passed": 4,
   "failed": 0,
   "scenarios": [
     {
@@ -11,12 +11,12 @@
         {
           "desc": "book accepted",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a149LYbiBmeLr1tC0FwtWS8f4fzlSpU2LDGjXfbaNBsWMaSdwSanuWAJDC#f"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a10UQcYOznLkKsON9OuWlsjwBWdbxvbkZuTLReDdeNWPrK5qRL3qpN9EcO#f"
         },
         {
           "desc": "the order is for the PRIVATE item, not items[0] (shared)",
           "ok": true,
-          "detail": "item_id=490af8e7"
+          "detail": "item_id=abb20b66"
         },
         {
           "desc": "unit/price came from that item (flat, £120)",
@@ -43,7 +43,7 @@
         {
           "desc": "two seats is accepted",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a13BeKUHAwmOUUPAiXZKQ3vbk8T7HccSVgUkzEmV"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1hd3ByfY4p5yrCQJGtpbCzrjP0mYBNGWEHXkWt8"
         },
         {
           "desc": "the order is the shared item, 2 seats, £60",
@@ -81,6 +81,38 @@
           "desc": "no seat was claimed for the refused bookings",
           "ok": true,
           "detail": null
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "4",
+      "title": "A per-person item with no slot_capacity is refused before the seat claim and before Stripe; a flat item on the same provider still books",
+      "checks": [
+        {
+          "desc": "the per-person item is refused (400)",
+          "ok": true,
+          "detail": "HTTP 400 This session isn’t bookable yet — the host hasn’t set how many people it’s for. Try again later or message them."
+        },
+        {
+          "desc": "the guest is told the host has not set how many people it is for",
+          "ok": true,
+          "detail": "This session isn’t bookable yet — the host hasn’t set how many people it’s for. Try again later or message them."
+        },
+        {
+          "desc": "no seat was claimed (no session row, or zero seats)",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "desc": "no holding order was created — refused before Stripe",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "desc": "the flat item on the same capacity-less provider still books (a private hire is one booking)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1YBdoCosU8vyWUQbmRzKK2XOJOzSJtVESRlxgsU"
         }
       ],
       "status": "passed"
