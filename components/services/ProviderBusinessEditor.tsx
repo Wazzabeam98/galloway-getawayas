@@ -5,22 +5,31 @@ import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { compressImage } from '@/lib/compressImage';
 import { generateRandomNumber, getImageUrl } from '@/lib/utils';
-import { schemeLabel, asksAboutFuel } from '@/lib/serviceProviders';
+import { schemeLabel, asksAboutFuel, COVERAGE_TOWNS } from '@/lib/serviceProviders';
+import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
 import Env from '@/config/Env';
-import { Check, Plus, X, ShieldCheck, ShieldAlert, Loader2 } from 'lucide-react';
+import {
+    Check, Plus, X, ShieldCheck, ShieldAlert, Loader2,
+    Briefcase, PoundSterling, MapPin, ListChecks, Tag, Phone, Image as ImageIcon, BadgeCheck,
+} from 'lucide-react';
 
-// One place to change everything a host sees about a business: the name and
-// blurb, the rates, the area covered, the photos, the registrations. It
-// replaces the old handful of links back into the sign-up wizard.
+// One place to change everything a host sees about a business — rebuilt on the
+// host listing editor's own shape: a left-hand section nav and a card per
+// section, each with its own Save, instead of the old single stack of plain
+// form cards. It reads like /services/dashboard/listing (the guest editor) and
+// like the cottage listing editor, so a trade's editor is in the same family as
+// the rest of the platform.
 //
-// Writes go straight from the browser under the owner's own row-level policies
-// (owners manage their own provider, their own areas, their own registration
-// numbers) — the same path the sign-up wizard already uses. The one thing a
-// provider cannot do here is mark their own registration verified: changing a
-// number un-verifies it until an admin checks it again, which is exactly the
-// intent of the column grants.
+// Coverage is the region picker the sign-up uses (round two), not a free-text
+// area name and a radius — so the editor and the sign-up finally agree. A region
+// is stored as a service_areas row whose label is the region and whose radius is
+// 0, exactly the shape the wizard writes.
+//
+// Writes go straight from the browser under the owner's own row-level policies,
+// the same path the sign-up uses. The one thing a provider cannot do here is
+// mark their own registration verified: changing a number un-verifies it until
+// an admin checks it again.
 
-type Area = { id: string; label: string; radius_miles: number };
 type Registration = { scheme: string; number: string; verified: boolean };
 type Provider = {
     id: string;
@@ -36,10 +45,7 @@ type Provider = {
     registration_number: string;
 };
 
-const card = 'rounded-2xl border border-slate-200 bg-white p-4 sm:p-5';
-const heading = 'font-bold text-slate-900';
-const labelCls = 'block text-sm font-semibold text-slate-700 mb-1';
-const inputCls = 'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-600';
+type ServiceGroup = { label: string; items: Array<{ key: string; label: string; offered: boolean }> };
 
 function numOrNull(v: string): number | null {
     const t = v.trim();
@@ -48,13 +54,54 @@ function numOrNull(v: string): number | null {
     return isNaN(n) ? null : n;
 }
 
-type ServiceGroup = { label: string; items: Array<{ key: string; label: string; offered: boolean }> };
+const inputCls = 'w-full rounded-xl border border-slate-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-600';
+
+// One section shell: header, its fields, and its own Save. Mirrors the guest
+// listing editor's SectionCard so the two read the same.
+function SectionCard({ title, hint, children, onSave, saving, saved }: {
+    title: string; hint?: string; children: React.ReactNode; onSave?: () => void; saving?: boolean; saved?: boolean;
+}) {
+    return (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+            <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+            {hint && <p className="mt-1 text-sm text-slate-500">{hint}</p>}
+            <div className="mt-4 space-y-4">{children}</div>
+            {onSave && (
+                <div className="mt-5 flex items-center gap-3">
+                    <button type="button" onClick={onSave} disabled={saving}
+                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
+                        Save
+                    </button>
+                    {saved && <span className="text-sm font-semibold text-emerald-700">Saved.</span>}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+    return (
+        <label className="block">
+            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+            <div className="mt-1">{children}</div>
+            {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+        </label>
+    );
+}
+
+type SectionKey = 'business' | 'rates' | 'coverage' | 'services' | 'skills' | 'contact' | 'photos' | 'registrations';
 
 export default function ProviderBusinessEditor({
-    provider, skills: initialSkills, serviceGroups, areas: initialAreas, registrations: initialRegs,
-}: { provider: Provider; skills: string[]; serviceGroups: ServiceGroup[]; areas: Area[]; registrations: Registration[] }) {
+    provider, skills: initialSkills, serviceGroups, regions: initialRegions, registrations: initialRegs,
+}: { provider: Provider; skills: string[]; serviceGroups: ServiceGroup[]; regions: string[]; registrations: Registration[] }) {
     const supabase = createClientComponentClient();
     const router = useRouter();
+
+    const [active, setActive] = useState<SectionKey>('business');
+    const [savingKey, setSavingKey] = useState<SectionKey | null>(null);
+    const [savedKey, setSavedKey] = useState<SectionKey | null>(null);
+    const [error, setError] = useState('');
 
     const [name, setName] = useState(provider.business_name);
     const [description, setDescription] = useState(provider.description);
@@ -67,140 +114,129 @@ export default function ProviderBusinessEditor({
     });
     const [skills, setSkills] = useState<string[]>(initialSkills);
     const [newSkill, setNewSkill] = useState('');
-    const [areas, setAreas] = useState<Area[]>(initialAreas);
+    const [regions, setRegions] = useState<string[]>(initialRegions);
     const [photos, setPhotos] = useState<string[]>(provider.photos);
     const [regs, setRegs] = useState<Registration[]>(initialRegs);
-    // Contact + registration moved here from the sign-up wizard: the email we
-    // reach them on (defaulted to their account email at sign-up, editable here),
-    // an optional phone and the don't-text tick, and the free-text registration
-    // number (shown only for the trades a number means something for).
     const [contactEmail, setContactEmail] = useState(provider.contact_email);
     const [contactPhone, setContactPhone] = useState(provider.contact_phone);
     const [smsOptOut, setSmsOptOut] = useState(provider.sms_opt_out);
     const [registrationNumber, setRegistrationNumber] = useState(provider.registration_number);
+    const [uploading, setUploading] = useState(false);
+    const [savingReg, setSavingReg] = useState<string | null>(null);
+
     const asksRegistration = asksAboutFuel(provider.trade) || provider.trade === 'electrician';
+    const ALL_REGION_LABEL = GUEST_REGIONS.filter((r) => r.key === GUEST_COVERAGE_ALL_KEY)[0].label;
 
     function addSkill() {
         const t = newSkill.trim();
         if (!t) return;
-        // Case-insensitive de-dupe for the type-ahead; the server normalises
-        // properly (slug/compact) when it reconciles the set.
-        if (!skills.some((s) => s.toLowerCase() === t.toLowerCase())) {
-            setSkills([...skills, t].slice(0, 20));
-        }
+        if (!skills.some((s) => s.toLowerCase() === t.toLowerCase())) setSkills([...skills, t].slice(0, 20));
         setNewSkill('');
     }
 
-    const [savingDetails, setSavingDetails] = useState(false);
-    const [detailsSaved, setDetailsSaved] = useState(false);
-    const [error, setError] = useState('');
-    const [uploading, setUploading] = useState(false);
-    const [savingReg, setSavingReg] = useState<string | null>(null);
+    // "All of D&G" is exclusive with the individual regions — the same rule the
+    // sign-up picker holds.
+    function toggleRegion(label: string, isAll: boolean) {
+        setRegions((prev) => {
+            if (isAll) return prev.includes(label) ? [] : [label];
+            const withoutAll = prev.filter((r) => r !== ALL_REGION_LABEL);
+            return withoutAll.includes(label) ? withoutAll.filter((r) => r !== label) : [...withoutAll, label];
+        });
+    }
 
-    // TELL US A LIVE LISTING CHANGED.
-    //
-    // business_name, description and photos are in REVIEWABLE_FIELDS: they are
-    // the shop window, and they are the route by which a business approved as
-    // one thing quietly becomes another. The sign-up form has always called
-    // this after saving; this editor did not, so an approved provider could
-    // rewrite their name and description and nobody was told.
-    //
-    // /admin/providers still worked the change out from the digest, so it was
-    // discoverable — but only by somebody who went and looked, which is not
-    // the same as being told.
-    //
-    // The route is the one written for exactly this: "an existing provider
-    // editing writes it straight from the browser, so there is no server step
-    // to hang the alert off — hence a route the page calls once the row and
-    // its areas are saved." It sets changes_pending_at and emails, once, and
-    // does nothing when nothing reviewable actually changed.
-    //
-    // Deliberately not fatal. The edit is already saved by the time this runs,
-    // and failing the save because an alert did not go would lose the change
-    // the provider just made.
+    // Tell the review queue a live listing changed — business_name, description
+    // and photos are the shop window (see the note in the old editor). Not fatal.
     async function announceChange() {
         try {
             await fetch('/api/services/submitted', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: provider.id }),
             });
-        } catch {
-            /* the row is saved; the queue still finds it from the digest */
-        }
+        } catch { /* the row is saved; the digest still finds it */ }
     }
 
-    async function saveDetails() {
-        setSavingDetails(true); setDetailsSaved(false); setError('');
+    async function run(key: SectionKey, fn: () => Promise<void>) {
+        setSavingKey(key); setSavedKey(null); setError('');
         try {
-            const { error: pErr } = await supabase
-                .from('service_providers')
-                .update({
-                    business_name: name.trim(),
-                    description: description,
-                    hourly_rate: numOrNull(hourly),
-                    callout_fee: numOrNull(callout),
-                    contact_email: contactEmail.trim(),
-                    contact_phone: contactPhone.trim() || null,
-                    sms_opt_out: smsOptOut,
-                    // Only the trades a number means something for write it; the
-                    // rest never show the field so it stays null.
-                    ...(asksRegistration ? { registration_number: registrationNumber.trim() || null } : {}),
-                })
-                .eq('id', provider.id);
-            if (pErr) throw pErr;
-
-            for (const a of areas) {
-                const { error: aErr } = await supabase
-                    .from('service_areas')
-                    .update({ label: a.label.trim(), radius_miles: a.radius_miles })
-                    .eq('id', a.id);
-                if (aErr) throw aErr;
-            }
-
-            // The ticked services (service_provider_extras). Upserted one row
-            // per toggle so it never disturbs the priced extras, which live in
-            // the same table under different keys and are not edited here.
-            const allKeys = serviceGroups.flatMap((g) => g.items.map((it) => it.key));
-            if (allKeys.length) {
-                const { error: xErr } = await supabase
-                    .from('service_provider_extras')
-                    .upsert(
-                        allKeys.map((key) => ({ provider_id: provider.id, extra_key: key, offered: !!offered[key] })),
-                        { onConflict: 'provider_id,extra_key' }
-                    );
-                if (xErr) throw xErr;
-            }
-
-            // Skills go through the reconcile route, not a direct write: the
-            // regulated concept (what stops a handyman tagging "boiler repair")
-            // is derived there under the service role. The whole set is sent.
-            const skillRes = await fetch('/api/services/skills', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ providerId: provider.id, labels: skills }),
-            });
-            if (!skillRes.ok) {
-                const d = await skillRes.json().catch(() => ({}));
-                throw new Error(d.error || 'Could not save your skills.');
-            }
-
-            await announceChange();
-
-            setDetailsSaved(true);
+            await fn();
+            setSavedKey(key);
             router.refresh();
         } catch (e: any) {
             setError(e?.message || 'Could not save those changes.');
         } finally {
-            setSavingDetails(false);
+            setSavingKey(null);
         }
+    }
+
+    async function saveBusiness() {
+        const { error: e } = await supabase.from('service_providers')
+            .update({ business_name: name.trim(), description }).eq('id', provider.id);
+        if (e) throw e;
+        await announceChange();
+    }
+
+    async function saveRates() {
+        const { error: e } = await supabase.from('service_providers')
+            .update({ hourly_rate: numOrNull(hourly), callout_fee: numOrNull(callout) }).eq('id', provider.id);
+        if (e) throw e;
+    }
+
+    async function saveCoverage() {
+        // Replace the whole set, region rows in the sign-up's shape: the region
+        // label in `label`, radius 0, centre 0 (nothing reads a region's radius).
+        const { error: delErr } = await supabase.from('service_areas').delete().eq('provider_id', provider.id);
+        if (delErr) throw delErr;
+        if (regions.length) {
+            const rows = regions.map((label) => {
+                const town = COVERAGE_TOWNS.filter((t) => t.label === label)[0];
+                return {
+                    provider_id: provider.id,
+                    label,
+                    centre_lat: town ? town.lat : 0,
+                    centre_lng: town ? town.lng : 0,
+                    radius_miles: 0,
+                };
+            });
+            const { error: insErr } = await supabase.from('service_areas').insert(rows);
+            if (insErr) throw insErr;
+        }
+    }
+
+    async function saveServices() {
+        const allKeys = serviceGroups.flatMap((g) => g.items.map((it) => it.key));
+        if (allKeys.length) {
+            const { error: e } = await supabase.from('service_provider_extras').upsert(
+                allKeys.map((key) => ({ provider_id: provider.id, extra_key: key, offered: !!offered[key] })),
+                { onConflict: 'provider_id,extra_key' },
+            );
+            if (e) throw e;
+        }
+    }
+
+    async function saveSkills() {
+        const res = await fetch('/api/services/skills', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ providerId: provider.id, labels: skills }),
+        });
+        if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            throw new Error(d.error || 'Could not save your skills.');
+        }
+    }
+
+    async function saveContact() {
+        const { error: e } = await supabase.from('service_providers').update({
+            contact_email: contactEmail.trim(),
+            contact_phone: contactPhone.trim() || null,
+            sms_opt_out: smsOptOut,
+            ...(asksRegistration ? { registration_number: registrationNumber.trim() || null } : {}),
+        }).eq('id', provider.id);
+        if (e) throw e;
     }
 
     async function persistPhotos(next: string[]) {
         const { error: e } = await supabase.from('service_providers').update({ photos: next }).eq('id', provider.id);
         if (e) { setError(e.message); return false; }
-        // Photos are reviewable too — swapping the pictures changes what
-        // somebody is chosen on as surely as changing the words.
         await announceChange();
         setPhotos(next);
         router.refresh();
@@ -229,18 +265,11 @@ export default function ProviderBusinessEditor({
         }
     }
 
-    async function removePhoto(path: string) {
-        await persistPhotos(photos.filter((p) => p !== path));
-    }
-
     async function saveRegNumber(scheme: string, number: string) {
         setSavingReg(scheme); setError('');
         try {
-            const { error: e } = await supabase
-                .from('service_provider_registrations')
-                .update({ number: number.trim() })
-                .eq('provider_id', provider.id)
-                .eq('scheme', scheme);
+            const { error: e } = await supabase.from('service_provider_registrations')
+                .update({ number: number.trim() }).eq('provider_id', provider.id).eq('scheme', scheme);
             if (e) throw e;
             router.refresh();
         } catch (e: any) {
@@ -250,228 +279,206 @@ export default function ProviderBusinessEditor({
         }
     }
 
+    const ALL_SECTIONS: Array<{ key: SectionKey; label: string; icon: any; show: boolean }> = [
+        { key: 'business', label: 'Business', icon: Briefcase, show: true },
+        { key: 'rates', label: 'Rates & call-out', icon: PoundSterling, show: true },
+        { key: 'coverage', label: 'Coverage', icon: MapPin, show: true },
+        { key: 'services', label: 'Services you offer', icon: ListChecks, show: serviceGroups.length > 0 },
+        { key: 'skills', label: 'Other skills', icon: Tag, show: true },
+        { key: 'contact', label: asksRegistration ? 'Contact & registration' : 'Contact', icon: Phone, show: true },
+        { key: 'photos', label: 'Photos', icon: ImageIcon, show: true },
+        { key: 'registrations', label: 'Registrations', icon: BadgeCheck, show: regs.length > 0 },
+    ];
+    const SECTIONS = ALL_SECTIONS.filter((s) => s.show);
+
+    const saving = (k: SectionKey) => savingKey === k;
+    const saved = (k: SectionKey) => savedKey === k;
+
     return (
-        <div className="mt-6 flex flex-col gap-4">
+        <div className="mt-6">
             {error && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
+                <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
             )}
 
-            {/* Business */}
-            <section className={card}>
-                <h2 className={heading}>Business</h2>
-                <div className="mt-3">
-                    <label className={labelCls} htmlFor="biz-name">Business name</label>
-                    <input id="biz-name" className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
-                </div>
-                <div className="mt-3">
-                    <label className={labelCls} htmlFor="biz-desc">What you do</label>
-                    <textarea id="biz-desc" className={`${inputCls} min-h-[96px]`} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A line or two hosts will read when deciding who to ask." />
-                </div>
-            </section>
+            <div className="grid grid-cols-1 gap-8 md:grid-cols-[220px_1fr]">
+                {/* Section nav */}
+                <nav className="space-y-1">
+                    {SECTIONS.map(({ key, label, icon: Icon }) => (
+                        <button key={key} type="button" onClick={() => setActive(key)}
+                            className={`flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-medium transition ${active === key ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                            <Icon className="mr-3 h-4 w-4" /> {label}
+                        </button>
+                    ))}
+                </nav>
 
-            {/* Rates & call-out */}
-            <section className={card}>
-                <h2 className={heading}>Rates &amp; call-out</h2>
-                <p className="text-[13px] text-slate-500 mt-0.5">What you charge. Leave blank to quote per job.</p>
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                    <div>
-                        <label className={labelCls} htmlFor="rate">Hourly rate (£)</label>
-                        <input id="rate" inputMode="decimal" className={inputCls} value={hourly} onChange={(e) => setHourly(e.target.value)} placeholder="e.g. 55" />
-                    </div>
-                    <div>
-                        <label className={labelCls} htmlFor="callout">Call-out fee (£)</label>
-                        <input id="callout" inputMode="decimal" className={inputCls} value={callout} onChange={(e) => setCallout(e.target.value)} placeholder="e.g. 40" />
-                    </div>
-                </div>
-            </section>
+                {/* Content */}
+                <div className="space-y-6">
+                    {active === 'business' && (
+                        <SectionCard title="Business" hint="The name and the line hosts read when deciding who to ask." onSave={() => run('business', saveBusiness)} saving={saving('business')} saved={saved('business')}>
+                            <Field label="Business name">
+                                <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
+                            </Field>
+                            <Field label="What you do">
+                                <textarea className={`${inputCls} min-h-[110px]`} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A line or two hosts will read when deciding who to ask." />
+                            </Field>
+                        </SectionCard>
+                    )}
 
-            {/* Coverage */}
-            <section className={card}>
-                <h2 className={heading}>Coverage area</h2>
-                <p className="text-[13px] text-slate-500 mt-0.5">How far you&rsquo;ll travel, and what it&rsquo;s called.</p>
-                {areas.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-500">No area set yet.</p>
-                ) : areas.map((a, i) => (
-                    <div key={a.id} className="mt-3 grid grid-cols-[1fr_auto] gap-3 items-end">
-                        <div>
-                            <label className={labelCls}>Area name</label>
-                            <input className={inputCls} value={a.label} onChange={(e) => setAreas(areas.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} placeholder="e.g. Kirkcudbright" />
-                        </div>
-                        <div>
-                            <label className={labelCls}>Radius (mi)</label>
-                            {/* Clamped to what the column accepts (1–200) so the
-                                form never lets him type a number the database
-                                will only reject on save. */}
-                            <input
-                                inputMode="numeric" min={1} max={200}
-                                className={`${inputCls} w-24`}
-                                value={String(a.radius_miles)}
-                                onChange={(e) => {
-                                    const n = Math.max(1, Math.min(200, Number(e.target.value) || 1));
-                                    setAreas(areas.map((x, j) => j === i ? { ...x, radius_miles: n } : x));
-                                }}
-                            />
-                        </div>
-                    </div>
-                ))}
-            </section>
+                    {active === 'rates' && (
+                        <SectionCard title="Rates & call-out" hint="What you charge. Leave blank to quote per job." onSave={() => run('rates', saveRates)} saving={saving('rates')} saved={saved('rates')}>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Hourly rate (£)">
+                                    <input inputMode="decimal" className={inputCls} value={hourly} onChange={(e) => setHourly(e.target.value)} placeholder="e.g. 55" />
+                                </Field>
+                                <Field label="Call-out fee (£)">
+                                    <input inputMode="decimal" className={inputCls} value={callout} onChange={(e) => setCallout(e.target.value)} placeholder="e.g. 40" />
+                                </Field>
+                            </div>
+                        </SectionCard>
+                    )}
 
-            {/* Services you offer — the ticked list from sign-up */}
-            {serviceGroups.length > 0 && (
-                <section className={card}>
-                    <h2 className={heading}>Services you offer</h2>
-                    <p className="text-[13px] text-slate-500 mt-0.5">Tick the work you take on — this is what a host filters by.</p>
-                    {serviceGroups.map((g) => (
-                        <div key={g.label} className="mt-3">
-                            <div className="text-[12px] font-bold uppercase tracking-wide text-slate-400 mb-1">{g.label}</div>
-                            <div className="grid sm:grid-cols-2 gap-x-4">
-                                {g.items.map((it) => (
-                                    <label key={it.key} className="flex items-center gap-2.5 text-sm text-slate-700 cursor-pointer py-1.5">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!offered[it.key]}
-                                            onChange={(e) => setOffered({ ...offered, [it.key]: e.target.checked })}
-                                            className="w-4 h-4 rounded border-slate-300 text-emerald-700 focus:ring-2 focus:ring-emerald-600/30"
-                                        />
-                                        {it.label}
-                                    </label>
+                    {active === 'coverage' && (
+                        <SectionCard title="Coverage" hint="The parts of Dumfries & Galloway you cover. Tick the regions — hosts there can find you." onSave={() => run('coverage', saveCoverage)} saving={saving('coverage')} saved={saved('coverage')}>
+                            <div className="space-y-2">
+                                {GUEST_REGIONS.map((rg) => {
+                                    const isAll = rg.key === GUEST_COVERAGE_ALL_KEY;
+                                    const on = regions.includes(rg.label);
+                                    return (
+                                        <button key={rg.key} type="button" onClick={() => toggleRegion(rg.label, isAll)} aria-pressed={on}
+                                            className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition ${on ? 'border-emerald-600 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                                            <span className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300'}`}>
+                                                {on && <Check className="h-3 w-3" strokeWidth={3} />}
+                                            </span>
+                                            <span className="min-w-0">
+                                                <span className="block text-sm font-semibold text-slate-900">{rg.label}</span>
+                                                <span className="block text-[13px] text-slate-500">{rg.hint}</span>
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </SectionCard>
+                    )}
+
+                    {active === 'services' && serviceGroups.length > 0 && (
+                        <SectionCard title="Services you offer" hint="Tick the work you take on — this is what a host filters by." onSave={() => run('services', saveServices)} saving={saving('services')} saved={saved('services')}>
+                            {serviceGroups.map((g) => (
+                                <div key={g.label}>
+                                    <div className="mb-1 text-[12px] font-bold uppercase tracking-wide text-slate-400">{g.label}</div>
+                                    <div className="grid gap-x-4 sm:grid-cols-2">
+                                        {g.items.map((it) => (
+                                            <label key={it.key} className="flex cursor-pointer items-center gap-2.5 py-1.5 text-sm text-slate-700">
+                                                <input type="checkbox" checked={!!offered[it.key]} onChange={(e) => setOffered({ ...offered, [it.key]: e.target.checked })}
+                                                    className="h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-2 focus:ring-emerald-600/30" />
+                                                {it.label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </SectionCard>
+                    )}
+
+                    {active === 'skills' && (
+                        <SectionCard title="Other skills" hint="Anything the services list doesn't name — a specialism worth spelling out. Hosts search on these too." onSave={() => run('skills', saveSkills)} saving={saving('skills')} saved={saved('skills')}>
+                            <div className="flex flex-wrap gap-1.5">
+                                {skills.length === 0 && <span className="text-sm text-slate-400">None added yet.</span>}
+                                {skills.map((sk) => (
+                                    <span key={sk} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 py-1 pl-3 pr-1.5 text-[13px] font-semibold text-emerald-800">
+                                        {sk}
+                                        <button onClick={() => setSkills(skills.filter((x) => x !== sk))} aria-label={`Remove ${sk}`} className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-200/70 text-emerald-800 hover:bg-emerald-300">
+                                            <X className="h-3 w-3" strokeWidth={2.5} />
+                                        </button>
+                                    </span>
                                 ))}
                             </div>
-                        </div>
-                    ))}
-                </section>
-            )}
+                            {skills.length < 20 && (
+                                <div className="flex items-center gap-2">
+                                    <input className={inputCls} value={newSkill} onChange={(e) => setNewSkill(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSkill(); } }}
+                                        placeholder="e.g. Boiler servicing, bathroom fitting, leak repair" />
+                                    <button onClick={addSkill} className="inline-flex flex-none items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-[13px] font-bold text-slate-800 hover:bg-slate-50">
+                                        <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> Add
+                                    </button>
+                                </div>
+                            )}
+                            <p className="text-[12px] text-slate-400">Regulated work (gas, oil, electrical) only shows to hosts once your matching registration is verified.</p>
+                        </SectionCard>
+                    )}
 
-            {/* Other skills — free text, for anything the ticklist doesn't name */}
-            <section className={card}>
-                <h2 className={heading}>Other skills</h2>
-                <p className="text-[13px] text-slate-500 mt-0.5">Anything the list above doesn&rsquo;t name — a specialism worth spelling out. Hosts search on these too.</p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                    {skills.length === 0 && <span className="text-sm text-slate-400">None added yet.</span>}
-                    {skills.map((sk) => (
-                        <span key={sk} className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full pl-3 pr-1.5 py-1">
-                            {sk}
-                            <button onClick={() => setSkills(skills.filter((x) => x !== sk))} aria-label={`Remove ${sk}`} className="w-4 h-4 rounded-full bg-emerald-200/70 text-emerald-800 flex items-center justify-center hover:bg-emerald-300">
-                                <X className="w-3 h-3" strokeWidth={2.5} />
-                            </button>
-                        </span>
-                    ))}
-                </div>
-                {skills.length < 20 && (
-                    <div className="mt-3 flex items-center gap-2">
-                        <input
-                            className={inputCls}
-                            value={newSkill}
-                            onChange={(e) => setNewSkill(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSkill(); } }}
-                            placeholder="e.g. Boiler servicing, bathroom fitting, leak repair"
-                        />
-                        <button onClick={addSkill} className="flex-none inline-flex items-center gap-1 text-[13px] font-bold text-slate-800 bg-white border border-slate-300 rounded-lg px-3 py-2 hover:bg-slate-50">
-                            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Add
-                        </button>
-                    </div>
-                )}
-                <p className="mt-2 text-[12px] text-slate-400">Regulated work (gas, oil, electrical) only shows to hosts once your matching registration is verified.</p>
-            </section>
+                    {active === 'contact' && (
+                        <SectionCard title={asksRegistration ? 'Contact & registration' : 'Contact'} hint="How we reach you about jobs. Your email and phone never go on your public listing." onSave={() => run('contact', saveContact)} saving={saving('contact')} saved={saved('contact')}>
+                            <Field label="Email we reach you on">
+                                <input type="email" className={inputCls} value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+                            </Field>
+                            <Field label="Phone (optional)">
+                                <input className={inputCls} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+                            </Field>
+                            <label className="flex cursor-pointer items-start gap-2.5">
+                                <input type="checkbox" className="mt-1" checked={smsOptOut} onChange={(e) => setSmsOptOut(e.target.checked)} />
+                                <span className="text-sm text-slate-700">
+                                    Don&rsquo;t text me — email only
+                                    <span className="block text-xs text-slate-500">You will still get every enquiry, just not as quickly.</span>
+                                </span>
+                            </label>
+                            {asksRegistration && (
+                                <Field label="Registration number (optional)" hint="If you add it, hosts see it on your profile.">
+                                    <input className={inputCls} value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} />
+                                </Field>
+                            )}
+                        </SectionCard>
+                    )}
 
-            {/* Contact + registration number — moved here from the sign-up wizard.
-                The email is the one we reach them on about jobs; the phone is
-                optional; neither goes on the public listing. The registration
-                number (for the trades it applies to) DOES show on the profile. */}
-            <section className={card}>
-                <h2 className={heading}>Contact{asksRegistration ? ' & registration' : ''}</h2>
-                <p className="text-[13px] text-slate-500 mt-0.5">How we reach you about jobs. Your email and phone never go on your public listing.</p>
+                    {active === 'photos' && (
+                        <SectionCard title="Photos" hint="Your work, or your van and team. Hosts see these first.">
+                            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[13px] font-bold text-emerald-800 hover:bg-emerald-100">
+                                {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />}
+                                Add photos
+                                <input type="file" accept="image/*" multiple className="hidden" disabled={uploading} onChange={(e) => addPhotos(e.target.files)} />
+                            </label>
+                            {photos.length === 0 ? (
+                                <p className="text-sm text-slate-500">No photos yet.</p>
+                            ) : (
+                                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                                    {photos.map((p) => (
+                                        <div key={p} className="group relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img src={getImageUrl(p)} alt="" className="h-full w-full object-cover" />
+                                            <button onClick={() => persistPhotos(photos.filter((x) => x !== p))} aria-label="Remove photo" className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition group-hover:opacity-100">
+                                                <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <p className="text-[12px] text-slate-400">Photos save as soon as you add or remove them.</p>
+                        </SectionCard>
+                    )}
 
-                <div className="mt-3 space-y-3">
-                    <div>
-                        <label htmlFor="pbe-email" className={labelCls}>Email we reach you on</label>
-                        <input id="pbe-email" type="email" className={inputCls} value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
-                    </div>
-                    <div>
-                        <label htmlFor="pbe-phone" className={labelCls}>Phone <span className="font-normal text-slate-400">(optional)</span></label>
-                        <input id="pbe-phone" className={inputCls} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
-                    </div>
-                    <label className="flex items-start gap-2.5 cursor-pointer">
-                        <input type="checkbox" className="mt-1" checked={smsOptOut} onChange={(e) => setSmsOptOut(e.target.checked)} />
-                        <span className="text-sm text-slate-700">
-                            Don&rsquo;t text me — email only
-                            <span className="block text-xs text-slate-500">You will still get every enquiry, just not as quickly.</span>
-                        </span>
-                    </label>
-
-                    {asksRegistration && (
-                        <div className="pt-1">
-                            <label htmlFor="pbe-reg" className={labelCls}>Registration number <span className="font-normal text-slate-400">(optional)</span></label>
-                            <input id="pbe-reg" className={inputCls} value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} />
-                            <p className="mt-1.5 text-[12px] text-slate-400">If you add it, hosts see it on your profile.</p>
-                        </div>
+                    {active === 'registrations' && regs.length > 0 && (
+                        <SectionCard title="Registrations" hint="Your trade registrations. Changing a number sends it back to us to re-check before the badge shows again.">
+                            {regs.map((r) => (
+                                <div key={r.scheme} className="border-t border-slate-100 pt-3 first:border-t-0 first:pt-0">
+                                    <div className="mb-1 flex items-center gap-2">
+                                        <span className="text-sm font-semibold text-slate-800">{schemeLabel(r.scheme)}</span>
+                                        {r.verified ? (
+                                            <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700"><ShieldCheck className="h-3.5 w-3.5" /> Verified</span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-amber-700"><ShieldAlert className="h-3.5 w-3.5" /> Awaiting check</span>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                                        <input className={inputCls} value={r.number} onChange={(e) => setRegs(regs.map((x) => x.scheme === r.scheme ? { ...x, number: e.target.value } : x))} />
+                                        <button onClick={() => saveRegNumber(r.scheme, r.number)} disabled={savingReg === r.scheme} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-[13px] font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-60">
+                                            {savingReg === r.scheme ? 'Saving…' : 'Update'}
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </SectionCard>
                     )}
                 </div>
-            </section>
-
-            {/* One save for the fields above, skills included */}
-            <div className="flex items-center gap-3">
-                <button onClick={saveDetails} disabled={savingDetails} className="inline-flex items-center gap-2 font-bold text-sm text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-xl px-5 py-2.5">
-                    {savingDetails ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" strokeWidth={2.5} />}
-                    Save details
-                </button>
-                {detailsSaved && <span className="text-sm font-semibold text-emerald-700">Saved.</span>}
             </div>
-
-            {/* Photos */}
-            <section className={card}>
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className={heading}>Photos</h2>
-                        <p className="text-[13px] text-slate-500 mt-0.5">Your work, or your van and team. Hosts see these first.</p>
-                    </div>
-                    <label className="inline-flex items-center gap-1.5 text-[13px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-emerald-100">
-                        {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />}
-                        Add
-                        <input type="file" accept="image/*" multiple className="hidden" disabled={uploading} onChange={(e) => addPhotos(e.target.files)} />
-                    </label>
-                </div>
-                {photos.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-500">No photos yet.</p>
-                ) : (
-                    <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 gap-2">
-                        {photos.map((p) => (
-                            <div key={p} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
-                                <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
-                                <button onClick={() => removePhoto(p)} aria-label="Remove photo" className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/55 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                                    <X className="w-3.5 h-3.5" strokeWidth={2.5} />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-
-            {/* Registrations */}
-            <section className={card}>
-                <h2 className={heading}>Registrations</h2>
-                <p className="text-[13px] text-slate-500 mt-0.5">Your trade registrations. Changing a number sends it back to us to re-check before the badge shows again.</p>
-                {regs.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-500">None on file.</p>
-                ) : regs.map((r) => (
-                    <div key={r.scheme} className="mt-3 border-t border-slate-100 pt-3 first:border-t-0 first:pt-0">
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-semibold text-slate-800">{schemeLabel(r.scheme)}</span>
-                            {r.verified ? (
-                                <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700"><ShieldCheck className="w-3.5 h-3.5" /> Verified</span>
-                            ) : (
-                                <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-amber-700"><ShieldAlert className="w-3.5 h-3.5" /> Awaiting check</span>
-                            )}
-                        </div>
-                        <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
-                            <input className={inputCls} value={r.number} onChange={(e) => setRegs(regs.map((x) => x.scheme === r.scheme ? { ...x, number: e.target.value } : x))} />
-                            <button onClick={() => saveRegNumber(r.scheme, r.number)} disabled={savingReg === r.scheme} className="text-[13px] font-bold text-slate-800 bg-white border border-slate-300 rounded-lg px-3 py-2 hover:bg-slate-50 disabled:opacity-60">
-                                {savingReg === r.scheme ? 'Saving…' : 'Update'}
-                            </button>
-                        </div>
-                    </div>
-                ))}
-            </section>
         </div>
     );
 }
