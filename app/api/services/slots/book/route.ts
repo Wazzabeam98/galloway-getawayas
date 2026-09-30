@@ -15,6 +15,7 @@ import {
     resolvedDuration, overlapsBooked, minutesOfDay,
 } from '@/lib/serviceSlots';
 import { itemFulfilment } from '@/lib/serviceProviders';
+import { agreementProblem, anonGuestTermsRecord } from '@/lib/agreements';
 import { childrenAllowed } from '@/lib/guestAges';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
@@ -77,6 +78,11 @@ export async function POST(request: Request) {
         const typedName: string = (body && body.guestName ? String(body.guestName) : '').slice(0, 120).trim();
         const typedEmail: string = (body && body.guestEmail ? String(body.guestEmail) : '').slice(0, 200).trim().toLowerCase();
         const typedPhone: string = (body && body.guestPhone ? String(body.guestPhone) : '').slice(0, 40).trim();
+        // The Guest Terms version an anonymous booker ticked at checkout — see the
+        // wall below. Ignored when signed in (recorded through /api/agreements
+        // before this POST). A string or null; never trusted beyond the wall.
+        const submittedGuestTerms: string | null =
+            body && typeof body.guestTermsVersion === 'string' ? body.guestTermsVersion : null;
 
         if (!providerId || !sessionDate || !sessionTime) {
             return NextResponse.json({ ok: false, error: 'Missing details' }, { status: 400 });
@@ -112,6 +118,19 @@ export async function POST(request: Request) {
                 return NextResponse.json(
                     { ok: false, error: 'That’s a lot of attempts in a short time. Try again shortly.' },
                     { status: 429 }
+                );
+            }
+            // THE GUEST TERMS WALL for an anonymous booker. A signed-in guest
+            // records them through /api/agreements before this POST and is held by
+            // its own wall; an anonymous one has no account yet, so the acceptance
+            // rides on the order and is proved HERE — the same rule the browser's
+            // disabled button and /api/agreements apply (lib/agreements). A missing
+            // tick, or a page older than the current wording, is refused.
+            const termsProblem = agreementProblem('guest', null, submittedGuestTerms);
+            if (termsProblem) {
+                return NextResponse.json(
+                    { ok: false, needsAgreement: true, document: 'guest', error: termsProblem },
+                    { status: 400 }
                 );
             }
         }
@@ -577,6 +596,11 @@ export async function POST(request: Request) {
                 // (lib/linkedTravelNotice ltaNoticeRecord, the rule the page uses).
                 ...ltaNoticeRecord(!standalone, !!packageNotice, nowIso),
                 ...(packageNotice || {}),
+                // An anonymous booker's Guest Terms acceptance — the version they
+                // ticked and the checkout time — carried on the order until the
+                // webhook mints their account and records it against them. Nothing
+                // for a signed-in booker (recorded through /api/agreements already).
+                ...anonGuestTermsRecord(anonymous ? submittedGuestTerms : null, nowIso),
                 // The buyer's contact, for the provider — written here for a
                 // standalone order (the webhook writes it for the against-a-stay one).
                 guest_name: standalone ? guestName : undefined,

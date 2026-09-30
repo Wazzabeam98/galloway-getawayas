@@ -3,6 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { stripeRequest } from '@/lib/stripe';
 import { resolveGuestForPaidOrder, supabaseGuestStore } from '@/lib/guestAccount';
 import { createRequestOrderFromSession } from '@/lib/requestOrder';
+import { recordOrderGuestTerms } from '@/lib/agreementRecords';
 import { authoriseChangeRequest } from '@/lib/changeRequest';
 import { notifyTopUpConfirmed } from '@/lib/slotNotify';
 
@@ -175,7 +176,7 @@ export async function GET(request: Request) {
     const graceIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: staleHolds } = await admin
         .from('service_orders')
-        .select('id, parent_order_id, provider_id, provider_business_name, item_name, service_date, service_time, price, slot_session_id, quantity, created_at, guest_id, guest_email, guest_name, guest_phone')
+        .select('id, parent_order_id, provider_id, provider_business_name, item_name, service_date, service_time, price, slot_session_id, quantity, created_at, guest_id, guest_email, guest_name, guest_phone, guest_terms_version, guest_terms_accepted_at')
         .eq('status', 'holding')
         .lt('expires_at', graceIso);
 
@@ -221,6 +222,15 @@ export async function GET(request: Request) {
                     .select('id');
                 if (confirmed && confirmed.length) {
                     reconciled++;
+                    // An anonymous booker whose account we minted here: record the
+                    // Guest Terms they ticked at checkout against it — the version
+                    // and the checkout time carried on the order, not now. Only when
+                    // we minted (confirmPatch.guest_id set), best-effort — the fact
+                    // stays on the order and next sign-in catches a missing record.
+                    if (confirmPatch.guest_id) {
+                        const { error: gtErr } = await recordOrderGuestTerms(admin, confirmPatch.guest_id, hold);
+                        if (gtErr) failures.push('hold ' + hold.id + ' confirmed but its guest terms acceptance could not be recorded (it stays on the order): ' + (gtErr && gtErr.message));
+                    }
                     // The webhook confirms and notifies; when it never landed and
                     // we confirm here instead, an ADDED place (a per-person top-up)
                     // would otherwise be raised silently. Tell both sides, once —

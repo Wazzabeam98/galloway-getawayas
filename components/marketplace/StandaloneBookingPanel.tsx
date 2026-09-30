@@ -5,6 +5,7 @@ import { priceParts, cancellationBadge } from '@/components/marketplace/present'
 import BookingDialog, { type BookArgs } from '@/components/marketplace/BookingDialog';
 import DatePreview from '@/components/marketplace/DatePreview';
 import { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
+import { AGREEMENTS } from '@/lib/agreements';
 
 interface PanelItem { id: string; name: string; price: number; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
@@ -16,7 +17,7 @@ interface PanelDeclared { id: string; date: string; time: string; duration: numb
 // picking a slot goes straight to Stripe Checkout, which collects the email and
 // card. No contact form here — a brand-new guest's account is minted from the
 // Stripe payer email after payment (passwordless), so the inbox is the only way in.
-export default function StandaloneBookingPanel({ provider }: {
+export default function StandaloneBookingPanel({ provider, signedIn }: {
     provider: {
         id: string; who: string; shape: string; fulfilment?: string | null; isFood?: boolean;
         slotCapacity: number; minPeople: number; slotLength?: number; items: PanelItem[]; sessions: PanelSession[];
@@ -24,7 +25,8 @@ export default function StandaloneBookingPanel({ provider }: {
         cancellationHours?: number | null; noRefund?: boolean | null;
         minAge?: number | null;
     };
-    // Accepted for compatibility with the host page; booking no longer needs them.
+    // signedIn tells us whether this is an anonymous checkout; signInNext is kept
+    // for compatibility with the host page.
     signedIn?: boolean;
     signInNext?: string;
 }) {
@@ -32,19 +34,25 @@ export default function StandaloneBookingPanel({ provider }: {
     const [initialDate, setInitialDate] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    // A signed-in guest who still owes the Guest Terms accepts them here, in the
-    // dialog above the Book button, before the order. A brand-new guest booking
-    // anonymously has no account yet — their account is minted from the Stripe
-    // payer email after payment — so there is nothing to record against and the
-    // tick stays off for them (status is null when signed out).
-    const [needsGuestTerms, setNeedsGuestTerms] = useState(false);
+    // THE GUEST TERMS TICK, shown above the Book button whenever this guest owes
+    // them. Two cases:
+    //   * signed in and owes → accept here and record before the order, against
+    //     their account (recordAgreement).
+    //   * anonymous (no account yet — it is minted from the Stripe payer email
+    //     after payment) → still tick here, but there is nothing to record
+    //     against, so the accepted version rides on the order and is written
+    //     against the account the moment it is minted (the webhook). An anonymous
+    //     booker always owes them, so the tick is always shown for them.
+    const anonymous = !signedIn;
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(anonymous);
     useEffect(() => {
+        if (anonymous) { setNeedsGuestTerms(true); return; }
         let cancelled = false;
         fetchAgreementStatus().then((st) => {
             if (!cancelled) setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
         });
         return () => { cancelled = true; };
-    }, []);
+    }, [anonymous]);
 
     const declaredSessions = provider.declaredSessions || [];
     // The cheapest option, per-person where that's the unit — "From £15 / guest".
@@ -56,12 +64,18 @@ export default function StandaloneBookingPanel({ provider }: {
 
     async function book(args: BookArgs) {
         setBusy(true); setError(null);
-        // Record the Guest Terms before the order, when they are owed and there is
-        // an account to record against.
+        // The Guest Terms, when owed. A signed-in guest records them now, against
+        // their account; an anonymous one carries the ticked version on the order
+        // (guestTermsVersion below), recorded against the account when it is minted.
+        let guestTermsVersion: string | undefined;
         if (needsGuestTerms) {
-            const failed = await recordAgreement('guest', 'experience_checkout');
-            if (failed) { setError(failed); setBusy(false); return; }
-            setNeedsGuestTerms(false);
+            if (anonymous) {
+                guestTermsVersion = AGREEMENTS.guest.version;
+            } else {
+                const failed = await recordAgreement('guest', 'experience_checkout');
+                if (failed) { setError(failed); setBusy(false); return; }
+                setNeedsGuestTerms(false);
+            }
         }
         try {
             const res = await fetch('/api/services/slots/book', {
@@ -71,6 +85,7 @@ export default function StandaloneBookingPanel({ provider }: {
                     quantity: args.quantity, attendees: args.attendees,
                     adults: args.adults, children: args.children,
                     serviceAddress: args.serviceAddress, allergy: args.allergy,
+                    guestTermsVersion,
                 }),
             });
             const j = await res.json();

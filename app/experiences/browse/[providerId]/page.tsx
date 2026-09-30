@@ -90,6 +90,7 @@ export default async function PublicListingPage({ params }: { params: { provider
         // until the provider confirms.
         <BookingPanel
             standalone
+            signedIn={!!user}
             provider={{
                 id: p.id,
                 business_name: p.business_name,

@@ -10,6 +10,7 @@ import { createRequestOrderFromSession } from '@/lib/requestOrder';
 import { settlePaidBookingSession } from '@/lib/settlePaidBooking';
 import { authoriseChangeRequest } from '@/lib/changeRequest';
 import { resolveGuestForPaidOrder, supabaseGuestStore, guestMagicLink } from '@/lib/guestAccount';
+import { recordOrderGuestTerms } from '@/lib/agreementRecords';
 import { notifyTopUpConfirmed } from '@/lib/slotNotify';
 import { issueRefunds } from '@/lib/refundSpread';
 import { round2 } from '@/lib/resolutions';
@@ -544,7 +545,7 @@ export async function POST(request: Request) {
                     // guest_id, so this is skipped for them and on any redelivery.
                     const { data: hold } = await admin
                         .from('service_orders')
-                        .select('guest_id, guest_email, guest_name, guest_phone')
+                        .select('guest_id, guest_email, guest_name, guest_phone, guest_terms_version, guest_terms_accepted_at')
                         .eq('id', orderId)
                         .maybeSingle();
 
@@ -600,6 +601,20 @@ export async function POST(request: Request) {
                         .select('id, parent_order_id, provider_id, provider_business_name, guest_email, service_date, service_time, item_name, quantity, price, note, allergy');
                     if (slotConfErr) {
                         console.error('[webhook] slot-order confirm', orderId, slotConfErr.message);
+                    }
+
+                    // AN ANONYMOUS BOOKER'S GUEST TERMS. They ticked them at
+                    // checkout with no account to record against; now that the
+                    // account is minted, write the acceptance against it — with the
+                    // version and the checkout time carried on the order, not this
+                    // mint time. Only on the first confirm (a row was returned) and
+                    // only when we minted here. Best-effort: the fact stays on the
+                    // order, and a missing record is caught at next sign-in.
+                    if (mintedGuestId && slotRows && slotRows.length) {
+                        const { error: gtErr } = await recordOrderGuestTerms(admin, mintedGuestId, hold);
+                        if (gtErr) {
+                            await logError('[webhook] guest terms acceptance for a minted booker could not be recorded — it stays on the order', gtErr, { path: 'stripe/webhook' });
+                        }
                     }
 
                     // Both notifications for a slot booking. It books instantly

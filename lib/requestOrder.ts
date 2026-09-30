@@ -1,6 +1,8 @@
 import { stripeRequest } from '@/lib/stripe';
 import { expiryFrom } from '@/lib/serviceOrders';
 import { resolveGuestForPaidOrder, supabaseGuestStore } from '@/lib/guestAccount';
+import { anonGuestTermsFromMetadata } from '@/lib/agreements';
+import { recordOrderGuestTerms } from '@/lib/agreementRecords';
 import { displayName, formatTime } from '@/lib/utils';
 import {
     sendEmail, emailLayout, escapeHtml, button, noteCallout, allergyCallout, SITE_URL,
@@ -161,6 +163,11 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             // The package notice, if the order route decided at checkout that it
             // applied (lib/packageNotice) — carried in the server-written metadata.
             ...packageNoticeFromMetadata(md),
+            // An anonymous booker's Guest Terms acceptance (version + the checkout
+            // time they ticked), carried in the metadata. Kept on the order so the
+            // fact survives even if the account is never minted; also recorded
+            // against the minted account below. Nothing for a signed-in booker.
+            ...anonGuestTermsFromMetadata(md),
             // The chosen time (comes_to_you / made_to_order now carry one) and, for
             // a travelling shape, the address the provider goes to. Frozen here so
             // they never drift if the provider edits their offering later.
@@ -252,6 +259,18 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
         }
         await logError('[requestOrder] a service order could not be recorded', orderErr, { path: 'requestOrder' });
         return { created: false, reason: 'error' };
+    }
+
+    // The order is on record with a real guest_id. If this was an anonymous
+    // booker who ticked the Guest Terms at checkout, write that acceptance against
+    // the account just minted — with the version and the checkout time they
+    // ticked, not now (guestAccount minted the account moments ago). Best-effort:
+    // the acceptance also sits on the order row, so a failure here loses nothing.
+    if (guestId) {
+        const { error: gtErr } = await recordOrderGuestTerms(admin, guestId, anonGuestTermsFromMetadata(md));
+        if (gtErr) {
+            await logError('[requestOrder] guest terms acceptance for a minted booker could not be recorded — it stays on the order', gtErr, { path: 'requestOrder' });
+        }
     }
 
     // A rendered list of the cart's lines, for the emails below.
