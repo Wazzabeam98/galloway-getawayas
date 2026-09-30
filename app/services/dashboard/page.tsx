@@ -10,9 +10,12 @@ import ProviderUpcoming from '@/components/services/ProviderUpcoming';
 import { loadProviderReservations } from '@/lib/providerReservations';
 
 export const metadata = {
-    // A trade's home for every enquiry — the four folders below. A guest provider
-    // lands on the same page worded as their reservations.
-    title: 'Enquiries',
+    // One static tab title for both audiences. The visible heading carries the
+    // audience's own noun ("Enquiries" for a trade, "Your bookings" for a guest
+    // experience provider); the tab title stays neutral so a guest provider's tab
+    // does not read "Enquiries", the trade noun. Making it audience-specific would
+    // cost a second auth+provider query here purely for a tab title.
+    title: 'Your dashboard',
     robots: { index: false, follow: false },
 };
 
