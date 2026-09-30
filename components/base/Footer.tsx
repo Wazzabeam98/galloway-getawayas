@@ -1,6 +1,5 @@
 import React from 'react';
 import Link from 'next/link';
-import { Instagram, Facebook } from 'lucide-react';
 import { SOCIAL } from '@/config/social';
 import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 import { GooseMark } from '@/components/base/Logo';
@@ -69,7 +68,11 @@ const Footer = () => {
                         Registered office: {REGISTERED_OFFICE}.
                     </p>
                     <div className="flex items-center gap-4">
-                        {/* Icons only, no labels. The aria-label is not a
+                        {/* The brands' own coloured logos (public/social, 96px
+                            PNGs), decorative — alt="" — so the link's
+                            aria-label is the one thing announced.
+
+                            Icons only, no labels. The aria-label is not a
                             visible label — it is the only thing a screen
                             reader has to go on, and without it the link
                             announces as nothing at all.
@@ -82,9 +85,10 @@ const Footer = () => {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 aria-label="Galloway Getaways on Instagram"
-                                className="p-1 -m-1 text-slate-500 hover:text-slate-900 transition"
+                                className="p-1 -m-1 rounded-full transition hover:opacity-80"
                             >
-                                <Instagram className="w-5 h-5" />
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src="/social/instagram.png" alt="" width={28} height={28} className="h-7 w-7" />
                             </a>
                         ) : null}
                         {SOCIAL.facebook ? (
@@ -93,9 +97,10 @@ const Footer = () => {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 aria-label="Galloway Getaways on Facebook"
-                                className="p-1 -m-1 text-slate-500 hover:text-slate-900 transition"
+                                className="p-1 -m-1 rounded-full transition hover:opacity-80"
                             >
-                                <Facebook className="w-5 h-5" />
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src="/social/facebook.png" alt="" width={28} height={28} className="h-7 w-7" />
                             </a>
                         ) : null}
                         <a
