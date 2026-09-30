@@ -6,10 +6,16 @@
 // host side of the same jobs.
 //
 // Both owners get a KNOWN password so the logins can actually be walked. They
-// live on the reserved @gallowayexp.test domain (torn down with the experience
-// seeders, never emails). The enquiries are sent BY Liam's real account against
-// his own listings, so the trade sees real cottages and names, and Liam sees the
-// other side of the same jobs.
+// live on the reserved @gallowaytrade.test domain — the trade seeds' OWN domain,
+// deliberately separate from the experience seeders' @gallowayexp.test. The
+// experience seed (scripts/seed-experiences.mjs) resets by deleting EVERY user on
+// its domain, so a trade account sharing that domain was wiped whenever the
+// experience seed ran. Each seed owns a distinct domain — the same way the
+// passport seed (@gallowaypassport.test) stays clear of the payments seed
+// (@gallowayseed.test). Do not move the trade seeds back onto an experience or
+// payments domain. The enquiries are sent BY Liam's real account against his own
+// listings, so the trade sees real cottages and names, and Liam sees the other
+// side of the same jobs.
 //
 // Photos: there are no trade stock images in the repo, so this uploads a few of
 // the site's Galloway hero photos to the bucket under seed-assets/trade/ as
@@ -24,7 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadEnv, supabaseClient, TEST_PROJECT_REF } from './seed-lib.mjs';
 
-const SEED_DOMAIN = 'gallowayexp.test';
+const SEED_DOMAIN = 'gallowaytrade.test';
 const LIAM_EMAIL = 'liamworrall18@hotmail.com';
 const PASSWORD = 'walk-the-trade-2026';
 const AGREEMENT_VERSION = 'v1-draft-2026-09-29'; // keep in sync with AGREEMENTS in lib/agreements.ts
