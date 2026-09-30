@@ -7,15 +7,20 @@
 //
 // Render this ONLY on the stay-linked experience checkout — never standalone,
 // and nowhere else. The `show` prop is the stay gate; when false it renders
-// nothing.
+// nothing. `date` is the experience date picked: when the package notice applies
+// to it (the guest's own confirmed, paid stay covers it), that notice is shown
+// instead of this one — the rule is lib/linkedTravelNotice linkedTravelNoticeApplies,
+// the same one the order routes use to decide whether to record this notice.
 
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { LTA_NOTICE_SUMMARY, LTA_NOTICE_FULL } from '@/lib/linkedTravelNotice';
+import { LTA_NOTICE_SUMMARY, LTA_NOTICE_FULL, linkedTravelNoticeApplies } from '@/lib/linkedTravelNotice';
+import { usePackageNoticeApplies } from '@/components/marketplace/PackageNotice';
 
-export default function LinkedTravelNotice({ show }: { show: boolean }) {
+export default function LinkedTravelNotice({ show, date }: { show: boolean; date: string | null | undefined }) {
     const [open, setOpen] = useState(false);
-    if (!show) return null;
+    const packageApplies = usePackageNoticeApplies(date);
+    if (!linkedTravelNoticeApplies(show, packageApplies)) return null;
 
     return (
         <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">

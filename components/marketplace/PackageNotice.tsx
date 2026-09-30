@@ -20,9 +20,14 @@ export function PackageStaysProvider({ stays, children }: { stays: StayWindow[];
     return <PackageStays.Provider value={stays}>{children}</PackageStays.Provider>;
 }
 
+// Whether the package notice is drawn for this date — read by the linked-travel
+// notice too, which stands down when this one shows (lib/linkedTravelNotice).
+export function usePackageNoticeApplies(date: string | null | undefined): boolean {
+    return hasCoveringStay(useContext(PackageStays), date);
+}
+
 export default function PackageNotice({ date }: { date: string | null | undefined }) {
-    const stays = useContext(PackageStays);
-    if (!hasCoveringStay(stays, date)) return null;
+    if (!usePackageNoticeApplies(date)) return null;
     return (
         <p className="mb-3 flex items-start gap-2 text-xs leading-relaxed text-slate-600" data-package-notice>
             <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-400" aria-hidden />

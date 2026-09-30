@@ -49,6 +49,8 @@ async function wipeExperiences() {
             await db.remove('messages', '?order_id=eq.' + o.id).catch(() => {});
             await db.remove('reviews', '?order_id=eq.' + o.id).catch(() => {});
         }
+        // Admin refund trail rows (no FK, so they would outlive the orders).
+        await db.remove('service_order_refunds', '?provider_id=eq.' + p.id).catch(() => {});
         await db.remove('service_orders', '?provider_id=eq.' + p.id).catch(() => {});
         // Provider children.
         for (const t of ['reviews', 'service_areas', 'provider_ical_feeds', 'service_provider_extras',
