@@ -1,4 +1,4 @@
-import { heldChargeMetadata, heldOrderFields } from '@/lib/experienceFunds';
+import { heldChargeMetadata, heldOrderFields, heldChargeSeller } from '@/lib/experienceFunds';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -121,7 +121,9 @@ async function startIncreaseRequest(
                 product_data: { name: child.lineName + ' · ' + String(order.service_date).slice(0, 10),
                     description: 'Extra places requested from ' + business + '. Your card is only held until they accept; Galloway Getaways takes the payment on their behalf and is not the provider.' } } }],
             payment_intent_data: {
-                // A platform charge: captured to us on accept, paid out after the date.
+                // On behalf of the provider (the seller): captured to us on
+                // accept, held, and paid out after the date.
+                ...heldChargeSeller(provider.stripe_account_id),
                 capture_method: 'manual',
                 description: 'Galloway experience — extra places (request) · ' + business + ' · ' + itemName,
                 metadata: { kind: 'change_request', order_id: row.id, parent_order_id: order.id, provider_id: provider.id, ...heldChargeMetadata(pricing) },

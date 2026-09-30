@@ -194,11 +194,28 @@ export async function GET(request: Request) {
 
             // A destination charge already paid its provider at capture. If one
             // were ever marked 'held' by mistake, paying it here would pay twice.
-            if ((pi && (pi.transfer_data || pi.on_behalf_of || pi.application_fee_amount)) || (charge && (charge.transfer || charge.application_fee))) {
+            // on_behalf_of alone is NOT that: a held charge carries it on purpose
+            // (the provider is the seller); what moves money at capture is
+            // transfer_data / an application fee, and those are what we refuse.
+            if ((pi && (pi.transfer_data || pi.application_fee_amount)) || (charge && (charge.transfer || charge.application_fee))) {
                 problems.push({ order: order.id, what: 'NOT paid — its charge is a destination charge (already paid to the provider by Stripe) but the order is marked held' });
                 await logMoneyFailure(
                     'experience-payouts: an order marked held has a destination charge — refused to pay it a second time; check the order',
                     { order_id: order.id, payment_intent: order.stripe_payment_intent_id },
+                    { path: '/api/cron/experience-payouts' }
+                );
+                failed++;
+                continue;
+            }
+
+            // The seller on the charge must be the account we are about to pay.
+            // If the provider has since connected a different Stripe account,
+            // stop and say so rather than send one seller's takings to another.
+            if (pi && pi.on_behalf_of && pi.on_behalf_of !== provider.stripe_account_id) {
+                problems.push({ order: order.id, what: 'NOT paid — the charge was made on behalf of ' + pi.on_behalf_of + ' but the provider is now connected as ' + provider.stripe_account_id });
+                await logMoneyFailure(
+                    'experience-payouts: the seller on the charge is not the provider\'s current Stripe account — refused; check the order',
+                    { order_id: order.id, on_behalf_of: pi.on_behalf_of, provider_account: provider.stripe_account_id },
                     { path: '/api/cron/experience-payouts' }
                 );
                 failed++;

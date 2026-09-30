@@ -162,13 +162,14 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
                 <MonthlyTrendChart months={months} />
             </div>
 
-            {/* How the money reaches the provider: held by us, released the day
-                after the booking, then Stripe to their bank. The same two hops a
-                host is told about (lib/payoutTiming). */}
+            {/* How the money reaches the provider: taken on their behalf (they are
+                the seller, named on the guest's statement), held by us, released
+                the day after the booking, then Stripe to their bank. */}
             <div className="border rounded-2xl p-6 mb-10">
                 <h2 className="font-bold text-slate-900 mb-2">How you're paid</h2>
                 <p className="text-sm text-slate-600">
-                    We hold the guest&rsquo;s payment until the booking has happened, then send you your share &mdash;
+                    You&rsquo;re the seller: each booking is taken in your name, and your business is what the guest sees on
+                    their card statement. We hold the guest&rsquo;s payment until the booking has happened, then send you your share &mdash;
                     what they paid, less our {effectivePercent}% fee &mdash; the day after. Stripe then pays it into your
                     bank, which usually takes about a week. If a booking is cancelled and refunded before then, the
                     refund comes from the money we hold.

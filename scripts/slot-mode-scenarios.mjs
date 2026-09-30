@@ -69,6 +69,7 @@ async function payFor(total, account, orderId, providerId, bookingId) {
     const pi = await stripe.request('POST', '/payment_intents', {
         amount: amountPence, currency: 'gbp', payment_method: 'pm_card_visa', payment_method_types: ['card'],
         confirm: 'true', description: TAG,
+        on_behalf_of: account, // the provider is the seller, as the route sets it
         metadata: { funds_flow: 'held', platform_fee_pence: String(feePence), kind: 'slot_order', order_id: orderId, provider_id: providerId, booking_id: bookingId },
     });
     return pi;

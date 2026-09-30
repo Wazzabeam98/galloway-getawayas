@@ -8,12 +8,18 @@
 //       Stripe balance the moment the card was captured, so a refund has to
 //       pull it back out of them (refund_application_fee + reverse_transfer).
 //
-//   'held' — every order from this change. A PLATFORM charge: none of those
-//       three fields. The whole amount sits on the Galloway Getaways balance
-//       until the day after the experience, when /api/cron/experience-payouts
-//       transfers the provider's share — exactly how a host is paid the day
-//       after check-in. A refund before then comes straight from us, with
-//       nothing to reverse. A refund after it also claws the payout back.
+//   'held' — every order from this change. A charge made on our account but
+//       ON BEHALF OF the provider (on_behalf_of), with no transfer_data and no
+//       application fee. The provider stays the seller on the card networks —
+//       their name is on the guest's statement — but the whole amount settles
+//       to the Galloway Getaways balance and stays there until the day after
+//       the experience, when /api/cron/experience-payouts transfers the
+//       provider's share (Stripe's "separate charges and transfers" with a
+//       settlement merchant). The timing mirrors a host being paid the day
+//       after check-in; the seller does not — on a stay we are the seller, by
+//       decision, and that is unchanged. A refund before payout comes straight
+//       from us, with nothing to reverse. A refund after it also claws the
+//       payout back.
 //
 // The marker is written by the code that creates the charge, in the same
 // breath, and the database refuses to change it once a PaymentIntent is
@@ -47,14 +53,46 @@ export const ORDER_FUNDS_COLUMNS =
 // What rides on a new order's PaymentIntent (and its Checkout session): the
 // flow, so the webhook writes the order row with the right marker, and our fee
 // in pence, which used to be the application fee and is now just a number the
-// payout run subtracts. Deliberately NO on_behalf_of, transfer_data or
-// application_fee_amount — those are what sent the money to the provider at
-// capture.
+// payout run subtracts. Deliberately NO transfer_data or application_fee_amount
+// — those are what sent the money to the provider at capture. on_behalf_of IS
+// set, by heldChargeSeller below: it names the seller, it does not move money.
 export function heldChargeMetadata(pricing: { applicationFeePence: number }): Record<string, string> {
     return {
         funds_flow: 'held',
         platform_fee_pence: String(Math.max(0, Math.round(Number(pricing.applicationFeePence) || 0))),
     };
+}
+
+// Who the card networks see as the seller of a held charge: the provider.
+// Spread into payment_intent_data at every place an experience is charged, so
+// the five routes cannot disagree. on_behalf_of makes the provider the
+// settlement merchant (their statement descriptor, their card_payments
+// capability — requested at Connect onboarding); the money still settles to
+// our balance and waits for the payout run, because there is no transfer_data.
+export function heldChargeSeller(providerAccountId: string): { on_behalf_of: string } {
+    if (!providerAccountId) throw new Error('heldChargeSeller: the provider has no Stripe account');
+    return { on_behalf_of: providerAccountId };
+}
+
+// The name on the guest's card statement for a held charge. on_behalf_of makes
+// the provider's account the settlement merchant, and Stripe prints THAT
+// account's statement descriptor — which, left unset, Stripe derives from the
+// account's website. Provider accounts are created with our site as the
+// website, so without this the guest would read GALLOWAYGETAWAYS.CO.UK and the
+// provider would be the seller in name only. So the descriptor is set from the
+// business name. Stripe's rules: 5–22 characters, at least one letter, Latin
+// characters only, none of < > \ ' " *. Too short is padded rather than left
+// for Stripe to fill from our website.
+export function providerStatementDescriptor(businessName: string | null | undefined): string {
+    let d = String(businessName || '')
+        .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[<>\\'"*]/g, '')
+        .replace(/[^\x20-\x7E]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!/[A-Za-z]/.test(d)) d = '';
+    if (d.length < 5) d = (d ? d + ' ' : '') + 'EXPERIENCE';
+    return d.slice(0, 22).trim();
 }
 
 // The two columns a route writes when it inserts a held order row itself (the

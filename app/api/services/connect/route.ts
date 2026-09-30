@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
 import { stripeProfileForProvider } from '@/lib/serviceOrders';
+import { providerStatementDescriptor } from '@/lib/experienceFunds';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +65,22 @@ export async function POST(request: Request) {
 
         let accountId = provider.stripe_account_id;
 
+        // The provider is the seller on a guest's charge (on_behalf_of), so the
+        // name on the guest's card statement is THEIR account's descriptor. Keep
+        // it their business name every time they come through here, so an
+        // account made before this, or a business renamed since, reads right.
+        // Best-effort: a refusal from Stripe must not block payout setup.
+        if (accountId) {
+            try {
+                await stripeRequest('POST', '/accounts/' + accountId, {
+                    business_profile: { name: provider.business_name || undefined },
+                    settings: { payments: { statement_descriptor: providerStatementDescriptor(provider.business_name) } },
+                });
+            } catch (e: any) {
+                console.error('[services/connect] could not set the statement descriptor', e && e.message);
+            }
+        }
+
         // Open the Express dashboard for a provider already set up.
         if (action === 'dashboard') {
             if (!accountId) {
@@ -104,20 +121,22 @@ export async function POST(request: Request) {
                 default_currency: 'gbp',
                 business_type: 'individual',
                 capabilities: {
-                    // transfers so the money can reach them — the payout run
-                    // transfers each held order's share. card_payments was for
-                    // the old destination charge (on_behalf_of the provider,
-                    // before 30 Sep 2026); still requested so an account made
-                    // either side of that change looks the same.
+                    // card_payments so the provider can be the merchant of
+                    // record on a guest's charge (on_behalf_of); transfers so
+                    // the money can reach them.
                     transfers: { requested: 'true' },
                     card_payments: { requested: 'true' },
                 },
                 business_profile: {
                     mcc: profile.mcc,
                     url: SITE_URL,
+                    // Their name, so they are the seller in name as well as in
+                    // Stripe's records — see providerStatementDescriptor.
+                    name: provider.business_name || undefined,
                     product_description: profile.product_description,
                 },
                 settings: {
+                    payments: { statement_descriptor: providerStatementDescriptor(provider.business_name) },
                     payouts: {
                         // Daily/minimum, the same as hosts — a payout is made
                         // as soon as the settlement wait allows rather than

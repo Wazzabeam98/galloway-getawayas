@@ -12,6 +12,9 @@
 //   * HELD        — a provider without payouts enabled waits; a dispute holds it.
 //   * CLAWBACK    — a refund after payout reverses the transfer; before payout it
 //                   is a plain refund with no reverse_transfer.
+//   * SELLER      — a held charge is made on behalf of the provider (they are the
+//                   seller); that alone is paid, and a charge naming a different
+//                   account is refused.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -206,6 +209,31 @@ test('LEGACY: an order marked held whose charge is a destination charge is refus
     assert.ok(logged.some((l) => l.money && /destination charge/.test(l.message)));
 });
 
+test('SELLER: a held charge made on behalf of the provider is paid — on_behalf_of names the seller, it moves no money', async () => {
+    const { route, stripeCalls } = load({ pi: { id: 'pi_1', latest_charge: 'ch_1', on_behalf_of: 'acct_p1' } });
+    const res: any = await route.GET(authorised());
+    const sent = transfers(stripeCalls);
+    assert.equal(sent.length, 1, 'the provider is paid the day after, as with any held order');
+    assert.equal(sent[0].body.destination, 'acct_p1', 'paid to the seller named on the charge');
+    assert.equal(sent[0].body.amount, 16200);
+    assert.equal(res.body.failed, 0);
+});
+
+test('SELLER: if the charge was made on behalf of a different Stripe account, nothing is sent and it is said loudly', async () => {
+    const { route, stripeCalls, logged } = load({ pi: { id: 'pi_1', latest_charge: 'ch_1', on_behalf_of: 'acct_OLD' } });
+    const res: any = await route.GET(authorised());
+    assert.equal(transfers(stripeCalls).length, 0, "one seller's takings are never sent to another account");
+    assert.equal(res.body.failed, 1);
+    assert.ok(logged.some((l) => l.money && /seller on the charge/.test(l.message)));
+});
+
+test('SELLER: heldChargeSeller names the provider as seller and refuses to build a charge without their account', () => {
+    clearModule('@/lib/experienceFunds');
+    const { heldChargeSeller } = require('../lib/experienceFunds');
+    assert.deepEqual(heldChargeSeller('acct_p1'), { on_behalf_of: 'acct_p1' });
+    assert.throws(() => heldChargeSeller(''), /no Stripe account/);
+});
+
 test('HELD: a provider without payouts enabled waits — skipped, not failed, and said out loud', async () => {
     const { route, stripeCalls, logged } = load({ provider: { ...PROVIDER, stripe_payouts_enabled: false } });
     const res: any = await route.GET(authorised());
@@ -317,4 +345,20 @@ test('CLAWBACK: a refund after payout reverses what the provider can fund and re
     assert.equal(reversal.body.amount, 10000, 'only what the provider can fund');
     assert.equal(reversal.key, 'exp-clawback-o1-re_1');
     assert.ok(updates.some((u) => u.payout_reversed === 100 && u.payout_clawback_owed === 62));
+});
+
+test('SELLER: the statement descriptor is the business name, inside Stripe’s rules, never left to default to our website', () => {
+    clearModule('@/lib/experienceFunds');
+    const { providerStatementDescriptor } = require('../lib/experienceFunds');
+    assert.equal(providerStatementDescriptor('Solway Sauna'), 'Solway Sauna');
+    assert.equal(providerStatementDescriptor('The Big Galloway Bakehouse & Café Company'), 'The Big Galloway Bakeh', 'cut to 22 characters');
+    assert.equal(providerStatementDescriptor('Bob\'s "Best" <Fish> *Tours*'), 'Bobs Best Fish Tours', 'forbidden characters removed');
+    assert.equal(providerStatementDescriptor('Crème Brûlée'), 'Creme Brulee', 'accents folded to Latin');
+    assert.equal(providerStatementDescriptor('Jo'), 'Jo EXPERIENCE', 'too short is padded, not left to Stripe');
+    assert.equal(providerStatementDescriptor(''), 'EXPERIENCE');
+    assert.equal(providerStatementDescriptor('1234'), 'EXPERIENCE', 'must contain a letter');
+    for (const name of ['Solway Sauna', 'Jo', '', 'The Big Galloway Bakehouse & Café Company']) {
+        const d = providerStatementDescriptor(name);
+        assert.ok(d.length >= 5 && d.length <= 22 && /[A-Za-z]/.test(d) && !/[<>\\'"*]/.test(d), name + ' → ' + d);
+    }
 });

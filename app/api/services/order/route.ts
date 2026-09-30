@@ -8,7 +8,7 @@ import {
     isLiveToGuests, priceOrder, guestExperiencesOpen, exclusivePerDate,
     normaliseUnit, unitMultiplies, unitNoun, orderQuantity, orderTotal, MAX_ORDER_QUANTITY,
 } from '@/lib/serviceOrders';
-import { heldChargeMetadata } from '@/lib/experienceFunds';
+import { heldChargeMetadata, heldChargeSeller } from '@/lib/experienceFunds';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { hasExtraGuests, partyPrice, partyCeiling } from '@/lib/extraGuests';
@@ -33,10 +33,11 @@ export const dynamic = 'force-dynamic';
 // not made to pay for a chef who has not agreed, and a chef is not made to hold
 // an evening for a guest who has not committed.
 //
-// WE HOLD THE MONEY UNTIL AFTER THE EXPERIENCE. The charge is made on the
-// platform's own account — no on_behalf_of, no transfer_data, no application
-// fee — so on capture the whole amount sits with Galloway Getaways, as agent
-// for the provider. The day after the experience /api/cron/experience-payouts
+// WE HOLD THE MONEY UNTIL AFTER THE EXPERIENCE. The charge is made on behalf
+// of the provider (on_behalf_of — they are the seller, and their name is on
+// the guest's statement) but with no transfer_data and no application fee, so
+// on capture the whole amount settles to Galloway Getaways, as agent for the
+// provider. The day after the experience /api/cron/experience-payouts
 // transfers the provider's share (the total less our 10%, frozen here as
 // platform_fee_pence). A no-show is refunded from money we still hold. Until
 // 30 Sep 2026 this was a destination charge that paid the provider at capture;
@@ -294,8 +295,10 @@ export async function POST(request: Request) {
                     // Standard-only orders capture at once; a custom order is HELD
                     // until the provider accepts.
                     capture_method: hasCustom ? 'manual' : 'automatic',
-                    // A platform charge: held by us until after the date, then
-                    // paid out by the experience-payouts run (lib/experienceFunds).
+                    // On behalf of the provider — they are the seller, their name
+                    // is on the statement — but held by us until after the date,
+                    // then paid out by the experience-payouts run (lib/experienceFunds).
+                    ...heldChargeSeller(prov.stripe_account_id),
                     description: 'Galloway food order — ' + businessC + (hasCustom ? ' (request)' : ''),
                     metadata: mdC,
                 },
@@ -618,8 +621,10 @@ export async function POST(request: Request) {
             payment_intent_data: {
                 // The hold. Captured only when the provider confirms.
                 capture_method: 'manual',
-                // A platform charge: captured to us on confirm and held until
-                // the day after the experience (lib/experienceFunds).
+                // On behalf of the provider (the seller, named on the guest's
+                // statement), captured to us on confirm and held until the day
+                // after the experience (lib/experienceFunds).
+                ...heldChargeSeller(provider.stripe_account_id),
                 description: 'Galloway experience — ' + business + ' · ' + itemName,
                 // The full order shape on the held PaymentIntent, so the sweep
                 // can rebuild the order from Stripe alone if the webhook is lost.

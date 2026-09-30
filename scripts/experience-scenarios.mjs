@@ -13,8 +13,9 @@
 // scenarios 1/2/4/5 hit: a hosted Checkout page cannot be completed over the
 // API. So where a real guest's money would be born on the Checkout page, this
 // creates the PaymentIntent directly with the IDENTICAL fields the route sets —
-// since 30 Sep 2026 a PLATFORM charge (capture_method + metadata, with the
-// funds_flow 'held' marker and our frozen fee; no on_behalf_of, transfer_data or
+// since 30 Sep 2026 a charge ON BEHALF OF the provider (on_behalf_of, so they
+// are the seller and their name is on the statement; capture_method + metadata,
+// with the funds_flow 'held' marker and our frozen fee; no transfer_data or
 // application fee — the money is held by us and paid to the provider by the
 // experience-payouts run the day after the experience) — and — for the order row
 // the webhook creates — delivers a SELF-SIGNED checkout.session.completed to the
@@ -92,11 +93,11 @@ function priceParts(total) {
     return { amountPence, feePence, netPence: Math.round(net * 100) };
 }
 
-// The guest's money, as the routes now take it: a PLATFORM charge held by us
-// (lib/experienceFunds heldChargeMetadata). `capture: 'manual'` is the request
-// shape's held card; omit it for the slot shape's instant charge. `account` is
-// accepted and ignored so the call sites read as before — the provider is no
-// longer on the charge at all.
+// The guest's money, as the routes now take it: a charge on behalf of the
+// provider (lib/experienceFunds heldChargeSeller — they are the seller) whose
+// money is held by us (heldChargeMetadata; no transfer_data, no application
+// fee). `capture: 'manual'` is the request shape's held card; omit it for the
+// slot shape's instant charge.
 async function guestPI({ total, account, capture, metadata, pm = 'pm_card_visa' }) {
     const { amountPence, feePence } = priceParts(total);
     const body = {
@@ -105,7 +106,8 @@ async function guestPI({ total, account, capture, metadata, pm = 'pm_card_visa' 
         payment_method: pm,
         payment_method_types: ['card'],
         confirm: 'true',
-        description: EXP_TAG + ' held platform charge',
+        on_behalf_of: account,
+        description: EXP_TAG + ' held charge on behalf of the provider',
         metadata: { funds_flow: 'held', platform_fee_pence: String(feePence), ...(metadata || {}) },
     };
     if (capture) body.capture_method = capture;
@@ -131,6 +133,24 @@ async function legacyDestinationPI({ total, account, capture, metadata, pm = 'pm
     };
     if (capture) body.capture_method = capture;
     return stripe.request('POST', '/payment_intents', body);
+}
+
+// THE SELLER. On a held charge the provider — not Galloway Getaways — is the
+// settlement merchant: the charge names their account in on_behalf_of, and the
+// statement descriptor Stripe works out for the guest's card statement is
+// theirs, not ours. Read from Stripe itself, not from anything we sent.
+let platformDescriptor = null;
+async function sellerIsProvider(charge, account) {
+    if (platformDescriptor === null) {
+        const me = await stripe.request('GET', '/account');
+        platformDescriptor = String((me && me.settings && me.settings.payments && me.settings.payments.statement_descriptor) || '').toUpperCase();
+    }
+    const acct = await stripe.request('GET', '/accounts/' + account);
+    const theirs = String((acct && acct.settings && acct.settings.payments && acct.settings.payments.statement_descriptor) || '').toUpperCase();
+    const shown = String((charge && charge.calculated_statement_descriptor) || '').toUpperCase();
+    const onBehalf = charge && charge.on_behalf_of === account;
+    const named = !!shown && (theirs ? shown.indexOf(theirs) === 0 : true) && (!platformDescriptor || shown.indexOf(platformDescriptor) !== 0);
+    return { ok: onBehalf && named, detail: 'on_behalf_of=' + (charge && charge.on_behalf_of) + ' statement="' + shown + '" provider="' + theirs + '" platform="' + platformDescriptor + '"' };
 }
 
 async function getPI(id) {
@@ -524,6 +544,10 @@ async function main() {
         check('STRIPE: the money is HELD by us — no transfer and no application fee at payment',
             charge && !charge.transfer && !charge.application_fee,
             'fee=' + (charge && charge.application_fee) + ' transfer=' + (charge && charge.transfer));
+        {
+            const seller = await sellerIsProvider(charge, account);
+            check('STRIPE: the provider is the seller — the charge is on their behalf and their name is on the statement', seller.ok, seller.detail);
+        }
         check('APP: the order is marked held with our frozen £6 fee', afterOrder.funds_flow === 'held' && Number(afterOrder.platform_fee) === 6,
             afterOrder.funds_flow + ' fee £' + afterOrder.platform_fee);
         check('APP: the order was RECONCILED to confirmed (not expired)', afterOrder.status === 'confirmed', afterOrder.status);
@@ -583,6 +607,10 @@ async function main() {
             charge && (charge.status + ' captured=' + charge.amount_captured));
         check('STRIPE: captured to the platform — no transfer to the provider at confirm, no application fee',
             charge && !charge.transfer && !charge.application_fee, 'fee=' + (charge && charge.application_fee) + ' transfer=' + (charge && charge.transfer));
+        {
+            const seller = await sellerIsProvider(charge, account);
+            check('STRIPE: the provider is the seller — the charge is on their behalf and their name is on the statement', seller.ok, seller.detail);
+        }
         check('APP: the order is confirmed, held, with our £18 fee frozen', afterOrder.status === 'confirmed' && afterOrder.funds_flow === 'held' && Number(afterOrder.platform_fee) === 18,
             afterOrder.status + ' ' + afterOrder.funds_flow + ' £' + afterOrder.platform_fee);
     }
@@ -607,6 +635,10 @@ async function main() {
         const charge = await settledCharge(pi.id);
         check('STRIPE: held by us — no transfer, no application fee', charge && !charge.transfer && !charge.application_fee,
             'fee=' + (charge && charge.application_fee) + ' transfer=' + (charge && charge.transfer));
+        {
+            const seller = await sellerIsProvider(charge, account);
+            check('STRIPE: the provider is the seller — the charge is on their behalf and their name is on the statement', seller.ok, seller.detail);
+        }
 
         const wh = await postWebhook({ ...sessionForServiceOrder({ pi: pi.id, total: 60, provider: sauna, guest, booking, serviceDate: sessionDate, item: saunaItem }),
             metadata: { kind: 'slot_order', order_id: hold.id, provider_id: sauna.id, booking_id: booking.id } });
