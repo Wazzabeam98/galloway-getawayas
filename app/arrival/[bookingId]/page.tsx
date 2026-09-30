@@ -4,8 +4,8 @@ import { ArrowLeft, KeyRound, Wifi, MessageCircle, DoorOpen } from 'lucide-react
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { displayName } from '@/lib/utils';
-import { stayCountdown } from '@/lib/bookingWindows';
+import { firstName } from '@/lib/utils';
+import { stayCountdown, arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import CopyField from '@/components/arrival/CopyField';
@@ -66,7 +66,8 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
     // exactly that reason.
     const now = new Date();
     const { phase, daysUntilCheckIn } = stayCountdown(booking, now);
-    const codeReady = daysUntilCheckIn <= 3;
+    // Three days out until the end of checkout day — not for ever after.
+    const codeReady = arrivalSecretsWindowOpen(booking, now);
 
     // The listing's check-in method (public-safe), the host name for the fall-back
     // message, the wifi (own grant-less table) and the door code, read under the
@@ -115,7 +116,8 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
                     : phase === 'during' ? 'You’re staying now'
                         : null;
 
-    const hostName = displayName(host, 'your host');
+    const hostName = firstName(host, 'your host');
+    const ended = phase === 'over';
 
     const Section = ({ children }: { children: any }) => (
         <div className="mt-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-stone-200/80">{children}</div>
@@ -149,10 +151,10 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
                     {codeReady && doorCode ? (
                         <>
                             <div className="mt-1.5 text-3xl font-semibold tracking-[0.15em] text-stone-900">{doorCode}</div>
-                            <p className="mt-0.5 text-xs text-emerald-700">Shown because your check-in is close</p>
+                            <p className="mt-0.5 text-xs text-emerald-700">{phase === 'during' ? 'Shown until you check out' : 'Shown because your check-in is close'}</p>
                         </>
                     ) : hasCode ? (
-                        <p className="mt-1.5 text-sm text-emerald-900/80">Your door code shows here a few days before you arrive.</p>
+                        <p className="mt-1.5 text-sm text-emerald-900/80">{ended ? 'Your stay has ended, so the door code is no longer shown.' : 'Your door code shows here a few days before you arrive.'}</p>
                     ) : method ? (
                         <div className="mt-1.5 flex items-start gap-2">
                             <DoorOpen className="mt-0.5 h-4 w-4 flex-none text-emerald-700" strokeWidth={1.75} />
@@ -189,7 +191,7 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
                                     <CopyField value={a.wifi_password} label="Copy" />
                                 </div>
                             ) : (
-                                <p className="mt-1.5 text-sm text-stone-500">The password shows here a few days before you arrive.</p>
+                                <p className="mt-1.5 text-sm text-stone-500">{ended ? 'Your stay has ended, so the password is no longer shown.' : 'The password shows here a few days before you arrive.'}</p>
                             )
                         )}
                     </Section>

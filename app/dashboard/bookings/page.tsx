@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import BookingsView from "@/components/BookingsView";
-import { displayName } from "@/lib/utils";
+import { firstName } from "@/lib/utils";
 import { createClient } from "@supabase/supabase-js";
 import { accessibleListings } from "@/lib/access";
 
@@ -23,6 +23,12 @@ export default async function BookingsPage() {
     // would fail are left off.
     const ownedIds = access.filter((a) => a.isOwner).map((a) => a.listingId);
 
+    // Money is its own permission. A co-host who handles bookings but not
+    // earnings never has the figures sent — stripped here, on the server, not
+    // hidden in the browser, because anything handed to a client component is
+    // readable in the page whether or not it is drawn.
+    const earningIds = new Set(access.filter((a) => a.isOwner || a.can_earnings).map((a) => a.listingId));
+
     const admin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',
         process.env.SUPABASE_SERVICE_ROLE_KEY || '',
@@ -32,7 +38,9 @@ export default async function BookingsPage() {
     const { data: bookings } = allowed.length
         ? await admin
             .from("bookings")
-            .select("*")
+            // Named, not '*': the payout transfer, the Stripe ids and the
+            // platform's own figures are nobody's business on this screen.
+            .select("id, listing_id, guest_id, host_id, check_in, check_out, guests, status, payment_status, total_price, amount_paid, amount_refunded, commission_rate, created_at")
             .in("listing_id", allowed)
             .order("check_in", { ascending: true })
         : { data: [] };
@@ -45,7 +53,7 @@ export default async function BookingsPage() {
         : { data: [] };
 
     const { data: guests } = guestIds.length
-        ? await admin.from("profiles").select("id, full_name, preferred_name, show_full_name, email").in("id", guestIds)
+        ? await admin.from("profiles").select("id, full_name, preferred_name, show_full_name").in("id", guestIds)
         : { data: [] };
 
     // Build plain objects (not Maps) since only serializable data can cross
@@ -63,7 +71,7 @@ export default async function BookingsPage() {
         listingMap[l.id] = {
             title: l.title,
             images: l.images,
-            commission_rate: l.commission_rate,
+            commission_rate: earningIds.has(l.id) ? l.commission_rate : null,
             // Decides when a stay stops being upcoming, so the split lands on
             // the guest actually leaving rather than on midnight.
             check_out_time: l.check_out_time,
@@ -72,7 +80,7 @@ export default async function BookingsPage() {
 
     const guestNameMap: Record<string, string> = {};
     (guests || []).forEach((g) => {
-        guestNameMap[g.id] = displayName(g, "Guest");
+        guestNameMap[g.id] = firstName(g, "Guest");
     });
 
     const { data: myGuestReviews } = await supabase
@@ -86,7 +94,9 @@ export default async function BookingsPage() {
         <div className="max-w-4xl mx-auto px-6 py-10">
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-8">Bookings</h1>
             <BookingsView
-                bookings={bookings || []}
+                bookings={(bookings || []).map((b: any) => earningIds.has(b.listing_id) ? b : {
+                    ...b, total_price: null, amount_paid: null, amount_refunded: null, commission_rate: null,
+                })}
                 listingMap={listingMap}
                 guestNameMap={guestNameMap}
                 reviewedBookingIds={reviewedBookingIds}

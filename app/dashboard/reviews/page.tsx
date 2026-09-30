@@ -7,7 +7,8 @@ import LoginModel from '@/components/auth/LoginModel';
 import LeaveReviewForm from '@/components/LeaveReviewForm';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewStars from '@/components/ReviewStars';
-import { capitializeFirst, displayName } from '@/lib/utils';
+import { capitializeFirst, firstName } from '@/lib/utils';
+import { ukDate } from '@/lib/dayKey';
 
 export default function HostReviewsPage() {
     const supabase = createClientComponentClient();
@@ -43,7 +44,7 @@ export default function HostReviewsPage() {
             if (reviewerIds.length) {
                 const { data: reviewers } = await supabase.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds);
                 const names: Record<string, string> = {};
-                (reviewers || []).forEach((p) => { names[p.id] = displayName(p, 'Guest'); });
+                (reviewers || []).forEach((p) => { names[p.id] = firstName(p, 'Guest'); });
                 setReviewerNames(names);
             }
 
@@ -59,7 +60,7 @@ export default function HostReviewsPage() {
             if (guestIds.length) {
                 const { data: guests } = await supabase.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', guestIds);
                 const names: Record<string, string> = {};
-                (guests || []).forEach((p) => { names[p.id] = displayName(p, 'Guest'); });
+                (guests || []).forEach((p) => { names[p.id] = firstName(p, 'Guest'); });
                 setGuestNames(names);
             }
 
@@ -113,7 +114,7 @@ export default function HostReviewsPage() {
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <div className="font-semibold text-slate-900">{capitializeFirst(guestNames[b.guest_id] || 'Guest')}</div>
-                                        <div className="text-sm text-slate-500">{b.check_in} → {b.check_out}</div>
+                                        <div className="text-sm text-slate-500">{ukDate(b.check_in)} → {ukDate(b.check_out)}</div>
                                     </div>
                                     {openReviewFor !== b.id && (
                                         <button

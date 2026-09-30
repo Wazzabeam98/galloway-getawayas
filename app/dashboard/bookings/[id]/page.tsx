@@ -7,10 +7,10 @@ import { formatGBP } from "@/lib/formatMoney";
 import Link from "next/link";
 import { adminClient } from "@/lib/supabaseAdmin";
 import { checkListing, accessibleListings } from "@/lib/access";
-import { displayName, getImageUrl, capitializeFirst } from "@/lib/utils";
+import { getImageUrl, capitializeFirst, firstName as firstNameOf } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
 import { formatUk, refundDue, policyOf, freeCancelUntilKey } from "@/lib/cancellation";
-import { londonDayKey } from "@/lib/dayKey";
+import { londonDayKey, shiftDayKey, ukDate } from "@/lib/dayKey";
 import { contactNumberVisible, stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from "@/lib/hostDebt";
 import { dateFromKey } from "@/lib/pricing";
@@ -51,24 +51,17 @@ function weekday(dateStr: string): string {
     const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
     return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { weekday: 'long' });
 }
+// DD/MM/YYYY from the day key — the one date format the site shows.
 function dateLong(dateStr: string): string {
-    const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
-    return isNaN(d.getTime()) ? String(dateStr) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    return ukDate(dateStr);
 }
-// "24 Sep" — the compact day used in the reservations rail's date range.
+// The reservations rail and header use the same format; the old "24 Sep" /
+// "22–25 Sep" compact forms are kept as names so every caller still reads.
 function shortDay(dateStr: string): string {
-    const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
-    return isNaN(d.getTime()) ? String(dateStr) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return ukDate(dateStr);
 }
-// "22–25 Sep" (or "28 Sep – 2 Oct" across months) — the header's date range.
 function nightRange(checkIn: string, checkOut: string): string {
-    const a = new Date(String(checkIn).slice(0, 10) + 'T12:00:00');
-    const b = new Date(String(checkOut).slice(0, 10) + 'T12:00:00');
-    if (isNaN(a.getTime()) || isNaN(b.getTime())) return shortDay(checkIn) + ' – ' + shortDay(checkOut);
-    if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()) {
-        return a.getDate() + '–' + b.getDate() + ' ' + b.toLocaleDateString('en-GB', { month: 'short' });
-    }
-    return shortDay(checkIn) + ' – ' + shortDay(checkOut);
+    return ukDate(checkIn) + ' – ' + ukDate(checkOut);
 }
 // "3:00pm" from a stored 'HH:MM[:SS]'. Null in, null out — no invented time.
 function timeLabel(t: string | null | undefined): string | null {
@@ -134,7 +127,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
         .eq('id', booking.guest_id)
         .maybeSingle();
 
-    const guestName = displayName(guestProfile, 'Guest');
+    const guestName = firstNameOf(guestProfile, 'Guest');
     const firstName = guestName.split(' ')[0] || 'there';
     const guestAvatar = guestProfile?.avatar_url ? getImageUrl(String(guestProfile.avatar_url)) : null;
 
@@ -149,7 +142,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
             .eq('id', listing.host_id)
             .maybeSingle()
         : { data: null };
-    const ownerName = capitializeFirst(displayName(owner, 'the owner'));
+    const ownerName = capitializeFirst(firstNameOf(owner, 'the owner'));
     const ownerFirst = ownerName.split(' ')[0] || ownerName;
     const ownerAvatar = owner?.avatar_url ? getImageUrl(String(owner.avatar_url)) : null;
     const ownerIsViewer = uid === listing?.host_id;
@@ -207,9 +200,6 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const youGetFee = round2(youGetBase - yours);
     const youGetWorking = 'Guest paid ' + money(youGetBase) + ' − our ' + rate + '% fee ' + money(youGetFee) + ' = ' + money(yours);
 
-    // A stay pays out the day after check-in.
-    const paysOn = dateFromKey(booking.check_in);
-    paysOn.setDate(paysOn.getDate() + 1);
 
     const closed = booking.status === 'cancelled' || booking.status === 'declined';
 
@@ -388,8 +378,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // first sixty characters are visible while the host reads it back. It also
     // has to be sendable exactly as it stands, because a bracketed 'fill this
     // in' note is one distracted press away from reaching the guest.
-    const shortDate = (value: string) =>
-        dateFromKey(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+    const shortDate = (value: string) => ukDate(value);
 
     const askToCancelDraft =
         'Hi ' + firstName + ', I’m very sorry — I’ve run into a problem with '
@@ -427,18 +416,30 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // is formatted here (the same helpers the payout run uses) and each appears
     // once: the fee breakdown behind "You get", the payment stage behind "Paid
     // so far", the payout reasoning behind "Payout". ----
-    const payoutStatus = booking.payout_transfer_id
-        ? 'Sent — ' + money(Number(booking.payout_amount || 0))
-        : booking.status !== 'confirmed'
-            ? 'Nothing to send'
-            : started
-                ? 'Was due ' + formatUk(paysOn) + ' — not recorded as sent'
-                : 'Due ' + formatUk(paysOn) + ', the day after check-in';
-    const payoutHeadline = booking.payout_transfer_id
-        ? 'Sent'
-        : booking.status !== 'confirmed'
-            ? '—'
-            : started ? 'Overdue' : formatUk(paysOn);
+    // The payout, told the way the payout run actually behaves: it runs the
+    // morning of the day after check-in, so that whole day reads "today", not
+    // "overdue"; a payout withheld against money the host owed has paid_out_at
+    // but no transfer, and is settled, not missing; and a payee with no payout
+    // method yet is held, not late.
+    const payKey = shiftDayKey(String(booking.check_in).slice(0, 10), 1);
+    // todayKey (London) is defined above.
+    const { data: payee } = booking.payout_transfer_id || booking.paid_out_at
+        ? { data: null }
+        : await admin.from('profiles').select('stripe_payouts_enabled').eq('id', booking.host_id).maybeSingle();
+    const payoutHeld = !!payee && payee.stripe_payouts_enabled !== true;
+    const [payoutStatus, payoutHeadline] = booking.payout_transfer_id
+        ? ['Sent — ' + money(Number(booking.payout_amount || 0)), 'Sent']
+        : booking.paid_out_at
+            ? ['Settled against money owed from before — nothing to send', 'Settled']
+            : booking.status !== 'confirmed'
+                ? ['Nothing to send', '—']
+                : payoutHeld
+                    ? ['Held until a payout method is added', 'Held']
+                    : todayKey < payKey
+                        ? ['Due ' + ukDate(payKey) + ', the day after check-in', ukDate(payKey)]
+                        : todayKey === payKey
+                            ? ['Being sent today', 'Today']
+                            : ['Was due ' + ukDate(payKey) + ' — not recorded as sent', 'Overdue'];
 
     // ONE money card now — the total and nights on its face, the whole breakdown
     // behind it: what the guest paid, what's in so far, any balance still due, our
@@ -467,13 +468,19 @@ export default async function BookingDetail({ params }: { params: { id: string }
     }
     if (Number(listing?.damage_deposit || 0) > 0) moneyRows.push({ label: 'Damage deposit', value: money(Number(listing?.damage_deposit)) + ' — you collect this yourself', muted: true });
 
-    const moneyProps: MoneyCardsData = {
-        showMoney,
-        total: money(total),
-        nightsLabel: 'Total for ' + nights + ' ' + (nights === 1 ? 'night' : 'nights'),
-        working: youGetWorking,
-        rows: moneyRows,
-    };
+    // MoneyCards is a client component: whatever it is handed reaches the
+    // browser even when it draws nothing. So a co-host without the earnings
+    // permission is handed no figures at all — the wall is here, not in the
+    // card's `if (!showMoney)`.
+    const moneyProps: MoneyCardsData = showMoney
+        ? {
+            showMoney,
+            total: money(total),
+            nightsLabel: 'Total for ' + nights + ' ' + (nights === 1 ? 'night' : 'nights'),
+            working: youGetWorking,
+            rows: moneyRows,
+        }
+        : { showMoney, total: '', nightsLabel: '', working: undefined, rows: [] };
 
     // The ask-to-cancel draft is the same one this screen has always offered.
     const askToCancelHref = (isOwner && booking.status === 'confirmed' && !ended)
@@ -630,9 +637,9 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             started={started}
                             phone={phone}
                             guestFirst={firstName}
-                            totalPrice={total}
-                            amountPaid={paid}
-                            amountRefunded={refunded}
+                            totalPrice={showMoney ? total : 0}
+                            amountPaid={showMoney ? paid : 0}
+                            amountRefunded={showMoney ? refunded : 0}
                             askToCancelHref={askToCancelHref}
                             checkIn={String(booking.check_in).slice(0, 10)}
                             checkOut={String(booking.check_out).slice(0, 10)}

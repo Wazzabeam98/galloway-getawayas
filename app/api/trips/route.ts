@@ -33,7 +33,10 @@ export async function GET() {
 
     const { data: own } = await admin
         .from('bookings')
-        .select('*')
+        // Named, not '*': the row also holds the platform's side of the money —
+        // commission_rate, payout_amount, the transfer and Stripe ids — none of
+        // which is the guest's to read. What they paid and are owed stays.
+        .select('id, listing_id, host_id, guest_id, check_in, check_out, guests, adults, children, pets, status, payment_status, payment_plan, total_price, amount_paid, amount_refunded, balance_amount, balance_due_date, created_at, confirmed_at, cancelled_at')
         .eq('guest_id', uid)
         .order('check_in', { ascending: true })
         .order('check_out', { ascending: true })

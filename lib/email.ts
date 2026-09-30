@@ -9,8 +9,22 @@
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { logError } from '@/lib/logError';
 import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
+import { ukDate, londonDayKey as dayKeyOf } from '@/lib/dayKey';
 
 export const SITE_URL = 'https://gallowaygetaways.co.uk';
+
+// Where a person is sent back to after paying at Stripe. On production that is
+// the site. On a Vercel preview it must be the preview itself: the booking only
+// exists on the test database the preview writes to, so returning to the live
+// domain landed a tester on a 404 for a booking they had just paid for.
+// VERCEL_BRANCH_URL is set by Vercel (not by us, not by a request), so it can't
+// be pointed anywhere else. Emails keep SITE_URL.
+export function returnUrl(): string {
+    if (process.env.VERCEL_ENV === 'preview' && process.env.VERCEL_BRANCH_URL) {
+        return 'https://' + process.env.VERCEL_BRANCH_URL;
+    }
+    return SITE_URL;
+}
 
 // Booking-related mail comes from bookings@. Account and auth mail is
 // sent by Supabase from hello@, configured in the Supabase dashboard.
@@ -29,18 +43,16 @@ export function escapeHtml(value: string | null | undefined): string {
         .split("'").join('&#39;');
 }
 
+// DD/MM/YYYY — the one date format the site shows, in email too. A bare day
+// key ('2026-10-09') is formatted from its parts; a timestamp is first turned
+// into its London calendar day, so a payout sent at 00:30 BST is dated that
+// day and not the UTC one before it.
 export function formatDate(value: string | null | undefined): string {
     if (!value) return '';
-    try {
-        return new Date(value).toLocaleDateString('en-GB', {
-            weekday: 'short',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-        });
-    } catch (err) {
-        return String(value);
-    }
+    const text = String(value);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return ukDate(text);
+    const at = new Date(text);
+    return isNaN(at.getTime()) ? text : ukDate(dayKeyOf(at));
 }
 
 // Everything on this site happens in one place, so the clock that matters is
