@@ -9,8 +9,9 @@
 -- paid it out on the provider's schedule. If they then did not turn up, the
 -- money was already theirs and a refund had to pull it back out of them.
 --
--- From this change a new order is a PLATFORM charge: no on_behalf_of, no
--- transfer_data, no application fee. The whole amount sits on the Galloway
+-- From this change a new order is still made on_behalf_of the provider — they
+-- stay the seller, and their name is on the guest's statement — but with no
+-- transfer_data and no application fee. The whole amount sits on the Galloway
 -- Getaways balance until the day after the experience, when the
 -- experience-payouts run transfers `total − 10%` to the provider (drawn on the
 -- order's own charge, `source_transaction`), exactly as a host is paid the day
@@ -27,12 +28,12 @@
 -- on it:
 --
 --   funds_flow = 'direct'  destination charge; provider paid by Stripe at capture
---   funds_flow = 'held'    platform charge; provider paid by the payout run
+--   funds_flow = 'held'    on_behalf_of only (no transfer); provider paid by the payout run
 --
 -- The DEFAULT IS 'direct' ON PURPOSE. This migration reaches production before
 -- the code that writes 'held' (the house rule), and until that code deploys
 -- every order written is still a destination charge — so a row that says
--- nothing must mean 'direct'. Only the new code, creating a platform charge in
+-- nothing must mean 'direct'. Only the new code, creating a held charge in
 -- the same breath, writes 'held'. That also backfills every existing row to
 -- 'direct' with no UPDATE to run.
 --
@@ -115,8 +116,9 @@ create trigger service_orders_money_is_final
 comment on column public.service_orders.funds_flow is
     'Which way this order''s money went. direct = destination charge (on_behalf_of + '
     'transfer_data), provider paid by Stripe at capture, refunds reverse the transfer; '
-    'every order before 30 Sep 2026. held = platform charge, money held by Galloway '
-    'Getaways until the day after service_date, paid by /api/cron/experience-payouts. '
+    'every order before 30 Sep 2026. held = charge on_behalf_of the provider (still the '
+    'seller) with no transfer, money held by Galloway Getaways until the day after '
+    'service_date, paid by /api/cron/experience-payouts. '
     'Default direct so a row written by pre-change code is never paid twice.';
 comment on column public.service_orders.platform_fee is
     'Our fee in pounds, frozen at charge time (was the application fee). Held orders only.';
