@@ -29,7 +29,10 @@
 -- guest experience, Tradesperson for a trade). The CURRENT-version check is in
 -- /api/agreements, which refuses to record a stale or missing version; this
 -- wall only needs to know that one was recorded. Everything else about the
--- function is unchanged from 20260929164512_submit_guard_trade_description_and_pricing.sql.
+-- function is unchanged from 20260929190533_submit_guard_services_and_coverage.sql
+-- (description, pricing, at least one service, at least one coverage area for a
+-- trade) — this migration sorts after it and must carry all of its checks, or
+-- a later create-or-replace would silently drop them.
 --
 -- ORDER. Apply, then merge straight away. Between the two, the live wizard does
 -- not yet record the agreement, so a provider pressing "Send for review" in that
@@ -110,6 +113,8 @@ declare
     v_quote       boolean;
     v_hourly      numeric;
     v_flat        numeric;
+    v_services    int;
+    v_areas       int;
     v_document    text;
 begin
     select "owner_id", "status", "audience", "description",
@@ -143,6 +148,25 @@ begin
                 or coalesce(v_hourly, 0) > 0
                 or coalesce(v_flat, 0) > 0) then
             raise exception 'a trade listing needs a way to price the job (a quote, an hourly rate or a flat fee) before it can be submitted';
+        end if;
+
+        select count(*) into v_services
+          from "public"."service_provider_skills"
+         where "provider_id" = p_id;
+        if v_services = 0 then
+            select count(*) into v_services
+              from "public"."service_provider_extras"
+             where "provider_id" = p_id and "offered" = true;
+        end if;
+        if v_services = 0 then
+            raise exception 'a trade listing needs at least one service before it can be submitted';
+        end if;
+
+        select count(*) into v_areas
+          from "public"."service_areas"
+         where "provider_id" = p_id;
+        if v_areas = 0 then
+            raise exception 'a trade listing needs at least one coverage area before it can be submitted';
         end if;
     end if;
 
