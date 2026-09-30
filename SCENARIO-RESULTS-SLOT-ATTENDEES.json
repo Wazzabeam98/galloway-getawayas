@@ -1,9 +1,9 @@
 {
-  "ranAt": "2026-09-14T11:14:09.941Z",
-  "target": "http://localhost:3192",
-  "account": "acct_1UFVhiAQQUL0pK8w",
-  "passed": 3,
-  "failed": 0,
+  "ranAt": "2026-09-30T07:27:01.943Z",
+  "target": "http://localhost:3800",
+  "account": "acct_1U6iMxAJfMhUsIVc",
+  "passed": 2,
+  "failed": 1,
   "scenarios": [
     {
       "number": "1",
@@ -48,11 +48,11 @@
         },
         {
           "desc": "and it shows attendees = 6",
-          "ok": true,
-          "detail": "attendees=6"
+          "ok": false,
+          "detail": "attendees=1"
         }
       ],
-      "status": "passed"
+      "status": "failed"
     },
     {
       "number": "3",

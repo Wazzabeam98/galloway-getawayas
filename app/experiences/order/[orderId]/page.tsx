@@ -1008,9 +1008,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             Airbnb's EXPERIENCE reservation shows no price, no
                             amount paid and no receipt — those live on its STAY
                             reservation under "Payment info". Deliberately NOT
-                            copied: the provider is the merchant of record on this
-                            order, not Galloway Getaways, so what the guest paid
-                            and who they paid it to belongs on the page. Airbnb can
+                            copied: the guest pays Galloway Getaways as the
+                            provider's agent (we hold it until after the
+                            experience), so what the guest paid and who it was
+                            for belongs on the page. Airbnb can
                             omit it because it is the merchant itself and its
                             receipts live in a trips-wide payments section this
                             product has no equivalent of.

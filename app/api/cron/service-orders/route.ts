@@ -13,8 +13,8 @@ export const maxDuration = 60;
 //
 // A 'holding' slot order never kept a PaymentIntent id — the webhook is what
 // writes it, and this reconciliation exists precisely for when that webhook
-// never arrived. But if the guest paid, their money is a destination-charge
-// PaymentIntent carrying `metadata.order_id`, set by the slot/book route's
+// never arrived. But if the guest paid, their money is a PaymentIntent carrying
+// `metadata.order_id`, set by the slot/book route's
 // Checkout (`payment_intent_data.metadata`) and the same key the webhook links
 // on. So we find the payment by that metadata.
 //
@@ -24,8 +24,8 @@ export const maxDuration = 60;
 // instant it exists. The list is bounded to the hold's own lifetime (a slot
 // hold lives ~30 minutes, SLOT_HOLD_MINUTES), which keeps it small. We read the
 // PaymentIntent's STATUS, which flips to 'succeeded' synchronously on capture —
-// unlike the Transfer and Application Fee objects, which settle a few seconds
-// later because on_behalf_of equals the transfer destination. Status is the
+// (an older destination charge's Transfer and Application Fee objects settled a
+// few seconds later still; a held platform charge has neither). Status is the
 // right thing to read here, and it is never late.
 async function findPaidPaymentIntent(orderId: string, sinceIso: string): Promise<any | null> {
     // Five-minute buffer before the hold was written, to be safe against clock skew.

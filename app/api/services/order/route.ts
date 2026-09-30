@@ -8,6 +8,7 @@ import {
     isLiveToGuests, priceOrder, guestExperiencesOpen, exclusivePerDate,
     normaliseUnit, unitMultiplies, unitNoun, orderQuantity, orderTotal, MAX_ORDER_QUANTITY,
 } from '@/lib/serviceOrders';
+import { heldChargeMetadata, heldChargeSeller } from '@/lib/experienceFunds';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { hasExtraGuests, partyPrice, partyCeiling } from '@/lib/extraGuests';
@@ -32,11 +33,16 @@ export const dynamic = 'force-dynamic';
 // not made to pay for a chef who has not agreed, and a chef is not made to hold
 // an evening for a guest who has not committed.
 //
-// THE PROVIDER IS THE MERCHANT OF RECORD. The charge is on_behalf_of the
-// provider's own connected account, settled to it (transfer_data.destination),
-// and our 10% is an application fee — not a markup. The guest is paying the
-// provider; we are the platform taking payment for them. That is the whole
-// liability posture, and it lives in these four Stripe fields.
+// WE HOLD THE MONEY UNTIL AFTER THE EXPERIENCE. The charge is made on behalf
+// of the provider (on_behalf_of — they are the seller, and their name is on
+// the guest's statement) but with no transfer_data and no application fee, so
+// on capture the whole amount settles to Galloway Getaways, as agent for the
+// provider. The day after the experience /api/cron/experience-payouts
+// transfers the provider's share (the total less our 10%, frozen here as
+// platform_fee_pence). A no-show is refunded from money we still hold. Until
+// 30 Sep 2026 this was a destination charge that paid the provider at capture;
+// those orders are funds_flow 'direct' and keep their old refund path. See
+// lib/experienceFunds.ts.
 //
 // Nothing about the money is trusted from the browser: the price is the
 // provider's own, read here, and the guest count comes off the booking the
@@ -263,6 +269,7 @@ export async function POST(request: Request) {
                 delivery_fee: deliveryFeeC > 0 ? String(deliveryFeeC) : '',
                 collection_note: collectionNote,
                 commission_rate: String(pricingC.commissionRate),
+                ...heldChargeMetadata(pricingC),
                 note: note,
                 allergy: allergy,
                 item_name: summaryName,
@@ -288,9 +295,10 @@ export async function POST(request: Request) {
                     // Standard-only orders capture at once; a custom order is HELD
                     // until the provider accepts.
                     capture_method: hasCustom ? 'manual' : 'automatic',
-                    on_behalf_of: prov.stripe_account_id,
-                    application_fee_amount: pricingC.applicationFeePence,
-                    transfer_data: { destination: prov.stripe_account_id },
+                    // On behalf of the provider — they are the seller, their name
+                    // is on the statement — but held by us until after the date,
+                    // then paid out by the experience-payouts run (lib/experienceFunds).
+                    ...heldChargeSeller(prov.stripe_account_id),
                     description: 'Galloway food order — ' + businessC + (hasCustom ? ' (request)' : ''),
                     metadata: mdC,
                 },
@@ -570,6 +578,7 @@ export async function POST(request: Request) {
             adults: hasExtraGuests(item) ? String(Math.max(1, reqAdults || 1)) : '',
             children: hasExtraGuests(item) ? String(childrenAllowed(minAge) ? reqChildrenRaw : 0) : '',
             commission_rate: String(pricing.commissionRate),
+            ...heldChargeMetadata(pricing),
             note: note,
             allergy: allergy,
             item_id: item.id,
@@ -612,10 +621,10 @@ export async function POST(request: Request) {
             payment_intent_data: {
                 // The hold. Captured only when the provider confirms.
                 capture_method: 'manual',
-                // The provider is the merchant of record; our cut is a fee.
-                on_behalf_of: provider.stripe_account_id,
-                application_fee_amount: pricing.applicationFeePence,
-                transfer_data: { destination: provider.stripe_account_id },
+                // On behalf of the provider (the seller, named on the guest's
+                // statement), captured to us on confirm and held until the day
+                // after the experience (lib/experienceFunds).
+                ...heldChargeSeller(provider.stripe_account_id),
                 description: 'Galloway experience — ' + business + ' · ' + itemName,
                 // The full order shape on the held PaymentIntent, so the sweep
                 // can rebuild the order from Stripe alone if the webhook is lost.

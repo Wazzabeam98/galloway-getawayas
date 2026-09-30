@@ -21,6 +21,7 @@
     "lib/**/*.ts",
     "config/areas.ts",
     "app/api/cron/host-payouts/route.ts",
+    "app/api/cron/experience-payouts/route.ts",
     "app/api/cron/booking-payments/route.ts",
     "app/api/cron/balance-charges/route.ts",
     "app/api/stripe/webhook/route.ts",

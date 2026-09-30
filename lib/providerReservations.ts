@@ -16,7 +16,7 @@ import { requestedWhen } from '@/lib/serviceEnquiries';
 import { groupLabel } from '@/lib/bookingDisplay';
 import { formatGBP } from '@/lib/formatMoney';
 import { getImageUrl, displayName } from '@/lib/utils';
-import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import { londonDayKey, shiftDayKey, ukDate } from '@/lib/dayKey';
 
 export type ReservationKind = 'slot' | 'comes_to_you' | 'made_to_order' | 'trade';
 
@@ -184,7 +184,7 @@ export async function loadProviderReservations(
 async function loadGuestReservations(admin: any, provider: any, today: string, tomorrow: string, weekEnd: string): Promise<ProviderReservationsResult> {
     const { data: orders } = await admin
         .from('service_orders')
-        .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, guest_id, guest_name, guest_phone, note, allergy, listing_id, created_at, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
+        .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, guest_id, guest_name, guest_phone, note, allergy, listing_id, created_at, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, funds_flow, paid_out_at')
         .eq('provider_id', provider.id)
         .in('status', ['authorised', 'confirmed'])
         .is('parent_order_id', null)
@@ -229,7 +229,16 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
                         { label: 'Our fee (' + Math.round(net.rate * 100) + '%)', value: '-' + formatGBP(net.fee), muted: true },
                         { label: 'You get', value: formatGBP(net.youGet) },
                     ],
-                    working: 'Guest paid ' + formatGBP(net.gross - net.refunded) + ' − our ' + Math.round(net.rate * 100) + '% fee ' + formatGBP(net.fee) + ' = ' + formatGBP(net.youGet) + ', paid straight to your account.',
+                    working: 'Guest paid ' + formatGBP(net.gross - net.refunded) + ' − our ' + Math.round(net.rate * 100) + '% fee ' + formatGBP(net.fee) + ' = ' + formatGBP(net.youGet) + ', ' + (
+                        // Where the provider's share is. A held order (every order
+                        // from 30/09/2026) is paid the day after the booking; an
+                        // older direct order went to their account at payment.
+                        o.funds_flow !== 'held'
+                            ? 'paid straight to your account.'
+                            : o.paid_out_at
+                                ? 'paid to you on ' + ukDate(londonDayKey(new Date(o.paid_out_at))) + '.'
+                                : 'paid to you the day after the booking.'
+                    ),
                 };
             const moneyNote = awaiting
                 ? 'Their card is held, not charged — confirm the request to take the payment (' + formatGBP(net.gross) + ').'
