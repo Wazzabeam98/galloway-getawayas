@@ -8,7 +8,8 @@ import { firstName, getImageUrl, formatTime } from '@/lib/utils';
 import { groupLabel, cancellationWords } from '@/lib/bookingDisplay';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukDate, ukWeekday, daysBetweenKeys } from '@/lib/dayKey';
-import { stayCountdown } from '@/lib/bookingWindows';
+import { stayCountdown, arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
+import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { rateFor, netOfFee } from '@/lib/fees';
 import { formatGBP } from '@/lib/formatMoney';
 import { publicArea } from '@/lib/places';
@@ -175,11 +176,11 @@ export async function GET(
     // Arrival secrets — a server-side wall: pulled ONLY when the existing rules
     // allow them, so a viewer who may not see them never has the value sent. The
     // host (or a co-host holding the listing permission) always may; the guest may
-    // once check-in is within the arrival window and the booking is still live.
-    const closedBooking = booking.status === 'cancelled' || booking.status === 'declined';
+    // only on a paid, confirmed stay (an unpaid row costs nothing to create) and
+    // only inside the arrival window — the same two gates the arrival page draws.
     const hostSecrets = isHost || (isCoHost && !!(await checkListing(uid, booking.listing_id, 'can_listing')));
-    const guestSecrets = isGuest && !closedBooking
-        && stayCountdown({ check_in: booking.check_in, check_out: booking.check_out }, new Date()).daysUntilCheckIn <= 3;
+    const guestSecrets = isGuest && bookingReleasesPrivateData(booking)
+        && arrivalSecretsWindowOpen({ check_in: booking.check_in, check_out: booking.check_out }, new Date());
     let arrival: { doorCode: string | null; wifiName: string | null; wifiPassword: string | null } | null = null;
     if (hostSecrets || guestSecrets) {
         const [{ data: arr }, { data: code }, { data: override }] = await Promise.all([
@@ -312,7 +313,9 @@ export async function GET(
             phoneHeld: phoneHeld,
             avatar: (otherProfile && otherProfile.avatar_url) || null,
         },
-        listing: listing || null,
+        // commission_rate is read above for the host's money rows; it is the
+        // platform's number, not the guest's, so it does not leave the server.
+        listing: listing ? (({ commission_rate, ...rest }: any) => rest)(listing) : null,
         booking: {
             id: booking.id,
             check_in: booking.check_in,

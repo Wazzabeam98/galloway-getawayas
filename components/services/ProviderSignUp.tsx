@@ -41,7 +41,6 @@ import {
     offerableSchemes,
     asksAboutSkills,
     calloutLine,
-    planTerms,
     groupForTrade,
     schemeLabel,
     schemeNumberLabel,
@@ -81,7 +80,8 @@ import {
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
 import { serviceCommission } from '@/lib/pricing';
-import { PROVIDER_TERMS, PROVIDER_TERMS_VERSION } from '@/lib/providerTerms';
+import { AGREEMENTS, agreementProblem, versionForTick } from '@/lib/agreements';
+import AgreementTick, { AGREEMENTS_CHANGED, fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY, HOST_LOCATION_COPY } from '@/lib/strings';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
@@ -486,9 +486,12 @@ function ApplicationForm() {
     // see the save() guard and the gated button. `termsError` is the gate message.
     const [termsAgreed, setTermsAgreed] = useState(false);
     const [termsError, setTermsError] = useState('');
-    // The terms open in a modal from the agree line, so the finish screen itself
-    // stays a preview of what they're submitting rather than a wall of terms.
-    const [termsModalOpen, setTermsModalOpen] = useState(false);
+    // Which agreements this account already has on record at the current
+    // version (from /api/agreements; null until known). A guest experience asks
+    // for the Experience Provider Agreement, a trade for the Tradesperson
+    // Agreement — lib/agreements. Somebody already on the current version is
+    // not shown the box.
+    const [agreementsOnRecord, setAgreementsOnRecord] = useState<Record<string, boolean> | null>(null);
     // The finish-screen byline: the provider's first name, shown beneath their
     // photo. Derived from the account (resolveGuestBylineNow is async), so it is
     // loaded into state when the finish screen is reached. The title itself is
@@ -999,13 +1002,12 @@ function ApplicationForm() {
                             : '';
                         const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
                         setGuestCategory(storedKey || (byLabel ? byLabel.key : 'other'));
-                        // Their declarations, which now hold the terms acceptance.
-                        // Pre-tick the agree box only if they already agreed to the
-                        // CURRENT terms version — if the terms have moved on since,
-                        // the box starts unticked so they agree to the new text.
+                        // Their declarations, which also carry a copy of the terms
+                        // acceptance for the review screen. Whether the agree box
+                        // shows is decided by agreement_acceptances (below), not
+                        // by this copy.
                         if (ex.declarations && typeof ex.declarations === 'object') {
                             setDeclarations(ex.declarations as Record<string, any>);
-                            setTermsAgreed((ex.declarations as any).terms_version === PROVIDER_TERMS_VERSION);
                         }
                         // Their content answers in their own words — the seven
                         // fields that now live in the guest_details jsonb column
@@ -1850,6 +1852,29 @@ function ApplicationForm() {
     // which is what keeps a host's steps and validation byte-for-byte unchanged:
     // the guest steps stay off and stepForField uses the host map.
     const isGuest = audienceForTrade(trade) === 'guest';
+    // The one extra agreement this sign-up ends with.
+    const agreementDoc = isGuest ? 'experience_provider' as const : 'tradesperson' as const;
+    // Asked only of somebody sending for review (a live business editing is
+    // caught by the sign-in prompt instead) with no current acceptance on
+    // record. Unknown (null) counts as not on record — the server decides.
+    const needsAgreementTick = status !== 'approved'
+        && !(agreementsOnRecord && agreementsOnRecord[agreementDoc]);
+
+    // What they have already agreed to — asked once signed in, and again when
+    // the sign-in prompt records something (AGREEMENTS_CHANGED).
+    useEffect(() => {
+        if (!session) return;
+        let cancelled = false;
+        const load = () => fetchAgreementStatus().then((st) => {
+            if (cancelled || !st) return;
+            const on: Record<string, boolean> = {};
+            Object.keys(st.documents).forEach((k) => { on[k] = !!(st.documents as any)[k].agreed; });
+            setAgreementsOnRecord(on);
+        });
+        load();
+        window.addEventListener(AGREEMENTS_CHANGED, load);
+        return () => { cancelled = true; window.removeEventListener(AGREEMENTS_CHANGED, load); };
+    }, [session]);
     // The made-to-order Location screen is the three-card fulfilment fork, so it
     // centres vertically like the stepper screens (g_you/g_capacity/g_notice) —
     // desktop only; the stacked mobile layout is left exactly as it is.
@@ -2572,9 +2597,9 @@ function ApplicationForm() {
         // stamp makes a stale agreement obvious if the text later changes. Written
         // only when they've agreed (the send gate guarantees they have); the
         // timestamp is the moment of submit.
-        const acceptance: Record<string, string> = termsAgreed
-            ? { terms_version: PROVIDER_TERMS_VERSION, terms_agreed_at: new Date().toISOString() }
-            : {};
+        const acceptance: Record<string, any> = termsAgreed
+            ? { terms_version: AGREEMENTS.experience_provider.version, terms_agreed_at: new Date().toISOString() }
+            : declarations;
         // Fulfilment (made-to-order this pass): the direction, plus the collection
         // address when they collect. The address is OMITTED from the write while it
         // is not loaded AND the field is empty — so a returning provider whose
@@ -2710,16 +2735,20 @@ function ApplicationForm() {
     }, [isGuest, step, session]);
 
     const save = async (submit: boolean) => {
-        // Agreeing to the terms gates send for EVERY provider — a guest experience
-        // and a host trade alike; someone who won't agree should not go live.
+        // Agreeing to the role's agreement gates send — someone who won't agree
+        // should not go live. The shared rule (lib/agreements), the same one
+        // /api/agreements and submit_service_provider() hold on the server.
         // Checked before the account/validation branches so it applies whichever
         // submit path they are on. Not a submitProblems field: it lives on the
         // finish screen, so its own error shows there.
-        if (submit && !termsAgreed) {
-            setTouchedSubmit(true);
-            setTermsError(GUEST_SCREEN_COPY.termsGate);
-            goToFirstProblem();
-            return;
+        if (submit && needsAgreementTick) {
+            const termsMsg = agreementProblem(agreementDoc, null, versionForTick(agreementDoc, termsAgreed));
+            if (termsMsg) {
+                setTouchedSubmit(true);
+                setTermsError(termsMsg);
+                goToFirstProblem();
+                return;
+            }
         }
 
         let active: any = session;
@@ -2849,6 +2878,17 @@ function ApplicationForm() {
         // Submitting is its own step now, after the row exists and its columns
         // are saved. The function is the only thing that may move `status`.
         if (Object.keys(statusPatch).length > 0) {
+            // The agreement first: recorded (version + server time) through the
+            // one route, which refuses it unticked; submit_service_provider()
+            // then refuses a submit with no acceptance on record.
+            if (needsAgreementTick) {
+                const failed = await recordAgreement(agreementDoc, isGuest ? 'experience_signup' : 'trade_signup');
+                if (failed) {
+                    setSaving(false);
+                    setTermsError(failed);
+                    return;
+                }
+            }
             const { error } = await supabase.rpc('submit_service_provider', { p_id: id });
             if (error) {
                 setSaving(false);
@@ -5922,43 +5962,16 @@ function ApplicationForm() {
                 </section>
             )}
 
-            {/* The trade terms tick — the same shape as the guest one, and the same
-                shared modal/state (termsAgreed / termsModalOpen). What a trade is
-                agreeing to INCLUDES the subscription terms, so the plan line
-                (planTerms) sits right above the box, in the agreement, not tucked
-                away. Send is greyed until this is ticked (see the button's disabled
-                rule and the save() guard); the acceptance — version + timestamp —
-                is written to declarations exactly as the guest's is. */}
-            {onStep('finish') && !isGuest && !locked && (
+            {/* The Tradesperson Agreement, the last thing before Send — the same
+                one-line tick box every agreement uses (lib/agreements). */}
+            {onStep('finish') && !isGuest && !locked && needsAgreementTick && (
                 <section className="mb-8">
-                    <p className="text-sm text-slate-600 rounded-xl bg-slate-50 border border-slate-200 p-3.5">
-                        {planTerms(trade)}
-                    </p>
-                    <div className="mt-4 flex items-start gap-3">
-                        <input
-                            id="agree-terms-trade"
-                            type="checkbox"
-                            checked={termsAgreed}
-                            onChange={(e) => { setTermsAgreed(e.target.checked); setTermsError(''); }}
-                            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 accent-emerald-600"
-                        />
-                        <label htmlFor="agree-terms-trade" className="text-sm text-slate-800">
-                            {GUEST_SCREEN_COPY.termsAgreePrefix}{' '}
-                            <button
-                                type="button"
-                                onClick={(e) => { e.preventDefault(); setTermsModalOpen(true); }}
-                                className="font-semibold text-emerald-700 underline hover:text-emerald-800"
-                            >
-                                {GUEST_SCREEN_COPY.termsLinkText}
-                            </button>, including the subscription terms above.
-                            <span className="mt-0.5 block text-xs text-slate-400">
-                                Version {PROVIDER_TERMS.version}
-                            </span>
-                        </label>
-                    </div>
-                    {termsError && (
-                        <p data-problem className="mt-2 text-sm text-rose-700">{termsError}</p>
-                    )}
+                    <AgreementTick
+                        doc="tradesperson"
+                        checked={termsAgreed}
+                        onChange={(v) => { setTermsAgreed(v); setTermsError(''); }}
+                        error={termsError}
+                    />
                 </section>
             )}
 
@@ -6115,82 +6128,21 @@ function ApplicationForm() {
                         </div>
                     </div>
 
-                    {/* The terms, one line: a tickbox with the terms behind a link.
-                        The link is a button INSIDE the label — clicking it opens the
-                        modal and does not toggle the box (an interactive descendant
-                        doesn't fire the label's control). */}
-                    <div className="mt-6">
-                        <div className="flex items-start gap-3">
-                            <input
-                                id="agree-terms"
-                                type="checkbox"
+                    {/* The agreement, one line: a tickbox with the Experience
+                        Provider Agreement behind an underlined link. */}
+                    {needsAgreementTick && (
+                        <div className="mt-6">
+                            <AgreementTick
+                                doc="experience_provider"
                                 checked={termsAgreed}
-                                onChange={(e) => { setTermsAgreed(e.target.checked); setTermsError(''); }}
-                                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
+                                onChange={(v) => { setTermsAgreed(v); setTermsError(''); }}
+                                error={termsError}
                             />
-                            <label htmlFor="agree-terms" className="text-sm text-slate-800">
-                                {GUEST_SCREEN_COPY.termsAgreePrefix}{' '}
-                                <button
-                                    type="button"
-                                    onClick={(e) => { e.preventDefault(); setTermsModalOpen(true); }}
-                                    className="font-semibold text-emerald-700 underline hover:text-emerald-800"
-                                >
-                                    {GUEST_SCREEN_COPY.termsLinkText}
-                                </button>.
-                                <span className="mt-0.5 block text-xs text-slate-400">
-                                    Version {PROVIDER_TERMS.version}
-                                </span>
-                            </label>
                         </div>
-                        {termsError && (
-                            <p data-problem className="mt-2 text-sm text-rose-700">{termsError}</p>
-                        )}
-                    </div>
+                    )}
                 </section>
                 );
             })()}
-
-            {/* The terms modal: the full terms in a scrollable panel with a close
-                button. No scroll-to-bottom gate. Opened from the agree line. */}
-            {termsModalOpen && (
-                <div
-                    className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 sm:items-center sm:p-6"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={PROVIDER_TERMS.title}
-                    onClick={() => setTermsModalOpen(false)}
-                >
-                    <div
-                        className="flex max-h-[85vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
-                            <h3 className="text-base font-bold text-slate-900">{PROVIDER_TERMS.title}</h3>
-                            <button
-                                type="button"
-                                onClick={() => setTermsModalOpen(false)}
-                                aria-label={GUEST_SCREEN_COPY.termsModalClose}
-                                className="rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-                            >
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-                        <div className="scroll-always space-y-4 overflow-y-auto px-5 py-5 text-sm text-slate-700 sm:px-6">
-                            {PROVIDER_TERMS.draftNotice && (
-                                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                                    {PROVIDER_TERMS.draftNotice}
-                                </p>
-                            )}
-                            {PROVIDER_TERMS.sections.map((sec) => (
-                                <div key={sec.heading} className="space-y-1.5">
-                                    <h4 className="font-semibold text-slate-900">{sec.heading}</h4>
-                                    {sec.body.map((p, i) => <p key={i}>{p}</p>)}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* "Save and finish later" now lives in the footer, on the same line
                 as the send button (see the footer below). What stays here is the
@@ -6422,13 +6374,12 @@ function ApplicationForm() {
                         <button
                             type="button"
                             onClick={() => save(true)}
-                            // Every provider must agree to the terms before send —
-                            // a guest experience and a host trade alike. The save()
-                            // guard enforces it too; greying the button makes it
-                            // visible (matching how Next greys on the other steps),
-                            // with the agree box and its gate line right above on
-                            // the finish screen.
-                            disabled={saving || !termsAgreed}
+                            // Every provider must agree to their role's agreement
+                            // before send. The save() guard enforces it too; greying
+                            // the button makes it visible (matching how Next greys on
+                            // the other steps), with the agree box right above on the
+                            // finish screen.
+                            disabled={saving || (needsAgreementTick && !termsAgreed)}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >
                             <span className="block truncate">

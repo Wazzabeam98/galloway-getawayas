@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
-import { SITE_URL } from '@/lib/email';
+import { returnUrl } from '@/lib/email';
 import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
 import { balanceDueKey } from '@/lib/balanceDue';
 import { londonDayKey } from '@/lib/dayKey';
@@ -306,8 +306,8 @@ export async function POST(request: Request) {
             // a guest staring at a login screen. Stripe fills in the session id,
             // which lets that page ask Stripe directly whether the payment went
             // through when the webhook has not landed (lib/bookingPaymentReconcile).
-            success_url: SITE_URL + '/booking-confirmed/' + booking.id + '?session_id={CHECKOUT_SESSION_ID}',
-            cancel_url: SITE_URL + '/homes/' + booking.listing_id + '?cancelled=1',
+            success_url: returnUrl() + '/booking-confirmed/' + booking.id + '?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url: returnUrl() + '/homes/' + booking.listing_id + '?cancelled=1',
             line_items: [
                 {
                     quantity: 1,

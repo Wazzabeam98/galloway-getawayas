@@ -27,7 +27,7 @@ import { loadEnv, supabaseClient, TEST_PROJECT_REF } from './seed-lib.mjs';
 const SEED_DOMAIN = 'gallowayexp.test';
 const LIAM_EMAIL = 'liamworrall18@hotmail.com';
 const PASSWORD = 'walk-the-trade-2026';
-const TERMS_VERSION = 'draft-2026-09-07'; // keep in sync with lib/providerTerms.ts
+const AGREEMENT_VERSION = 'v1-draft-2026-09-29'; // keep in sync with AGREEMENTS in lib/agreements.ts
 
 const env = loadEnv();
 if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.NEXT_PUBLIC_SUPABASE_URL.includes(TEST_PROJECT_REF)) {
@@ -192,8 +192,16 @@ async function seedOne(t, liam, listings, photoKeys) {
         headshot: photoKeys[0] || null,
         photos: photoKeys,
         guest_details: t.guest_details,
-        declarations: { terms_version: TERMS_VERSION, terms_agreed_at: now.toISOString() },
+        declarations: {},
     }]);
+
+    // Agreements are recorded in agreement_acceptances now (PR #222), not in
+    // declarations. Seed the role's agreement plus the site-wide Terms so the
+    // account matches a real signed-up trade and would pass the submit wall.
+    await db.insert('agreement_acceptances', [
+        { user_id: owner, document: 'tradesperson', version: AGREEMENT_VERSION, accepted_at: now.toISOString(), source: 'seed' },
+        { user_id: owner, document: 'guest', version: AGREEMENT_VERSION, accepted_at: now.toISOString(), source: 'seed' },
+    ]);
 
     await db.insert('service_areas', [{ provider_id: provider.id, ...t.area }]);
     await db.insert('service_provider_extras', t.extras.map((key) => ({ provider_id: provider.id, extra_key: key, offered: true })));

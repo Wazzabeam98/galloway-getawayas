@@ -578,7 +578,7 @@ export function reviewContentFrom(source: {
 // on the finish screen. What they agreed to, and when, is recorded in the
 // `declarations` jsonb (terms_version + terms_agreed_at) — the acceptance store,
 // no longer a set of tickboxes. The terms text is the single source in
-// lib/providerTerms.ts.
+// components/legal/agreements/text/experience-provider.ts (lib/agreements.ts).
 
 // A heading on the picker, not a thing anybody is.
 //

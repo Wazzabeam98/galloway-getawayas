@@ -62,9 +62,40 @@ export async function POST(request: Request) {
         const alreadyRefunded = Number(booking.amount_refunded || 0);
         const refundable = round2(paid - alreadyRefunded);
 
-        // Nothing was ever taken, or it has all been given back already.
-        // Not an error — the booking status change on its own is correct.
+        // Nothing was ever taken, or it has all been given back already (a host
+        // who refunded the whole stay as goodwill, then cancels). No money moves,
+        // but the stay is still called off — here, because nothing else closes
+        // it any more. This used to return ok without touching the booking, so
+        // the host was told "Booking cancelled" while it still read confirmed,
+        // the dates stayed blocked and the guest was emailed a cancellation of
+        // a stay the site still showed as on.
         if (!booking.stripe_payment_intent_id || refundable <= 0) {
+            const closing = reason === 'declined' ? 'declined' : reason === 'cancelled' ? 'cancelled' : null;
+            if (closing && (booking.status === 'pending' || booking.status === 'confirmed')) {
+                const { error: closeError } = await admin
+                    .from('bookings')
+                    .update({
+                        status: closing,
+                        balance_amount: 0,
+                        cancelled_at: new Date().toISOString(),
+                        cancelled_by_user: user.id,
+                        cancelled_by_role: isHost ? 'host' : 'guest',
+                    })
+                    .eq('id', booking.id);
+                if (closeError) {
+                    await logError('[stripe/refund] could not close a booking with nothing to refund', closeError, {
+                        path: 'stripe/refund',
+                        userId: user.id,
+                    });
+                    return NextResponse.json(
+                        { ok: false, error: 'The booking could not be updated. Please try again.' },
+                        { status: 500 }
+                    );
+                }
+                if (isHost && closing === 'cancelled' && booking.status === 'confirmed') {
+                    await cancelStayExperienceOrders(admin, booking.id);
+                }
+            }
             return NextResponse.json({ ok: true, refunded: 0, nothingToRefund: true });
         }
 
