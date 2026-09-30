@@ -151,8 +151,17 @@ export default async function ProviderDashboardPage() {
     const datedJobs = (acceptedRows || []).filter((e: any) => e.preferred_date);
     const jobs = datedJobs.map((e: any) => {
         const rw = requestedWhen(e);
-        const window = rw ? rw.replace(/^Asked for [^,]+,\s*/, '') : 'a time to agree';
+        const windowFull = rw ? rw.replace(/^Asked for [^,]+,\s*/, '') : 'a time to agree';
+        // Tighten for the small calendar cell: "between 9am and 12pm" -> "9am–12pm",
+        // "any time that day" -> "any time". The full phrasing stays in the hover.
+        const window = windowFull
+            .replace(/^between /, '')
+            .replace(/ and /, '–')
+            .replace(/^any time that day$/, 'any time');
         return {
+            // The enquiry id, so clicking the day opens that enquiry on the
+            // Requests page (the Accepted folder), the way a host opens a booking.
+            id: String(e.id),
             dayKey: String(e.preferred_date).slice(0, 10),
             title: e.summary || 'Job',
             window,

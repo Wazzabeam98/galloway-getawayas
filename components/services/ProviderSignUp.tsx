@@ -27,6 +27,8 @@ import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 import {
     tradeLabel,
+    tradeNoun,
+    indefiniteArticle,
     audienceForTrade,
     extrasFor,
     extrasProblems,
@@ -1806,6 +1808,24 @@ function ApplicationForm() {
 
     const hasSkills = asksAboutSkills(trade);
 
+    // The credentials step's heading, personalised to the trade they picked —
+    // "What do you cover as a joiner?", a plumber sees "plumber", an electrician
+    // sees "an electrician". For 'Something else' (trade 'other') we use what they
+    // typed for their trade when it reads as a trade noun, and otherwise fall back
+    // to a plain "What do you cover?" rather than an "as a ..." with nothing to
+    // put in it.
+    const coverHeading = (() => {
+        if (trade === 'other') {
+            const typed = otherText.trim();
+            const readsProperly = typed.length >= 2 && typed.length <= 40 && /^[a-zA-Z][a-zA-Z '&-]*$/.test(typed);
+            if (!readsProperly) return 'What do you cover?';
+            const noun = typed.toLowerCase();
+            return `What do you cover as ${indefiniteArticle(noun)} ${noun}?`;
+        }
+        const noun = tradeNoun(trade);
+        return `What do you cover as ${indefiniteArticle(noun)} ${noun}?`;
+    })();
+
     const skillIsNew = wouldCreateNew(allSkills, skillTyped);
 
     const addSkill = (label: string) => {
@@ -3506,7 +3526,7 @@ function ApplicationForm() {
                                years screen (same mb-10 + text-center). Every other
                                host screen is a left-aligned form. */
                             + (step === 'g_you' ? 'mb-10 text-center' : 'mb-8')}>
-                            {stepMeta.title}
+                            {step === 'credentials' ? coverHeading : stepMeta.title}
                         </h1>
                     )}
                     {!isGuest && step === 'trade' && (
@@ -5271,11 +5291,9 @@ function ApplicationForm() {
                     thing before the usual one. */}
                 {onStep('credentials') && hasSkills && (
                     <section className="mb-8">
-                        {/* One short instruction, no paragraph of explanation. */}
-                        <h2 className="text-sm font-semibold text-slate-900 mb-4">
-                            Add the jobs you take on
-                        </h2>
-
+                        {/* The heading above (the personalised "What do you cover
+                            as a joiner?") carries the instruction now; the box's own
+                            prompt sits under it, below. */}
                         {skills.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-3">
                                 {skills.map((label) => (
@@ -5316,6 +5334,12 @@ function ApplicationForm() {
                             placeholder="Search, or type your own"
                             className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
+
+                        {/* The prompt sits under the box, and steps aside once they
+                            start typing and the matching services appear. */}
+                        {skillTyped.trim() === '' && (
+                            <p className="mt-2 text-[13px] text-slate-500">Start typing to add a service</p>
+                        )}
 
                         {/* Search-only: the list appears once something is typed
                             and shows the existing services that match — no

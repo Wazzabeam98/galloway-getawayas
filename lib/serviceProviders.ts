@@ -49,6 +49,36 @@ export function tradeLabel(key: string): string {
     return found ? found.label : 'Service';
 }
 
+// The trade as a WORKER NOUN, for a sentence like "What do you cover as a
+// joiner?". For most host trades the key already IS the noun (joiner, plumber,
+// electrician, roofer, painter, handyman), so it is used as-is. The few whose key
+// is an icon name, or whose label is an activity rather than a person, get an
+// explicit noun so the sentence never reads "as a window cleaning". 'other' is
+// not handled here — the applicant's typed trade (custom_label) is used instead,
+// by the caller. Unknown falls back to 'tradesperson'.
+const TRADE_NOUNS: Record<string, string> = {
+    sponge: 'cleaner',
+    bin: 'waste removal service',
+    trees: 'gardener',
+    droplet: 'window cleaner',
+    electrician: 'electrician',
+    joiner: 'joiner',
+    plumber: 'plumber',
+    roofer: 'roofer',
+    painter: 'painter and decorator',
+    handyman: 'handyman',
+};
+export function tradeNoun(key: string): string {
+    return TRADE_NOUNS[String(key || '')] || 'tradesperson';
+}
+
+// "a" or "an" for a noun, by its first sound (vowel letter is a good-enough
+// proxy here — the trade nouns are all ordinary words). Used so "an electrician"
+// reads right where "a joiner" also does.
+export function indefiniteArticle(noun: string): string {
+    return /^[aeiou]/i.test(String(noun || '').trim()) ? 'an' : 'a';
+}
+
 // Which sign-up a trade belongs to.
 //
 // Two pages, not one page with a question. A business arriving at the host

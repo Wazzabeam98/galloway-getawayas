@@ -9,7 +9,7 @@
 //
 // Money is pre-formatted server-side (strings), same rule as MoneyCards.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, ArrowLeft, CalendarDays, History, CalendarClock } from 'lucide-react';
 import { ukDate } from '@/lib/dayKey';
 import type { ProviderReservation } from '@/lib/providerReservations';
@@ -189,6 +189,24 @@ function FolderView({ reservations, past }: { reservations: ProviderReservation[
     const list = buckets[folder];
     const [selectedId, setSelectedId] = useState<string | null>(list[0]?.id ?? null);
     const selected = list.find((r) => r.id === selectedId) || list[0] || null;
+
+    // Deep link from the trade calendar: /services/dashboard?enquiry=<id> lands
+    // here with that enquiry selected in its folder and scrolled into view — the
+    // trade opening a job from their calendar the way a host opens a booking.
+    // Read once on mount from the URL (no Suspense boundary needed).
+    useEffect(() => {
+        let wanted: string | null = null;
+        try { wanted = new URLSearchParams(window.location.search).get('enquiry'); } catch { wanted = null; }
+        if (!wanted) return;
+        const found = FOLDERS.find((f) => buckets[f.key].some((r) => r.id === wanted))?.key;
+        if (!found) return;
+        setFolder(found);
+        setSelectedId(wanted);
+        setMobileOpen(true);
+        requestAnimationFrame(() => document.getElementById('upcoming')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        // Once, on arrival; buckets is stable for the mounted data.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const pick = (f: FolderKey) => {
         setFolder(f);
