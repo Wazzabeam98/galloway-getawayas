@@ -7,16 +7,16 @@ import {
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { getImageUrl, capitializeFirst, displayName, firstName } from '@/lib/utils';
+import { getImageUrl, capitializeFirst, firstName } from '@/lib/utils';
 import { formatGBP } from '@/lib/formatMoney';
 import { publicArea } from '@/lib/places';
 import { partyLabel, confirmationNumber, cancellationWords } from '@/lib/bookingDisplay';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
-import { liveForGuestCard, stayCountdown, upcomingUntilCheckout } from '@/lib/bookingWindows';
+import { liveForGuestCard, stayCountdown, upcomingUntilCheckout, arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadBookingSeats } from '@/lib/groupSeats';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
-import { londonDayKey } from '@/lib/dayKey';
+import { londonDayKey, ukDate } from '@/lib/dayKey';
 import PropertyMap from '@/components/PropertyMap';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
@@ -69,8 +69,7 @@ function weekday(dateStr: string): string {
     return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { weekday: 'long' });
 }
 function dateLong(dateStr: string): string {
-    const d = new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
-    return isNaN(d.getTime()) ? String(dateStr) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    return ukDate(dateStr) || String(dateStr);
 }
 // "3:00pm" from a stored 'HH:MM[:SS]'. Null in, null out — no invented time.
 function timeLabel(t: string | null | undefined): string | null {
@@ -85,8 +84,7 @@ function timeLabel(t: string | null | undefined): string | null {
 // A stamped night's date as "Fri 18 Sep", built at midday so the day never slips
 // under a timezone offset.
 function nightDateLabel(iso: string): string {
-    const d = new Date(String(iso).split('T')[0] + 'T12:00:00');
-    return isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    return ukDate(iso) || String(iso);
 }
 // The word beside a night dearer than the base rate — a weekend or a seasonal
 // override. Base nights say nothing; only the reason for a difference earns a word.
@@ -140,7 +138,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
     const { data: hostProfile } = booking.host_id
         ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, phone, avatar_url, host_bio').eq('id', booking.host_id).maybeSingle()
         : { data: null };
-    const hostName = capitializeFirst(hostProfile ? displayName(hostProfile, 'your host') : 'your host');
+    const hostName = capitializeFirst(hostProfile ? firstName(hostProfile, 'your host') : 'your host');
     // A host with no name must never render as the bare word "Your" in a sentence
     // ("Message Your", "Your will let you know"). When there's no real first name,
     // fall back to "your host" — one sensible fallback used everywhere below, and
@@ -247,8 +245,9 @@ export default async function StayReservationPage({ params }: { params: { bookin
 
     const countdown = live ? stayCountdown(booking, now) : null;
     const phase = countdown?.phase ?? null;
-    const withinWindow = !!countdown && countdown.daysUntilCheckIn <= 3;
-    const phaseChip = phase === 'during' ? 'You’re here'
+    const withinWindow = !!countdown && arrivalSecretsWindowOpen(booking, now);
+    const phaseChip = phase === 'during' && String(booking.check_out).slice(0, 10) === londonDayKey(now) ? 'You check out today'
+        : phase === 'during' ? 'You’re here'
         : phase === 'today' ? 'You arrive today'
             : phase === 'tomorrow' ? 'You arrive tomorrow' : null;
 
@@ -542,7 +541,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                                     {payRefunded > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Refunded</span><span className="tabular-nums">{formatGBP(payRefunded)}</span></div>}
                                                     {payRemaining > 0 && (
                                                         <div className="flex items-baseline justify-between font-medium text-amber-800">
-                                                            <span>Still to pay{booking.balance_due_date ? (balanceOverdue ? ' · overdue' : ' · due ' + booking.balance_due_date) : ''}</span>
+                                                            <span>Still to pay{booking.balance_due_date ? (balanceOverdue ? ' · overdue' : ' · due ' + ukDate(booking.balance_due_date)) : ''}</span>
                                                             <span className="tabular-nums">{formatGBP(payRemaining)}</span>
                                                         </div>
                                                     )}
@@ -556,8 +555,8 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                                 <p className="mt-0.5 text-xs text-amber-800">
                                                     {booking.balance_due_date
                                                         ? (balanceOverdue
-                                                            ? 'This was due on ' + booking.balance_due_date + ' and is taken from your card automatically — pay now to settle it.'
-                                                            : 'This is taken from your card automatically on ' + booking.balance_due_date + '. You can pay it sooner if you prefer.')
+                                                            ? 'This was due on ' + ukDate(booking.balance_due_date) + ' and is taken from your card automatically — pay now to settle it.'
+                                                            : 'This is taken from your card automatically on ' + ukDate(booking.balance_due_date) + '. You can pay it sooner if you prefer.')
                                                         : 'You can settle this at any time.'}
                                                 </p>
                                                 <PayBalanceButton bookingId={booking.id} />

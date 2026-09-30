@@ -239,7 +239,7 @@ function load(opts: {
     });
     stubModule('next/headers', { cookies: () => ({}) });
     stubModule('@/lib/logError', { logError: async () => undefined });
-    stubModule('@/lib/email', { SITE_URL: 'http://example.invalid' });
+    stubModule('@/lib/email', { SITE_URL: 'http://example.invalid', returnUrl: () => 'http://example.invalid' });
     stubModule('@/lib/stripe', {
         stripeRequest: async (method: string, path: string, body: any) => {
             stripeCalls.push({ method, path, body });

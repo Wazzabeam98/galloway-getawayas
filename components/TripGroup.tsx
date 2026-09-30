@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { UserPlus } from 'lucide-react';
-import { getImageUrl, displayName } from '@/lib/utils';
+import { getImageUrl, firstName } from '@/lib/utils';
 import InviteSheet, { Seat, Profile } from './InviteSheet';
 
 // The group coming on a trip, the way Airbnb shows it — a summary row with the
@@ -75,7 +75,7 @@ export default function TripGroup({
     const accepted = (p: Seat) => p.status === 'active';
     const nameOf = (p: Seat) => {
         const prof = p.user_id ? profiles[p.user_id] : undefined;
-        return (prof && displayName(prof, '')) || p.name || p.email || 'Guest';
+        return (prof && firstName(prof, '')) || (p.name ? String(p.name).trim().split(' ')[0] : '') || 'Guest';
     };
     // Just the people, as avatars — the booker plus anyone who has accepted. No
     // count text and no empty-seat placeholders: the group reads as faces and an

@@ -24,6 +24,7 @@ export default function ManageReservationSheet({
     status,
     isOwner,
     ended,
+    started,
     phone,
     guestFirst,
     totalPrice,
@@ -117,7 +118,10 @@ export default function ManageReservationSheet({
                     {isOwner && !closed && !ended && askToCancelHref && (
                         <Row icon={MessageSquare} label={'Ask ' + guestFirst + ' to cancel'} sub="Draft a message for them to cancel" href={askToCancelHref} onNavigate={() => setOpen(false)} />
                     )}
-                    {!closed && (
+                    {/* Not once the stay has begun — the list hides it from
+                        check-in day too. Cancelling then would refund a stay the
+                        guest is in, or has had, in full. */}
+                    {!closed && !started && !ended && (
                         <Row icon={XCircle} label="Cancel booking" sub={isOwner ? 'Call the stay off' : 'Stays with the owner'} danger onClick={() => setView('cancel')} />
                     )}
                     {closed && <p className="py-3 text-sm text-slate-500">This booking is {status}. There’s nothing left to manage.</p>}

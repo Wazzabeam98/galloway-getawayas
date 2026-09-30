@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CancelBookingConfirm from '@/components/CancelBookingConfirm';
-import { ukLongDate } from '@/lib/dayKey';
+import { ukDate } from '@/lib/dayKey';
 
 // The home card's cancel: two steps, one page. "Free to cancel until [date]"
 // reads as a fact; pressing it opens the SAME confirm the trips card uses, in
@@ -58,7 +58,7 @@ export default function HomeCancelPanel({
                 onClick={() => setOpen(true)}
                 className={'underline underline-offset-2 hover:no-underline ' + (freeDaysLeft <= 3 ? 'text-amber-700' : 'text-emerald-700')}
             >
-                Free to cancel until {ukLongDate(freeUntilKey)}
+                Free to cancel until {ukDate(freeUntilKey)}
             </button>
             {freeDaysLeft <= 3 && (
                 <span className="text-stone-500">
