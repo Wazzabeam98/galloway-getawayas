@@ -31,6 +31,11 @@ const tools = [
         blurb: 'What each host is owed, and what has already been sent.',
     },
     {
+        href: '/admin/experience-orders',
+        title: 'Experience orders',
+        blurb: 'Paid experience bookings. Refund all or part of one.',
+    },
+    {
         href: '/admin/disputes',
         title: 'Chargebacks',
         blurb: 'Disputes raised by guests\u2019 banks, and what evidence to send.',
