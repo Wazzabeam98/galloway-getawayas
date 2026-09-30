@@ -45,6 +45,10 @@ const reset = process.argv.includes('--reset');
 
 const now = new Date();
 const inDays = (n) => new Date(now.getTime() + n * 24 * 3600 * 1000);
+// Six CALENDAR months, matching lib/serviceProviders.trialEndsAt — the trial is
+// six months, not the ninety days this used to hard-code (which showed as a
+// "Free until <date>" three months too early on the dashboard).
+const inMonths = (n) => { const d = new Date(now.getTime()); d.setMonth(d.getMonth() + n); return d; };
 const dateKey = (d) => d.toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
 
 // A short, unique-ish reference in the same GG-XXXX shape the app mints.
@@ -104,7 +108,7 @@ async function seed() {
         approved_at: now.toISOString(),
         plan: 'subscription',
         commission_rate: 0,
-        trial_ends_at: inDays(90).toISOString(),
+        trial_ends_at: inMonths(6).toISOString(),
         callout_fee: 40,
         hourly_rate: 50,
         callout_waived: true,

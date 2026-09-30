@@ -1,12 +1,12 @@
 // The six emails that are the only reason anybody ever pays.
 //
-// Nobody has a card on file until the end of the ninety days, so this ladder
+// Nobody has a card on file until the end of the six months, so this ladder
 // is not a courtesy — it is the mechanism. If these do not go out, the
 // subscription does not exist.
 //
 // The shape: one email that asks for nothing before any email that asks for
 // something, and nothing at all after the card is in. A tradesman who has had
-// ninety free days and then gets a bill out of nowhere is a tradesman who
+// six free months and then gets a bill out of nowhere is a tradesman who
 // leaves; a tradesman chased for something he has already done is a tradesman
 // who stops reading. Both failures are avoided by the same two rules and both
 // live in lib/serviceSubscription.ts, not here.
@@ -200,6 +200,6 @@ export async function sendTrialStarted(provider: any): Promise<boolean> {
     const reminder = reminderByKey('trial_started');
     if (!reminder) return false;
 
-    // No card link in this one — there is nothing to pay for ninety days.
+    // No card link in this one — there is nothing to pay for six months.
     return sendReminder(reminder, provider, null);
 }

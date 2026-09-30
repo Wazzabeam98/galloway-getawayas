@@ -439,7 +439,7 @@ export async function POST(req: Request) {
                         // What it costs, in the email that makes the promise.
                         //
                         // NO DATE HERE ANY MORE, because at approval there is not
-                        // one — the ninety days start when we send him his first
+                        // one — the six months start when we send him his first
                         // enquiry, which may be months away or never. Quoting a
                         // date computed here would be inventing one, and the
                         // whole reason the clock moved is that a date stamped at

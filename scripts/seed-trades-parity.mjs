@@ -45,6 +45,9 @@ const BUCKET = env.NEXT_PUBLIC_S3_BUCKET || 'listings';
 
 const now = new Date();
 const inDays = (n) => new Date(now.getTime() + n * 24 * 3600 * 1000);
+// Six CALENDAR months, matching lib/serviceProviders.trialEndsAt — the trial is
+// six months, not the ninety days this used to hard-code.
+const inMonths = (n) => { const d = new Date(now.getTime()); d.setMonth(d.getMonth() + n); return d; };
 const dateKey = (d) => d.toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const reference = () => 'GG-' + Array.from({ length: 4 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
@@ -180,7 +183,7 @@ async function seedOne(t, liam, listings, photoKeys) {
         approved_at: now.toISOString(),
         plan: 'subscription',
         commission_rate: 0,
-        trial_ends_at: inDays(90).toISOString(),
+        trial_ends_at: inMonths(6).toISOString(),
         callout_fee: t.callout_fee,
         hourly_rate: t.hourly_rate,
         callout_waived: true,

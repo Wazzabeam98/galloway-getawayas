@@ -21,6 +21,7 @@ import {
     pricingModelFor,
     canBeEnquiredAbout,
 } from '@/lib/serviceProviders';
+import { ukDate } from '@/lib/dayKey';
 
 // ---------------------------------------------------------------------------
 // STATES
@@ -105,7 +106,7 @@ export function canReask(status: string): boolean {
 //
 // It was built handing the host the number on the spot. That was wrong, and
 // the reason is not about the host at all — it is about what the platform can
-// prove. Every trade in this flow is free for ninety days and then twenty
+// prove. Every trade in this flow is free for six months and then twenty
 // pounds a month, and the only argument for the twenty pounds is "you got five
 // jobs out of us". An introduction nobody accepted is not evidence of
 // anything. Hand the number over unasked and the accept never happens, and the
@@ -127,7 +128,7 @@ export function canReask(status: string): boolean {
 // That is uncomfortable and it is deliberate. It was built the other way twice
 // — first releasing the number immediately, then releasing it after twenty
 // minutes — and both versions manufacture something that cannot be sold. The
-// whole argument at day ninety is "you got five jobs out of us", and the
+// whole argument at the end of the trial is "you got five jobs out of us", and the
 // accept is the only event that evidences one. An introduction the platform
 // gave away is not an introduction the platform can charge for, whether it
 // gave it away at once or after a decent interval.
@@ -298,15 +299,13 @@ export function requestedWhen(row: {
 }): string | null {
     if (!row || !row.preferred_date) return null;
 
-    const date = new Date(String(row.preferred_date) + 'T12:00:00Z');
-    if (isNaN(date.getTime())) return null;
-
-    const when = date.toLocaleDateString('en-GB', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        timeZone: 'Europe/London',
-    });
+    // DD/MM/YYYY from the shared day-key formatter — the one numeric date format
+    // the UI uses, immune to BST slipping a day. This string ends up on the
+    // trade's dashboard, in Messages and in the enquiry emails, so it goes
+    // through ukDate like every other user-facing date rather than a locale
+    // "weekday day month" that would read as its own format.
+    const when = ukDate(String(row.preferred_date));
+    if (!when) return null;
 
     const from = prettyTime(row.window_from);
     const to = prettyTime(row.window_to);
