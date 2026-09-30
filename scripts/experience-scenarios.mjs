@@ -12,9 +12,11 @@
 // WHAT IT CANNOT DO, AND HOW IT STANDS IN — exactly the wall the cottage
 // scenarios 1/2/4/5 hit: a hosted Checkout page cannot be completed over the
 // API. So where a real guest's money would be born on the Checkout page, this
-// creates the PaymentIntent directly with the IDENTICAL destination-charge
-// fields the route sets (on_behalf_of, application_fee_amount,
-// transfer_data.destination, capture_method, metadata), and — for the order row
+// creates the PaymentIntent directly with the IDENTICAL fields the route sets —
+// since 30 Sep 2026 a PLATFORM charge (capture_method + metadata, with the
+// funds_flow 'held' marker and our frozen fee; no on_behalf_of, transfer_data or
+// application fee — the money is held by us and paid to the provider by the
+// experience-payouts run the day after the experience) — and — for the order row
 // the webhook creates — delivers a SELF-SIGNED checkout.session.completed to the
 // webhook exactly as Stripe would (same secret, same signature scheme). The
 // money movement is faithful; only the hosted page is skipped. Time is
@@ -90,9 +92,30 @@ function priceParts(total) {
     return { amountPence, feePence, netPence: Math.round(net * 100) };
 }
 
-// A real destination charge, the guest's money. `capture: 'manual'` is the
-// request shape's held card; omit it for the slot shape's instant charge.
-async function destinationPI({ total, account, capture, metadata, pm = 'pm_card_visa' }) {
+// The guest's money, as the routes now take it: a PLATFORM charge held by us
+// (lib/experienceFunds heldChargeMetadata). `capture: 'manual'` is the request
+// shape's held card; omit it for the slot shape's instant charge. `account` is
+// accepted and ignored so the call sites read as before — the provider is no
+// longer on the charge at all.
+async function guestPI({ total, account, capture, metadata, pm = 'pm_card_visa' }) {
+    const { amountPence, feePence } = priceParts(total);
+    const body = {
+        amount: amountPence,
+        currency: 'gbp',
+        payment_method: pm,
+        payment_method_types: ['card'],
+        confirm: 'true',
+        description: EXP_TAG + ' held platform charge',
+        metadata: { funds_flow: 'held', platform_fee_pence: String(feePence), ...(metadata || {}) },
+    };
+    if (capture) body.capture_method = capture;
+    return stripe.request('POST', '/payment_intents', body);
+}
+
+// The OLD flow, kept for the legacy-order scenario only: a destination charge
+// exactly as every order before 30 Sep 2026 was made — on_behalf_of, the
+// application fee and the transfer to the provider all on the charge.
+async function legacyDestinationPI({ total, account, capture, metadata, pm = 'pm_card_visa' }) {
     const { amountPence, feePence } = priceParts(total);
     const body = {
         amount: amountPence,
@@ -103,7 +126,7 @@ async function destinationPI({ total, account, capture, metadata, pm = 'pm_card_
         on_behalf_of: account,
         application_fee_amount: feePence,
         transfer_data: { destination: account },
-        description: EXP_TAG + ' destination charge',
+        description: EXP_TAG + ' legacy destination charge',
         metadata: metadata || {},
     };
     if (capture) body.capture_method = capture;
@@ -126,7 +149,7 @@ async function chargeOf(piId) {
     const id = typeof lc === 'string' ? lc : (lc && lc.id);
     return id ? stripe.request('GET', '/charges/' + id) : null;
 }
-async function settledCharge(piId, { needTransfer = true, tries = 12, gapMs = 2000 } = {}) {
+async function settledCharge(piId, { needTransfer = false, tries = 12, gapMs = 2000 } = {}) {
     let ch = null;
     for (let i = 0; i < tries; i++) {
         ch = await chargeOf(piId);
@@ -165,7 +188,10 @@ async function postWebhook(eventObject, { secret = WEBHOOK_SECRET } = {}) {
 
 // A checkout.session.completed that mirrors what the request-order route's
 // Checkout would carry: all order metadata, the held PaymentIntent, the total.
-function sessionForServiceOrder({ pi, total, provider, guest, booking, serviceDate, item }) {
+function sessionForServiceOrder({ pi, total, provider, guest, booking, serviceDate, item, legacy = false }) {
+    // A held order's session carries the flow marker and our frozen fee; a
+    // legacy (pre-30-Sep) session carried neither.
+    const flow = legacy ? {} : { funds_flow: 'held', platform_fee_pence: String(priceParts(total).feePence) };
     return {
         object: 'checkout_session',
         payment_status: 'no_payment_required',
@@ -190,6 +216,7 @@ function sessionForServiceOrder({ pi, total, provider, guest, booking, serviceDa
             item_unit: 'flat',
             unit_price: String(total),
             quantity: '1',
+            ...flow,
         },
     };
 }
@@ -235,6 +262,9 @@ async function resetSeed() {
         await db.remove('slot_availability', '?provider_id=eq.' + p.id);
         await db.remove('slot_blocks', '?provider_id=eq.' + p.id);
         await db.remove('service_provider_items', '?provider_id=eq.' + p.id);
+        // An enquiry against a seeded provider (made by a walkthrough on the
+        // shared test project) restricts the provider's delete.
+        await db.remove('service_enquiries', '?provider_id=eq.' + p.id);
     }
     await db.remove('service_providers', '?owner_id=in.' + ids);
 
@@ -307,6 +337,10 @@ async function main() {
         host_id: host.id, title: 'EXP — cottage', description: 'seed',
         location: 'Dumfries & Galloway', price_per_night: 100, max_guests: 6,
         status: 'published', cancellation_policy: 'Moderate',
+        // Placed, so a provider who travels (comes_to_you) can be checked as
+        // reaching it — the delivery-reach gate added 25 Sep refuses an
+        // unplaceable cottage.
+        postcode: 'DG7 1AA', latitude: 54.942865, longitude: -3.927194,
     });
     // A stay that spans every service date the scenarios use.
     const [booking] = await db.insert('bookings', {
@@ -454,7 +488,7 @@ async function main() {
 
         // The guest pays — real money, immediate capture, split to the provider.
         const balBefore = await connectedBalance(account);
-        const pi = await destinationPI({
+        const pi = await guestPI({
             total: 60, account, capture: null,
             metadata: { kind: 'slot_order', order_id: hold.id, provider_id: sauna.id, booking_id: booking.id },
         });
@@ -487,10 +521,11 @@ async function main() {
         check('the sweep reported a reconciliation', Number(swept.body.reconciled) >= 1, 'reconciled=' + swept.body.reconciled);
         check('STRIPE: the charge is captured (money really moved)', charge && charge.captured === true && charge.amount_captured === 6000,
             charge && (charge.status + ' captured=' + charge.amount_captured));
-        check('STRIPE: the provider was paid — £6 fee to us, £54 transferred to them',
-            charge && charge.application_fee_amount === 600 && !!charge.transfer,
-            'fee=' + (charge && charge.application_fee_amount) + ' transfer=' + (charge && charge.transfer));
-        check('STRIPE: the provider’s connected balance rose by ~£54 net', delta >= 53.9, 'delta £' + delta);
+        check('STRIPE: the money is HELD by us — no transfer and no application fee at payment',
+            charge && !charge.transfer && !charge.application_fee,
+            'fee=' + (charge && charge.application_fee) + ' transfer=' + (charge && charge.transfer));
+        check('APP: the order is marked held with our frozen £6 fee', afterOrder.funds_flow === 'held' && Number(afterOrder.platform_fee) === 6,
+            afterOrder.funds_flow + ' fee £' + afterOrder.platform_fee);
         check('APP: the order was RECONCILED to confirmed (not expired)', afterOrder.status === 'confirmed', afterOrder.status);
         check('APP: the order now carries the PaymentIntent id', afterOrder.stripe_payment_intent_id === pi.id, afterOrder.stripe_payment_intent_id);
         check('APP: the seat was KEPT (seats_taken still 1 — not resold)', afterSess && afterSess.seats_taken === 1,
@@ -506,7 +541,7 @@ async function main() {
     }
 
     /* ===================================================== 2. REQUEST → CONFIRM */
-    scenario('2', 'Request-and-confirm (chef): held on request, captured on confirm, 10% fee + 90% to provider');
+    scenario('2', 'Request-and-confirm (chef): held on request, captured on confirm — to us, not yet to the provider');
     {
         const serviceDate = dayOffset(5);
         // The real entry route builds a valid Checkout (proves pricing + gates).
@@ -517,7 +552,7 @@ async function main() {
             'HTTP ' + started.status + ' ' + JSON.stringify(started.body).slice(0, 160));
 
         // The guest pays: a HELD card (manual capture), real destination charge.
-        const pi = await destinationPI({
+        const pi = await guestPI({
             total: 180, account, capture: 'manual',
             metadata: { kind: 'service_order', provider_id: chef.id, booking_id: booking.id },
         });
@@ -546,10 +581,10 @@ async function main() {
         const afterOrder = await orderRow(order.id);
         check('STRIPE: the hold was captured (£180)', charge && charge.captured === true && charge.amount_captured === 18000,
             charge && (charge.status + ' captured=' + charge.amount_captured));
-        check('STRIPE: our fee is £18 and the transfer went to the provider',
-            charge && charge.application_fee_amount === 1800 && !!charge.transfer, 'fee=' + (charge && charge.application_fee_amount));
-        check('STRIPE: the provider gained ~£162 net', delta >= 161.9, 'delta £' + delta);
-        check('APP: the order is confirmed', afterOrder.status === 'confirmed', afterOrder.status);
+        check('STRIPE: captured to the platform — no transfer to the provider at confirm, no application fee',
+            charge && !charge.transfer && !charge.application_fee, 'fee=' + (charge && charge.application_fee) + ' transfer=' + (charge && charge.transfer));
+        check('APP: the order is confirmed, held, with our £18 fee frozen', afterOrder.status === 'confirmed' && afterOrder.funds_flow === 'held' && Number(afterOrder.platform_fee) === 18,
+            afterOrder.status + ' ' + afterOrder.funds_flow + ' £' + afterOrder.platform_fee);
     }
 
     /* =========================================================== 3. SLOT (happy) */
@@ -564,14 +599,14 @@ async function main() {
             '?select=*&provider_id=eq.' + sauna.id + '&service_date=eq.' + sessionDate + '&service_time=eq.11:00:00&order=created_at.desc&limit=1'))[0];
         check('a holding order exists', hold && hold.status === 'holding', hold && hold.status);
 
-        const pi = await destinationPI({
+        const pi = await guestPI({
             total: 60, account, capture: null,
             metadata: { kind: 'slot_order', order_id: hold.id, provider_id: sauna.id, booking_id: booking.id },
         });
         check('STRIPE: charged immediately (succeeded)', pi.status === 'succeeded', pi.status);
         const charge = await settledCharge(pi.id);
-        check('STRIPE: fee £6, transfer to provider', charge && charge.application_fee_amount === 600 && !!charge.transfer,
-            'fee=' + (charge && charge.application_fee_amount) + ' transfer=' + (charge && charge.transfer));
+        check('STRIPE: held by us — no transfer, no application fee', charge && !charge.transfer && !charge.application_fee,
+            'fee=' + (charge && charge.application_fee) + ' transfer=' + (charge && charge.transfer));
 
         const wh = await postWebhook({ ...sessionForServiceOrder({ pi: pi.id, total: 60, provider: sauna, guest, booking, serviceDate: sessionDate, item: saunaItem }),
             metadata: { kind: 'slot_order', order_id: hold.id, provider_id: sauna.id, booking_id: booking.id } });
@@ -587,7 +622,7 @@ async function main() {
         const serviceDate = dayOffset(8);
         let declined = false, code = null;
         try {
-            await destinationPI({
+            await guestPI({
                 total: 180, account, capture: 'manual', pm: 'pm_card_chargeDeclined',
                 metadata: { kind: 'service_order', provider_id: chef.id, booking_id: booking.id },
             });
@@ -603,7 +638,7 @@ async function main() {
     scenario('5', 'Provider never responds: the 48h hold is released by the sweep, nothing captured');
     {
         const serviceDate = dayOffset(6);
-        const pi = await destinationPI({
+        const pi = await guestPI({
             total: 180, account, capture: 'manual',
             metadata: { kind: 'service_order', provider_id: chef.id, booking_id: booking.id },
         });
@@ -625,10 +660,10 @@ async function main() {
     }
 
     /* ============================================ 6. LATE CANCEL (forfeit) */
-    scenario('6', 'Cancel after payment, inside the window: provider keeps 90%, platform keeps its 10%, no refund');
+    scenario('6', 'Cancel after payment, inside the window: no refund — the money stays held for the provider’s payout');
     {
         const serviceDate = dayOffset(1); // within 48h of the stay start → inside the free-cancel window
-        const pi = await destinationPI({
+        const pi = await guestPI({
             total: 180, account, capture: 'manual',
             metadata: { kind: 'service_order', provider_id: chef.id, booking_id: booking.id },
         });
@@ -643,20 +678,18 @@ async function main() {
         check('cancel (forfeit) succeeded with no refund', cancel.status === 200 && cancel.body.refunded === 0,
             'HTTP ' + cancel.status + ' ' + JSON.stringify(cancel.body).slice(0, 120));
         const charge = await settledCharge(pi.id);
-        const fee = charge && charge.application_fee ? await stripe.request('GET', '/application_fees/' + charge.application_fee).catch(() => null) : null;
         check('STRIPE: nothing was refunded (money stays put)', charge && Number(charge.amount_refunded) === 0, charge && String(charge.amount_refunded));
-        check('STRIPE: our £18 application fee was NOT refunded', charge && charge.application_fee_amount === 1800 && fee && fee.refunded === false,
-            'fee=' + (charge && charge.application_fee_amount) + ' refunded=' + (fee && fee.refunded));
+        check('STRIPE: still held by us — no transfer yet', charge && !charge.transfer, charge && String(charge.transfer));
         const afterOrder = await orderRow(order.id);
         check('APP: the order is cancelled and records the forfeit (cancel_ack)', afterOrder.status === 'cancelled' && !!afterOrder.cancel_ack, afterOrder.status);
-        note('Provider keeps 90% and the platform keeps its 10% on an experience that will not happen — a policy choice for the solicitor.');
+        note('The walk-away keeps the order payable: the payout run pays the provider their 90% the day after the date (cancel_ack marks it kept). A policy choice for the solicitor.');
     }
 
     /* =================================================== 7. REFUND + COMMISSION UNWIND */
-    scenario('7', 'Refund issued: full refund to the guest, our 10% returned, the transfer reversed');
+    scenario('7', 'Refund before payout: full refund to the guest from the money we hold — no transfer to reverse');
     {
         const serviceDate = dayOffset(7);
-        const pi = await destinationPI({
+        const pi = await guestPI({
             total: 180, account, capture: 'manual',
             metadata: { kind: 'service_order', provider_id: chef.id, booking_id: booking.id },
         });
@@ -675,21 +708,19 @@ async function main() {
         // The refund's three effects — guest refund, application-fee refund, and
         // transfer reversal — each settle a few seconds after the call, so poll
         // until they have all landed (or time out).
-        let charge = null, fee = null, tr = null;
-        for (let i = 0; i < 12; i++) {
+        let charge = null;
+        for (let i = 0; i < 6; i++) {
             charge = await chargeOf(pi.id);
-            fee = charge && charge.application_fee ? await stripe.request('GET', '/application_fees/' + charge.application_fee).catch(() => null) : null;
-            tr = charge && charge.transfer ? await stripe.request('GET', '/transfers/' + charge.transfer).catch(() => null) : null;
-            if (charge && Number(charge.amount_refunded) === 18000 && fee && fee.refunded && tr && tr.amount_reversed === tr.amount) break;
-            await sleep(2000);
+            if (charge && Number(charge.amount_refunded) === 18000) break;
+            await sleep(1000);
         }
+        const refunds = await stripe.request('GET', '/refunds?payment_intent=' + pi.id);
+        const r0 = refunds && refunds.data && refunds.data[0];
         check('STRIPE: the guest was refunded in full (£180)', charge && Number(charge.amount_refunded) === 18000, charge && String(charge.amount_refunded));
-        check('STRIPE: our application fee was refunded — commission UNWOUND', fee && fee.refunded === true && fee.amount_refunded === 1800,
-            fee ? ('refunded=' + fee.refunded + ' amount_refunded=' + fee.amount_refunded) : 'no application_fee object');
-        check('STRIPE: the transfer to the provider was fully reversed', tr && tr.amount_reversed === tr.amount && tr.amount > 0,
-            tr ? ('reversed ' + tr.amount_reversed + '/' + tr.amount) : 'no transfer on the charge');
+        check('STRIPE: a plain refund from us — no transfer existed, none reversed', charge && !charge.transfer && r0 && !r0.transfer_reversal,
+            'transfer=' + (charge && charge.transfer) + ' reversal=' + (r0 && r0.transfer_reversal));
         check('APP: the order is refunded', (await orderRow(order.id)).status === 'refunded', null);
-        note('No partial-refund path exists for experiences, so the cottage "partial refund keeps the fee" bug has no analogue here.');
+        note('Our 10% goes back with it, as before — we simply keep none of a refunded order. No partial-refund path exists for experiences.');
     }
 
     /* ================================= 8. UNPAID HOLD still expires (regression) */
@@ -736,7 +767,7 @@ async function main() {
         // capture destination charge carrying the FULL order shape the route now
         // puts on the PaymentIntent (not just kind/provider/booking), so the sweep
         // can rebuild from the PI alone.
-        const pi = await destinationPI({
+        const pi = await guestPI({
             total: 180, account, capture: 'manual',
             metadata: {
                 kind: 'service_order', provider_id: chef.id, booking_id: booking.id,
@@ -806,7 +837,7 @@ async function main() {
         // completed Checkout would. Works for a parent booking and for a top-up
         // child alike — both carry kind:'slot_order' and their own order_id.
         const payAndConfirm = async (orderId, total) => {
-            const pi = await destinationPI({
+            const pi = await guestPI({
                 total, account, capture: null,
                 metadata: { kind: 'slot_order', order_id: orderId, provider_id: yoga.id },
             });
@@ -920,25 +951,26 @@ async function main() {
             check('C: cancel refunded (free window)', cancel.status === 200 && cancel.body.status === 'refunded',
                 'HTTP ' + cancel.status + ' ' + JSON.stringify(cancel.body).slice(0, 120));
 
-            // READ BACK FROM STRIPE: both charges refunded in full, both transfers reversed.
+            // READ BACK FROM STRIPE: both charges refunded in full, from the money
+            // we hold — neither ever had a transfer to reverse.
             const settle = async (piId, wantPence) => {
-                let charge = null, tr = null;
-                for (let i = 0; i < 12; i++) {
+                let charge = null;
+                for (let i = 0; i < 6; i++) {
                     charge = await chargeOf(piId);
-                    tr = charge && charge.transfer ? await stripe.request('GET', '/transfers/' + charge.transfer).catch(() => null) : null;
-                    if (charge && Number(charge.amount_refunded) === wantPence && tr && tr.amount_reversed === tr.amount) break;
-                    await sleep(2000);
+                    if (charge && Number(charge.amount_refunded) === wantPence) break;
+                    await sleep(1000);
                 }
-                return { charge, tr };
+                return { charge };
             };
             const pr = await settle(piParent.id, 4000);
             const cr = await settle(piChild.id, 2000);
-            check('C: STRIPE — the original £40 was refunded and its transfer reversed',
-                pr.charge && Number(pr.charge.amount_refunded) === 4000 && pr.tr && pr.tr.amount_reversed === pr.tr.amount,
-                pr.charge && ('refunded=' + pr.charge.amount_refunded + ' reversed=' + (pr.tr && pr.tr.amount_reversed)));
-            check('C: STRIPE — the added £20 refunded SEPARATELY and its transfer reversed',
-                cr.charge && Number(cr.charge.amount_refunded) === 2000 && cr.tr && cr.tr.amount_reversed === cr.tr.amount,
-                cr.charge && ('refunded=' + cr.charge.amount_refunded + ' reversed=' + (cr.tr && cr.tr.amount_reversed)));
+            check('C: STRIPE — the original £40 was refunded, from the held money (no transfer)',
+                pr.charge && Number(pr.charge.amount_refunded) === 4000 && !pr.charge.transfer,
+                pr.charge && ('refunded=' + pr.charge.amount_refunded + ' transfer=' + pr.charge.transfer));
+            check('C: STRIPE — the added £20 refunded SEPARATELY, from the held money',
+                cr.charge && Number(cr.charge.amount_refunded) === 2000 && !cr.charge.transfer,
+                cr.charge && ('refunded=' + cr.charge.amount_refunded + ' transfer=' + cr.charge.transfer));
+            check('C: APP — the parent and the top-up are both held orders', (await orderRow(parent.id)).funds_flow === 'held' && (await orderRow(child.id)).funds_flow === 'held', null);
 
             check('C: APP — both orders are refunded', (await orderRow(parent.id)).status === 'refunded' && (await orderRow(child.id)).status === 'refunded', null);
             const sessFreed = (await db.select('slot_sessions', '?select=*&provider_id=eq.' + yoga.id + '&session_date=eq.' + sessionDate + '&session_time=eq.14:00:00'))[0];
@@ -959,7 +991,7 @@ async function main() {
     scenario('11', 'Move a booking: the whole family (parent + top-up) moves together, or nobody does; a full target and a past-cutoff target are both refused');
     {
         const payAndConfirm = async (orderId, total) => {
-            const pi = await destinationPI({
+            const pi = await guestPI({
                 total, account, capture: null,
                 metadata: { kind: 'slot_order', order_id: orderId, provider_id: yoga.id },
             });
@@ -1093,7 +1125,7 @@ async function main() {
     // A confirmed per-person chef order for `qty` on `serviceDate`, £55/head.
     async function confirmedChefOrder(serviceDate, qty) {
         const total = 55 * qty;
-        const pi = await destinationPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+        const pi = await guestPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
         const base = sessionForServiceOrder({ pi: pi.id, total, provider: chef, guest, booking, serviceDate, item: chefPerson });
         await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'person', unit_price: '55', quantity: String(qty), adults: String(qty), children: '0' } });
         const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + serviceDate + '&order=created_at.desc&limit=1'))[0];
@@ -1105,7 +1137,7 @@ async function main() {
     // above the included four pays the per-adult fee (party 6 → £300).
     async function confirmedChefEGOrder(serviceDate, adults) {
         const total = 220 + Math.max(0, adults - 4) * 40;
-        const pi = await destinationPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+        const pi = await guestPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
         const base = sessionForServiceOrder({ pi: pi.id, total, provider: chef, guest, booking, serviceDate, item: chefEG });
         await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'flat', unit_price: String(total), quantity: '1', guests: String(adults), adults: String(adults), children: '0' } });
         const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + serviceDate + '&order=created_at.desc&limit=1'))[0];
@@ -1142,7 +1174,7 @@ async function main() {
     {
         const book6 = await postRoute('/api/services/order', guestCookie, { itemId: chefEG.id, bookingId: booking.id, serviceDate: dayOffset(14), adults: 6, children: 0 });
         check('a party of 6 on the £220-for-4 item is accepted (stay is 8)', book6.status === 200 && book6.body.ok && !!book6.body.url, 'HTTP ' + book6.status + ' ' + JSON.stringify(book6.body).slice(0, 140));
-        const pi = await destinationPI({ total: 300, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+        const pi = await guestPI({ total: 300, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
         const base = sessionForServiceOrder({ pi: pi.id, total: 300, provider: chef, guest, booking, serviceDate: dayOffset(15), item: chefEG });
         await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'flat', unit_price: '300', quantity: '1', guests: '6', adults: '6', children: '0' } });
         const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + dayOffset(15) + '&order=created_at.desc&limit=1'))[0];
@@ -1159,15 +1191,16 @@ async function main() {
         check('the increase is a REQUEST — a Checkout hold, not an instant charge', up.status === 200 && up.body.ok && !!up.body.url && up.body.requested === true, 'HTTP ' + up.status + ' ' + JSON.stringify(up.body).slice(0, 140));
         const child = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + order.id + '&order=created_at.desc&limit=1'))[0];
         check('a holding child was written for the extra place (£55)', child && child.status === 'holding' && Number(child.price) === 55, child && (child.status + ' £' + child.price));
-        const childPi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child.id } });
+        const childPi = await guestPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child.id } });
         await postWebhook({ object: 'checkout_session', payment_status: 'no_payment_required', payment_intent: childPi.id, amount_total: 5500, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'change_request', order_id: child.id, parent_order_id: order.id, provider_id: chef.id, guest_id: guest.id } });
         const held = await orderRow(child.id);
         check('the completed hold is now AUTHORISED — a request to answer', held.status === 'authorised' && held.stripe_payment_intent_id === childPi.id, held.status);
         const acc = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: child.id, decision: 'confirm' });
         check('accept succeeds', acc.status === 200 && acc.body.ok, 'HTTP ' + acc.status + ' ' + JSON.stringify(acc.body).slice(0, 140));
-        const ch = await settledCharge(childPi.id, { needTransfer: true });
+        const ch = await settledCharge(childPi.id);
         check('STRIPE — the £55 hold was CAPTURED on accept', ch && ch.captured === true && ch.amount_captured === 5500, 'captured=' + (ch && ch.captured) + ' amt=' + (ch && ch.amount_captured));
-        note('The accepted extra is its own destination charge, so the provider payout is the sum across the order family.');
+        check('APP — the accepted extra is its own held order, paid out with the rest', (await orderRow(child.id)).funds_flow === 'held' && !ch.transfer, null);
+        note('The accepted extra is its own held charge, so the provider payout is the sum across the order family.');
     }
 
     /* ============================= 15. INCREASE = REQUEST, DECLINED / EXPIRED */
@@ -1177,7 +1210,7 @@ async function main() {
         // Declined.
         await postRoute('/api/services/order/change-count', guestCookie, { orderId: order.id, count: 3 });
         const child = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + order.id + '&order=created_at.desc&limit=1'))[0];
-        const childPi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child.id } });
+        const childPi = await guestPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child.id } });
         await postWebhook({ object: 'checkout_session', payment_status: 'no_payment_required', payment_intent: childPi.id, amount_total: 5500, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'change_request', order_id: child.id, parent_order_id: order.id, provider_id: chef.id, guest_id: guest.id } });
         const dec = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: child.id, decision: 'decline' });
         check('decline succeeds and the child is declined', dec.status === 200 && dec.body.ok && (await orderRow(child.id)).status === 'declined', 'HTTP ' + dec.status);
@@ -1186,7 +1219,7 @@ async function main() {
         // Expired by the sweep.
         await postRoute('/api/services/order/change-count', guestCookie, { orderId: order.id, count: 3 });
         const child2 = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + order.id + '&status=eq.holding&order=created_at.desc&limit=1'))[0];
-        const child2Pi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child2.id } });
+        const child2Pi = await guestPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child2.id } });
         await postWebhook({ object: 'checkout_session', payment_status: 'no_payment_required', payment_intent: child2Pi.id, amount_total: 5500, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'change_request', order_id: child2.id, parent_order_id: order.id, provider_id: chef.id, guest_id: guest.id } });
         await db.update('service_orders', '?id=eq.' + child2.id, { expires_at: dayOffset(-1) + 'T00:00:00Z' });
         await runOrderSweep();
@@ -1228,7 +1261,7 @@ async function main() {
         const r = await orderRow(order.id);
         const net = (Number(r.price) - Number(r.amount_refunded)) * 0.9;
         check('amount_refunded is set to the FULL amount and orderNet is £0', r.status === 'refunded' && Number(r.amount_refunded) === 220 && Math.round(before) === 198 && Math.round(net) === 0, r.status + ' refunded £' + r.amount_refunded + ' net £' + net.toFixed(2));
-        note('A provider refund now writes amount_refunded = price, so orderNet = (price − amount_refunded) × 0.9 reads zero — the destination transfer is reversed to nothing.');
+        note('A provider refund writes amount_refunded = price, so orderNet reads zero — and the order is never paid out (it is no longer confirmed).');
     }
 
     /* ================================ 18. LOST CHANGE-REQUEST WEBHOOK */
@@ -1241,7 +1274,7 @@ async function main() {
         const up = await postRoute('/api/services/order/change-count', guestCookie, { orderId: order.id, count: 3 });
         check('the increase is a request — a holding child is written', up.status === 200 && up.body.requested === true, 'HTTP ' + up.status + ' ' + JSON.stringify(up.body).slice(0, 120));
         const child = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + order.id + '&status=eq.holding&order=created_at.desc&limit=1'))[0];
-        const childPi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child.id } });
+        const childPi = await guestPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child.id } });
         // NO webhook is delivered — the lost case. The rebuild sweep asks Stripe.
         await runOrderSweep();
         const rebuilt = await orderRow(child.id);
@@ -1254,7 +1287,7 @@ async function main() {
         const { order: o2 } = await confirmedChefOrder(dayOffset(24), 2);
         await postRoute('/api/services/order/change-count', guestCookie, { orderId: o2.id, count: 3 });
         const child2 = (await db.select('service_orders', '?select=*&parent_order_id=eq.' + o2.id + '&status=eq.holding&order=created_at.desc&limit=1'))[0];
-        const child2Pi = await destinationPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child2.id } });
+        const child2Pi = await guestPI({ total: 55, account, capture: 'manual', metadata: { kind: 'change_request', order_id: child2.id } });
         await db.update('service_orders', '?id=eq.' + child2.id, { expires_at: dayOffset(-1) + 'T00:00:00Z' });
         await runOrderSweep();
         const exp2 = await orderRow(child2.id);
@@ -1269,8 +1302,8 @@ async function main() {
         const bookRes = await postRoute('/api/services/order', guestCookie, { items: [{ itemId: bakerStd.id, qty: 2 }, { itemId: bakerStd2.id, qty: 3 }], bookingId: booking.id, serviceDate: dayOffset(6), collectionTime: 'around 10am' });
         check('the order is INSTANT (books straight away, not a request)', bookRes.status === 200 && bookRes.body.ok && bookRes.body.instant === true && !!bookRes.body.url, 'HTTP ' + bookRes.status + ' ' + JSON.stringify(bookRes.body).slice(0, 140));
         // Auto-capture (no capture_method) — the money moves at once, like a slot.
-        const pi = await destinationPI({ total: 72, account, metadata: { kind: 'service_order', provider_id: baker.id } });
-        await postWebhook({ object: 'checkout_session', payment_status: 'paid', payment_intent: pi.id, amount_total: 7200, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'service_order', provider_id: baker.id, booking_id: booking.id, guest_id: guest.id, listing_id: listing.id, service_date: dayOffset(6), service_time: '', fulfilment: 'collection', instant: '1', cart: bakerStd.id + ':2,' + bakerStd2.id + ':3', collection_note: 'around 10am', commission_rate: '0.1', item_name: 'EXP Bakehouse order', item_unit: 'order' } });
+        const pi = await guestPI({ total: 72, account, metadata: { kind: 'service_order', provider_id: baker.id } });
+        await postWebhook({ object: 'checkout_session', payment_status: 'paid', payment_intent: pi.id, amount_total: 7200, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'service_order', provider_id: baker.id, booking_id: booking.id, guest_id: guest.id, listing_id: listing.id, service_date: dayOffset(6), service_time: '', fulfilment: 'collection', instant: '1', cart: bakerStd.id + ':2,' + bakerStd2.id + ':3', collection_note: 'around 10am', commission_rate: '0.1', item_name: 'EXP Bakehouse order', item_unit: 'order', funds_flow: 'held', platform_fee_pence: '720' } });
         const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + baker.id + '&service_date=eq.' + dayOffset(6) + '&order=created_at.desc&limit=1'))[0];
         check('the order is CONFIRMED at once — no provider step', order && order.status === 'confirmed', order && order.status);
         check('it records the cart lines and the £72 total', order && Array.isArray(order.line_items) && order.line_items.length === 2 && Number(order.price) === 72, order && ('£' + order.price + ' · ' + (order.line_items || []).length + ' lines'));
@@ -1283,16 +1316,150 @@ async function main() {
     {
         const bookRes = await postRoute('/api/services/order', guestCookie, { items: [{ itemId: bakerStd.id, qty: 1 }, { itemId: bakerCustom.id, qty: 1 }], bookingId: booking.id, serviceDate: dayOffset(7), collectionTime: 'afternoon' });
         check('the order is a REQUEST (held, not instant)', bookRes.status === 200 && bookRes.body.ok && bookRes.body.requested === true && !bookRes.body.instant, 'HTTP ' + bookRes.status + ' ' + JSON.stringify(bookRes.body).slice(0, 140));
-        const pi = await destinationPI({ total: 66, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: baker.id } });
-        await postWebhook({ object: 'checkout_session', payment_status: 'no_payment_required', payment_intent: pi.id, amount_total: 6600, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'service_order', provider_id: baker.id, booking_id: booking.id, guest_id: guest.id, listing_id: listing.id, service_date: dayOffset(7), service_time: '', fulfilment: 'collection', instant: '', cart: bakerStd.id + ':1,' + bakerCustom.id + ':1', collection_note: 'afternoon', commission_rate: '0.1', item_name: 'EXP Bakehouse order', item_unit: 'order' } });
+        const pi = await guestPI({ total: 66, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: baker.id } });
+        await postWebhook({ object: 'checkout_session', payment_status: 'no_payment_required', payment_intent: pi.id, amount_total: 6600, customer_email: guest.email, customer_details: { email: guest.email }, metadata: { kind: 'service_order', provider_id: baker.id, booking_id: booking.id, guest_id: guest.id, listing_id: listing.id, service_date: dayOffset(7), service_time: '', fulfilment: 'collection', instant: '', cart: bakerStd.id + ':1,' + bakerCustom.id + ':1', collection_note: 'afternoon', commission_rate: '0.1', item_name: 'EXP Bakehouse order', item_unit: 'order', funds_flow: 'held', platform_fee_pence: '660' } });
         const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + baker.id + '&service_date=eq.' + dayOffset(7) + '&order=created_at.desc&limit=1'))[0];
         check('the held order is AUTHORISED — a request to answer', order && order.status === 'authorised', order && order.status);
         check('it carries both cart lines and the £66 total', order && Array.isArray(order.line_items) && order.line_items.length === 2 && Number(order.price) === 66, order && ('£' + order.price));
         const acc = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'confirm' });
         check('the provider accepts and it is captured', acc.status === 200 && acc.body.ok, 'HTTP ' + acc.status);
-        const ch = await settledCharge(pi.id, { needTransfer: true });
+        const ch = await settledCharge(pi.id);
         check('STRIPE — the £66 hold was captured on accept', ch && ch.captured === true && ch.amount_captured === 6600, 'captured=' + (ch && ch.captured) + ' amt=' + (ch && ch.amount_captured));
         note('Any custom item turns the whole order into a request; an all-standard cart is instant.');
+    }
+
+    /* ======================== 21–24. HELD MONEY — THE PAYOUT RUN (30 Sep 2026) */
+    // Since 30 Sep 2026 an experience's money is held by us until the day after
+    // it happens, then /api/cron/experience-payouts transfers the provider's
+    // share. These prove it against real Stripe: timing, amount, source, never
+    // twice, a no-show refunded from what we hold, a legacy order left alone, and
+    // a refund after payout clawing the transfer back.
+    const runPayouts = async () => {
+        const res = await fetch(SITE + '/api/cron/experience-payouts', { headers: { authorization: 'Bearer ' + env.CRON_SECRET } });
+        return { status: res.status, body: await res.json().catch(() => ({})) };
+    };
+    const transfersFor = async (orderId) => {
+        const list = await stripe.request('GET', '/transfers?limit=10&transfer_group=service_order_' + orderId);
+        return (list && list.data) || [];
+    };
+    const refundsFor = async (piId) => {
+        const list = await stripe.request('GET', '/refunds?payment_intent=' + piId);
+        return (list && list.data) || [];
+    };
+
+    scenario('21', 'Held money is paid the day after the experience: nothing before, total − 10% after, drawn on the charge, never twice');
+    {
+        // Yesterday's dinner for two, £110 (our fee £11).
+        const { order, pi } = await confirmedChefOrder(dayOffset(-1), 2);
+        const held = await orderRow(order.id);
+        check('APP: confirmed, held, £11 fee frozen, not yet paid out',
+            held.status === 'confirmed' && held.funds_flow === 'held' && Number(held.platform_fee) === 11 && !held.paid_out_at,
+            held.status + ' ' + held.funds_flow + ' £' + held.platform_fee + ' paid_out_at=' + held.paid_out_at);
+        const charge = await chargeOf(pi.id);
+        check('STRIPE: captured to us, no transfer at confirm', charge && charge.captured && !charge.transfer, charge && String(charge.transfer));
+
+        const run1 = await runPayouts();
+        check('the payout run ran', run1.status === 200 && run1.body.ok, 'HTTP ' + run1.status + ' ' + JSON.stringify(run1.body).slice(0, 160));
+        const paid = await orderRow(order.id);
+        check('APP: the order is paid out — £99 (£110 less our £11)', !!paid.paid_out_at && Number(paid.payout_amount) === 99 && !!paid.payout_transfer_id,
+            'paid_out_at=' + paid.paid_out_at + ' £' + paid.payout_amount);
+        const tr = paid.payout_transfer_id ? await stripe.request('GET', '/transfers/' + paid.payout_transfer_id) : null;
+        check('STRIPE: a £99 transfer to the provider’s account', tr && tr.amount === 9900 && tr.destination === account,
+            tr && ('amount=' + tr.amount + ' dest=' + tr.destination));
+        check('STRIPE: drawn on the order’s own charge (source_transaction), in the order’s transfer group',
+            tr && tr.source_transaction === (charge && charge.id) && tr.transfer_group === 'service_order_' + order.id,
+            tr && ('source=' + tr.source_transaction + ' group=' + tr.transfer_group));
+
+        // Nothing dated today or later was paid.
+        const future = await db.select('service_orders', '?select=id,paid_out_at,service_date&funds_flow=eq.held&status=eq.confirmed&provider_id=eq.' + chef.id + '&service_date=gt.' + dayOffset(-1));
+        check('APP: no order dated today or later was paid — only the day after', future.length > 0 && future.every((o) => !o.paid_out_at),
+            future.length + ' future order(s), paid: ' + future.filter((o) => o.paid_out_at).length);
+
+        // Run again: the transfer group already has it — no second payment.
+        const run2 = await runPayouts();
+        const group = await transfersFor(order.id);
+        const again = await orderRow(order.id);
+        check('a second run pays nothing more — one transfer in the group, the order unchanged',
+            run2.status === 200 && group.length === 1 && again.payout_transfer_id === paid.payout_transfer_id,
+            'transfers=' + group.length);
+
+        // The payout is final in the database: clearing it is refused.
+        let refused = false;
+        try { await db.update('service_orders', '?id=eq.' + order.id, { paid_out_at: null }); } catch (e) { refused = /final/.test(String(e.message)); }
+        check('DB: a payout cannot be un-stamped (trigger refuses)', refused, null);
+    }
+
+    scenario('22', 'Provider no-show: refunded in full from the money we hold — no transfer reversal, and the payout run then pays nothing');
+    {
+        const { order, pi } = await confirmedChefOrder(dayOffset(-2), 2);
+        // The owner refunds the guest in the Stripe dashboard (a plain platform
+        // refund), before the payout run — nothing to chase from the provider.
+        await stripe.request('POST', '/refunds', { payment_intent: pi.id });
+        const refunds = await refundsFor(pi.id);
+        const charge = await chargeOf(pi.id);
+        check('STRIPE: the guest has the full £110 back', charge && Number(charge.amount_refunded) === 11000, charge && String(charge.amount_refunded));
+        check('STRIPE: no transfer existed and none was reversed', charge && !charge.transfer && refunds[0] && !refunds[0].transfer_reversal,
+            'transfer=' + (charge && charge.transfer));
+        const run = await runPayouts();
+        const row = await orderRow(order.id);
+        const group = await transfersFor(order.id);
+        check('the payout run sends the provider nothing and settles the order at £0',
+            run.status === 200 && group.length === 0 && !!row.paid_out_at && Number(row.payout_amount) === 0,
+            'transfers=' + group.length + ' payout=£' + row.payout_amount);
+    }
+
+    scenario('23', 'Legacy order (paid under the old destination-charge flow): never paid again, and still refunds the old way');
+    {
+        const total = 110;
+        const serviceDate = dayOffset(-3);
+        const pi = await legacyDestinationPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+        const base = sessionForServiceOrder({ pi: pi.id, total, provider: chef, guest, booking, serviceDate, item: chefPerson, legacy: true });
+        await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'person', unit_price: '55', quantity: '2', adults: '2', children: '0' } });
+        const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + serviceDate + '&order=created_at.desc&limit=1'))[0];
+        check('APP: a pre-change session writes a DIRECT order', order && order.funds_flow === 'direct' && order.platform_fee === null, order && order.funds_flow);
+        await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'confirm' });
+        const charge = await settledCharge(pi.id, { needTransfer: true });
+        check('STRIPE: the provider was paid by Stripe at capture (old flow)', charge && !!charge.transfer && charge.application_fee_amount === 1100,
+            charge && ('transfer=' + charge.transfer + ' fee=' + charge.application_fee_amount));
+
+        let refused = false;
+        try { await db.update('service_orders', '?id=eq.' + order.id, { funds_flow: 'held' }); } catch (e) { refused = /funds_flow cannot change/.test(String(e.message)); }
+        check('DB: a paid direct order cannot be re-marked held (trigger refuses)', refused, null);
+
+        await runPayouts();
+        const after = await orderRow(order.id);
+        const group = await transfersFor(order.id);
+        check('the payout run leaves it alone — no second payment', !after.paid_out_at && group.length === 0, 'paid_out_at=' + after.paid_out_at + ' transfers=' + group.length);
+
+        const ref = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'refund' });
+        let ch = null, fee = null, tr = null;
+        for (let i = 0; i < 12; i++) {
+            ch = await chargeOf(pi.id);
+            fee = ch && ch.application_fee ? await stripe.request('GET', '/application_fees/' + ch.application_fee).catch(() => null) : null;
+            tr = ch && ch.transfer ? await stripe.request('GET', '/transfers/' + ch.transfer).catch(() => null) : null;
+            if (ch && Number(ch.amount_refunded) === 11000 && fee && fee.refunded && tr && tr.amount_reversed === tr.amount) break;
+            await sleep(2000);
+        }
+        check('refunds the old way: guest refunded, our fee returned, the provider’s transfer reversed',
+            ref.status === 200 && ch && Number(ch.amount_refunded) === 11000 && fee && fee.refunded && tr && tr.amount_reversed === tr.amount,
+            'refunded=' + (ch && ch.amount_refunded) + ' fee_refunded=' + (fee && fee.refunded) + ' reversed=' + (tr && tr.amount_reversed));
+    }
+
+    scenario('24', 'Refund after payout: the guest is refunded from us and the provider’s payout is clawed back');
+    {
+        const { order, pi } = await confirmedChefOrder(dayOffset(-4), 2);
+        await runPayouts();
+        const paid = await orderRow(order.id);
+        check('paid out £99 the day after', Number(paid.payout_amount) === 99 && !!paid.payout_transfer_id, '£' + paid.payout_amount);
+        const ref = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'refund' });
+        check('the provider’s refund succeeds', ref.status === 200 && ref.body.ok, 'HTTP ' + ref.status + ' ' + JSON.stringify(ref.body).slice(0, 120));
+        const charge = await chargeOf(pi.id);
+        const tr = paid.payout_transfer_id ? await stripe.request('GET', '/transfers/' + paid.payout_transfer_id) : null;
+        const row = await orderRow(order.id);
+        check('STRIPE: the guest has the full £110 back', charge && Number(charge.amount_refunded) === 11000, charge && String(charge.amount_refunded));
+        check('STRIPE: the £99 payout was reversed in full', tr && tr.amount_reversed === 9900, tr && ('reversed ' + tr.amount_reversed));
+        check('APP: the reversal is recorded on the order, nothing owed', Number(row.payout_reversed) === 99 && Number(row.payout_clawback_owed) === 0 && row.status === 'refunded',
+            'reversed £' + row.payout_reversed + ' owed £' + row.payout_clawback_owed + ' ' + row.status);
     }
 
     /* ----------------------------------------------------------------- write + sum */
