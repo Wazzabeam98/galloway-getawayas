@@ -95,3 +95,27 @@ export function savePending(p: PendingSignIn, store: StorageLike | null = sessio
 export function clearPending(store: StorageLike | null = session()): void {
     remove(store, PENDING_KEY);
 }
+
+// ---- when a code last went to an address (this tab) -------------------------
+//
+// Supabase refuses a second code to the same address inside 60 seconds. Rather
+// than let the press fail with "wait a minute", the panel remembers when it last
+// sent one and goes straight to "Confirm it's you" with the seconds left on the
+// resend button — the same screen and wording whether the person came through
+// Log in on the welcome-back card, or through "Not you?" and typed it again.
+
+export const RESEND_SECONDS = 60;
+export const SENT_KEY = 'gg_code_sent';
+
+export function recordCodeSent(value: string, at: number = Date.now(), store: StorageLike | null = session()): void {
+    const map = read<Record<string, number>>(store, SENT_KEY) || {};
+    map[value] = at;
+    write(store, SENT_KEY, map);
+}
+
+export function secondsUntilResend(value: string, now: number = Date.now(), store: StorageLike | null = session()): number {
+    const map = read<Record<string, number>>(store, SENT_KEY) || {};
+    const at = map[value];
+    if (typeof at !== 'number') return 0;
+    return Math.max(0, Math.ceil(RESEND_SECONDS - (now - at) / 1000));
+}

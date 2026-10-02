@@ -19,6 +19,21 @@ import { explainSendError, explainVerifyError, tidyCode, Outcome } from './email
 
 export type CodeTarget = { kind: 'email' | 'phone'; value: string };
 
+// A refusal that means "a code has only just gone to this address" — the
+// per-address cooldown — and how many seconds are left on it. Supabase says
+// "you can only request this after 42 seconds"; without a number, a minute.
+// The site-wide email allowance running out is NOT this: nothing was sent.
+export function retryAfterSeconds(err: any): number {
+    const message: string = (err && err.message) || '';
+    if ((err && err.code === 'over_email_send_rate_limit') || /email rate limit/i.test(message)) return 0;
+    const m = /after (\d+) seconds?/i.exec(message);
+    if (m) return Number(m[1]);
+    if ((err && err.status === 429) || /security purposes/i.test(message)) return 60;
+    return 0;
+}
+
+export type SendOutcome = { ok: true } | { ok: false; message: string; retryAfter: number };
+
 export interface CodeClient {
     auth: {
         signInWithOtp(args: any): Promise<{ error: any }>;
@@ -47,20 +62,20 @@ export async function sendSignInCode(
     client: CodeClient,
     target: CodeTarget,
     emailRedirectTo?: string
-): Promise<Outcome> {
+): Promise<SendOutcome> {
     if (target.kind === 'phone') {
         const { error } = await client.auth.signInWithOtp({
             phone: target.value,
             options: { shouldCreateUser: true, channel: 'sms' },
         });
-        if (error) return { ok: false, message: explainSmsSendError(error) };
-        return { ok: true, value: undefined };
+        if (error) return { ok: false, message: explainSmsSendError(error), retryAfter: retryAfterSeconds(error) };
+        return { ok: true };
     }
     const options: Record<string, unknown> = { shouldCreateUser: true };
     if (emailRedirectTo) options.emailRedirectTo = emailRedirectTo;
     const { error } = await client.auth.signInWithOtp({ email: target.value, options });
-    if (error) return { ok: false, message: explainSendError(error) };
-    return { ok: true, value: undefined };
+    if (error) return { ok: false, message: explainSendError(error), retryAfter: retryAfterSeconds(error) };
+    return { ok: true };
 }
 
 export async function verifySignInCode(client: CodeClient, target: CodeTarget, rawCode: string): Promise<Outcome<any>> {

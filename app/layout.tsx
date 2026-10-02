@@ -12,6 +12,7 @@ import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
 import AgreementGate from '@/components/legal/AgreementGate';
 import AuthPanelHost from '@/components/auth/AuthPanel';
+import KeepSignedIn from '@/components/auth/KeepSignedIn';
 import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import { COMPANY } from '@/config/company';
@@ -158,6 +159,9 @@ export default function RootLayout({
         {/* The one Log in or sign up panel. Every "Log in" button on the site
             opens this (components/auth/LoginModel → openAuthPanel). */}
         <AuthPanelHost />
+        {/* Keeps a sign-in alive for a year (or until the browser closes, if
+            that was the choice) — lib/staySignedIn. */}
+        <KeepSignedIn />
         {/* Vercel Web Analytics — privacy-friendly visitor and page-view trends.
             It only reports once deployed on Vercel with Analytics switched on for
             the project; locally it no-ops. */}
