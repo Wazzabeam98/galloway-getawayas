@@ -3333,6 +3333,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     : 'Sign in or create your free account to set up your business. Everything you add is saved to your account as you go.'}
                 exitHref="/business"
                 onSignedIn={() => window.location.reload()}
+                // The Guest Terms are taken on this wizard's own finish screen,
+                // with the role agreement — not here at account creation.
+                collectGuestTerms={false}
             />
         );
     }

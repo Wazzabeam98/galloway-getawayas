@@ -128,6 +128,9 @@ export default function FinishForm({ token, email, trade }: { token: string; ema
                 intro="This address already has an account. Sign in and we’ll add your application to it."
                 exitHref="/business"
                 initialEmail={email}
+                // The Guest Terms are taken on the provider/trade wizard's finish
+                // screen, not here — this only re-attaches an emailed application.
+                collectGuestTerms={false}
                 onSignedIn={(s) => {
                     setNeedsSignIn(false);
                     if ((s?.user?.email || '').toLowerCase() === email.toLowerCase()) {
