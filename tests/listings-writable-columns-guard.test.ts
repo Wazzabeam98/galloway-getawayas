@@ -56,6 +56,7 @@ const PLATFORM_ONLY: Record<string, string> = {
     instant_book_requires_verified_id: 'editor via service route',
     ical_import_url: 'editor via service route', checkin_start: 'legacy', checkin_end: 'legacy',
     checkout_time: 'legacy',
+    deactivated_at: 'reversible deactivation tombstone — set only by the SECURITY DEFINER deactivate/reactivate routines, never a browser UPDATE',
 };
 
 test('host-writable and platform-only lists are disjoint', () => {

@@ -53,6 +53,7 @@ const TABLES: TableDecision[] = [
         revoked: {
             ical_token: 'calendar-export secret — subscribing to a provider\'s feed reads their bookings; read only via the service role in the experiences iCal export route, never browser-read (mirrors listings.ical_token)',
             owner_paused: 'owner\'s self-serve take-down flag; read and written only via the provider editor\'s service-role route (ownership-checked), never browser-read — isLiveToGuests consults it server-side',
+            deactivated_at: 'reversible deactivation tombstone — set by the SECURITY DEFINER deactivate routine, read only via the service role (admin reactivation, directory loads); a deactivated provider is signed out, so no browser reads it (mirrors owner_paused)',
             based_line: 'server-derived display line; the wizard dropped it from its select — unread by any browser',
             provider_name: 'retired with the "Your name" step; dropped from the wizard select — unread by any browser',
             category_assigned_at: 'admin audit — when the category was assigned; no provider reads it',
@@ -94,6 +95,7 @@ const TABLES: TableDecision[] = [
             host_terms_agreed_at: 'host terms acceptance record; written and read by the server only (publish route), never by the browser',
             host_terms_version: 'host terms acceptance record; written and read by the server only (publish route), never by the browser',
             anonymised_at: 'audit tombstone — when the account was anonymised; server/admin only, no user or public read',
+            deactivated_at: 'reversible deactivation tombstone — set by the SECURITY DEFINER deactivate routine, read only via the service role (admin reactivation); a deactivated user is signed out and suspended, so no browser reads it (mirrors anonymised_at)',
             email: 'private contact detail — not public',
             phone: 'private contact detail — not public',
             residential_address: 'private PII — not public',
