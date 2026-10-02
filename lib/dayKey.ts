@@ -78,6 +78,38 @@ export function ukDate(key: string | null | undefined): string {
     return (y && m && d) ? `${d}/${m}/${y}` : '';
 }
 
+// Cached for the same reason as londonParts — this is called once per message
+// on a thread.
+const londonStampParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: LONDON,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+});
+
+// A full timestamp as "DD/MM/YYYY, HH:MM" (24-hour) in Europe/London — the one
+// format every message timestamp uses: the two experience threads and both
+// inbox panes. Unlike ukDate, which formats a calendar day KEY from its parts,
+// this takes an INSTANT (an ISO string, epoch ms, or a Date) and reads its
+// London wall-clock parts, so a message sent just after midnight BST reads on
+// the right day and hour wherever this runs — including a UTC server, which is
+// why the inbox's old zone-less toLocaleString could show the wrong day. Built
+// from formatToParts so no locale can reorder or repunctuate it.
+export function ukDateTime(at: string | number | Date | null | undefined): string {
+    if (at === null || at === undefined || at === '') return '';
+    const d = at instanceof Date ? at : new Date(at);
+    if (isNaN(d.getTime())) return '';
+    const p: Record<string, string> = {};
+    for (const part of londonStampParts.formatToParts(d)) p[part.type] = part.value;
+    if (!p.day || !p.month || !p.year) return '';
+    // hour12:false renders midnight as "24" on some engines; pin it to "00".
+    const hour = p.hour === '24' ? '00' : p.hour;
+    return `${p.day}/${p.month}/${p.year}, ${hour}:${p.minute}`;
+}
+
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 // The weekday name of a day key ("Thursday"). Anchored at UTC noon so the ±1h of

@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { londonDayKey, shiftDayKey, daysBetweenKeys, ukLongDate } from '../lib/dayKey';
+import { londonDayKey, shiftDayKey, daysBetweenKeys, ukLongDate, ukDateTime } from '../lib/dayKey';
 
 test('londonDayKey reads the London day, not the UTC day, late on a summer evening', () => {
     // 2026-07-01 23:30 UTC is already 2 July in London (BST, +1). toISOString
@@ -53,4 +53,32 @@ test('daysBetweenKeys counts whole days across a DST transition', () => {
 test('ukLongDate reads a key back as the site writes dates', () => {
     assert.equal(ukLongDate('2026-10-01'), '1 October 2026');
     assert.equal(ukLongDate('2026-03-09'), '9 March 2026');
+});
+
+// ukDateTime — the one message-timestamp format: DD/MM/YYYY, HH:MM, 24-hour,
+// always Europe/London. These are the cases the thread/inbox's old zone-less
+// (or zone-named-but-"24 Sep") toLocaleString got wrong.
+test('ukDateTime formats a timestamp as DD/MM/YYYY, HH:MM (24-hour)', () => {
+    // 09:05 London in winter (GMT): zero-padded hour and minute.
+    assert.equal(ukDateTime('2026-01-15T09:05:00Z'), '15/01/2026, 09:05');
+});
+
+test('ukDateTime reads the London wall clock in summer, so the day can roll', () => {
+    // 2026-07-01 23:30 UTC is 00:30 on 2 July in London (BST, +1). The inbox's
+    // old zone-less toLocaleString would read the runner's zone — on a UTC
+    // server, "01/07/2026, 23:30", the wrong day AND hour.
+    assert.equal(ukDateTime('2026-07-01T23:30:00Z'), '02/07/2026, 00:30');
+});
+
+test('ukDateTime is 24-hour, not am/pm', () => {
+    // 18:45 London in winter.
+    assert.equal(ukDateTime('2026-02-10T18:45:00Z'), '10/02/2026, 18:45');
+});
+
+test('ukDateTime tolerates a Date, and empty/invalid input gives an empty string', () => {
+    assert.equal(ukDateTime(new Date('2026-01-15T09:05:00Z')), '15/01/2026, 09:05');
+    assert.equal(ukDateTime(null), '');
+    assert.equal(ukDateTime(undefined), '');
+    assert.equal(ukDateTime(''), '');
+    assert.equal(ukDateTime('not a date'), '');
 });
