@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { rememberAccount } from '@/lib/signInMemory';
+import { stayChoiceInBrowser } from '@/lib/staySignedIn';
 
 // Rendered by the navbar while someone is signed in, so that the moment they
 // sign out this browser already knows who they were — and the Log in or sign
@@ -20,7 +21,8 @@ export default function RememberAccount({
     phone: string | null | undefined;
 }) {
     useEffect(() => {
-        if (!firstName) return;
+        // A shared computer ("don't stay signed in") is not told who you are.
+        if (!firstName || !stayChoiceInBrowser()) return;
         if (email) {
             rememberAccount({ firstName, avatarUrl, kind: 'email', value: email.trim().toLowerCase() });
         } else if (phone) {

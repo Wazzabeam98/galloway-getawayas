@@ -18,10 +18,14 @@ import {
     forgetAccount,
     readPending,
     readRemembered,
+    recordCodeSent,
     rememberAccount,
     RememberedAccount,
+    RESEND_SECONDS,
     savePending,
+    secondsUntilResend,
 } from '@/lib/signInMemory';
+import { recordStayChoice } from '@/lib/staySignedIn';
 import { getImageUrl } from '@/lib/utils';
 
 /**
@@ -63,7 +67,6 @@ type Screen = 'welcome' | 'start' | 'code' | 'details' | 'terms';
 const INPUT = 'w-full rounded-xl border border-slate-400 px-4 py-3.5 text-base text-slate-900 placeholder:text-slate-500 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900';
 const PRIMARY = 'w-full rounded-xl bg-emerald-700 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400';
 const LINK = 'font-semibold text-slate-900 underline underline-offset-2 hover:text-emerald-800 disabled:opacity-60';
-const RESEND_WAIT_SECONDS = 60;
 
 export default function AuthPanelHost() {
     const supabase = createClientComponentClient();
@@ -86,6 +89,8 @@ export default function AuthPanelHost() {
     const [wait, setWait] = useState(0);
     const [ticked, setTicked] = useState(false);
     const [termsError, setTermsError] = useState('');
+    // "Stay signed in on this device" — on by default (lib/staySignedIn).
+    const [stay, setStay] = useState(true);
     const firstField = useRef<HTMLInputElement>(null);
 
     useEffect(() => { setMounted(true); }, []);
@@ -139,6 +144,7 @@ export default function AuthPanelHost() {
         supabase.auth.getSession().then(({ data }) => {
             if (data.session) { clearPending(); return; }
             setTarget({ kind: p.kind, value: p.value });
+            setWait(secondsUntilResend(p.value));
             setNext(p.next || null);
             setRemembered(readRemembered());
             setScreen('code');
@@ -170,23 +176,53 @@ export default function AuthPanelHost() {
         return `${window.location.origin}/auth/callback?next=${encodeURIComponent(here)}`;
     };
 
-    const send = async (t: CodeTarget): Promise<boolean> => {
-        setBusy(true);
+    // 'sent' — a new code is on its way. 'already' — one went to this address
+    // under a minute ago and still works, so we go to the code screen with the
+    // seconds left on the resend button instead of failing with "wait a
+    // minute". The same either way the person arrived (Log in, or Not you?).
+    const send = async (t: CodeTarget): Promise<'sent' | 'already' | false> => {
         setError('');
         setNotice('');
+        const left = secondsUntilResend(t.value);
+        if (left > 0) {
+            savePending({ kind: t.kind, value: t.value, at: Date.now(), next });
+            setCode('');
+            setWait(left);
+            return 'already';
+        }
+        setBusy(true);
         // Email goes through the email-flow client so the link in the email works
         // on whichever device it is opened (lib/supabaseEmailFlow); the code
         // itself works from either.
         const r = await sendSignInCode(t.kind === 'email' ? supabaseEmailFlow() : supabase, t, t.kind === 'email' ? returnLink() : undefined);
         setBusy(false);
         if (!r.ok) {
+            // Supabase's own cooldown (a code sent from another tab, say): the
+            // code it refers to is still good, so treat it exactly as above.
+            if (r.retryAfter > 0) {
+                recordCodeSent(t.value, Date.now() - (RESEND_SECONDS - r.retryAfter) * 1000);
+                savePending({ kind: t.kind, value: t.value, at: Date.now(), next });
+                setCode('');
+                setWait(r.retryAfter);
+                return 'already';
+            }
             setError(r.message);
             return false;
         }
+        recordCodeSent(t.value);
         savePending({ kind: t.kind, value: t.value, at: Date.now(), next });
         setCode('');
-        setWait(RESEND_WAIT_SECONDS);
-        return true;
+        setWait(RESEND_SECONDS);
+        return 'sent';
+    };
+
+    const alreadySent = 'We sent you a code less than a minute ago, and it still works. Enter it below, or send a new one when the timer runs out.';
+
+    const sendAndShowCode = async (t: CodeTarget) => {
+        const r = await send(t);
+        if (!r) return;
+        go('code');
+        if (r === 'already') setNotice(alreadySent);
     };
 
     const submitStart = async (e?: FormEvent) => {
@@ -199,7 +235,7 @@ export default function AuthPanelHost() {
         }
         const t: CodeTarget = { kind: id.kind, value: id.value };
         setTarget(t);
-        if (await send(t)) go('code');
+        await sendAndShowCode(t);
     };
 
     const logInRemembered = async () => {
@@ -210,7 +246,7 @@ export default function AuthPanelHost() {
         }
         const t: CodeTarget = { kind: remembered.kind, value: remembered.value };
         setTarget(t);
-        if (await send(t)) go('code');
+        await sendAndShowCode(t);
     };
 
     const notYou = () => {
@@ -221,7 +257,9 @@ export default function AuthPanelHost() {
 
     const resend = async () => {
         if (!target) return;
-        if (await send(target)) setNotice('New code sent. Use the latest one — earlier codes stop working.');
+        const r = await send(target);
+        if (r === 'sent') setNotice('New code sent. Use the latest one — earlier codes stop working.');
+        if (r === 'already') setNotice(alreadySent);
     };
 
     // Signed in. Where to now?
@@ -246,6 +284,8 @@ export default function AuthPanelHost() {
     };
 
     const remember = (s: any, fullName: string | null | undefined, avatar: string | null | undefined) => {
+        // A shared computer ("don't stay signed in") is not told who you are.
+        if (!stay) { forgetAccount(); return; }
         const first = String(fullName || '').trim().split(/\s+/)[0] || '';
         const u = s.user || {};
         const kind: 'email' | 'phone' = u.email ? 'email' : 'phone';
@@ -265,6 +305,9 @@ export default function AuthPanelHost() {
             return;
         }
         clearPending();
+        // The lifetime the middleware gives the sign-in cookie from the next page.
+        recordStayChoice(stay);
+        if (!stay) forgetAccount();
         const s = r.value;
         setSession(s);
         const { data: prof } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', s.user.id).maybeSingle();
@@ -330,6 +373,20 @@ export default function AuthPanelHost() {
     };
 
     if (!mounted || !open) return null;
+
+    // Instagram's "save login info", worded for us. Ticked by default; untick on
+    // a shared or borrowed computer.
+    const stayTick = (
+        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
+            <input
+                type="checkbox"
+                checked={stay}
+                onChange={(e) => setStay(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-400 accent-emerald-700"
+            />
+            Stay signed in on this device
+        </label>
+    );
 
     const signedIn = screen === 'details' || screen === 'terms';
     const heading =
@@ -405,6 +462,7 @@ export default function AuthPanelHost() {
                             <button type="button" onClick={logInRemembered} disabled={busy} className={PRIMARY}>
                                 {busy ? 'Sending your code…' : 'Log in'}
                             </button>
+                            {stayTick}
                         </div>
                         <p className="mt-6 text-center text-sm text-slate-600">
                             Not you?{' '}
@@ -436,9 +494,11 @@ export default function AuthPanelHost() {
                             <button type="submit" disabled={busy} className={PRIMARY}>
                                 {busy ? 'Sending your code…' : 'Continue'}
                             </button>
+                            {stayTick}
                         </form>
                         <GoogleButton
                             compact
+                            onStart={() => { recordStayChoice(stay); if (!stay) forgetAccount(); }}
                             divider={
                                 <div className="my-6 flex items-center gap-3 text-xs text-slate-500">
                                     <span className="h-px flex-1 bg-slate-200" /> or <span className="h-px flex-1 bg-slate-200" />

@@ -13,6 +13,9 @@ interface Props {
     // as Airbnb does, rather than a full-width button competing with the main
     // field. The full-width button stays for the full-page sign-up steps.
     compact?: boolean;
+    // Called just before leaving for Google — the panel records the "stay
+    // signed in" choice here, since the code screen never runs for Google.
+    onStart?: () => void;
 }
 
 /**
@@ -23,7 +26,7 @@ interface Props {
  * behaves the same in both — they had drifted into two different buttons with
  * two different logos.
  */
-export default function GoogleButton({ divider, compact = false }: Props) {
+export default function GoogleButton({ divider, compact = false, onStart }: Props) {
     const supabase = createClientComponentClient();
     const [enabled, setEnabled] = useState(false);
 
@@ -40,6 +43,7 @@ export default function GoogleButton({ divider, compact = false }: Props) {
     if (!enabled) return null;
 
     const signIn = async () => {
+        onStart?.();
         // Back to the page they pressed it on, not the home page.
         //
         // This button is mounted inside the provider sign-up as well as the
