@@ -16,7 +16,8 @@ import {
     tidyEmail,
     verifyCode,
 } from '@/lib/emailCodeSignIn';
-import { holdAgreementGate } from '@/components/legal/AgreementTick';
+import AgreementTick, { fetchAgreementStatus, holdAgreementGate, recordAgreement } from '@/components/legal/AgreementTick';
+import { agreementProblem, versionForTick } from '@/lib/agreements';
 
 /**
  * The shared first step of every sign-up: "What's your email?".
@@ -29,10 +30,14 @@ import { holdAgreementGate } from '@/components/legal/AgreementTick';
  *   code     — the 6-digit code we emailed; resend; or "use your password"
  *   password — for an account that already has one (still works, always)
  *   name     — only if the account has no name yet (a new one never does):
- *              the name guests and our team see. The Guest Terms are NOT taken
- *              here — a sign-up is never interrupted by a legal pop-up. They are
- *              taken at the end of the provider/trade sign-up (with the role
- *              agreement) and at a guest's first stay checkout.
+ *              the name guests and our team see.
+ *   terms    — the Guest Terms, the FINAL screen of sign-up, shown only when
+ *              this flow collects them (collectGuestTerms) and the account still
+ *              owes them. One tick and one button: the press both records the
+ *              agreement and finishes sign-up, so nobody completes it without
+ *              agreeing and nobody is asked again afterwards by a roaming prompt.
+ *              The provider/trade wizard collects them on its own finish screen
+ *              instead, so it passes collectGuestTerms={false}.
  *
  * Whoever is already signed in never sees any of this — the page mounting it
  * decides that, and should render its own flow straight away.
@@ -41,7 +46,7 @@ import { holdAgreementGate } from '@/components/legal/AgreementTick';
  * trade flows.
  */
 
-type Screen = 'email' | 'code' | 'password' | 'name';
+type Screen = 'email' | 'code' | 'password' | 'name' | 'terms';
 
 interface Props {
     // Small emerald label over the heading, naming the flow ("List your place").
@@ -54,6 +59,11 @@ interface Props {
     onSignedIn: (session: any) => void;
     // Pre-fills the address, where the page already knows it (an emailed link).
     initialEmail?: string;
+    // Whether THIS flow is the one that takes the Guest Terms, as the final
+    // screen of sign-up. Default true (the host flow, payouts). A flow that
+    // collects them on its own last screen — the provider/trade wizard's finish —
+    // passes false so they are not asked twice.
+    collectGuestTerms?: boolean;
 }
 
 const INPUT = 'w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-700';
@@ -65,7 +75,7 @@ const LINK = 'font-semibold text-slate-900 underline underline-offset-2 hover:te
 // beats letting the press fail.
 const RESEND_WAIT_SECONDS = 60;
 
-export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, initialEmail = '' }: Props) {
+export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, initialEmail = '', collectGuestTerms = true }: Props) {
     const supabase = createClientComponentClient();
     const [screen, setScreen] = useState<Screen>('email');
     const [email, setEmail] = useState(initialEmail);
@@ -79,6 +89,9 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
     const [session, setSession] = useState<any>(null);
     // The last screen asks for a name when the account has none.
     const [askName, setAskName] = useState(true);
+    // The Guest Terms tick on the final 'terms' screen.
+    const [guestTicked, setGuestTicked] = useState(false);
+    const [termsError, setTermsError] = useState('');
     const firstField = useRef<HTMLInputElement>(null);
 
     // Keep the site-wide sign-in prompt out of the way while this takeover is up,
@@ -110,8 +123,7 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
     };
 
     // Signed in. Ask for a name only if the account has none — a new account
-    // never does. The Guest Terms are not taken here (see the note at the top of
-    // the file); they are taken at the end of sign-up and at first checkout.
+    // never does — then take the Guest Terms as the final screen.
     const afterSignIn = async (s: any) => {
         setSession(s);
         const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', s.user.id).maybeSingle();
@@ -121,7 +133,25 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
             go('name');
             return;
         }
-        onSignedIn(s);
+        await maybeTerms(s);
+    };
+
+    // The Guest Terms are the LAST action of sign-up: one screen, one tick, one
+    // button whose press both records the agreement and finishes sign-up. Shown
+    // only when this flow collects them and the account still owes them — so the
+    // provider/trade wizard (collectGuestTerms=false, it takes them at its own
+    // finish) and an account that has already agreed go straight through. When
+    // they are owed, onSignedIn is withheld until they are ticked, so nobody
+    // completes sign-up without agreeing, and nothing pops up afterwards.
+    const maybeTerms = async (s: any) => {
+        if (!collectGuestTerms) { onSignedIn(s); return; }
+        const st = await fetchAgreementStatus();
+        // Fail closed: skip the screen only on a POSITIVE confirmation of
+        // agreement. A failed lookup keeps the screen rather than waving them in.
+        const agreed = !!(st && st.documents && st.documents.guest && st.documents.guest.agreed);
+        if (agreed) { onSignedIn(s); return; }
+        setBusy(false);
+        go('terms');
     };
 
     const submitEmail = async (e?: FormEvent) => {
@@ -221,14 +251,39 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
             // page reads a greeting name from before the profile is loaded.
             await supabase.auth.updateUser({ data: { name: full } });
         }
+        await maybeTerms(session);
+    };
+
+    // The final screen: tick the Guest Terms, press once, and that press both
+    // records the agreement and finishes sign-up. The button is disabled until
+    // it is ticked, and /api/agreements rejects a missing or stale version, so
+    // the wall holds in the browser and on the server.
+    const submitTerms = async (e?: FormEvent) => {
+        e?.preventDefault();
+        const problem = agreementProblem('guest', null, versionForTick('guest', guestTicked));
+        if (problem) { setTermsError(problem); return; }
+        setBusy(true);
+        setTermsError('');
+        const failed = await recordAgreement('guest', 'signup');
+        setBusy(false);
+        if (failed) { setTermsError(failed); return; }
         onSignedIn(session);
+    };
+
+    // The way out for someone who will not agree: signed out, back where they
+    // started. The account exists (the code was verified before this screen) but
+    // with no Guest Terms on record, so the next sign-in brings them here again.
+    const logOutWithoutAgreeing = async () => {
+        await supabase.auth.signOut();
+        window.location.href = exitHref;
     };
 
     const heading =
         screen === 'email' ? 'What’s your email?'
             : screen === 'code' ? 'Enter your code'
                 : screen === 'password' ? 'Log in with your password'
-                    : 'What’s your name?';
+                    : screen === 'terms' ? 'Our Guest Terms'
+                        : 'What’s your name?';
 
     const backButton = 'inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition';
 
@@ -408,6 +463,32 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
                                     {busy ? 'Saving…' : 'Continue'}
                                 </button>
                             </form>
+                        </>
+                    )}
+
+                    {screen === 'terms' && (
+                        <>
+                            <p className="mb-8 text-slate-600 [text-wrap:pretty]">
+                                Before you carry on, please read and agree to our Guest Terms. They cover your account, bookings and how the site works.
+                            </p>
+                            <form onSubmit={submitTerms} className="space-y-5" noValidate>
+                                <AgreementTick
+                                    doc="guest"
+                                    id="signup-agree-guest"
+                                    open="tab"
+                                    checked={guestTicked}
+                                    onChange={(v) => { setGuestTicked(v); setTermsError(''); }}
+                                    error={termsError}
+                                />
+                                <button type="submit" disabled={busy || !guestTicked} className={PRIMARY}>
+                                    {busy ? 'Saving…' : 'Agree and continue'}
+                                </button>
+                            </form>
+                            <p className="mt-8 text-sm text-slate-500">
+                                <button type="button" onClick={logOutWithoutAgreeing} className={LINK}>
+                                    Not now — log out
+                                </button>
+                            </p>
                         </>
                     )}
                 </div>
