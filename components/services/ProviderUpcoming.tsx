@@ -422,7 +422,7 @@ export default function ProviderUpcoming({
                     {selected && (
                         <div className={(mobileOpen ? '' : 'hidden ') + 'lg:block'}>
                             <button type="button" onClick={() => setMobileOpen(false)} className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 lg:hidden">
-                                <ArrowLeft className="h-4 w-4" /> All reservations
+                                <ArrowLeft className="h-4 w-4" /> All bookings
                             </button>
                             <ReservationCard r={selected} />
                         </div>

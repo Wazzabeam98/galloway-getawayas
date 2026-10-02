@@ -81,9 +81,20 @@ const Navbar = async () => {
         providerAudience = (providerRow && providerRow.audience) || null;
     }
 
-    // Default a host to travel mode until they choose otherwise.
+    // The one gg_mode cookie carries the travelling/working split for everyone
+    // who has two sides. A host defaults to travel until they choose otherwise;
+    // a pure provider (no listing of their own) defaults to their providing side,
+    // because that is where sign-in lands them (LoginModel) and where their work
+    // is. An explicit choice in the cookie always wins over either default.
     const modeCookie = cookieStore.get('gg_mode')?.value;
-    const mode: 'host' | 'travel' = modeCookie === 'host' ? 'host' : 'travel';
+    const mode: 'host' | 'travel' =
+        modeCookie === 'host'
+            ? 'host'
+            : modeCookie === 'travel'
+            ? 'travel'
+            : isProvider && !isHost
+            ? 'host'
+            : 'travel';
 
     // Experiences are a public destination once the feature is live — anyone can
     // browse, signed in or not — so the link is shown to everyone, gated only on
@@ -116,8 +127,15 @@ const Navbar = async () => {
                             <ModeSwitch mode={mode} />
                         </div>
                     ) : isProvider ? (
-                        /* A tradesman isn't a lapsed host to convert. */
-                        null
+                        /* A provider — a trade or an experience host — has a
+                           providing side and a travelling side, the same two
+                           sides an accommodation host has. Same switch, pointed
+                           at their provider dashboard and worded in their own
+                           noun ("providing"), not "hosting". A host who is also a
+                           provider keeps the host switch above. */
+                        <div className='hidden sm:block'>
+                            <ModeSwitch mode={mode} workHref='/services/dashboard' workLabel='providing' />
+                        </div>
                     ) : (
                         <Link href="/business" className="text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition text-slate-800">
                             Start hosting

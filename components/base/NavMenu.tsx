@@ -42,6 +42,12 @@ const NavMenu = ({
     initial?: string;
 }) => {
     const hostView = isHost && mode === 'host';
+    // A provider sees their providing menu only on their providing side, exactly
+    // as a host sees the host menu only in host mode. In travelling mode a
+    // provider gets the guest menu (their own trips), so the one mode switch
+    // flips the dropdown for a provider the same way it does for a host. A host
+    // who is also a provider is handled by hostView above.
+    const providerView = isProvider && !isHost && mode === 'host';
     // A guest-experience provider (a chef, a sauna, a class) is booked and paid
     // through us, so their menu is a Calendar and Earnings. A trade provider (a
     // plumber) is contacted by Enquiry and paid off-platform, so theirs is
@@ -129,18 +135,21 @@ const NavMenu = ({
                                         <Link href='/trips'>Your trips</Link>
                                     </li>
                                 </>
-                            ) : isProvider ? (
+                            ) : providerView ? (
                                 /* A provider's menu is their business, not a
-                                   traveller's. A plumber signing in is not
-                                   looking for a cottage, so "Your trips" and
-                                   "Become a host" give way to their own things.
-                                   (A provider who is also a host still gets the
-                                   full host menu in host mode, above.) */
+                                   traveller's. On their providing side "Your
+                                   trips" and "Become a host" give way to their
+                                   own things; switch to travelling and they get
+                                   the guest menu below instead. (A provider who
+                                   is also a host gets the full host menu in host
+                                   mode, above.) */
                                 <>
                                     {isGuestProvider ? (
                                         /* A guest-experience provider is booked and paid
-                                           through us: their listing, their reservations,
-                                           the calendar, then Earnings. */
+                                           through us: their listing, their bookings,
+                                           the calendar, then Earnings. Their word is
+                                           "bookings" — they take bookings for their
+                                           experiences, not reservations for a property. */
                                         <>
                                             <li className={itemClass}>
                                                 <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
@@ -148,7 +157,7 @@ const NavMenu = ({
                                                 </Link>
                                             </li>
                                             <li className={itemClass}>
-                                                <Link href='/services/dashboard'>Your reservations</Link>
+                                                <Link href='/services/dashboard'>Your bookings</Link>
                                             </li>
                                             <li className={itemClass}>
                                                 <Link href='/services/dashboard/calendar'>Calendar</Link>
@@ -237,9 +246,19 @@ const NavMenu = ({
                                     />
                                 </li>
                             ) : isProvider ? (
-                                /* A tradesman isn't a lapsed host to convert —
-                                   no "Become a host" nudge in his menu. */
-                                null
+                                /* A provider gets the same switch a host does —
+                                   the only way to reach the travelling side on
+                                   mobile, where the top-bar switch is hidden —
+                                   pointed at their provider dashboard and worded
+                                   "providing", not "hosting". */
+                                <li className={itemClass}>
+                                    <ModeSwitch
+                                        mode={mode}
+                                        workHref='/services/dashboard'
+                                        workLabel='providing'
+                                        className='w-full text-left rounded-md'
+                                    />
+                                </li>
                             ) : (
                                 <li className={itemClass}>
                                     <Link href='/business'>Start hosting</Link>

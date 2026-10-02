@@ -10,9 +10,12 @@ import ProviderUpcoming from '@/components/services/ProviderUpcoming';
 import { loadProviderReservations } from '@/lib/providerReservations';
 
 export const metadata = {
-    // A trade's home for every enquiry — the four folders below. A guest provider
-    // lands on the same page worded as their reservations.
-    title: 'Enquiries',
+    // One static tab title for both audiences. The visible heading carries the
+    // audience's own noun ("Enquiries" for a trade, "Your bookings" for a guest
+    // experience provider); the tab title stays neutral so a guest provider's tab
+    // does not read "Enquiries", the trade noun. Making it audience-specific would
+    // cost a second auth+provider query here purely for a tab title.
+    title: 'Your dashboard',
     robots: { index: false, follow: false },
 };
 
@@ -67,7 +70,10 @@ export default async function ProviderReservationsPage() {
     // Subscription state ("Free until …") and the "Listed" pill used to sit here;
     // they belong to the business, not to this inbox, so they moved to Your
     // listing (round six).
-    const heading = isTrade ? 'Enquiries' : 'Your reservations';
+    // A guest-experience provider takes "bookings" for their experiences, not
+    // "reservations" for a property — that is the accommodation host's noun, and
+    // it does not belong on a chef's or a class's dashboard.
+    const heading = isTrade ? 'Enquiries' : 'Your bookings';
 
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-24">
@@ -97,7 +103,7 @@ export default async function ProviderReservationsPage() {
                 )}
             </div>
 
-            <ProviderUpcoming reservations={reservations} past={past} summary={summary} title={isTrade ? null : 'Upcoming reservations'} folders={isTrade} />
+            <ProviderUpcoming reservations={reservations} past={past} summary={summary} title={isTrade ? null : 'Upcoming bookings'} folders={isTrade} />
         </div>
     );
 }
