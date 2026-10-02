@@ -27,13 +27,19 @@ const STEPS: StepId[] = ['category', 'name', 'email', 'phone', 'region', 'extra'
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-export default function RegisterInterest() {
+export default function RegisterInterest({
+    initialCategory = null,
+}: {
+    initialCategory?: CategoryKey | null;
+}) {
     const [step, setStep] = useState(0);
     const [done, setDone] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [category, setCategory] = useState<CategoryKey | null>(null);
+    // Preselected, not skipped: the tile screen still shows, with the choice
+    // already made, so they can see what they are registering for and change it.
+    const [category, setCategory] = useState<CategoryKey | null>(initialCategory);
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');

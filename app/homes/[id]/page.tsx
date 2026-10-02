@@ -9,6 +9,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { capitializeFirst, getImageUrl, formatTime, firstName } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
+import { guestCalendar } from '@/lib/availability';
+import { AGREEMENTS } from '@/lib/agreements';
 import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
@@ -395,6 +397,26 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const { data: { user: viewer } } = await supabase.auth.getUser();
     const isHostViewing = viewer?.id === home.host_id;
 
+    // The booking calendar's data, read here so the widget paints with every
+    // taken night already struck out — never an open month that fills up two
+    // seconds later. And whether this viewer still owes the Guest Terms, so the
+    // tick is there from the first paint too (null when signed out).
+    const [calendar, guestTermsRow] = await Promise.all([
+        guestCalendar(home.id),
+        viewer
+            ? adminClient()
+                .from('agreement_acceptances')
+                .select('version')
+                .eq('user_id', viewer.id)
+                .eq('document', 'guest')
+                .eq('version', AGREEMENTS.guest.version)
+                .maybeSingle()
+            : Promise.resolve(null),
+    ]);
+    const viewerNeedsGuestTerms: boolean | null = viewer
+        ? (guestTermsRow && !(guestTermsRow as any).error ? !(guestTermsRow as any).data : null)
+        : null;
+
     // ONE rating source for the whole site: the stored aggregate columns,
     // rating_avg and rating_count, maintained by a database trigger. They are
     // the same two columns the listing cards and the area grids read, so the
@@ -774,6 +796,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             damageDeposit={home.damage_deposit || 0}
                             availabilityWindow={home.availability_window}
                             cancellationPolicy={home.cancellation_policy}
+                            blockedNights={calendar.blockedNights}
+                            priceOverrides={calendar.priceOverrides}
+                            needsGuestTerms={viewerNeedsGuestTerms}
                         />
                     </div>
                 </div>

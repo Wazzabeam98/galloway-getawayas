@@ -106,7 +106,7 @@ function GuestCounter({
   divider = true,
 }: {
   label: string;
-  hint: string;
+  hint?: string;
   value: number;
   onDecrement: () => void;
   onIncrement: () => void;
@@ -126,7 +126,7 @@ function GuestCounter({
     >
       <div>
         <p className="font-semibold text-sm">{label}</p>
-        <p className="text-xs text-stone-500">{hint}</p>
+        {hint && <p className="text-xs text-stone-500">{hint}</p>}
       </div>
       <div className="flex items-center gap-3">
         <button
@@ -516,7 +516,6 @@ export default function Hero() {
       />
       <GuestCounter
         label="Pets"
-        hint="Bringing a service animal?"
         value={pets}
         size={variant}
         divider={false}
@@ -685,9 +684,10 @@ export default function Hero() {
         {/* Compact search — phones only. A single Airbnb-style pill that names
             what the guest has chosen so far (or "Where to?") and opens the full
             Where / When / Who search in a sheet when tapped. `mt-auto` drops it
-            to the bottom of the hero so the photo is clear above it. The desktop
-            pill bar below is untouched. */}
-        <div className="md:hidden mt-auto mb-8 w-full max-w-md text-stone-800">
+            into the middle of the space under the heading, so it sits in the body of
+            the photo rather than on its bottom edge. The desktop pill bar below
+            is untouched. */}
+        <div className="md:hidden my-auto w-full max-w-md text-stone-800">
           <button
             type="button"
             onClick={() => { setActivePopover('where'); setMobileSearchOpen(true); }}

@@ -79,6 +79,11 @@ export default function CalendarPage() {
     // date -> which platform has it, from the imported calendars
     const [external, setExternal] = useState<Record<string, { platform: string; name: string }>>({});
     const [guestNames, setGuestNames] = useState<Record<string, string>>({});
+    // Which listing the bookings/blocks/synced nights above belong to. Until it
+    // matches the selected listing the month is not drawn — an empty map would
+    // show every night as open at the base price, then fill in, which reads as
+    // the calendar being wrong. Also covers switching listing.
+    const [calendarFor, setCalendarFor] = useState<string>('');
 
     const [rightTab, setRightTab] = useState<'manage' | 'pricing' | 'fees' | 'availability'>('manage');
 
@@ -177,21 +182,37 @@ export default function CalendarPage() {
     useEffect(() => {
         if (!selectedListingId) return;
 
+        let live = true;
         const loadCalendarData = async () => {
-            const { data: overrideRows } = await supabase
-                .from('calendar_overrides')
-                .select('date, is_blocked, price_override, min_nights_override')
-                .eq('listing_id', selectedListingId);
+            // In parallel, not one after another: these used to run in a row,
+            // which is most of the wait before the month could be trusted.
+            const [{ data: overrideRows }, { data: bookingRows }, { data: workRows }, icalRes] = await Promise.all([
+                supabase
+                    .from('calendar_overrides')
+                    .select('date, is_blocked, price_override, min_nights_override')
+                    .eq('listing_id', selectedListingId),
+                supabase
+                    .from('bookings')
+                    .select('check_in, check_out, guest_id')
+                    .eq('listing_id', selectedListingId)
+                    .eq('status', 'confirmed'),
+                // Accepted, planned work the host asked a tradesman for on this
+                // cottage — see the note where it is mapped below.
+                supabase
+                    .from('service_enquiries')
+                    .select('preferred_date, trade, business_name, window_from, window_to')
+                    .eq('listing_id', selectedListingId)
+                    .eq('status', 'accepted')
+                    .eq('urgency', 'planned')
+                    .not('preferred_date', 'is', null),
+                fetch('/api/ical-import?listing=' + selectedListingId).catch(() => null),
+            ]);
+            if (!live) return;
 
             const map: Record<string, Override> = {};
             (overrideRows || []).forEach((o) => { map[o.date] = o; });
             setOverrides(map);
 
-            const { data: bookingRows } = await supabase
-                .from('bookings')
-                .select('check_in, check_out, guest_id')
-                .eq('listing_id', selectedListingId)
-                .eq('status', 'confirmed');
             setBookings(bookingRows || []);
 
             // Accepted, planned work the host asked a tradesman for on this
@@ -201,14 +222,6 @@ export default function CalendarPage() {
             // and a trade fall on one date. The wording stays "asked for"
             // everywhere it renders. A co-host without a select policy simply
             // gets nothing back, which shows an empty layer rather than failing.
-            const { data: workRows } = await supabase
-                .from('service_enquiries')
-                .select('preferred_date, trade, business_name, window_from, window_to')
-                .eq('listing_id', selectedListingId)
-                .eq('status', 'accepted')
-                .eq('urgency', 'planned')
-                .not('preferred_date', 'is', null);
-
             const wmap: Record<string, Work[]> = {};
             (workRows || []).forEach((w: any) => {
                 const k = String(w.preferred_date).slice(0, 10);
@@ -220,8 +233,8 @@ export default function CalendarPage() {
             // listing syncs with. Without this a host sees their Galloway
             // bookings only and assumes the rest of the month is free.
             try {
-                const res = await fetch('/api/ical-import?listing=' + selectedListingId);
-                const data = res.ok ? await res.json() : { events: [] };
+                const res = icalRes;
+                const data = res && res.ok ? await res.json() : { events: [] };
 
                 const map: Record<string, any> = {};
 
@@ -254,10 +267,12 @@ export default function CalendarPage() {
                     .in('id', guestIds);
                 const names: Record<string, string> = {};
                 (profiles || []).forEach((p) => { names[p.id] = firstName(p, 'Guest'); });
-                setGuestNames(names);
+                if (live) setGuestNames(names);
             }
+            if (live) setCalendarFor(selectedListingId);
         };
         loadCalendarData();
+        return () => { live = false; };
     }, [supabase, selectedListingId]);
 
     const days = useMemo(() => {
@@ -561,7 +576,16 @@ export default function CalendarPage() {
                         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d}>{d}</div>)}
                     </div>
 
-                    <div className="grid grid-cols-7 gap-1.5">
+                    <div className="relative">
+                    {calendarFor !== selectedListingId && (
+                        <div className="absolute inset-0 z-20 grid grid-cols-7 gap-1.5 bg-white" aria-busy="true" aria-label="Loading calendar">
+                            {Array.from({ length: leadingBlanks }).map((_, i) => <div key={`sk-blank-${i}`} />)}
+                            {days.map((day) => (
+                                <div key={'sk-' + day.toISOString()} className="aspect-square rounded-xl bg-slate-100 animate-pulse" />
+                            ))}
+                        </div>
+                    )}
+                    <div className={`grid grid-cols-7 gap-1.5 ${calendarFor !== selectedListingId ? 'invisible' : ''}`}>
                         {Array.from({ length: leadingBlanks }).map((_, i) => <div key={`blank-${i}`} />)}
                         {days.map((day) => {
                             const key = format(day, 'yyyy-MM-dd');
@@ -633,6 +657,7 @@ export default function CalendarPage() {
                                 </button>
                             );
                         })}
+                    </div>
                     </div>
 
                     <div className="mt-6 border-t pt-5">

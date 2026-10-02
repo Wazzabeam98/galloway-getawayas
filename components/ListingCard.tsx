@@ -5,6 +5,7 @@ import { cardBadges } from '@/lib/listingRules';
 import { publicArea } from '@/lib/places';
 import { hasPublicScore } from '@/lib/reviews';
 import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
+import { propertyTypeLabel } from '@/lib/listingFilters';
 
 // One property card, used by the home page grid and by the area pages.
 //
@@ -45,6 +46,8 @@ export interface CardListing {
      */
     approx_latitude?: number | string | null;
     approx_longitude?: number | string | null;
+    /** The category the host picked at sign-up ("Cottages", "Townhouses"…). */
+    property_type?: string | null;
 }
 
 export default function ListingCard({ listing }: { listing: CardListing }) {
@@ -55,6 +58,10 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
     // only part of it that belongs to the card.
     const badges = cardBadges(listing.amenities);
     const near = nearestTown(listing.location, listing.approx_latitude, listing.approx_longitude);
+    // Airbnb's line under the title: "Cottage in Kirkcudbright". Just the area
+    // when the host never picked a type.
+    const type = propertyTypeLabel(listing.property_type);
+    const area = publicArea(listing.location);
 
     return (
         <Link href={`/homes/${listing.id}`} className="group flex flex-col space-y-2">
@@ -118,7 +125,7 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
                 )}
             </div>
 
-            <p className="text-sm text-stone-500 truncate">{publicArea(listing.location)}</p>
+            <p className="text-sm text-stone-500 truncate">{type ? `${type} in ${area}` : area}</p>
             {near && (
                 <p className="text-xs text-stone-400 truncate -mt-1">{nearestTownLabel(near)}</p>
             )}

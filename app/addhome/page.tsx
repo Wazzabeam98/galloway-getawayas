@@ -2,6 +2,8 @@
 
 export const dynamic = 'force-dynamic';
 
+import { Accessibility as AccessibilityIcon } from 'lucide-react';
+import { ACCESSIBILITY_AMENITIES } from '@/lib/listingFilters';
 import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -132,6 +134,12 @@ export default function AddHome() {
                 { name: 'Beach access', icon: Umbrella },
                 { name: 'Waterfront', icon: Anchor },
             ],
+        },
+        {
+            // Airbnb's step-free features — what the "Accessibility features"
+            // filter on the home page searches (lib/listingFilters).
+            category: 'Accessibility',
+            items: ACCESSIBILITY_AMENITIES.map((name) => ({ name, icon: AccessibilityIcon })),
         },
         {
             category: 'Safety',

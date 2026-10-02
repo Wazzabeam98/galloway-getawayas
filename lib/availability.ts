@@ -89,6 +89,50 @@ export function rangeHitsBlockedNight(blocked: Set<string>, from: string, to: st
     return false;
 }
 
+// EVERYTHING A GUEST'S CALENDAR NEEDS FOR ONE LISTING, read on the server so
+// the page paints with it. The booking widget used to draw the month first and
+// fetch this afterwards — five round trips in a row — so October showed as
+// wide open for two seconds and then filled up, which looks like the site lying
+// about availability. A server page calls this and passes the result down.
+//
+// The same three sources the checkout route walls on: nights held or booked
+// here (listing_busy_nights, pending + confirmed), the host's blocked days
+// (calendar_overrides), and the dates taken on other platforms (cached feed
+// events). Only night keys and nightly prices leave — no names, no feed URLs.
+export interface GuestCalendar {
+    blockedNights: string[];
+    priceOverrides: Record<string, number>;
+}
+
+export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
+    const admin = adminClient();
+    const [busy, overrides, feeds] = await Promise.all([
+        admin.from('listing_busy_nights')
+            .select('check_in, check_out')
+            .eq('listing_id', listingId)
+            .in('status', ['pending', 'confirmed']),
+        admin.from('calendar_overrides')
+            .select('date, is_blocked, price_override')
+            .eq('listing_id', listingId),
+        admin.from('listing_ical_feeds')
+            .select('events')
+            .eq('listing_id', listingId),
+    ]);
+
+    const events: IcalEvent[] = [];
+    ((busy.data as any[]) || []).forEach((b) => events.push({ start: b.check_in, end: b.check_out }));
+    ((feeds.data as any[]) || []).forEach((f) => (f.events || []).forEach((e: any) => events.push(e)));
+    const nights = blockedNightsFromEvents(events);
+
+    const priceOverrides: Record<string, number> = {};
+    ((overrides.data as any[]) || []).forEach((o) => {
+        if (o.is_blocked) nights.add(o.date);
+        if (o.price_override) priceOverrides[o.date] = Number(o.price_override);
+    });
+
+    return { blockedNights: Array.from(nights).sort(), priceOverrides };
+}
+
 // Which of these listings are taken on another platform for these dates.
 //
 // Ids in, ids out. The events themselves never leave this function, and the
