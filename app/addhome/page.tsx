@@ -251,18 +251,29 @@ export default function AddHome() {
                 }
             }
 
-            if (session?.user) {
-                fetch('/api/host/terms')
-                    .then((r) => r.json())
-                    .then((b) => setTermsOnRecord(!!(b && b.agreed)))
-                    .catch(() => setTermsOnRecord(false));
-            }
-
             setLoading(false);
         };
 
         checkUser();
     }, [supabase]);
+
+    // Whether this host has already agreed to the current Host Agreement — the
+    // listing-review tick shows only when this is false. Keyed on the session so
+    // it is (re)fetched the moment they sign in, including a FRESH host who makes
+    // their account on the sign-up screens above without a page reload. The fetch
+    // used to live in the mount-only checkUser above, where it ran while still
+    // signed out, saw no session, and left termsOnRecord null — so the Host
+    // Agreement tick never rendered and Publish was walled ("Please agree to the
+    // Host Agreement") with no tick on screen to satisfy it.
+    useEffect(() => {
+        if (!session?.user) return;
+        let cancelled = false;
+        fetch('/api/host/terms')
+            .then((r) => r.json())
+            .then((b) => { if (!cancelled) setTermsOnRecord(!!(b && b.agreed)); })
+            .catch(() => { if (!cancelled) setTermsOnRecord(false); });
+        return () => { cancelled = true; };
+    }, [session]);
 
     // The listing's content in the shape of a listings row — ONE builder for the
     // draft save, the autosave and the submit, so they can never save different
