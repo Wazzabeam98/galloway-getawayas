@@ -116,7 +116,7 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
 
                 {rating && hasPublicScore(count) ? (
                     <span className="flex items-center gap-1 text-sm text-stone-900 shrink-0">
-                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        <Star className="w-3.5 h-3.5 fill-stone-900 text-stone-900" />
                         <span className="font-semibold">{rating.toFixed(2)}</span>
                         <span className="text-stone-400 font-normal">({count})</span>
                     </span>

@@ -304,7 +304,7 @@ export default async function Dashboard() {
                                     )}
                                     <span className="min-w-0 flex-1">
                                         <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-                                            <Star className="h-3.5 w-3.5 flex-none text-amber-400" /> Leave {first} a review
+                                            <Star className="h-3.5 w-3.5 flex-none text-stone-900" /> Leave {first} a review
                                         </span>
                                         <span className="mt-0.5 block truncate text-[13px] text-slate-500">{fuListingMap[b.listing_id] || 'your listing'}</span>
                                         <span className={'mt-0.5 block text-[12px] font-medium ' + (left <= 3 ? 'text-amber-700' : 'text-slate-400')}>

@@ -266,8 +266,18 @@ export default async function HomePage({
         .filter((a) => a !== 'Pets allowed')
         .forEach((a) => criteria.push((QUICK_CHIPS.find((c) => c.amenity === a) || { label: a }).label.toLowerCase()));
     filters.types.forEach((t) => criteria.push(propertyTypeLabel(t) || t));
-    const otherFilters = filterCount - filters.amenities.length - filters.types.length;
-    if (otherFilters > 0) criteria.push(`${otherFilters} more filter${otherFilters > 1 ? 's' : ''}`);
+    if (filters.minPrice != null || filters.maxPrice != null) {
+        criteria.push(
+            filters.maxPrice == null ? `from £${filters.minPrice}`
+                : filters.minPrice == null ? `up to £${filters.maxPrice}`
+                    : `£${filters.minPrice}–£${filters.maxPrice}`,
+        );
+    }
+    if (filters.bedrooms) criteria.push(`${filters.bedrooms}+ bedroom${filters.bedrooms > 1 ? 's' : ''}`);
+    if (filters.beds) criteria.push(`${filters.beds}+ bed${filters.beds > 1 ? 's' : ''}`);
+    if (filters.bathrooms) criteria.push(`${filters.bathrooms}+ bathroom${filters.bathrooms > 1 ? 's' : ''}`);
+    if (filters.instantBook) criteria.push('Instant Book');
+    if (filters.selfCheckIn) criteria.push('self check-in');
 
     return (
         <main className="min-h-screen bg-stone-50">
