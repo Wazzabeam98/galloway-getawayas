@@ -11,6 +11,7 @@ import { ToastContainer } from 'react-toastify';
 import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
 import AgreementGate from '@/components/legal/AgreementGate';
+import AuthPanelHost from '@/components/auth/AuthPanel';
 import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import { COMPANY } from '@/config/company';
@@ -154,6 +155,9 @@ export default function RootLayout({
         {/* The sign-in prompt for a missing or out-of-date agreement — one
             document at a time (lib/agreements.ts). */}
         <AgreementGate />
+        {/* The one Log in or sign up panel. Every "Log in" button on the site
+            opens this (components/auth/LoginModel → openAuthPanel). */}
+        <AuthPanelHost />
         {/* Vercel Web Analytics — privacy-friendly visitor and page-view trends.
             It only reports once deployed on Vercel with Analytics switched on for
             the project; locally it no-ops. */}

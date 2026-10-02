@@ -16,7 +16,10 @@
 // paused — leaves the button hidden, because a hidden button costs a visitor
 // nothing and a dead one costs them a sign-in attempt.
 
-export type ProviderName = 'google';
+// 'phone' is Supabase's SMS sign-in (codes texted through the project's Twilio
+// provider). It is reported in the same map, so the panel only offers phone
+// numbers on a project where texting is genuinely switched on.
+export type ProviderName = 'google' | 'phone';
 
 let inFlight: Promise<Record<string, boolean>> | null = null;
 

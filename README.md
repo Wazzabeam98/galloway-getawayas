@@ -91,7 +91,6 @@
     ├── tsconfig.json
     ├── types.ts
     └── validation/
-        ├── authSchema.ts
         └── homeSchema.ts
 ```
 </details>
