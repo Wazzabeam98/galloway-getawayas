@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { StickyNote, Check, Loader2 } from 'lucide-react';
+import { ukDateTime } from '@/lib/dayKey';
 
 interface Note { host_note: string; created_at: string }
 
-function stamp(iso: string): string {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-        + ', ' + d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
+// DD/MM/YYYY, HH:MM in Europe/London — the shared formatter the message threads
+// and inbox use, so a note's stamp reads the same as everything else and no
+// longer hangs on the runtime's own zone or a 12-hour am/pm of its own.
+const stamp = ukDateTime;
 
 // A provider's private notes on an experience order — an APPEND-ONLY log, the
 // experience twin of the stay-side HostNotes. Kept separate from the guest's own
