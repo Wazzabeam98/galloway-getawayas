@@ -266,6 +266,17 @@ link (`scripts/_login-url.mjs`).
 - money columns are revoked from `authenticated`; keep it that way
 - a co-host is not the `host_id` on a booking, so their queries need the
   service key or row-level security silently returns nothing
+- **the repo holds code, not binary blobs.** Never push a branch whose only
+  job is to host assets, and never commit a screenshot or other raster image —
+  no PNGs or JPEGs in a commit, not even to make a PR render a screenshot
+  inline. Screenshots stay on disk and are referred to by filename, which is
+  what the "go and look at a real screen" section already assumes. A 3000px PNG
+  that never diffs sits in git history forever; it does not belong there. The
+  exception is a vector the product or brand kit actually uses: an **SVG** is
+  text, not a binary, so the logo files in `brand-assets/` are fine — and when
+  a tool needs a raster, export it from the SVG at the size you need rather than
+  committing one. (This came out of #128, which committed four 3000px PNGs past
+  a red check, and #152, which asked for the rule.)
 
 ## Before you design a screen, go and look at a real one
 
