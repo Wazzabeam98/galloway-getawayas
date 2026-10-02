@@ -11,8 +11,6 @@ import { blockedNightsFromEvents, fetchLiveIcalEvents } from '@/lib/availability
 import { rateFor } from '@/lib/fees';
 import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
-import { requireGuestTerms } from '@/lib/agreementRecords';
-import { anonGuestTermsMetadata } from '@/lib/agreements';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,22 +69,6 @@ export async function POST(request: Request) {
         if (booking.payment_status !== 'unpaid') {
             return NextResponse.json({ ok: false, error: 'This booking has already been paid' }, { status: 400 });
         }
-
-        // THE GUEST TERMS WALL, on the server. This used to trust the browser to
-        // have recorded the tick through /api/agreements before the booking was
-        // made; when that step failed the stay went through with nothing on
-        // record. Now: the current version is on record already, or the tick
-        // sent with this request is recorded against the account here, before any
-        // Stripe session exists. The acceptance also rides on the session's
-        // metadata, the same pair the anonymous experience path carries.
-        const terms = await requireGuestTerms(
-            admin,
-            user.id,
-            body && typeof body.guestTermsVersion === 'string' ? body.guestTermsVersion : null,
-            'stay_checkout',
-        );
-        if (!terms.ok) return NextResponse.json(terms.body, { status: terms.status });
-        const guestTermsMeta = anonGuestTermsMetadata(terms.stamp!);
 
         const { data: listing } = await admin
             .from('listings')
@@ -356,7 +338,6 @@ export async function POST(request: Request) {
             metadata: {
                 booking_id: booking.id,
                 kind: useDeposit ? 'deposit' : 'full',
-                ...guestTermsMeta,
             },
         });
 

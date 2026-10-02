@@ -5,7 +5,7 @@
 // run through the admin client passed in. A signed-in user may SELECT their own
 // rows (RLS), but nothing in the app relies on that.
 
-import { AGREEMENTS, AgreementKey, RoleFacts, agreementProblem, isAgreementKey } from './agreements';
+import { AGREEMENTS, AgreementKey, RoleFacts, isAgreementKey } from './agreements';
 
 export type Recorded = Partial<Record<AgreementKey, string[]>>;
 
@@ -99,68 +99,6 @@ export async function recordAcceptance(
         if (profErr) return { error: profErr };
     }
     return { error: null };
-}
-
-// THE GUEST TERMS WALL FOR A SIGNED-IN BOOKER, on every route that starts a
-// guest checkout (stay, experience request/cart, experience slot). The anonymous
-// path has always been walled on the server; a signed-in guest used to be trusted
-// to have recorded the terms from the browser first, and when that browser step
-// failed the booking went through with nothing on record. Now the server decides:
-//
-//   - the current version is already on record → pass, and hand back that
-//     acceptance (version + its real time) to stamp on the order;
-//   - otherwise the request must carry the current version (the tick), which is
-//     recorded against the account here, at server time, before any money moves —
-//     and a failed write refuses the checkout rather than letting it through.
-//
-// The stamp is the same pair the anonymous path carries (anonGuestTermsRecord),
-// so every order says which Guest Terms its booker accepted, and when.
-// One flat shape rather than a union, so it narrows the same under the test
-// build's looser compiler settings: ok → stamp is set; not ok → status + body.
-export interface GuestTermsWall {
-    ok: boolean;
-    stamp?: { guest_terms_version: string; guest_terms_accepted_at: string };
-    status?: number;
-    body?: Record<string, unknown>;
-}
-
-export async function requireGuestTerms(
-    admin: any,
-    userId: string,
-    submittedVersion: string | null | undefined,
-    source: string,
-): Promise<GuestTermsWall> {
-    const version = AGREEMENTS.guest.version;
-
-    const { data: onRecord, error: readErr } = await admin
-        .from('agreement_acceptances')
-        .select('version, accepted_at')
-        .eq('user_id', userId)
-        .eq('document', 'guest')
-        .eq('version', version)
-        .maybeSingle();
-    if (readErr) {
-        return { ok: false, status: 500, body: { ok: false, error: 'We couldn’t check the Guest Terms. Please try again.' } };
-    }
-    if (onRecord) {
-        return { ok: true, stamp: { guest_terms_version: version, guest_terms_accepted_at: (onRecord as any).accepted_at } };
-    }
-
-    const problem = agreementProblem('guest', null, submittedVersion);
-    if (problem) {
-        return {
-            ok: false,
-            status: 400,
-            body: { ok: false, needsAgreement: true, document: 'guest', version, error: problem },
-        };
-    }
-
-    const acceptedAt = new Date().toISOString();
-    const { error } = await recordAcceptance(admin, userId, 'guest', source, { version, acceptedAt });
-    if (error) {
-        return { ok: false, status: 500, body: { ok: false, error: 'We couldn’t save your agreement. Please try again.' } };
-    }
-    return { ok: true, stamp: { guest_terms_version: version, guest_terms_accepted_at: acceptedAt } };
 }
 
 // Record an anonymous booker's Guest Terms acceptance against the account the

@@ -22,7 +22,6 @@ import { deliveryReach, type ReachDecision } from '@/lib/postcodeGeocode';
 import { outOfReachMessage } from '@/lib/deliveryReachMessage';
 import { packageNoticeRecord, packageNoticeMetadata } from '@/lib/packageNotice';
 import { agreementProblem, anonGuestTermsRecord, anonGuestTermsMetadata } from '@/lib/agreements';
-import { requireGuestTerms } from '@/lib/agreementRecords';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,9 +89,9 @@ export async function POST(request: Request) {
         const typedName: string = (body && body.guestName ? String(body.guestName) : '').slice(0, 120).trim();
         const typedEmail: string = (body && body.guestEmail ? String(body.guestEmail) : '').slice(0, 200).trim().toLowerCase();
         const typedPhone: string = (body && body.guestPhone ? String(body.guestPhone) : '').slice(0, 40).trim();
-        // The Guest Terms version the booker ticked at checkout — proved by the
-        // wall below (anonymous or signed in) and carried into the order's
-        // metadata. A signed-in guest already on the current version sends none.
+        // The Guest Terms version an anonymous booker ticked at checkout — proved
+        // by the wall below and carried into the order's metadata. Ignored when
+        // signed in (recorded through /api/agreements before this POST).
         const submittedGuestTerms: string | null =
             body && typeof body.guestTermsVersion === 'string' ? body.guestTermsVersion : null;
 
@@ -120,9 +119,9 @@ export async function POST(request: Request) {
             }
             // THE GUEST TERMS WALL for an anonymous booker — the same rule the
             // browser's disabled button and /api/agreements apply (lib/agreements).
-            // An anonymous booker has no account yet, so the acceptance rides on
-            // the order's metadata and is proved here (a signed-in one is walled
-            // just below, once the admin client is up). A missing or stale tick is
+            // A signed-in guest is recorded through /api/agreements before this
+            // POST; an anonymous one has no account yet, so the acceptance rides on
+            // the order's metadata and is proved here. A missing or stale tick is
             // refused before any Stripe session is created.
             const termsProblem = agreementProblem('guest', null, submittedGuestTerms);
             if (termsProblem) {
@@ -131,20 +130,12 @@ export async function POST(request: Request) {
         }
 
         const admin = adminClient();
-        // The Guest Terms acceptance, stamped once and carried in whichever
-        // session metadata this request builds (cart or single item). Anonymous:
-        // the tick proved above, at server time. Signed in: the same wall on the
-        // server (lib/agreementRecords requireGuestTerms) — on record already, or
-        // the tick is recorded against the account now — never trusted to the
-        // browser having called /api/agreements first.
-        let guestTermsMeta = anonGuestTermsMetadata(
+        // The checkout time an anonymous booker ticked the Guest Terms, stamped
+        // once and carried in whichever session metadata this request builds
+        // (cart or single item). Server time, never the browser's clock.
+        const guestTermsMeta = anonGuestTermsMetadata(
             anonGuestTermsRecord(anonymous ? submittedGuestTerms : null, new Date().toISOString()),
         );
-        if (user) {
-            const wall = await requireGuestTerms(admin, user.id, submittedGuestTerms, 'experience_checkout');
-            if (!wall.ok) return NextResponse.json(wall.body, { status: wall.status });
-            guestTermsMeta = anonGuestTermsMetadata(wall.stamp!);
-        }
 
         // The booking (against-a-stay only) is the guest's own, and it is where the
         // dates, the place and the guest count come from — never the browser.
