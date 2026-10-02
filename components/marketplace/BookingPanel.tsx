@@ -112,7 +112,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
         if (anonymous) { setNeedsGuestTerms(true); return; }
         let cancelled = false;
         fetchAgreementStatus().then((st) => {
-            if (!cancelled) setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
+            // Fail CLOSED: keep the tick unless we have POSITIVELY confirmed the
+            // guest has agreed. A null (lookup error / unreachable table) must
+            // not drop the tick and let them book without a recorded agreement.
+            if (!cancelled) setNeedsGuestTerms(!(st && st.documents && st.documents.guest && st.documents.guest.agreed));
         });
         return () => { cancelled = true; };
     }, [anonymous]);

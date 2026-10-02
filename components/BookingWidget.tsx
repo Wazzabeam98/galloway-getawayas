@@ -235,7 +235,13 @@ export default function BookingWidget({
             // here, at checkout, rather than through a sign-in pop-up.
             if (session?.user) {
                 const st = await fetchAgreementStatus();
-                setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
+                // Fail CLOSED: only clear the tick when we have POSITIVELY
+                // confirmed this guest has agreed. If the lookup errors or the
+                // table is unreachable, fetchAgreementStatus returns null — and
+                // we must keep the tick (and the disabled pay button) rather than
+                // let someone pay with no agreement recorded. The server does not
+                // re-check a signed-in guest's Guest Terms, so this is the gate.
+                setNeedsGuestTerms(!(st && st.documents && st.documents.guest && st.documents.guest.agreed));
             }
 
             const { data: existing } = await supabase
