@@ -152,3 +152,13 @@ test('booking draft: day keys come from the local calendar day, not UTC', () => 
     assert.equal(draft.dateToKey(new Date(2026, 10, 6, 23, 30)), '2026-11-06');
     assert.equal(draft.keyToDate('2026-11-06').getDate(), 6);
 });
+
+test('the text provider refusing is our problem, never "check the number"', async () => {
+    const err = { status: 422, code: 'sms_send_failed', message: 'Error sending confirmation OTP to provider: Primary compliance profile is not approved.' };
+    const { client } = fakeClient({ otp: { error: err } });
+    const r = await code.sendSignInCode(client, { kind: 'phone', value: '+447700900123' });
+    assert.equal(r.ok, false);
+    assert.match(r.message, /can’t send texts right now/);
+    assert.doesNotMatch(r.message, /Check the number/);
+    assert.equal(r.retryAfter, 0);
+});

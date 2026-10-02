@@ -49,6 +49,13 @@ function explainSmsSendError(err: any): string {
     if (/phone.*(disabled|not enabled)|unsupported phone provider|sms.*disabled/i.test(message)) {
         return 'We can’t text codes just now. Use your email address instead.';
     }
+    // Supabase reached our text provider and the provider refused (422
+    // sms_send_failed) — an account problem on our side, not the guest's
+    // number. Found 02/10/2026: Twilio error 20003, the account's Trust Hub
+    // business profile not yet approved. "Check the number" would blame them.
+    if ((err && err.code === 'sms_send_failed') || /sending .*otp to provider/i.test(message)) {
+        return 'We can’t send texts right now. Use your email address instead — we’re on it.';
+    }
     if (/invalid.*phone|phone.*invalid/i.test(message)) {
         return 'That number doesn’t look right. Check it, or use your email address instead.';
     }
