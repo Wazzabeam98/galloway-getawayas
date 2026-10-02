@@ -29,7 +29,10 @@ import {
     asksAboutFuel,
     audienceForTrade,
     guestAsksExpertise,
+    guestNeedsShapeChoice,
     slotAsksWhereFork,
+    slotDurationPerItem,
+    slotMixedDuration,
 } from '@/lib/serviceProviders';
 import { GUEST_SCREEN_COPY } from '@/lib/strings';
 
@@ -41,8 +44,8 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // with no context still sees the old trade/business/finish, and no host trade
 // ever gains one. See stepApplies.
 export type StepKey =
-    | 'trade' | 'g_subtype' | 'g_verify' | 'business'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
+    | 'trade' | 'g_subtype' | 'business' | 'b_area'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -54,8 +57,8 @@ export type StepKey =
 // real photos step (g_photos). There is NO naming step: a guest experience is a
 // person, so the listing title is their account name (or a trading name they set
 // later in account settings), derived at submit — never asked. The name itself
-// is captured at the account step (the g_verify gate), which is account
-// information; a guest never sees the standalone 'business' step.
+// is captured by the shared email-first sign-in (EmailFirstStep), which is
+// account information; a guest never sees the standalone 'business' step.
 // Airbnb's host-an-experience sequence (Sep 2026): sub-type, then About you
 // (years, expertise), then Location straight after — it matters more for us than
 // for them, a chef in Carlisle should learn we only cover Dumfries & Galloway
@@ -65,8 +68,13 @@ export type StepKey =
 // on the finish screen) and no contact step (a guest signs in up front, so the
 // account address is the contact address, and the phone lives on the profile).
 const GUEST_STEP_KEYS: StepKey[] = [
-    'g_verify', 'g_subtype',
-    'g_you', 'g_creds', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu', 'g_expect',
+    'g_subtype',
+    // g_slot_hours stays in this registry — it is what marks it a GUEST step and
+    // gates it away from host trades (stepApplies returns false for non-guests on
+    // a listed key). It is retired for guests too, by its case returning false and
+    // by its removal from the When section rail; it is never shown, but it must
+    // remain listed here or it leaks into host flows.
+    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu', 'g_title', 'g_expect',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -76,13 +84,6 @@ export interface StepContext {
     group?: string | null;
     category?: string | null;
     shape?: string | null;
-    // Whether a verified session already exists. The guest flow now signs the
-    // applicant in up front (email OTP), right after the category pick, so the
-    // rest of the wizard runs authenticated — photos upload, everything saves to
-    // the database, and the finish screen is a real submit. The verify step
-    // (g_verify) only exists while there is NO session: a returning applicant
-    // who is already signed in never sees it.
-    hasSession?: boolean;
     // What a slot provider offers: 'private' (the whole session for one group),
     // 'shared' (several people join, per person), 'both' (either — each time sold
     // as whichever books first), null = not yet answered. The per-person MINIMUM
@@ -92,6 +93,15 @@ export interface StepContext {
     // context so the step model can add or drop that one screen, the same way
     // shape adds or drops g_capacity.
     slotOffer?: 'private' | 'shared' | 'both' | null;
+    // How a slot is fulfilled: 'collection' (guests come to the provider),
+    // 'delivery' (the provider travels to the guest), '' = not yet / n/a. A
+    // MIXED provider (yoga, pottery, painting) who travels sells only private
+    // sessions — no one books a place in a class held in someone's cottage — so
+    // the provider-level session-length and capacity screens have no meaning and
+    // drop, the same way the shared-vs-private question does. Carried here so the
+    // step model can derive that, rather than the wizard hiding the screen while
+    // still asking underneath.
+    fulfilment?: string | null;
 }
 
 export interface Step {
@@ -103,30 +113,36 @@ export interface Step {
 }
 
 const ALL_STEPS: Step[] = [
-    // The verify-your-email gate is the guest's FIRST screen — before the
-    // category picker, before anything. Picking "Host a guest experience" on
-    // the fork lands them here; nothing comes before the account. Guest-only
-    // and off once a session exists, so a host trade still opens on 'trade' and
-    // a returning applicant skips straight past. See stepApplies / openingStep.
-    { key: 'g_verify', label: 'Account', title: 'Verify your email to carry on' },
     { key: 'trade', label: 'Trade', title: 'What do you do?' },
     // A guest's second screen: the narrower choices under the group they picked
     // (Airbnb's "How would you describe your experience?"). Off for 'other'.
     { key: 'g_subtype', label: 'Type', title: 'How would you describe it?' },
-    { key: 'business', label: 'Business', title: 'Your business' },
-    // The guest experience, one question a screen, in Airbnb's order (see
-    // GUEST_STEP_KEYS for the reasoning): About you (years, expertise), then
-    // Location, then Photos before the writing, then Pricing and Details, then
-    // the naming/describing near the end, then the Finish wrap-up. Which of them
-    // a given guest sees is decided by stepApplies from the category and shape;
-    // the standalone 'business' step above is host-only. The `label` is the old
-    // per-dot label, now superseded by the named sections (see GUEST_SECTIONS);
-    // it is kept for the host trades and harmless for guests.
+    // About you (years, then the expertise hub), one question a screen, in
+    // Airbnb's order. These come BEFORE the host 'business' step so a trade opens
+    // on the years counter and the "Tell hosts about yourself" hub, the same way
+    // a guest opens on the years counter and "Tell guests about yourself" — the
+    // two flows share these screens now. For a guest the 'business' step below is
+    // filtered out (stepApplies), so their order is unchanged; only host trades
+    // gain these two, first. The `label` is the old per-dot label, superseded by
+    // the named sections (see GUEST_SECTIONS / TRADE_SECTIONS).
     { key: 'g_you', label: 'You', title: GUEST_SCREEN_COPY.yearsQuestion },
     { key: 'g_creds', label: 'Expertise', title: GUEST_SCREEN_COPY.expertiseHeading },
+    // The host 'business' section, split one question a screen the way the guest
+    // experience is — a name screen, a coverage screen, a contact screen — rather
+    // than four questions crammed onto one page. All three are host-only (a guest
+    // carries its name on the account and its coverage on g_area), grouped under
+    // the one "Your business" rail section (TRADE_SECTIONS). See stepApplies.
+    { key: 'business', label: 'Business', title: 'What’s your business called?' },
+    { key: 'b_area', label: 'Coverage', title: 'Where do you cover?' },
     // Made-to-order only: the notice period, its own single-question screen before
     // the delivery areas (a big stepper, like the years/guests screens). The other
     // shapes carry their "when" inside g_area (a slot's schedule) or not at all.
+    // "Something else" has no sub-type, so it never declared a booking shape. This
+    // asks it — in what the provider sells, not engine words — and everything after
+    // (the location model, the When/Pricing screens, what's stored) then follows
+    // exactly as it does for a real category of that shape. Only shown for a
+    // null-shape category; every real one answered this at its sub-type pick.
+    { key: 'g_shape', label: 'Format', title: GUEST_SCREEN_COPY.shapeQuestion },
     { key: 'g_notice', label: 'Notice', title: GUEST_SCREEN_COPY.noticeQuestion },
     // Slot only, and only the three either-way categories (yoga, massage,
     // painting): does the guest come to a place the host names, or does the host
@@ -164,6 +180,14 @@ const ALL_STEPS: Step[] = [
     // M" as one thought. Dropped entirely for a private/whole-group slot.
     { key: 'g_slot_min', label: 'Minimum', title: GUEST_SCREEN_COPY.slotMinQuestion },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
+    // The listing's own name — what the EXPERIENCE is called, not what the person
+    // is. It becomes business_name (the denormalised display copy the card, the
+    // marketplace sort, the review queue and the order/emails all read), so the
+    // guest's first line describes the thing they're buying; the professional
+    // title moved to the About block as a credential. Its own step, first in the
+    // Details section, near the end — the naming/describing moment the original
+    // flow always placed here.
+    { key: 'g_title', label: 'Title', title: GUEST_SCREEN_COPY.experienceTitleQuestion },
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
     // Not "Registration". Registration and skills never co-occur across the
     // trade list — the electrician and plumber give numbers, the handyman gives
@@ -172,7 +196,10 @@ const ALL_STEPS: Step[] = [
     // of the capability lists that now sit here; the registration numbers keep
     // their own heading inside it, which is honest, because being registered is
     // a fact about what you are allowed to do.
-    { key: 'credentials', label: 'What you do', title: 'What you do' },
+    // The rail/eyebrow says the section ("What you do"); the on-screen heading has
+    // to be a DIFFERENT question, the way every guest page's heading differs from
+    // its section eyebrow — otherwise the same words show twice, as eyebrow and h1.
+    { key: 'credentials', label: 'What you do', title: 'What kind of work do you do?' },
     { key: 'prices', label: 'Prices', title: 'What you charge' },
     { key: 'finish', label: 'Finish', title: 'Photos and your account' },
 ];
@@ -181,6 +208,14 @@ const ALL_STEPS: Step[] = [
 //
 // Written as one function per step rather than a table, because each answer is
 // a different question and a table would hide that behind a column of trues.
+// A mixed slot provider (yoga, pottery, painting) who TRAVELS to the guest sells
+// only private sessions — nobody joins a class held in someone else's cottage —
+// so the provider-level session-length and capacity screens have no meaning and
+// drop. Come-to-me mixed providers keep both (their group classes need them).
+function travellingMixedSlot(ctx: StepContext): boolean {
+    return ctx.shape === 'slot' && slotMixedDuration(ctx.category) && ctx.fulfilment === 'delivery';
+}
+
 export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): boolean {
     const key = String(trade || '');
 
@@ -195,6 +230,35 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
     if (step === 'business') {
         if (audienceForTrade(key) === 'guest' && ctx) return false;
         return true;
+    }
+
+    // The coverage screen of the host 'business' section is host-only. A guest
+    // carries its coverage on g_area, so it never appears for them; every host
+    // trade has it. (It sits outside the GUEST_STEP_KEYS gate below, which would
+    // otherwise let the trailing `return true` hand it to a guest.) There is no
+    // separate contact screen any more — the email is the one they signed in with,
+    // and the optional phone / don't-text tick moved to the finish screen.
+    if (step === 'b_area') {
+        return audienceForTrade(key) === 'host';
+    }
+
+    // The About-you screens (the years opener and the expertise hub) are the
+    // one pair of g_ keys shared with the host trades. A host trade ALWAYS has
+    // both — the trades sign-up now opens on the same years counter and the same
+    // "Tell hosts about yourself" hub the guest experience uses. A guest gets
+    // them for the categories that ask about the person (guestAsksExpertise);
+    // without a context (the old single-step flow) a guest has neither. This sits
+    // before the GUEST_STEP_KEYS gate below, which would otherwise refuse a g_
+    // key for any non-guest.
+    if (step === 'g_you' || step === 'g_creds') {
+        const aud = audienceForTrade(key);
+        // A host trade always has both (the years opener and the expertise hub).
+        if (aud === 'host') return true;
+        // A guest (trade='guest', category in ctx) has them for the categories
+        // that ask about the person — and only once a context is supplied.
+        if (aud === 'guest') return ctx ? guestAsksExpertise(ctx.category) : false;
+        // Anything else — a bare category key, an unknown trade — has neither.
+        return false;
     }
 
     // The guest-experience steps. Two gates before any per-step rule:
@@ -212,27 +276,18 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // is alone under its group, so it goes straight to the business step.
             case 'g_subtype':
                 return !!ctx.group && ctx.group !== 'other';
-            // The verify-your-email gate — the guest's FIRST screen, before the
-            // category picker. Every guest passes through it EXCEPT one who is
-            // already signed in (a returning applicant). No category or shape
-            // gate, because it runs before either is picked: making the account
-            // is the same question whatever they go on to list.
-            case 'g_verify':
-                return !ctx.hasSession;
-            // The years opener (g_you) and the expertise screen (g_creds) are
-            // shown for everyone EXCEPT a made-to-order product — you're buying a
-            // cake or a hamper, not the maker, so we don't ask about the person.
-            // guestAsksExpertise decides; the required-vs-optional split within
-            // the "asked" set is a Next-gate in the form, not a step gate.
-            case 'g_you':
-            case 'g_creds':
-                return guestAsksExpertise(ctx.category);
-            // Asked of every guest: the price (g_menu), what a guest can expect
-            // (g_expect) and the photos (g_photos). There is no naming step (the
-            // title is derived from the account), no contact step (the account
-            // address is the contact address) and no checks step (collapsed to
-            // one confirmation on the finish screen).
+            // g_you (years) and g_creds (the expertise hub) are handled ABOVE this
+            // block, because they are shared with the host trades — for a guest
+            // they follow guestAsksExpertise (shown for everyone except a
+            // made-to-order product, where you buy a cake, not the maker). See the
+            // g_you/g_creds branch before the GUEST_STEP_KEYS gate.
+            // Asked of every guest: the price (g_menu), the listing's name
+            // (g_title — what the experience is called), what a guest can expect
+            // (g_expect) and the photos (g_photos). No contact step (the account
+            // address is the contact address) and no checks step (collapsed to one
+            // confirmation on the finish screen).
             case 'g_menu':
+            case 'g_title':
             case 'g_expect':
             case 'g_photos':
                 return true;
@@ -242,17 +297,40 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // 'other' has no shape, so both skip it.
             // The private/shared pricing basis — slot only. A made-to-order
             // product and a traveller price per item/enquiry, not per session.
+            // The private/shared basis is fixed for the one-at-a-time shape (a
+            // treatment is a whole-session price for one person) AND not asked for
+            // the mixed shape (there each item picks shared-class vs one-at-a-time
+            // in its own sub-flow) — so both skip it. Every other slot still asks.
+            // Capacity stays asked for a COME-TO-ME mixed provider (its classes need
+            // a size); a TRAVELLING mixed provider sells only private sessions, so
+            // capacity is meaningless and drops — same as pure one-at-a-time.
             case 'g_slot_basis':
-                return shape === 'slot';
+                return shape === 'slot' && !slotDurationPerItem(ctx.category) && !slotMixedDuration(ctx.category);
             case 'g_capacity':
-                return shape === 'comes_to_you' || shape === 'slot';
+                return shape === 'comes_to_you' || (shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx));
             // The per-person minimum — a slot that is priced per person (the
             // shared answer). A private/whole-group slot is one booking whatever
             // the head count, so it has no minimum-people rule and no screen.
-            // null (not yet answered) hides it too — the basis screen comes
-            // first, so by the time this could apply the answer exists.
+            //
+            // For a fixed-basis slot that answer is the provider-level slotOffer;
+            // null (not yet answered) hides it too — the basis screen comes first.
+            // A MIXED provider (yoga, pottery, painting) answers shared-vs-private
+            // PER ITEM, so slotOffer is never set — but a come-to-me mixed provider
+            // can still run a shared class (which is exactly why its capacity screen
+            // is shown), and that class needs a minimum. The minimum is capacity's
+            // twin, so it must appear on the same path. A TRAVELLING mixed provider
+            // sells only private sessions, so it correctly keeps no minimum.
             case 'g_slot_min':
-                return shape === 'slot' && (ctx.slotOffer === 'shared' || ctx.slotOffer === 'both');
+                return shape === 'slot' && (
+                    ctx.slotOffer === 'shared' || ctx.slotOffer === 'both'
+                    || (slotMixedDuration(ctx.category) && !travellingMixedSlot(ctx))
+                );
+            // The booking-shape question — only for a category that never declared
+            // one ("something else"). A real sub-type settled its shape at the
+            // picker, so it never sees this. Sits before the location step, which
+            // reads the shape it sets.
+            case 'g_shape':
+                return guestNeedsShapeChoice(ctx.category);
             // The notice period, made-to-order only — its own screen before the
             // delivery areas. Other shapes have no notice (a slot has a schedule
             // inside g_area; a traveller arranges it on the enquiry).
@@ -271,9 +349,16 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             case 'g_area':
                 return true;
             // The When section — slots only. Session length, then weekly hours.
+            // The one-at-a-time shape asks length PER TREATMENT (in the item
+            // sub-flow), so it skips the single provider-length screen; a
+            // TRAVELLING mixed provider does too (every item is a private session
+            // with its own length). Both still set weekly hours.
             case 'g_slot_length':
+                return shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx);
+            // g_slot_hours retired from the wizard — weekly hours are set in the
+            // listing editor's Availability section, not at sign-up.
             case 'g_slot_hours':
-                return shape === 'slot';
+                return false;
             default:
                 return false;
         }
@@ -345,18 +430,40 @@ export function stepsFor(trade: string, ctx?: StepContext): Step[] {
 
 const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
-    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_notice', 'g_slot_where', 'g_area'] },
-    // Slots only: session length + weekly hours. A section with no live steps
-    // drops out of the rail (sectionsFor filters by stepApplies), so a
-    // made-to-order or comes-to-you guest never sees a "When" section at all.
-    { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_slot_length', 'g_slot_hours'] },
+    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_shape', 'g_notice', 'g_slot_where', 'g_area'] },
+    // Slots only: session length. Weekly HOURS have left the wizard — they live
+    // in the listing editor's Availability section now (one home for the weekly
+    // template), so a slot provider sets a length at create and their hours after,
+    // in the editor. A section with no live steps drops out of the rail
+    // (sectionsFor filters by stepApplies), so a made-to-order or comes-to-you
+    // guest never sees a "When" section at all.
+    { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_slot_length'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
     { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu'] },
-    { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
+    { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_title', 'g_expect'] },
     // Finish is now a single screen: the account, with one responsibility
     // confirmation folded in above submit. The old checks and contact steps that
     // shared this section are gone.
     { key: 'finish', label: GUEST_SCREEN_COPY.sectionFinish, steps: ['finish'] },
+];
+
+// The host-trade sections, the left-rail equivalent of GUEST_SECTIONS. A trade
+// walks the same full-page wizard now, so its steps group into named sections
+// too. The `trade` picker is pre-rail (like the guest pickers) — the flow
+// branches on it — so it belongs to no section. A section whose only step
+// doesn't apply to a given trade drops out (sectionsFor filters by stepApplies),
+// e.g. a cleaner with no separate credentials step.
+const TRADE_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
+    // About you comes first, the same as the guest rail: the years opener and the
+    // "Tell hosts about yourself" expertise hub, shared with the guest flow.
+    { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
+    // One section, three screens — the same shape as the guest "About you"
+    // (years + expertise) or "Location" (several screens): the name, then the
+    // coverage, then the contact details, one question a screen.
+    { key: 'business', label: 'Your business', steps: ['business', 'b_area'] },
+    { key: 'credentials', label: 'What you do', steps: ['credentials'] },
+    { key: 'prices', label: 'What you charge', steps: ['prices'] },
+    { key: 'finish', label: 'Finish', steps: ['finish'] },
 ];
 
 export interface FlowSection {
@@ -368,14 +475,16 @@ export interface FlowSection {
     firstStep: StepKey;
 }
 
-// The sections this guest actually walks, in order, each carrying only the
-// steps that apply. Empty for a host trade or a guest with no context (the
-// rail is guest-only) — callers fall back to the old indicator in that case.
+// The sections this applicant actually walks, in order, each carrying only the
+// steps that apply. Guests use GUEST_SECTIONS (and need a context); a host trade
+// uses TRADE_SECTIONS. Empty only for a guest with no context yet.
 export function sectionsFor(trade: string, ctx?: StepContext): FlowSection[] {
-    if (audienceForTrade(String(trade || '')) !== 'guest' || !ctx) return [];
+    const isGuest = audienceForTrade(String(trade || '')) === 'guest';
+    if (isGuest && !ctx) return [];
+    const catalogue = isGuest ? GUEST_SECTIONS : TRADE_SECTIONS;
     const present = stepsFor(trade, ctx).map((s) => s.key);
     const out: FlowSection[] = [];
-    for (const sec of GUEST_SECTIONS) {
+    for (const sec of catalogue) {
         const steps = sec.steps.filter((k) => present.indexOf(k) !== -1);
         if (steps.length > 0) out.push({ key: sec.key, label: sec.label, steps, firstStep: steps[0] });
     }
@@ -383,9 +492,11 @@ export function sectionsFor(trade: string, ctx?: StepContext): FlowSection[] {
 }
 
 // The section a given step sits in, or null for the pre-rail pickers. Used for
-// the eyebrow at the top of each screen.
+// the eyebrow at the top of each screen. Searches the trade sections first for a
+// host step and the guest sections for a guest step; 'finish' is shared and
+// resolves to the same "Finish" label either way.
 export function sectionForStep(step: StepKey): { key: string; label: string } | null {
-    for (const sec of GUEST_SECTIONS) {
+    for (const sec of [...TRADE_SECTIONS, ...GUEST_SECTIONS]) {
         if (sec.steps.indexOf(step) !== -1) return { key: sec.key, label: sec.label };
     }
     return null;
@@ -458,7 +569,14 @@ export function resolveStep(trade: string, wanted: string | null | undefined, ct
 
 const STEP_FIELDS: Record<StepKey, string[]> = {
     trade: ['trade', 'audience'],
-    business: ['business_name', 'contact_email', 'description', 'areas', 'availability'],
+    // 'description' has moved off the business step: a host's "about you" is now
+    // the expertise hub (g_creds), whose required field is the professional
+    // title. The old single business step is split one question a screen: the
+    // name here and the coverage on b_area — so a greyed Next and "go to first
+    // problem" each land on the screen that owns the field. (There is no contact
+    // screen; the email is the account's and maps to finish as a fallback below.)
+    business: ['business_name'],
+    b_area: ['areas', 'availability'],
     credentials: ['registration_'],
     prices: [
         'prices', 'price_', 'hours_', 'hourly_rate', 'callout_fee', 'extra_price_',
@@ -470,14 +588,18 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     // description, contact_email, areas — move off 'business' for a guest). Empty
     // for now: the component does not yet drive these steps, so nothing maps here.
     g_subtype: [],
-    g_verify: [],
     g_you: [],
-    g_creds: [],
+    // The expertise hub's one required field, for a host trade: the professional
+    // title. (A guest's g_creds gates on the title in the form directly, not via
+    // a submitProblems field, so its guest map entry stays empty.)
+    g_creds: ['professional_title'],
     g_about: [],
+    g_shape: [],
     g_slot_basis: [],
     g_capacity: [],
     g_slot_min: [],
     g_menu: [],
+    g_title: [],
     g_expect: [],
     g_photos: [],
     g_notice: [],
@@ -485,7 +607,11 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_area: [],
     g_slot_length: [],
     g_slot_hours: [],
-    finish: [],
+    // The email is taken from the account they signed in with (not asked), so a
+    // contact_email problem can only mean the session carried no address; it lands
+    // on the finish screen, the last thing before submit, rather than the contact
+    // step that no longer exists.
+    finish: ['contact_email'],
 };
 
 // The guest field→step map. Only the fields submitProblems can actually raise
@@ -582,19 +708,12 @@ export interface OpeningState {
     hydrated: boolean;
     // A draft was found and has already decided where they are.
     restored: boolean;
-    // The application has been sent. Nothing may move them off the screen that
-    // says so.
-    lodged: boolean;
     // The trade from the URL. Empty means step one has not been answered.
     trade: string;
     // A guest arrives with trade='guest' already in the URL, but the category is
     // the guest's version of step one and is not yet answered. When true, open on
     // the picker (the category grid) rather than skipping it as an answered trade.
     guestNeedsCategory?: boolean;
-    // Whether a verified session already exists. A guest with none opens on the
-    // verify gate — the first screen, before the category picker. Nothing comes
-    // before the account.
-    hasSession?: boolean;
     // The guest's chosen category. Decides their first content screen: the
     // About-you opener (g_you) for a category that asks about expertise, else
     // Location (g_area), which every guest has. Without it a category that skips
@@ -606,17 +725,7 @@ export interface OpeningState {
 export function openingStep(state: OpeningState): StepKey | null {
     if (!state.hydrated) return null;
 
-    // First, and before `restored`: sending clears the draft, so a lodged
-    // application is never also a restored one, and the order has to say which
-    // wins if that ever stops being true.
-    if (state.lodged) return 'finish';
-
     if (state.restored) return null;
-
-    // A guest who is not signed in opens on the verify gate — the first screen,
-    // before the category picker. This is ahead of the category check below: the
-    // account comes before anything they might pick.
-    if (audienceForTrade(state.trade) === 'guest' && !state.hasSession) return 'g_verify';
 
     // A guest whose trade is set but whose category is not has still not
     // answered step one — the category grid is their picker. Send them to it.
@@ -624,13 +733,14 @@ export function openingStep(state: OpeningState): StepKey | null {
 
     // A trade in the URL means step one is already answered — they came back
     // through a link, or they have a saved record — so opening on the picker
-    // would make them answer it twice. A guest has no business step; their first
-    // content screen is the About-you opener (g_you), or Location (g_area) for a
-    // category that skips the expertise screens — the same rule the forward flow
-    // uses after the sub-type pick, so a returning sauna owner lands on the
-    // where-and-when step (its schedule) rather than a step it does not have.
+    // would make them answer it twice. Both flows open on the About-you opener
+    // (g_you, the years counter) now: a host trade always has it, and a guest has
+    // it for a category that asks about the person — otherwise the guest opens on
+    // Location (g_area), the same rule the forward flow uses after the sub-type
+    // pick, so a returning sauna owner lands on the where-and-when step rather
+    // than a step it does not have.
     if (!state.trade) return 'trade';
-    if (audienceForTrade(state.trade) !== 'guest') return 'business';
+    if (audienceForTrade(state.trade) !== 'guest') return 'g_you';
     return guestAsksExpertise(state.category) ? 'g_you' : 'g_area';
 }
 
@@ -640,9 +750,8 @@ export function openingStep(state: OpeningState): StepKey | null {
 export function openingVisited(state: OpeningState): StepKey[] | null {
     const step = openingStep(state);
     if (step === null) return null;
-    // The verify gate and the trade picker are both the first thing a person
-    // sees on their respective flows, so nothing is behind them yet.
-    if (step === 'g_verify' || step === 'trade') return [];
-    if (step === 'finish') return stepsFor(state.trade).map((s) => s.key);
+    // The trade picker is the first thing a person sees, so nothing is behind
+    // it yet.
+    if (step === 'trade') return [];
     return ['trade'];
 }

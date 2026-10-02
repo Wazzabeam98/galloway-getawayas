@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
+import { alertDirectorsNow } from '@/lib/moneyAlert';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 import { billingTokenFor, hashBillingToken } from '@/lib/serviceBillingToken';
 import { sendReminder, billingLink } from '@/lib/serviceSubscriptionAlert';
 import { remindersDue, graceExpired } from '@/lib/serviceSubscription';
@@ -12,11 +14,14 @@ export const maxDuration = 60;
 //
 // WHY THIS IS THE ROUTE THE SUBSCRIPTION ACTUALLY DEPENDS ON
 //
-// Nobody has a card on file until the end of their ninety days, because we ask
-// for one near the end on purpose. That means there is no charge to retry and
+// Nobody has a card on file until the end of their six-month trial, because we
+// ask for one near the end on purpose. That means there is no charge to retry and
 // no dunning to lean on for the whole trial: if these emails do not go out,
 // nobody ever pays, and the failure is completely silent — the listings stay
-// up, the tradesmen stay happy, and no money arrives.
+// up, the tradesmen stay happy, and no money arrives. So this run alerts the
+// directors on a failure (like the money crons do) and stamps a heartbeat on
+// success (see lib/cronHeartbeat), which the daily error-digest checks so a run
+// that stops firing altogether is noticed too.
 //
 // WHY DAILY AND NOT EVERY FIVE MINUTES
 //
@@ -56,6 +61,14 @@ export async function GET(request: Request) {
 
     if (error) {
         await logError('service-subscription-read', { error: String(error.message) });
+        // A failed run is a silent-money risk (no charge-retry notices it), so the
+        // directors hear about it now, not in tomorrow's digest.
+        await alertDirectorsNow({
+            headline: 'The subscription billing run failed to read providers',
+            lines: ['The daily service-subscription cron could not load providers, so no reminders went out and no delisting happened this run.'],
+            facts: { error: String(error.message) },
+        });
+        await recordCronRun('service-subscriptions', false, String(error.message));
         return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
@@ -180,6 +193,10 @@ export async function GET(request: Request) {
             });
         }
     }
+
+    // The run finished. Stamp the heartbeat so the daily error-digest can tell a
+    // cron that has stopped firing from one that simply had nothing to do.
+    await recordCronRun('service-subscriptions', true, 'considered ' + (providers || []).length + ', sent ' + sent + ', hidden ' + hidden);
 
     return NextResponse.json({ ok: true, considered: (providers || []).length, sent, hidden });
 }

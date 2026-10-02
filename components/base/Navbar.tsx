@@ -1,5 +1,6 @@
 import NavMenu from '@/components/base/NavMenu';
 import { londonDayKey } from '@/lib/dayKey';
+import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import Link from 'next/link';
@@ -18,6 +19,7 @@ const Navbar = async () => {
     let isAdmin = false;
     let hasCompletedStay = false;
     let isProvider = false;
+    let providerAudience: string | null = null;
 
     if (data?.session?.user) {
         const { data: profile } = await supabase
@@ -63,25 +65,55 @@ const Navbar = async () => {
         // You run a service business if you own an approved provider. RLS lets
         // an owner read their own row whatever its state; we only light the
         // menu link once it is live, so it never leads to a page that would
-        // just bounce a draft back to the wizard.
-        const { count: providerCount } = await supabase
+        // just bounce a draft back to the wizard. We also read the AUDIENCE, so
+        // the menu can show a guest-experience provider their own sections
+        // (a Calendar and Earnings) rather than a tradesman's Enquiries.
+        const { data: providerRow } = await supabase
             .from('service_providers')
-            .select('id', { count: 'exact', head: true })
+            .select('audience')
             .eq('owner_id', data.session.user.id)
-            .eq('status', 'approved');
+            .eq('status', 'approved')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        isProvider = (providerCount || 0) > 0;
+        isProvider = !!providerRow;
+        providerAudience = (providerRow && providerRow.audience) || null;
     }
 
-    // Default a host to travel mode until they choose otherwise.
+    // The one gg_mode cookie carries the travelling/working split for everyone
+    // who has two sides. A host defaults to travel until they choose otherwise;
+    // a pure provider (no listing of their own) defaults to their providing side,
+    // because that is where sign-in lands them (LoginModel) and where their work
+    // is. An explicit choice in the cookie always wins over either default.
     const modeCookie = cookieStore.get('gg_mode')?.value;
-    const mode: 'host' | 'travel' = modeCookie === 'host' ? 'host' : 'travel';
+    const mode: 'host' | 'travel' =
+        modeCookie === 'host'
+            ? 'host'
+            : modeCookie === 'travel'
+            ? 'travel'
+            : isProvider && !isHost
+            ? 'host'
+            : 'travel';
+
+    // Experiences are a public destination once the feature is live — anyone can
+    // browse, signed in or not — so the link is shown to everyone, gated only on
+    // the launch flag. Dormant (nothing shown) while it is unset.
+    const experiencesOpen = guestExperiencesOpen();
 
     return (
         <nav className='w-full border-b bg-white sticky top-0 z-50'>
             <div className='max-w-7xl mx-auto px-6 md:px-10 h-20 flex items-center justify-between'>
-                <div className='flex items-center'>
+                <div className='flex items-center gap-6'>
                     <Logo />
+                    {experiencesOpen && (
+                        <Link
+                            href="/experiences/browse"
+                            className="hidden sm:block text-sm font-semibold text-slate-800 hover:text-emerald-800 transition"
+                        >
+                            Experiences
+                        </Link>
+                    )}
                 </div>
                 <div className='flex items-center space-x-6'>
                     {firstName && (
@@ -95,8 +127,15 @@ const Navbar = async () => {
                             <ModeSwitch mode={mode} />
                         </div>
                     ) : isProvider ? (
-                        /* A tradesman isn't a lapsed host to convert. */
-                        null
+                        /* A provider — a trade or an experience host — has a
+                           providing side and a travelling side, the same two
+                           sides an accommodation host has. Same switch, pointed
+                           at their provider dashboard and worded in their own
+                           noun ("providing"), not "hosting". A host who is also a
+                           provider keeps the host switch above. */
+                        <div className='hidden sm:block'>
+                            <ModeSwitch mode={mode} workHref='/services/dashboard' workLabel='providing' />
+                        </div>
                     ) : (
                         <Link href="/business" className="text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition text-slate-800">
                             Start hosting
@@ -105,11 +144,13 @@ const Navbar = async () => {
 
                     <NavMenu
                         session={data?.session?.user}
+                        experiencesOpen={experiencesOpen}
                         isHost={isHost}
                         isAdmin={isAdmin}
                         mode={mode}
                         hasCompletedStay={hasCompletedStay}
                         isProvider={isProvider}
+                        providerAudience={providerAudience}
                         avatarUrl={avatarUrl}
                         initial={firstName ? firstName.charAt(0).toUpperCase() : ''}
                     />

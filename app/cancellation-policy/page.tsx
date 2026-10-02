@@ -1,40 +1,18 @@
 import type { Metadata } from 'next';
+import { CANCELLATION_TIERS as TIERS } from '@/lib/cancellationTiers';
 
 export const metadata: Metadata = {
     title: 'Cancellation & Refund Policy',
     description:
-        'How cancellations and refunds work when you book a holiday let through Galloway Getaways.',
+        'How cancellations and refunds work when you book a holiday let or an experience through Galloway Getaways.',
     alternates: { canonical: '/cancellation-policy' },
 };
-
-const TIERS = [
-    {
-        name: 'Flexible',
-        full: 'Full refund if you cancel more than 1 day before check-in.',
-        partial: '50% refund if you cancel within 1 day of check-in.',
-    },
-    {
-        name: 'Moderate',
-        full: 'Full refund if you cancel more than 5 days before check-in.',
-        partial: '50% refund if you cancel within 5 days of check-in.',
-    },
-    {
-        name: 'Limited',
-        full: 'Full refund if you cancel more than 14 days before check-in.',
-        partial: '50% refund if you cancel 7 to 14 days before check-in. No refund within 7 days.',
-    },
-    {
-        name: 'Firm',
-        full: 'Full refund if you cancel more than 30 days before check-in.',
-        partial: '50% refund if you cancel 7 to 30 days before check-in. No refund within 7 days.',
-    },
-];
 
 export default function CancellationPolicyPage() {
     return (
         <div className="max-w-3xl mx-auto px-6 py-12">
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Cancellation &amp; Refund Policy</h1>
-            <p className="text-sm text-slate-500 mb-10">Last updated 16 August 2026</p>
+            <p className="text-sm text-slate-500 mb-10">Last updated 28 September 2026</p>
 
             <div className="prose prose-slate max-w-none">
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">How it works</h2>
@@ -85,6 +63,23 @@ export default function CancellationPolicyPage() {
                 <p className="text-slate-700 mb-4">
                     If a host cancels a confirmed booking, you receive a full refund including all fees.
                     We will also help you find alternative accommodation where we can.
+                </p>
+
+                <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">Guest experiences</h2>
+                <p className="text-slate-700 mb-4">
+                    Experiences you book around your stay — a chef, a sauna, a cake, a photographer and
+                    the like — are provided by third-party providers, and we take the payment on the
+                    provider&apos;s behalf. You can cancel an experience free of charge up to 48 hours
+                    before it is due. Inside that window a refund is at the provider&apos;s discretion. A
+                    provider may refund a confirmed booking at any time; where they do, the full amount is
+                    returned to your card.
+                </p>
+
+                <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">Tradespeople</h2>
+                <p className="text-slate-700 mb-4">
+                    When we introduce you to a tradesperson, the job is arranged and paid for directly
+                    between you and them. No money for the work passes through Galloway Getaways, so
+                    cancellation and any refund for a job are matters between you and the tradesperson.
                 </p>
 
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">Circumstances outside anyone&apos;s control</h2>

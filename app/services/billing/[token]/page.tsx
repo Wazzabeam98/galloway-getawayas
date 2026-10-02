@@ -1,6 +1,6 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { hashBillingToken } from '@/lib/serviceBillingToken';
-import { SUBSCRIPTION_MONTHLY, TRIAL_DAYS, tradeLabel } from '@/lib/serviceProviders';
+import { SUBSCRIPTION_MONTHLY, TRIAL_PERIOD_LABEL, tradeLabel } from '@/lib/serviceProviders';
 import { hasCard, GRACE_DAYS } from '@/lib/serviceSubscription';
 import BillingStart from '@/components/services/BillingStart';
 
@@ -111,14 +111,14 @@ export default async function BillingPage({
                 <p className="text-slate-600 mt-4">
                     {over ? (
                         <>
-                            Your {TRIAL_DAYS} free days ran to{' '}
+                            Your {TRIAL_PERIOD_LABEL} free ran to{' '}
                             <strong>{formatDate(String(provider.trial_ends_at))}</strong>. Your
                             listing stays up for {GRACE_DAYS} days after that while you sort this
                             out, and comes down afterwards.
                         </>
                     ) : (
                         <>
-                            Your {TRIAL_DAYS} free days run to{' '}
+                            Your {TRIAL_PERIOD_LABEL} free run to{' '}
                             <strong>{formatDate(String(provider.trial_ends_at))}</strong>.{' '}
                             <strong>Nothing is taken before then</strong> — add a card now and you
                             keep every remaining day of it.

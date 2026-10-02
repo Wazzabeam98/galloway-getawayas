@@ -21,14 +21,29 @@ const tools = [
         blurb: 'Every property ranked by what it has taken this year.',
     },
     {
+        href: '/admin/traffic',
+        title: 'Traffic and growth',
+        blurb: 'Month by month: sign-ups, listings, bookings, nights, value, commission and cancellations.',
+    },
+    {
         href: '/admin/payouts',
         title: 'Payouts',
         blurb: 'What each host is owed, and what has already been sent.',
     },
     {
+        href: '/admin/experience-orders',
+        title: 'Experience orders',
+        blurb: 'Paid experience bookings. Refund all or part of one.',
+    },
+    {
         href: '/admin/disputes',
         title: 'Chargebacks',
         blurb: 'Disputes raised by guests\u2019 banks, and what evidence to send.',
+    },
+    {
+        href: '/admin/resolutions',
+        title: 'Money disputes',
+        blurb: 'Escalated money requests \u2014 declined or ignored \u2014 waiting on a decision.',
     },
     {
         // This page existed and was linked from nowhere. You could only reach
@@ -37,6 +52,11 @@ const tools = [
         href: '/admin/providers',
         title: 'Tradesmen and businesses',
         blurb: 'Applications to review, and the ones still waiting on the applicant.',
+    },
+    {
+        href: '/admin/reviews',
+        title: 'Reviews',
+        blurb: 'The latest reviews of stays and experiences. Take one down if it needs it, or put it back.',
     },
     {
         href: '/admin/errors',

@@ -6,6 +6,8 @@ import { issueRefunds } from '@/lib/refundSpread';
 import { clawBackPayout } from '@/lib/clawback';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { logMoneyFailure } from '@/lib/moneyAlert';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,7 +77,7 @@ export async function POST(request: Request) {
             return NextResponse.json(
                 {
                     ok: false,
-                    error: 'That is more than the £' + refundable.toFixed(2) + ' the guest has paid.',
+                    error: 'That is more than the ' + formatGBP(refundable) + ' the guest has paid.',
                 },
                 { status: 400 }
             );
@@ -110,7 +112,7 @@ export async function POST(request: Request) {
         );
 
         if (issued.refundedPence <= 0) {
-            await logError(
+            await logMoneyFailure(
                 '[bookings/host-refund] a host asked to refund \u00A3' + amount.toFixed(2)
                     + ' and nothing could be sent back',
                 issued.failure || { booking_id: booking.id, due: amount },
@@ -130,7 +132,7 @@ export async function POST(request: Request) {
         const refundedNow = round2(issued.refundedPence / 100);
 
         if (issued.refundedPence < Math.round(amount * 100)) {
-            await logError(
+            await logMoneyFailure(
                 '[bookings/host-refund] \u00A3' + amount.toFixed(2) + ' was asked for but only \u00A3'
                     + refundedNow.toFixed(2) + ' could be refunded',
                 issued.failure || { booking_id: booking.id, due: amount, sent: refundedNow },
@@ -148,17 +150,41 @@ export async function POST(request: Request) {
             });
         }
 
-        const totalRefunded = round2(alreadyRefunded + refundedNow);
+        // The stay is still happening, so the status is left alone; only the
+        // money changes — and it moves atomically in the database, not
+        // read-then-written here. A guest cancel or a second host refund
+        // landing in the window of this one must SUM, not overwrite the figure
+        // read before the money moved. record_booking_refund locks the row,
+        // adds what we just refunded (clamped at what was paid) and returns how
+        // much actually fit and the payment_status derived from it.
+        const { data: appliedRow, error: refundWriteError } = await admin
+            .rpc('record_booking_refund', { p_booking: booking.id, p_amount: refundedNow })
+            .maybeSingle();
+        // The RPC's row type is not in the generated Supabase types.
+        const applied = appliedRow as { applied: number } | null;
 
-        // The stay is still happening, so the status is left alone. Only the
-        // money changes.
-        await admin
-            .from('bookings')
-            .update({
-                amount_refunded: totalRefunded,
-                payment_status: totalRefunded >= paid ? 'refunded' : 'partially_refunded',
-            })
-            .eq('id', booking.id);
+        if (refundWriteError || !applied) {
+            // The money has already gone back, so failing to record it is the
+            // dangerous case — the booking then looks less refunded than it is
+            // and its refundable guard reads wrong on the next refund.
+            await logMoneyFailure(
+                '[bookings/host-refund] refunded ' + formatGBP(refundedNow)
+                    + ' but could not record it against the booking',
+                refundWriteError || { booking_id: booking.id, amount: refundedNow },
+                { path: 'api/bookings/host-refund', userId: booking.host_id }
+            );
+        } else if (round2(Number(applied.applied)) < refundedNow) {
+            // Less was added than we asked to: the total hit what was paid
+            // because a concurrent refund took the headroom. The money left at
+            // Stripe, so a person has to reconcile it.
+            await logMoneyFailure(
+                '[bookings/host-refund] ' + formatGBP(refundedNow) + ' was refunded but only '
+                    + formatGBP(Number(applied.applied))
+                    + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
+                Object.assign({ booking_id: booking.id }, applied),
+                { path: 'api/bookings/host-refund', userId: booking.host_id }
+            );
+        }
 
         // If they've already been paid for this stay, recover it.
         if (booking.payout_transfer_id) {
@@ -177,10 +203,10 @@ export async function POST(request: Request) {
         if (guestEmail) {
             await sendEmail(
                 guestEmail,
-                'Your host has refunded you \u00A3' + refundedNow.toFixed(2),
+                'Your host has refunded you ' + formatGBP(refundedNow),
                 emailLayout(
-                    '<p style="margin:0 0 16px;font-size:16px;">Your host has sent back <strong>\u00A3'
-                        + refundedNow.toFixed(2)
+                    '<p style="margin:0 0 16px;font-size:16px;">Your host has sent back <strong>'
+                        + formatGBP(refundedNow)
                         + '</strong> on your stay at <strong>'
                         + escapeHtml((listing && listing.title) || 'their place')
                         + '</strong>.</p>'
@@ -200,7 +226,7 @@ export async function POST(request: Request) {
         });
     } catch (err: any) {
         console.error('[bookings/host-refund]', err && err.message);
-        await logError('[bookings/host-refund] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/host-refund' });
+        await logMoneyFailure('[bookings/host-refund] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/host-refund' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not process the refund' },
             { status: 500 }

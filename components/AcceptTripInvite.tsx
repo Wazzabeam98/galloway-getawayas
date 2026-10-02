@@ -15,13 +15,19 @@ export default function AcceptTripInvite({
     token,
     inviteEmail,
     signedInAs,
+    isOrder = false,
 }: {
     token: string;
     inviteEmail: string;
     signedInAs: string;
+    // An invite to an EXPERIENCE reads "experience", not "trip" — "join the trip"
+    // is wrong when someone's been invited to a sauna.
+    isOrder?: boolean;
 }) {
     const [working, setWorking] = useState(false);
     const [done, setDone] = useState(false);
+
+    const thing = isOrder ? 'this experience' : 'this trip';
 
     // An email-bound invite must be accepted from that address; a plain share
     // link has no address to match, so anyone signed in can accept.
@@ -41,7 +47,7 @@ export default function AcceptTripInvite({
             const data = await res.json();
 
             if (data && data.ok) {
-                toast.success('You’re on the trip.', { theme: 'colored' });
+                toast.success(isOrder ? 'You’re going.' : 'You’re on the trip.', { theme: 'colored' });
                 setDone(true);
                 return;
             }
@@ -61,13 +67,15 @@ export default function AcceptTripInvite({
     if (done) {
         return (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                <p className="text-sm font-semibold text-emerald-900">You&apos;re on the trip.</p>
+                <p className="text-sm font-semibold text-emerald-900">{isOrder ? 'You’re going.' : 'You’re on the trip.'}</p>
                 <p className="mt-1 text-sm text-emerald-800/90">
-                    It&apos;s in your trips, with the address, the way in and a line to the host.
+                    {isOrder
+                        ? 'It’s in your trips, with where to go, when, and a line to the host.'
+                        : 'It’s in your trips, with the address, the way in and a line to the host.'}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                     <Link href="/trips" className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800">
-                        See your trip
+                        {isOrder ? 'See your trips' : 'See your trip'}
                     </Link>
                     <Link href="/" className="rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-800 hover:border-emerald-500">
                         Explore more of Galloway
@@ -83,7 +91,7 @@ export default function AcceptTripInvite({
                 {emailBound ? (
                     <>
                         <p className="text-sm text-slate-700">
-                            Sign in as <strong>{inviteEmail}</strong> to join this trip.
+                            Sign in as <strong>{inviteEmail}</strong> to join {thing}.
                         </p>
                         <p className="mt-1 text-sm text-slate-500">
                             New to Galloway Getaways? Create an account with that same email address —
@@ -93,7 +101,7 @@ export default function AcceptTripInvite({
                     </>
                 ) : (
                     <>
-                        <p className="text-sm text-slate-700">Sign in to join this trip.</p>
+                        <p className="text-sm text-slate-700">Sign in to join {thing}.</p>
                         <p className="mt-1 text-sm text-slate-500">
                             New to Galloway Getaways? Create a free account — it takes a moment, and
                             you&apos;ll come straight back here to join.
@@ -135,7 +143,7 @@ export default function AcceptTripInvite({
             disabled={working}
             className="px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-xl disabled:opacity-50"
         >
-            {working ? 'Just a moment…' : 'Accept and join the trip'}
+            {working ? 'Just a moment…' : (isOrder ? 'Accept invitation' : 'Accept and join the trip')}
         </button>
     );
 }

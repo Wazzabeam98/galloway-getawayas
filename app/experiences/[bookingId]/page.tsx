@@ -7,7 +7,7 @@ import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadMarketplace, MpProvider } from '@/lib/experiencesData';
 import { shapeCue } from '@/lib/serviceSlots';
 import { BadgeCheck, MapPin } from 'lucide-react';
-import { townFromLocation, fromPriceLabel, nextSessionLabel, coverageLabel } from '@/components/marketplace/present';
+import { townFromLocation, fromPriceLabel, nextSessionLabel, cardLocationLine } from '@/components/marketplace/present';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,9 +48,9 @@ export default async function ExperiencesPage({ params }: { params: { bookingId:
 
                 {mp.open === false ? (
                     <Empty title="Coming soon to your stay"
-                        body="We’re lining up chefs, bakers, saunas and guides near your cottage. Check back before you travel." />
+                        body="We’re lining up chefs, bakers, saunas and guides near where you’re staying. Check back before you travel." />
                 ) : mp.providers.length === 0 ? (
-                    <Empty title="Nothing near this cottage yet"
+                    <Empty title="Nothing near your stay yet"
                         body="No providers cover this spot for your dates just now. It’s a new part of the site and filling in fast." />
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
@@ -117,10 +117,10 @@ function Card({ bookingId, p }: { bookingId: string; p: MpProvider }) {
                     <p className="mt-2 text-sm leading-relaxed text-slate-600 line-clamp-2">{p.description}</p>
                 ) : null}
 
-                {coverageLabel(p) ? (
+                {cardLocationLine(p) ? (
                     <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
                         <MapPin className="h-3.5 w-3.5 flex-none" aria-hidden />
-                        <span className="min-w-0 truncate">{coverageLabel(p)}</span>
+                        <span className="min-w-0 truncate">{cardLocationLine(p)}</span>
                     </p>
                 ) : null}
 

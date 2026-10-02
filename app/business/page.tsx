@@ -1,4 +1,5 @@
 import HostFork from '@/components/business/HostFork';
+import { businessSignupsOpen } from '@/lib/serviceOrders';
 
 export const metadata = {
     // The root layout appends ' | Galloway Getaways' to every page title.
@@ -18,7 +19,18 @@ export const metadata = {
 //   • home / holiday let → /addhome
 //   • guest experience   → /services/join?trade=guest
 //   • service            → /services/join
+//
+// All three tiles are held behind a "coming soon" state on PRODUCTION until the
+// host/provider terms are back from the solicitor. businessSignupsOpen() (read
+// on the SERVER here and handed to the client fork) decides it: held on prod
+// until BUSINESS_SIGNUPS_OPEN is true (any case, spaces ignored), always open on previews and local so the
+// flows stay walkable. It is a front-door change only — the flows behind the
+// tiles, and every existing host and tradesman, are untouched — and flipping
+// the one flag brings all three tiles back together, no code change.
+
+// Read on every request, never frozen into a build (see register-interest).
+export const dynamic = 'force-dynamic';
 
 export default function BusinessPage() {
-    return <HostFork />;
+    return <HostFork signupsOpen={businessSignupsOpen()} />;
 }

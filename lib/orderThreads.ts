@@ -26,11 +26,20 @@ export interface OrderThreadContext {
     otherId: string;
     otherName: string;
     business: string;
+    // The guest's display name, independent of who is viewing (honouring
+    // show_full_name). Needed when NAMING THE SENDER to the recipient: a message
+    // FROM the guest must show the guest's name to the provider, which otherName
+    // cannot give from the guest's own perspective.
+    guestName: string;
 }
 
 // The provider side of the inbox: the order threads for every provider this user
-// owns, newest and unread first. Threads with an actual message only — an inbox
-// of empty orders is noise; the provider starts one from their dashboard.
+// owns, newest and unread first. A LIVE booking (a guest who is confirmed, or a
+// request awaiting the provider) appears whether or not a message exists yet —
+// the same way the cottage host inbox lists every booking, so the provider can
+// start the conversation from here, not only from the calendar. An ENDED order
+// (cancelled/refunded) only stays in the list if it carries a message, so a pile
+// of dead bookings doesn't become noise.
 export interface OrderThreadListItem {
     orderId: string;
     otherName: string;
@@ -48,7 +57,7 @@ export async function listProviderOrderThreads(admin: any, uid: string): Promise
 
     const { data: orders } = await admin
         .from('service_orders')
-        .select('id, item_name, service_date, guest_name, status')
+        .select('id, item_name, service_date, guest_name, status, created_at')
         .in('provider_id', provIds)
         .in('status', ['authorised', 'confirmed', 'cancelled', 'refunded']);
     const rows = orders || [];
@@ -68,8 +77,15 @@ export async function listProviderOrderThreads(admin: any, uid: string): Promise
         if (m.recipient_id === uid && !m.read_at) unread[m.order_id] = (unread[m.order_id] || 0) + 1;
     }
 
-    const items: OrderThreadListItem[] = rows
-        .filter((o: any) => last[o.id])
+    // A live booking (authorised/confirmed) shows even with no message; an ended
+    // one (cancelled/refunded) shows only if it was actually messaged about.
+    const isLive = (o: any) => o.status === 'authorised' || o.status === 'confirmed';
+    // Newest activity first: the last message's time, or the booking's own time
+    // when there is no message yet, so a fresh booking sorts near the top.
+    const activityAt = (o: any) => (last[o.id] ? String(last[o.id].created_at) : String(o.created_at || ''));
+
+    const items: (OrderThreadListItem & { _at: string })[] = rows
+        .filter((o: any) => last[o.id] || isLive(o))
         .map((o: any) => ({
             orderId: o.id,
             otherName: o.guest_name || 'Guest',
@@ -78,13 +94,14 @@ export async function listProviderOrderThreads(admin: any, uid: string): Promise
             lastAt: last[o.id] ? String(last[o.id].created_at) : null,
             unread: unread[o.id] || 0,
             ended: o.status === 'cancelled' || o.status === 'refunded',
+            _at: activityAt(o),
         }));
 
     items.sort((a, b) => {
         if (a.unread !== b.unread) return b.unread - a.unread;
-        return (b.lastAt || '') < (a.lastAt || '') ? -1 : 1;
+        return b._at < a._at ? -1 : 1;
     });
-    return items;
+    return items.map(({ _at, ...rest }) => rest);
 }
 
 export async function orderThreadContext(
@@ -112,6 +129,17 @@ export async function orderThreadContext(
 
     const business = order.provider_business_name || prov.business_name || 'the provider';
 
+    // The guest's display name, always — honouring show_full_name, the way a
+    // person is named everywhere else. Read once here so both the "other party"
+    // label (guest → provider) and the "sender" label (a message FROM the guest,
+    // shown to the provider) can use it, whoever is viewing.
+    const { data: guest } = await admin
+        .from('profiles')
+        .select('full_name, preferred_name, show_full_name')
+        .eq('id', order.guest_id)
+        .maybeSingle();
+    const guestName = displayName(guest, 'the guest');
+
     let otherId: string;
     let otherName: string;
     if (isGuest) {
@@ -119,15 +147,8 @@ export async function orderThreadContext(
         otherName = business;
     } else {
         otherId = order.guest_id;
-        // The guest named to the provider — through displayName, honouring the
-        // show_full_name switch like everywhere else a person is named.
-        const { data: guest } = await admin
-            .from('profiles')
-            .select('full_name, preferred_name, show_full_name')
-            .eq('id', order.guest_id)
-            .maybeSingle();
-        otherName = displayName(guest, 'the guest');
+        otherName = guestName;
     }
 
-    return { order, isGuest, otherId, otherName, business };
+    return { order, isGuest, otherId, otherName, business, guestName };
 }

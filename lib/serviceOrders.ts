@@ -29,8 +29,53 @@ import { commissionRateFor } from '@/lib/serviceProviders';
 // as a click.
 //
 // Flipping it takes a redeploy to bind on Vercel — see MAINTENANCE.md.
+//
+// Held on PRODUCTION only. Previews and local always return open, the same as
+// businessSignupsOpen below, so the whole guest-experiences surface — the home
+// and town-page sections, the browse pages — stays walkable on a preview while
+// the feature is still gated for real visitors. Defaulting to held on prod
+// (absent, or anything but 'true') is the safe direction: a preview can only
+// ever be more open than production, never expose it early.
 export function guestExperiencesOpen(): boolean {
+    if (process.env.VERCEL_ENV !== 'production') return true;
     return process.env.GUEST_EXPERIENCES_OPEN === 'true';
+}
+
+// The three /business sign-up tiles — holiday let, offer a service, and host a
+// guest experience — are held behind a "coming soon" state on PRODUCTION until
+// the host/provider terms are back from the solicitor. This is a front-door
+// flag only: it greys the tiles on the fork and nothing else. The flows behind
+// them (/addhome, /services/join, /services/join?trade=guest) are untouched, and
+// so is every existing host and tradesman — none of their routes read this.
+//
+// Releasing is ONE step: set BUSINESS_SIGNUPS_OPEN=true on Production (a
+// redeploy binds it, same as GUEST_EXPERIENCES_OPEN above). All three tiles,
+// the homepage "Coming soon · Register your interest" bar and /register-interest
+// read this one flag, so they all change together.
+//
+// READ TOLERANTLY (29 September 2026). Set to "true" twice on Production and
+// redeployed, the tiles stayed shut: the check was `=== 'true'`, so a value
+// typed as "True", with a trailing space or newline, or pasted with its quotes,
+// read as closed — and a Sensitive variable cannot be read back to see which.
+// Case, surrounding whitespace and one pair of surrounding quotes are now
+// ignored. Anything else still means closed, which stays the safe direction.
+// /api/health/flags says whether the variable is set and how it reads, without
+// the value.
+//
+// Held on PRODUCTION only — previews and local always return open, so the whole
+// of each flow stays walkable while the terms are outstanding. Defaulting to
+// held on prod (absent, or anything but 'true') is the safe direction: the
+// RESEND_API_KEY-set-on-Production-not-Preview class of scoping slip can only
+// ever leave a preview more open, never expose production before the terms land.
+export function businessSignupsOpen(): boolean {
+    if (process.env.VERCEL_ENV !== 'production') return true;
+    return flagIsTrue(process.env.BUSINESS_SIGNUPS_OPEN);
+}
+
+/** "true" in any case, with surrounding whitespace or one pair of quotes. */
+export function flagIsTrue(value: string | null | undefined): boolean {
+    const v = String(value == null ? '' : value).trim().replace(/^(['"])(.*)\1$/, '$2').trim().toLowerCase();
+    return v === 'true';
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +216,12 @@ export function stripeProfileForProvider(
 // This is the single reason "approved" stopped meaning "live" for guest trades.
 export function isLiveToGuests(provider: any): boolean {
     if (!provider) return false;
-    return provider.status === 'approved' && provider.stripe_payouts_enabled === true;
+    // owner_paused is the provider's own take-down: approved and payout-ready, but
+    // hidden by their choice for now. Undefined (a caller that didn't select the
+    // column) reads as not-paused, so this stays inert everywhere but the
+    // marketplace reads that select it.
+    return provider.status === 'approved' && provider.stripe_payouts_enabled === true
+        && !provider.owner_paused;
 }
 
 // A provider who has been approved but has not finished Stripe. Not a guest's
@@ -365,27 +415,6 @@ export function expiryFrom(createdISO: string): string {
     return new Date(t).toISOString();
 }
 
-// FREE CANCELLATION, AND WHERE THE LINE IS.
-//
-// A guest can always cancel a request that has not been answered — the hold is
-// released and nothing was ever taken. A CONFIRMED booking is different: money
-// has moved, so cancelling it is a refund, and a refund follows the provider's
-// own promise. The one every provider makes on their listing is "let me know 48
-// hours ahead and there's nothing to pay", so that is the line the guest-facing
-// cancel honours: 48 hours or more before the service date, a confirmed booking
-// refunds in full; inside that window it is the provider's call, and the guest
-// is pointed to them (the provider can still refund out of goodwill).
-//
-// Measured to the START of the service date, which is the earliest the work
-// could begin. Pure and takes `now`, so it tests without a clock.
-export const FREE_CANCEL_HOURS = 48;
-
-export function guestMayCancelFree(serviceDate: string, now: Date): boolean {
-    const start = new Date(String(serviceDate) + 'T00:00:00Z').getTime();
-    if (isNaN(start)) return false;
-    return start - now.getTime() >= FREE_CANCEL_HOURS * 60 * 60 * 1000;
-}
-
 // WHO CAN ONLY DO ONE THING ON A DATE — an owner-set flag, not a trade.
 //
 // A chef cooks one evening: a second live order for the same chef and date is a
@@ -407,4 +436,47 @@ export function exclusivePerDate(
     // partial unique index's predicate), so either answers — reading both means
     // a row written before the shape column, or after, both resolve correctly.
     return provider.shape === 'comes_to_you' || !!provider.exclusive_per_date;
+}
+
+// A short, quotable booking reference for an order — the same GG-XXXX shape a
+// service enquiry uses (lib/serviceEnquiries.enquiryReference), so the language
+// is one across the platform. DETERMINISTIC from the order id, so it is stable
+// every time the same order is shown (an enquiry's is random-and-stored; an
+// order has no such column, so we derive it). No I/O/0/1 — it gets read aloud.
+const ORDER_REFERENCE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+export function orderReference(orderId: string | null | undefined): string {
+    const id = String(orderId || '');
+    if (!id) return 'GG-????';
+    // A small stable hash over the id's characters; the uuid's own entropy is
+    // plenty for a 4-char human reference (collisions don't matter — the id is
+    // still the key, this is only for a person to quote).
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+        hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    }
+    let out = '';
+    for (let i = 0; i < 4; i++) {
+        out += ORDER_REFERENCE_ALPHABET.charAt(hash % ORDER_REFERENCE_ALPHABET.length);
+        hash = Math.floor(hash / ORDER_REFERENCE_ALPHABET.length) + 7;
+    }
+    return 'GG-' + out;
+}
+
+// The money split for ONE order: what the guest paid net of any refund, our 10%
+// fee on it, and the provider's take — the 90% we pay them the day after the
+// booking (or, for an order before 30/09/2026, that landed in their Stripe
+// balance at payment; see lib/experienceFunds). Shared so the
+// calendar panel, the earnings page and anywhere else read the SAME numbers.
+// NOTE commission_rate here is a FRACTION (0.10), not a percent.
+export function orderNet(
+    o: { price?: number | null; commission_rate?: number | null; amount_refunded?: number | null }
+): { rate: number; refunded: number; gross: number; fee: number; youGet: number } {
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const rate = Number(o.commission_rate) || 0.10;
+    const refunded = Number(o.amount_refunded) || 0;
+    const gross = Number(o.price || 0);
+    const kept = r2(gross - refunded);        // what the guest actually paid, net of refund
+    const fee = r2(kept * rate);              // our cut on what was kept
+    return { rate, refunded, gross, fee, youGet: r2(kept - fee) };
 }

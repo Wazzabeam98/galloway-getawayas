@@ -5,6 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -58,6 +59,10 @@ import { TEST_PROJECT_REF } from './target.cjs';
 
 export { TEST_PROJECT_REF };
 
+// Real accounts no seed may delete or lock out — see scripts/protectedAccounts.cjs.
+import protectedAccounts from './protectedAccounts.cjs';
+export const { PROTECTED_EMAILS, isProtectedEmail, guardFetch } = protectedAccounts;
+
 // Everything the seeder creates carries one of these, so a reset can find it
 // again and nothing else is ever touched.
 export const SEED_DOMAIN = 'gallowayseed.test';
@@ -89,12 +94,27 @@ function encodeForm(obj, prefix) {
 }
 
 export function stripeClient(env) {
+    // A seed run makes dozens of Stripe calls in a row, and a single dropped
+    // connection to api.stripe.com used to fail the whole suite with a bare
+    // "fetch failed" — nothing wrong with the code, just one flaky socket. So
+    // transient failures are retried with exponential backoff. Only the
+    // transient ones: a network throw, a 429, or a 5xx. A 4xx (a declined card
+    // at 402, a bad request) is a real answer we want to surface immediately,
+    // never retry.
+    const MAX_ATTEMPTS = 4;
+    const retryable = (status) => status === 429 || status >= 500;
+
     async function request(method, endpoint, body, options = {}) {
         const headers = {
             Authorization: 'Bearer ' + env.STRIPE_SECRET_KEY,
             'Stripe-Version': '2024-06-20',
         };
+        // An idempotency key makes a retried POST safe — Stripe returns the
+        // original result instead of charging twice. GETs need none. Reuse a
+        // caller-supplied key if there is one, otherwise mint one per call so it
+        // is stable across this call's own retries.
         if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey;
+        else if (method === 'POST') headers['Idempotency-Key'] = crypto.randomUUID();
         // Acting as the connected account rather than the platform.
         if (options.account) headers['Stripe-Account'] = options.account;
 
@@ -108,17 +128,41 @@ export function stripeClient(env) {
             if (qs) url += '?' + qs;
         }
 
-        const res = await fetch(url, { method, headers, body: payload });
-        const data = await res.json();
-        if (!res.ok) {
-            const err = new Error((data && data.error && data.error.message) || 'Stripe request failed');
-            err.stripeCode = data && data.error && data.error.code;
-            err.status = res.status;
-            throw err;
+        let lastErr;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            let res;
+            try {
+                res = await fetch(url, { method, headers, body: payload });
+            } catch (netErr) {
+                // Connection-level failure ("fetch failed"): retry unless spent.
+                lastErr = netErr;
+                if (attempt === MAX_ATTEMPTS) throw netErr;
+                await sleep(backoff(attempt));
+                continue;
+            }
+            if (retryable(res.status) && attempt < MAX_ATTEMPTS) {
+                await sleep(backoff(attempt));
+                continue;
+            }
+            const data = await res.json();
+            if (!res.ok) {
+                const err = new Error((data && data.error && data.error.message) || 'Stripe request failed');
+                err.stripeCode = data && data.error && data.error.code;
+                err.status = res.status;
+                throw err;
+            }
+            return data;
         }
-        return data;
+        // Only reached if every attempt was a network throw.
+        throw lastErr;
     }
     return { request };
+}
+
+// Exponential backoff with jitter: ~0.3s, 0.6s, 1.2s, plus up to 250ms of
+// spread so a burst of parallel calls does not retry in lockstep.
+function backoff(attempt) {
+    return 300 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250);
 }
 
 /* -------------------------------------------------------------- Supabase */
@@ -129,6 +173,7 @@ export function supabaseClient(env) {
     const headers = { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' };
 
     async function rest(method, pathAndQuery, body, prefer) {
+        await protectedAccounts.guardFetch(base, headers, method, pathAndQuery, body);
         const res = await fetch(base + '/rest/v1' + pathAndQuery, {
             method,
             headers: prefer ? { ...headers, Prefer: prefer } : headers,
@@ -141,6 +186,7 @@ export function supabaseClient(env) {
     }
 
     async function auth(method, endpoint, body) {
+        await protectedAccounts.guardFetch(base, headers, method, endpoint, body);
         const res = await fetch(base + '/auth/v1' + endpoint, {
             method,
             headers,

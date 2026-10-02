@@ -94,6 +94,7 @@ test('a genuinely quiet day is still a success', async () => {
     assert.equal(res.status, 200);
     assert.deepEqual(res.body, {
         ok: true, sent: 0, skipped: 0, failed: 0, hostsWaitingToOnboard: 0, reconciled: 0,
+        notReached: 0, problems: 0,
     });
     assert.equal(logged.length, 0, 'nothing due is not an error');
 });

@@ -4,7 +4,9 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { coordinatePatchFor } from '@/lib/postcodeGeocode';
-import { addressBlockerForPublish } from '@/lib/listingRules';
+import { addressBlockerForPublish, NEW_LISTING_MIN_PHOTOS } from '@/lib/listingRules';
+import { HOST_TERMS_VERSION, hasAgreedToCurrentTerms, termsProblem } from '@/lib/hostTerms';
+import { recordAcceptance } from '@/lib/agreementRecords';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,10 +25,16 @@ export const dynamic = 'force-dynamic';
 // server, not read from a cookie the caller could write. This route is the
 // authority on who owns the listing, so it cannot trust a forgeable id.
 //
-// WHERE THE REVIEW GATE WILL LIVE. When listings start waiting for approval,
-// this is the single place that changes: 'published' becomes 'pending_review',
-// and app/api/admin/listings/decide moves it the rest of the way. Nothing else
-// needs to know.
+// THE REVIEW GATE. A listing going live for the FIRST time does not go live:
+// it goes to 'pending_review', the host's dashboard says "Waiting for
+// approval", and an owner approves it at /admin/listings (one at a time or in
+// bulk), which moves it to 'published' and emails the host — see
+// app/api/admin/listings/decide. Signed out, a pending listing is not
+// readable: the listings_readable policy shows anonymous callers 'published'
+// rows only, and /homes/[id] shows only 'published' and 'hidden'.
+//
+// A listing that has been live before ('published', or 'hidden' by its host)
+// was approved once and is not queued again: re-saving it stays 'published'.
 export async function POST(request: Request) {
     let reporterId: string | null = null;
     try {
@@ -40,6 +48,10 @@ export async function POST(request: Request) {
 
         const body = await request.json();
         const listingId: string = body && body.listingId;
+        // The terms version the host ticked "I agree" to on this submit, if the
+        // box was shown to them (it is shown only when they have no current
+        // agreement on record).
+        const agreedTermsVersion: string | null = (body && typeof body.termsVersion === 'string') ? body.termsVersion : null;
 
         if (!listingId) {
             return NextResponse.json({ ok: false, error: 'Missing listing' }, { status: 400 });
@@ -49,7 +61,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('id, host_id, title, price_per_night, status, street_address, postcode, latitude, longitude')
+            .select('id, host_id, title, price_per_night, status, images, street_address, postcode, latitude, longitude')
             .eq('id', listingId)
             .maybeSingle();
 
@@ -81,6 +93,57 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: addressProblem }, { status: 400 });
         }
 
+        // At least five photos to go live for the FIRST time — the Airbnb bar for a
+        // listing worth booking. Only gates a listing that has never been live: a
+        // 'hidden' (paused/unlisted) or already-'published' listing has been through
+        // this once, so it can go live again with the photos it has. A brand-new
+        // 'draft' (or a not-yet-approved 'pending_review') is what the bar is for.
+        const everPublished = listing.status === 'published' || listing.status === 'hidden';
+        const photoCount = Array.isArray(listing.images) ? listing.images.filter(Boolean).length : 0;
+        if (!everPublished && photoCount < NEW_LISTING_MIN_PHOTOS) {
+            return NextResponse.json(
+                { ok: false, error: `Add at least ${NEW_LISTING_MIN_PHOTOS} photos before your listing can go live — you have ${photoCount}.` },
+                { status: 400 }
+            );
+        }
+
+        // THE HOST TERMS, before a listing is submitted for review.
+        //
+        // Payout setup used to sit here: a host could not submit until Stripe
+        // said payouts were on. That is not how Airbnb orders it, and it put a
+        // bank-details form between a new host and their first listing. The
+        // order now is list → submit → approved → live and bookable, and the
+        // host is asked to add a payout method after approval (the approval
+        // email, a dashboard banner, a reminder with each booking and before
+        // check-in). Their money waits safely until they do — the payout run
+        // holds a stay whose host has no payouts and pays it on the first run
+        // after Stripe enables them (app/api/cron/host-payouts).
+        //
+        // What IS needed before submitting is the host's agreement to the terms,
+        // recorded — version and server time — on their profile. Only a first-
+        // time submission asks; a listing that has been live before was
+        // submitted (and agreed to) already.
+        let recordTerms = false;
+        if (!everPublished) {
+            const { data: hostProfile } = await admin
+                .from('profiles')
+                .select('host_terms_version')
+                .eq('id', user.id)
+                .maybeSingle();
+            const recorded = hostProfile ? hostProfile.host_terms_version : null;
+            const problem = termsProblem(recorded, agreedTermsVersion);
+            if (problem) {
+                return NextResponse.json(
+                    { ok: false, needsTerms: true, termsVersion: HOST_TERMS_VERSION, error: problem },
+                    { status: 400 }
+                );
+            }
+            recordTerms = !hasAgreedToCurrentTerms(recorded);
+        }
+
+        // First time live waits for an owner; see THE REVIEW GATE above.
+        const nextStatus = everPublished ? 'published' : 'pending_review';
+
         const { error } = await admin
             .from('listings')
             // THE OTHER DOOR A POSTCODE COMES THROUGH.
@@ -93,14 +156,31 @@ export async function POST(request: Request) {
             //
             // Empty object when there is nothing to do, so this stays a single
             // update.
-            .update({ status: 'published', ...(await coordinatePatchFor(listing, {})) })
+            .update({ status: nextStatus, ...(await coordinatePatchFor(listing, {})) })
             .eq('id', listingId);
 
         if (error) {
             return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
         }
 
-        return NextResponse.json({ ok: true, status: 'published' });
+        // Recorded once the submission has gone through, so a refused submit
+        // records nothing. A failure here is logged rather than un-submitting
+        // the listing: the host did agree, and the box will simply be shown to
+        // them again next time.
+        if (recordTerms) {
+            // Both records at once: agreement_acceptances (the registry's
+            // store, read by the sign-in prompt) and profiles.host_terms_*
+            // (read above on the next submit).
+            const { error: termsError } = await recordAcceptance(admin, user.id, 'host', 'listing_publish');
+            if (termsError) {
+                await logError('listings/publish: host terms agreement not recorded', termsError, {
+                    path: 'api/listings/publish',
+                    userId: user.id,
+                });
+            }
+        }
+
+        return NextResponse.json({ ok: true, status: nextStatus });
     } catch (err: any) {
         console.error('[listings/publish]', err && err.message);
 

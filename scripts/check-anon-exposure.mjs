@@ -85,12 +85,23 @@ console.log(`\n  anonymous exposure — ${prod ? 'PRODUCTION' : 'test'} (${expec
 }
 
 {
-    // The names ARE public on purpose — a listing says who hosts it, and a
-    // review says who wrote it. If this breaks, the public pages lose them.
-    const { body } = await get('/rest/v1/profiles?select=id,full_name&limit=1');
-    const ok = Array.isArray(body) && body.length > 0;
-    if (!ok) notes.push('profiles: display names are NOT readable — "Hosted by…" and reviewer names will be blank');
-    console.log(`  ${ok ? 'ok  ' : 'WARN'}  profiles: display names still readable${ok ? '' : '  — public pages will lose them'}`);
+    // Legal names must NOT be readable by a stranger. The public surfaces that
+    // show who hosts a place or wrote a review resolve the display name
+    // server-side (through the service role) and render a first name only, so a
+    // raw anon read of full_name is a leak, not a feature. (Revoked in
+    // 20260924174233_profiles_revoke_anon_name.sql.)
+    const { body } = await get('/rest/v1/profiles?select=full_name&limit=1');
+    check('profiles: legal names', !Array.isArray(body), Array.isArray(body) ? `${body.length} readable` : 'refused outright');
+}
+
+{
+    // The public bits a listing/review still needs — id and avatar — must stay
+    // readable, or the pages lose host avatars. If this breaks the revoke went
+    // too far.
+    const { body } = await get('/rest/v1/profiles?select=id,avatar_url&limit=1');
+    const ok = Array.isArray(body);
+    if (!ok) notes.push('profiles: id + avatar are NOT readable — host avatars will be blank');
+    console.log(`  ${ok ? 'ok  ' : 'WARN'}  profiles: id + avatar still readable${ok ? '' : '  — public pages will lose avatars'}`);
 }
 
 /* ------------------------------------------------------------- listings */

@@ -12,6 +12,28 @@
 // The entry that used to be here, uujmaobsbhxwzjvbwdwb.supabase.co, belongs to
 // no project of ours — images through next/image have been failing wherever
 // they are used, HomeCard included.
+// Where each old /services/<trade> page now lives — the same answer
+// tradeListHref() in lib/serviceProviders.ts gives, written out because this
+// file cannot import TypeScript. tests/old-services-routes.test.ts fails if
+// the two disagree or a trade is added to TRADES without a line here.
+//   guest      not a host trade — experiences are booked against a stay
+//   sponge     coming soon, nobody to show — the unfiltered list
+//   the rest   the list, filtered to that trade
+const OLD_TRADE_PAGES = {
+    guest: '/',
+    sponge: '/services',
+    bin: '/services?trade=bin',
+    trees: '/services?trade=trees',
+    droplet: '/services?trade=droplet',
+    electrician: '/services?trade=electrician',
+    joiner: '/services?trade=joiner',
+    plumber: '/services?trade=plumber',
+    roofer: '/services?trade=roofer',
+    painter: '/services?trade=painter',
+    handyman: '/services?trade=handyman',
+    other: '/services?trade=other',
+}
+
 const nextConfig = {
     // Where the build writes. Default `.next` for dev, `next start` and Vercel,
     // but overridable so a compile-only gate (the pre-push hook) can build into
@@ -26,6 +48,48 @@ const nextConfig = {
             'yefoqcabuijcowoqewtc.supabase.co',
             'hviwjxigqivjfhmhpjiy.supabase.co',
         ],
+    },
+
+    // /homes has never been a route. Only /homes/[id] exists, so the bare
+    // path answered 404 — and /services/guest used to send signed-out
+    // visitors straight to it. That internal link is fixed at its source, so
+    // this is for the addresses already loose in the world: a pasted link, a
+    // bookmark, anything a crawler picked up while it was 404ing.
+    //
+    // Permanent (308), because the answer will not change: the cottages are
+    // on the home page and /homes is not coming back. A 308 keeps the method
+    // and tells Google to forget the old address rather than re-checking it.
+    //
+    // The source matches /homes EXACTLY. It does not touch /homes/<id>.
+    async redirects() {
+        return [
+            {
+                source: '/homes',
+                destination: '/',
+                permanent: true,
+            },
+
+            // THE OLD SERVICES PAGES. /services/property (the trade-tile grid)
+            // and /services/<trade> (one shop page per trade) were real,
+            // indexable pages; they are now the one list at /services, with
+            // trade as a filter. Permanent for the same reason as /homes —
+            // redirect() in a page answers 307 on Next 13.5, which tells Google
+            // to keep the old address and check back.
+            //
+            // Each source is EXACT: /services/joiner/<providerId>, the public
+            // profile, is untouched. Next carries any incoming query string
+            // across (?ask=… survives).
+            {
+                source: '/services/property',
+                destination: '/services',
+                permanent: true,
+            },
+            ...Object.keys(OLD_TRADE_PAGES).map((trade) => ({
+                source: '/services/' + trade,
+                destination: OLD_TRADE_PAGES[trade],
+                permanent: true,
+            })),
+        ];
     },
 }
 

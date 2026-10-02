@@ -9,7 +9,8 @@ import { tradeLabel, offeringsFor, EXTRA_GROUPS, audienceForTrade } from '@/lib/
 
 const groupLabel = (key: string): string =>
     (EXTRA_GROUPS.find((g) => g.key === key) as any)?.label || key;
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ukDate } from '@/lib/dayKey';
 import ProviderBusinessEditor from '@/components/services/ProviderBusinessEditor';
 
 export const metadata = {
@@ -26,7 +27,7 @@ export default async function EditBusinessPage() {
 
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, description, hourly_rate, callout_fee, photos, status')
+        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number, plan, trial_ends_at')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -36,17 +37,26 @@ export default async function EditBusinessPage() {
     if (provider.status !== 'approved') redirect(`/services/join?trade=${provider.trade}`);
 
     // This editor is host-shaped — rates, service groups, registrations. A
-    // guest-trade provider edits their listing (the gallery, their price, and
-    // who they are) on the sign-up itself, which loads their row and shows the
-    // guest fields, so send them there rather than to a screen that does not
-    // ask for any of what they need to change.
-    if (audienceForTrade(provider.trade) === 'guest') {
-        redirect(`/services/join?trade=${provider.trade}`);
+    // guest-experience provider now has its OWN sectioned listing editor, which
+    // owns edit (the wizard is first-time create only). Send them there rather
+    // than back into the sign-up flow.
+    //
+    // Fork on the AUTHORITATIVE audience column, not audienceForTrade(trade): a
+    // guest provider's category (sauna, yoga, chef…) is NOT a registered trade,
+    // so audienceForTrade returns '' for it and a guest would fall through to the
+    // tradesman editor. audience === 'guest' is the truth and can't be fooled;
+    // the trade fallback stays only as belt-and-braces. Mirrors the guard on
+    // /services/dashboard/listing so the two routes agree.
+    if (provider.audience === 'guest' || audienceForTrade(provider.trade) === 'guest') {
+        redirect('/services/dashboard/listing');
     }
 
+    // Coverage is regions now (round two) — a service_areas row per region, the
+    // region name in `label`. The editor renders the region picker, so we just
+    // need the current labels.
     const { data: areas } = await admin
         .from('service_areas')
-        .select('id, label, radius_miles')
+        .select('label')
         .eq('provider_id', provider.id)
         .order('created_at', { ascending: true });
 
@@ -85,7 +95,7 @@ export default async function EditBusinessPage() {
     }
 
     return (
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-24">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-24">
             <Link href="/services/dashboard" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
                 <ArrowLeft className="w-4 h-4" /> Back to your business
             </Link>
@@ -96,18 +106,49 @@ export default async function EditBusinessPage() {
                 Everything hosts see about {provider.business_name} — {tradeLabel(provider.trade)} — in one place.
             </p>
 
+            {/* Business status — the "Listed" pill and the free-subscription line
+                that used to sit on the enquiries inbox. They describe the business,
+                so they live here, with a link to see the profile a host sees (the
+                way a host previews a listing). */}
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+                {provider.plan === 'subscription' && (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        Listed · hosts can find you
+                    </span>
+                )}
+                {provider.plan === 'subscription' && (
+                    <span className="text-sm font-semibold text-emerald-700">
+                        {provider.trial_ends_at ? 'Free until ' + ukDate(provider.trial_ends_at) : 'Free for six months from your first enquiry'}
+                    </span>
+                )}
+                <a
+                    href={`/services/${encodeURIComponent(provider.trade)}/${provider.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-4 py-1.5 text-sm font-semibold text-slate-700 hover:border-slate-500"
+                >
+                    <ExternalLink className="h-4 w-4" /> View your public profile
+                </a>
+            </div>
+
             <ProviderBusinessEditor
                 provider={{
                     id: provider.id,
+                    trade: provider.trade,
                     business_name: provider.business_name || '',
                     description: provider.description || '',
                     hourly_rate: provider.hourly_rate,
                     callout_fee: provider.callout_fee,
                     photos: provider.photos || [],
+                    contact_email: provider.contact_email || '',
+                    contact_phone: provider.contact_phone || '',
+                    sms_opt_out: !!provider.sms_opt_out,
+                    registration_number: provider.registration_number || '',
                 }}
                 skills={skills}
                 serviceGroups={serviceGroups}
-                areas={(areas || []).map((a) => ({ id: a.id, label: a.label || '', radius_miles: Number(a.radius_miles) }))}
+                regions={(areas || []).map((a: any) => a.label || '').filter(Boolean)}
                 registrations={(registrations || []).map((r: any) => ({
                     scheme: r.scheme,
                     number: r.number || '',

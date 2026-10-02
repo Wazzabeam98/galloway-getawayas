@@ -77,19 +77,45 @@ Production first, then test, then merge. If a migration is destructive its
 pre-flight decides whether it runs at all — read the count before. A branch
 carrying a migration should say so in its description.
 
-**If somebody else applied it, record it.**
+**If somebody else applied it, record it — check first, never re-run live DDL.**
 
 ```
-node scripts/migrate.mjs --target prod supabase/migrations/<file> \
-  --record --note "what you checked"
+node scripts/migrate.mjs --target <test|prod> supabase/migrations/<file> \
+  --record --note "what you checked" \
+  --check "select ... -- read-only, returns one truthy value"
 ```
 
 Two sessions work on this repo and only one goes through this runner. A
 migration applied by hand leaves the schema changed and the ledger silent, so
 `--status` calls it outstanding for ever — and a warning that is wrong every
 time is one people stop reading, at which point the real one goes past. It
-records an **assumption**, not an observation, and the note is required because
-an unexplained row is what the table exists to stop.
+records an **assumption**, not an observation; the note is required because an
+unexplained row is what the table exists to stop, and `--check` is now required
+too — a read-only query that must return one truthy value proving the change is
+present, or nothing is written. The check is stored, so `--status` re-runs it
+and catches the day the schema drifts from what you recorded.
+
+**This bites test, not just prod, and it bites during a build.** `test` receives
+migrations out of band — the other session, or a hand-apply in the SQL editor,
+or a branch that pushed the schema straight — so `--status --target test` can
+read a stack of migrations as OUTSTANDING when the columns, constraints and
+defaults are **already there**. That is a *ledger* gap, not a *schema* gap, and
+the two want opposite fixes. Before you reach for `--apply`, look at the actual
+schema (`--sql "select pg_get_constraintdef(...)"`, `information_schema.columns`,
+a column probe). If the change is already present, **record it — do not re-apply
+it.** Re-running an idempotent migration to "catch the ledger up" drops and
+recreates whatever it touches; for a live exclusion constraint or index that
+momentarily removes the guard and re-validates every row on a database the other
+session may be using. `--record`'s check-first rule is the safe path precisely
+because it proves the change and writes only the ledger row, touching no DDL.
+(15 Sep 2026: the five 14-Sep slot/experience migrations read outstanding on
+test, were confirmed already applied — `blocked` predicate widened, columns
+present — and were `--record`ed, not re-run.)
+
+Only reach for `--apply` on test when the schema genuinely lacks the change. The
+test-behind-prod case that actually endangers a live run is a *missing* object,
+not a *missing ledger row* — a guard that passes on test's older schema and
+fails on prod's; a column probe tells the two apart in one call.
 
 **`--status` is how you check what is outstanding.**
 `public.schema_migrations` records what has been applied to each database, and

@@ -2,12 +2,12 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { idsFrom, decideBatch, MAX_BATCH } from '@/lib/reviewQueue';
 import {
     reviewDigest, approvalBlockers, schemeLabel,
-    planForTrade, TRIAL_DAYS, SUBSCRIPTION_MONTHLY,
+    planForTrade, TRIAL_PERIOD_LABEL, SUBSCRIPTION_MONTHLY,
 } from '@/lib/serviceProviders';
 import { ASSIGNABLE_MCCS } from '@/lib/serviceOrders';
 import { SHAPES, shapeOf } from '@/lib/serviceSlots';
@@ -439,7 +439,7 @@ export async function POST(req: Request) {
                         // What it costs, in the email that makes the promise.
                         //
                         // NO DATE HERE ANY MORE, because at approval there is not
-                        // one — the ninety days start when we send him his first
+                        // one — the six months start when we send him his first
                         // enquiry, which may be months away or never. Quoting a
                         // date computed here would be inventing one, and the
                         // whole reason the clock moved is that a date stamped at
@@ -449,11 +449,11 @@ export async function POST(req: Request) {
                         // told, which the email that stamps the clock then keeps.
                         const terms = patch.plan === 'subscription'
                             ? '<p style="margin:0 0 16px;font-size:16px;">Your first '
-                                + TRIAL_DAYS + ' days are free, and they do not start today — they start'
+                                + TRIAL_PERIOD_LABEL + ' are free, and they do not start today — they start'
                                 + ' when we send you your first enquiry. If we do not find you any work,'
                                 + ' you are not paying for it.</p>'
                                 + '<p style="margin:0 0 16px;font-size:16px;">After those '
-                                + TRIAL_DAYS + ' days it is £' + SUBSCRIPTION_MONTHLY
+                                + TRIAL_PERIOD_LABEL + ' it is £' + SUBSCRIPTION_MONTHLY
                                 + ' a month, and we take no commission on your work — you quote and get paid'
                                 + ' direct, the same as you do now. We will tell you the day your free period'
                                 + ' starts and write to you well before anything is due. There is nothing to'
@@ -469,7 +469,7 @@ export async function POST(req: Request) {
                                 + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
                                 + terms
                                 + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'See your listing'),
-                            FOOT
+                            FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     } else if (decision === 'decline') {
                         subject = 'About your Galloway Getaways listing';
@@ -479,7 +479,7 @@ export async function POST(req: Request) {
                                 + quoted(note)
                                 + '<p style="margin:0 0 16px;font-size:16px;">You can change it and send it back to us whenever you like.</p>'
                                 + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'Update your details'),
-                            FOOT
+                            FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     } else if (decision === 'approve_changes') {
                         // They were told we would look and come back to them, so
@@ -490,7 +490,7 @@ export async function POST(req: Request) {
                             '<p style="margin:0 0 16px;font-size:16px;">We have looked at the changes you made to <strong>'
                                 + name + '</strong>. Nothing needs doing — you stayed on the site throughout.</p>'
                                 + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'See your listing'),
-                            FOOT
+                            FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     } else {
                         subject = 'About the changes to your listing';
@@ -504,7 +504,7 @@ export async function POST(req: Request) {
                                     : 'Your listing is still up. Change it whenever you can and we will take another look.')
                                 + '</p>'
                                 + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'Update your details'),
-                            FOOT
+                            FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     }
 

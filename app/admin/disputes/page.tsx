@@ -8,6 +8,7 @@ import { notFound } from 'next/navigation';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { formatUk } from '@/lib/cancellation';
 import { guidanceFor, deadlineText, isUrgent, isMoneyAtRisk, isInquiry } from '@/lib/disputes';
+import { formatGBP } from '@/lib/formatMoney';
 
 // Chargebacks, and what to send back.
 //
@@ -84,7 +85,7 @@ export default async function AdminDisputes() {
                     {atRisk > 0 ? (
                         <div className="border border-red-300 bg-red-50 rounded-2xl p-5 mb-6">
                             <div className="font-semibold text-red-900">
-                                £{atRisk.toFixed(2)} taken back by Stripe, across{' '}
+                                {formatGBP(atRisk)} taken back by Stripe, across{' '}
                                 {open.length - inquiries}{' '}
                                 {open.length - inquiries === 1 ? 'chargeback' : 'chargebacks'}
                             </div>
@@ -129,7 +130,7 @@ export default async function AdminDisputes() {
                                         </div>
                                         <div className="text-right">
                                             <div className="font-bold text-slate-900">
-                                                £{Number(d.amount || 0).toFixed(2)}
+                                                {formatGBP(d.amount || 0)}
                                             </div>
                                             {isInquiry(d.status) && (
                                                 <div className="text-xs font-semibold text-amber-700">
@@ -152,8 +153,8 @@ export default async function AdminDisputes() {
                                             <>
                                                 {listingTitle[booking.listing_id] || 'Listing'} &middot;{' '}
                                                 {formatUk(new Date(booking.check_in))} &rarr;{' '}
-                                                {formatUk(new Date(booking.check_out))} &middot; £
-                                                {Number(booking.total_price || 0).toFixed(2)} booking
+                                                {formatUk(new Date(booking.check_out))} &middot;{' '}
+                                                {formatGBP(booking.total_price || 0)} booking
                                             </>
                                         ) : (
                                             'Not matched to a booking — check the charge in Stripe'
@@ -223,7 +224,7 @@ export default async function AdminDisputes() {
                         {settled.map((d: any) => (
                             <div key={d.id} className="flex justify-between text-sm border-b pb-2">
                                 <span className="text-slate-600">
-                                    £{Number(d.amount || 0).toFixed(2)} &middot; {d.reason || 'no reason given'}
+                                    {formatGBP(d.amount || 0)} &middot; {d.reason || 'no reason given'}
                                 </span>
                                 <span className={d.funds_reinstated_at || d.status === 'won'
                                     ? 'font-semibold text-emerald-700'

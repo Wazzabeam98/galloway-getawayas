@@ -251,6 +251,72 @@ async function main() {
         atStripe10 === round2(Number(after10.amount_refunded)),
         'db £' + after10.amount_refunded + ' vs Stripe £' + atStripe10);
 
+    /* ---- 3b: a crashed run's claim is replayed, not charged a second time ---- */
+
+    // The second failure the audit found (Group A #2): a booking-to-paid write
+    // that fails but leaves the claim settled means the next run re-charges
+    // under a fresh key. The fix leaves the claim 'attempting' so the next run
+    // reuses its id — and therefore its idempotency key — and Stripe replays
+    // the one charge. This proves that guarantee against real Stripe money.
+    //
+    // s29 was charged once by the very first balance run above (PI recorded on
+    // the booking). Here we put it back the way a run that charged and then
+    // died would leave it — owing again, the claim back at 'attempting' with no
+    // intent on it — and run the cron once more. The one thing that must not
+    // happen is a second charge.
+
+    scenario('3b', 'A dangling claim from a crashed run is replayed at Stripe, not charged again');
+
+    const paid29 = await booking(bookings.s29);
+    const pi1 = paid29.balance_payment_intent_id;
+    check('s29 was charged once already and recorded its intent',
+        paid29.payment_status === 'paid' && !!pi1, paid29.payment_status + ' / ' + pi1);
+
+    const rows29 = await paymentsFor(bookings.s29);
+    const firstCharge = rows29.find((p) => p.kind === 'balance' && p.status === 'succeeded');
+    check('exactly one settled balance charge to begin with',
+        !!firstCharge && rows29.filter((p) => p.kind === 'balance' && p.status === 'succeeded').length === 1);
+
+    if (firstCharge) {
+        // Rewind to the crash: owing again, and the claim back to 'attempting'
+        // with its intent cleared — a run that charged (under
+        // balance-attempt-<row id>) and died before settling.
+        await db.update('bookings', '?id=eq.' + bookings.s29, {
+            payment_status: 'deposit_paid', balance_amount: 600, amount_paid: 200,
+            balance_attempts: 0, balance_last_attempt_at: null,
+            balance_payment_intent_id: null,
+        });
+        await db.update('payments', '?id=eq.' + firstCharge.id, {
+            status: 'attempting', stripe_payment_intent_id: null,
+        });
+
+        await runBalanceCharges();
+
+        const after29 = await booking(bookings.s29);
+        const rows29b = await paymentsFor(bookings.s29);
+        const settledBalance = rows29b.filter((p) => p.kind === 'balance' && p.status === 'succeeded');
+
+        check('the booking is paid again', after29.payment_status === 'paid'
+            && round2(Number(after29.balance_amount)) === 0,
+            after29.payment_status + ' / £' + after29.balance_amount);
+
+        // The proof. A fresh charge would carry a new PaymentIntent id; a replay
+        // returns the first one. The dead run's key was reused, so it is the
+        // first one.
+        check('the SAME intent was replayed — no second charge was created',
+            after29.balance_payment_intent_id === pi1,
+            'recorded ' + after29.balance_payment_intent_id + ', first charge was ' + pi1);
+        check('still exactly one settled balance charge — the guest paid once',
+            settledBalance.length === 1, settledBalance.length + ' settled balance rows');
+
+        const intent3b = pi1
+            ? await stripe.request('GET', '/payment_intents/' + pi1).catch(() => null)
+            : null;
+        check('Stripe agrees that one intent took £600 and no more',
+            !!intent3b && intent3b.status === 'succeeded' && intent3b.amount === 60000,
+            intent3b ? intent3b.status + '/' + intent3b.amount : 'no intent');
+    }
+
     /* ------------------------------------------------------------ summary */
 
     console.log('\n' + '='.repeat(64));

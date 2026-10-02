@@ -21,6 +21,7 @@ import {
     pricingModelFor,
     canBeEnquiredAbout,
 } from '@/lib/serviceProviders';
+import { ukDate } from '@/lib/dayKey';
 
 // ---------------------------------------------------------------------------
 // STATES
@@ -105,7 +106,7 @@ export function canReask(status: string): boolean {
 //
 // It was built handing the host the number on the spot. That was wrong, and
 // the reason is not about the host at all — it is about what the platform can
-// prove. Every trade in this flow is free for ninety days and then twenty
+// prove. Every trade in this flow is free for six months and then twenty
 // pounds a month, and the only argument for the twenty pounds is "you got five
 // jobs out of us". An introduction nobody accepted is not evidence of
 // anything. Hand the number over unasked and the accept never happens, and the
@@ -127,7 +128,7 @@ export function canReask(status: string): boolean {
 // That is uncomfortable and it is deliberate. It was built the other way twice
 // — first releasing the number immediately, then releasing it after twenty
 // minutes — and both versions manufacture something that cannot be sold. The
-// whole argument at day ninety is "you got five jobs out of us", and the
+// whole argument at the end of the trial is "you got five jobs out of us", and the
 // accept is the only event that evidences one. An introduction the platform
 // gave away is not an introduction the platform can charge for, whether it
 // gave it away at once or after a decent interval.
@@ -267,6 +268,36 @@ export function windowByKey(key: string) {
     return TIME_WINDOWS.filter((w) => w.key === String(key || ''))[0] || null;
 }
 
+// Do two jobs' time windows on the SAME day overlap?
+//
+// This is the whole of the soft clash rule: a trade who already has a job in a
+// window is WARNED before taking a second in it, never blocked (a trade can
+// often fit two small jobs in a morning, and a job is an asked-for window, not a
+// fixed slot — so a hard lock would be wrong more often than right). It is used
+// both to warn at the accept and to mark a clashing day on the calendar.
+//
+// An open window ("any time that day", stored as null from/to) overlaps every
+// other window on that day — someone free "any time" clashes with everything.
+// Two timed windows overlap on the usual half-open rule: a start before the
+// other's end, and vice versa. The caller checks the day; this checks the time.
+export function windowsClash(
+    a: { window_from?: string | null; window_to?: string | null },
+    b: { window_from?: string | null; window_to?: string | null },
+): boolean {
+    const af = a.window_from, at = a.window_to, bf = b.window_from, bt = b.window_to;
+    if (!af || !at || !bf || !bt) return true;      // an open window overlaps anything
+    return af < bt && bf < at;                       // half-open interval overlap
+}
+
+// The short window phrase for a warning ("that morning", "between 8am and 11am").
+// A dateless / open window reads "that day". Reuses prettyTime so it matches the
+// rest of the trade side.
+export function windowPhrase(row: { window_from?: string | null; window_to?: string | null }): string {
+    const from = prettyTime(row.window_from);
+    const to = prettyTime(row.window_to);
+    return (from && to) ? 'between ' + from + ' and ' + to : 'that day';
+}
+
 // Which urgencies carry a date. Only planned work: an emergency is happening
 // now by definition, and "soon" is the answer of somebody who does not have a
 // date in mind and should not be made to invent one.
@@ -298,15 +329,13 @@ export function requestedWhen(row: {
 }): string | null {
     if (!row || !row.preferred_date) return null;
 
-    const date = new Date(String(row.preferred_date) + 'T12:00:00Z');
-    if (isNaN(date.getTime())) return null;
-
-    const when = date.toLocaleDateString('en-GB', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        timeZone: 'Europe/London',
-    });
+    // DD/MM/YYYY from the shared day-key formatter — the one numeric date format
+    // the UI uses, immune to BST slipping a day. This string ends up on the
+    // trade's dashboard, in Messages and in the enquiry emails, so it goes
+    // through ukDate like every other user-facing date rather than a locale
+    // "weekday day month" that would read as its own format.
+    const when = ukDate(String(row.preferred_date));
+    if (!when) return null;
 
     const from = prettyTime(row.window_from);
     const to = prettyTime(row.window_to);

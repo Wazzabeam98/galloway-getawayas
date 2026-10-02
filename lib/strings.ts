@@ -43,19 +43,9 @@ export const GUEST_SCREEN_COPY = {
     sectionDetails: 'Details',
     sectionFinish: 'Finish',
 
-    // The verify-email screen (g_verify) — the opening screen, where a guest signs
-    // in with a one-time code. Two fields: name and email.
-    // Name placeholder is DELIBERATELY EMPTY. An example name ("Rosa Muir") reads
-    // as a value already filled in rather than as a hint, and the "(optional)"
-    // label already says what the field is for. Leave it blank.
-    verifyNamePlaceholder: '',
-    // Email keeps an example: an address format reads unmistakably as a hint, not
-    // as a filled-in value.
-    verifyEmailPlaceholder: 'you@example.com',
-
     // The finish screen: a full-width preview of what they're submitting, then the
     // provider terms as one line — a tickbox with the terms behind a link/modal.
-    // The terms TEXT lives in lib/providerTerms.ts (one source); only the UI chrome
+    // The terms TEXT lives in components/legal/agreements/text (one source); only the UI chrome
     // copy is here.
     finishSummaryHeading: 'What you’re submitting',
     finishSummaryCategory: 'Experience',   // fallback if the category has no label
@@ -71,21 +61,13 @@ export const GUEST_SCREEN_COPY = {
     finishSummaryPhotos: 'Photos',
     // Shown on the finish preview for an 'offer both' slot — the one place a
     // provider is now told how a time with both products on it actually sells.
-    finishBothNote: 'Each time sells as a private hire or single places — whichever a guest books first. Once it’s booked one way, the other closes for that time.',
+    finishBothNote: 'Each time sells as the whole thing or as individual places — whichever a guest books first. Once it’s booked one way, the other closes for that time.',
     // The written answers, previewed on the finish screen — their last look before
     // it goes for review.
     finishWroteTitle: 'Your title',
     finishWroteExpect: 'What to expect',
     finishWroteQuals: 'Qualifications',
     finishWroteDietary: 'Dietary',
-    // The agree line beneath the preview: a tickbox with the terms behind a link
-    // that opens them in a modal. Required to send — someone who won't agree
-    // shouldn't be listed. No scroll gate in the modal: it's the opportunity to
-    // read; forcing a scroll is friction, not consent.
-    termsAgreePrefix: 'I have read and agree to the',
-    termsLinkText: 'provider terms and conditions',
-    termsGate: 'Agree to the provider terms and conditions before you send.',
-    termsModalClose: 'Close',
 
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
     // of subtext, then rows that each open their own single-field sub-flow modal.
@@ -96,28 +78,33 @@ export const GUEST_SCREEN_COPY = {
     // optional row; the only sometimes-required one is qualifications.
     optionalSuffix: '(optional)',
 
-    // Row: your title — one field, no caption, a 0/40 counter. This is the
-    // listing's DISPLAY NAME now (it becomes business_name at submit), so a guest
-    // reads it as the heading; the provider's own name is the byline beneath.
-    titleRowLabel: 'Intro',
-    titleRowPrompt: 'Add your title',
-    // The gate under a greyed Next when the (now required) title is still empty —
-    // shown for every category.
-    titleGate: 'Add your title — it’s the first thing a guest reads.',
-    titleModalTitle: 'Add your title',
-    titlePlaceholder: 'What you do — your title or trade',
+    // The listing's own name — what the EXPERIENCE is called, asked on its own
+    // step (g_title) and separate from the person's professional title below. It
+    // becomes business_name (the h1, the card, the sort, the order emails), so
+    // the guest's first line names the thing they're buying.
+    experienceTitleQuestion: 'What’s your experience called?',
+    experienceTitleSubtext: 'A short name a guest sees first — the thing, not you.',
+    experienceTitlePlaceholder: 'e.g. “Sunrise wild swim”, “Beginners’ wheel throwing”',
+    // The gate under a greyed Next when the (required) listing name is still empty.
+    experienceTitleGate: 'Give your experience a name — it’s the first thing a guest reads.',
 
-    // Row: qualifications. Required for the four safety categories (no
-    // suffix, gates Next), optional everywhere else (the suffix shows).
+    // Row: the person's professional title — one field, a 0/40 counter. NOT the
+    // listing name (that is g_title); this is their credential, shown in the
+    // "About {first name}" block beneath the listing heading.
+    titleRowLabel: 'Your title',
+    titleRowPrompt: 'Add your professional title',
+    // The gate under a greyed Next when the (required) professional title is empty.
+    titleGate: 'Add your title — a guest reads it as your credential.',
+    titleModalTitle: 'Your title',
+    titlePlaceholder: 'What you do — e.g. “Cold-water swimming guide”',
+
+    // Row: qualifications. Optional everywhere (the suffix always shows), and
+    // only prompted at all on the physical-safety categories.
     qualsRowLabel: 'Qualifications',
     qualsRowPrompt: 'Add your training and qualifications',
     qualsModalTitle: 'Training and qualifications',
     qualsPlaceholder: 'What qualifies you — where you trained, how long you’ve done it, any certificates or licences. A guest chooses you on this.',
-    qualsRequiredNote: 'A guest is putting their safety in your hands, so for this kind of experience we do need it.',
     qualsOptionalNote: 'Anything you’ve trained in or worked at — it all helps.',
-    // The gate under a greyed Next on the hub when a required qualification is
-    // still missing.
-    qualsGate: 'Add your training or qualifications — for this kind of experience it’s required.',
 
     // Row three: endorsements — always optional, never gates Next.
     recognitionRowLabel: 'Endorsements',
@@ -141,12 +128,28 @@ export const GUEST_SCREEN_COPY = {
     capacitySubtextVenue: 'The most guests your space or session fits at once.',
     capacitySuffix: 'guests',
 
-    // The slot pricing-basis screen (g_slot_basis) — private (the whole session
-    // for one group, one flat booking) vs shared (several people join, priced
-    // per person). Lifted off the schedule screen to its own question. The two
-    // option cards' words live in the component; this is the heading.
-    slotBasisQuestion: 'Who is a session for?',
-    slotBasisGate: 'Pick who a session is for to carry on.',
+    // The slot pricing-basis screen (g_slot_basis) — how a booking works: one
+    // group takes the whole thing (a private booking, one flat price) vs several
+    // separate bookings each taking a place (priced per person). Lifted off the
+    // schedule screen to its own question. Shown for the GROUP categories only —
+    // sauna, tastings, cooking, workshops, outdoors, water; the one-at-a-time
+    // (massage) and mixed (yoga/pottery/painting) shapes decide this elsewhere.
+    //
+    // The words describe the BOOKING MECHANIC, never the product: "the whole
+    // thing" and "individual places" are true of a sauna, a tasting and a guided
+    // walk alike, so ONE wording serves all six and no per-category copy is
+    // needed. Naming the product ("a class or a tasting") is the leak that put
+    // class/table copy on a sauna — keep the mechanic, drop the noun. The card
+    // labels live here now (they were inline in the component); the values 'private'
+    // /'shared'/'both' are the logic and stay in code.
+    slotBasisQuestion: 'How do guests book it?',
+    slotBasisGate: 'Choose how guests book it to carry on.',
+    slotBasisPrivateLabel: 'One group takes the whole thing',
+    slotBasisPrivateHint: 'A private booking — that group has it to themselves and no one else can join. One price for the whole thing.',
+    slotBasisSharedLabel: 'People book individual places',
+    slotBasisSharedHint: 'Several separate bookings share the same time, each priced per person, up to a number you set.',
+    slotBasisBothLabel: 'Offer both',
+    slotBasisBothHint: 'Let guests choose — book the whole thing, or take a single place.',
     // The per-person minimum screen (g_slot_min) — shared slots only. The
     // smallest group a single booking may be, Airbnb-style: the guest books and
     // pays for at least this many. Default 1 means no minimum.
@@ -220,15 +223,30 @@ export const GUEST_SCREEN_COPY = {
     // the provider offers both. 'flat' = a private hire (the whole session, one
     // booking), 'person' = a seat at a shared table.
     menuSlotUnitTitle: 'How is this priced?',
-    menuSlotUnitFlat: 'For the session',
-    menuSlotUnitFlatHint: 'One price for the whole session — a private hire.',
+    menuSlotUnitFlat: 'For the whole thing',
+    menuSlotUnitFlatHint: 'One price for a private booking — one group has it to themselves.',
     menuSlotUnitPerson: 'Per person',
-    menuSlotUnitPersonHint: 'A price each — a shared table or class.',
+    menuSlotUnitPersonHint: 'A price each — guests book individual places, up to the number you set.',
+    // The mixed shape's per-item choice (yoga, pottery, painting): what the host
+    // is SELLING, not the booking mechanic. One set of words serves all three — a
+    // yoga class / pottery class / painting class read as "a shared class"; a 1:1
+    // yoga session, private pottery tuition or private painting session all read
+    // as "a private session". The distinction is EXCLUSIVITY (can anyone else book
+    // that time), not head count: a private session may be one guest or a whole
+    // cottage of six, as long as it's one booking that closes the time. The shared
+    // hint describes the CLASS (one time, one length), not a field on an earlier
+    // screen. Only a come-to-me provider is asked this — a traveller's session is
+    // exclusive by definition.
+    menuBookedTitle: 'How is it booked?',
+    menuBookedSharedLabel: 'A shared class',
+    menuBookedSharedHint: 'Several guests book the same time, at one fixed length.',
+    menuBookedPrivateLabel: 'A private session',
+    menuBookedPrivateHint: 'One group books the whole session, closing that time to everyone else. You set the length.',
     // Shown beside the greyed Next on the slot price screen when 'offer both' is
     // missing one side, so the reason is never left unsaid. The no-price-at-all
     // case falls to menuRequiredGate.
-    menuSlotBothGatePrivate: 'Set a price for the private hire to carry on.',
-    menuSlotBothGateShared: 'Set a price for the shared table to carry on.',
+    menuSlotBothGatePrivate: 'Set a price for the whole-thing booking to carry on.',
+    menuSlotBothGateShared: 'Set a price for the individual places to carry on.',
     menuDescTitle: 'Add a short description',
     menuDescPlaceholder: 'A line about what’s included.',
     menuPhotoTitle: 'Add a photo',
@@ -252,7 +270,7 @@ export const GUEST_SCREEN_COPY = {
     // menuNameExamples. Fallback for "other"/unknown reads as guidance.
     expectExamples: {
         chef: 'I arrive at 6, cook three courses while you relax, serve at the table and clear everything away by 9.',
-        food_order: 'Order two days ahead and collect from Gatehouse, or I’ll drop it to your cottage on the morning.',
+        food_order: 'Order two days ahead and collect from Gatehouse, or I’ll drop it to where you’re staying on the morning.',
         tastings: 'We sit down for six drams over about ninety minutes; I talk you through each, with water and oatcakes between.',
         cooking: 'Over two hours we make a sourdough loaf from scratch — mix, shape and bake — and you take yours home.',
         outdoors: 'We meet at the car park at 10, walk about four miles over easy ground, stop for a flask halfway, back by 1.',
@@ -290,6 +308,22 @@ export const GUEST_SCREEN_COPY = {
     // for them because their coverage does filter.
     locationAreaGate: 'Add at least one area — guests see it on your listing.',
 
+    // THE BOOKING-SHAPE QUESTION — "something else" only (every real sub-type
+    // settled its shape at the picker). Three cards, in what the provider sells
+    // rather than engine words: slot / made_to_order / comes_to_you. The answer
+    // drives the location model and every screen after, exactly as a real
+    // category's declared shape does. Worded as the FORMAT of the offering, not
+    // "how do guests get it?" — that phrasing belongs to the made-to-order
+    // fulfilment fork (fulfilmentHeading), which lands on the same path, and two
+    // screens asking the same question read as a bug.
+    shapeQuestion: 'How does it work?',
+    shapeSlotLabel: 'People book a time with you',
+    shapeSlotHint: 'A session, class or slot they turn up for',
+    shapeMadeLabel: 'You make something they collect or you deliver',
+    shapeMadeHint: 'A thing you prepare — they pick it up, or you drop it off',
+    shapeTravelLabel: 'You come to them and do it',
+    shapeTravelHint: 'At the guest’s place — you travel to them',
+    shapeGate: 'Choose how it works to carry on.',
     // Made-to-order's two logistics screens, split so each asks one thing.
     // First the notice (a big stepper, like the other single-number screens); then
     // the delivery areas — a baker doesn't TRAVEL to a guest, they collect or drop
@@ -332,13 +366,37 @@ export const GUEST_SCREEN_COPY = {
     slotWhereAtPlace: 'At my place',
     slotWhereAtPlaceHint: 'Guests come to you',
     slotWhereTravel: 'I come to the guest',
-    slotWhereTravelHint: 'You go to their cottage',
+    slotWhereTravelHint: 'You go to where they’re staying',
+    // The third option — some sessions at the provider's place, some travelled to
+    // the guest. Picking it moves the location question into each item's sub-flow.
+    slotWhereBoth: 'Both',
+    slotWhereBothHint: 'Some at your place, some you travel for',
     slotWhereGate: 'Choose where it happens to carry on.',
+    // Asked per item, in the menu sub-flow, only for a 'both' provider: where THIS
+    // one happens. Reuses the At-my-place / I-come-to-the-guest cards.
+    menuLocationTitle: 'Where’s this one?',
     // The g_area heading for a slot, by where it happens. Premises vs meeting
     // point is copy only — the stored address is identical.
     slotPlaceHeadingPremises: 'What’s the address guests come to?',
     slotPlaceHeadingMeeting: 'Where do guests meet you?',
     slotPlaceHeadingTravel: 'Which parts of Dumfries & Galloway do you cover?',
+    // A 'both' provider gives BOTH an address (for the studio sessions) and the
+    // areas they travel to (for the cottage ones). This is the ONE screen in the
+    // guest wizard with two answers on it, so the H1 is an umbrella question and
+    // each answer sits under its own sub-heading (below) — not one crammed form.
+    slotPlaceHeadingBoth: 'Where do your sessions happen?',
+    // The two sub-headings on the 'both' place screen, so the areas and the
+    // address read as two separate answers rather than one run-on form.
+    slotBothAreasHeading: 'Where you travel',
+    slotBothAddressHeading: 'Your address',
+    slotBothAddressSubtext: 'The place guests come to for your at-my-place sessions.',
+    // The footer gate when BOTH answers are still empty — it named only the
+    // areas before, so the address looked optional. One-missing still falls
+    // through to that field's own gate.
+    slotBothPlaceGate: 'Add where you travel and your address to carry on.',
+    // Finish-summary coverage for a 'both' slot: the studio's town and the areas
+    // travelled to, joined — "Kirkcudbright · travels to Stewartry, Wigtownshire".
+    finishCoverageTravelSuffix: ' · travels to ',
     // The address-block label, slot variants (the made-to-order one is "Where
     // guests collect"). Same three fields underneath.
     slotAddressLabelPremises: 'Your address',
@@ -424,7 +482,7 @@ export const HOST_LOCATION_COPY = {
 export const GUEST_CATEGORY_COPY: Record<string, CategoryCopy> = {
     chef: {
         label: 'Dining & private chef',
-        hint: 'A chef cooks at the cottage — dinners, grazing tables',
+        hint: 'A chef cooks where you’re staying — dinners, grazing tables',
     },
     food_order: {
         label: 'Food to order',

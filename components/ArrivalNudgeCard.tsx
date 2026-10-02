@@ -46,7 +46,7 @@ export default function ArrivalNudgeCard({ listingId, title, checkIn }: { listin
                     <p className="mt-1 text-sm text-amber-900/80">
                         Add the last bit of the journey, parking and wifi so they’re not driving past the red postbox in the dark. Takes two minutes.
                     </p>
-                    <Link href={`/edit-listing/${listingId}`} className="mt-2.5 inline-block rounded-lg bg-amber-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-amber-800">
+                    <Link href={`/edit-listing/${listingId}`} className="mt-2.5 inline-flex items-center min-h-[44px] rounded-lg bg-emerald-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
                         Add arrival details
                     </Link>
                 </div>

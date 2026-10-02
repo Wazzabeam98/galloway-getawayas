@@ -15,9 +15,11 @@
 //
 // Relative imports on purpose: this module is exercised by a unit test, and the
 // '@/' alias is a build-time path Node cannot resolve at runtime.
-import { sendEmail, emailLayout, escapeHtml } from './email';
+import { sendEmail, emailLayout, escapeHtml, formatDate, NEUTRAL_SUBTITLE } from './email';
 import { logError } from './logError';
 import { stripeRequest } from './stripe';
+import { formatGBP } from './formatMoney';
+import { refundExperienceOrder, fundsFlowOf, ORDER_FUNDS_COLUMNS } from './experienceFunds';
 
 // Tell both sides — the guest that their dinner went back with the stay, and the
 // provider that a booking they were counting on is off and the money reversed,
@@ -25,8 +27,8 @@ import { stripeRequest } from './stripe';
 // cottage nobody is in.
 async function tellAboutStayCancel(admin: any, order: any): Promise<void> {
     const who = escapeHtml(order.provider_business_name || 'your experience');
-    const date = escapeHtml(String(order.service_date || ''));
-    const amount = '£' + Number(order.price || 0).toFixed(2);
+    const date = escapeHtml(formatDate(String(order.service_date || '')));
+    const amount = formatGBP(order.price || 0);
 
     if (order.guest_email) {
         try {
@@ -37,7 +39,8 @@ async function tellAboutStayCancel(admin: any, order: any): Promise<void> {
                     '<p style="margin:0 0 16px;font-size:16px;">Because your stay was cancelled, your booking with <strong>'
                     + who + '</strong> for <strong>' + date + '</strong> has been cancelled too and refunded '
                     + escapeHtml(amount) + ' in full.</p>',
-                    'You’re receiving this because you booked an experience through Galloway Getaways.'
+                    'You’re receiving this because you booked an experience through Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE
                 )
             );
         } catch (e: any) { await logError('experience-cancel-guest-order-email', { order: order.id, message: String(e && e.message) }); }
@@ -56,8 +59,14 @@ async function tellAboutStayCancel(admin: any, order: any): Promise<void> {
                 emailLayout(
                     '<p style="margin:0 0 16px;font-size:16px;">The guest booked with you for <strong>' + date
                     + '</strong> has had their stay cancelled, so this booking is off — please don’t turn up. They have been refunded '
-                    + escapeHtml(amount) + ' in full, and that amount has been reversed from your account.</p>',
-                    'You’re receiving this because you offer experiences on Galloway Getaways.'
+                    + escapeHtml(amount) + ' in full'
+                    // A held order that has not been paid out never reached the
+                    // provider, so there is nothing to take back from them.
+                    + (fundsFlowOf(order) === 'held' && !order.payout_transfer_id
+                        ? '. Nothing had been paid to you for it yet, so nothing comes out of your account.</p>'
+                        : ', and that amount has been reversed from your account.</p>'),
+                    'You’re receiving this because you offer experiences on Galloway Getaways.',
+                    undefined, NEUTRAL_SUBTITLE
                 )
             );
         }
@@ -68,7 +77,7 @@ export async function cancelStayExperienceOrders(admin: any, bookingId: string):
     try {
         const { data: liveOrders } = await admin
             .from('service_orders')
-            .select('id, status, stripe_payment_intent_id, guest_email, service_date, price, provider_id, provider_business_name, slot_session_id, quantity')
+            .select('id, status, stripe_payment_intent_id, guest_email, service_date, price, provider_id, provider_business_name, slot_session_id, quantity, ' + ORDER_FUNDS_COLUMNS)
             .eq('booking_id', bookingId)
             .in('status', ['authorised', 'confirmed']);
 
@@ -86,6 +95,37 @@ export async function cancelStayExperienceOrders(admin: any, bookingId: string):
             }
         };
 
+        // A per-person top-up is a CHILD order — its own PaymentIntent and its own
+        // seats on the same session, linked by parent_order_id and carrying NO
+        // booking_id, so the booking-scoped query above never sees it. Refund each
+        // added place with the stay and give its seats back, or this cascade would
+        // reverse the original dinner and quietly keep the money for the extra
+        // covers. A child still 'holding' (topped up, unpaid) is simply released.
+        const cancelTopUps = async (parentId: string) => {
+            const { data: kids } = await admin
+                .from('service_orders')
+                .select('id, provider_id, parent_order_id, status, stripe_payment_intent_id, slot_session_id, quantity, ' + ORDER_FUNDS_COLUMNS)
+                .eq('parent_order_id', parentId)
+                .in('status', ['confirmed', 'holding']);
+            // Belt-and-braces: only a genuine child of THIS parent (the query
+            // already scopes it; this holds even against a loose test double).
+            for (const kid of (kids || []).filter((k: any) => k.parent_order_id === parentId)) {
+                try {
+                    if (kid.status === 'confirmed') {
+                        if (!kid.stripe_payment_intent_id) continue;
+                        await refundExperienceOrder(admin, kid, 'refund-' + kid.id);
+                        const { data: moved } = await admin.from('service_orders').update({ status: 'refunded', cancelled_at: new Date().toISOString() }).eq('id', kid.id).eq('status', 'confirmed').select('id');
+                        if (moved && moved.length) await releaseSeat(kid);
+                    } else {
+                        const { data: moved } = await admin.from('service_orders').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', kid.id).eq('status', 'holding').select('id');
+                        if (moved && moved.length) await releaseSeat(kid);
+                    }
+                } catch (kidErr: any) {
+                    await logError('[experienceCancel] could not settle a top-up on a cancelled stay', kidErr, { path: 'lib/experienceCancel' });
+                }
+            }
+        };
+
         for (const o of liveOrders || []) {
             try {
                 if (!o.stripe_payment_intent_id) continue;
@@ -93,12 +133,13 @@ export async function cancelStayExperienceOrders(admin: any, bookingId: string):
                     await stripeRequest('POST', '/payment_intents/' + o.stripe_payment_intent_id + '/cancel', undefined, 'cancel-' + o.id);
                     await admin.from('service_orders').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', o.id).eq('status', 'authorised');
                 } else {
-                    await stripeRequest('POST', '/refunds', { payment_intent: o.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' }, 'refund-' + o.id);
+                    await refundExperienceOrder(admin, o, 'refund-' + o.id);
                     // Only release the seat when this call is the one that moved
                     // the order off 'confirmed' — so a retry or a race with a
                     // direct cancel cannot double-decrement.
                     const { data: moved } = await admin.from('service_orders').update({ status: 'refunded', cancelled_at: new Date().toISOString() }).eq('id', o.id).eq('status', 'confirmed').select('id');
                     if (moved && moved.length) await releaseSeat(o);
+                    await cancelTopUps(o.id);   // added places refund and release with the original
                     await tellAboutStayCancel(admin, o);
                 }
             } catch (orderErr: any) {

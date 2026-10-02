@@ -84,6 +84,14 @@ const CLOCK_RULE_FROM = '20260902000000';
 // fails: this set does not grow without another file having genuinely run.
 const ALREADY_RUN_ROUND_HOURS = new Set<string>([
     '20260902090000_one_form_guest.sql',
+    // The per-treatment interval-overlap guard. Named on a round hour by mistake,
+    // but it had already run on the TEST project (its schema_migrations row names
+    // it) before the slip was noticed, and it must stay test-only until it and the
+    // duration-columns migration it builds on reach production. Renaming it now
+    // would break that ledger row and, worse, re-running the DDL would fail on the
+    // exclusion constraint it already added — so it is grandfathered by name, not
+    // renamed, exactly as the file above was.
+    '20260914120000_slot_interval_overlap_exclusion.sql',
 ]);
 
 test('a new migration uses a real clock time, not a round hour', () => {

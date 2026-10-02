@@ -567,6 +567,18 @@ towns, by the other session, and every one is deliberately held.
   **Do not re-merge it.** Deletable.
 - The 404 emits two robots tags. They **agree** (`noindex` and `noindex,
   nofollow`), so this is tidiness, not a defect.
+- `components/base/FooterMinimal.tsx` is **dead, and not free**. `FooterSwitch`
+  renders it only when the path is in `MINIMAL_ON`, and that array is empty —
+  so a takeover route gets no footer and everything else gets the full one, and
+  the minimal footer can never appear. It still costs, though: `app/layout.tsx`
+  passes `minimal={<FooterMinimal />}`, and a server component handed to a
+  client component as a prop is rendered and serialized whether or not it is
+  used. Measured on `/terms`, 19 Sep 2026: its markup is **~581 bytes of RSC
+  payload on every page that has a footer**, about 1.15% of that page, thrown
+  away on arrival. Deleting it is three things — the component, the import in
+  `app/layout.tsx`, and the `minimal` prop on `FooterSwitch`.
+  Social links were deliberately **not** added to it on 19 Sep: a legal-line
+  footer is not where they belong, which is the other reason it has no future.
 
 ---
 

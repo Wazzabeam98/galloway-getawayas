@@ -108,12 +108,26 @@ function load(options: {
                     return chain;
                 },
                 update(patch: any) {
-                    return {
-                        eq: async (_c: string, id: string) => {
-                            updates.push({ table, patch, id });
-                            return { data: null, error: null };
+                    const filters: Record<string, any> = {};
+                    const rec = { table, patch, get id() { return filters.id; } };
+                    updates.push(rec);
+                    // The paid write-back is now a compare-and-swap that reads
+                    // back the rows it moved with .select('id'); every other
+                    // update still filters by id and is awaited directly. The
+                    // builder has to be both chainable and awaitable.
+                    const builder: any = {
+                        eq: (column: string, value: any) => {
+                            filters[column] = value;
+                            return builder;
                         },
+                        in: () => builder,
+                        select: () => ({
+                            then: (resolve: any) =>
+                                resolve({ data: [{ id: filters.id }], error: null }),
+                        }),
+                        then: (resolve: any) => resolve({ data: null, error: null }),
                     };
+                    return builder;
                 },
                 insert: (row: any) => {
                     inserts.push({ table, row });

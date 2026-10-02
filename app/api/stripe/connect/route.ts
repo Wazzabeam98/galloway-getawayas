@@ -28,11 +28,28 @@ export async function POST(request: Request) {
         const body = await request.json().catch(function () { return {}; });
         const action = (body && body.action) || 'onboard';
 
+        // Where Stripe sends the host back to after onboarding. Defaults to the
+        // account payments section, but the publish flow passes the page it
+        // interrupted (e.g. /addhome) so the host lands back where they were and
+        // can publish — "set it up and come back". Kept to our own paths: a
+        // single leading slash and no protocol/host, so it can never redirect off
+        // site.
+        const rawReturn = String((body && body.returnTo) || '');
+        const safeReturn = /^\/[^/\\]/.test(rawReturn) ? rawReturn : '';
+
+        // Who is being paid: a person, or a company (a land-owner's estate, a
+        // letting partnership). Chosen by the host on /payouts/setup, as Airbnb
+        // asks at "Add a payout method". It used to be hardcoded 'individual',
+        // which a company can't correct once Stripe has collected details.
+        const businessType = body && (body.businessType === 'company' || body.businessType === 'individual')
+            ? body.businessType as 'company' | 'individual'
+            : null;
+
         const admin = adminClient();
 
         const { data: profile } = await admin
             .from('profiles')
-            .select('stripe_account_id, full_name, stripe_payouts_enabled')
+            .select('stripe_account_id, full_name, stripe_payouts_enabled, stripe_details_submitted')
             .eq('id', uid)
             .maybeSingle();
 
@@ -58,7 +75,7 @@ export async function POST(request: Request) {
                 country: 'GB',
                 email: user.email,
                 default_currency: 'gbp',
-                business_type: 'individual',
+                business_type: businessType || 'individual',
                 capabilities: {
                     transfers: { requested: 'true' },
                     card_payments: { requested: 'true' },
@@ -104,13 +121,34 @@ export async function POST(request: Request) {
         }
 
         // -------------------------------------------------------------
+        // An account made earlier but never finished (they opened Stripe and
+        // left) can still change who it's for — Stripe accepts business_type
+        // until the details are submitted. Best effort: if Stripe refuses, the
+        // host carries on with the type they started with and can change it in
+        // Stripe's own form.
+        // -------------------------------------------------------------
+        else if (businessType && !(profile && profile.stripe_details_submitted)) {
+            try {
+                await stripeRequest('POST', '/accounts/' + accountId, { business_type: businessType });
+            } catch (err: any) {
+                await logError('stripe/connect: could not change business_type on an unfinished account', err, {
+                    path: 'api/stripe/connect',
+                    userId: uid,
+                });
+            }
+        }
+
+        // -------------------------------------------------------------
         // A fresh onboarding link. These expire quickly and are single
         // use, so one is generated every time rather than being stored.
         // -------------------------------------------------------------
+        const defaultReturn = '/account?section=payments';
+        const returnPath = safeReturn || defaultReturn;
+        const joiner = returnPath.indexOf('?') === -1 ? '?' : '&';
         const accountLink = await stripeRequest('POST', '/account_links', {
             account: accountId,
-            refresh_url: SITE_URL + '/account?section=payments&refresh=1',
-            return_url: SITE_URL + '/account?section=payments&done=1',
+            refresh_url: SITE_URL + returnPath + joiner + 'refresh=1',
+            return_url: SITE_URL + returnPath + joiner + 'done=1',
             type: 'account_onboarding',
             collection_options: {
                 fields: 'eventually_due',

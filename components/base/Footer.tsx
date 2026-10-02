@@ -1,5 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
+import { SOCIAL } from '@/config/social';
+import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 import { GooseMark } from '@/components/base/Logo';
 
 const Footer = () => {
@@ -22,7 +24,7 @@ const Footer = () => {
                             </div>
                         </div>
                         <p className="text-xs text-slate-500">
-                            Self catering holiday cottages and apartments across Dumfries &amp; Galloway.
+                            Self catering holiday accommodation across Dumfries &amp; Galloway.
                             Book direct with local hosts.
                         </p>
                     </div>
@@ -45,7 +47,7 @@ const Footer = () => {
                         <ul className="space-y-2 text-sm text-slate-600">
                             <li><Link href="/business" className="hover:text-slate-900">Start hosting</Link></li>
                             <li><Link href="/dashboard" className="hover:text-slate-900">Host dashboard</Link></li>
-                            <li><Link href="/services/property" className="hover:text-slate-900">Property services</Link></li>
+                            <li><Link href="/services" className="hover:text-slate-900">Property services</Link></li>
                         </ul>
                     </div>
 
@@ -61,14 +63,53 @@ const Footer = () => {
 
                 <div className="border-t pt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <p className="text-xs text-slate-500">
-                        &copy; {year} Galloway Getaways Ltd. Registered in Scotland.
+                        &copy; {year} {COMPANY.name}. Registered in {COMPANY.registeredIn}, company number {COMPANY.number}.
+                        <br className="hidden sm:block" />{' '}
+                        Registered office: {REGISTERED_OFFICE}.
                     </p>
-                    <a
-                        href="mailto:hello@gallowaygetaways.co.uk"
-                        className="text-xs text-slate-500 hover:text-slate-900"
-                    >
-                        hello@gallowaygetaways.co.uk
-                    </a>
+                    <div className="flex items-center gap-4">
+                        {/* The brands' own coloured logos (public/social, 96px
+                            PNGs), decorative — alt="" — so the link's
+                            aria-label is the one thing announced.
+
+                            Icons only, no labels. The aria-label is not a
+                            visible label — it is the only thing a screen
+                            reader has to go on, and without it the link
+                            announces as nothing at all.
+
+                            A blank URL in config/social.ts renders NOTHING
+                            here, rather than an icon pointing nowhere. */}
+                        {SOCIAL.instagram ? (
+                            <a
+                                href={SOCIAL.instagram}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label="Galloway Getaways on Instagram"
+                                className="p-1 -m-1 rounded-full transition hover:opacity-80"
+                            >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src="/social/instagram.png" alt="" width={28} height={28} className="h-7 w-7" />
+                            </a>
+                        ) : null}
+                        {SOCIAL.facebook ? (
+                            <a
+                                href={SOCIAL.facebook}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label="Galloway Getaways on Facebook"
+                                className="p-1 -m-1 rounded-full transition hover:opacity-80"
+                            >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src="/social/facebook.png" alt="" width={28} height={28} className="h-7 w-7" />
+                            </a>
+                        ) : null}
+                        <a
+                            href="mailto:hello@gallowaygetaways.co.uk"
+                            className="text-xs text-slate-500 hover:text-slate-900"
+                        >
+                            hello@gallowaygetaways.co.uk
+                        </a>
+                    </div>
                 </div>
             </div>
         </footer>

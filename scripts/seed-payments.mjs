@@ -36,29 +36,47 @@ async function reset() {
 
     const inList = '(' + seeded.map((u) => u.id).join(',') + ')';
 
+    // The seeded listings, needed up front: a listing can be referenced by a
+    // booking or an order that a DIFFERENT (non-seeded) user made against it, and
+    // those rows have to go before the listing does. Clearing children only by
+    // seeded user misses them and the listing delete then fails on a foreign key.
+    const listings = await db.select('listings', '?select=id&host_id=in.' + inList);
+    const listingList = listings.length ? '(' + listings.map((l) => l.id).join(',') + ')' : null;
+
     // Children first — payouts and payments carry a booking_id with no cascade
-    // behind it, so deleting the bookings out from under them would fail.
-    const bookings = await db.select(
-        'bookings',
-        '?select=id&or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')'
-    );
+    // behind it, so deleting the bookings out from under them would fail. Gather
+    // every booking owned by a seeded user OR sitting on a seeded listing.
+    const bookingFilter = listingList
+        ? '?select=id&or=(guest_id.in.' + inList + ',host_id.in.' + inList + ',listing_id.in.' + listingList + ')'
+        : '?select=id&or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')';
+    const bookings = await db.select('bookings', bookingFilter);
     if (bookings.length) {
         const bookingList = '(' + bookings.map((b) => b.id).join(',') + ')';
-        for (const table of ['payouts', 'payments', 'booking_guests', 'messages', 'reviews']) {
+        // booking_resolutions is RESTRICT-linked to bookings (a resolution must
+        // never be orphaned), so it has to go before the booking does or the
+        // delete fails on its foreign key — which is exactly what stopped the
+        // seed once the Resolution Centre landed. Its attachments cascade from
+        // it, so removing the resolution rows clears those too.
+        for (const table of ['booking_resolutions', 'booking_change_requests', 'payouts', 'payments', 'booking_guests', 'messages', 'reviews']) {
             await db.remove(table, '?booking_id=in.' + bookingList);
         }
+        await db.remove('bookings', '?id=in.' + bookingList);
     }
 
-    await db.remove('bookings', '?or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')');
-
-    // Anything hanging off a listing has to go before the listing does.
-    const listings = await db.select('listings', '?select=id&host_id=in.' + inList);
-    if (listings.length) {
-        const listingList = '(' + listings.map((l) => l.id).join(',') + ')';
-        for (const table of ['listing_ical_feeds', 'calendar_overrides', 'listing_access']) {
+    // Anything else hanging off a listing has to go before the listing does.
+    // service_orders (guest experiences) postdate this reset and reference a
+    // listing with no cascade, which is why a leftover order once failed the
+    // whole seed on a foreign key.
+    if (listingList) {
+        for (const table of ['service_orders', 'listing_ical_feeds', 'calendar_overrides', 'listing_access']) {
             await db.remove(table, '?listing_id=in.' + listingList);
         }
     }
+
+    // service_orders also carry a guest_id with no cascade, so an order made by a
+    // seeded guest against a listing that is NOT seeded would block the profiles
+    // delete below.
+    await db.remove('service_orders', '?guest_id=in.' + inList);
 
     await db.remove('listings', '?host_id=in.' + inList);
     await db.remove('profiles', '?id=in.' + inList);
@@ -296,6 +314,17 @@ async function createBooking(listing, guest, host, patch = {}) {
     return booking;
 }
 
+// The frozen per-night price series a booking carries since #120. A shortening
+// credits removed nights at what was PAID, read from here, so the change money
+// scenarios seed it explicitly rather than leaning on today's rate.
+function breakdown(startOffset, nights, rate) {
+    const out = [];
+    for (let i = 0; i < nights; i++) {
+        out.push({ date: dayOffset(startOffset + i), rate });
+    }
+    return out;
+}
+
 /* ------------------------------------------------------------------ main */
 
 async function main() {
@@ -475,6 +504,14 @@ async function main() {
         check_in: dayOffset(-3), check_out: dayOffset(-1),
     });
 
+    // 31 — one fully-paid, confirmed stay that scenario 14c hits with several
+    // host goodwill refunds AT ONCE, to prove the refunded total is summed in
+    // the database and not lost when two refunds overlap.
+    const s31 = await createBooking(listingReady, guest, hostReady, {
+        label: 's31', total_price: 500, amount_paid: 500,
+        check_in: dayOffset(25), check_out: dayOffset(28),
+    });
+
     // 15 — guest cancels with the free window still open. Flexible is full
     // refund up to 1 day before.
     const s15 = await createBooking(listingFlexible, guest, hostReady, {
@@ -525,6 +562,37 @@ async function main() {
     const s03 = await depositBooking('s03', 'pm_card_visa', 50);
     const s07 = await depositBooking('s07', 'tok_chargeCustomerFail', 60);
     const s11 = await depositBooking('s11', 'pm_card_authenticationRequired', 70);
+    // A good card, used by scenario 3b: a run that charged the balance and died
+    // before settling leaves a dangling 'attempting' claim, and the next run
+    // must replay the same idempotency key rather than charge a second time.
+    const s29 = await depositBooking('s29', 'pm_card_visa', 80);
+
+    // 32-34 — deposit-paid, balance due today, saved card, on a Flexible
+    // listing far enough out that a cancel is a full refund. Crosscutting
+    // scenario 30 races a guest cancel against the balance charge on these, so
+    // there are several to give both orderings a chance to occur in one run.
+    const raceBookings = [];
+    const raceLabels = ['s32', 's33', 's34'];
+    for (let i = 0; i < raceLabels.length; i++) {
+        const label = raceLabels[i];
+        const card = await savedCard('pm_card_visa', label);
+        // Staggered dates so three confirmed stays on the one listing do not
+        // trip the no-overlap exclusion constraint.
+        const start = 45 + i * 5;
+        const b = await createBooking(listingFlexible, guest, hostReady, {
+            label,
+            total_price: 800, amount_paid: 200,
+            payment_status: 'deposit_paid', payment_plan: 'deposit',
+            // Not due yet, so the balance runs in the earlier scenarios leave
+            // them alone; scenario 30 makes them due the instant it races them.
+            deposit_amount: 200, balance_amount: 600, balance_due_date: dayOffset(10),
+            balance_attempts: 0,
+            check_in: dayOffset(start), check_out: dayOffset(start + 3),
+            stripe_customer_id: card.customerId,
+            stripe_payment_method_id: card.paymentMethodId,
+        });
+        raceBookings.push(b);
+    }
 
     /* ------------------------------------------------ checkout, 1, 2, 4, 5, 6 */
 
@@ -599,6 +667,85 @@ async function main() {
     // 28 — flipped between states to see what the confirmation page says.
     const s28 = await unpaidOn(listingPrice, 's28', 150, 3, 300);
 
+    // 'slost' — paid at Stripe, and the webhook never arrives. Instant book, so a
+    // recovery confirms it outright.
+    const slost = await unpaidOn(listingPrice, 'slost', 160, 3, 300);
+
+    /* ----------------------------------- change money (shortenings / move) */
+    // For scripts/change-scenarios.mjs. Each carries a frozen nightly_breakdown
+    // so a shortening credits the dropped nights at what was paid, and each sits
+    // where its cancellation window decides the refund. Dedicated listings, so
+    // their date ranges can't collide with the payout/refund bookings above.
+    const listingChangeFlex = await createListing(hostReady, 'Change — flexible cottage', {
+        commission_rate: 10, cancellation_policy: 'Flexible',
+    });
+    const listingChangeFirm = await createListing(hostReady, 'Change — firm cottage', {
+        commission_rate: 10, cancellation_policy: 'Firm',
+    });
+    const listingChangeMove = await createListing(hostReady, 'Change — move cottage', {
+        commission_rate: 10, cancellation_policy: 'Moderate',
+    });
+
+    // cg1 — DEPOSIT booking, £100/night × 8 = £800, only the £200 deposit taken.
+    // Flexible and far out (free window), so a shortening is a full credit but
+    // still above the deposit: no card refund, the balance owed just drops.
+    const cg1 = await createBooking(listingChangeFlex, guest, hostReady, {
+        label: 'cg1', total_price: 800, amount_paid: 200,
+        payment_status: 'deposit_paid', payment_plan: 'deposit',
+        deposit_amount: 200, balance_amount: 600, balance_due_date: dayOffset(30),
+        check_in: dayOffset(40), check_out: dayOffset(48),
+        nightly_breakdown: breakdown(40, 8, 100),
+    });
+
+    // cg2 — fully paid, £100/night × 5 = £500, Flexible and far out: a shortening
+    // is inside the free window, so the dropped night comes back in full.
+    const cg2 = await createBooking(listingChangeFlex, guest, hostReady, {
+        label: 'cg2', total_price: 500, amount_paid: 500,
+        check_in: dayOffset(55), check_out: dayOffset(60),
+        nightly_breakdown: breakdown(55, 5, 100),
+    });
+
+    // cg3 — fully paid, £100/night × 5 = £500, Firm and 20 days out: past the
+    // 30-day full window, inside the partial one → 50% back on a dropped night.
+    const cg3 = await createBooking(listingChangeFirm, guest, hostReady, {
+        label: 'cg3', total_price: 500, amount_paid: 500,
+        check_in: dayOffset(20), check_out: dayOffset(25),
+        nightly_breakdown: breakdown(20, 5, 100),
+    });
+
+    // cg4 — fully paid, £100/night × 3 = £300, Firm and 4 days out: inside the
+    // non-refundable window → a dropped night forfeits entirely, no money moves.
+    const cg4 = await createBooking(listingChangeFirm, guest, hostReady, {
+        label: 'cg4', total_price: 300, amount_paid: 300,
+        check_in: dayOffset(4), check_out: dayOffset(7),
+        nightly_breakdown: breakdown(4, 3, 100),
+    });
+
+    // ch1 — fully paid, £100/night × 5 = £500, already CHECKED IN (so the payout
+    // run pays it out) but still running (checkout ahead), so the host can still
+    // shorten it. A host-proposed shortening refunds the dropped nights in full
+    // whatever the tier, and the clawback recovers the host's share.
+    const ch1 = await createBooking(listingChangeFirm, guest, hostReady, {
+        label: 'ch1', total_price: 500, amount_paid: 500,
+        check_in: dayOffset(-2), check_out: dayOffset(3),
+        nightly_breakdown: breakdown(-2, 5, 100),
+    });
+
+    // cm1 — fully paid, £100/night × 3 = £300, and a set of pricier nights to
+    // move ONTO: calendar overrides at £180 on dayOffset 50–52. Moving the whole
+    // stay there charges the difference (3 × £180 − 3 × £100 = £240), with no
+    // cancellation penalty because no nights are lost on net.
+    const cm1 = await createBooking(listingChangeMove, guest, hostReady, {
+        label: 'cm1', total_price: 300, amount_paid: 300,
+        check_in: dayOffset(40), check_out: dayOffset(43),
+        nightly_breakdown: breakdown(40, 3, 100),
+    });
+    await db.insert('calendar_overrides', [
+        { listing_id: listingChangeMove.id, date: dayOffset(50), price_override: 180 },
+        { listing_id: listingChangeMove.id, date: dayOffset(51), price_override: 180 },
+        { listing_id: listingChangeMove.id, date: dayOffset(52), price_override: 180 },
+    ]);
+
     const manifest = {
         seededAt: new Date().toISOString(),
         project: env.NEXT_PUBLIC_SUPABASE_URL,
@@ -611,11 +758,13 @@ async function main() {
         },
         bookings: {
             s01: s01.id, s02: s02.id, s04: s04.id, s05: s05.id, s06: s06.id,
-            s25: s25.id, s26: s26.id, s27a: s27a.id, s27b: s27b.id, s28: s28.id,
-            s03: s03.id, s07: s07.id, s11: s11.id,
-            s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id,
+            s25: s25.id, s26: s26.id, s27a: s27a.id, s27b: s27b.id, s28: s28.id, slost: slost.id,
+            s03: s03.id, s07: s07.id, s11: s11.id, s29: s29.id,
+            s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id, s31: s31.id,
+            s32: raceBookings[0].id, s33: raceBookings[1].id, s34: raceBookings[2].id,
             s17: s17.id, s18: s18.id,
             s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id,
+            cg1: cg1.id, cg2: cg2.id, cg3: cg3.id, cg4: cg4.id, ch1: ch1.id, cm1: cm1.id,
         },
     };
     writeManifest(manifest);

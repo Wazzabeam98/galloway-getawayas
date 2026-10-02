@@ -4,8 +4,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
-import { ukLongDate } from '@/lib/dayKey';
+import { ukDate } from '@/lib/dayKey';
 import { publicArea } from '@/lib/places';
+import { formatGBP } from '@/lib/formatMoney';
+import { recoverBookingPayment } from '@/lib/bookingPaymentReconcile';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,20 +19,47 @@ export const dynamic = 'force-dynamic';
 // is a random identifier that only that guest has been given, and this page
 // shows nothing beyond what they already know: their own stay and what they
 // just paid. No email, no host details, nothing about anyone else.
-export default async function BookingConfirmed({ params }: { params: { id: string } }) {
+export default async function BookingConfirmed({
+    params,
+    searchParams,
+}: {
+    params: { id: string };
+    searchParams?: { session_id?: string };
+}) {
     const admin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',
         process.env.SUPABASE_SERVICE_ROLE_KEY || '',
         { auth: { persistSession: false } }
     );
 
-    const { data: booking } = await admin
+    const COLUMNS = 'id, listing_id, check_in, check_out, guests, total_price, status, payment_status, amount_paid, balance_amount, balance_due_date, created_at';
+
+    let { data: booking } = await admin
         .from('bookings')
-        .select('id, listing_id, check_in, check_out, guests, total_price, status, payment_status, amount_paid, balance_amount, balance_due_date')
+        .select(COLUMNS)
         .eq('id', params.id)
         .maybeSingle();
 
     if (!booking) notFound();
+
+    // The webhook usually beats the guest back here, but not always — and if
+    // it was lost it never will. So a booking still waiting on payment asks
+    // Stripe itself, server-side, and settles through the same function the
+    // webhook uses (lib/settlePaidBooking), which cannot confirm it twice.
+    // Only Stripe's answer is trusted; session_id from the URL is a hint.
+    if (booking.status === 'pending_payment') {
+        try {
+            const settled = await recoverBookingPayment(admin, booking, searchParams && searchParams.session_id);
+            if (settled) {
+                const { data: fresh } = await admin.from('bookings').select(COLUMNS).eq('id', params.id).maybeSingle();
+                if (fresh) booking = fresh;
+            }
+        } catch (err) {
+            // Stripe unreachable: fall back to "just confirming", which the
+            // webhook or the reconcile cron will resolve.
+            console.error('[booking-confirmed] could not check Stripe', err);
+        }
+    }
 
     const { data: listing } = await admin
         .from('listings')
@@ -44,7 +73,6 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
         || booking.payment_status === 'deposit_paid'
         || paid > 0;
 
-    // The webhook usually beats the guest back here, but not always.
     if (!settled) {
         return (
             <div className="max-w-xl mx-auto px-6 py-16 text-center">
@@ -119,10 +147,10 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
 
                 <div className="border-t pt-4">
                     <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Paid today</div>
-                    <div className="text-xl font-bold text-slate-900">£{paid.toFixed(2)}</div>
+                    <div className="text-xl font-bold text-slate-900">{formatGBP(paid)}</div>
                     {balance > 0 && (
                         <p className="text-sm text-slate-600 mt-1">
-                            The remaining <strong>£{balance.toFixed(2)}</strong>
+                            The remaining <strong>{formatGBP(balance)}</strong>
                             {booking.balance_due_date
                                 ? ' is taken from the same card on ' + formatUk(new Date(booking.balance_due_date)) + '.'
                                 : ' is due before your stay.'}{' '}
@@ -152,7 +180,7 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
                                 Free cancellation
                             </div>
                             <div className="text-slate-800">
-                                Until {ukLongDate(cancel.freeUntilKey)}
+                                Until {ukDate(cancel.freeUntilKey)}
                             </div>
                         </div>
                     );

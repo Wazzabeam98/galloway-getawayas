@@ -21,6 +21,9 @@ const {
     TRADE_GROUPS,
     HOST_TRADES,
     COMMISSION_HOST_TRADES,
+    isTradeComingSoon,
+    comingSoonNote,
+    pickerEntries,
     canBeBooked,
     planForTrade,
     pricingModelFor,
@@ -30,7 +33,8 @@ const {
     trialState,
     shouldStartTrial,
     planTerms,
-    TRIAL_DAYS,
+    TRIAL_MONTHS,
+    TRIAL_PERIOD_LABEL,
     SUBSCRIPTION_MONTHLY,
     slotAsksWhereFork,
     slotIsMeetingPoint,
@@ -70,15 +74,19 @@ test('a non-slot category has no slot fulfilment default (its own fork or none)'
 });
 
 const complete = {
-    business_name: 'Solway Sparkle',
-    trade: 'sponge',
-    description: 'Changeover cleans and deep cleans for holiday cottages across the Stewartry.',
-    contact_email: 'hello@solwaysparkle.test',
+    business_name: 'Solway Joinery',
+    trade: 'joiner',
+    // A host trade no longer types a free-text description — its "about you" is
+    // the expertise hub, whose required field is the professional title. The
+    // stored description is derived from the hub. So a complete host application
+    // gives a title, not a paragraph.
+    professional_title: 'Joiner and kitchen fitter',
+    contact_email: 'hello@solwayjoinery.test',
     audience: 'host',
     areaCount: 1,
-    // A banded trade has to price at least one band before it can be sent.
-    // See tests/service-pricing.test.ts for the rule itself.
-    prices: { beds_1_2: { price: '60' } },
+    // Every trade needs a way to price now: a quote, an hourly rate or a flat
+    // fee. See tests/service-pricing.test.ts for the rule itself.
+    provides_quote: true,
 };
 
 test('a complete application can be sent', () => {
@@ -90,9 +98,11 @@ test('each missing piece is named, and named once', () => {
     const problems = submitProblems({});
     const fields = problems.map((p: any) => p.field).sort();
 
-    // No trade means no pricing shape, so pricing has nothing to complain
-    // about yet — the trade problem stands in for it.
-    assert.deepEqual(fields, ['areas', 'audience', 'business_name', 'contact_email', 'description', 'trade']);
+    // No trade means no pricing shape, so pricing has nothing to complain about
+    // yet — the trade problem stands in for it. An empty draft is treated as a
+    // host trade (no guest sentinel), so its "about you" gate is the professional
+    // title, not a description.
+    assert.deepEqual(fields, ['areas', 'audience', 'business_name', 'contact_email', 'professional_title', 'trade']);
     assert.equal(new Set(fields).size, fields.length, 'no field should be reported twice');
 });
 
@@ -102,9 +112,15 @@ test('covering nowhere is a problem — that is how a provider reaches nobody', 
     assert.equal(problems[0].field, 'areas');
 });
 
-test('a one-word description is not a description', () => {
-    const problems = submitProblems({ ...complete, description: 'Cleaning.' });
-    assert.equal(problems.some((p: any) => p.field === 'description'), true);
+test('a host trade with no professional title is refused', () => {
+    // The host "about you" is the expertise hub now, and its one required field
+    // is the professional title. A blank title is what a missing description used
+    // to be — the thing that holds up an otherwise complete application.
+    const problems = submitProblems({ ...complete, professional_title: '' });
+    assert.equal(problems.some((p: any) => p.field === 'professional_title'), true);
+    // A single character is not a title; two or more is fine.
+    assert.equal(submitProblems({ ...complete, professional_title: 'x' }).some((p: any) => p.field === 'professional_title'), true);
+    assert.deepEqual(submitProblems({ ...complete, professional_title: 'Roofer' }), []);
 });
 
 test('an email without an @ is caught', () => {
@@ -186,10 +202,11 @@ test('an unknown trade still reads as something', () => {
 // accident, which is the third time this file has been asked to read one thing
 // as a stand-in for another.
 //
-// The rule is now asserted as the rule: every host trade except cleaning and
-// waste is on the subscription. Looped over HOST_TRADES rather than a list, so
-// a trade added to the picker cannot arrive without a plan.
-test('every host trade except cleaning and waste is on the subscription', () => {
+// The rule is now asserted as the rule: every host trade except cleaning is on
+// the subscription (waste joined it on 28 September 2026). Looped over
+// HOST_TRADES rather than a list, so a trade added to the picker cannot arrive
+// without a plan.
+test('every host trade except cleaning is on the subscription', () => {
     const exceptions = COMMISSION_HOST_TRADES as unknown as string[];
 
     for (const trade of HOST_TRADES as unknown as string[]) {
@@ -200,11 +217,12 @@ test('every host trade except cleaning and waste is on the subscription', () => 
     }
 });
 
-test('the two exceptions are the ones named, and they are real host trades', () => {
+test('the one exception is the one named, and it is a real host trade', () => {
     // Guards the exception list itself. Without this, emptying it would put
     // every host trade on the subscription and the loop above would still
-    // pass, because it takes its expectation from the same list.
-    assert.deepEqual((COMMISSION_HOST_TRADES as unknown as string[]).slice().sort(), ['bin', 'sponge']);
+    // pass, because it takes its expectation from the same list. Waste came off
+    // this list on 28 September 2026, leaving cleaning alone.
+    assert.deepEqual((COMMISSION_HOST_TRADES as unknown as string[]).slice().sort(), ['sponge']);
 
     for (const trade of COMMISSION_HOST_TRADES as unknown as string[]) {
         assert.equal((HOST_TRADES as unknown as string[]).indexOf(trade) !== -1, true,
@@ -212,15 +230,16 @@ test('the two exceptions are the ones named, and they are real host trades', () 
     }
 });
 
-test('eight host trades pay a subscription and two pay commission', () => {
+test('ten host trades pay a subscription and one pays commission', () => {
     // The count, stated plainly, so a trade quietly changing sides shows up as
-    // a number rather than as nothing.
+    // a number rather than as nothing. "Something else" (other) joined on the
+    // subscription, so the split is ten to one now.
     const host = HOST_TRADES as unknown as string[];
     const subscription = host.filter((t) => planForTrade(t) === 'subscription');
     const commission = host.filter((t) => planForTrade(t) === 'commission');
 
-    assert.equal(subscription.length, 8);
-    assert.deepEqual(commission.sort(), ['bin', 'sponge']);
+    assert.equal(subscription.length, 10);
+    assert.deepEqual(commission.sort(), ['sponge']);
 });
 
 test('the maintenance group is not what decides the plan', () => {
@@ -273,9 +292,10 @@ test('every trade has a plan, and the guest trades are all commission', () => {
     }
 
     // The trap in "quoted trades go on the subscription": pricingModelFor
-    // returns 'quoted' for all four of these as well, so deriving the plan
-    // from it would have put a cake baker on £20 a month.
-    for (const trade of ['chef', 'cake', 'basket', 'other']) {
+    // returns 'quoted' for these as well, so deriving the plan from it would
+    // have put a cake baker on £20 a month. ("Other" is a host trade and does
+    // pay the subscription — it is exercised in the host-plan tests above.)
+    for (const trade of ['chef', 'cake', 'basket']) {
         assert.equal(planForTrade(trade), 'commission', trade + ' sells through the site');
         assert.equal(pricingModelFor(trade), 'quoted',
             trade + ' is quoted, which is exactly why the plan is not read off the pricing model');
@@ -320,18 +340,25 @@ test('a commission provider with no rate falls back rather than charging nothing
     assert.equal(commissionRateFor({ trade: 'sponge', plan: 'commission', commission_rate: null }), 0.10);
 });
 
-test('the trial is ninety days, counted in days rather than months', () => {
-    const end = trialEndsAt('2026-08-27T09:00:00.000Z');
-
-    // 27 August + 90 days = 25 November. Months vary in length; the promise
-    // is a number of days, so the arithmetic has to be too.
-    assert.equal(end, '2026-11-25T09:00:00.000Z');
-    assert.equal(TRIAL_DAYS, 90);
+test('the trial is six months, as a calendar span from the first enquiry', () => {
+    // 27 August + 6 months = 27 February. It became six months on 28 September
+    // 2026, and it is counted as calendar months so "six months" is literally
+    // what a provider is given, not an approximate day count.
+    assert.equal(trialEndsAt('2026-08-27T09:00:00.000Z'), '2027-02-27T09:00:00.000Z');
+    assert.equal(TRIAL_MONTHS, 6);
+    assert.equal(TRIAL_PERIOD_LABEL, 'six months');
 });
 
-test('the trial clock crosses a month end and a leap year without drifting', () => {
-    assert.equal(trialEndsAt('2026-12-15T00:00:00.000Z'), '2027-03-15T00:00:00.000Z');
-    assert.equal(trialEndsAt('2027-12-15T00:00:00.000Z'), '2028-03-14T00:00:00.000Z');
+test('six months clamps to the end of a short month rather than spilling over', () => {
+    // 31 August + 6 months has no 31 February, so it lands on the last day of
+    // February — the 28th, or the 29th in a leap year — not on 2 or 3 March.
+    assert.equal(trialEndsAt('2026-08-31T00:00:00.000Z'), '2027-02-28T00:00:00.000Z');
+    assert.equal(trialEndsAt('2027-08-31T00:00:00.000Z'), '2028-02-29T00:00:00.000Z');
+});
+
+test('the trial clock crosses a year end and a leap day without drifting', () => {
+    assert.equal(trialEndsAt('2026-12-15T00:00:00.000Z'), '2027-06-15T00:00:00.000Z');
+    assert.equal(trialEndsAt('2027-12-15T00:00:00.000Z'), '2028-06-15T00:00:00.000Z');
 });
 
 test('a running trial is only a thing a subscription provider can have', () => {
@@ -435,13 +462,47 @@ test('a trial that has not started is a different state from one that has ended'
 
 test('what a provider is told they will pay comes from the same numbers', () => {
     const plumber = planTerms('plumber');
-    assert.match(plumber, new RegExp(String(TRIAL_DAYS) + ' days'));
+    assert.match(plumber, new RegExp(TRIAL_PERIOD_LABEL));
     assert.match(plumber, new RegExp('£' + String(SUBSCRIPTION_MONTHLY) + ' a month'));
     assert.equal(plumber.indexOf('10%'), -1, 'a subscription trade is not told about commission');
 
     const cleaner = planTerms('sponge');
     assert.match(cleaner, /10%/);
     assert.equal(cleaner.indexOf('a month'), -1, 'a commission trade is not told about a subscription');
+
+    // Waste moved to the subscription on 28 September 2026, so it is told about
+    // the £20 a month and never about a per-job commission.
+    const waste = planTerms('bin');
+    assert.match(waste, new RegExp('£' + String(SUBSCRIPTION_MONTHLY) + ' a month'));
+    assert.equal(waste.indexOf('10%'), -1, 'waste is no longer told about a per-job commission');
+});
+
+// The two business decisions of 28 September 2026, pinned so neither can slide
+// back unnoticed.
+test('waste is on the subscription, exactly like the other subscription trades', () => {
+    assert.equal(planForTrade('bin'), 'subscription', 'waste pays a subscription, not commission');
+    assert.equal((COMMISSION_HOST_TRADES as unknown as string[]).indexOf('bin'), -1,
+        'waste is not a commission host trade any more');
+    // Same zero-per-job rate as every other subscription trade, even with a
+    // stale 0.10 still sitting on the row.
+    assert.equal(commissionRateFor({ trade: 'bin', commission_rate: 0.10 }), 0,
+        'waste takes nothing per job');
+});
+
+test('cleaning is coming soon: browsable, but off the sign-up picker', () => {
+    assert.equal(isTradeComingSoon('sponge'), true, 'cleaning is coming soon');
+    assert.equal(isTradeComingSoon('bin'), false, 'waste is not coming soon');
+
+    // Still a host trade, so it keeps appearing wherever trades are browsed.
+    assert.equal((HOST_TRADES as unknown as string[]).indexOf('sponge') !== -1, true,
+        'cleaning stays a host trade so it stays visible in the shop');
+    assert.match(String(comingSoonNote('sponge')), /coming soon/i);
+
+    // But it is not offered on the sign-up picker, so nobody new joins under it.
+    const offered = pickerEntries([], 'host').map((e: any) => e.key);
+    assert.equal(offered.indexOf('sponge'), -1, 'cleaning is not on the sign-up picker');
+    assert.equal(offered.indexOf('bin') !== -1 || offered.indexOf('maintenance') !== -1, true,
+        'other host trades are still offered');
 });
 
 test('nothing anywhere still charges per enquiry', () => {

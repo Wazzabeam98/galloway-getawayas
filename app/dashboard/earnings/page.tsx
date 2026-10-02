@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 import { listingIdsFor } from '@/lib/access';
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from '@/lib/hostDebt';
 import { readSchedule, payoutTimingText } from '@/lib/payoutTiming';
+import { formatGBP } from '@/lib/formatMoney';
 
 
 export default async function EarningsPage({ searchParams }: { searchParams?: { from?: string; to?: string } }) {
@@ -227,14 +228,14 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
             </p>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                <StatCard label="Net revenue" value={`£${netTotal.toFixed(2)}`} sub={`£${grossTotal.toFixed(2)} gross`} />
+                <StatCard label="Net revenue" value={formatGBP(netTotal)} sub={`${formatGBP(grossTotal)} gross`} />
                 <StatCard label="Reservations" value={String(confirmed.length)} sub={`${pending.length} pending`} />
                 <StatCard label="Cancellation rate" value={`${cancellationRate.toFixed(2)}%`} sub={`${cancelled.length} of ${everAccepted} accepted`} />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-10">
-                <StatCard label="Upcoming payout" value={`£${upcomingNet.toFixed(2)}`} sub={`${upcoming.length} stay${upcoming.length !== 1 ? 's' : ''}`} />
-                <StatCard label="Completed stays" value={`£${completedNet.toFixed(2)}`} sub={`${completed.length} stay${completed.length !== 1 ? 's' : ''}`} />
-                <StatCard label="Pending requests" value={`£${pendingGross.toFixed(2)}`} sub={`${pending.length} awaiting response`} />
+                <StatCard label="Upcoming payout" value={formatGBP(upcomingNet)} sub={`${upcoming.length} stay${upcoming.length !== 1 ? 's' : ''}`} />
+                <StatCard label="Completed stays" value={formatGBP(completedNet)} sub={`${completed.length} stay${completed.length !== 1 ? 's' : ''}`} />
+                <StatCard label="Pending requests" value={formatGBP(pendingGross)} sub={`${pending.length} awaiting response`} />
             </div>
 
             <div className="border rounded-2xl p-6 mb-10">
@@ -247,7 +248,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
                     <h2 className="font-bold text-slate-900">Your payouts</h2>
                     <div className="text-sm text-slate-500">
-                        £{(owedTotal > 0 ? netAfterDebt : awaitingTotal).toFixed(2)} still to come
+                        {formatGBP(owedTotal > 0 ? netAfterDebt : awaitingTotal)} still to come
                     </div>
                 </div>
                 <p className="text-sm text-slate-500 mb-5">
@@ -259,12 +260,12 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 {owedTotal > 0 && (
                     <div className="border border-amber-300 bg-amber-50 rounded-xl p-4 mb-5">
                         <div className="font-semibold text-amber-900 text-sm">
-                            £{owedTotal.toFixed(2)} comes off your next payouts
+                            {formatGBP(owedTotal)} comes off your next payouts
                         </div>
                         <ul className="text-sm text-amber-800 mt-2 space-y-1">
                             {debts.map((d) => (
                                 <li key={d.id}>
-                                    £{outstandingOf(d).toFixed(2)} &mdash; {debtReason(d.kind).toLowerCase()}
+                                    {formatGBP(outstandingOf(d))} &mdash; {debtReason(d.kind).toLowerCase()}
                                 </li>
                             ))}
                         </ul>
@@ -273,7 +274,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                 ? 'Taken off the stays marked below, as each one pays out.'
                                 : 'It will come off as soon as you have a stay to pay out.'}
                             {owedBeyondQueue > 0 && deductionTotal > 0
-                                ? ' £' + owedBeyondQueue.toFixed(2) + ' of it is more than your'
+                                ? ' ' + formatGBP(owedBeyondQueue) + ' of it is more than your'
                                     + ' booked stays cover, so it waits for later ones.'
                                 : ''}
                         </p>
@@ -296,7 +297,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                     </div>
                                     {!r.fullyPaid && r.outstanding > 0 && (
                                         <div className="text-xs text-amber-700 mt-0.5">
-                                            Includes £{r.outstanding.toFixed(2)} of the guest&apos;s
+                                            Includes {formatGBP(r.outstanding)} of the guest&apos;s
                                             balance still to be collected before check-in
                                         </div>
                                     )}
@@ -305,18 +306,18 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                     {deductions[r.id] ? (
                                         <>
                                             <div className="text-sm text-slate-500 line-through">
-                                                £{r.expected.toFixed(2)}
+                                                {formatGBP(r.expected)}
                                             </div>
                                             <div className="text-xs text-amber-700">
-                                                less £{deductions[r.id].toFixed(2)} owed
+                                                less {formatGBP(deductions[r.id])} owed
                                             </div>
                                             <div className="font-semibold text-slate-900">
-                                                £{Math.max(0, round2(r.expected - deductions[r.id])).toFixed(2)}
+                                                {formatGBP(Math.max(0, round2(r.expected - deductions[r.id])))}
                                             </div>
                                         </>
                                     ) : (
                                         <div className="font-semibold text-slate-900">
-                                            £{r.expected.toFixed(2)}
+                                            {formatGBP(r.expected)}
                                         </div>
                                     )}
                                     <div className="text-xs text-slate-500">
@@ -338,7 +339,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                         {r.title} &middot; {formatUk(new Date(r.checkIn))}
                                     </span>
                                     <span className="text-slate-900 font-medium whitespace-nowrap ml-3">
-                                        £{Number(r.payoutAmount || 0).toFixed(2)} on{' '}
+                                        {formatGBP(r.payoutAmount || 0)} on{' '}
                                         {formatUk(new Date(r.paidOutAt))}
                                     </span>
                                 </div>
@@ -353,15 +354,15 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 <div className="space-y-2 text-sm max-w-sm">
                     <div className="flex justify-between text-slate-600">
                         <span>Gross bookings (confirmed)</span>
-                        <span>£{grossTotal.toFixed(2)}</span>
+                        <span>{formatGBP(grossTotal)}</span>
                     </div>
                     <div className="flex justify-between text-slate-600">
                         <span>Host fee ({effectivePercent}%)</span>
-                        <span>− £{feeTotal.toFixed(2)}</span>
+                        <span>− {formatGBP(feeTotal)}</span>
                     </div>
                     <div className="flex justify-between font-bold text-slate-900 pt-2 border-t">
                         <span>Net earnings</span>
-                        <span>£{netTotal.toFixed(2)}</span>
+                        <span>{formatGBP(netTotal)}</span>
                     </div>
                 </div>
             </div>
@@ -378,7 +379,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                 <div key={l.id}>
                                     <div className="flex justify-between text-sm mb-1">
                                         <span className="font-medium text-slate-800">{l.title}</span>
-                                        <span className="text-slate-600">£{l.net.toFixed(2)}</span>
+                                        <span className="text-slate-600">{formatGBP(l.net)}</span>
                                     </div>
                                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                         <div className="h-full bg-slate-900 rounded-full" style={{ width: `${Math.min(100, pct)}%` }} />

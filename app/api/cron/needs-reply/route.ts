@@ -1,5 +1,6 @@
 import { isArchived, needsReply } from '@/lib/conversations';
 import { logError } from '@/lib/logError';
+import { providerFirstNames } from '@/lib/providerName';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import {
@@ -365,11 +366,14 @@ export async function GET(request: Request) {
                 ? admin.from('service_enquiries').select('id, reference, summary, business_name, host_id').in('id', enquiryIds)
                 : Promise.resolve({ data: [] } as any),
             orderIds.length
-                ? admin.from('service_orders').select('id, item_name, service_date, provider_business_name, guest_id').in('id', orderIds)
+                ? admin.from('service_orders').select('id, item_name, service_date, provider_business_name, provider_id, guest_id').in('id', orderIds)
                 : Promise.resolve({ data: [] } as any),
         ]);
         const enqById: Record<string, any> = {}; (enqRows || []).forEach((e: any) => { enqById[e.id] = e; });
         const ordById: Record<string, any> = {}; (ordRows || []).forEach((o: any) => { ordById[o.id] = o; });
+        // First names for the providers on these orders, so a guest's digest reads
+        // "Fiona is waiting on your reply", not the listing name.
+        const provNameById = await providerFirstNames(admin, (ordRows || []).map((o: any) => o.provider_id));
 
         const keys = otherWaiting.map(threadKey).filter(Boolean);
         const { data: otherNudges } = keys.length
@@ -399,7 +403,7 @@ export async function GET(request: Request) {
                 const isGuest = userId === o.guest_id;
                 providerSide = !isGuest;
                 heading = isGuest
-                    ? escapeHtml(o.provider_business_name || 'A provider') + ' is waiting on your reply'
+                    ? escapeHtml(provNameById[o.provider_id] || o.provider_business_name || 'A provider') + ' is waiting on your reply'
                     : 'A guest is waiting on your reply';
                 line = escapeHtml(o.item_name || 'An experience') + (o.service_date ? ' — ' + escapeHtml(String(o.service_date)) : '');
             } else { skipped++; continue; }

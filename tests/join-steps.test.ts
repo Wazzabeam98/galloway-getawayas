@@ -34,71 +34,77 @@ const {
 } = require('@/lib/joinSteps');
 
 const {
-    TRADES, submitProblems, planForTrade,
+    TRADES, submitProblems, planForTrade, audienceForTrade,
     capabilityFor, pricedOfferingsFor, showsRates, extrasFor, bandsFor,
     asksAboutFuel, asksAboutSkills, offerableSchemes,
-    guestAsksExpertise, guestQualificationsRequired, guestYearsRequired,
+    guestAsksExpertise, guestAsksQualifications, guestYearsRequired,
 } = require('@/lib/serviceProviders');
 
 const keys = (trade: string) => stepsFor(trade).map((s: any) => s.key);
 
 // --- which steps exist ------------------------------------------------------
 
-test('a cleaner sees four steps, and the missing one is not counted', () => {
-    // The example the whole rule comes from. No registration number, no
-    // skills, so no third step at all.
-    assert.deepEqual(keys('sponge'), ['trade', 'business', 'prices', 'finish']);
-    assert.equal(stepCount('sponge'), 4);
+test('every host trade opens on the About-you screens now', () => {
+    // The trades sign-up opens on the same years counter and expertise hub as the
+    // guest experience, so every host trade gains g_you and g_creds at the front —
+    // before the business screens. The old single business step is split one
+    // question a screen: the name, then the coverage (b_area). There is no separate
+    // contact screen — the email is the account's, and the phone moved to finish —
+    // so with the credentials step (the services search) the cleaner is eight steps.
+    assert.deepEqual(keys('sponge'),
+        ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'credentials', 'prices', 'finish']);
+    assert.equal(stepCount('sponge'), 8);
 
-    // And the numbering closes up behind it. This is the part an indicator
-    // gets wrong: "step 4 of 5" on the last page of four.
-    assert.equal(stepNumber('sponge', 'prices'), 3);
-    assert.equal(stepNumber('sponge', 'finish'), 4);
-    assert.equal(stepNumber('sponge', 'credentials'), 0, 'a step she does not have has no number');
+    assert.equal(stepNumber('sponge', 'g_you'), 2);
+    assert.equal(stepNumber('sponge', 'g_creds'), 3);
+    assert.equal(stepNumber('sponge', 'business'), 4);
+    assert.equal(stepNumber('sponge', 'b_area'), 5);
+    assert.equal(stepNumber('sponge', 'finish'), 8);
 });
 
-test('a plumber sees all five', () => {
-    assert.deepEqual(keys('plumber'), ['trade', 'business', 'credentials', 'prices', 'finish']);
-    assert.equal(stepCount('plumber'), 5);
-    assert.equal(stepNumber('plumber', 'finish'), 5);
+test('a plumber sees all eight', () => {
+    assert.deepEqual(keys('plumber'),
+        ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'credentials', 'prices', 'finish']);
+    assert.equal(stepCount('plumber'), 8);
+    assert.equal(stepNumber('plumber', 'finish'), 8);
 });
 
-test('the joiner, roofer and painter went from four steps to five', () => {
-    // Approved as the correction rather than the cost: their capability lists
-    // were on a step headed "What you charge" where they set no price.
+test('the joiner, roofer and painter open on About-you too', () => {
+    // Their capability lists sit on the credentials step; the About-you screens
+    // (years, expertise hub) open the flow the same as every trade, and the two
+    // business screens (name, coverage) follow.
     for (const trade of ['joiner', 'roofer', 'painter']) {
-        assert.deepEqual(keys(trade), ['trade', 'business', 'credentials', 'prices', 'finish'],
-            trade + ' has all five');
-        assert.equal(stepCount(trade), 5);
+        assert.deepEqual(keys(trade),
+            ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'credentials', 'prices', 'finish'],
+            trade + ' has all eight');
+        assert.equal(stepCount(trade), 8);
     }
 });
 
-test('the "what you do" step is exactly the six maintenance trades', () => {
+test('the "what you do" step is on every host trade now', () => {
     const withCredentials = TRADES
         .map((t: any) => t.key)
         .filter((trade: string) => stepApplies('credentials', trade));
 
-    // It was three: the electrician for Part P, the plumber for gas and oil,
-    // the handyman for skills. It is six now, because the capability lists
-    // moved here off the prices step — the joiner, roofer and painter give no
-    // registration and no skills but carry nine to sixteen capability entries
-    // each, which were filed under "What you charge" where they set no price.
+    // Every host trade gets the credentials step now — it carries the services
+    // search that replaced the per-trade capability checklist. Guests keep their
+    // own flow and are not on this step.
     assert.deepEqual(withCredentials.sort(),
-        ['electrician', 'handyman', 'joiner', 'painter', 'plumber', 'roofer']);
+        ['bin', 'droplet', 'electrician', 'handyman', 'joiner', 'other', 'painter', 'plumber', 'roofer', 'sponge', 'trees']);
 });
 
-test('registration and skills are never asked of the same trade', () => {
-    // Why the step is not called "Registration". The electrician and plumber
-    // give numbers, the handyman gives skills, and nobody does both — so a
-    // step titled Registration was wrong for the handyman every single time,
-    // not merely sometimes.
+test('gas and electrical trades are asked for a registration number as well as services', () => {
+    // The old rule was "registration OR skills, never both". It is both now: a
+    // plumber gives a Gas Safe number AND lists the services it covers; an
+    // electrician the same. Every host trade lists its services; gas and
+    // electrical additionally give a registration number.
     for (const trade of TRADES.map((t: any) => t.key)) {
-        const hasRegistration = asksAboutFuel(trade)
-            || offerableSchemes({ trade, does_gas: true, does_oil: true }).length > 0;
-
-        assert.equal(hasRegistration && asksAboutSkills(trade), false,
-            trade + ' is asked for registration or skills, never both');
+        if (audienceForTrade(trade) === 'host') {
+            assert.equal(asksAboutSkills(trade), true, trade + ' lists its services');
+        }
     }
+    assert.equal(asksAboutFuel('plumber'), true, 'a plumber gives a registration number');
+    assert.equal(asksAboutFuel('roofer'), false, 'a roofer does not');
 });
 
 test('capability sits on the step somebody can see it on, not with the prices', () => {
@@ -148,20 +154,22 @@ test('the joiner, roofer and painter still have a prices step for the call-out f
     }
 });
 
-test('the cleaner keeps her two toggles beside her prices rather than gaining a step', () => {
-    // `about` is not capability. Two tick boxes -- own equipment, reports
-    // damage with photos -- that read correctly next to her laundry and hot
-    // tub prices, and would otherwise be a fifth step carrying nothing else.
+test('the cleaner now has the credentials step for the services search', () => {
+    // She has no pre-filled capability list (that was `about`, two tick boxes
+    // that stay with her prices), but she still lists her services on the
+    // credentials step like every other host trade.
     assert.deepEqual(capabilityFor('sponge'), []);
     assert.equal(pricedOfferingsFor('sponge').length > 0, true);
-    assert.equal(stepApplies('credentials', 'sponge'), false, 'no step gained');
-    assert.deepEqual(keys('sponge'), ['trade', 'business', 'prices', 'finish']);
+    assert.equal(stepApplies('credentials', 'sponge'), true, 'the services-search step');
+    assert.deepEqual(keys('sponge'),
+        ['trade', 'g_you', 'g_creds', 'business', 'b_area', 'credentials', 'prices', 'finish']);
 });
 
 test('the guest trades have no prices step either, so they see four', () => {
     // A chef quotes per job and has no extras to offer. A step containing one
-    // heading and nothing under it is the thing this rule is against.
-    for (const trade of ['chef', 'cake', 'basket', 'other']) {
+    // heading and nothing under it is the thing this rule is against. ('other'
+    // is a HOST trade now — "something else" — so it is not in this list.)
+    for (const trade of ['chef', 'cake', 'basket']) {
         assert.deepEqual(keys(trade), ['trade', 'business', 'finish'], trade + ' has three steps');
         assert.equal(stepCount(trade), 3);
     }
@@ -196,16 +204,21 @@ test('the last step is the same one for everybody, whatever they skipped', () =>
 
 // --- moving about -----------------------------------------------------------
 
-test('next skips the step a cleaner does not have', () => {
-    // The bug this is against: Next landing on a blank panel between the
-    // business and the prices.
-    assert.equal(nextStep('sponge', 'business'), 'prices');
-    assert.equal(nextStep('plumber', 'business'), 'credentials');
+test('next moves through the two business screens then credentials → prices', () => {
+    // The business section is two screens now (name → coverage), and every host
+    // trade has the credentials step, so Next walks all of them rather than
+    // skipping to prices.
+    assert.equal(nextStep('sponge', 'business'), 'b_area');
+    assert.equal(nextStep('sponge', 'b_area'), 'credentials');
+    assert.equal(nextStep('plumber', 'b_area'), 'credentials');
+    assert.equal(nextStep('sponge', 'credentials'), 'prices');
 });
 
-test('back skips it too, so the way out is the way in reversed', () => {
-    assert.equal(previousStep('sponge', 'prices'), 'business');
+test('back is the way in reversed', () => {
+    assert.equal(previousStep('sponge', 'prices'), 'credentials');
     assert.equal(previousStep('plumber', 'prices'), 'credentials');
+    assert.equal(previousStep('sponge', 'credentials'), 'b_area');
+    assert.equal(previousStep('sponge', 'b_area'), 'business');
 });
 
 test('the ends stay where they are rather than falling off', () => {
@@ -234,10 +247,10 @@ test('somebody comes back to the step they left', () => {
 });
 
 test('a step that no longer exists lands on the last one that does', () => {
-    // Left on the registration step as a plumber, came back having changed
-    // trade to cleaner. The step is gone. Landing on a blank panel or throwing
-    // are both worse than landing where their work actually got to.
-    assert.equal(resolveStep('sponge', 'credentials'), 'finish');
+    // Left on a guest location step, came back having changed to a host trade.
+    // That step is not in a host flow. Landing on a blank panel or throwing are
+    // both worse than landing where their work actually got to.
+    assert.equal(resolveStep('sponge', 'g_area'), 'finish');
 });
 
 test('a draft with no step and no trade starts at the beginning', () => {
@@ -285,15 +298,23 @@ test('problems are sliced by step, not shown all at once', () => {
         { field: 'extra_price_clean_oven', message: 'e' },
     ];
 
+    // The business section is two screens now: the name owns business_name and the
+    // coverage screen owns areas, so each problem lands on its own screen rather
+    // than piling onto one business step. contact_email is no longer asked (it is
+    // the account email), so it is not in this set.
     assert.deepEqual(problemsOnStep(problems, 'business').map((p: any) => p.field),
-        ['business_name', 'areas']);
+        ['business_name']);
+    assert.deepEqual(problemsOnStep(problems, 'b_area').map((p: any) => p.field),
+        ['areas']);
     assert.deepEqual(problemsOnStep(problems, 'credentials').map((p: any) => p.field),
         ['registration_gas_safe']);
     assert.deepEqual(problemsOnStep(problems, 'prices').map((p: any) => p.field),
         ['price_beds_1_2', 'extra_price_clean_oven']);
 
-    // Nothing is validated on the last step. The tick box is its own thing and
-    // the photos are optional, so arriving there should never be refused.
+    // The photos/tick are optional and none of the fields in this set map to
+    // finish, so arriving there is not refused. (contact_email now maps to finish
+    // as a defensive fallback, but the account always supplies it, so it is empty
+    // here.)
     assert.deepEqual(problemsOnStep(problems, 'finish'), []);
 });
 
@@ -340,21 +361,21 @@ test('a problem on a step this trade skips is not lost silently', () => {
     }
 });
 
-test('a subscription trade is not asked for a price it does not set', () => {
-    // Crossing the two models: these three are on the subscription and set no
-    // band prices, so their prices step is extras and a call-out fee only.
+test('a subscription trade that prices by quote is not held up on the prices step', () => {
+    // These three are on the subscription and typically quote per job. With the
+    // quote ticked they set no number and the prices step is satisfied.
     for (const trade of ['roofer', 'joiner', 'painter']) {
         assert.equal(planForTrade(trade), 'subscription');
         const problems = submitProblems({
             business_name: 'A Firm', trade,
             description: 'Long enough a description to pass the length check on the form itself.',
-            contact_email: 'a@b.test', audience: 'host', areaCount: 1, prices: {},
-            callout_fee: '', hourly_rate: '', callout_waived: false, extras: {},
+            contact_email: 'a@b.test', audience: 'host', areaCount: 1,
+            provides_quote: true, callout_fee: '', hourly_rate: '', callout_waived: false, extras: {},
             does_gas: false, does_oil: false, registrations: [],
         });
 
         assert.deepEqual(problemsOnStep(problems, 'prices'), [],
-            trade + ' is not held up over a price it never sets');
+            trade + ' prices by quote, so nothing is required on the prices step');
     }
 });
 
@@ -387,105 +408,45 @@ test('no trade gets a prices step only for entries that never render', () => {
 // ---------------------------------------------------------------------------
 // Which step the form opens on
 // ---------------------------------------------------------------------------
-//
-// This rule was a useEffect, and it turned a working application into one that
-// looked broken. A successful send cleared `restored` to take the "your details
-// have been saved" banner down; that released the only condition holding the
-// rule back, it ran again, and it moved the applicant to the business step. The
-// panel confirming the application only renders on the finish step, so nobody
-// ever saw it — and a sent application and a refused one ended on the same
-// screen.
-//
-// Indistinguishable success is the thing this flow exists to prevent, so the
-// rule is tested rather than inferred from a dependency array.
-
-test('a lodged application is never moved off the screen that says so', () => {
-    // The regression, stated directly. Every combination that used to move
-    // them, with `lodged` true.
-    for (const restored of [true, false]) {
-        for (const trade of ['joiner', 'sponge', '']) {
-            assert.equal(
-                openingStep({ hydrated: true, restored, lodged: true, trade }),
-                'finish',
-                `lodged must win: restored=${restored} trade=${trade || 'none'}`
-            );
-        }
-    }
-});
-
-test('clearing the restored banner cannot move a lodged applicant', () => {
-    // The exact transition that caused it: lodged, and `restored` going from
-    // true to false underneath.
-    const before = openingStep({ hydrated: true, restored: true, lodged: true, trade: 'joiner' });
-    const after = openingStep({ hydrated: true, restored: false, lodged: true, trade: 'joiner' });
-
-    assert.equal(before, 'finish');
-    assert.equal(after, 'finish', 'the banner going away is not a reason to move them');
-});
-
 test('nothing moves before the load has finished', () => {
-    assert.equal(openingStep({ hydrated: false, restored: false, lodged: false, trade: 'joiner' }), null);
-    assert.equal(openingStep({ hydrated: false, restored: false, lodged: true, trade: 'joiner' }), null);
+    assert.equal(openingStep({ hydrated: false, restored: false, trade: 'joiner' }), null);
 });
 
 test('a restored draft decides for itself', () => {
     // resolveStep put them somewhere from the draft. This must not overrule it.
-    assert.equal(openingStep({ hydrated: true, restored: true, lodged: false, trade: 'joiner' }), null);
+    assert.equal(openingStep({ hydrated: true, restored: true, trade: 'joiner' }), null);
 });
 
 test('a trade in the URL means step one is already answered', () => {
-    assert.equal(openingStep({ hydrated: true, restored: false, lodged: false, trade: 'joiner' }), 'business');
-    assert.equal(openingStep({ hydrated: true, restored: false, lodged: false, trade: '' }), 'trade');
+    // A host trade opens on the About-you years counter now (g_you), the same
+    // opener the guest flow uses — not the business step.
+    assert.equal(openingStep({ hydrated: true, restored: false, trade: 'joiner' }), 'g_you');
+    assert.equal(openingStep({ hydrated: true, restored: false, trade: '' }), 'trade');
 });
 
 test('what counts as seen matches where they land', () => {
     // The step they open on shows its own errors; steps ahead stay quiet.
-    assert.deepEqual(openingVisited({ hydrated: true, restored: false, lodged: false, trade: '' }), []);
-    assert.deepEqual(openingVisited({ hydrated: true, restored: false, lodged: false, trade: 'joiner' }), ['trade']);
-    assert.equal(openingVisited({ hydrated: true, restored: true, lodged: false, trade: 'joiner' }), null);
-
-    // A lodged application has been through all of them.
-    const seen = openingVisited({ hydrated: true, restored: false, lodged: true, trade: 'joiner' });
-    assert.equal(Array.isArray(seen) && seen.indexOf('finish') !== -1, true);
+    assert.deepEqual(openingVisited({ hydrated: true, restored: false, trade: '' }), []);
+    assert.deepEqual(openingVisited({ hydrated: true, restored: false, trade: 'joiner' }), ['trade']);
+    assert.equal(openingVisited({ hydrated: true, restored: true, trade: 'joiner' }), null);
 });
 
-test('a guest with no session opens on the verify gate, before the picker', () => {
-    // The account moved to the very front. Trade ('guest') is in the URL, but
-    // with no session the first screen is g_verify — ahead of the category
-    // picker, whatever else is or isn't answered.
+test('a guest opens on the picker if no category, else the first content screen', () => {
+    // They open on the category picker (no category yet) or straight on the content.
     assert.equal(
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
-        'g_verify',
-    );
-    assert.equal(
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false }),
-        'g_verify',
-        'still the gate first, even with a category already picked',
-    );
-    // Nothing is behind the gate when they land on it.
-    assert.deepEqual(
-        openingVisited({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
-        [],
-    );
-});
-
-test('a signed-in guest skips the gate — the picker if no category, else the first content screen', () => {
-    // A returning applicant, already signed in: the gate is behind them, so they
-    // open on the category picker (no category yet) or straight on the content.
-    assert.equal(
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true, hasSession: true }),
+        openingStep({ hydrated: true, restored: false, trade: 'guest', guestNeedsCategory: true }),
         'trade',
     );
     assert.equal(
         // First content screen is the About-you opener for an expertise category.
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true, category: 'chef' }),
+        openingStep({ hydrated: true, restored: false, trade: 'guest', guestNeedsCategory: false, category: 'chef' }),
         'g_you',
     );
     assert.equal(
         // A sauna skips the expertise screens, so it opens on Location (g_area) —
         // its where-and-when step, which holds the weekly schedule — never g_you,
         // a step it does not have. This is the returning-sauna reorder fix.
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true, category: 'sauna' }),
+        openingStep({ hydrated: true, restored: false, trade: 'guest', guestNeedsCategory: false, category: 'sauna' }),
         'g_area',
     );
 });
@@ -504,26 +465,23 @@ test('a guest with no context still sees the old three steps', () => {
     assert.deepEqual(stepsFor('guest').map((s: any) => s.key), ['trade', 'business', 'finish']);
 });
 
-// The rebuilt flow, reordered to Airbnb's sequence and with the account gate
-// moved to the VERY FRONT (Sep 2026). g_verify — the verify-your-email gate that
-// makes the account — is the first screen of all, before the category picker:
-// picking "Host a guest experience" on the fork lands them straight on it, and
-// nothing comes before the account. Then the picker ('trade' group grid),
-// g_subtype, and the content: About you (g_you, g_creds), Location (g_area)
+// The rebuilt flow, reordered to Airbnb's sequence (Sep 2026). The account is
+// made before the wizard renders at all (the shared email-first sign-in), so the
+// flow opens on the picker ('trade' group grid), then g_subtype, and the content: About you (g_you, g_creds), Location (g_area)
 // straight after, Photos (g_photos) BEFORE the writing, Pricing (g_menu),
 // Details (g_expect), and the Finish screen (the account). The booking shape is
 // inferred from the category and never a step; availability folds into g_area;
-// dietary folds into g_expect; the business step is host-only (a guest's title
-// is derived from the account). There is NO naming step, NO contact step (a
+// dietary folds into g_expect; the business step is host-only. The Details
+// section opens with a NAMING step (g_title — what the experience is CALLED,
+// written to business_name), then g_expect; the professional title is asked
+// separately on g_creds and is NOT the listing name. There is NO contact step (a
 // guest signs in up front, so the account address is the contact address, and
 // the phone lives on the profile) and NO checks step (the per-category checks
 // collapsed to one responsibility confirmation folded onto the finish screen).
-// So an anonymous applicant with a sub-type walks these ten keys — g_verify
-// leading, because they have no session yet. A signed-in applicant skips
-// g_verify (see the test below).
+// So an applicant with a sub-type walks these keys.
 const TEN = [
-    'g_verify', 'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
-    'g_menu', 'g_expect', 'finish',
+    'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
+    'g_menu', 'g_title', 'g_expect', 'finish',
 ];
 
 // A comes-to-you or slot category also has a max-guests step (g_capacity) at the
@@ -541,35 +499,6 @@ test('a chef (food, comes to them) walks the flow, with a capacity step, and nev
     // The old "how do guests get it?" screen is gone — the shape is inferred.
     assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a chef sets a largest group');
-});
-
-test('the verify gate leads the flow for an anonymous applicant and is gone once signed in', () => {
-    // The account moved to the very front: an applicant with no session verifies
-    // their email before the category picker, and everything after runs
-    // authenticated. A returning applicant who is already signed in never sees it.
-    const anon = { group: 'food', category: 'chef', shape: 'comes_to_you' };
-    assert.equal(stepApplies('g_verify', 'guest', anon), true, 'anonymous applicant must verify');
-    assert.equal(gkeys(anon).indexOf('g_verify'), 0, 'the gate is the very first screen, before the picker');
-
-    const signedIn = { ...anon, hasSession: true };
-    assert.equal(stepApplies('g_verify', 'guest', signedIn), false, 'a signed-in applicant skips it');
-    assert.equal(gkeys(signedIn).indexOf('g_verify'), -1, 'the gate is not in a signed-in flow');
-    // Everything else is unchanged — the signed-in flow is the thirteen (plus
-    // the chef's capacity step) minus g_verify.
-    assert.deepEqual(gkeys(signedIn), withCapacity(TEN).filter((k) => k !== 'g_verify'));
-});
-
-test('a signed-in applicant is never resolved onto the verify gate by a restored draft', () => {
-    // The bug: the restore path resolved a saved step with a context that left
-    // hasSession out, so g_verify counted as a live step and a signed-in user
-    // with any draft landed on the email screen. With the session carried, the
-    // gate is not a step for them, so a draft saved on it resolves to a real one.
-    const signedIn = { group: 'food', category: 'chef', shape: 'comes_to_you', hasSession: true };
-    assert.equal(stepsFor('guest', signedIn).some((s: any) => s.key === 'g_verify'), false);
-    assert.notEqual(resolveStep('guest', 'g_verify', signedIn), 'g_verify');
-    // Anonymous is unchanged — the gate is still a real step it can rest on.
-    const anon = { group: 'food', category: 'chef', shape: 'comes_to_you' };
-    assert.equal(resolveStep('guest', 'g_verify', anon), 'g_verify');
 });
 
 test('a cake maker (made to order) gets the years and expertise screens too', () => {
@@ -597,32 +526,54 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
 // a slot restructures the middle too much for that). A slot carries:
 //   - the LOCATION section: g_area (the place) — and, for the three either-way
 //     categories, a come-to-me/travel fork (g_slot_where) before it;
-//   - a WHEN section (slots only): g_slot_length then g_slot_hours;
+//   - a WHEN section (slots only): g_slot_length (weekly hours moved to the
+//     listing editor's Availability section, so they are no longer a wizard step);
 //   - the PRICING section: g_slot_basis, g_capacity, and — per person only —
 //     g_slot_min, before g_menu.
 // `expertise` is true for every slot category except the sauna, which skips the
 // years and expertise screens.
-const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean } = {}) => {
-    const keys = ['g_verify', 'trade', 'g_subtype'];
+const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean; perItemDuration?: boolean; mixed?: boolean } = {}) => {
+    const keys = ['trade', 'g_subtype'];
     if (opts.expertise !== false) keys.push('g_you', 'g_creds');
     if (opts.fork) keys.push('g_slot_where');
-    keys.push('g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity');
-    if (opts.perPerson) keys.push('g_slot_min');
-    keys.push('g_menu', 'g_expect', 'finish');
+    keys.push('g_area');
+    // The one-at-a-time shape (massage) asks length PER TREATMENT in the pricing
+    // sub-flow, so it drops the single provider-length screen — the MIXED shape
+    // keeps it (its group classes need one). WEEKLY HOURS are no longer a wizard
+    // step: they moved to the listing editor's Availability section, so a slot
+    // sets a length at sign-up and its hours in the editor after.
+    if (!opts.perItemDuration) keys.push('g_slot_length');
+    keys.push('g_photos');
+    // massage drops the pricing BASIS and the capacity (both fixed for it). The
+    // mixed shape drops the basis only — each item picks shared-class vs
+    // one-at-a-time in its own sub-flow — but keeps the capacity for its classes.
+    if (!opts.perItemDuration && !opts.mixed) keys.push('g_slot_basis');
+    if (!opts.perItemDuration) keys.push('g_capacity');
+    // The per-person minimum: a fixed-basis per-person slot (perPerson), OR a
+    // come-to-me mixed slot — whose classes can be shared, so the minimum is the
+    // twin of the capacity above. A travelling mixed slot sells only private
+    // sessions and drops both (the perItemDuration/travelling cases never reach
+    // this helper with mixed set — those are asserted directly via stepApplies).
+    if (opts.perPerson || opts.mixed) keys.push('g_slot_min');
+    keys.push('g_menu', 'g_title', 'g_expect', 'finish');
     return keys;
 };
 
 test('a potter (slot, fixed come-to-me) walks the location + When split, no fork', () => {
     // Pottery is a come-to-me slot with no fork (studio, one honest answer), and
     // it is asked its expertise. Its location is g_area (the address) and its
-    // When section is session length then weekly hours.
+    // When section is just the session length now (weekly hours moved to the
+    // listing editor). It is now a MIXED shape
+    // (a group wheel class AND private tuition), so it keeps the length and the
+    // capacity but drops the provider basis — each item chooses shared vs 1:1.
     const ctx = { group: 'crafts', category: 'pottery', shape: 'slot' };
-    assert.deepEqual(gkeys(ctx), slotFlow());
+    assert.deepEqual(gkeys(ctx), slotFlow({ mixed: true }));
     assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, 'a fixed come-to-me slot skips the where fork');
-    assert.equal(stepApplies('g_slot_length', 'guest', ctx), true, 'a slot sets a session length');
-    assert.equal(stepApplies('g_slot_hours', 'guest', ctx), true, 'a slot sets weekly hours');
-    assert.equal(stepApplies('g_slot_basis', 'guest', ctx), true);
-    assert.equal(stepApplies('g_capacity', 'guest', ctx), true);
+    assert.equal(stepApplies('g_slot_length', 'guest', ctx), true, 'a mixed slot keeps a session length for its classes');
+    assert.equal(stepApplies('g_slot_hours', 'guest', ctx), false, 'weekly hours moved to the listing editor — not asked at sign-up');
+    assert.equal(stepApplies('g_slot_basis', 'guest', ctx), false, 'a mixed slot decides shared-vs-1:1 per item, not a provider basis');
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a mixed slot keeps a capacity for its classes');
+    assert.equal(stepApplies('g_slot_min', 'guest', ctx), true, 'a come-to-me mixed slot keeps a minimum — its classes can be shared');
 });
 
 test('the come-to-me / travel fork is asked only for yoga, massage and painting', () => {
@@ -631,8 +582,27 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     for (const cat of ['yoga', 'massage', 'painting']) {
         const ctx = { group: 'wellness', category: cat, shape: 'slot' };
         assert.equal(stepApplies('g_slot_where', 'guest', ctx), true, cat + ' is asked the fork');
-        assert.deepEqual(gkeys(ctx), slotFlow({ fork: true }));
+        // Massage is pure one-at-a-time (per-treatment length, no basis/capacity).
+        // Yoga and painting are MIXED: they keep the length and capacity (for their
+        // group classes) but drop the basis (each item picks shared vs 1:1).
+        assert.deepEqual(gkeys(ctx), slotFlow({ fork: true, perItemDuration: cat === 'massage', mixed: cat !== 'massage' }));
     }
+    // Massage's dropped screens, stated: duration is asked per treatment (in the
+    // item sub-flow), the basis is fixed private and the capacity fixed at one, so
+    // none of the three is a screen — and weekly hours are no longer one either
+    // (they moved to the listing editor).
+    const massage = { group: 'wellness', category: 'massage', shape: 'slot' };
+    assert.equal(stepApplies('g_slot_length', 'guest', massage), false, 'massage asks duration per treatment, not a provider length');
+    assert.equal(stepApplies('g_slot_basis', 'guest', massage), false, 'massage is fixed private, not asked');
+    assert.equal(stepApplies('g_capacity', 'guest', massage), false, 'massage is one at a time, not asked');
+    assert.equal(stepApplies('g_slot_hours', 'guest', massage), false, 'weekly hours moved to the listing editor — not asked at sign-up');
+    // A mixed category (yoga) keeps length + capacity but has no provider basis.
+    // (No fulfilment ⇒ treated as come-to-me for the screens it declares.)
+    const mixed = { group: 'wellness', category: 'yoga', shape: 'slot' };
+    assert.equal(stepApplies('g_slot_basis', 'guest', mixed), false, 'a mixed slot has no provider basis — each item chooses shared vs 1:1');
+    assert.equal(stepApplies('g_slot_length', 'guest', mixed), true, 'a mixed slot keeps a provider length for its classes');
+    assert.equal(stepApplies('g_capacity', 'guest', mixed), true, 'a mixed slot keeps a capacity for its classes');
+    assert.equal(stepApplies('g_slot_min', 'guest', mixed), true, 'a come-to-me mixed slot keeps a minimum for its shared classes');
     for (const cat of ['tastings', 'cooking', 'sauna', 'pottery', 'workshops', 'outdoors', 'water']) {
         const ctx = { group: 'x', category: cat, shape: 'slot' };
         assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, cat + ' defaults, no fork');
@@ -642,10 +612,35 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     assert.equal(stepApplies('g_slot_where', 'guest', { category: 'food_order', shape: 'made_to_order' }), false);
 });
 
-test('the per-person minimum screen exists only for a shared/per-person slot', () => {
-    const shared = { group: 'crafts', category: 'pottery', shape: 'slot', slotOffer: 'shared' };
+test('a TRAVELLING mixed provider drops the session-length and capacity screens', () => {
+    // Come-to-me: guests come to the studio, so its group classes need a length
+    // and a capacity — both asked.
+    const comeToMe = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'collection' };
+    assert.equal(stepApplies('g_slot_length', 'guest', comeToMe), true, 'come-to-me keeps the class length');
+    assert.equal(stepApplies('g_capacity', 'guest', comeToMe), true, 'come-to-me keeps the class capacity');
+    assert.equal(stepApplies('g_slot_min', 'guest', comeToMe), true, 'come-to-me keeps the class minimum (capacity’s twin)');
+    // Travels to the guest: every item is a private session with its own length,
+    // and nobody joins a class in someone's cottage — so both screens drop, the
+    // same way the shared-vs-private question does.
+    const travels = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'delivery' };
+    assert.equal(stepApplies('g_slot_length', 'guest', travels), false, 'a traveller sets the length per private session');
+    assert.equal(stepApplies('g_capacity', 'guest', travels), false, 'a traveller declares no class capacity');
+    assert.equal(stepApplies('g_slot_min', 'guest', travels), false, 'a traveller sells only private sessions, so no minimum');
+    assert.equal(stepApplies('g_slot_hours', 'guest', travels), false, 'weekly hours moved to the listing editor — not asked at sign-up');
+    // The traveller rule is mixed-only — a non-mixed slot is unaffected.
+    const tastingTravels = { group: 'food', category: 'tastings', shape: 'slot', fulfilment: 'delivery' };
+    assert.equal(stepApplies('g_capacity', 'guest', tastingTravels), true, 'the traveller rule is mixed-only');
+});
+
+test('the per-person minimum screen exists for a shared slot or a come-to-me mixed slot', () => {
+    // A fixed-basis slot's minimum is keyed off its provider slotOffer. A MIXED
+    // slot has no provider basis (slotOffer stays null), so its minimum is keyed
+    // off the category + direction instead: a come-to-me mixed slot can run a
+    // shared class, so it keeps the minimum (see the mixed/travelling tests
+    // above); this test covers the fixed-basis path and the non-slot exclusions.
+    const shared = { group: 'food', category: 'tastings', shape: 'slot', slotOffer: 'shared' };
     const priv = { group: 'wellness', category: 'sauna', shape: 'slot', slotOffer: 'private' };
-    const unanswered = { group: 'crafts', category: 'pottery', shape: 'slot' };
+    const unanswered = { group: 'food', category: 'tastings', shape: 'slot' };
     // Per person: … g_capacity → g_slot_min → g_menu.
     assert.equal(stepApplies('g_slot_min', 'guest', shared), true, 'per person has a minimum');
     assert.deepEqual(gkeys(shared), slotFlow({ perPerson: true }));
@@ -695,33 +690,31 @@ test('expertise and years are asked of every category except the sauna', () => {
 // acceptance lives in the component, not the pure step model, so it has no test
 // here; the gating and the recorded stamp are covered live and by typecheck.
 
-test('years and qualifications are required only where physical safety is at stake', () => {
-    // The line, category by category (Sep 2026). The four where a guide holds
-    // someone's safety require both; a private chef requires a track record but
-    // not a certificate (food hygiene is a separate check); a made-to-order
-    // product asks neither; everyone else asks, optionally.
-    const REQUIRE_BOTH = ['outdoors', 'water', 'massage', 'yoga'];
-    for (const c of REQUIRE_BOTH) {
+test('qualifications are prompted only where a formal qualification matters, and never required', () => {
+    // Qualifications are always OPTIONAL now — no category forces one. We only
+    // PROMPT for them (show the row) on the physical-safety categories, where a
+    // guide holds someone's safety; everywhere else the row is not shown at all.
+    const SAFETY = ['outdoors', 'water', 'massage', 'yoga'];
+    for (const c of SAFETY) {
         assert.equal(guestYearsRequired(c), true, c + ' requires years');
-        assert.equal(guestQualificationsRequired(c), true, c + ' requires qualifications');
+        assert.equal(guestAsksQualifications(c), true, c + ' is prompted for qualifications');
         assert.equal(guestAsksExpertise(c), true, c + ' is asked');
     }
 
-    // The food experiences where the person is the draw: years required,
-    // qualifications optional. The private chef in your kitchen, the tasting host
-    // whose knowledge is the product, and the cooking class you're paying to be
-    // taught — none forced to hold a certificate (food hygiene is a check).
+    // The food experiences where the person is the draw: years required, and
+    // qualifications not prompted (food hygiene is a separate check). The private
+    // chef in your kitchen, the tasting host, the cooking class.
     for (const c of ['chef', 'tastings', 'cooking']) {
         assert.equal(guestYearsRequired(c), true, c + ' needs a track record');
-        assert.equal(guestQualificationsRequired(c), false, c + ' is not forced to hold a qualification');
+        assert.equal(guestAsksQualifications(c), false, c + ' is not prompted for qualifications');
         assert.equal(guestAsksExpertise(c), true, c + ' is asked');
     }
 
-    // The optional middle — asked, qualifications never forced. The crafts and
-    // made-to-order food are back in this group, and 'other' is the catch-all.
+    // Everything else asks the expertise screen (title, years, endorsements) but
+    // the qualifications row is not prompted — a potter's work speaks for itself.
     for (const c of ['other', 'food_order', 'pottery', 'painting', 'workshops']) {
-        assert.equal(guestQualificationsRequired(c), false, c + ' does not force qualifications');
-        assert.equal(guestAsksExpertise(c), true, c + ' is asked, qualifications optional');
+        assert.equal(guestAsksQualifications(c), false, c + ' is not prompted for qualifications');
+        assert.equal(guestAsksExpertise(c), true, c + ' is asked');
     }
 
     // Skipped entirely: only the sauna. The years and expertise screens never
@@ -730,34 +723,49 @@ test('years and qualifications are required only where physical safety is at sta
     assert.equal(guestAsksExpertise('sauna'), false, 'sauna skips the years and expertise screens');
 });
 
-test('the something-else group skips the sub-type screen', () => {
-    // 'other' is alone under its group, so there is no screen two to show.
+test('the something-else group skips the sub-type screen but is asked its shape', () => {
+    // 'other' is alone under its group, so there is no sub-type screen to show —
+    // and because it declares no shape, it never answered the booking shape a
+    // sub-type pick settles for every other category. So it is asked g_shape
+    // instead, before the location step (which reads the shape it sets).
     const ctx = { group: 'other', category: 'other', shape: null };
     assert.equal(stepApplies('g_subtype', 'guest', ctx), false, 'other has no sub-type');
-    // The ten minus the sub-type screen — the verify gate still leads, then
-    // the picker, then straight into the content.
+    assert.equal(stepApplies('g_shape', 'guest', ctx), true, 'other is asked its booking shape');
+    // A real category, whose shape came from its sub-type, is never asked g_shape.
+    assert.equal(stepApplies('g_shape', 'guest', { group: 'wellness', category: 'sauna', shape: 'slot' }), false, 'a real category already has a shape');
+    // g_shape sits between About-you and the location step.
     assert.deepEqual(
         gkeys(ctx),
-        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'finish'],
+        ['trade', 'g_you', 'g_creds', 'g_shape', 'g_area', 'g_photos', 'g_menu', 'g_title', 'g_expect', 'finish'],
     );
 });
 
-test('the guest split never touches a host trade', () => {
+test('the guest-only split never touches a host trade', () => {
     const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
     // A guest context passed to a plumber changes nothing about the plumber.
     assert.deepEqual(
         stepsFor('plumber', ctx).map((s: any) => s.key),
         stepsFor('plumber').map((s: any) => s.key),
     );
-    for (const k of ['g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_capacity', 'g_menu', 'g_expect', 'g_photos', 'g_area']) {
+    // The genuinely guest-only steps stay off for a host trade. g_you and g_creds
+    // are NO LONGER in this list — the years opener and the expertise hub are
+    // shared, and a host trade now has both.
+    for (const k of ['g_subtype', 'g_capacity', 'g_menu', 'g_title', 'g_expect', 'g_photos', 'g_area']) {
         assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
     }
+    // And the shared About-you screens ARE on for the host trade.
+    assert.equal(stepApplies('g_you', 'plumber', ctx), true, 'g_you is on for a host trade');
+    assert.equal(stepApplies('g_creds', 'plumber', ctx), true, 'g_creds is on for a host trade');
 });
 
 test('guest movement and the last step honour the context', () => {
     const ctx = { group: 'wellness', category: 'sauna', shape: 'slot' };
-    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_expect');
-    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_menu');
+    // The Details section opens on the naming step (g_title) now, between the
+    // price and what-happens.
+    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_title');
+    assert.equal(nextStep('guest', 'g_title', ctx), 'g_expect');
+    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_title');
+    assert.equal(previousStep('guest', 'g_title', ctx), 'g_menu');
     assert.equal(isLastStep('guest', 'finish', ctx), true);
     assert.equal(isLastStep('guest', 'g_expect', ctx), false);
     // The business step is off for a guest-with-context, so it resolves back to
@@ -814,9 +822,6 @@ test('the pickers and the name step sit before the rail, in no section', () => {
     // category mid-flow and invalidate everything after it.
     assert.equal(sectionForStep('trade'), null);
     assert.equal(sectionForStep('g_subtype'), null);
-    // The verify-email gate is pre-rail too — the rail begins once the account
-    // exists, at About you.
-    assert.equal(sectionForStep('g_verify'), null);
     // The name step (g_about) sits right after the sub-type, before the rail
     // begins — it belongs to no section, like the pickers it follows.
     assert.equal(sectionForStep('g_about'), null);
@@ -825,8 +830,18 @@ test('the pickers and the name step sit before the rail, in no section', () => {
     assert.equal(sectionForStep('g_creds').key, 'about');
 });
 
-test('a host trade has no rail', () => {
-    // The rail is guest-only. A plumber (or a guest with no context) gets none.
-    assert.deepEqual(sectionsFor('plumber', { group: 'x', category: 'y', shape: null }), []);
+test('a host trade now has its own rail; a guest with no context has none yet', () => {
+    // A host trade walks the full-page wizard too, so it gets the trade rail
+    // (TRADE_SECTIONS), filtered to the steps this trade actually has. It starts
+    // with the About-you section (years + expertise hub, shared with the guest
+    // flow) and ends with finish.
+    const trade = sectionsFor('plumber', { group: 'x', category: 'y', shape: null });
+    const keys = trade.map((s) => s.key);
+    assert.ok(keys.length > 0, 'a host trade has sections');
+    assert.equal(keys[0], 'about');
+    assert.equal(keys[keys.length - 1], 'finish');
+
+    // A guest needs a context before the rail can be drawn (the flow branches on
+    // the category first); without one it is still empty.
     assert.deepEqual(sectionsFor('guest'), []);
 });

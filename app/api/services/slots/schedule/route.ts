@@ -5,15 +5,20 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-// A slot provider's schedule — the weekly opening hours, the slot length and
-// capacity, and the blocked days. Read on the dashboard (to block a day) and in
-// the sign-up (to set it up). Owner-checked both ways: a provider touches only
-// their own schedule.
+// A slot provider's diary. GET reads the weekly hours, slot length and capacity
+// (to show whether hours are set) plus the blocked days. POST writes ONLY the
+// blocked days — the dated exceptions the diary owns.
+//
+// The weekly TEMPLATE (hours, length, capacity) lives in the listing editor's
+// Availability section and is written only through /api/services/listing/save.
+// This route used to be able to write it too; those params were stripped so a
+// later caller cannot resurrect a second writer for one field. Owner-checked: a
+// provider touches only their own diary.
 
 async function ownProvider(admin: any, providerId: string, userId: string) {
     const { data: p } = await admin
         .from('service_providers')
-        .select('id, owner_id, slot_length_minutes, slot_capacity')
+        .select('id, owner_id, slot_length_minutes, slot_capacity, slot_min_people')
         .eq('id', providerId)
         .maybeSingle();
     return p && p.owner_id === userId ? p : null;
@@ -30,18 +35,41 @@ export async function GET(request: Request) {
         const p = await ownProvider(admin, providerId, user.id);
         if (!p) return NextResponse.json({ ok: false, error: 'Not your business' }, { status: 403 });
 
-        const [{ data: availability }, { data: blocks }] = await Promise.all([
+        // Declared dated sessions (the scheduler's rows) from today on — shown on
+        // the calendar and listed in the day panel so a provider sees what they've
+        // added alongside the weekly template and their bookings.
+        const today = new Date().toISOString().slice(0, 10);
+        const [{ data: availability }, { data: blocks }, { data: declared }, { data: items }] = await Promise.all([
             admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', providerId)
                 .order('day_of_week', { ascending: true }),
             admin.from('slot_blocks').select('blocked_date').eq('provider_id', providerId).order('blocked_date', { ascending: true }),
+            admin.from('slot_sessions')
+                .select('id, session_date, session_time, capacity, seats_taken, duration_minutes, title')
+                .eq('provider_id', providerId).eq('declared', true).gte('session_date', today)
+                .order('session_date', { ascending: true }).order('session_time', { ascending: true }),
+            // The priced items — the calendar resolves a free slot's seats through
+            // seatConfig (item wins, else the provider default), the same way the
+            // guest panel and the book route do, so the numbers can't disagree.
+            admin.from('service_provider_items').select('unit, capacity, min_people, active, price').eq('provider_id', providerId),
         ]);
 
         return NextResponse.json({
             ok: true,
             slot_length_minutes: p.slot_length_minutes || 60,
             slot_capacity: p.slot_capacity || 1,
+            slot_min_people: p.slot_min_people || 1,
+            items: (items || []).map((it: any) => ({ unit: it.unit, capacity: it.capacity, min_people: it.min_people, active: it.active !== false, price: Number(it.price) })),
             availability: availability || [],
             blocks: (blocks || []).map((b: any) => b.blocked_date),
+            declaredSessions: (declared || []).map((s: any) => ({
+                id: s.id,
+                date: s.session_date,
+                time: String(s.session_time).slice(0, 5),
+                capacity: Number(s.capacity),
+                seats_taken: Number(s.seats_taken),
+                duration_minutes: s.duration_minutes == null ? null : Number(s.duration_minutes),
+                title: s.title || null,
+            })),
         });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not load the schedule' }, { status: 500 });
@@ -63,28 +91,10 @@ export async function POST(request: Request) {
         const p = await ownProvider(admin, providerId, user.id);
         if (!p) return NextResponse.json({ ok: false, error: 'Not your business' }, { status: 403 });
 
-        // Provider-level config, clamped to sane bounds.
-        const patch: any = {};
-        if (body.slot_length_minutes !== undefined) {
-            patch.slot_length_minutes = Math.min(600, Math.max(15, Math.floor(Number(body.slot_length_minutes) || 60)));
-        }
-        if (body.slot_capacity !== undefined) {
-            patch.slot_capacity = Math.min(200, Math.max(1, Math.floor(Number(body.slot_capacity) || 1)));
-        }
-        if (Object.keys(patch).length) await admin.from('service_providers').update(patch).eq('id', providerId);
-
-        if (Array.isArray(body.availability)) {
-            await admin.from('slot_availability').delete().eq('provider_id', providerId);
-            const rows = body.availability
-                .map((a: any) => ({
-                    provider_id: providerId,
-                    day_of_week: Math.max(0, Math.min(6, Math.floor(Number(a.day_of_week)))),
-                    open_time: String(a.open_time || '').slice(0, 5),
-                    close_time: String(a.close_time || '').slice(0, 5),
-                }))
-                .filter((r: any) => /^\d\d:\d\d$/.test(r.open_time) && /^\d\d:\d\d$/.test(r.close_time) && r.open_time < r.close_time);
-            if (rows.length) await admin.from('slot_availability').insert(rows);
-        }
+        // The weekly template (slot_length_minutes, slot_capacity, weekly hours)
+        // is NOT written here — it belongs to the listing editor's Availability
+        // section (/api/services/listing/save). This route writes only the dated
+        // blocks below, so those params are ignored even if a caller sends them.
 
         if (Array.isArray(body.blocks)) {
             await admin.from('slot_blocks').delete().eq('provider_id', providerId);

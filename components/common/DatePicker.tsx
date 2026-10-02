@@ -17,6 +17,7 @@ const DatePicker = ({ state, dateChangeCallback }: { state: any, dateChangeCallb
                     moveRangeOnFirstSelection={false}
                     onChange={dateChangeCallback}
                     months={1}
+                    weekStartsOn={1}
                     direction='horizontal'
                 />
             </div>
@@ -26,6 +27,7 @@ const DatePicker = ({ state, dateChangeCallback }: { state: any, dateChangeCallb
                     moveRangeOnFirstSelection={false}
                     onChange={dateChangeCallback}
                     months={1}
+                    weekStartsOn={1}
                     direction='horizontal'
                 />
             </div>

@@ -71,7 +71,7 @@ export default async function ArrivalNudge({ userId }: { userId: string }) {
     return (
         <ArrivalNudgeCard
             listingId={candidate.listing_id}
-            title={(listing && listing.title) || 'a cottage'}
+            title={(listing && listing.title) || 'your place'}
             checkIn={candidate.check_in}
         />
     );

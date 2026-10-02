@@ -3,13 +3,14 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
-import { SITE_URL } from '@/lib/email';
+import { returnUrl } from '@/lib/email';
 import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
 import { balanceDueKey } from '@/lib/balanceDue';
 import { londonDayKey } from '@/lib/dayKey';
-import { blockedNightsFromEvents } from '@/lib/availability';
+import { blockedNightsFromEvents, fetchLiveIcalEvents } from '@/lib/availability';
 import { rateFor } from '@/lib/fees';
 import { logError } from '@/lib/logError';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -137,8 +138,8 @@ export async function POST(request: Request) {
             return NextResponse.json(
                 {
                     ok: false,
-                    error: 'The price for these dates has changed to \u00A3'
-                        + quote.total.toFixed(2)
+                    error: 'The price for these dates has changed to '
+                        + formatGBP(quote.total)
                         + '. Please refresh the page and book again.',
                 },
                 { status: 409 }
@@ -157,14 +158,30 @@ export async function POST(request: Request) {
         // this guest was deciding.
         const { data: icalFeeds } = await admin
             .from('listing_ical_feeds')
-            .select('id, label, events')
+            .select('id, label, url, events')
             .eq('listing_id', booking.listing_id);
+
+        // LIVE re-check, right before payment — not just the cached column.
+        //
+        // The sync cron runs feeds serially under a 60s cap with no ordering, so
+        // above ~20 listings an arbitrary tail is never re-synced and its cached
+        // `events` go stale. Reading only that column let a date sold on Airbnb
+        // after the last successful sync stay bookable here right through payment —
+        // two guests, one cottage. So each feed is fetched live here and, when the
+        // fetch succeeds, its FRESH events decide availability; a feed that can't
+        // be reached falls back to its cached column (best available) rather than
+        // blocking a real booking on a momentary outage. Feeds are fetched
+        // concurrently so the added latency is one feed's, not the sum.
+        const liveEvents = await Promise.all(
+            (icalFeeds || []).map((feed: any) => fetchLiveIcalEvents(String(feed.url || '')))
+        );
 
         // Expanded by lib/availability, which is also what search filters
         // with — so a stay search calls free and a stay checkout calls taken
         // cannot come apart.
-        (icalFeeds || []).forEach(function (feed: any) {
-            blockedNightsFromEvents(feed.events).forEach(function (night: string) {
+        (icalFeeds || []).forEach(function (feed: any, i: number) {
+            const events = liveEvents[i] !== null ? liveEvents[i] : feed.events;
+            blockedNightsFromEvents(events).forEach(function (night: string) {
                 blockedDates[night] = true;
             });
         });
@@ -286,9 +303,11 @@ export async function POST(request: Request) {
             customer_creation: keepCard ? 'always' : 'if_required',
             // Lands on a page that confirms the payment from the booking id
             // alone, so a session lost on the way back from Stripe never leaves
-            // a guest staring at a login screen.
-            success_url: SITE_URL + '/booking-confirmed/' + booking.id,
-            cancel_url: SITE_URL + '/homes/' + booking.listing_id + '?cancelled=1',
+            // a guest staring at a login screen. Stripe fills in the session id,
+            // which lets that page ask Stripe directly whether the payment went
+            // through when the webhook has not landed (lib/bookingPaymentReconcile).
+            success_url: returnUrl() + '/booking-confirmed/' + booking.id + '?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url: returnUrl() + '/homes/' + booking.listing_id + '?cancelled=1',
             line_items: [
                 {
                     quantity: 1,
@@ -349,6 +368,20 @@ export async function POST(request: Request) {
                 // booking row is created client-side, so a value arriving with
                 // it would be the guest's claim rather than ours.
                 cleaning_fee: quote.cleaningFeeTotal,
+                // The other two fee lines, frozen for the same reason as the
+                // cleaning fee: the listing's pet_fee / extra_guest_fee are
+                // host-mutable, so the breakdown has to remember what was
+                // actually charged, not what the host has set since. Stored so
+                // the trip card can show each as its own line instead of rolling
+                // them into the accommodation figure.
+                pet_fee: quote.petFeeTotal,
+                extra_guest_fee: quote.extraGuestTotal,
+                // The per-night split behind the accommodation subtotal, frozen
+                // on the same principle and at the same moment: the calendar
+                // this was computed against is host-mutable, so the only honest
+                // record of what each night cost is the one taken now. Every
+                // later view reads this snapshot rather than recomputing.
+                nightly_breakdown: quote.nightly,
                 status: 'pending_payment',
             })
             .eq('id', booking.id);

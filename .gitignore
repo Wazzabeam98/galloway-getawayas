@@ -11,6 +11,7 @@
 # next.js
 /.next/
 /.next-verify/
+/.next-dev-verify/
 /out/
 
 # production
@@ -49,3 +50,10 @@ next-env.d.ts
 /playwright-report
 /blob-report
 /.playwright
+
+# browser profiles for UI research — real session cookies, never committed.
+# The live profile deliberately lives OUTSIDE this repo
+# (~/.claude-browser-profiles); this entry is a backstop in case one is ever
+# created in the working tree by mistake.
+.claude-browser-profiles/
+browser-profile*/

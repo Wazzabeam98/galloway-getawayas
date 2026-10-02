@@ -53,6 +53,13 @@ export const MAX_PRICE_PER_NIGHT = 5000;
 // and loses the booking to it.
 export const MIN_AMENITIES = 3;
 
+// Photos a NEW listing needs before it can be published for the first time — the
+// Airbnb bar. Enforced on the server (listings/publish) and mirrored in the
+// new-listing wizard. Deliberately NOT part of the per-step publish rules below,
+// which the edit screen also runs on save: an already-live listing with fewer is
+// grandfathered and must stay editable, so this only ever gates a first publish.
+export const NEW_LISTING_MIN_PHOTOS = 5;
+
 // ---------------------------------------------------------------------------
 // WHAT EARNS A BADGE ON A CARD
 //

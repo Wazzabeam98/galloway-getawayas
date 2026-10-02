@@ -29,7 +29,7 @@ import assert from 'node:assert/strict';
 const path = require('path');
 const report = require(path.resolve(__dirname, '..', '..', 'scripts', 'scenario-report.cjs'));
 
-const RUNNERS = ['payout', 'refund', 'balance', 'crosscutting'];
+const RUNNERS = ['payout', 'refund', 'balance', 'change', 'crosscutting'];
 // What to do about it. Attached to every failure whose remedy is "run them",
 // and deliberately not to the one where the last run recorded a real failure —
 // there the remedy is to fix the bug, not to run it again until it is quiet.

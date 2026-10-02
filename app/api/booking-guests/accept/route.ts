@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
         const { data: invite } = await admin
             .from('booking_guests')
-            .select('id, booking_id, email, status, user_id, link_sent_at')
+            .select('id, booking_id, order_id, email, status, user_id, link_sent_at')
             .eq('invite_token', token)
             .maybeSingle();
 
@@ -47,28 +47,49 @@ export async function POST(request: Request) {
             );
         }
 
-        // The link expires when the stay ends, so a leaked or forgotten invite
-        // can't sit live for months. Read the booking's check_out and compare on
-        // date, not time — a same-day accept on the checkout day still counts.
-        const { data: booking } = await admin
-            .from('bookings')
-            .select('check_out, status')
-            .eq('id', invite.booking_id)
-            .maybeSingle();
-
-        if (!booking || booking.status === 'cancelled' || booking.status === 'declined') {
-            return NextResponse.json(
-                { ok: false, error: 'That trip is no longer available.' },
-                { status: 404 }
-            );
-        }
-
+        // The link expires when the thing it's for is over, so a leaked or
+        // forgotten invite can't sit live for months. An EXPERIENCE invite reads
+        // the order's date; a STAY invite reads the booking's check-out. Same
+        // rule, its own parent — compared on date, not time, so a same-day accept
+        // on the day itself still counts.
         const today = new Date().toISOString().slice(0, 10);
-        if (String(booking.check_out) < today) {
-            return NextResponse.json(
-                { ok: false, error: 'This invite has expired — the stay has already ended.' },
-                { status: 410 }
-            );
+        if (invite.order_id) {
+            const { data: order } = await admin
+                .from('service_orders')
+                .select('service_date, status')
+                .eq('id', invite.order_id)
+                .maybeSingle();
+            if (!order || ['cancelled', 'refunded', 'declined', 'expired'].includes(String(order.status))) {
+                return NextResponse.json(
+                    { ok: false, error: 'That experience is no longer available.' },
+                    { status: 404 }
+                );
+            }
+            if (order.service_date && String(order.service_date) < today) {
+                return NextResponse.json(
+                    { ok: false, error: 'This invite has expired — the experience has already happened.' },
+                    { status: 410 }
+                );
+            }
+        } else {
+            const { data: booking } = await admin
+                .from('bookings')
+                .select('check_out, status')
+                .eq('id', invite.booking_id)
+                .maybeSingle();
+
+            if (!booking || booking.status === 'cancelled' || booking.status === 'declined') {
+                return NextResponse.json(
+                    { ok: false, error: 'That trip is no longer available.' },
+                    { status: 404 }
+                );
+            }
+            if (String(booking.check_out) < today) {
+                return NextResponse.json(
+                    { ok: false, error: 'This invite has expired — the stay has already ended.' },
+                    { status: 410 }
+                );
+            }
         }
 
         // Single use. Once a link is claimed it belongs to whoever claimed it:

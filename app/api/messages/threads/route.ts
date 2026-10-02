@@ -266,6 +266,82 @@ export async function GET() {
         });
     }
 
+    // --- the PROVIDER's own reservation threads ------------------------------
+    // The other side of the two above: orders and enquiries for a business this
+    // user OWNS. This is what makes /messages a home for a provider too, so their
+    // Message buttons open the three-pane with the reservation card rather than a
+    // bare single-thread page. Deduped by key (a user is never both sides of one
+    // thread, so this only adds).
+    const seenKeys = new Set(conversations.map((c: any) => c.key));
+    const { data: myProviders } = await admin
+        .from('service_providers')
+        .select('id')
+        .eq('owner_id', uid);
+    const providerIds = (myProviders || []).map((p: any) => p.id);
+
+    if (providerIds.length) {
+        const { data: provOrders } = await admin
+            .from('service_orders')
+            .select('id, item_name, service_date, status, guest_name')
+            .in('provider_id', providerIds)
+            .is('parent_order_id', null)
+            .in('status', ['authorised', 'confirmed']);
+        const provOrderIds = (provOrders || []).map((o: any) => o.id);
+        const poLast: Record<string, any> = {};
+        const poUnread: Record<string, number> = {};
+        if (provOrderIds.length) {
+            const { data: msgs } = await admin.from('messages')
+                .select('order_id, body, created_at, sender_id, recipient_id, read_at')
+                .in('order_id', provOrderIds).order('created_at', { ascending: false });
+            (msgs || []).forEach((m: any) => {
+                if (!poLast[m.order_id]) poLast[m.order_id] = m;
+                if (m.recipient_id === uid && !m.read_at) poUnread[m.order_id] = (poUnread[m.order_id] || 0) + 1;
+            });
+        }
+        for (const o of provOrders || []) {
+            if (seenKeys.has('order:' + o.id)) continue;
+            const last = poLast[o.id] || null;
+            conversations.push({
+                kind: 'order', id: o.id, key: 'order:' + o.id, manageable: false,
+                otherName: o.guest_name || 'Guest',
+                subtitle: (o.item_name || 'Experience') + (o.service_date ? ' · ' + String(o.service_date) : ''),
+                listing: null, lastMessage: last, unread: poUnread[o.id] || 0,
+                needsReply: !!(last && last.sender_id !== uid),
+                noReplyNeeded: false, starred: false, archived: false, stage: null,
+            });
+        }
+
+        const { data: provEnq } = await admin
+            .from('service_enquiries')
+            .select('id, reference, summary, status, host_name')
+            .in('provider_id', providerIds)
+            .in('status', ['accepted', 'cancelled']);
+        const provEnqIds = (provEnq || []).map((e: any) => e.id);
+        const peLast: Record<string, any> = {};
+        const peUnread: Record<string, number> = {};
+        if (provEnqIds.length) {
+            const { data: msgs } = await admin.from('messages')
+                .select('enquiry_id, body, created_at, sender_id, recipient_id, read_at')
+                .in('enquiry_id', provEnqIds).order('created_at', { ascending: false });
+            (msgs || []).forEach((m: any) => {
+                if (!peLast[m.enquiry_id]) peLast[m.enquiry_id] = m;
+                if (m.recipient_id === uid && !m.read_at) peUnread[m.enquiry_id] = (peUnread[m.enquiry_id] || 0) + 1;
+            });
+        }
+        for (const e of provEnq || []) {
+            if (seenKeys.has('enquiry:' + e.id)) continue;
+            const last = peLast[e.id] || null;
+            conversations.push({
+                kind: 'enquiry', id: e.id, key: 'enquiry:' + e.id, manageable: false,
+                otherName: e.host_name || 'The owner',
+                subtitle: String(e.reference || '') + (e.summary ? ' · ' + e.summary : ''),
+                listing: null, lastMessage: last, unread: peUnread[e.id] || 0,
+                needsReply: !!(last && last.sender_id !== uid),
+                noReplyNeeded: false, starred: false, archived: false, stage: null,
+            });
+        }
+    }
+
     // Sorted by the most recent message rather than when the booking was
     // made — a conversation someone replied to an hour ago matters more than
     // a booking taken last week.

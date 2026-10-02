@@ -245,20 +245,21 @@ test('a new tag is only new when nothing matches', () => {
 
 const { asksAboutSkills } = require('@/lib/serviceProviders');
 
-test('only the handyman is asked for skills', () => {
-    // A roofer's work is a roof and a joiner's is joinery — both already said
-    // by the trade and the offerings, so a tag box there is a blank field to
-    // fill in for no gain. This was briefly on all six maintenance trades and
-    // was friction on five of them.
-    assert.equal(asksAboutSkills('handyman'), true);
-
-    for (const trade of ['electrician', 'joiner', 'plumber', 'roofer', 'painter']) {
-        assert.equal(asksAboutSkills(trade), false, trade + ' is not asked for skills');
+test('every host trade is asked what services it covers', () => {
+    // Now that the pre-filled competency list is gone, the services search
+    // stands in for it on every trade a host hires — the handyman as before,
+    // but also the roofer, the joiner, gardening and waste removal, each
+    // searching an existing list first and adding their own when nothing fits.
+    for (const trade of ['handyman', 'electrician', 'joiner', 'plumber', 'roofer',
+        'painter', 'sponge', 'bin', 'trees', 'droplet', 'other']) {
+        assert.equal(asksAboutSkills(trade), true, trade + ' is asked what services it covers');
     }
 });
 
-test('the trades outside maintenance are not asked either', () => {
-    for (const trade of ['sponge', 'bin', 'trees', 'droplet', 'cake', 'chef']) {
-        assert.equal(asksAboutSkills(trade), false, trade + ' is not asked for skills');
+test('a guest offering is not asked for host services', () => {
+    // The guest experiences run their own wizard; the host services search is
+    // for the trades a host hires, not a baker or a chef.
+    for (const trade of ['cake', 'chef']) {
+        assert.equal(asksAboutSkills(trade), false, trade + ' is not asked for host services');
     }
 });

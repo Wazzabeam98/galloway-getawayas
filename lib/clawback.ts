@@ -1,5 +1,6 @@
 import { stripeRequest } from '@/lib/stripe';
 import { logError } from '@/lib/logError';
+import { formatGBP } from '@/lib/formatMoney';
 
 function round2(value: number): number {
     return Math.round(value * 100) / 100;
@@ -8,7 +9,7 @@ function round2(value: number): number {
 // Stripe's own code for 'the connected account did not have the money'. It is
 // the only failure that means the host genuinely owes us; everything else is
 // a fault on our side or Stripe's, and must not be turned into a debt.
-function isShortOfFunds(err: any): boolean {
+export function isShortOfFunds(err: any): boolean {
     if (!err) return false;
     if (err.stripeCode === 'balance_insufficient') return true;
     return /insufficient/i.test(String(err.message || ''));
@@ -75,12 +76,14 @@ async function availableAt(accountId: string): Promise<number | null> {
 // ALREADY come back, so there is nothing to recover and nothing owed either.
 // Collapsing that into "reachable: 0" invents a debt out of a payout that was
 // recovered in full — which is the one thing this file must never do.
-interface Reversible {
+export interface Reversible {
     reachable: number | null;
     fullyReversed: boolean;
 }
 
-async function reversibleFrom(
+// Exported for lib/experienceFunds.ts, which claws back an experience payout
+// the same way.
+export async function reversibleFrom(
     accountId: string,
     transferId: string
 ): Promise<Reversible> {
@@ -232,7 +235,7 @@ export async function clawBackPayout(
                 status: 'succeeded',
                 stripe_transfer_id: booking.payout_transfer_id,
                 note: shortfall > 0
-                    ? 'All the host had at Stripe. £' + shortfall.toFixed(2) + ' carried forward'
+                    ? 'All the host had at Stripe. ' + formatGBP(shortfall) + ' carried forward'
                     : null,
             });
         }
@@ -240,7 +243,7 @@ export async function clawBackPayout(
         if (shortfall > 0) {
             await carryForward(
                 admin, booking, shortfall,
-                'The host’s Stripe balance was £' + shortfall.toFixed(2)
+                'The host’s Stripe balance was ' + formatGBP(shortfall)
                     + ' short, carried to their next payout'
             );
         }

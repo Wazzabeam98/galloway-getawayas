@@ -9,6 +9,7 @@ import { DEFAULT_COMMISSION_PERCENT, netOfFee, feeAmount } from '@/lib/fees';
 import { adminName } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
 import { outstandingOf, debtReason, debtExplanation, round2 } from '@/lib/hostDebt';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,12 +29,14 @@ export default async function AdminPayouts() {
         .from('bookings')
         .select('id, listing_id, host_id, check_in, check_out, total_price, status, payment_status, commission_rate, paid_out_at, payout_amount, payout_transfer_id')
         .eq('status', 'confirmed')
-        .eq('payment_status', 'paid')
+        // The same set the payout run pays (app/api/cron/host-payouts): a stay
+        // with a partial refund is still owed its remainder.
+        .in('payment_status', ['paid', 'partially_refunded'])
         .order('check_in', { ascending: true });
 
     const rows = bookings || [];
 
-    const { data: listings } = await admin.from('listings').select('id, title, commission_rate');
+    const { data: listings } = await admin.from('listings').select('id, title, commission_rate, host_id, status');
     // `profiles`, not `profile_private`. That view is scoped by auth.uid() in
     // its own WHERE clause — which is part of the view body, so it applies to
     // the service key too, and auth.uid() is null there. It returned NOTHING,
@@ -118,6 +121,7 @@ export default async function AdminPayouts() {
 
     const paid: any[] = [];
     const due: any[] = [];
+    const held: any[] = [];
     const upcoming: any[] = [];
 
     rows.forEach((b: any) => {
@@ -127,6 +131,7 @@ export default async function AdminPayouts() {
             id: b.id,
             title: listingTitle[b.listing_id] || 'Untitled listing',
             host: hostInfo[b.host_id] || { name: 'Host', connected: false, payoutsOn: false },
+            hostId: b.host_id,
             checkIn: b.check_in,
             gross: gross,
             rate: rate,
@@ -138,12 +143,37 @@ export default async function AdminPayouts() {
         };
 
         if (b.paid_out_at) paid.push(entry);
+        // HELD: due, but the host has no payouts. The payout run skips these
+        // and retries every day; the first run after Stripe enables the host
+        // (the account.updated webhook) pays them. Nothing is lost.
+        else if (entry.when.getTime() <= today.getTime() && !entry.host.payoutsOn) held.push(entry);
         else if (entry.when.getTime() <= today.getTime()) due.push(entry);
         else upcoming.push(entry);
     });
 
     const sum = (list: any[], key: string) =>
         list.reduce((total, r) => total + Number(r[key] || 0), 0);
+
+    // Every host with a listing that's live, paused or waiting for approval,
+    // and where their payouts stand — so a host who's live but can't be paid
+    // is visible here before any money is waiting on them.
+    const hostIdsWithListings = Array.from(new Set((listings || [])
+        .filter((l: any) => l.status === 'published' || l.status === 'hidden' || l.status === 'pending_review')
+        .map((l: any) => l.host_id)
+        .filter(Boolean)));
+    const payoutStatus = hostIdsWithListings.map((id) => {
+        const h = hostInfo[id] || { name: 'Host', connected: false, payoutsOn: false };
+        const heldFor = held.filter((r) => r.hostId === id);
+        const upcomingFor = upcoming.filter((r) => r.hostId === id);
+        return {
+            id,
+            name: h.name,
+            state: h.payoutsOn ? 'on' : h.connected ? 'started' : 'none',
+            held: sum(heldFor, 'net'),
+            heldCount: heldFor.length,
+            upcomingCount: upcomingFor.length,
+        };
+    }).sort((a, b) => (a.state === 'on' ? 1 : 0) - (b.state === 'on' ? 1 : 0) || b.held - a.held);
 
     const Section = ({ title, note, list, showPaidDate }: any) => (
         <div className="mb-10">
@@ -183,9 +213,9 @@ export default async function AdminPayouts() {
                                 )}
                             </div>
                             <div className="text-right">
-                                <div className="font-semibold text-slate-900">£{r.net.toFixed(2)}</div>
+                                <div className="font-semibold text-slate-900">{formatGBP(r.net)}</div>
                                 <div className="text-xs text-slate-500">
-                                    £{r.gross.toFixed(2)} guest &middot; £{r.fee.toFixed(2)} fee
+                                    {formatGBP(r.gross)} guest &middot; {formatGBP(r.fee)} fee
                                     {r.rate === 0 ? ' (no commission)' : ' (' + r.rate + '%)'}
                                 </div>
                             </div>
@@ -233,10 +263,10 @@ export default async function AdminPayouts() {
                                             {(host && host.name) || 'Host'}
                                         </div>
                                         <div className="font-bold text-amber-800">
-                                            £{left.toFixed(2)}
+                                            {formatGBP(left)}
                                             {left < charged && (
                                                 <span className="font-normal text-xs text-amber-700">
-                                                    {' '}of £{charged.toFixed(2)}, part recovered
+                                                    {' '}of {formatGBP(charged)}, part recovered
                                                 </span>
                                             )}
                                         </div>
@@ -250,8 +280,8 @@ export default async function AdminPayouts() {
                                         <div className="text-sm text-slate-500 mt-0.5">
                                             {listingTitle[b.listing_id] || 'Listing'} &middot;{' '}
                                             {formatUk(new Date(b.check_in))} &rarr;{' '}
-                                            {formatUk(new Date(b.check_out))} &middot; £
-                                            {Number(b.total_price || 0).toFixed(2)} booking
+                                            {formatUk(new Date(b.check_out))} &middot;{' '}
+                                            {formatGBP(b.total_price || 0)} booking
                                             {b.cancelled_by_role
                                                 ? ' · cancelled by the ' + b.cancelled_by_role
                                                 : ''}
@@ -315,8 +345,8 @@ export default async function AdminPayouts() {
                             <div className="text-xs font-semibold text-red-700 mt-4 space-y-1">
                                 {off.map((r) => (
                                     <p key={r.id}>
-                                        {r.name}: these lines come to £{r.itemised.toFixed(2)} but the
-                                        running total on the host record says £{r.total.toFixed(2)}.
+                                        {r.name}: these lines come to {formatGBP(r.itemised)} but the
+                                        running total on the host record says {formatGBP(r.total)}.
                                         They should match — check before quoting either at them.
                                     </p>
                                 ))}
@@ -326,27 +356,70 @@ export default async function AdminPayouts() {
                 </div>
             )}
 
-            <div className="grid grid-cols-3 gap-4 mb-10">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
+                <div className="border rounded-2xl p-5">
+                    <div className="text-sm text-slate-500 mb-1">Held</div>
+                    <div className="text-xl font-bold text-rose-700">
+                        {formatGBP(sum(held, 'net'))}
+                    </div>
+                </div>
                 <div className="border rounded-2xl p-5">
                     <div className="text-sm text-slate-500 mb-1">Due now</div>
                     <div className="text-xl font-bold text-amber-700">
-                        £{sum(due, 'net').toFixed(2)}
+                        {formatGBP(sum(due, 'net'))}
                     </div>
                 </div>
                 <div className="border rounded-2xl p-5">
                     <div className="text-sm text-slate-500 mb-1">Upcoming</div>
                     <div className="text-xl font-bold text-slate-900">
-                        £{sum(upcoming, 'net').toFixed(2)}
+                        {formatGBP(sum(upcoming, 'net'))}
                     </div>
                 </div>
                 <div className="border rounded-2xl p-5">
                     <div className="text-sm text-slate-500 mb-1">Paid out</div>
                     <div className="text-xl font-bold text-emerald-700">
-                        £{sum(paid, 'net').toFixed(2)}
+                        {formatGBP(sum(paid, 'net'))}
                     </div>
                 </div>
             </div>
 
+            <div className="mb-10">
+                <h2 className="text-lg font-semibold text-slate-900 mb-1">Hosts&apos; payout status</h2>
+                <p className="text-sm text-slate-500 mb-4">
+                    Every host with a live, paused or pending listing. A listing goes live on approval
+                    whether or not payouts are set up; their money is held until they are.
+                </p>
+                {payoutStatus.length === 0 ? (
+                    <p className="text-sm text-slate-400 border rounded-2xl p-5">No hosts with listings yet.</p>
+                ) : (
+                    <div className="border rounded-2xl divide-y">
+                        {payoutStatus.map((h) => (
+                            <div key={h.id} className="flex items-center justify-between gap-4 p-4 flex-wrap">
+                                <div className="min-w-0">
+                                    <div className="font-semibold text-slate-900 truncate">{h.name}</div>
+                                    <div className="text-xs text-slate-500">
+                                        {h.upcomingCount} upcoming {h.upcomingCount === 1 ? 'stay' : 'stays'}
+                                        {h.heldCount > 0 ? ' · ' + h.heldCount + ' held' : ''}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {h.held > 0 && <span className="text-sm font-semibold text-rose-700">{formatGBP(h.held)} held</span>}
+                                    <span className={'rounded-full px-2.5 py-1 text-xs font-semibold '
+                                        + (h.state === 'on' ? 'bg-emerald-50 text-emerald-800' : h.state === 'started' ? 'bg-amber-50 text-amber-800' : 'bg-rose-50 text-rose-800')}>
+                                        {h.state === 'on' ? 'Payouts on' : h.state === 'started' ? 'Started, not finished' : 'Not set up'}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <Section
+                title="Held"
+                note="Check-in has passed, but the host hasn't finished setting up payouts. Paid automatically on the first payout run after Stripe enables them."
+                list={held}
+            />
             <Section
                 title="Due now"
                 note="Check-in has passed and the money is ready to go."

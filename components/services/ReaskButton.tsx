@@ -107,7 +107,7 @@ export default function ReaskButton({ source, onDone }: { source: ReaskSource; o
                 <button onClick={() => setOpen(false)} className="text-[12.5px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1.5">Back</button>
             </div>
             {source.urgency === 'planned' && date && (
-                <p className="mt-1.5 text-[11.5px] text-slate-400">Suggested: the cottage’s next changeover. Change it if you need it sooner.</p>
+                <p className="mt-1.5 text-[11.5px] text-slate-400">Suggested: the property’s next changeover. Change it if you need it sooner.</p>
             )}
             {error && <div className="mt-1.5 text-[11.5px] text-rose-700">{error}</div>}
         </div>

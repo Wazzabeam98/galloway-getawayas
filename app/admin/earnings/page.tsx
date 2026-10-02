@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DEFAULT_COMMISSION_PERCENT, feeAmount } from '@/lib/fees';
 import { adminName } from '@/lib/utils';
+import { formatGBP } from '@/lib/formatMoney';
 
 export const dynamic = 'force-dynamic';
 
@@ -131,13 +132,13 @@ export default async function AdminEarnings({
                 <div className="border rounded-2xl p-5">
                     <div className="text-sm text-slate-500 mb-1">Guest bookings total</div>
                     <div className="text-2xl font-bold text-slate-900">
-                        £{grandGross.toFixed(2)}
+                        {formatGBP(grandGross)}
                     </div>
                 </div>
                 <div className="border rounded-2xl p-5">
                     <div className="text-sm text-slate-500 mb-1">Commission earned</div>
                     <div className="text-2xl font-bold text-emerald-700">
-                        £{grandCommission.toFixed(2)}
+                        {formatGBP(grandCommission)}
                     </div>
                 </div>
             </div>
@@ -163,9 +164,9 @@ export default async function AdminEarnings({
                                 </div>
                             </div>
                             <div className="text-right">
-                                <div className="font-semibold text-slate-900">£{r.gross.toFixed(2)}</div>
+                                <div className="font-semibold text-slate-900">{formatGBP(r.gross)}</div>
                                 <div className="text-sm text-slate-500">
-                                    £{r.commission.toFixed(2)} commission
+                                    {formatGBP(r.commission)} commission
                                 </div>
                             </div>
                         </div>

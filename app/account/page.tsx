@@ -82,7 +82,7 @@ function describeListings(ids: string[] | null | undefined): string {
 // Highlights the placeholders inside the box you actually type in.
 //
 interface Field {
-    key: 'full_name' | 'preferred_name' | 'trading_name' | 'phone' | 'residential_address';
+    key: 'full_name' | 'preferred_name' | 'phone' | 'residential_address';
     label: string;
     hint?: string;
 }
@@ -90,10 +90,6 @@ interface Field {
 const FIELDS: Field[] = [
     { key: 'full_name', label: 'Legal name' },
     { key: 'preferred_name', label: 'Preferred name' },
-    // Optional, and never asked at sign-up: a guest experience is listed under
-    // the person's own name unless they trade under one. When set, it takes over
-    // as the listing title.
-    { key: 'trading_name', label: 'Trading name', hint: 'Optional. The name your experience is listed under, if you trade under one. Leave it blank and your listing shows under your own name.' },
     { key: 'phone', label: 'Phone number' },
 ];
 
@@ -103,8 +99,7 @@ export default function AccountSettings() {
     const [email, setEmail] = useState('');
     const [activeSection, setActiveSection] = useState('personal');
 
-    const [profile, setProfile] = useState<{ full_name: string; preferred_name: string; trading_name: string; phone: string; residential_address: string }>({
-        trading_name: '',
+    const [profile, setProfile] = useState<{ full_name: string; preferred_name: string; phone: string; residential_address: string }>({
         full_name: '',
         preferred_name: '',
         phone: '',
@@ -204,22 +199,11 @@ export default function AccountSettings() {
                     setProfile({
                         full_name: profileData.full_name || '',
                         preferred_name: profileData.preferred_name || '',
-                        trading_name: '',
                         phone: profileData.phone || '',
                         residential_address: profileData.residential_address || '',
                     });
                     setShowFullName(profileData.show_full_name !== false);
                     setAvatarUrl(profileData.avatar_url || null);
-                }
-
-                // trading_name is public (granted like full_name), so it is read
-                // straight off profiles rather than the private view. Defensive:
-                // if the column is not deployed yet the whole page must still
-                // load, so a failure just leaves it blank.
-                const { data: tn } = await supabase
-                    .from('profiles').select('trading_name').eq('id', session.user.id).maybeSingle();
-                if (tn && (tn as any).trading_name) {
-                    setProfile((prev) => ({ ...prev, trading_name: (tn as any).trading_name }));
                 }
 
                 // host_bio lives on profiles (public-readable), not on the
@@ -420,13 +404,16 @@ export default function AccountSettings() {
         if (deleteConfirmText !== 'DELETE') return;
         setDeleting(true);
 
-        // Runs a database function that refuses if there are still live
-        // bookings, then removes the account. See the Supabase SQL step.
-        const { error } = await supabase.rpc('delete_own_account');
+        // Closing an account ANONYMISES it: the route scrubs personal details,
+        // disables sign-in and removes stored images, while keeping the booking
+        // and payment records (they are required and belong to other people's
+        // stays too). It refuses if there are still live bookings to cancel.
+        const res = await fetch('/api/account/delete', { method: 'POST' });
+        const body = await res.json().catch(() => ({}));
 
-        if (error) {
+        if (!res.ok) {
             setDeleting(false);
-            toast.error(error.message, { theme: 'colored' });
+            toast.error(body?.error || 'Could not close your account.', { theme: 'colored' });
             return;
         }
 
@@ -790,7 +777,7 @@ export default function AccountSettings() {
                                     onChange={(e) => setHostBio(e.target.value)}
                                     maxLength={500}
                                     rows={4}
-                                    placeholder="e.g. We live just up the road in Kirkcudbright and have let this cottage for years. Message any time — we usually reply within the hour."
+                                    placeholder="e.g. We live just up the road in Kirkcudbright and have let this place for years. Message any time — we usually reply within the hour."
                                     className="w-full p-3 border rounded-xl text-sm"
                                 />
                                 <div className="flex items-center justify-between mt-2">
@@ -1096,7 +1083,7 @@ export default function AccountSettings() {
                                     <div className="font-semibold text-red-800 text-sm">Delete my account</div>
                                 </div>
                                 <p className="text-xs text-red-700/80 mb-4">
-                                    This permanently removes your account, your profile, your listings and your booking history. It cannot be undone. If you have upcoming or pending bookings, cancel them first — as either a guest or a host.
+                                    This closes your account for good. Your personal details — your name, contact details, address and photos — are removed and you won&apos;t be able to sign back in. Your booking and payment records are kept, because they belong to other people&apos;s stays too and we&apos;re required to hold them, but they&apos;re no longer linked to a usable account. If you have upcoming or pending bookings, cancel them first — as either a guest or a host.
                                 </p>
 
                                 {!deleteOpen ? (
@@ -1136,7 +1123,7 @@ export default function AccountSettings() {
                                                 disabled={deleting || deleteConfirmText !== 'DELETE'}
                                                 className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
-                                                {deleting ? 'Deleting...' : 'Permanently delete'}
+                                                {deleting ? 'Closing...' : 'Close my account'}
                                             </button>
                                         </div>
                                     </div>
@@ -1403,8 +1390,11 @@ export default function AccountSettings() {
                     ) : activeSection === 'bookings' ? (
                         <div>
                             <h2 className="text-2xl font-bold text-slate-900 mb-1">Booking permissions</h2>
-                            <p className="text-sm text-slate-500 mb-6">
-                                Decide how guests can book each of your places.
+                            <p className="text-sm text-slate-500 mb-4">
+                                Decide how guests can book each of your places. Instant book, the fees, deposit,
+                                stay length and cancellation policy all live together under
+                                <span className="font-medium text-slate-700"> Booking settings</span> on each
+                                listing&rsquo;s editor now — the toggles here still work and stay in step.
                             </p>
 
                             {hostListings.length === 0 ? (
@@ -1420,8 +1410,13 @@ export default function AccountSettings() {
                                         const busy = savingListing === l.id;
                                         return (
                                             <div key={l.id} className="border rounded-2xl p-5">
-                                                <div className="font-semibold text-slate-900 text-sm mb-4">
-                                                    {l.title || 'Untitled listing'}
+                                                <div className="flex items-center justify-between gap-3 mb-4">
+                                                    <div className="font-semibold text-slate-900 text-sm">
+                                                        {l.title || 'Untitled listing'}
+                                                    </div>
+                                                    <a href={`/edit-listing/${l.id}?section=booking`} className="flex-none text-[13px] font-semibold text-emerald-700 hover:underline">
+                                                        Booking settings &rarr;
+                                                    </a>
                                                 </div>
 
                                                 {/* Scottish short-term let licence */}

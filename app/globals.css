@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Scale ONLY the host reservation page's content up ~15% on laptop and desktop
+   widths, like 115% browser zoom on that one page. The class goes on the page's
+   own content container (below the nav, above the footer), so the nav bar, the
+   footer and every other page are left exactly as they were. `zoom` reflows the
+   subtree to fit the viewport width, so nothing overflows horizontally. Phones
+   and tablets (< 1024px) stay at their normal size. */
+@media (min-width: 1024px) {
+  .hostres-zoom {
+    zoom: 1.15;
+  }
+}
+
 /* `.container` carries 2rem of side padding, which is 64px off a 375px screen
    before any content gets a look in — the listing page was rendering its
    booking card at 247px and clipping Friday and Saturday out of the calendar.
@@ -17,6 +29,22 @@
   .container {
     padding-left: 1rem;
     padding-right: 1rem;
+  }
+}
+
+/* iOS Safari zooms the page whenever a focused control's font is below 16px, so
+   every form control gets at least 16px at phone widths. Only the value; nothing
+   about the layout changes at or above 768px. The react-date-range month/year
+   pickers ship at 12px and carry the library's own class specificity, so they
+   are lifted by name as well as by the element rule. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  .rdrMonthAndYearPickers select {
+    font-size: 16px;
   }
 }
 
@@ -104,17 +132,61 @@
   padding: 0 0.5em 0.5em 0.5em !important;
 }
 
-/* 5. Emerald selection colors */
-.rdrStartEdge, 
-.rdrEndEdge, 
-.rdrInRange {
+/* 4b. The cottage booking calendar (the listing-page BookingWidget). The
+   default .rdrMonth above is a fixed 23em (~368px), but the sticky booking card
+   at lg is narrower than that, and the wrapper's overflow-hidden cropped the
+   overflow — so the seventh (Saturday) column fell off the right and the
+   calendar looked like a six-day week. Force the whole react-date-range chain to
+   the card's own width and spread the seven day cells evenly, exactly the fix
+   the change calendars already use. Scoped to .cottage-cal so no other calendar
+   is touched. */
+.cottage-cal .rdrDateRangePickerWrapper,
+.cottage-cal .rdrDateRangeWrapper,
+.cottage-cal .rdrCalendarWrapper,
+.cottage-cal .rdrMonths,
+.cottage-cal .rdrMonthsVertical,
+.cottage-cal .rdrMonth,
+.cottage-cal .rdrMonthAndYearWrapper,
+.cottage-cal .rdrWeekDays,
+.cottage-cal .rdrDays {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.cottage-cal .rdrMonth { padding: 0 0.25em 0.5em 0.25em !important; }
+.cottage-cal .rdrDateRangePickerWrapper,
+.cottage-cal .rdrMonths,
+.cottage-cal .rdrMonthsVertical { display: flex; }
+.cottage-cal .rdrDay { width: 14.2857% !important; }
+
+/* 5. Emerald selection colors.
+   The range picker paints its edges with .rdrStartEdge/.rdrEndEdge/.rdrInRange;
+   a SINGLE-date Calendar (the change-date sheet, the booking panel) marks its
+   pick with .rdrSelected instead. react-date-range fills all of these with
+   `background: currentColor`, and rule 6 below forces their colour white — so
+   .rdrSelected MUST be given the emerald fill here alongside the range classes.
+   Leaving it out (the original bug) left the single-date pick white-on-white: an
+   empty ring with an invisible number. This one rule is the whole selection
+   colour for every react-date-range calendar in the app — no per-calendar
+   overrides. */
+.rdrStartEdge,
+.rdrEndEdge,
+.rdrInRange,
+.rdrSelected {
   background: #047857 !important;
 }
 
-/* 6. Text color fixes inside selected ranges */
-.rdrSelected, 
+/* 6. White number on the selected / in-range day, and white text on the fill
+   elements themselves. The `~ .rdrDayNumber span` rule is what actually colours
+   the day's digit (the number is a sibling of the fill, not a child). */
+.rdrSelected,
 .rdrInRange {
   color: white !important;
+}
+.rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span,
+.rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span,
+.rdrDay:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span,
+.rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span {
+  color: #fff !important;
 }
 
 .rdrDayDisabled {
@@ -123,6 +195,51 @@
 }.rdrDayPassive {
   visibility: hidden !important;
 }
+
+/* 6b. The in-app change calendars (the "Change date or time" experience modal and
+   the change-reservation form) — fills its card and uses larger, comfortably-
+   tappable day cells spread evenly across the width (the default .rdrMonth is a
+   fixed 23em and too small in a phone-width sheet). Scoped to .rdr-move so the
+   cottage booking calendar is untouched. */
+.rdr-move .rdrCalendarWrapper { width: 100%; font-size: 15px; }
+.rdr-move .rdrMonth { width: 100% !important; padding: 0 0.25em 0.5em 0.25em !important; }
+.rdr-move .rdrMonthAndYearWrapper { height: 44px; padding-top: 6px; }
+.rdr-move .rdrDay { height: 46px !important; line-height: 46px !important; }
+.rdr-move .rdrDayNumber { font-weight: 500; }
+.rdr-move .rdrDayNumber span { font-size: 15px; }
+.rdr-move .rdrWeekDay { font-size: 12px; color: #64748b; }
+/* The selected day's emerald fill + white number come from the global rule 5/6
+   above, so this sheet needs no selection override of its own — only its larger
+   cells (above). A rounder circle to suit those taller cells: */
+.rdr-move .rdrSelected { border-radius: 1.35em !important; }
+
+/* The change-reservation calendar shows the month only — no year dropdown (the
+   prev/next arrows still roll the year over). Scoped to .change-cal so no other
+   react-date-range calendar is affected. */
+.change-cal .rdrYearPicker { display: none !important; }
+
+/* Make the change-reservation calendar fill its card. react-date-range pins
+   intrinsic (inline-flex / fixed) widths on every level, so .rdrMonth at 100%
+   alone still sat left with empty space; force the whole chain — the picker
+   wrapper, the calendar wrapper, the months container, the month, the weekday and
+   day rows — to 100%, and spread the seven day cells evenly. Scoped to .change-cal
+   so the cottage booking widget is untouched. */
+.change-cal .rdrDateRangePickerWrapper,
+.change-cal .rdrDateRangeWrapper,
+.change-cal .rdrCalendarWrapper,
+.change-cal .rdrMonths,
+.change-cal .rdrMonthsVertical,
+.change-cal .rdrMonth,
+.change-cal .rdrMonthAndYearWrapper,
+.change-cal .rdrWeekDays,
+.change-cal .rdrDays {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.change-cal .rdrDateRangePickerWrapper,
+.change-cal .rdrMonths,
+.change-cal .rdrMonthsVertical { display: flex; }
+.change-cal .rdrDay { width: 14.2857% !important; }
 
 
 /* 7. Toast styling
@@ -265,19 +382,10 @@
   background: #047857;
 }
 
-/* Single-date picker (the experiences booking panel). react-date-range's
-   Calendar marks the chosen day with .rdrSelected, which the range rules above
-   never touch — so on its own it renders white-on-white and reads as unselected.
-   Fill it emerald with a white number, matching the cottage range edges. Scoped
-   to the compact calendar so the cottage's range picker is unaffected. */
-.airbnb-compact-calendar .rdrSelected {
-  background: #047857 !important;
-  border-radius: 1.042em !important;
-}
-
-.airbnb-compact-calendar .rdrSelected ~ .rdrDayNumber span {
-  color: #fff !important;
-}
+/* The single-date pick's emerald fill + white number now come from the global
+   rule 5/6 above (the booking panel uses react-date-range's Calendar); this
+   compact calendar only keeps its own rounding. */
+.airbnb-compact-calendar .rdrSelected { border-radius: 1.042em !important; }
 
 /* One month on narrower screens, so the popover never overflows. */
 @media (max-width: 860px) {
@@ -411,4 +519,39 @@
   .animate-guest-swoosh {
     animation: none;
   }
+}
+
+/* The search map (components/PriceMap): white price pills, and a full-bleed
+   mini-card in the click popup. The pill inverts to dark on hover or when its
+   card is hovered (.is-active), the Airbnb behaviour. */
+.pricemap-pill {
+  background: #fff;
+  color: #0f172a;
+  border-radius: 9999px;
+  padding: 4px 10px;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+}
+.pricemap-pill:hover,
+.pricemap-pill.is-active {
+  background: #0f172a;
+  color: #fff;
+  transform: scale(1.06);
+}
+.pricemap-popup .mapboxgl-popup-content {
+  padding: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.pricemap-popup .mapboxgl-popup-close-button {
+  font-size: 18px;
+  color: #0f172a;
+  padding: 2px 7px;
 }

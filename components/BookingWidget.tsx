@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { formatGBP } from '@/lib/formatMoney';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
 import { addDays, addMonths } from 'date-fns';
 import 'react-date-range/dist/styles.css';
@@ -12,6 +13,9 @@ import { Minus, Plus } from 'lucide-react';
 import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
 import { quoteBooking, dateKey } from '@/lib/pricing';
+import { plural } from '@/lib/plural';
+import { agreementProblem, versionForTick } from '@/lib/agreements';
+import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 
 interface Props {
     listingId: string;
@@ -62,17 +66,17 @@ function Counter({
                     type="button"
                     onClick={() => onChange(Math.max(min, value - 1))}
                     disabled={value <= min}
-                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
+                    className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
                 >
-                    <Minus className="w-3.5 h-3.5" />
+                    <Minus className="w-4 h-4" />
                 </button>
-                <span className="w-4 text-center text-sm">{value}</span>
+                <span className="w-6 text-center text-sm">{value}</span>
                 <button
                     type="button"
                     onClick={() => onChange(value + 1)}
-                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
+                    className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
                 >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-4 h-4" />
                 </button>
             </div>
         </div>
@@ -206,6 +210,14 @@ export default function BookingWidget({
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [requested, setRequested] = useState(false);
+    // The Guest Terms are accepted at a guest's FIRST stay checkout, not forced
+    // on them the moment they make an account. `needsGuestTerms` is set from
+    // /api/agreements once we know who is signed in; the tick shows above the
+    // pay button until they accept, and the acceptance is recorded (version +
+    // server time) before the booking is created.
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(false);
+    const [guestTicked, setGuestTicked] = useState(false);
+    const [guestTermsError, setGuestTermsError] = useState('');
 
     const maxBookableDate = (() => {
         const map: Record<string, number> = { '3 months': 3, '6 months': 6, '9 months': 9, '12 months': 12 };
@@ -218,6 +230,13 @@ export default function BookingWidget({
             const { data: { session } } = await supabase.auth.getSession();
             setSession(session);
             setLoadingSession(false);
+
+            // Does this guest still owe the Guest Terms? If so, they accept them
+            // here, at checkout, rather than through a sign-in pop-up.
+            if (session?.user) {
+                const st = await fetchAgreementStatus();
+                setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
+            }
 
             const { data: existing } = await supabase
                 // Busy nights, not bookings. A stranger can read no row of `bookings` at
@@ -339,8 +358,22 @@ export default function BookingWidget({
             return;
         }
 
+        // The Guest Terms, if this is their first booking. The same rule
+        // /api/agreements applies to the record below.
+        if (needsGuestTerms) {
+            const problem = agreementProblem('guest', null, versionForTick('guest', guestTicked));
+            if (problem) { setGuestTermsError(problem); return; }
+        }
+
         setSubmitting(true);
         try {
+            // Record the Guest Terms acceptance before anything is booked, so a
+            // guest who reaches payment has agreed to them.
+            if (needsGuestTerms) {
+                const failed = await recordAgreement('guest', 'stay_checkout');
+                if (failed) { setGuestTermsError(failed); return; }
+                setNeedsGuestTerms(false);
+            }
             // Instant Book can carry requirements the guest has to meet.
             //
             // Verified ID is deliberately NOT checked here. Nothing in the site
@@ -442,14 +475,14 @@ export default function BookingWidget({
     }
 
     return (
-        <div className="border rounded-2xl p-5 sticky top-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="mb-4">
                 <span className="text-2xl font-bold text-slate-900">£{pricePerNight}</span>
                 <span className="text-slate-500"> / night</span>
                 {weekendPrice && <span className="text-xs text-slate-400 block mt-0.5">£{weekendPrice} on Fri &amp; Sat nights</span>}
             </div>
 
-            <div ref={calendarRef} className="border rounded-xl overflow-hidden mb-4">
+            <div ref={calendarRef} className="cottage-cal border rounded-xl overflow-hidden mb-4">
                 <DateRangePicker
                     ranges={[dateRange]}
                     onChange={handleSelect}
@@ -457,6 +490,8 @@ export default function BookingWidget({
                     maxDate={maxBookableDate}
                     disabledDates={disabledDates}
                     months={1}
+                    // Monday-first, like every calendar on the site (and the UK).
+                    weekStartsOn={1}
                     direction="vertical"
                     rangeColors={['#047857']}
                     showDateDisplay={false}
@@ -491,24 +526,24 @@ export default function BookingWidget({
                     <Counter label="Pets" sub="This place allows pets" value={pets} onChange={setPets} min={0} />
                 )}
             </div>
-            <p className="text-xs text-slate-400 -mt-3 mb-4">Max {maxGuests} guests{petsAllowed ? ' (pets don\'t count toward this)' : ''}</p>
+            <p className="text-xs text-slate-400 -mt-3 mb-4">Max {plural(maxGuests, 'guest')}{petsAllowed ? ' (pets don\'t count toward this)' : ''}</p>
 
             {nights > 0 && (
                 <div className="border-t pt-3 mb-4 text-sm space-y-1.5">
                     <div className="flex justify-between text-slate-600">
                         <span>{nights} night{nights > 1 ? 's' : ''}</span>
-                        <span>£{nightsSubtotal.toFixed(2)}</span>
+                        <span>{formatGBP(nightsSubtotal)}</span>
                     </div>
                     {cleaningFeeTotal > 0 && (
                         <div className="flex justify-between text-slate-600">
                             <span>Cleaning fee</span>
-                            <span>£{cleaningFeeTotal.toFixed(2)}</span>
+                            <span>{formatGBP(cleaningFeeTotal)}</span>
                         </div>
                     )}
                     {petFeeTotal > 0 && (
                         <div className="flex justify-between text-slate-600">
                             <span>Pet fee</span>
-                            <span>£{petFeeTotal.toFixed(2)}</span>
+                            <span>{formatGBP(petFeeTotal)}</span>
                         </div>
                     )}
                     {extraGuestTotal > 0 && (
@@ -521,18 +556,18 @@ export default function BookingWidget({
                                     return (
                                         extra +
                                         (extra === 1 ? ' extra guest' : ' extra guests') +
-                                        ' × £' +
-                                        Number(extraGuestFee).toFixed(2) +
+                                        ' × ' +
+                                        formatGBP(extraGuestFee) +
                                         (extraGuestPeriod === 'stay' ? '' : ' × ' + nights + (nights === 1 ? ' night' : ' nights'))
                                     );
                                 })()}
                             </span>
-                            <span>£{extraGuestTotal.toFixed(2)}</span>
+                            <span>{formatGBP(extraGuestTotal)}</span>
                         </div>
                     )}
                     <div className="flex justify-between font-bold text-slate-900 mt-2 pt-2 border-t">
                         <span>Total</span>
-                        <span>£{total.toFixed(2)}</span>
+                        <span>{formatGBP(total)}</span>
                     </div>
                 </div>
             )}
@@ -546,10 +581,10 @@ export default function BookingWidget({
                     >
                         <div className="flex items-center justify-between">
                             <span className="text-sm font-semibold text-slate-900">Book now, pay the rest later</span>
-                            <span className="text-sm font-bold text-slate-900">£{depositNow.toFixed(2)}</span>
+                            <span className="text-sm font-bold text-slate-900">{formatGBP(depositNow)}</span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
-                            £{depositNow.toFixed(2)} now &middot; £{depositLater.toFixed(2)} on {formatUk(balanceDate)}
+                            {formatGBP(depositNow)} now &middot; {formatGBP(depositLater)} on {formatUk(balanceDate)}
                         </p>
                         <p className="text-xs text-slate-400 mt-0.5">No fees, no interest.</p>
                     </button>
@@ -561,7 +596,7 @@ export default function BookingWidget({
                     >
                         <div className="flex items-center justify-between">
                             <span className="text-sm font-semibold text-slate-900">Pay in full today</span>
-                            <span className="text-sm font-bold text-slate-900">£{total.toFixed(2)}</span>
+                            <span className="text-sm font-bold text-slate-900">{formatGBP(total)}</span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1">Settled in one go, nothing more to pay.</p>
                     </button>
@@ -586,7 +621,7 @@ export default function BookingWidget({
             {Number(damageDeposit) > 0 && nights > 0 && (
                 <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
                     <span className="font-semibold text-slate-800">
-                        £{Number(damageDeposit).toFixed(2)} damage deposit
+                        {formatGBP(damageDeposit)} damage deposit
                     </span>
                     <span className="block mt-0.5">
                         Collected by your host at the property and returned after your stay. It
@@ -600,28 +635,46 @@ export default function BookingWidget({
             {loadingSession ? (
                 <div className="text-center text-sm text-slate-400 py-2">Loading...</div>
             ) : !session ? (
-                <div className="text-center">
-                    <p className="text-sm text-slate-500 mb-2">Log in to request this booking</p>
-                    <LoginModel />
+                <div>
+                    <p className="text-sm text-slate-500 mb-2 text-center">Log in to request this booking</p>
+                    <LoginModel variant="button" />
                 </div>
             ) : (
+                <>
+                {needsGuestTerms && (
+                    <div className="mb-3">
+                        <AgreementTick
+                            doc="guest"
+                            id="booking-agree-guest"
+                            checked={guestTicked}
+                            onChange={(v) => { setGuestTicked(v); setGuestTermsError(''); }}
+                            error={guestTermsError}
+                            open="tab"
+                        />
+                    </div>
+                )}
                 <button
                     type="button"
                     onClick={handleRequest}
-                    disabled={submitting || nights <= 0}
+                    disabled={submitting || nights <= 0 || (needsGuestTerms && !guestTicked)}
                     className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                 >
                     {submitting
                         ? 'Taking you to payment...'
                         : nights > 0
-                            ? 'Secure your dates for £' + dueNow.toFixed(2)
+                            ? 'Secure your dates for ' + formatGBP(dueNow)
                             : (instantBook ? 'Reserve' : 'Request to book')}
                 </button>
+                </>
             )}
             <p className="text-xs text-slate-400 text-center mt-3">
                 {instantBook
                     ? 'Payment is taken securely by Stripe. Your dates are confirmed straight away.'
                     : 'Payment is taken securely by Stripe. If the host declines, you get it all back.'}
+            </p>
+            <p className="text-xs text-slate-400 text-center mt-1">
+                The stay is provided by the host. Galloway Getaways is acting as the host&apos;s agent and
+                takes payment on their behalf.
             </p>
         </div>
     );

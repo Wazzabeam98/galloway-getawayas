@@ -1,7 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { unreadFor, pendingFor } from '@/lib/badgeCounts';
+import { unreadFor, pendingFor, providerRequestsFor } from '@/lib/badgeCounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,15 +32,16 @@ export async function GET() {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-        return NextResponse.json({ unread: 0, pending: 0 });
+        return NextResponse.json({ unread: 0, pending: 0, requests: 0 });
     }
 
-    // In parallel: they touch different tables and neither needs the other's
-    // answer, so the request costs the slower of the two rather than the sum.
-    const [unread, pending] = await Promise.all([
+    // In parallel: they touch different tables and none needs another's answer,
+    // so the request costs the slowest of the three rather than the sum.
+    const [unread, pending, requests] = await Promise.all([
         unreadFor(supabase, user.id),
         pendingFor(user.id),
+        providerRequestsFor(user.id),
     ]);
 
-    return NextResponse.json({ unread, pending });
+    return NextResponse.json({ unread, pending, requests });
 }

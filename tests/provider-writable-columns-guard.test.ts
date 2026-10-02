@@ -36,10 +36,12 @@ const PROVIDER_WRITABLE = new Set([
     'audience', 'based_line', 'billable_hourly_rate', 'business_name', 'callout_fee',
     'callout_waived', 'collection_postcode', 'collection_street', 'collection_town',
     'contact_email', 'contact_phone', 'covered_bands', 'custom_label', 'declarations',
-    'description', 'dietary_note', 'does_gas', 'does_oil', 'exclusive_per_date',
-    'experience_price', 'fulfilment', 'guest_details', 'headshot', 'hourly_rate',
+    'description', 'dietary_note', 'does_emergency', 'does_gas', 'does_oil', 'does_scheduled', 'exclusive_per_date',
+    'experience_price', 'flat_fee', 'fulfilment', 'guest_details', 'headshot', 'hourly_rate',
     'lead_time_days', 'logo', 'owner_id', 'photos', 'pricing_choice', 'provider_name',
-    'shape', 'slot_capacity', 'slot_length_minutes', 'slot_min_people', 'sms_opt_out',
+    'provides_quote', 'registration_number',
+    'shape', 'slot_capacity', 'slot_length_minutes', 'slot_min_people',
+    'slot_turnaround_minutes', 'sms_opt_out',
     'trade', 'updated_at',
 ]);
 
@@ -47,6 +49,7 @@ const PROVIDER_WRITABLE = new Set([
 // write. The value is the reason — the decision, in writing. Keep them true.
 const PLATFORM_ONLY: Record<string, string> = {
     id: 'primary key',
+    ical_token: 'system-generated calendar-export secret; never provider-written (default gen_random_uuid())',
     created_at: 'set once',
     kind: 'pricing shape — not the applicant’s to set; the column check refuses a bad row anyway',
     // Status / moderation lifecycle — a provider who could write status could approve
@@ -70,6 +73,9 @@ const PLATFORM_ONLY: Record<string, string> = {
     category_assigned_by: 'admin audit — who assigned the category',
     // Service-role booking rule and server bookkeeping.
     cancellation_window_hours: 'booking rule read/written only via the service role',
+    delivery_fee: 'made-to-order delivery fee — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write',
+    delivery_radius_miles: 'enforced delivery radius — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write',
+    owner_paused: 'owner take-down flag — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write, so it is not in the write allow-list',
     reminders_sent: 'server-side reminder bookkeeping',
     notify_user_ids: 'server-managed notify list',
     // Stripe — every field is set by the connect/webhook flow under the service role.

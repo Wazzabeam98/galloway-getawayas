@@ -11,7 +11,7 @@ import {
     isSameDay, isBefore, startOfDay, getDay,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
-import { displayName } from "@/lib/utils";
+import { firstName } from "@/lib/utils";
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 
@@ -253,7 +253,7 @@ export default function CalendarPage() {
                     .select('id, full_name, preferred_name, show_full_name')
                     .in('id', guestIds);
                 const names: Record<string, string> = {};
-                (profiles || []).forEach((p) => { names[p.id] = displayName(p, 'Guest'); });
+                (profiles || []).forEach((p) => { names[p.id] = firstName(p, 'Guest'); });
                 setGuestNames(names);
             }
         };

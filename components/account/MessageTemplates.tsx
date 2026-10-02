@@ -599,7 +599,7 @@ export default function MessageTemplates() {
                     <p className="text-xs text-slate-500 max-w-xl">
                         Written once, sent automatically at the right moment. Anything highlighted in
                         blue is swapped for the real thing when the message goes out. A message can
-                        cover all your properties, or just some &mdash; so a cottage with a different
+                        cover all your properties, or just some &mdash; so a place with a different
                         door and a different lockbox can have its own. The name at the top of each
                         is for this list only; a guest never sees it.
                     </p>

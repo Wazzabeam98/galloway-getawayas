@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceSubmission } from '@/lib/serviceSubmittedAlert';
-import { audienceForTrade } from '@/lib/serviceProviders';
+import { audienceForTrade, tradeSubmitBlock } from '@/lib/serviceProviders';
 import { hasSlotCapacity } from '@/lib/serviceSlots';
 import { normaliseUnit, unitMultiplies } from '@/lib/serviceOrders';
-import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, pickColumns } from '@/lib/serviceApplications';
+import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, GUEST_CONTENT_KEYS, pickColumns } from '@/lib/serviceApplications';
+import { signedInCaller } from '@/lib/signedInCaller';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,8 +27,17 @@ export const dynamic = 'force-dynamic';
 //   expired            past LINK_DAYS; the page offers a new one, this does not
 //   already claimed    the link is single-use; a replay makes nothing
 //   account exists     the address gained an account between applying and
-//                      finishing. Making a second one is impossible and
-//                      overwriting the first would be a takeover.
+//                      finishing, and the caller is NOT signed in as it.
+//                      Making a second one is impossible and overwriting the
+//                      first would be a takeover.
+//
+// SIGNED IN AS THE ADDRESS. Since every sign-up opens on the email-code step,
+// an applicant still holding an old link can easily have an account by the
+// time they open it — the code step made it. If the caller is signed in
+// (verified with getUser) as the very address the application was made from,
+// the application is attached to THAT account: no new user, no password. Both
+// halves have proved the same address, so neither is a takeover. Signed in as
+// somebody else, it is refused like any other account-exists.
 //
 // The first three answer identically on purpose. A caller holding a token that
 // does not work should not learn WHICH kind of not-working it is — that is the
@@ -47,12 +57,6 @@ export async function POST(req: Request) {
         const password = String(body.password || '');
 
         if (!token) return NextResponse.json(UNUSABLE, { status: 400 });
-        if (password.length < 8) {
-            return NextResponse.json({
-                ok: false,
-                error: 'Passwords need at least 8 characters.',
-            }, { status: 400 });
-        }
 
         const admin = adminClient();
 
@@ -97,47 +101,106 @@ export async function POST(req: Request) {
         }
 
         // ------------------------------------------------------------------
-        // The account.
+        // The submit wall, before the account is made (no orphan user when it
+        // fires, like the capacity guard above). The same two rules the sign-up
+        // wizard enforces (submitProblems / pricingProblems): a host trade needs a
+        // description and a way to price the job — a quote tick, an hourly rate or
+        // a flat fee. A guest experience prices per item and is exempt.
+        // tradeSubmitBlock is the shared rule; the signed-in path enforces the
+        // same in the database, via submit_service_provider(). Audience comes from
+        // the trade, never the payload, so a crafted audience cannot skip it.
         // ------------------------------------------------------------------
-        const { data: made, error: userError } = await admin.auth.admin.createUser({
-            email: row.email,
-            password,
-            email_confirm: true,
-            user_metadata: { name: row.name || row.business_name },
+        const submitBlock = tradeSubmitBlock({
+            audience: audienceForTrade(row.trade),
+            description: incoming.description,
+            provides_quote: incoming.provides_quote,
+            hourly_rate: incoming.hourly_rate,
+            flat_fee: incoming.flat_fee,
         });
-
-        if (userError || !made || !made.user) {
-            const message = String((userError && userError.message) || '');
-
-            // Told plainly here, and only here. This is somebody holding a
-            // valid link to their own address, so there is no oracle in
-            // answering them — they have already proved the address is theirs.
-            if (/already|registered|exists/i.test(message)) {
-                return NextResponse.json({
-                    ok: false,
-                    code: 'account_exists',
-                    error: 'You already have an account on this address. Sign in and your application will be waiting.',
-                }, { status: 409 });
-            }
-
-            await logError('service-finish-create-user', { application: row.id, message });
-            return NextResponse.json({
-                ok: false,
-                error: 'We could not make your account. Nothing has been lost — try again in a moment.',
-            }, { status: 500 });
+        if (submitBlock) {
+            await logError('service-finish-invalid-trade', { application: row.id, reason: submitBlock });
+            return NextResponse.json({ ok: false, error: submitBlock }, { status: 400 });
         }
 
-        const owner = made.user.id;
+        // ------------------------------------------------------------------
+        // The account — theirs already, or made now.
+        // ------------------------------------------------------------------
+        const caller = await signedInCaller();
+        const callerOwnsAddress = !!caller
+            && caller.email.trim().toLowerCase() === String(row.email || '').trim().toLowerCase();
 
-        // full_name is the PERSON's name (row.name), or blank — never the
-        // business name. business_name belongs on service_providers; the shared
-        // profile the whole site reads for bylines and messages must not carry
-        // it. Nothing on production has run this flow, so there is nothing to
-        // repair — this just stops it happening to the first real applicant.
-        await admin.from('profiles').upsert(
-            { id: owner, email: row.email, full_name: row.name || null, is_host: false },
-            { onConflict: 'id' }
-        );
+        let owner: string;
+
+        if (callerOwnsAddress) {
+            owner = caller!.id;
+
+            // One business per trade. If they have already set this trade up
+            // on their account (through the wizard, after signing in), a second
+            // row would collide — say so rather than fail on the insert. The
+            // application stays unclaimed, so nothing is lost.
+            const { data: held } = await admin
+                .from('service_providers')
+                .select('id')
+                .eq('owner_id', owner)
+                .eq('trade', row.trade)
+                .limit(1);
+            if (held && held.length) {
+                return NextResponse.json({
+                    ok: false,
+                    code: 'already_applied',
+                    error: 'Your account already has an application for this. Open it from your account to carry on.',
+                }, { status: 409 });
+            }
+        } else {
+            if (password.length < 8) {
+                return NextResponse.json({
+                    ok: false,
+                    error: 'Passwords need at least 8 characters.',
+                }, { status: 400 });
+            }
+
+            const { data: made, error: userError } = await admin.auth.admin.createUser({
+                email: row.email,
+                password,
+                email_confirm: true,
+                user_metadata: { name: row.name || row.business_name },
+            });
+
+            if (userError || !made || !made.user) {
+                const message = String((userError && userError.message) || '');
+
+                // Told plainly here, and only here. This is somebody holding a
+                // valid link to their own address, so there is no oracle in
+                // answering them — they have already proved the address is theirs.
+                // The page answers this by signing them in with an emailed code
+                // and sending the link again, which lands in the branch above.
+                if (/already|registered|exists/i.test(message)) {
+                    return NextResponse.json({
+                        ok: false,
+                        code: 'account_exists',
+                        error: 'You already have an account on this address. Sign in and your application will be added to it.',
+                    }, { status: 409 });
+                }
+
+                await logError('service-finish-create-user', { application: row.id, message });
+                return NextResponse.json({
+                    ok: false,
+                    error: 'We could not make your account. Nothing has been lost — try again in a moment.',
+                }, { status: 500 });
+            }
+
+            owner = made.user.id;
+
+            // full_name is the PERSON's name (row.name), or blank — never the
+            // business name. business_name belongs on service_providers; the
+            // shared profile the whole site reads for bylines and messages must
+            // not carry it. Only for an account made here — an existing account
+            // keeps the profile it has.
+            await admin.from('profiles').upsert(
+                { id: owner, email: row.email, full_name: row.name || null, is_host: false },
+                { onConflict: 'id' }
+            );
+        }
 
         // ------------------------------------------------------------------
         // The application itself. Status and submitted_at are set here rather
@@ -147,12 +210,18 @@ export async function POST(req: Request) {
         const { data: provider, error: rowError } = await admin
             .from('service_providers')
             .insert({
-                // Narrowed to real columns: the stored payload also carries the
-                // guest content answers (years, qualifications, what-to-expect…),
-                // which have no column yet and must not reach the insert. They
-                // stay in service_applications.payload until the guest_details
-                // column lands, then materialise from there.
+                // Narrowed to real columns. The stored payload also carries the
+                // About-you answers (years, professional title, qualifications,
+                // endorsements, what-to-expect…) as TOP-LEVEL keys; the
+                // guest_details column has since landed, so they materialise into
+                // it here rather than being dropped. This is what carries a trade
+                // applicant's expertise hub (and a guest's, on the rare unsigned
+                // path) onto the row. A truthy value only, so a blank object is
+                // stored as null.
                 ...pickColumns(incoming, PROVIDER_COLUMNS),
+                ...(Object.keys(pickColumns(incoming, GUEST_CONTENT_KEYS)).length
+                    ? { guest_details: pickColumns(incoming, GUEST_CONTENT_KEYS) }
+                    : {}),
                 owner_id: owner,
                 audience: audienceForTrade(row.trade),
                 trade: row.trade,
@@ -190,21 +259,71 @@ export async function POST(req: Request) {
             }
         }
 
+        // Extras are optional add-ons on a host trade — a surcharge for a big
+        // garden, an out-of-hours callout. Losing them degrades the listing but
+        // does not stop it being enquired about, so this logs like areas and
+        // carries on rather than failing the finish.
         const extras = (payload.extras || []).map((e: any) => ({ ...e, provider_id: id }));
-        if (extras.length) await admin.from('service_provider_extras').insert(extras);
+        if (extras.length) {
+            const { error: extrasError } = await admin.from('service_provider_extras').insert(extras);
+            if (extrasError) {
+                await logError('service-finish-extras', { application: row.id, provider: id, message: extrasError.message });
+            }
+        }
 
+        // Prices are a host trade's rate bands. A trade is contacted by enquiry,
+        // not booked on a price the way a guest experience is, so a listing that
+        // lost its bands is still reachable — degraded, not broken. Log and carry
+        // on, the same as extras and areas.
         const prices = (payload.prices || []).map((p: any) => ({ ...p, provider_id: id }));
-        if (prices.length) await admin.from('service_provider_prices').insert(prices);
+        if (prices.length) {
+            const { error: pricesError } = await admin.from('service_provider_prices').insert(prices);
+            if (pricesError) {
+                await logError('service-finish-prices', { application: row.id, provider: id, message: pricesError.message });
+            }
+        }
 
         // The menu — a guest trade's items, one for a chef, many for a baker.
         // Stamped with provider_id here, the same as the other children.
+        //
+        // This one is NOT log-and-continue. The marketplace lists only providers
+        // with a priced item; a guest listing whose menu failed to save cannot be
+        // booked at all. Better the applicant is told now — with an account and a
+        // pending_review listing they can sign in and finish — than shown a
+        // success screen over a listing that silently takes no bookings. The row
+        // stays unclaimed (still on the chase list) and pending_review (never
+        // live), so nothing reaches a guest; only the finish stops here.
         const items = (payload.items || []).map((it: any) => ({ ...it, provider_id: id }));
-        if (items.length) await admin.from('service_provider_items').insert(items);
+        if (items.length) {
+            const { error: itemsError } = await admin.from('service_provider_items').insert(items);
+            if (itemsError) {
+                await logError('service-finish-items', { application: row.id, provider: id, message: itemsError.message });
+                return NextResponse.json({
+                    ok: false,
+                    error: 'We made your account, but could not save the things you offer — without them the '
+                        + 'listing can’t take bookings. Sign in and add them, and it will be waiting.',
+                }, { status: 500 });
+            }
+        }
 
         // A slot's weekly opening hours and days off. Stamped with provider_id
         // here like the other children; only a slot has them.
+        //
+        // The hours are as load-bearing as the menu: sessions are generated from
+        // them, so a slot with none has no times to book. Fail loud for the same
+        // reason as items — a told applicant over a silently unbookable listing.
         const availability = (payload.slotAvailability || []).map((a: any) => ({ ...a, provider_id: id }));
-        if (availability.length) await admin.from('slot_availability').insert(availability);
+        if (availability.length) {
+            const { error: availabilityError } = await admin.from('slot_availability').insert(availability);
+            if (availabilityError) {
+                await logError('service-finish-slot-hours', { application: row.id, provider: id, message: availabilityError.message });
+                return NextResponse.json({
+                    ok: false,
+                    error: 'We made your account, but could not save your opening times — without them there are '
+                        + 'no sessions to book. Sign in and set them, and it will be waiting.',
+                }, { status: 500 });
+            }
+        }
 
         const blocks = (payload.slotBlocks || []).map((b: any) => ({ ...b, provider_id: id }));
         if (blocks.length) await admin.from('slot_blocks').insert(blocks);

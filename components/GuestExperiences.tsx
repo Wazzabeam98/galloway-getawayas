@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { formatGBP } from '@/lib/formatMoney';
 import Link from 'next/link';
 import { CheckCircle2, Clock3, XCircle, ArrowRight, ChevronRight } from 'lucide-react';
 
@@ -143,7 +144,7 @@ export default function GuestExperiences(props: {
                                                     {o.item_name || 'Experience'}
                                                 </div>
                                                 <div className="text-xs text-slate-500">
-                                                    {o.provider_business_name ? o.provider_business_name + ' · ' : ''}{whenLabel(o.service_date, o.service_time)} · £{o.price.toFixed(2)}
+                                                    {o.provider_business_name ? o.provider_business_name + ' · ' : ''}{whenLabel(o.service_date, o.service_time)} · {formatGBP(o.price)}
                                                 </div>
                                             </div>
                                             <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>

@@ -81,6 +81,12 @@ export async function GET() {
         { loc: `${SITE_URL}/cancellation-policy`, lastmod: now, changefreq: 'yearly', priority: '0.4' },
     ];
 
+    // No /services/<trade> entries. There is no page per trade any more — trade
+    // is a filter on the one list at /services, and the old per-trade URLs are
+    // permanent redirects (next.config.js). A sitemap naming a redirect is a
+    // sitemap that disagrees with the site. /services itself is listed above.
+    const knownPages = staticPages;
+
     const headers = {
         'Content-Type': 'application/xml; charset=utf-8',
         // Five minutes at the CDN, so a crawl storm does not become a query
@@ -113,7 +119,7 @@ export async function GET() {
                 error,
                 { path: 'sitemap.xml' }
             );
-            return new NextResponse(render(staticPages), { headers });
+            return new NextResponse(render(knownPages), { headers });
         }
 
         const listingPages: Entry[] = (listings || []).map((listing: any) => ({
@@ -169,7 +175,7 @@ export async function GET() {
         // so reporting it would fill /admin/errors with the same row. A query
         // that FAILED is a different thing and is caught above.
         return new NextResponse(
-            render(staticPages.concat(areaPages).concat(listingPages)),
+            render(knownPages.concat(areaPages).concat(listingPages)),
             { headers }
         );
     } catch (err) {
@@ -177,6 +183,6 @@ export async function GET() {
         // fail quietly either: this now shows up on /admin/errors rather than
         // only in a Vercel log nobody reads.
         await logError('[sitemap] could not be built', err, { path: 'sitemap.xml' });
-        return new NextResponse(render(staticPages), { headers });
+        return new NextResponse(render(knownPages), { headers });
     }
 }

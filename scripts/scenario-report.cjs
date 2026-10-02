@@ -39,6 +39,11 @@ const WATCHED = [
     'app/api/stripe/refund/route.ts',
     'app/api/stripe/checkout/route.ts',
     'app/api/stripe/webhook/route.ts',
+    // The cottage payment settle, shared by the webhook, the reconcile cron
+    // and the success page.
+    'lib/settlePaidBooking.ts',
+    'lib/bookingPaymentReconcile.ts',
+    'app/api/cron/booking-payments/route.ts',
     'app/api/bookings/cancel/route.ts',
     'app/api/bookings/host-refund/route.ts',
     'lib/clawback.ts',
@@ -49,10 +54,28 @@ const WATCHED = [
     'lib/fees.ts',
     'lib/pricing.ts',
     'lib/cancellation.ts',
+    // "Change reservation" money: the diff pricing, the policy on a net loss of
+    // nights, and the routes that quote, create and settle a change.
+    'lib/changeMoney.ts',
+    'lib/quoteChange.ts',
+    'lib/bookingChange.ts',
+    'lib/applyBookingChange.ts',
+    'app/api/bookings/change/route.ts',
+    'app/api/bookings/change/quote/route.ts',
+    'app/api/bookings/change/respond/route.ts',
+    // The stay Resolution Centre ("send or request money"): the money rules
+    // (commission, the send cap, the change-flow collision guard) and the routes
+    // that create a request/send, take the guest's accepted payment and settle
+    // the host's decision. Watched so a change here re-proves against the run.
+    'lib/resolutions.ts',
+    'app/api/bookings/resolutions/route.ts',
+    'app/api/bookings/resolutions/respond/route.ts',
+    'app/api/bookings/resolutions/host-decide/route.ts',
     'scripts/seed-payments.mjs',
     'scripts/payout-scenarios.mjs',
     'scripts/refund-scenarios.mjs',
     'scripts/balance-scenarios.mjs',
+    'scripts/change-scenarios.mjs',
     'scripts/crosscutting-scenarios.mjs',
 ];
 

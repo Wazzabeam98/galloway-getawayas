@@ -2,9 +2,12 @@
 
 import { useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { formatGBP } from '@/lib/formatMoney';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-import { displayName } from '@/lib/utils';
+import { firstName } from '@/lib/utils';
+import { ukDate } from '@/lib/dayKey';
+import { fillPlaceholders, usesLockboxCode } from '@/lib/scheduledMessages';
 import { notify } from '@/lib/notify';
 import { resolveTemplate } from '@/lib/messageTemplates';
 import { bookingsChanged } from '@/components/base/usePendingCount';
@@ -65,7 +68,7 @@ export default function BookingActions({
             return;
         }
         if (value > refundable) {
-            setPanelError('The guest has only paid £' + refundable.toFixed(2) + '.');
+            setPanelError('The guest has only paid ' + formatGBP(refundable) + '.');
             return;
         }
 
@@ -79,7 +82,7 @@ export default function BookingActions({
             const data = await res.json();
 
             if (data && data.ok) {
-                toast.success('£' + value.toFixed(2) + ' refunded to your guest.', { theme: 'colored' });
+                toast.success(formatGBP(value) + ' refunded to your guest.', { theme: 'colored' });
                 closeRefund();
                 router.refresh();
             } else {
@@ -172,31 +175,32 @@ export default function BookingActions({
                 .eq('id', booking.listing_id)
                 .single();
 
-            // First name only, to match how {guest_name} renders elsewhere.
-            const fullGuestName = displayName(guest, 'there');
-            const guestName = fullGuestName.split(' ')[0] || 'there';
-            const formatDate = (value: string | null) => {
-                if (!value) return '';
-                const d = new Date(value);
-                return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-            };
+            // A welcome that carries the door code is left to the scheduled
+            // job, which holds it until the arrival window opens — a browser
+            // can't read the code, and shouldn't send it early if it could.
+            if (usesLockboxCode(body)) return;
 
-            body = body
-                .split('{guest_name}').join(guestName)
-                .split('{listing}').join(listing?.title || 'your stay')
-                .split('{check_in}').join(formatDate(booking.check_in))
-                .split('{check_out}').join(formatDate(booking.check_out));
+            // Claim it BEFORE writing, the same way the scheduled job does, so
+            // the job running in the same minute can't send a second copy.
+            const { error: claimError } = await supabase.from('sent_scheduled_messages').insert({
+                booking_id: bookingId,
+                template_type: 'booking_confirmation',
+            });
+            if (claimError) return;
+
+            // First name only, to match how {guest_name} renders elsewhere.
+            body = fillPlaceholders(body, {
+                guestName: firstName(guest, 'there'),
+                listing: listing?.title || 'your stay',
+                checkIn: ukDate(booking.check_in),
+                checkOut: ukDate(booking.check_out),
+            });
 
             await supabase.from('messages').insert({
                 booking_id: bookingId,
                 sender_id: session.user.id,
                 recipient_id: booking.guest_id,
                 body: body,
-            });
-
-            await supabase.from('sent_scheduled_messages').insert({
-                booking_id: bookingId,
-                template_type: 'booking_confirmation',
             });
         } catch (err) {
             console.error('Welcome message could not be sent:', err);
@@ -296,12 +300,12 @@ export default function BookingActions({
                     </div>
                     <p className="text-sm text-red-800 mt-1">
                         Your guest has this stay confirmed and may have arranged travel around it.
-                        They&apos;ll be refunded the full £{refundable.toFixed(2)} they have paid,
+                        They&apos;ll be refunded the full {formatGBP(refundable)} they have paid,
                         whatever your cancellation policy says, and the dates go back on sale.
                     </p>
                     {penalty > 0 && (
                         <p className="text-sm text-red-800 mt-2">
-                            A cancellation fee of <strong>£{penalty.toFixed(2)}</strong> (5% of the
+                            A cancellation fee of <strong>{formatGBP(penalty)}</strong> (5% of the
                             booking) will be taken off your next payout.
                         </p>
                     )}
@@ -352,7 +356,7 @@ export default function BookingActions({
                     >
                         {updating && !partial
                             ? 'Refunding…'
-                            : 'Refund the full £' + refundable.toFixed(2)}
+                            : 'Refund the full ' + formatGBP(refundable)}
                     </button>
 
                     {!partial ? (
@@ -367,7 +371,7 @@ export default function BookingActions({
                     ) : (
                         <div className="mt-3 pt-3 border-t border-slate-200">
                             <div className="text-xs text-slate-500 mb-2">
-                                Anything up to £{refundable.toFixed(2)}.
+                                Anything up to {formatGBP(refundable)}.
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className="text-slate-500">£</span>
@@ -445,7 +449,7 @@ export default function BookingActions({
                 </div>
                 <p className="text-sm text-red-800 mt-1">
                     {refundable > 0
-                        ? 'Your guest is refunded the full £' + refundable.toFixed(2)
+                        ? 'Your guest is refunded the full ' + formatGBP(refundable)
                             + ' they have paid, and the dates go back on sale.'
                         : 'The request is turned down and the dates go back on sale.'}
                 </p>

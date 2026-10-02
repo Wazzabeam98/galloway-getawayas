@@ -1,11 +1,13 @@
+import { refundExperienceOrder } from '@/lib/experienceFunds';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { canTransition } from '@/lib/serviceOrders';
+import { providerFirstName } from '@/lib/providerName';
 import { guestMayCancelFree, shapeOf } from '@/lib/serviceSlots';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
 import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, price, slot_session_id, stripe_payment_intent_id, provider_business_name')
+            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, price, slot_session_id, stripe_payment_intent_id, provider_business_name, guest_email, parent_order_id, funds_flow, platform_fee, paid_out_at, payout_amount, payout_transfer_id, payout_reversed, payout_clawback_owed')
             .eq('id', orderId)
             .maybeSingle();
 
@@ -56,6 +58,12 @@ export async function POST(request: Request) {
 
         const now = new Date();
         const shape = shapeOf(order);
+        // A top-up amends its parent; cancel the parent, never a top-up in
+        // isolation (per-seat cancel is not built — the child rows stand alone,
+        // so it is additive later). Send the guest to the booking itself.
+        if (order.parent_order_id) {
+            return NextResponse.json({ ok: false, error: 'Cancel the booking itself — added places go with it.' }, { status: 400 });
+        }
 
         // Give a slot's seat back — decrement the session it was claimed against.
         const releaseSeat = async () => {
@@ -65,6 +73,60 @@ export async function POST(request: Request) {
                 await admin.from('slot_sessions')
                     .update({ seats_taken: Math.max(0, s.seats_taken - (order.quantity || 1)) })
                     .eq('id', order.slot_session_id);
+            }
+        };
+
+        // THE TOP-UPS RIDE WITH THE BOOKING. An added place is its own row with
+        // its own PaymentIntent and its own seats on the same session, linked by
+        // parent_order_id and carrying no booking_id. Cancelling only the parent
+        // row would refund the original but keep the top-up's money and leave its
+        // seats taken — so the whole family is settled here, each child the same
+        // way the parent just was. 'refund' reverses each child's PI; 'forfeit'
+        // keeps each child's money; both release each child's seats. A child
+        // still 'holding' (topped up, not yet paid) is simply released.
+        const settleChildren = async (kind: 'refund' | 'forfeit') => {
+            const { data: kids } = await admin
+                .from('service_orders')
+                .select('id, provider_id, parent_order_id, status, quantity, slot_session_id, stripe_payment_intent_id, price, funds_flow, platform_fee, paid_out_at, payout_amount, payout_transfer_id, payout_reversed, payout_clawback_owed')
+                .eq('parent_order_id', order.id)
+                .in('status', ['confirmed', 'holding', 'authorised']);
+            // Belt-and-braces: only a genuine child of THIS order.
+            for (const kid of (kids || []).filter((k: any) => k.parent_order_id === order.id)) {
+                try {
+                    const releaseKid = async () => {
+                        if (!kid.slot_session_id) return;
+                        const { data: s } = await admin.from('slot_sessions').select('seats_taken').eq('id', kid.slot_session_id).maybeSingle();
+                        if (s) await admin.from('slot_sessions').update({ seats_taken: Math.max(0, s.seats_taken - (kid.quantity || 1)) }).eq('id', kid.slot_session_id);
+                    };
+                    if (kid.status === 'confirmed' && kid.stripe_payment_intent_id) {
+                        if (kind === 'refund') {
+                            await refundExperienceOrder(admin, kid, 'refund-' + kid.id);
+                            const { data: moved } = await admin.from('service_orders')
+                                .update({ status: 'refunded', cancelled_at: now.toISOString() })
+                                .eq('id', kid.id).eq('status', 'confirmed').select('id');
+                            if (moved && moved.length) await releaseKid();
+                        } else {
+                            // forfeit — the payment stays with the provider; the seat reopens.
+                            // The walk-away is recorded on the child too, so the
+                            // payout run knows this cancelled row's money is still
+                            // the provider's to be paid (a held order).
+                            const { data: moved } = await admin.from('service_orders')
+                                .update({ status: 'cancelled', cancelled_at: now.toISOString(), cancel_ack: { amount: Number(kid.price) || 0, currency: 'gbp', refunded: 0, note: 'Added places, cancelled with the booking inside the cancellation window — not refunded.', at: now.toISOString(), status_before: 'confirmed', parent_order_id: order.id } })
+                                .eq('id', kid.id).eq('status', 'confirmed').select('id');
+                            if (moved && moved.length) await releaseKid();
+                        }
+                    } else if (kid.status === 'holding') {
+                        const { data: moved } = await admin.from('service_orders')
+                            .update({ status: 'cancelled', cancelled_at: now.toISOString() })
+                            .eq('id', kid.id).eq('status', 'holding').select('id');
+                        if (moved && moved.length) await releaseKid();
+                    } else if (kid.status === 'authorised' && kid.stripe_payment_intent_id) {
+                        await stripeRequest('POST', '/payment_intents/' + kid.stripe_payment_intent_id + '/cancel', undefined, 'cancel-' + kid.id);
+                        await admin.from('service_orders').update({ status: 'cancelled', cancelled_at: now.toISOString() }).eq('id', kid.id).eq('status', 'authorised');
+                    }
+                } catch (kidErr: any) {
+                    await logError('services-orders-cancel-child', { parent: order.id, child: kid.id, message: String(kidErr && kidErr.message) });
+                }
             }
         };
 
@@ -92,24 +154,52 @@ export async function POST(request: Request) {
 
             const { data: prov } = await admin
                 .from('service_providers')
-                .select('cancellation_window_hours, business_name, contact_email, owner_id')
+                .select('cancellation_window_hours, business_name, contact_email, owner_id, guest_details')
                 .eq('id', order.provider_id).maybeSingle();
             const windowHours = Number(prov && prov.cancellation_window_hours) || 48;
-            const business = order.provider_business_name || (prov && prov.business_name) || 'the provider';
-            const free = guestMayCancelFree(shape, String(order.service_date), order.service_time || null, windowHours, now);
+            // A non-refundable policy: there is never an automatic full refund,
+            // whatever the clock says. The provider can still choose to refund
+            // (the 'ask' door below); the walk-away ('forfeit') is unchanged.
+            const noRefund = !!(prov && prov.guest_details && prov.guest_details.no_refund);
+            // Name the person in the guest-facing prompts below ("Inside Fiona's
+            // window", "Fiona's to decide"), not the listing.
+            const business = await providerFirstName(admin, order.provider_id, order.provider_business_name || (prov && prov.business_name) || 'the provider');
+            const free = !noRefund && guestMayCancelFree(shape, String(order.service_date), order.service_time || null, windowHours, now);
 
             // BEFORE THE CUTOFF: a full refund, automatic. mode is irrelevant here.
             if (free) {
                 if (!canTransition('confirmed', 'refunded')) {
                     return NextResponse.json({ ok: false, error: 'That can’t be cancelled.' }, { status: 409 });
                 }
-                await stripeRequest('POST', '/refunds',
-                    { payment_intent: order.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' },
-                    'refund-' + order.id);
+                await refundExperienceOrder(admin, order, 'refund-' + order.id);
                 const { data: refunded } = await admin.from('service_orders')
                     .update({ status: 'refunded', cancelled_at: now.toISOString() })
                     .eq('id', order.id).eq('status', 'confirmed').select('id');
                 if (refunded && refunded.length) await releaseSeat();   // a slot's time reopens
+                await settleChildren('refund');                          // added places refund with it
+                // Tell both sides — the free (before-cutoff) refund is the most
+                // common cancellation, and it used to send NO email at all, so a
+                // provider turned up to a booking that was gone. The 'ask' and
+                // 'forfeit' branches already notify; this closes the gap.
+                try {
+                    if (prov && prov.contact_email) {
+                        await sendEmail(prov.contact_email, 'A booking was cancelled and refunded', emailLayout(
+                            '<p>A guest has cancelled their booking for '
+                            + escapeHtml(formatDate(order.service_date))
+                            + ' and been refunded in full — it was before your cancellation window. Please don’t attend or prepare for it; the date is free again.</p>'
+                            + button(SITE_URL + '/services/dashboard', 'Open your bookings'),
+                            'You’re receiving this because you offer experiences on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE));
+                    }
+                    const guestEmail = order.guest_email || (user && user.email) || '';
+                    if (guestEmail) {
+                        const providerName = order.provider_business_name || (prov && prov.business_name) || 'your provider';
+                        await sendEmail(guestEmail, 'Your booking is cancelled and refunded', emailLayout(
+                            '<p>Your booking with ' + escapeHtml(String(providerName)) + ' for '
+                            + escapeHtml(formatDate(order.service_date))
+                            + ' has been cancelled and refunded in full. The refund goes back to your original payment method and can take a few days to show.</p>',
+                            'You’re receiving this because you booked an experience on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE));
+                    }
+                } catch (mailErr) { console.error('[services/orders/cancel] free-refund notify', mailErr); }
                 return NextResponse.json({ ok: true, status: 'refunded' });
             }
 
@@ -133,17 +223,19 @@ export async function POST(request: Request) {
                     if (prov && prov.contact_email) {
                         await sendEmail(prov.contact_email, 'A guest has asked to cancel', emailLayout(
                             '<p>A guest has asked to cancel their booking for '
-                            + escapeHtml(String(order.service_date))
+                            + escapeHtml(formatDate(order.service_date))
                             + ' and would like a refund. It’s inside your cancellation window, so the choice is yours — refund them from your dashboard, or reply.</p>'
                             + button(SITE_URL + '/services/dashboard', 'Open your bookings'),
-                            'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                            'You’re receiving this because you offer experiences on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE));
                     }
                 } catch (mailErr) { console.error('[services/orders/cancel] ask notify', mailErr); }
                 return NextResponse.json({ ok: true, status: 'confirmed', requested: true });
             }
 
             // WALK AWAY: cancel with no refund. The provider keeps the payment and
-            // gets the date back; no Stripe act, because the money stays put. Store
+            // gets the date back; no Stripe act, because the money stays put — for
+            // a held order it is still paid to the provider by the payout run the
+            // day after the date, which reads cancel_ack as "kept, not refunded". Store
             // exactly what the guest was shown, as the record if it is ever disputed.
             if (mode === 'forfeit') {
                 if (!canTransition('confirmed', 'cancelled')) {
@@ -164,14 +256,15 @@ export async function POST(request: Request) {
                     .update({ status: 'cancelled', cancelled_at: now.toISOString(), cancel_ack: ack })
                     .eq('id', order.id).eq('status', 'confirmed').select('id');
                 if (done && done.length) await releaseSeat();   // the date/seat reopens; provider keeps the money
+                await settleChildren('forfeit');                 // added places forfeit with it — money stays, seats reopen
                 try {
                     if (prov && prov.contact_email) {
                         await sendEmail(prov.contact_email, 'A guest cancelled — you keep the payment', emailLayout(
                             '<p>A guest has cancelled their booking for '
-                            + escapeHtml(String(order.service_date))
+                            + escapeHtml(formatDate(order.service_date))
                             + '. It was inside your cancellation window, so no refund was due — the payment stays yours, and the date is free again.</p>'
                             + button(SITE_URL + '/services/dashboard', 'Open your bookings'),
-                            'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                            'You’re receiving this because you offer experiences on Galloway Getaways.', undefined, NEUTRAL_SUBTITLE));
                     }
                 } catch (mailErr) { console.error('[services/orders/cancel] forfeit notify', mailErr); }
                 return NextResponse.json({ ok: true, status: 'cancelled', refunded: 0 });

@@ -5,84 +5,42 @@ import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { requestedWhen } from '@/lib/serviceEnquiries';
-import { tradeLabel, schemeLabel, registrationVerified } from '@/lib/serviceProviders';
-import { getImageUrl } from '@/lib/utils';
-import ProviderDashboard, {
-    DashboardEnquiry,
-    DashboardUpcoming,
-} from '@/components/services/ProviderDashboard';
-import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
-import ProviderSlotDashboard from '@/components/services/ProviderSlotDashboard';
-import { shapeOf } from '@/lib/serviceSlots';
+import { tradeLabel } from '@/lib/serviceProviders';
+import ProviderUpcoming from '@/components/services/ProviderUpcoming';
+import { loadProviderReservations } from '@/lib/providerReservations';
 
 export const metadata = {
-    title: 'Your business',
+    // One static tab title for both audiences. The visible heading carries the
+    // audience's own noun ("Enquiries" for a trade, "Your bookings" for a guest
+    // experience provider); the tab title stays neutral so a guest provider's tab
+    // does not read "Enquiries", the trade noun. Making it audience-specific would
+    // cost a second auth+provider query here purely for a tab title.
+    title: 'Your dashboard',
     robots: { index: false, follow: false },
 };
 
-const LONDON = 'Europe/London';
-
-function todayKey(): string {
-    return new Date().toLocaleDateString('en-CA', { timeZone: LONDON });
-}
-
-// "21 Aug" — a bare day for something already dealt with.
-function shortDay(value: string | null | undefined): string {
-    if (!value) return '';
-    const d = new Date(value);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: LONDON });
-}
-
-// "Thu 6pm" — a deadline, weekday and hour, for a request still to answer.
-function replyByLabel(value: string | null | undefined): string {
-    if (!value) return '';
-    const d = new Date(value);
-    if (isNaN(d.getTime())) return '';
-    const day = d.toLocaleDateString('en-GB', { weekday: 'short', timeZone: LONDON });
-    const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', hour12: true, timeZone: LONDON }).replace(' ', '');
-    return `${day} ${time}`;
-}
-
-// 'gatehouse_of_fleet' → 'Gatehouse Of Fleet'. The enquiry stores an area key,
-// not a display name; this is the readable form for the sub-line.
-function prettyArea(key: string | null | undefined): string {
-    return String(key || '')
-        .split(/[_\s]+/)
-        .filter(Boolean)
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(' ');
-}
-
-function chipFor(status: string): { chip: DashboardEnquiry['chip']; label: string } {
-    if (status === 'sent' || status === 'viewed') return { chip: 'new', label: 'New' };
-    if (status === 'accepted') return { chip: 'accepted', label: 'Accepted' };
-    if (status === 'declined') return { chip: 'declined', label: 'Declined' };
-    return { chip: 'closed', label: status.charAt(0).toUpperCase() + status.slice(1) };
-}
-
-export default async function ProviderDashboardPage() {
+// THE REQUESTS / RESERVATIONS HOME.
+//
+// A trade's home is Requests — every enquiry to answer and every job they have
+// accepted, on the shared reservation card, with Accept / Decline on the request
+// itself and a Past-work toggle. A guest provider's home is the same page worded
+// as their reservations. The month grid and blocking live one click away at
+// /services/dashboard/calendar; the listing editor at /services/dashboard/edit.
+export default async function ProviderReservationsPage() {
     const supabase = createServerComponentClient({ cookies });
-    // getUser(), not getSession() — the page keys authorization off who this is.
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect('/');
 
     const admin = adminClient();
 
-    // The provider(s) this account owns. Approved first, then the most recently
-    // touched — a signed-in owner with a live business lands on it, not on a
-    // half-finished draft for a second trade.
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, trial_ends_at, shape')
+        .select('id, business_name, trade, audience, status, plan, stripe_payouts_enabled, trial_ends_at, fulfilment, photos, cancellation_window_hours, guest_details, collection_street, collection_town, collection_postcode')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
     const list = providers || [];
     if (list.length === 0) {
-        // Signed in, but no business on this account. Point at the way in
-        // rather than 404 — this is where "become a provider" would live.
         return (
             <div className="max-w-lg mx-auto px-4 py-20 text-center">
                 <h1 className="text-2xl font-extrabold text-slate-900">No business here yet</h1>
@@ -98,167 +56,54 @@ export default async function ProviderDashboardPage() {
     }
 
     const provider = list.find((p) => p.status === 'approved') || list[0];
-
-    // Not approved yet: the dashboard proper is for a live business. A pending
-    // or returned application belongs back in the wizard, with its note.
     if (provider.status !== 'approved') {
         redirect(`/services/join?trade=${provider.trade}`);
     }
 
-    // A GUEST-TRADE PROVIDER GETS A DIFFERENT HOME.
-    //
-    // Everything below this point is the host/enquiry model — a "Requests"
-    // inbox read from service_enquiries, a rates-and-registrations profile card,
-    // "you're listed". A chef has none of that: they receive service_orders, are
-    // paid through the platform, and their screen is payouts + orders to
-    // confirm. Rendering the host dashboard for them showed an inbox that could
-    // never fill and chips for rates and coverage they do not have. So they
-    // branch here, to their own dashboard, rather than being shown a plumber's.
-    if (provider.audience === 'guest') {
-        return (
-            <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-24">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
-                            {provider.business_name}
-                        </h1>
-                        <p className="mt-1 text-sm text-slate-500">
-                            {tradeLabel(provider.trade)} · guest experiences
-                        </p>
-                    </div>
-                    <Link
-                        href={`/services/join?trade=${provider.trade}`}
-                        className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
-                    >
-                        Edit your listing
-                    </Link>
-                </div>
+    const { reservations, past, summary } = await loadProviderReservations(admin, provider);
 
-                {/* Two homes by shape: a slot provider gets a DIARY (a booked
-                    week, nothing to approve), everyone else the INBOX (requests
-                    to confirm, then coming up). The payouts gate is in both. */}
-                {shapeOf(provider) === 'slot'
-                    ? <ProviderSlotDashboard providerId={provider.id} editHref={`/services/join?trade=${provider.trade}`} />
-                    : <ProviderExperienceDashboard providerId={provider.id} />}
-            </div>
-        );
-    }
+    const isTrade = provider.audience !== 'guest';
 
-    const offPlatform = provider.plan === 'subscription';
-    const live = provider.stripe_payouts_enabled === true;
-
-    // Coverage area label — the first circle is enough for the header.
-    const { data: areas } = await admin
-        .from('service_areas')
-        .select('label')
-        .eq('provider_id', provider.id)
-        .order('created_at', { ascending: true });
-    const areaLabel = (areas && areas[0] && areas[0].label) || '';
-
-    // The badge: a verified registration wears its scheme's name (Gas Safe,
-    // OFTEC, NICEIC…); an approved provider without one is simply Approved.
-    const { data: regs } = await admin
-        .from('service_provider_registrations')
-        .select('scheme, number, verified_at, verified_number, expires_at')
-        .eq('provider_id', provider.id);
-    const verifiedReg = (regs || []).find((r: any) => registrationVerified(r));
-    const badge = verifiedReg ? schemeLabel(verifiedReg.scheme) : 'Approved';
-
-    // Everything that has arrived for this provider.
-    const { data: enquiryRows } = await admin
-        .from('service_enquiries')
-        .select('id, status, summary, area_key, urgency, preferred_date, window_from, window_to, host_name, host_phone, listing_id, proposed_date, sent_at, expires_at')
-        .eq('provider_id', provider.id)
-        .order('sent_at', { ascending: false });
-
-    const today = todayKey();
-
-    // Requests is only what still needs answering. The moment a job is
-    // accepted it leaves here and moves to Upcoming work — an accepted job is
-    // not a request any more. Declined/expired are done and drop off too.
-    const requests: DashboardEnquiry[] = (enquiryRows || [])
-        .filter((e: any) => e.status === 'sent' || e.status === 'viewed')
-        .map((e: any) => ({
-            id: e.id,
-            chip: 'new' as const,
-            chipLabel: 'New',
-            title: e.summary,
-            // "Asked for …", never "booked for".
-            askedFor: requestedWhen(e),
-            sub: prettyArea(e.area_key),
-            contactName: null,
-            contactPhone: null,
-            when: null,
-            replyBy: replyByLabel(e.expires_at),
-            answerHref: null,
-        }));
-
-    const toAnswer = requests.length;
-
-    // Upcoming work: accepted jobs still ahead (or without a fixed day yet).
-    // Each carries the cottage it is at and the host to ring — a tradesman can
-    // look at the bathroom before he turns up. Still "asked for", never a slot.
-    const acceptedRows = (enquiryRows || [])
-        .filter((e: any) => e.status === 'accepted' && (!e.preferred_date || e.preferred_date >= today))
-        .sort((a: any, b: any) => String(a.preferred_date || '9999').localeCompare(String(b.preferred_date || '9999')));
-
-    const upcomingListingIds = Array.from(new Set(acceptedRows.map((e: any) => e.listing_id).filter(Boolean)));
-    const { data: upcomingListings } = upcomingListingIds.length
-        ? await admin.from('listings').select('id, title, location, images').in('id', upcomingListingIds)
-        : { data: [] as any[] };
-    const listingById: Record<string, any> = {};
-    for (const l of upcomingListings || []) listingById[l.id] = l;
-
-    // Unread messages on those jobs' threads, for the provider (recipient).
-    const acceptedIds = acceptedRows.map((e: any) => e.id);
-    const unreadByEnquiry: Record<string, number> = {};
-    if (acceptedIds.length) {
-        const { data: unreadRows } = await admin
-            .from('messages')
-            .select('enquiry_id')
-            .in('enquiry_id', acceptedIds)
-            .eq('recipient_id', user.id)
-            .is('read_at', null);
-        for (const m of unreadRows || []) unreadByEnquiry[m.enquiry_id] = (unreadByEnquiry[m.enquiry_id] || 0) + 1;
-    }
-
-    const upcoming: DashboardUpcoming[] = acceptedRows.map((e: any) => {
-        const d = e.preferred_date ? new Date(String(e.preferred_date) + 'T12:00:00Z') : null;
-        const window = (requestedWhen(e) || 'a date still to agree').replace(/^Asked for [^,]+,\s*/, '');
-        const l = e.listing_id ? listingById[e.listing_id] : null;
-        return {
-            id: e.id,
-            day: d ? d.toLocaleDateString('en-GB', { day: 'numeric', timeZone: LONDON }) : '–',
-            month: d ? d.toLocaleDateString('en-GB', { month: 'short', timeZone: LONDON }) : 'TBC',
-            title: e.summary,
-            window,
-            preferredDate: e.preferred_date || null,
-            proposedDate: e.proposed_date || null,
-            unread: unreadByEnquiry[e.id] || 0,
-            hostName: e.host_name || null,
-            hostPhone: e.host_phone || null,
-            listing: l ? {
-                id: l.id,
-                title: l.title,
-                location: l.location || '',
-                image: (Array.isArray(l.images) && l.images[0]) ? getImageUrl(l.images[0]) : null,
-            } : null,
-        };
-    });
+    // The page heading reads like a host's dashboard: the section name (the top
+    // bar already greets them by first name), with the business name as the quiet
+    // line beneath — not a big business-name H1 competing with "Welcome, Ewan".
+    // Subscription state ("Free until …") and the "Listed" pill used to sit here;
+    // they belong to the business, not to this inbox, so they moved to Your
+    // listing (round six).
+    // A guest-experience provider takes "bookings" for their experiences, not
+    // "reservations" for a property — that is the accommodation host's noun, and
+    // it does not belong on a chef's or a class's dashboard.
+    const heading = isTrade ? 'Enquiries' : 'Your bookings';
 
     return (
-        <ProviderDashboard
-            businessName={provider.business_name}
-            tradeName={tradeLabel(provider.trade)}
-            areaLabel={areaLabel}
-            badge={badge}
-            offPlatform={offPlatform}
-            live={live}
-            editHref={`/services/join?trade=${provider.trade}`}
-            enquiries={requests}
-            upcoming={upcoming}
-            toAnswer={toAnswer}
-            nextPayoutLabel={null}
-        />
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-24">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+                <div>
+                    <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                        {heading}
+                    </h1>
+                    <p className="mt-1 text-sm text-slate-500">
+                        {provider.business_name}
+                        <span className="text-slate-300"> · </span>
+                        {tradeLabel(provider.trade)}
+                    </p>
+                </div>
+                {/* A trade's in-page nav duplicated the account menu (Calendar, Your
+                    listing), so it is gone — the menu is the one place to move
+                    around. A guest provider keeps its quick links. */}
+                {!isTrade && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Link href="/services/dashboard/calendar" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                            Calendar
+                        </Link>
+                        <Link href="/services/dashboard/edit" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                            Your listing
+                        </Link>
+                    </div>
+                )}
+            </div>
+
+            <ProviderUpcoming reservations={reservations} past={past} summary={summary} title={isTrade ? null : 'Upcoming bookings'} folders={isTrade} />
+        </div>
     );
 }

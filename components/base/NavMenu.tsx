@@ -14,29 +14,45 @@ import { getImageUrl } from '@/lib/utils'
 import MessagesLink from './MessagesLink'
 import MenuUnreadDot from './MenuUnreadDot'
 import BookingsLink from './BookingsLink'
+import RequestsLink from './RequestsLink'
 
 const itemClass = 'hover:bg-slate-200 rounded-md p-2 cursor-pointer';
 
 const NavMenu = ({
     session,
+    experiencesOpen = false,
     isHost = false,
     isAdmin = false,
     mode = 'travel',
     hasCompletedStay = false,
     isProvider = false,
+    providerAudience = null,
     avatarUrl = null,
     initial = '',
 }: {
     session: object | undefined;
+    experiencesOpen?: boolean;
     isHost?: boolean;
     isAdmin?: boolean;
     mode?: 'host' | 'travel';
     hasCompletedStay?: boolean;
     isProvider?: boolean;
+    providerAudience?: string | null;
     avatarUrl?: string | null;
     initial?: string;
 }) => {
     const hostView = isHost && mode === 'host';
+    // A provider sees their providing menu only on their providing side, exactly
+    // as a host sees the host menu only in host mode. In travelling mode a
+    // provider gets the guest menu (their own trips), so the one mode switch
+    // flips the dropdown for a provider the same way it does for a host. A host
+    // who is also a provider is handled by hostView above.
+    const providerView = isProvider && !isHost && mode === 'host';
+    // A guest-experience provider (a chef, a sauna, a class) is booked and paid
+    // through us, so their menu is a Calendar and Earnings. A trade provider (a
+    // plumber) is contacted by Enquiry and paid off-platform, so theirs is
+    // Enquiries and no Earnings.
+    const isGuestProvider = isProvider && providerAudience === 'guest';
 
     return (
         <Popover>
@@ -56,7 +72,7 @@ const NavMenu = ({
                     aria-label='Your account and menu'
                     className='flex items-center gap-2 border p-1.5 pl-3 rounded-full cursor-pointer hover:shadow-md transition'
                 >
-                    <MenuUnreadDot enabled={session != null} host={isHost} />
+                    <MenuUnreadDot enabled={session != null} host={isHost} provider={isProvider && !isGuestProvider} />
                     {session != null ? (
                         <div className='w-8 h-8 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0'>
                             {avatarUrl ? (
@@ -78,6 +94,9 @@ const NavMenu = ({
             </PopoverTrigger>
             <PopoverContent className='mr-6'>
                 <ul>
+                    {/* Experiences is not repeated here — it already sits in the top
+                        nav bar (Navbar.tsx), so a second copy in the dropdown was
+                        just noise. */}
                     {session != null ? (
                         <>
                             {hostView ? (
@@ -110,31 +129,74 @@ const NavMenu = ({
                                     <li className={itemClass}>
                                         <MessagesLink />
                                     </li>
+                                    {/* A host travels too — their own stays and
+                                        experiences live here, same as any guest. */}
+                                    <li className={itemClass}>
+                                        <Link href='/trips'>Your trips</Link>
+                                    </li>
                                 </>
-                            ) : isProvider ? (
+                            ) : providerView ? (
                                 /* A provider's menu is their business, not a
-                                   traveller's. A plumber signing in is not
-                                   looking for a cottage, so "Your trips" and
-                                   "Become a host" give way to their own things.
-                                   (A provider who is also a host still gets the
-                                   full host menu in host mode, above.) */
+                                   traveller's. On their providing side "Your
+                                   trips" and "Become a host" give way to their
+                                   own things; switch to travelling and they get
+                                   the guest menu below instead. (A provider who
+                                   is also a host gets the full host menu in host
+                                   mode, above.) */
                                 <>
+                                    {isGuestProvider ? (
+                                        /* A guest-experience provider is booked and paid
+                                           through us: their listing, their bookings,
+                                           the calendar, then Earnings. Their word is
+                                           "bookings" — they take bookings for their
+                                           experiences, not reservations for a property. */
+                                        <>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
+                                                    Your listing
+                                                </Link>
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard'>Your bookings</Link>
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/calendar'>Calendar</Link>
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/earnings'>Earnings</Link>
+                                            </li>
+                                        </>
+                                    ) : (
+                                        /* A trade's menu, in a host's shape: Requests,
+                                           Calendar, Your listing. "Your reservations" and
+                                           "Enquiries" used to be two names for the one
+                                           screen; they are one line now — Requests —
+                                           carrying the count of enquiries still to answer,
+                                           the same green badge a host's reservations line
+                                           gets. */
+                                        <>
+                                            <li className={itemClass}>
+                                                <RequestsLink className='font-semibold text-emerald-800' />
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/calendar'>Calendar</Link>
+                                            </li>
+                                            <li className={itemClass}>
+                                                <Link href='/services/dashboard/edit'>Your listing</Link>
+                                            </li>
+                                        </>
+                                    )}
+                                    {/* A provider's messages are their job/booking
+                                        threads — a home they can navigate to so a
+                                        thread is never a lost email. The count is the
+                                        same badge the host gets. */}
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard' className='font-semibold text-emerald-800'>
-                                            Your business
-                                        </Link>
+                                        <MessagesLink />
                                     </li>
+                                    {/* A provider is a traveller too: their own
+                                        stays and booked experiences, one place. */}
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard#requests'>Enquiries</Link>
-                                    </li>
-                                    <li className={itemClass}>
-                                        <Link href='/services/dashboard/edit'>Your profile</Link>
-                                    </li>
-                                    {/* A tradesman's messages are his job threads,
-                                        not booking chat — a home he can navigate to
-                                        so a thread is never a lost email. */}
-                                    <li className={itemClass}>
-                                        <Link href='/services/messages'>Messages</Link>
+                                        <Link href='/trips'>Your trips</Link>
                                     </li>
                                 </>
                             ) : (
@@ -184,9 +246,19 @@ const NavMenu = ({
                                     />
                                 </li>
                             ) : isProvider ? (
-                                /* A tradesman isn't a lapsed host to convert —
-                                   no "Become a host" nudge in his menu. */
-                                null
+                                /* A provider gets the same switch a host does —
+                                   the only way to reach the travelling side on
+                                   mobile, where the top-bar switch is hidden —
+                                   pointed at their provider dashboard and worded
+                                   "providing", not "hosting". */
+                                <li className={itemClass}>
+                                    <ModeSwitch
+                                        mode={mode}
+                                        workHref='/services/dashboard'
+                                        workLabel='providing'
+                                        className='w-full text-left rounded-md'
+                                    />
+                                </li>
                             ) : (
                                 <li className={itemClass}>
                                     <Link href='/business'>Start hosting</Link>

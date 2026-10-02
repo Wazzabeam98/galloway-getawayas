@@ -4,7 +4,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
-import { SITE_URL } from '@/lib/email';
+import { returnUrl } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,8 +96,8 @@ export async function POST(request: Request) {
             // Lands on a page that confirms the payment from the booking id
             // alone, so a session lost on the way back from Stripe never leaves
             // a guest staring at a login screen.
-            success_url: SITE_URL + '/booking-confirmed/' + booking.id,
-            cancel_url: SITE_URL + '/trips?cancelled=' + booking.id,
+            success_url: returnUrl() + '/booking-confirmed/' + booking.id,
+            cancel_url: returnUrl() + '/trips?cancelled=' + booking.id,
             line_items: [
                 {
                     quantity: 1,

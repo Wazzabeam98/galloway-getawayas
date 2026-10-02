@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import { Trash2, Plus } from 'lucide-react';
+import { feedUrlProblem } from '@/lib/feedUrl';
 
 interface Feed {
     id: string;
@@ -47,8 +48,13 @@ export default function IcalFeeds({ listingId }: { listingId: string }) {
             return;
         }
 
-        if (!/^https?:\/\//i.test(trimmed)) {
-            toast.error('That should start with https://', { theme: 'colored' });
+        // The same safety rule the server enforces before it ever fetches the
+        // feed (public https only, nothing pointing at a private/loopback/metadata
+        // address) — checked here too so a host gets a clear message up front
+        // rather than a feed that silently never syncs.
+        const problem = feedUrlProblem(trimmed);
+        if (problem) {
+            toast.error(problem, { theme: 'colored' });
             return;
         }
 

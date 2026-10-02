@@ -6,8 +6,10 @@ import { stripeRequest } from '@/lib/stripe';
 import { refundDue } from '@/lib/cancellation';
 import { clawBackPayout } from '@/lib/clawback';
 import { logError } from '@/lib/logError';
+import { logMoneyFailure } from '@/lib/moneyAlert';
 import { issueRefunds } from '@/lib/refundSpread';
 import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
+import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,9 +62,40 @@ export async function POST(request: Request) {
         const alreadyRefunded = Number(booking.amount_refunded || 0);
         const refundable = round2(paid - alreadyRefunded);
 
-        // Nothing was ever taken, or it has all been given back already.
-        // Not an error — the booking status change on its own is correct.
+        // Nothing was ever taken, or it has all been given back already (a host
+        // who refunded the whole stay as goodwill, then cancels). No money moves,
+        // but the stay is still called off — here, because nothing else closes
+        // it any more. This used to return ok without touching the booking, so
+        // the host was told "Booking cancelled" while it still read confirmed,
+        // the dates stayed blocked and the guest was emailed a cancellation of
+        // a stay the site still showed as on.
         if (!booking.stripe_payment_intent_id || refundable <= 0) {
+            const closing = reason === 'declined' ? 'declined' : reason === 'cancelled' ? 'cancelled' : null;
+            if (closing && (booking.status === 'pending' || booking.status === 'confirmed')) {
+                const { error: closeError } = await admin
+                    .from('bookings')
+                    .update({
+                        status: closing,
+                        balance_amount: 0,
+                        cancelled_at: new Date().toISOString(),
+                        cancelled_by_user: user.id,
+                        cancelled_by_role: isHost ? 'host' : 'guest',
+                    })
+                    .eq('id', booking.id);
+                if (closeError) {
+                    await logError('[stripe/refund] could not close a booking with nothing to refund', closeError, {
+                        path: 'stripe/refund',
+                        userId: user.id,
+                    });
+                    return NextResponse.json(
+                        { ok: false, error: 'The booking could not be updated. Please try again.' },
+                        { status: 500 }
+                    );
+                }
+                if (isHost && closing === 'cancelled' && booking.status === 'confirmed') {
+                    await cancelStayExperienceOrders(admin, booking.id);
+                }
+            }
             return NextResponse.json({ ok: true, refunded: 0, nothingToRefund: true });
         }
 
@@ -145,7 +178,7 @@ export async function POST(request: Request) {
         const refunds = issued.refunds;
 
         if (!charges.length) {
-            await logError(
+            await logMoneyFailure(
                 '[stripe/refund] a refund is due but no charge behind the booking could be read, '
                     + 'so nothing was sent back',
                 { booking_id: booking.id, due: amount },
@@ -174,16 +207,13 @@ export async function POST(request: Request) {
         const amountRefundedNow = round2(issued.refundedPence / 100);
 
         if (issued.refundedPence < Math.round(amount * 100)) {
-            await logError(
+            await logMoneyFailure(
                 '[stripe/refund] the guest is owed \u00A3' + amount.toFixed(2)
                     + ' but only \u00A3' + amountRefundedNow.toFixed(2) + ' could be refunded',
                 issued.failure || { booking_id: booking.id, due: amount, sent: amountRefundedNow },
                 { path: 'stripe/refund', userId: user.id }
             );
         }
-
-        const totalRefunded = round2(alreadyRefunded + amountRefundedNow);
-        const fullyRefunded = totalRefunded >= round2(paid);
 
         // Cancelling a stay a guest has already had confirmed is the most
         // damaging thing a host can do — they may have travel booked. A
@@ -202,7 +232,7 @@ export async function POST(request: Request) {
                 });
 
                 if (penaltyError) {
-                    await logError('refund: a cancellation penalty was not added to what the host owes', penaltyError, {
+                    await logMoneyFailure('refund: a cancellation penalty was not added to what the host owes', penaltyError, {
                         path: 'api/stripe/refund',
                         userId: booking.host_id,
                     });
@@ -219,43 +249,27 @@ export async function POST(request: Request) {
             }
         }
 
-        // The stay is called off here, in the same place the money moved, and
-        // only once it has. This used to be left to the browser to do after the
-        // route returned: a closed tab or a dropped connection left the guest
-        // refunded while the booking still read as confirmed and the dates
-        // stayed blocked. Nothing outside this route may set it now.
         const closingStatus =
             reason === 'declined' ? 'declined' : reason === 'cancelled' ? 'cancelled' : null;
 
-        const patch: Record<string, any> = {
-            amount_refunded: totalRefunded,
-            payment_status: fullyRefunded ? 'refunded' : 'partially_refunded',
-        };
-
-        if (closingStatus) {
-            patch.status = closingStatus;
-            // Nothing further is owed on a stay that isn't happening, so the
-            // balance charge can't pick it up.
-            patch.balance_amount = 0;
-
-            // Who did this, in our own records rather than only in the
-            // metadata on the Stripe refund. The 5% fee below turns on
-            // exactly this distinction, so the first time a host disputes one
-            // the answer has to be somewhere we can read it.
-            patch.cancelled_at = new Date().toISOString();
-            patch.cancelled_by_user = user.id;
-            patch.cancelled_by_role = isHost ? 'host' : 'guest';
-        }
-
-        const { error: updateError } = await admin
-            .from('bookings')
-            .update(patch)
-            .eq('id', booking.id);
+        // amount_refunded moves atomically in the database, not read-then-
+        // written here: a guest cancel or a second refund landing in the window
+        // of this one must SUM, not overwrite the figure read before the money
+        // moved. The same lost update the other two refund routes had — this is
+        // the third. record_booking_refund locks the row, adds what actually
+        // went back (clamped at what was paid) and returns how much fit and the
+        // payment_status derived from it.
+        const { data: appliedRow, error: refundWriteError } = await admin
+            .rpc('record_booking_refund', { p_booking: booking.id, p_amount: amountRefundedNow })
+            .maybeSingle();
+        // The RPC's row type is not in the generated Supabase types.
+        const applied = appliedRow as { applied: number } | null;
 
         // The guest's money has already gone back at this point, so a failure
-        // here is the dangerous one — it is the case that used to be silent.
-        if (updateError) {
-            await logError('[stripe/refund] refunded but could not update the booking', updateError, {
+        // to record it is the dangerous one — it is the case that used to be
+        // silent, and it must not be swallowed.
+        if (refundWriteError || !applied) {
+            await logMoneyFailure('[stripe/refund] refunded but could not record it against the booking', refundWriteError || { booking_id: booking.id, amount: amountRefundedNow }, {
                 path: 'stripe/refund',
                 userId: user.id,
             });
@@ -270,6 +284,60 @@ export async function POST(request: Request) {
             );
         }
 
+        if (round2(Number(applied.applied)) < amountRefundedNow) {
+            // Less was added than we asked to: the total hit what was paid
+            // because a concurrent refund took the headroom. The money left at
+            // Stripe, so a person has to reconcile it.
+            await logMoneyFailure(
+                '[stripe/refund] £' + amountRefundedNow.toFixed(2) + ' was refunded but only £'
+                    + round2(Number(applied.applied)).toFixed(2)
+                    + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
+                Object.assign({ booking_id: booking.id }, applied),
+                { path: 'stripe/refund', userId: user.id }
+            );
+        }
+
+        // The stay is called off here, in the same place the money moved, and
+        // only once it has — status / balance / who-did-it, which are not the
+        // contended money column and so are set on the booking id. This used to
+        // be left to the browser after the route returned: a closed tab left
+        // the guest refunded while the booking still read confirmed and the
+        // dates stayed blocked. Nothing outside this route may set it now.
+        if (closingStatus) {
+            const { error: closeError } = await admin
+                .from('bookings')
+                .update({
+                    status: closingStatus,
+                    // Nothing further is owed on a stay that isn't happening, so
+                    // the balance charge can't pick it up.
+                    balance_amount: 0,
+                    // Who did this, in our own records rather than only in the
+                    // metadata on the Stripe refund. The 5% fee above turns on
+                    // exactly this distinction, so the first time a host
+                    // disputes one the answer has to be somewhere we can read it.
+                    cancelled_at: new Date().toISOString(),
+                    cancelled_by_user: user.id,
+                    cancelled_by_role: isHost ? 'host' : 'guest',
+                })
+                .eq('id', booking.id);
+
+            if (closeError) {
+                await logError('[stripe/refund] refunded but could not close the booking', closeError, {
+                    path: 'stripe/refund',
+                    userId: user.id,
+                });
+                return NextResponse.json(
+                    {
+                        ok: false,
+                        error: 'The refund went through but the booking could not be updated. '
+                            + 'Please check it before trying again.',
+                        refunded: amountRefundedNow,
+                    },
+                    { status: 500 }
+                );
+            }
+        }
+
         // The stay is off, so its experiences go too — the same failure the
         // guest cancel already handles, which this route used to skip: a host
         // could cancel a stay and leave the guest paying for a dinner and the
@@ -280,6 +348,12 @@ export async function POST(request: Request) {
         // against it. Best-effort: the guest's stay refund has already gone back.
         if (isHost && reason === 'cancelled' && booking.status === 'confirmed') {
             await cancelStayExperienceOrders(admin, booking.id);
+        }
+
+        // A cancelled or declined stay closes any open change or money request
+        // against it, so neither can act on a booking that is no longer live.
+        if (closingStatus) {
+            await closeOpenBookingRequests(admin, booking.id);
         }
 
         // One ledger row per refund actually issued, naming the charge it came
@@ -311,7 +385,7 @@ export async function POST(request: Request) {
         });
     } catch (err: any) {
         console.error('[stripe/refund]', err && err.message);
-        await logError('[stripe/refund] ' + ((err && err.message) || 'failed'), err, { path: 'stripe/refund' });
+        await logMoneyFailure('[stripe/refund] ' + ((err && err.message) || 'failed'), err, { path: 'stripe/refund' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Refund failed' },
             { status: 500 }

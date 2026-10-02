@@ -4,7 +4,6 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
@@ -14,7 +13,7 @@ import {
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
-import { getImageUrl, generateRandomNumber, backfillName, firstName } from '@/lib/utils';
+import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
 import { buildStreetAddress } from '@/lib/address';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
 import { slotOfferingFromUnits, offeringHasShared, type SlotOffering } from '@/lib/serviceSlots';
@@ -23,18 +22,16 @@ import {
     skillKey,
     suggestSkills,
     wouldCreateNew,
-    regulatedConceptFor,
-    schemesSatisfying,
-    blockedSkillReason,
 } from '@/lib/serviceSkills';
-import LoginModel from '@/components/auth/LoginModel';
+import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 import {
     tradeLabel,
+    tradeNoun,
+    indefiniteArticle,
     audienceForTrade,
     extrasFor,
     extrasProblems,
-    imageryFor,
     initialsFor,
     showsTimeGuide,
     BUILDING_TYPES,
@@ -59,11 +56,11 @@ import {
     submitProblems,
     statusSummary,
     submitStatusPatch,
-    planTerms,
     pricingModelFor,
     offersHourlyChoice,
     pickerEntries,
     unclaimedTrades,
+    isTradeComingSoon,
     tradesFor,
     groupByKey,
     bandsFor,
@@ -74,16 +71,19 @@ import {
     guestCategoryByKey,
     guestCategoryIsFood,
     guestAsksExpertise,
-    guestQualificationsRequired,
+    guestAsksQualifications,
     slotAsksWhereFork,
     slotIsMeetingPoint,
+    slotDurationPerItem,
+    slotMixedDuration,
     defaultSlotFulfilment,
     collectionFieldsForWrite,
     DIETARY_OPTIONS,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
 import { serviceCommission } from '@/lib/pricing';
-import { PROVIDER_TERMS, PROVIDER_TERMS_VERSION } from '@/lib/providerTerms';
+import { AGREEMENTS, agreementProblem, versionForTick } from '@/lib/agreements';
+import AgreementTick, { AGREEMENTS_CHANGED, fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY, HOST_LOCATION_COPY } from '@/lib/strings';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
@@ -167,8 +167,18 @@ function NumberStepper({
     // starting position, not a greyed placeholder, and there is no visual
     // difference between touched and untouched. It STILL stores nothing until
     // touched: the parent value stays empty until a nudge or a type commits, so
-    // an untouched starting number never reaches the draft or the record. The
-    // years opener uses this; the slot counts keep the greyed-suggestion style.
+    // an untouched starting number never reaches the draft or the record.
+    //
+    // Use solid ONLY where the step is NOT gated — the screens whose Next is
+    // enabled from load and whose onNext stores the shown default (years,
+    // capacity, notice, session length). There a plus/minus genuinely MOVES the
+    // number, because the shown value is already the accepted answer.
+    //
+    // A GATED stepper (Next/Save disabled until touched) must NOT be solid: the
+    // greyed path below adopts the suggestion on the first press of either
+    // button — so accepting the suggestion is one press, not a press up and back
+    // down — and turns solid once touched, which is the signal that the required
+    // input has been given. The per-treatment duration is the gated one.
     solid?: boolean;
 }) {
     const has = String(value).trim() !== '' && Number.isFinite(Number(value));
@@ -273,11 +283,18 @@ function ChoiceCard({ selected, onSelect, title, hint, radio }: {
     radio?: boolean;
 }) {
     return (
+        // Content is top-aligned, not centred: these cards sit in a stretched
+        // grid row (all as tall as the wordiest one), and a centred body would
+        // float each title to a different height — a staircase, when they are
+        // one row of choices. Anchored to the top, every title lines up and the
+        // hint hangs beneath it, however many lines each runs to. The title
+        // reserves two lines so a one-line title (Both) starts its hint at the
+        // same place as a two-line one.
         <button type="button" onClick={onSelect}
             {...(radio ? { role: 'radio', 'aria-checked': selected } : { 'aria-pressed': selected })}
-            className={'flex min-h-[9rem] flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-white px-5 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[14rem] '
+            className={'flex min-h-[9rem] flex-col items-center justify-start gap-1.5 rounded-2xl border-2 bg-white px-5 py-7 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[13rem] sm:py-9 '
                 + (selected ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
-            <span className="text-lg font-semibold text-slate-900">{title}</span>
+            <span className="flex items-center text-lg font-semibold text-slate-900 sm:min-h-[3.5rem]">{title}</span>
             <span className="text-sm text-slate-500">{hint}</span>
         </button>
     );
@@ -386,6 +403,10 @@ const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
     details: ListChecks,
     experience: Sparkles,
     finish: Flag,
+    // Host-trade sections (TRADE_SECTIONS) reuse the same icon set.
+    business: User,
+    credentials: ListChecks,
+    prices: Tag,
 };
 
 function ApplicationForm() {
@@ -407,11 +428,6 @@ function ApplicationForm() {
     const [session, setSession] = useState<any>(null);
 
     const [providerId, setProviderId] = useState<string | null>(null);
-    // Set only on the unauthenticated path, where a press lodges an
-    // application rather than making an account. A provider row does not exist
-    // yet — that happens when the emailed link is opened — so this is the
-    // handle the resend button uses, and it is deliberately not providerId.
-    const [applicationId, setApplicationId] = useState<string | null>(null);
     const [status, setStatus] = useState('draft');
     const [reviewNote, setReviewNote] = useState<string | null>(null);
 
@@ -422,8 +438,10 @@ function ApplicationForm() {
     const [contactPhone, setContactPhone] = useState('');
     const [smsOptOut, setSmsOptOut] = useState(false);
     const [photos, setPhotos] = useState<string[]>([]);
+    // The logo column is no longer collected at sign-up (a trade's headshot from
+    // the About-you hub is its listing image now), but it is still LOADED and
+    // re-saved so a provider who set one under the old flow keeps it.
     const [logo, setLogo] = useState<string | null>(null);
-    const [uploadingLogo, setUploadingLogo] = useState(false);
     const [removing, setRemoving] = useState(false);
     const [confirmRemove, setConfirmRemove] = useState(false);
     const [buildingType, setBuildingType] = useState('');
@@ -453,20 +471,15 @@ function ApplicationForm() {
     // list rather than out of the form.
     const [openGroup, setOpenGroup] = useState<string>('');
 
+    // The "Other" trade: a name they type when their trade isn't listed. Stored
+    // as trade='other' with the typed name in custom_label, so the rest of the
+    // wizard treats it as an ordinary host trade.
+    const [otherOpen, setOtherOpen] = useState<boolean>(false);
+    const [otherText, setOtherText] = useState<string>('');
+
     // What they already have, for step one. One business per trade, so this is
     // a list of what they hold plus what is left.
     const [mine, setMine] = useState<any[]>([]);
-    // Set when they pressed a button that needs an account. The account panel
-    // appears, and the press is replayed once they are in.
-    const [wantsToSave, setWantsToSave] = useState<null | boolean>(null);
-
-    // The account, made from what they have already typed rather than behind a
-    // door. A tradesman who has just filled in a whole form and is then asked
-    // to go and register somewhere else has been asked to do the work twice.
-    const [acctPassword, setAcctPassword] = useState('');
-    const [acctBusy, setAcctBusy] = useState(false);
-    const [acctError, setAcctError] = useState('');
-    const [acctConsent, setAcctConsent] = useState(false);
     // The provider terms agreement on the finish screen (it replaced the single
     // responsibility tickbox, which replaced the per-category checks). `termsAgreed`
     // is the agree box; on submit it is recorded in the `declarations` jsonb as
@@ -475,45 +488,24 @@ function ApplicationForm() {
     // see the save() guard and the gated button. `termsError` is the gate message.
     const [termsAgreed, setTermsAgreed] = useState(false);
     const [termsError, setTermsError] = useState('');
-    // The terms open in a modal from the agree line, so the finish screen itself
-    // stays a preview of what they're submitting rather than a wall of terms.
-    const [termsModalOpen, setTermsModalOpen] = useState(false);
+    // The Guest Terms tick, alongside the role agreement on the finish screen.
+    // A provider is a user of the site too, so they accept the Guest Terms here —
+    // at the end of sign-up, with the role agreement — rather than being stopped
+    // by the sign-in prompt mid-sign-up. Only shown when they have not already
+    // accepted the current version.
+    const [guestAgreed, setGuestAgreed] = useState(false);
+    const [guestTermsError, setGuestTermsError] = useState('');
+    // Which agreements this account already has on record at the current
+    // version (from /api/agreements; null until known). A guest experience asks
+    // for the Experience Provider Agreement, a trade for the Tradesperson
+    // Agreement — lib/agreements. Somebody already on the current version is
+    // not shown the box.
+    const [agreementsOnRecord, setAgreementsOnRecord] = useState<Record<string, boolean> | null>(null);
     // The finish-screen byline: the provider's first name, shown beneath their
     // photo. Derived from the account (resolveGuestBylineNow is async), so it is
     // loaded into state when the finish screen is reached. The title itself is
     // now the Title field (professionalTitle), computed inline.
     const [summaryByline, setSummaryByline] = useState('');
-    const [checkYourEmail, setCheckYourEmail] = useState(false);
-
-    // The verify-your-email gate (g_verify). A guest signs in up front with a
-    // one-time code, so the rest of the wizard runs authenticated. `otpEmail` is
-    // the address; `otpSent` flips once a code is on its way and reveals the
-    // code field; `otpCode` is what they type back; `otpBusy`/`otpError` drive
-    // the button and the message. Verifying makes (or signs into) the account,
-    // which is the anti-squatting point: no session exists until the code proves
-    // they receive mail at that address.
-    const [otpName, setOtpName] = useState('');
-    const [otpEmail, setOtpEmail] = useState('');
-    const [otpSent, setOtpSent] = useState(false);
-    const [otpCode, setOtpCode] = useState('');
-    const [otpBusy, setOtpBusy] = useState(false);
-    const [otpError, setOtpError] = useState('');
-    // The application is in. Not "an email is on its way and you must come
-    // back" — that shape is gone; see lodgeApplication.
-    const [lodged, setLodged] = useState(false);
-    // The address already has an account. Its own state rather than a line of
-    // error text, because it is not a validation message — it is a fork, and it
-    // needs to be as visible as the success panel it was being mistaken for.
-    const [accountExists, setAccountExists] = useState(false);
-    // Whether the confirmation email was actually accepted for delivery. The
-    // panel used to say it had been sent regardless, which is a promise the
-    // applicant then waits on for ever.
-    const [verificationEmailed, setVerificationEmailed] = useState(true);
-    const [resending, setResending] = useState(false);
-    const [resendSaid, setResendSaid] = useState('');
-    // For somebody who has been here before. Not the default, because most
-    // people arriving at this point have no account.
-    const [showSignIn, setShowSignIn] = useState(false);
     const [areas, setAreas] = useState<AreaRow[]>([]);
 
     const [saving, setSaving] = useState(false);
@@ -539,6 +531,14 @@ function ApplicationForm() {
         unit: string;
         // The item's own photo, a storage path. The gallery is per item now.
         image: string | null;
+        // The one-at-a-time shape (massage) only: this treatment's length in
+        // minutes, as a string like the price. Empty/absent for every other
+        // category, where the session length is the provider's single number.
+        duration?: string;
+        // Per-item location, only for a provider who answered 'both' to "where
+        // does it happen?": 'collection' (at my place) | 'delivery' (I travel).
+        // Absent for every single-place provider (the item inherits theirs).
+        fulfilment?: string;
     }>>([]);
     // Which item row is uploading a photo, by index, so only that row shows a
     // spinner rather than all of them.
@@ -601,6 +601,13 @@ function ApplicationForm() {
     // page (guest_details.what_to_expect → experiencesData), so it earns its keep.
     const [yearsDoing, setYearsDoing] = useState('');
     const [professionalTitle, setProfessionalTitle] = useState('');
+    // The listing's own name (g_title) — what the experience is CALLED, distinct
+    // from professionalTitle above (what the PERSON is). It is written to
+    // business_name at submit; professionalTitle rides in guest_details and shows
+    // in the About block. On edit it loads from business_name, so an existing
+    // provider — whose business_name is today their professional title — sees that
+    // as the starting name and can refine it.
+    const [listingTitle, setListingTitle] = useState('');
     const [qualifications, setQualifications] = useState('');
     const [recognition, setRecognition] = useState('');
     const [whatToExpect, setWhatToExpect] = useState('');
@@ -724,19 +731,13 @@ function ApplicationForm() {
     // terms version on return (see the load below).
     const [declarations, setDeclarations] = useState<Record<string, any>>({});
     // The weekly opening hours — one row per open period. day is 0..6 (0=Sunday).
+    // Vestigial draft state only: weekly hours moved to the listing editor, so the
+    // wizard neither shows nor writes them. The hours control and its
+    // shared-hours/'simple'-vs-'perday' mode state were removed with that cut.
     const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
-    // The When screen's hours control. 'simple' is one set of hours across all
-    // the chosen days; 'perday' gives particular days their own. sharedOpen/close
-    // are the SUGGESTION shown in the control — they write nothing on their own,
-    // exactly like the stepper defaults: the schedule stays empty until a day is
-    // actually picked, and only then does a day take these hours. Derived from an
-    // existing schedule on load.
-    const [hoursMode, setHoursMode] = useState<'simple' | 'perday'>('simple');
-    const [sharedOpen, setSharedOpen] = useState('10:00');
-    const [sharedClose, setSharedClose] = useState('18:00');
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
-    const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
+    const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string; quote?: boolean }>>({});
     const [gateOpen, setGateOpen] = useState<Record<string, boolean | null>>({});
     // Which bands have the optional time guide showing. Open where one is
     // already set, so a returning provider sees what they typed.
@@ -752,6 +753,10 @@ function ApplicationForm() {
     const [calloutFee, setCalloutFee] = useState('');
     const [hourlyRate, setHourlyRate] = useState('');
     const [calloutWaived, setCalloutWaived] = useState(false);
+    // The unified pricing for every trade: a quote tick, an optional flat fee,
+    // and the hourly/call-out fees above. Valid when quote OR hourly OR flat.
+    const [provideQuote, setProvideQuote] = useState(false);
+    const [flatFee, setFlatFee] = useState('');
 
     // Skills tags. Held as labels rather than ids, because a tag they typed
     // before signing in does not have an id yet — the route settles all of
@@ -770,8 +775,6 @@ function ApplicationForm() {
     // so closing there would make the chips untappable — the classic version
     // of this bug, where the thing vanishes as you reach for it.
     const [skillsListOpen, setSkillsListOpen] = useState(false);
-    // Whether the list is showing everything or the first handful.
-    const [allTagsOpen, setAllTagsOpen] = useState(false);
     // The coverage-region picker modal on the guest location screen.
     const [areaPickerOpen, setAreaPickerOpen] = useState(false);
     // The town+radius sub-flow on the tradesman location screen. editIndex null
@@ -795,6 +798,16 @@ function ApplicationForm() {
     // Keyed by scheme. Strings, because a registration number is not a number
     // — Gas Safe numbers have leading zeros that Number() would eat.
     const [registrations, setRegistrations] = useState<Record<string, string>>({});
+    // The single free-text registration number for gas & electrical trades,
+    // replacing the pre-filled scheme checklist. A string for the same reason.
+    // NOT asked at sign-up any more (a trade without their number to hand would
+    // abandon) — it is loaded and re-saved here so an existing value survives, and
+    // it is entered/edited in account settings, where hosts then see it.
+    const [registrationNumber, setRegistrationNumber] = useState('');
+    // The two availability tick boxes on "What you do" — both optional, both
+    // selectable. They show on the trade's profile and hosts can filter on them.
+    const [doesEmergency, setDoesEmergency] = useState(false);
+    const [doesScheduled, setDoesScheduled] = useState(false);
 
     // No trade yet is not an error and no longer a redirect: it is step one,
     // which is on this screen. The trade still travels in the query string
@@ -839,7 +852,7 @@ function ApplicationForm() {
                 // able to see what they are signing up for, and fill it in,
                 // before being asked for anything.
                 if (!session) {
-                    restoreDraft(null);
+                    restoreDraft();
                     return;
                 }
 
@@ -855,7 +868,7 @@ function ApplicationForm() {
                     // provider_name was retired with the "Your name" field), and
                     // selecting a column the authenticated role can't read 403s
                     // the whole load. They stay revoked.
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, slot_min_people, declarations, guest_details, fulfilment')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, provides_quote, flat_fee, registration_number, does_gas, does_oil, does_emergency, does_scheduled, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, slot_min_people, declarations, guest_details, fulfilment')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -871,6 +884,10 @@ function ApplicationForm() {
                 if (existing) {
                     setProviderId(existing.id);
                     setBusinessName(existing.business_name || '');
+                    // A guest's business_name IS the listing name, so seed the
+                    // listing-title field from it. (A host reads business_name in
+                    // its own field; this is guest-only and harmless otherwise.)
+                    setListingTitle(existing.business_name || '');
                     setTrade(existing.trade || tradeFromUrl);
                     setDescription(existing.description || '');
                     // His own, through the view. The columns are revoked from
@@ -893,10 +910,15 @@ function ApplicationForm() {
                     setStatus(existing.status || 'draft');
                     setDoesGas(existing.does_gas === true);
                     setDoesOil(existing.does_oil === true);
+                    setDoesEmergency(existing.does_emergency === true);
+                    setDoesScheduled(existing.does_scheduled === true);
                     setReviewNote(existing.review_note || null);
                     setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
                     setHourlyRate(existing.hourly_rate === null || existing.hourly_rate === undefined ? '' : String(existing.hourly_rate));
                     setCalloutWaived(existing.callout_waived === true);
+                    setProvideQuote(existing.provides_quote === true);
+                    setFlatFee(existing.flat_fee === null || existing.flat_fee === undefined ? '' : String(existing.flat_fee));
+                    setRegistrationNumber(existing.registration_number || '');
                     setKind(existing.kind || 'external');
                     setPricingChoice(existing.pricing_choice === 'hourly' ? 'hourly' : 'bands');
                     setBillableHourlyRate(
@@ -909,7 +931,7 @@ function ApplicationForm() {
                     // The menu, if they have one. Loaded in the order they set.
                     const { data: itemRows } = await supabase
                         .from('service_provider_items')
-                        .select('id, name, description, price, unit, image, sort_order, created_at')
+                        .select('id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment')
                         .eq('provider_id', existing.id)
                         .order('sort_order', { ascending: true })
                         .order('created_at', { ascending: true });
@@ -921,6 +943,8 @@ function ApplicationForm() {
                             price: r.price === null || r.price === undefined ? '' : String(r.price),
                             unit: r.unit || 'flat',
                             image: r.image || null,
+                            duration: r.duration_minutes === null || r.duration_minutes === undefined ? '' : String(r.duration_minutes),
+                            fulfilment: r.fulfilment || undefined,
                         })));
                     }
 
@@ -977,18 +1001,22 @@ function ApplicationForm() {
                         }
                     }
                     if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
-                        const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
-                        // A real match restores the category; otherwise a sentinel
-                        // ('other') marks "already past the picker" without claiming
+                        // The category key is persisted now (guest_details.category),
+                        // so read it straight back. The label match is kept only as a
+                        // fallback for rows saved before the key existed; 'other' is
+                        // the last resort — "already past the picker" without claiming
                         // a food category it isn't.
-                        setGuestCategory(byLabel ? byLabel.key : 'other');
-                        // Their declarations, which now hold the terms acceptance.
-                        // Pre-tick the agree box only if they already agreed to the
-                        // CURRENT terms version — if the terms have moved on since,
-                        // the box starts unticked so they agree to the new text.
+                        const storedKey = ex.guest_details && typeof ex.guest_details === 'object'
+                            ? String((ex.guest_details as any).category || '').trim()
+                            : '';
+                        const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
+                        setGuestCategory(storedKey || (byLabel ? byLabel.key : 'other'));
+                        // Their declarations, which also carry a copy of the terms
+                        // acceptance for the review screen. Whether the agree box
+                        // shows is decided by agreement_acceptances (below), not
+                        // by this copy.
                         if (ex.declarations && typeof ex.declarations === 'object') {
                             setDeclarations(ex.declarations as Record<string, any>);
-                            setTermsAgreed((ex.declarations as any).terms_version === PROVIDER_TERMS_VERSION);
                         }
                         // Their content answers in their own words — the seven
                         // fields that now live in the guest_details jsonb column
@@ -1021,12 +1049,6 @@ function ApplicationForm() {
                             close: String(r.close_time || '').slice(0, 5),
                         }));
                         setSchedule(rows);
-                        // If every open day shares the same hours, the simple
-                        // control can represent them; otherwise open on the
-                        // per-day view so nothing already set is flattened.
-                        const uniform = rows.every((r: any) => r.open === rows[0].open && r.close === rows[0].close);
-                        if (uniform) { setSharedOpen(rows[0].open); setSharedClose(rows[0].close); setHoursMode('simple'); }
-                        else setHoursMode('perday');
                     }
                     // The numbers only. Whether one has been checked is not
                     // read here and not shown here — it is not theirs to see
@@ -1059,15 +1081,16 @@ function ApplicationForm() {
 
                     const { data: extraRows } = await supabase
                         .from('service_provider_extras')
-                        .select('extra_key, offered, price, notes')
+                        .select('extra_key, offered, price, notes, quote')
                         .eq('provider_id', existing.id);
 
-                    const loadedExtras: Record<string, { offered: boolean; price: string; notes: string }> = {};
+                    const loadedExtras: Record<string, { offered: boolean; price: string; notes: string; quote?: boolean }> = {};
                     for (const row of extraRows || []) {
                         loadedExtras[row.extra_key] = {
                             offered: row.offered === true,
                             price: row.price === null || row.price === undefined ? '' : String(row.price),
                             notes: row.notes || '',
+                            quote: row.quote === true,
                         };
                     }
                     setExtras(loadedExtras);
@@ -1107,9 +1130,7 @@ function ApplicationForm() {
                 } else {
                     // Signed in, nothing saved for this trade — so anything
                     // they typed before signing in is still the newest thing.
-                    // Pass the freshly-fetched session so the restore knows they
-                    // are signed in (the state hasn't updated within this run).
-                    restoreDraft(session);
+                    restoreDraft();
                     setContactEmail((prev) => prev || session.user.email || '');
                 }
 
@@ -1147,17 +1168,14 @@ function ApplicationForm() {
         // time this runs on hydrate, restoreDraft has already put back any saved
         // category, so this reads the real answer.
         const guestNeedsCategory = audienceForTrade(tradeFromUrl) === 'guest' && !guestCategory && !providerId;
-        // A guest with no session opens on the verify gate, before the picker.
-        // Session is set inside the same load() that flips `hydrated`, so it is
-        // already known by the time this runs.
-        const openState = { hydrated, restored, lodged, trade: tradeFromUrl, guestNeedsCategory, hasSession: !!session, category: guestCategory };
+        const openState = { hydrated, restored, trade: tradeFromUrl, guestNeedsCategory, category: guestCategory };
         const opening = openingStep(openState);
         if (opening === null) return;
 
         setStep(opening);
         setVisited(openingVisited(openState) || []);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hydrated, restored, lodged, tradeFromUrl]);
+    }, [hydrated, restored, tradeFromUrl]);
 
     // ONE SOURCE OF TRUTH FOR THE TRADE.
     //
@@ -1200,10 +1218,7 @@ function ApplicationForm() {
     // a cleaner.
     const chosen = tradeFromUrl !== '';
 
-    // `sessionArg` is passed by load() because the component `session` state has
-    // not updated yet inside that same synchronous run — reading it here would
-    // see a stale null and mis-resolve a signed-in user onto the verify gate.
-    const restoreDraft = (sessionArg: any = null) => {
+    const restoreDraft = () => {
         // Nothing has been picked, so there is no draft to come back to: the
         // key would be the empty one, and the only thing ever written under it
         // is the blank form. Restoring that told a first-time visitor "we kept
@@ -1223,6 +1238,8 @@ function ApplicationForm() {
             if (d.smsOptOut) setSmsOptOut(!!d.smsOptOut);
             if (d.doesGas !== undefined) setDoesGas(d.doesGas === true);
             if (d.doesOil !== undefined) setDoesOil(d.doesOil === true);
+            if (d.doesEmergency !== undefined) setDoesEmergency(d.doesEmergency === true);
+            if (d.doesScheduled !== undefined) setDoesScheduled(d.doesScheduled === true);
             if (d.registrations) setRegistrations(d.registrations);
             if (d.calloutWaived !== undefined) setCalloutWaived(d.calloutWaived === true);
             if (Array.isArray(d.skills)) setSkills(d.skills);
@@ -1244,6 +1261,7 @@ function ApplicationForm() {
             if (Array.isArray(d.dietaryOptions)) setDietaryOptions(d.dietaryOptions);
             if (d.headshot) setHeadshot(d.headshot);
             if (d.yearsDoing) setYearsDoing(d.yearsDoing);
+            if (d.listingTitle) setListingTitle(d.listingTitle);
             if (d.professionalTitle) setProfessionalTitle(d.professionalTitle);
             if (d.qualifications) setQualifications(d.qualifications);
             if (d.recognition) setRecognition(d.recognition);
@@ -1329,12 +1347,7 @@ function ApplicationForm() {
             const restoreTrade = d.trade || tradeFromUrl;
             const restoreCtx: StepContext | undefined =
                 audienceForTrade(restoreTrade) === 'guest'
-                    // hasSession MUST be carried here, not just in the opening
-                    // context: without it the verify-email gate (g_verify) counts
-                    // as a live step during restore, and a signed-in applicant
-                    // with any saved draft is resolved onto the email screen they
-                    // should never see. A signed-in user has no g_verify step.
-                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null) }
+                    ? { category: d.guestCategory, shape: d.shape, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null), fulfilment: d.fulfilment }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
@@ -1380,7 +1393,7 @@ function ApplicationForm() {
                     businessName, description, contactEmail, contactPhone, smsOptOut,
                     prices, extras, calloutFee, hourlyRate, areas,
                     pricingChoice, billableHourlyRate, coveredBands,
-                    doesGas, doesOil, registrations, calloutWaived, skills,
+                    doesGas, doesOil, doesEmergency, doesScheduled, registrations, calloutWaived, skills,
                     // Photos and the logo are storage paths, not files — they
                     // are already uploaded by this point, so the path is the
                     // whole of what there is to keep. Leaving them out meant
@@ -1396,7 +1409,7 @@ function ApplicationForm() {
                     items: shape === 'slot' ? items.filter((r) => Number(r.price) > 0) : items,
                     providerName, headshot, dietaryNote, dietaryOptions,
                     // The Airbnb-shaped content answers.
-                    yearsDoing, professionalTitle, qualifications, recognition,
+                    yearsDoing, listingTitle, professionalTitle, qualifications, recognition,
                     whatToExpect,
                     // The category (and the group above it, so the sub-type screen
                     // still has its cards after a reload), the inferred shape and
@@ -1419,10 +1432,10 @@ function ApplicationForm() {
         businessName, description, contactEmail, contactPhone, smsOptOut,
         prices, extras, calloutFee, hourlyRate, areas,
         pricingChoice, billableHourlyRate, coveredBands,
-        doesGas, doesOil, registrations, calloutWaived, skills,
+        doesGas, doesOil, doesEmergency, doesScheduled, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
         items, providerName, headshot, dietaryNote, dietaryOptions,
-        yearsDoing, professionalTitle, qualifications, recognition,
+        yearsDoing, listingTitle, professionalTitle, qualifications, recognition,
         whatToExpect,
         guestGroup, guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
@@ -1440,10 +1453,28 @@ function ApplicationForm() {
         number: registrations[scheme] || '',
     }));
 
+    // The effective slot offering. A fixed-basis slot answers private/shared/both
+    // once, up front (slotOffer). A MIXED provider answers it per item, so
+    // slotOffer stays null — the truth is in the item units, so derive it from
+    // them. This is what decides whether the per-person minimum is stored and
+    // whether the min ≤ capacity rule is checked; both must see a mixed provider's
+    // shared class, which only the item units reveal.
+    const slotOfferEffective = shape === 'slot' && slotMixedDuration(guestCategory)
+        ? slotOfferingFromUnits((items || []).map((i) => String(i.unit)))
+        : slotOffer;
+
+    // A come-to-me mixed provider may run a shared class, so it is asked the
+    // minimum (its capacity's twin). Its screen is offered before any item
+    // exists, so the gate is the category + direction, not the item units.
+    const slotMixedComeToMe = shape === 'slot' && slotMixedDuration(guestCategory) && fulfilment !== 'delivery';
+
     const problems = submitProblems({
         business_name: businessName,
         trade,
         description,
+        // The host expertise hub's required field — its Next gate and the submit
+        // gate both read the professional title now, in place of a description.
+        professional_title: professionalTitle,
         contact_email: contactEmail,
         audience: audienceForTrade(trade),
         areaCount: areas.length,
@@ -1451,6 +1482,8 @@ function ApplicationForm() {
         callout_fee: calloutFee,
         hourly_rate: hourlyRate,
         callout_waived: calloutWaived,
+        provides_quote: provideQuote,
+        flat_fee: flatFee,
         extras,
         does_gas: doesGas,
         does_oil: doesOil,
@@ -1462,8 +1495,10 @@ function ApplicationForm() {
         shape,
         scheduleCount: schedule.length,
         // The slot pricing basis and its two group numbers, so the min ≤ capacity
-        // rule can be checked. slotMinPeople blank reads as no minimum.
-        slotOffer,
+        // rule can be checked. slotMinPeople blank reads as no minimum. The
+        // effective offering (derived from item units for a mixed provider) so a
+        // mixed shared class is covered by the rule, not just a fixed-basis one.
+        slotOffer: slotOfferEffective,
         slotCapacity: maxGuests,
         slotMinPeople,
         // Items priced above zero — the marketplace lists only priced providers,
@@ -1689,11 +1724,11 @@ function ApplicationForm() {
         || gatedGroups.length > 0
         || extrasIn('reimbursed').length > 0;
 
-    const extraOf = (key: string) => extras[key] || { offered: false, price: '', notes: '' };
-    const setExtra = (key: string, field: 'offered' | 'price' | 'notes', value: any) =>
+    const extraOf = (key: string) => extras[key] || { offered: false, price: '', notes: '', quote: false };
+    const setExtra = (key: string, field: 'offered' | 'price' | 'notes' | 'quote', value: any) =>
         setExtras((prev) => ({
             ...prev,
-            [key]: Object.assign({ offered: false, price: '', notes: '' }, prev[key] || {}, { [field]: value }),
+            [key]: Object.assign({ offered: false, price: '', notes: '', quote: false }, prev[key] || {}, { [field]: value }),
         }));
 
     // One headed block of tick boxes.
@@ -1773,6 +1808,24 @@ function ApplicationForm() {
 
     const hasSkills = asksAboutSkills(trade);
 
+    // The credentials step's heading, personalised to the trade they picked —
+    // "What do you cover as a joiner?", a plumber sees "plumber", an electrician
+    // sees "an electrician". For 'Something else' (trade 'other') we use what they
+    // typed for their trade when it reads as a trade noun, and otherwise fall back
+    // to a plain "What do you cover?" rather than an "as a ..." with nothing to
+    // put in it.
+    const coverHeading = (() => {
+        if (trade === 'other') {
+            const typed = otherText.trim();
+            const readsProperly = typed.length >= 2 && typed.length <= 40 && /^[a-zA-Z][a-zA-Z '&-]*$/.test(typed);
+            if (!readsProperly) return 'What do you cover?';
+            const noun = typed.toLowerCase();
+            return `What do you cover as ${indefiniteArticle(noun)} ${noun}?`;
+        }
+        const noun = tradeNoun(trade);
+        return `What do you cover as ${indefiniteArticle(noun)} ${noun}?`;
+    })();
+
     const skillIsNew = wouldCreateNew(allSkills, skillTyped);
 
     const addSkill = (label: string) => {
@@ -1787,90 +1840,23 @@ function ApplicationForm() {
         setSkillTyped('');
     };
 
-    // What a tag needs, whether it came off the list or was typed. An existing
-    // tag carries its concept; a brand new one is matched on the words.
-    const conceptOf = (label: string): string | null => {
-        const key = skillKey(label);
-        if (!key) return null;
-
-        const known = allSkills.filter((x: any) => String(x.slug || '') === key.slug)[0];
-        if (known) return known.regulated_concept || null;
-
-        return regulatedConceptFor(key.slug);
-    };
-
-    // Whether THIS trade is ever asked for that registration. A handyman is
-    // asked for none of them, which is exactly why the message has to route
-    // rather than say "add your number" — there is no field here to add it to.
-    const asksForConcept = (concept: string | null): boolean => {
-        if (concept === 'electrical') return trade === 'electrician';
-        if (concept === 'gas' || concept === 'oil') return asksAboutFuel(trade);
-        return false;
-    };
-
-    const reasonFor = (label: string): string | null => {
-        const concept = conceptOf(label);
-        if (!concept) return null;
-        if (asksForConcept(concept) && registrations[schemesSatisfying(concept as any)[0]]) return null;
-
-        return blockedSkillReason(
-            { label: (skillKey(label) || { label }).label, regulated_concept: concept },
-            tradeLabel(trade).toLowerCase(),
-            asksForConcept(concept)
-        );
-    };
-
-    // Tags they are holding that will not appear. Not a scolding — mostly it
-    // is somebody who does the work and cannot prove it here.
-    const blockedHeld = skills
-        .map((label) => ({ label, reason: reasonFor(label) }))
-        .filter((x) => x.reason);
-
-    // The tags worth putting in front of somebody before they type.
+    // The type-ahead over the existing services. One list, search-only: nothing
+    // shows until something is typed, and what shows is the existing services
+    // that match — ranked exact, then starts-with, then contains (suggestSkills),
+    // so somebody half way through "electr" gets "Electrical testing" at the top.
     //
-    // This is the anti-fragmentation mechanism, and until now it was invisible:
-    // the copy says "pick from the list where you can" and the list only
-    // appeared once they had started typing — by which point they have already
-    // chosen their own wording and are typing "brick laying" past a
-    // "Bricklaying" they never saw. An instruction to pick from a list that is
-    // not on screen is not an instruction.
-    //
-    // Regulated tags are left out. A handyman cannot hold Gas Safe or Part P —
-    // the sign-up does not even ask them for a number — so offering "Boiler
-    // repair" as a tappable chip is offering something that comes straight back
-    // with "will not show" against it. They can still be typed, and reasonFor
-    // still explains itself when they are.
+    // We DON'T police what a trade lists any more: a regulated service (electrical,
+    // gas, oil) is offered like any other. The old filter that hid them was what
+    // made "electr" suggest nothing on the electrician, so a real service got
+    // typed in as somebody's own ("Eicr") past a list that would have had it.
+    // A word that matches nothing — and only then — offers "add your own".
     const TAGS_SHOWN_CLOSED = 12;
 
-    const heldCompact = skills.map((x) => (skillKey(x) || { compact: '' }).compact);
-
-    const offerableTags = (allSkills || []).filter((tag: any) =>
-        !tag.regulated_concept &&
-        heldCompact.indexOf((skillKey(String(tag.label)) || { compact: '' }).compact) === -1
-    );
-
-    // Typing FILTERS this list rather than replacing it with a different one.
-    //
-    // There used to be two lists — chips before typing, a dropdown after — and
-    // they behaved differently and looked different, so typing felt like
-    // leaving the list rather than narrowing it. One list, one set of rules:
-    // regulated tags are never in it, held tags are never in it, and what you
-    // type only decides which of the rest survive.
-    //
-    // suggestSkills does the matching because it ranks exact, then
-    // starts-with, then contains — a handyman half way through "brick" wants
-    // Bricklaying at the top, not an alphabetical list of everything with
-    // those letters in it. The high limit is so "Show all" still governs how
-    // many appear, rather than the matcher quietly capping it at eight.
     const matchingTags = skillTyped.trim() === ''
-        ? offerableTags
-        : suggestSkills(allSkills, skillTyped, skills, 500)
-            .filter((tag: any) => !tag.regulated_concept);
+        ? []
+        : suggestSkills(allSkills, skillTyped, skills, 500);
 
-    const tagsToShow = allTagsOpen ? matchingTags : matchingTags.slice(0, TAGS_SHOWN_CLOSED);
-
-    const typedConcept = conceptOf(skillTyped);
-    const typedReason = skillTyped.trim() === '' ? null : reasonFor(skillTyped);
+    const tagsToShow = matchingTags.slice(0, TAGS_SHOWN_CLOSED);
 
     const bands = bandsFor(trade);
 
@@ -1893,6 +1879,33 @@ function ApplicationForm() {
     // which is what keeps a host's steps and validation byte-for-byte unchanged:
     // the guest steps stay off and stepForField uses the host map.
     const isGuest = audienceForTrade(trade) === 'guest';
+    // The one extra agreement this sign-up ends with.
+    const agreementDoc = isGuest ? 'experience_provider' as const : 'tradesperson' as const;
+    // Asked only of somebody sending for review (a live business editing is
+    // caught by the sign-in prompt instead) with no current acceptance on
+    // record. Unknown (null) counts as not on record — the server decides.
+    const needsAgreementTick = status !== 'approved'
+        && !(agreementsOnRecord && agreementsOnRecord[agreementDoc]);
+    // The Guest Terms are taken here too — the end of sign-up — for anyone who
+    // has not already accepted the current version.
+    const needsGuestTick = status !== 'approved'
+        && !(agreementsOnRecord && agreementsOnRecord.guest);
+
+    // What they have already agreed to — asked once signed in, and again when
+    // the sign-in prompt records something (AGREEMENTS_CHANGED).
+    useEffect(() => {
+        if (!session) return;
+        let cancelled = false;
+        const load = () => fetchAgreementStatus().then((st) => {
+            if (cancelled || !st) return;
+            const on: Record<string, boolean> = {};
+            Object.keys(st.documents).forEach((k) => { on[k] = !!(st.documents as any)[k].agreed; });
+            setAgreementsOnRecord(on);
+        });
+        load();
+        window.addEventListener(AGREEMENTS_CHANGED, load);
+        return () => { cancelled = true; window.removeEventListener(AGREEMENTS_CHANGED, load); };
+    }, [session]);
     // The made-to-order Location screen is the three-card fulfilment fork, so it
     // centres vertically like the stepper screens (g_you/g_capacity/g_notice) —
     // desktop only; the stacked mobile layout is left exactly as it is.
@@ -1907,7 +1920,7 @@ function ApplicationForm() {
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
         isGuest
-            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotOffer }
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, slotOffer, fulfilment }
             : undefined;
 
     const problemFor = (field: string) => {
@@ -1985,29 +1998,30 @@ function ApplicationForm() {
     // greyed Next is never a silent dead end and a skippable screen never
     // looks like one she has to fill. Pickers (trade, g_subtype) and the
     // finish step carry their own affordances and are left out here.
-    // Whether this guest's category requires years and/or qualifications before
-    // Qualifications gate: required only for the four safety categories.
-    const catQualsRequired = isGuest && guestQualificationsRequired(guestCategory);
+    // Whether the qualifications row is prompted at all for this category — the
+    // physical-safety categories only. It is always optional (never gates Next);
+    // on every other category the row is not shown.
+    const catAsksQuals = isGuest && guestAsksQualifications(guestCategory);
 
     // g_menu and g_expect are always skippable. g_you is NEVER skippable: the
     // years screen shows a starting number (5), so a host could otherwise walk
     // past it thinking that number is their answer when nothing was stored — it
-    // must be touched. g_creds is skippable unless this category requires
-    // qualifications. (The old g_checks is gone — its one confirmation moved to
-    // the finish screen and is required there, not skippable.)
+    // must be touched. g_creds gates on the professional title only —
+    // qualifications are optional everywhere now. (The old g_checks is gone — its
+    // one confirmation moved to the finish screen and is required there.)
     // g_menu is required now: a listing needs at least one priced item to be
     // bookable, so its Next gates on the 'menu' problem (GUEST_STEP_FIELDS).
     // g_expect stays optional.
     const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_expect'];
     const stepIsPicker = step === 'trade' || step === 'g_subtype';
     // g_creds is no longer skippable for anyone: the professional title is now
-    // required for every category (qualifications on top for the safety four).
+    // required for every category. Qualifications are optional everywhere.
     const stepIsOptional = isGuest && !stepIsPicker && (
         OPTIONAL_GUEST_STEPS.indexOf(step) !== -1
     );
 
     // Three guest steps can be required without a submitProblems field of their
-    // own — years and qualifications (only for the categories that need them)
+    // own — years (only for the categories that need it), the professional title,
     // and at least one photo (always). They gate Next on the spot, the same way
     // the pickers do, with a plain line saying what to add.
     // The counts on the where-and-when step only display a suggestion until the
@@ -2027,8 +2041,12 @@ function ApplicationForm() {
     const guestExtraMissing: string | null = isGuest
         ? (step === 'g_creds' && !professionalTitle.trim()
             ? GUEST_SCREEN_COPY.titleGate
-            : step === 'g_creds' && catQualsRequired && !qualifications.trim()
-            ? GUEST_SCREEN_COPY.qualsGate
+            // The listing must be named before Next — it is the h1 a guest reads.
+            : step === 'g_title' && !listingTitle.trim()
+            ? GUEST_SCREEN_COPY.experienceTitleGate
+            // The booking-shape fork gates Next until answered.
+            : step === 'g_shape' && !shape
+            ? GUEST_SCREEN_COPY.shapeGate
             // The pricing basis gates Next until it's answered — say so rather
             // than leaving a greyed button with no reason.
             : step === 'g_slot_basis' && slotOffer === null
@@ -2048,7 +2066,24 @@ function ApplicationForm() {
                 : items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
                     ? GUEST_SCREEN_COPY.menuSlotBothGateShared
                     : GUEST_SCREEN_COPY.menuSlotBothGatePrivate)
+            // The 'both' place screen carries two answers. When BOTH are still
+            // empty the footer named only the areas (the first problem), so the
+            // address looked optional — name both. If just one is missing this
+            // falls through to that field's own problem via stepProblems below.
+            : step === 'g_area' && shape === 'slot' && fulfilment === 'both'
+                && areas.length === 0
+                && !(collectionStreet.trim() && collectionTown.trim() && collectionPostcode.trim())
+            ? GUEST_SCREEN_COPY.slotBothPlaceGate
             : whereMissing)
+        : null;
+
+    // What a host trade needs before Next un-greys, phrased for a person. Every
+    // host step reads its first outstanding problem off stepProblems — the
+    // professional title on g_creds (a host-worded message), the name/coverage on
+    // the business step, a price on the prices step. Shown beside the greyed Next
+    // so a trade is never left at a dead button with no reason.
+    const hostStepMissing: string | null = !isGuest && !stepIsPicker && stepProblems.length > 0
+        ? stepProblems[0].message
         : null;
 
     // The one thing missing on a required step, phrased for a person. Shown in
@@ -2057,7 +2092,7 @@ function ApplicationForm() {
         ? guestExtraMissing
         : isGuest && !stepIsPicker && !stepIsOptional && stepProblems.length > 0
             ? stepProblems[0].message
-            : null;
+            : hostStepMissing;
 
     const markVisited = (key: StepKey) =>
         setVisited((prev) => (prev.indexOf(key) === -1 ? prev.concat([key]) : prev));
@@ -2190,7 +2225,12 @@ function ApplicationForm() {
         setOpenGroup('');
         markVisited('trade');
         router.replace('/services/join?trade=' + encodeURIComponent(key));
-        setStep('business');
+        // The first screen after the picker is the shared About-you opener (the
+        // years counter), the same as the guest flow — NOT the business step. The
+        // opening-step effect (keyed on the URL trade) resolves to g_you too; we
+        // set it here as well so there is no one-frame flash of the business step
+        // between the click and that effect landing.
+        setStep('g_you');
         scrollPanelToTop();
     };
 
@@ -2214,29 +2254,63 @@ function ApplicationForm() {
     // experience: their years, their photos and their headshot. shape and the
     // fulfilment default are then reset to the new category's by
     // selectGuestCategory.
-    const clearOfferingAnswers = () => {
-        setProfessionalTitle('');
-        setDescription('');
-        setQualifications('');
-        setRecognition('');
+    // The offering answers that depend on the SHAPE — the items, the slot counts
+    // and schedule, the notice, the areas and collection address. Cleared when the
+    // shape itself changes (the 'something else' shape screen) so a switch from,
+    // say, a slot to comes-to-you can't leave a stale slot capacity or a stale
+    // studio address behind to be saved. About-you (title, expertise) and the
+    // photos are NOT shape-specific, so they survive a shape change.
+    const clearShapeDependentAnswers = () => {
         setItems([]);
         setMenuIndex(null);
-        setWhatToExpect('');
-        setDietaryNote('');
-        setDietaryOptions([]);
         setSlotOffer(null);
         setMaxGuests('');
         setSlotMinPeople('');
         setSlotLength('');
         setSchedule([]);
-        setHoursMode('simple');
-        setSharedOpen('10:00');
-        setSharedClose('18:00');
         setLeadTimeDays('');
         setCollectionStreet('');
         setCollectionTown('');
         setCollectionPostcode('');
+        // Collection UI that belongs to the offering: drop the manual-entry toggle
+        // so the address screen returns to its lookup default rather than showing
+        // the previous offering's opened (now empty) manual boxes.
+        setCollectionManual(false);
         setAreas([]);
+    };
+
+    const clearOfferingAnswers = () => {
+        setListingTitle('');
+        setProfessionalTitle('');
+        setDescription('');
+        setQualifications('');
+        setRecognition('');
+        setWhatToExpect('');
+        setDietaryNote('');
+        setDietaryOptions([]);
+        clearShapeDependentAnswers();
+        // The STRUCTURAL answers, not just the offering's contents. shape and
+        // fulfilment decide which screens render and how the location screen reads,
+        // so a category change must clear them too — otherwise a switch FROM a slot
+        // TO a null-shape category ('something else') left shape='slot' behind and
+        // the whole flow ran as a slot (an empty "What's the address" screen). Reset
+        // to empty here; selectGuestCategory sets the real values for the new
+        // category right after (it is the only caller that knows them).
+        setShape('');
+        setFulfilment('');
+    };
+
+    // 'Something else' answering its booking shape (the g_shape screen). Setting the
+    // shape here is the equivalent of a real category's DECLARED shape: it drives
+    // which screens follow and how the location screen reads. A slot defaults to
+    // come-to-me ('collection'), like a fixed slot category (a sauna), so g_area
+    // shows the address; made-to-order leaves fulfilment blank so g_area asks the
+    // delivery/collection fork; comes-to-you doesn't use fulfilment. Changing the
+    // answer clears the previous shape's offering but keeps About-you and photos.
+    const pickShape = (next: string) => {
+        if (shape && shape !== next) clearShapeDependentAnswers();
+        setShape(next);
+        setFulfilment(next === 'slot' ? 'collection' : '');
     };
 
     // Screen two: select a sub-type. Records the category (a starting point,
@@ -2249,7 +2323,11 @@ function ApplicationForm() {
         if (guestCategory && key !== guestCategory) clearOfferingAnswers();
         setGuestCategory(key);
         const cat = guestCategoryByKey(key);
-        if (cat && cat.shape) setShape(cat.shape);
+        // Set the shape unconditionally — including to '' for a null-shape category
+        // ('something else'). The old `if (cat.shape)` guard meant a switch from a
+        // slot to 'something else' kept the slot shape, and the flow ran as a slot
+        // (the empty "What's the address" screen). '' is the honest "no shape yet".
+        setShape(cat?.shape || '');
         // A slot's location fork: the seven fixed categories default to come-to-me
         // ('collection') and skip g_slot_where; the three either-way ones (yoga,
         // massage, painting) start blank so that screen asks. Made-to-order forks
@@ -2303,57 +2381,6 @@ function ApplicationForm() {
     };
 
 
-    // One row per circle. The town carries the coordinates, so a tradesperson
-    // picks a place and a distance rather than a latitude.
-    const uploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = (e.target.files || [])[0];
-        if (!file) return;
-
-        // The bucket will not take a file from somebody with no account, and
-        // a silent nothing looks like a broken button.
-        //
-        // The wording matters more than it looks. "Make an account first and
-        // you can add your logo — everything else is kept" reads as though the
-        // logo is the thing that is NOT kept, and somebody who has just picked
-        // a file hears that as losing it. It is not lost; it was never
-        // uploaded, and it can be added any time afterwards without redoing
-        // anything.
-        if (!session) {
-            // "Once your account exists" was written when an account was a
-            // separate errand. The same button makes it now, so this says when
-            // rather than what has to happen first — and it says the file has
-            // not gone anywhere, because somebody who has just picked one and
-            // seen nothing happen assumes it has.
-            toast.info('Your logo can go on as soon as this is sent — nothing has been lost, just pick it again then.', {
-                theme: 'colored',
-            });
-            e.target.value = '';
-            return;
-        }
-
-        setUploadingLogo(true);
-
-        try {
-            const ready = await compressImage(file);
-            const path = 'providers/logo-' + session.user.id + '-' + Date.now() + '.jpg';
-
-            const { error } = await supabase.storage
-                .from(Env.S3_BUCKET)
-                .upload(path, ready, { contentType: 'image/jpeg' });
-
-            if (error) {
-                toast.error(error.message, { theme: 'colored' });
-            } else {
-                setLogo(path);
-            }
-        } catch (err) {
-            toast.error('That image could not be read. Try a different one.', { theme: 'colored' });
-        }
-
-        setUploadingLogo(false);
-        // So the same file can be chosen again after a failure.
-        e.target.value = '';
-    };
 
     // A portrait for a guest-trade provider — the person a guest is letting into
     // the cottage. Kept apart from the work gallery (photos). Same owner-prefixed
@@ -2573,124 +2600,7 @@ function ApplicationForm() {
         });
     };
 
-    // Making the account out of what they have already typed.
-    //
-    // Their contact email is the account email: asking for a second address at
-    // the end of a form that already has one is asking a question we know the
-    // answer to. The password is the only new thing, and the tick box is the
-    // consent — an account should not appear because somebody pressed Save.
-    const createAccount = async (): Promise<any> => {
-        const email = contactEmail.trim();
-
-        if (!email || email.indexOf('@') === -1) {
-            setAcctError('Add an email address above — that is the one your account will use.');
-            return null;
-        }
-
-        if (acctPassword.length < 8) {
-            setAcctError('Pick a password of at least 8 characters.');
-            return null;
-        }
-
-        if (!acctConsent) {
-            setAcctError('Tick the box and we will make your account.');
-            return null;
-        }
-
-        setAcctBusy(true);
-        setAcctError('');
-
-        try {
-            // signUp returns Supabase's own errors but THROWS anything else —
-            // a dropped connection, a 5xx, a CORS refusal. Without this catch
-            // the throw escapes and the button sits there having said nothing.
-            const { data, error } = await supabaseEmailFlow().auth.signUp({
-                email: email,
-                password: acctPassword,
-                options: {
-                    // The PERSON's name, never the business. full_name is the
-                    // shared personal field the whole site reads for bylines,
-                    // messages and trip cards, so the business name must never
-                    // reach it. Blank when we have no personal name (a trade, or
-                    // a guest who skipped "Your name") — the trigger then seeds an
-                    // empty full_name rather than something wrong.
-                    data: providerName.trim() ? { name: providerName.trim() } : {},
-                    // Straight back to this form, with the trade, so a
-                    // confirmed address lands on the thing they were doing
-                    // rather than on the home page.
-                    emailRedirectTo: window.location.origin
-                        + '/auth/callback?next='
-                        + encodeURIComponent('/services/join/apply?trade=' + tradeFromUrl),
-                },
-            });
-
-            setAcctBusy(false);
-
-            if (error) {
-                const message = String(error.message || '');
-                setAcctError(
-                    /already/i.test(message)
-                        ? 'There is already an account on that address. Sign in below and we will save this to it.'
-                        : message || 'That did not work.'
-                );
-                if (/already/i.test(message)) setShowSignIn(true);
-                return null;
-            }
-
-            // With email confirmation switched on, signUp returns a user and
-            // NO session — so nothing can be written yet. The form is already
-            // in local storage and the link comes back here, so this is a
-            // pause rather than a loss, but it has to be SAID: silently doing
-            // nothing looks exactly like a broken button.
-            if (!data.session) {
-                setCheckYourEmail(true);
-                return null;
-            }
-
-            // Only reachable with email confirmation switched OFF. The
-            // email-flow client keeps no session of its own, so hand it to the
-            // auth-helpers client, which owns the cookies the rest of the site
-            // reads — including the update immediately below, which needs to be
-            // authenticated as this user for the row policy to allow it.
-            await supabase.auth.setSession(data.session);
-
-            // UPDATE, NOT UPSERT — see components/auth/SignupModel.tsx for
-            // why. The row already exists; the upsert needed SELECT on email
-            // and had been failing since 20260828234003.
-            //
-            // full_name is seeded from the PERSON's name if we have one, never
-            // the business. The trigger already wrote it from the signUp metadata
-            // above; this is belt-and-braces for the personal name, and a no-op
-            // when there is none rather than a write of the business name.
-            const personalName = providerName.trim();
-            if (personalName) {
-                await supabase.from('profiles')
-                    .update({ full_name: personalName })
-                    .eq('id', data.session.user.id);
-            }
-
-            setSession(data.session);
-            return data.session;
-        } catch (err: any) {
-            setAcctBusy(false);
-            setAcctError('Something went wrong making your account. Try again.');
-            return null;
-        }
-    };
-
-    // The rows this application is made of, built in one place.
-    //
-    // There are two ways they get written and they must not drift. A signed-in
-    // provider writes them straight from the browser under RLS. A FIRST
-    // application has no session — the account is made in the same breath — so
-    // it posts them to /api/services/apply, which writes them on behalf of the
-    // account it has just created.
-    //
-    // Same shapes, same rules, one definition. `owner_id` is deliberately not
-    // here: the browser knows it, the route decides it, and neither should be
-    // taking the other's word for it.
-    // The guest-experience columns, shared by both write paths so they can't
-    // drift. All are a starting point the owner confirms at review:
+    // The guest-experience columns. All are a starting point the owner confirms at review:
     //   - custom_label: the picked category's guest-facing word. Seeded only
     //     while the row is not yet approved, so the owner's confirmed label at
     //     review is never overwritten by a later applicant edit. "Something else"
@@ -2703,6 +2613,11 @@ function ApplicationForm() {
         if (audienceForTrade(trade) !== 'guest') return {};
         const cat = guestCategoryByKey(guestCategory);
         const isSlot = shape === 'slot';
+        const slotPerItem = isSlot && slotDurationPerItem(guestCategory);
+        // A travelling mixed provider sells only private sessions — no provider
+        // length (each item has its own) and no declared capacity (its head-count
+        // cap is the cottage, not a class size), so both are stored null.
+        const travellingMixed = isSlot && slotMixedDuration(guestCategory) && fulfilment === 'delivery';
         const isMTO = shape === 'made_to_order';
         const num = (v: string, min: number) => {
             const n = Math.floor(Number(String(v || '').trim()));
@@ -2713,9 +2628,9 @@ function ApplicationForm() {
         // stamp makes a stale agreement obvious if the text later changes. Written
         // only when they've agreed (the send gate guarantees they have); the
         // timestamp is the moment of submit.
-        const acceptance: Record<string, string> = termsAgreed
-            ? { terms_version: PROVIDER_TERMS_VERSION, terms_agreed_at: new Date().toISOString() }
-            : {};
+        const acceptance: Record<string, any> = termsAgreed
+            ? { terms_version: AGREEMENTS.experience_provider.version, terms_agreed_at: new Date().toISOString() }
+            : declarations;
         // Fulfilment (made-to-order this pass): the direction, plus the collection
         // address when they collect. The address is OMITTED from the write while it
         // is not loaded AND the field is empty — so a returning provider whose
@@ -2750,34 +2665,51 @@ function ApplicationForm() {
             shape: shape || 'made_to_order',
             exclusive_per_date: shape === 'comes_to_you',
             lead_time_days: isMTO ? (num(leadTimeDays, 0) ?? 0) : 0,
-            slot_length_minutes: isSlot ? num(slotLength, 15) : null,
+            // The one-at-a-time shape (massage) has no single provider length —
+            // each treatment carries its own — so it stores none, and capacity is
+            // fixed at 1 (one person at a time, never asked). Every other slot
+            // keeps its provider length and its asked capacity.
+            slot_length_minutes: (isSlot && !slotPerItem && !travellingMixed) ? num(slotLength, 15) : null,
             // Max guests → slot_capacity for a slot (drives sellable seats for a
             // shared/per-person slot via sessionCapacity; a private/flat slot
             // records it but still sells whole). Written from the one maxGuests
             // state, so it can never disagree with the jsonb copy below.
-            slot_capacity: isSlot ? (num(maxGuests, 1) ?? 1) : null,
+            slot_capacity: slotPerItem ? 1 : travellingMixed ? null : (isSlot ? (num(maxGuests, 1) ?? 1) : null),
             // The per-person minimum — a real number only for a shared/per-person
             // slot; a private/flat slot is one booking whatever the head count, so
             // it stores 1 (no minimum). Floored at 1 to satisfy the column's
             // check; the min ≤ capacity rule is enforced before send (submitProblems).
-            slot_min_people: (isSlot && offeringHasShared(slotOffer)) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
+            slot_min_people: (isSlot && offeringHasShared(slotOfferEffective)) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
             ...fulfilmentFields,
             declarations: acceptance,
         };
     };
 
-    // The Airbnb-shaped content answers, for the APPLICATION PAYLOAD ONLY.
-    //
-    // Deliberately NOT part of guestProviderFields: that is spread into the
-    // signed-in column write as well, and none of these six has a column yet, so
-    // sending them there would fail the insert. They ride only in the apply
-    // route's jsonb payload (service_applications.payload), which needs no
-    // migration to hold them — and are materialised to columns later, when the
-    // guest_details column lands. Empty stays null so the stored object is clean.
+    // The Airbnb-shaped content answers, written to the guest_details jsonb
+    // column (not spread into the row like guestProviderFields). Empty stays null
+    // so the stored object is clean.
     const guestContentFields = (): Record<string, string | string[] | null> => {
-        if (audienceForTrade(trade) !== 'guest') return {};
         const t = (v: string) => (String(v || '').trim() || null);
+        // A host trade now fills the SAME About-you hub as a guest — a years
+        // count, a professional title, qualifications and endorsements — so its
+        // row carries those in guest_details too (the column already exists; it is
+        // no longer guest-only). The guest-specific answers below (category, what
+        // to expect, dietary, max guests) have no meaning for a trade, so a host
+        // gets just the four profile fields.
+        if (audienceForTrade(trade) !== 'guest') {
+            return {
+                years_experience: t(yearsDoing),
+                professional_title: t(professionalTitle),
+                qualifications: t(qualifications),
+                recognition: t(recognition),
+            };
+        }
         return {
+            // The category KEY the provider picked, persisted so an approved
+            // provider knows its own sub-type. Everything that used to guess it
+            // back from the label or the Stripe code can read this instead — see
+            // the recovery below and lib/serviceProviders guestCategory/isFood.
+            category: t(guestCategory),
             years_experience: t(yearsDoing),
             professional_title: t(professionalTitle),
             qualifications: t(qualifications),
@@ -2794,17 +2726,18 @@ function ApplicationForm() {
         };
     };
 
-    // The weekly opening hours, as child rows for the slot_availability table.
-    // Only meaningful for a slot; empty for every other shape. Days off are NOT
-    // set here any more — the slot diary owns them (app/api/services/slots/
-    // schedule), so the wizard never writes slot_blocks.
-    const guestScheduleRows = () => {
-        if (audienceForTrade(trade) !== 'guest' || shape !== 'slot') return { availability: [] };
-        return {
-            availability: schedule
-                .filter((r) => r.open && r.close)
-                .map((r) => ({ day_of_week: r.day, open_time: r.open, close_time: r.close })),
-        };
+    // The stored description column, per audience. The service_providers table
+    // has description NOT NULL and the trade shop card reads it, so a host row
+    // must always carry a non-empty one — but a host no longer types a free-text
+    // description (its "about you" is the hub). So it is DERIVED from the hub: the
+    // professional title, plus the qualifications when given. The title is the
+    // hub's one required field (submitProblems gates on it), so this is never
+    // empty at submit; the fallbacks are belt-and-braces. A guest keeps its own
+    // description (the "what to expect" field feeds it as before).
+    const contentDescription = (): string => {
+        if (audienceForTrade(trade) === 'guest') return description.trim();
+        const parts = [professionalTitle.trim(), qualifications.trim()].filter(Boolean);
+        return parts.join('. ') || businessName.trim() || 'Local trade';
     };
 
     // The listing title for a guest is now the Title (their Intro field), so it
@@ -2832,355 +2765,33 @@ function ApplicationForm() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isGuest, step, session]);
 
-    const applicationRows = (now: Date, title: string) => {
-        const provider: any = {
-            ...guestProviderFields(),
-            // The content answers ride only here, in the application payload —
-            // never in the signed-in column write (they have no columns yet).
-            ...guestContentFields(),
-            // A guest's title is their Title (the Intro field), passed in; a host
-            // trades under the business name they typed.
-            business_name: audienceForTrade(trade) === 'guest' ? title : businessName.trim(),
-            trade,
-            description: description.trim(),
-            contact_email: contactEmail.trim(),
-            contact_phone: contactPhone.trim() || null,
-            sms_opt_out: smsOptOut,
-            audience: audienceForTrade(trade),
-            // Who they are — a guest trade only. A guest is choosing someone to
-            // come into their cottage, so the listing carries a bit of the
-            // person. Null for a host trade, where a logo and a trade say enough.
-            provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
-            dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
-            headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
-            photos,
-            logo,
-            does_gas: asksAboutFuel(trade) ? doesGas : false,
-            does_oil: asksAboutFuel(trade) ? doesOil : false,
-            callout_fee: calloutFee.trim() !== '' ? Number(calloutFee) : null,
-            hourly_rate: model === 'callout_hourly' && hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
-            callout_waived: calloutFee.trim() !== '' ? calloutWaived : false,
-            pricing_choice: trade === 'sponge' ? (hourlyAllowed && pricingChoice === 'hourly' ? 'hourly' : 'bands') : null,
-            billable_hourly_rate: hourlyAllowed && pricingChoice === 'hourly' && billableHourlyRate.trim() !== ''
-                ? Number(billableHourlyRate)
-                : null,
-            covered_bands: hourlyAllowed && pricingChoice === 'hourly' ? coveredBands : [],
-            updated_at: now.toISOString(),
-        };
-
-        const registrations_ = showableSchemes
-            .map((scheme) => ({ scheme, number: String(registrations[scheme] || '').trim() }))
-            .filter((r) => r.number !== '');
-
-        const extras_ = tradeExtras
-            .filter((extra) => {
-                const entry = extraOf(extra.key);
-                if (extra.type === 'priced') {
-                    return String(entry.price).trim() !== '' && Number(entry.price) > 0;
-                }
-                return entry.offered;
-            })
-            .map((extra) => {
-                const entry = extraOf(extra.key);
-                const priced = extra.type === 'priced' && String(entry.price).trim() !== '' && Number(entry.price) > 0;
-                return {
-                    extra_key: extra.key,
-                    offered: true,
-                    price: priced ? Number(entry.price) : null,
-                    notes: String(entry.notes || '').trim() || null,
-                    updated_at: now.toISOString(),
-                };
-            });
-
-        const prices_ = model === 'bands'
-            ? bandsFor(trade)
-                .filter((band) => {
-                    const entry = prices[band.key];
-                    return entry && String(entry.price).trim() !== '' && Number(entry.price) > 0;
-                })
-                .map((band) => {
-                    const entry = prices[band.key];
-                    const hours = String(entry.typical_hours || '').trim();
-                    return {
-                        band_key: band.key,
-                        price: Number(entry.price),
-                        typical_hours: hours === '' || !(Number(hours) > 0) ? null : Number(hours),
-                        updated_at: now.toISOString(),
-                    };
-                })
-            : [];
-
-        const areas_ = areas.map((a) => {
-            const town = COVERAGE_TOWNS.filter((t) => t.label === a.town)[0];
-            return {
-                label: a.town,
-                centre_lat: town ? town.lat : 0,
-                centre_lng: town ? town.lng : 0,
-                radius_miles: a.radius_miles,
-            };
-        });
-
-        // The menu, for a guest trade. Only rows with a name and a real price;
-        // everyone names their items now, so a nameless row is an empty one and
-        // drops out, and a half-filled form does not create a phantom item.
-        const items_ = audienceForTrade(trade) === 'guest'
-            ? items
-                .map((it, i) => ({
-                    name: String(it.name || '').trim(),
-                    description: String(it.description || '').trim() || null,
-                    price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    // A slot keeps each item's OWN unit — flat for a private hire,
-                    // person for a shared table — so 'both' can carry two.
-                    unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
-                    image: it.image || null,
-                    sort_order: i,
-                    active: true,
-                }))
-                .filter((r) => r.name && r.price !== null && Number(r.price) > 0)
-            : [];
-
-        const { availability } = guestScheduleRows();
-
-        return {
-            provider,
-            registrations: registrations_,
-            extras: extras_,
-            prices: prices_,
-            areas: areas_,
-            items: items_,
-            skills: hasSkills ? skills : [],
-            slotAvailability: availability,
-        };
-    };
-
-    // The whole application, in one request, for somebody who has no account
-    // yet. See app/api/services/apply/route.ts for why it cannot be done from
-    // here: there is no session to write under until the email is confirmed,
-    // and waiting for that is what lost applications.
-    // Ask again for the confirmation email. Takes the application id, never an
-    // address — see app/api/services/resend-verification/route.ts for why that
-    // distinction is the whole design.
-    const askAgainForEmail = async () => {
-        setResending(true);
-        setResendSaid('');
-        try {
-            const res = await fetch('/api/services/resend-verification', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ applicationId }),
-            });
-            const out = await res.json().catch(() => ({}));
-
-            if (out.sent) setResendSaid('Sent. Give it a minute or two, and check the spam folder.');
-            else if (out.wait) setResendSaid('One is already on its way — try again in ' + out.wait + ' seconds.');
-            else if (out.capped) setResendSaid('That is as many as we can send today. Email us and we will sort it out.');
-            else setResendSaid('We could not send it just now. Your application is still with us either way.');
-        } catch (err) {
-            setResendSaid('We could not reach the site. Your application is still with us either way.');
-        }
-        setResending(false);
-    };
-
-    // The verify-your-email gate. Send a one-time code, then verify it. Uses the
-    // MAIN client (not supabaseEmailFlow, which is deliberately session-less for
-    // the lodge flow) so verifyOtp writes a real session the rest of the wizard
-    // reads.
-    const sendOtp = async () => {
-        const email = otpEmail.trim();
-        if (!email || email.indexOf('@') === -1) {
-            setOtpError('Enter the email address we should send your code to.');
-            return;
-        }
-        setOtpBusy(true);
-        setOtpError('');
-        // shouldCreateUser makes the account on first verify; a returning
-        // applicant is signed into their existing one by the same code. Either
-        // way nothing exists until the code is entered — the anti-squatting
-        // point the old emailed-link flow was built around, kept.
-        const { error } = await supabase.auth.signInWithOtp({
-            email,
-            // The PERSON's name, captured here at the account step — it is
-            // account information, and it becomes the listing title (a guest
-            // experience is a person, not a business). Supabase writes it to
-            // raw_user_meta_data on account creation, and the add_profile_for_new_user
-            // trigger copies it into profiles.full_name. Only applied when the
-            // account is CREATED — a returning applicant keeps their existing name.
-            options: { shouldCreateUser: true, data: { name: otpName.trim() } },
-        });
-        setOtpBusy(false);
-        if (error) {
-            setOtpError(error.message);
-            return;
-        }
-        setOtpSent(true);
-    };
-
-    const verifyOtp = async () => {
-        const email = otpEmail.trim();
-        const token = otpCode.trim();
-        if (!token) {
-            setOtpError('Enter the code from your email.');
-            return;
-        }
-        setOtpBusy(true);
-        setOtpError('');
-        const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-        setOtpBusy(false);
-        if (error || !data.session) {
-            setOtpError((error && error.message) || 'That code did not work. Check it and try again.');
-            return;
-        }
-        // Signed in. A NEW account already has the typed name (Supabase applied
-        // the sign-up metadata on creation). A RETURNING one does not — the
-        // metadata is ignored for an existing user — so if that account has no
-        // name yet, fill it from what they typed. backfillName never overwrites
-        // an existing name and never writes an empty one, so this is a no-op for
-        // everyone but the returning-with-no-name case it exists to close.
-        const { data: prof } = await supabase
-            .from('profiles').select('full_name').eq('id', data.session.user.id).maybeSingle();
-        const fill = backfillName(prof?.full_name, otpName);
-        if (fill) {
-            await supabase.from('profiles')
-                .update({ full_name: fill }).eq('id', data.session.user.id);
-        }
-
-        // The address they verified is the one to reach them on, so it pre-fills
-        // the contact field. Then move to the category picker — verify is the
-        // first screen now, so the picker is what comes next. Done in the same
-        // action, because setting the session drops g_verify from the flow and we
-        // must not be left standing on a step that no longer exists.
-        setSession(data.session);
-        if (!contactEmail.trim()) setContactEmail(email);
-        setStep('trade');
-        scrollPanelToTop();
-    };
-
-    const lodgeApplication = async () => {
-        const email = contactEmail.trim();
-        setAccountExists(false);
-
-        // No password gate here any more. This press does not make an account:
-        // it lodges the application and emails a link, and the password is
-        // chosen on the page that link opens — which is the only point at which
-        // anybody has shown they can receive mail at this address.
-        if (!email || email.indexOf('@') === -1) {
-            setAcctError('Add an email address above — that is the one we will send your link to.');
-            return;
-        }
-        if (!acctConsent) {
-            setAcctError('Tick the box and we will send you your link.');
-            return;
-        }
-
-        setSaving(true);
-        setAcctError('');
-
-        const title = audienceForTrade(trade) === 'guest' ? professionalTitle.trim() : businessName.trim();
-        const rows = applicationRows(new Date(), title);
-
-        try {
-            const res = await fetch('/api/services/apply', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email,
-                    // The applicant's own name (never the business) — it becomes
-                    // profiles.full_name when the account is made at /finish. Null
-                    // when we have none, so full_name is left blank, not wrong.
-                    name: providerName.trim() || null,
-                    ...rows,
-                }),
-            });
-
-            const out = await res.json().catch(() => ({}));
-            setSaving(false);
-
-            if (!res.ok || !out.ok) {
-                // There is no account_exists fork any more, because the route
-                // no longer answers that question. "There is already an account
-                // on that address" is an oracle any stranger could query for
-                // any address, so both cases now return the same thing and the
-                // difference is carried in the email — which only its owner can
-                // read. Somebody who already has an account gets a message
-                // telling them to sign in.
-                setAcctError(out.error || 'That did not work. Try again.');
-                return;
-            }
-
-            // It is in. Nothing to come back and press.
-            //
-            // ORDER AND STEP MATTER HERE, and getting them wrong is what made a
-            // successful application look like a failed one.
-            //
-            // `setRestored(false)` used to be in this list, to clear the "your
-            // details have been saved" banner. It also un-did the one condition
-            // holding the open-on-this-step effect back, so that effect ran
-            // again and put them on step two — of a form now locked, with no
-            // confirmation anywhere, because the panel that says "your
-            // application is in" only renders on the finish step.
-            //
-            // A successful send and a failed one therefore looked identical:
-            // both ended on step two. The step is now pinned to finish and
-            // `lodged` holds that effect off for good.
-            forgetDraft();
-            setApplicationId(out.applicationId);
-            setLodged(true);
-            setVerificationEmailed(out.verificationEmailed !== false);
-            setStep('finish');
-            scrollPanelToTop();
-        } catch (err: any) {
-            setSaving(false);
-            setAcctError('We could not reach the site. Check your connection and try again.');
-        }
-    };
-
     const save = async (submit: boolean) => {
-        // Agreeing to the terms gates send for a guest — someone who won't agree
-        // should not go live. Checked before the account/validation branches so it
-        // applies whichever submit path they are on. Not a submitProblems field:
-        // it lives on the finish screen, so its own error shows there.
-        if (submit && isGuest && !termsAgreed) {
-            setTouchedSubmit(true);
-            setTermsError(GUEST_SCREEN_COPY.termsGate);
-            goToFirstProblem();
-            return;
-        }
-
-        let active: any = session;
-
-        // No detour. The details they have entered make the account, and the
-        // same press that makes it saves the form — rather than sending
-        // somebody who has just filled in twenty fields off to register
-        // elsewhere and hope their work is still here when they get back.
-        //
-        // What they typed is in local storage on every keystroke regardless,
-        // so any route out of this page is survivable.
-        if (!session) {
-            setWantsToSave(submit);
-            if (submit) setTouchedSubmit(true);
-
-            // Still gate on the form being right. Making an account for
-            // somebody whose application cannot be sent is the worst order to
-            // do these two things in.
-            if (submit && problems.length) {
+        // Agreeing to the role's agreement gates send — someone who won't agree
+        // should not go live. The shared rule (lib/agreements), the same one
+        // /api/agreements and submit_service_provider() hold on the server.
+        // Checked before the account/validation branches so it applies whichever
+        // submit path they are on. Not a submitProblems field: it lives on the
+        // finish screen, so its own error shows there.
+        if (submit && needsGuestTick) {
+            const guestMsg = agreementProblem('guest', null, versionForTick('guest', guestAgreed));
+            if (guestMsg) {
+                setTouchedSubmit(true);
+                setGuestTermsError(guestMsg);
                 goToFirstProblem();
                 return;
             }
-
-            // ONE PRESS. The account is made and the application is lodged in
-            // the same request, by /api/services/apply.
-            //
-            // It used to make the account here, find no session — because
-            // confirmation is on and signUp returns none — and stop, leaving
-            // the applicant a screen asking them to open a link, come back, and
-            // press send again. Anything that went wrong in between lost the
-            // lot, silently, because no row had been written to lose.
-            //
-            // Verification still happens; it just does not hold the application
-            // up. The row is in the queue before they have opened their inbox.
-            await lodgeApplication();
-            return;
         }
+        if (submit && needsAgreementTick) {
+            const termsMsg = agreementProblem(agreementDoc, null, versionForTick(agreementDoc, termsAgreed));
+            if (termsMsg) {
+                setTouchedSubmit(true);
+                setTermsError(termsMsg);
+                goToFirstProblem();
+                return;
+            }
+        }
+
+        let active: any = session;
 
         if (submit) {
             setTouchedSubmit(true);
@@ -3194,16 +2805,18 @@ function ApplicationForm() {
 
         const now = new Date();
 
-        // A guest's title is their Title (the Intro field, mandatory); a host
-        // trades under the business name they typed.
-        const title = audienceForTrade(trade) === 'guest' ? professionalTitle.trim() : businessName.trim();
+        // A guest's business_name is the LISTING title (g_title, required) — the
+        // name of the experience; the professional title rides in guest_details.
+        // A host trades under the business name they typed.
+        const title = audienceForTrade(trade) === 'guest' ? listingTitle.trim() : businessName.trim();
 
         const payload: any = {
             ...guestProviderFields(),
             owner_id: active.user.id,
             business_name: title,
             trade,
-            description: description.trim(),
+            ...(trade === 'other' && otherText.trim() ? { custom_label: otherText.trim() } : {}),
+            description: contentDescription(),
             contact_email: contactEmail.trim(),
             contact_phone: contactPhone.trim() || null,
             sms_opt_out: smsOptOut,
@@ -3213,36 +2826,37 @@ function ApplicationForm() {
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
             dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
-            headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
+            headshot,
             // The seven content answers now have a home on the row (the
             // guest_details jsonb column, 20260906143712), so the signed-in
             // wizard writes them here rather than only in the anonymous apply
             // payload. Null for a host trade, which has none of them.
-            guest_details: audienceForTrade(trade) === 'guest' ? guestContentFields() : null,
+            // Both audiences carry their About-you content in guest_details now:
+            // a guest's category/expertise/dietary, a host's four profile fields.
+            guest_details: guestContentFields(),
             photos,
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
             does_oil: asksAboutFuel(trade) ? doesOil : false,
+            // The two availability ticks from "What you do" — host trades only.
+            does_emergency: audienceForTrade(trade) === 'host' ? doesEmergency : false,
+            does_scheduled: audienceForTrade(trade) === 'host' ? doesScheduled : false,
             // A call-out fee is optional on both models — a roofer who turns
             // out for a leak charges one even though the re-slate is quoted.
             // The hourly rate belongs only to the trades that actually bill by
             // the hour, and is cleared otherwise so a provider who switches
             // trade does not carry a stale rate.
             callout_fee: calloutFee.trim() !== '' ? Number(calloutFee) : null,
-            hourly_rate: model === 'callout_hourly' && hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
+            hourly_rate: hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
             callout_waived: calloutFee.trim() !== '' ? calloutWaived : false,
-
-            // Cleaning and in-house only, and cleared to the banded shape
-            // otherwise. `kind` is never sent — it is not the applicant's to
-            // set, and the database check would refuse an hourly row that is
-            // not in-house anyway. Sending the cleared values rather than
-            // omitting them is what stops a provider who was switched back to
-            // external keeping a live rate nothing validates any more.
-            pricing_choice: trade === 'sponge' ? (hourlyAllowed && pricingChoice === 'hourly' ? 'hourly' : 'bands') : null,
-            billable_hourly_rate: hourlyAllowed && pricingChoice === 'hourly' && billableHourlyRate.trim() !== ''
-                ? Number(billableHourlyRate)
-                : null,
-            covered_bands: hourlyAllowed && pricingChoice === 'hourly' ? coveredBands : [],
+            provides_quote: provideQuote,
+            flat_fee: flatFee.trim() !== '' ? Number(flatFee) : null,
+            registration_number: (asksAboutFuel(trade) || trade === 'electrician') ? (registrationNumber.trim() || null) : null,
+            // Bands are gone; the old columns are written null so a re-saved row
+            // clears them.
+            pricing_choice: null,
+            billable_hourly_rate: null,
+            covered_bands: [],
             updated_at: now.toISOString(),
         };
 
@@ -3304,6 +2918,25 @@ function ApplicationForm() {
         // Submitting is its own step now, after the row exists and its columns
         // are saved. The function is the only thing that may move `status`.
         if (Object.keys(statusPatch).length > 0) {
+            // The agreement first: recorded (version + server time) through the
+            // one route, which refuses it unticked; submit_service_provider()
+            // then refuses a submit with no acceptance on record.
+            if (needsGuestTick) {
+                const failedGuest = await recordAgreement('guest', isGuest ? 'experience_signup' : 'trade_signup');
+                if (failedGuest) {
+                    setSaving(false);
+                    setGuestTermsError(failedGuest);
+                    return;
+                }
+            }
+            if (needsAgreementTick) {
+                const failed = await recordAgreement(agreementDoc, isGuest ? 'experience_signup' : 'trade_signup');
+                if (failed) {
+                    setSaving(false);
+                    setTermsError(failed);
+                    return;
+                }
+            }
             const { error } = await supabase.rpc('submit_service_provider', { p_id: id });
             if (error) {
                 setSaving(false);
@@ -3377,24 +3010,26 @@ function ApplicationForm() {
         const extraRows = tradeExtras
             .filter((extra) => {
                 const entry = extraOf(extra.key);
-                // A priced extra says yes by having a price. Nothing else to
-                // agree or disagree with, and a blank is a no.
+                // A priced extra says yes by having a price OR by ticking "I
+                // provide a quote". A blank with no quote is a no.
                 if (extra.type === 'priced') {
-                    return String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                    return entry.quote === true || (String(entry.price).trim() !== '' && Number(entry.price) > 0);
                 }
                 return entry.offered;
             })
             .map((extra) => {
                 const entry = extraOf(extra.key);
-                const priced = extra.type === 'priced' && String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                const byQuote = extra.type === 'priced' && entry.quote === true;
+                const priced = extra.type === 'priced' && !byQuote && String(entry.price).trim() !== '' && Number(entry.price) > 0;
                 return {
                     provider_id: id,
                     extra_key: extra.key,
                     offered: true,
-                    // Null for a toggle, and null for a reimbursed one: the
-                    // amount is whatever the receipt says, weeks later. It is
-                    // paid host to provider directly and never through us.
+                    // Null for a toggle, a reimbursed one, or one priced by quote:
+                    // the amount is whatever the receipt says, weeks later, or is
+                    // quoted per job. Paid host to provider directly, never through us.
                     price: priced ? Number(entry.price) : null,
+                    quote: byQuote,
                     notes: String(entry.notes || '').trim() || null,
                     updated_at: now.toISOString(),
                 };
@@ -3469,19 +3104,11 @@ function ApplicationForm() {
             }
         }
 
-        // The slot schedule — the weekly opening hours. Replaced
-        // wholesale like the areas: a handful of rows, and the provider owns them
-        // under RLS (the slot_shape migration's "owners manage their own"
-        // policies). Only a slot has them; for any other shape the delete clears
-        // any left behind by a shape the provider changed away from.
-        if (audienceForTrade(trade) === 'guest') {
-            const { availability } = guestScheduleRows();
-            await supabase.from('slot_availability').delete().eq('provider_id', id);
-            if (availability.length) {
-                const { error } = await supabase.from('slot_availability').insert(availability.map((a) => ({ ...a, provider_id: id })));
-                if (error) { console.error('[provider-save] slot_availability insert failed', error); savedButFailed.push('your weekly hours'); }
-            }
-        }
+        // Weekly opening hours are NOT written here any more. They moved out of
+        // the wizard to the listing editor's Availability section, which is the
+        // single home for the weekly template — so the wizard neither asks for
+        // hours nor writes slot_availability. A new slot provider sets them in the
+        // editor after create; the diary still owns the dated exceptions.
 
         // The menu — UPSERTED BY ID, not deleted and re-inserted. A guest trade
         // only; a host trade never has items. An item now carries a photo, and
@@ -3496,6 +3123,17 @@ function ApplicationForm() {
             // for a shared table. private/shared derive it from the offering; 'both'
             // has the provider choose it per item on the unit step. Either way a
             // slot row is only ever flat or person, normalised here.
+            // The one-at-a-time shape (massage): each treatment carries its own
+            // length. NULL for every other category (the provider's single length
+            // is used). This is what makes the times a guest sees depend on the
+            // treatment, and what the interval-overlap claim reads.
+            const slotPerItem = shape === 'slot' && slotDurationPerItem(guestCategory);
+            const slotMixed = shape === 'slot' && slotMixedDuration(guestCategory);
+            // A TIMED item carries its own length: every item on the pure
+            // one-at-a-time shape (massage), and a mixed provider's one-at-a-time
+            // items (unit 'flat'). A mixed shared CLASS (unit 'person') is untimed —
+            // it uses the provider's single length — so it stores no duration.
+            const isTimed = (unit: string) => (slotPerItem || slotMixed) && String(unit) === 'flat';
             const valid = items
                 .map((it, i) => ({
                     id: it.id,
@@ -3503,18 +3141,37 @@ function ApplicationForm() {
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
+                    // A travelling item is always private (flat), whatever the row
+                    // carries — nobody joins a class in someone else's cottage.
+                    unit: shape === 'slot'
+                        ? ((fulfilment === 'both' && String(it.fulfilment) === 'delivery') ? 'flat' : (String(it.unit) === 'person' ? 'person' : 'flat'))
+                        : String(it.unit || 'flat'),
                     image: it.image || null,
+                    duration_minutes: isTimed(it.unit) && Number(it.duration) > 0 ? Math.round(Number(it.duration)) : null,
+                    // Per-item location, only when the provider answered 'both'; null
+                    // otherwise (the item inherits the provider's single answer).
+                    fulfilment: (shape === 'slot' && fulfilment === 'both') ? (String(it.fulfilment) === 'delivery' ? 'delivery' : 'collection') : null,
                     sort_order: i,
                     active: true,
                 }))
                 .filter((r) => r.name && r.price !== null && Number(r.price) > 0);
 
+            // ALL-OR-NOTHING for the per-treatment shape: a massage treatment
+            // without a length must never reach the database, or it would fall back
+            // to the provider length and could overlap a timed treatment — the
+            // double-booking again. The duration step is mandatory in the sub-flow,
+            // so this only ever fires as a guard; when it does, the untimed row is
+            // not written and the provider is told, rather than silently accepted.
+            const writable = slotPerItem ? valid.filter((r) => r.duration_minutes != null) : valid;
+            if (slotPerItem && writable.length !== valid.length) {
+                savedButFailed.push('a length on every treatment');
+            }
+
             // Delete only the rows that are in the database but no longer on the
             // form — the ones the provider took off the menu.
             const { data: existingItems } = await supabase
                 .from('service_provider_items').select('id').eq('provider_id', id);
-            const keep = new Set(valid.map((r) => r.id).filter(Boolean));
+            const keep = new Set(writable.map((r) => r.id).filter(Boolean));
             const removed = (existingItems || [])
                 .map((r: any) => r.id)
                 .filter((x: string) => !keep.has(x));
@@ -3525,8 +3182,8 @@ function ApplicationForm() {
             // Edited rows keep their id (update in place); new rows have none
             // (insert, letting the id default). Split so each request carries a
             // uniform set of columns.
-            const toUpdate = valid.filter((r) => r.id);
-            const toInsert = valid.filter((r) => !r.id).map(({ id: _omit, ...rest }) => rest);
+            const toUpdate = writable.filter((r) => r.id);
+            const toInsert = writable.filter((r) => !r.id).map(({ id: _omit, ...rest }) => rest);
             if (toUpdate.length) {
                 const { error } = await supabase.from('service_provider_items').upsert(toUpdate);
                 if (error) { console.error('[provider-save] items upsert failed', error); savedButFailed.push('your prices'); }
@@ -3611,17 +3268,6 @@ function ApplicationForm() {
         }
     };
 
-    // Signed in after pressing a button that needed it: carry on where they
-    // left off rather than making them find the button again.
-    useEffect(() => {
-        if (session && wantsToSave !== null && !saving) {
-            const submit = wantsToSave;
-            setWantsToSave(null);
-            save(submit);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [session, wantsToSave]);
-
     if (loading) {
         return <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-slate-500">Loading…</div>;
     }
@@ -3640,6 +3286,32 @@ function ApplicationForm() {
                     Try again
                 </button>
             </div>
+        );
+    }
+
+    // EVERY SIGN-UP OPENS THE SAME WAY: "What's your email?", a 6-digit code,
+    // signed in — the shared first step the holiday-let sign-up opens on too.
+    //
+    // It replaced two different starts: the guest wizard's own g_verify screen,
+    // and a trade applying signed out and being emailed a verification link
+    // AFTER submitting (/api/services/apply). The address is now proved before
+    // anything is typed, so a trade saves through the ordinary signed-in path
+    // and there is no link to wait for. Links already sent under the old flow
+    // still work — /services/join/finish/[token] is untouched, and attaches the
+    // application to the account if the code step has since made one.
+    //
+    // A full reload once signed in, so load() runs again as the owner and the
+    // wizard opens exactly as it does for any returning signed-in applicant.
+    if (!session) {
+        return (
+            <EmailFirstStep
+                eyebrow={isGuest ? 'Host a guest experience' : 'Offer a service'}
+                intro={isGuest
+                    ? 'Sign in or create your free account to set up your experience. Everything you add is saved to your account as you go.'
+                    : 'Sign in or create your free account to set up your business. Everything you add is saved to your account as you go.'}
+                exitHref="/business"
+                onSignedIn={() => window.location.reload()}
+            />
         );
     }
 
@@ -3663,27 +3335,23 @@ function ApplicationForm() {
            header and the buttons stay put while the questions move — on a
            phone that means the way forward is always under your thumb and
            never below the fold. */
-        <div className={isGuest
-            ? 'fixed inset-0 z-[60] flex flex-col bg-white'
-            : 'fixed inset-0 z-[60] flex md:items-center md:justify-center md:p-6 bg-white md:bg-slate-900/40'}>
-            {/* A guest gets a full-page takeover (no card, no dimmed backdrop,
-                no site header behind it) matching /addhome and the fork; a trade
-                keeps the centred modal it always had. */}
-            <div className={isGuest
-                ? 'flex flex-col w-full h-full bg-white overflow-hidden'
-                : 'flex flex-col w-full h-full bg-white md:h-auto md:max-h-[90vh] md:w-full md:rounded-2xl md:shadow-xl overflow-hidden md:max-w-3xl'
-            }>
+        <div className="fixed inset-0 z-[60] flex flex-col bg-white">
+            {/* One full-page takeover for everyone — a guest experience and a
+                host trade now share the same wizard (no card, no dimmed backdrop),
+                matching /addhome and the fork. */}
+            <div className="flex flex-col w-full h-full bg-white overflow-hidden">
 
-                {isGuest ? (
-                    /* Guest takeover top bar — Back top-left, brand, a way out.
-                       No step count and no per-screen segments any more: the
-                       flow is named sections now (the left rail on wide screens,
-                       the section eyebrow at the top of each screen on a phone),
-                       so a "Step 5 of 12" here would be the very thing they
-                       replace. */
-                    <div className="shrink-0 border-b border-slate-100 px-4 sm:px-8">
-                        <div className="flex h-16 items-center justify-between gap-3">
-                            {(position > 1 || openGroup) ? (
+                {/* Takeover top bar — Back top-left, brand, close top-right. No
+                    step count or per-screen segments: the flow is named sections
+                    (the left rail on wide screens, the section eyebrow at the top
+                    of each screen on a phone), the same for a guest and a trade. */}
+                <div className="shrink-0 border-b border-slate-100 px-4 sm:px-8">
+                    <div className="flex h-16 items-center justify-between gap-3">
+                        {/* Guests keep Back top-left; a trade's Back lives in the
+                            footer (both its buttons at the bottom), so a spacer here
+                            keeps the brand centred. */}
+                        {isGuest ? (
+                            (position > 1 || openGroup) ? (
                                 <button type="button" onClick={goBack} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
                                     <ChevronLeft className="w-5 h-5" /> Back
                                 </button>
@@ -3691,107 +3359,44 @@ function ApplicationForm() {
                                 <Link href="/business" className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
                                     <ChevronLeft className="w-5 h-5" /> Back
                                 </Link>
-                            )}
-                            <span className="text-sm font-bold tracking-tight text-slate-900">Galloway Getaways</span>
-                            <Link href="/business" aria-label="Close" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition">
-                                <X className="w-5 h-5" />
-                            </Link>
-                        </div>
-                    </div>
-                ) : (
-                <div className="shrink-0 border-b border-slate-200 px-4 sm:px-6 pt-4 pb-3">
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                            <h1 className="text-lg sm:text-xl font-bold text-slate-900 truncate">
-                                {stepMeta.title}
-                            </h1>
-                            {/* `chosen`, not `trade`: the trade state defaults
-                                to 'sponge' so the rest of the form has
-                                something to work from, and reading it here put
-                                "Cleaning" under the heading of somebody who had
-                                not picked anything yet. */}
-                            <p className="text-xs text-slate-500 mt-0.5 truncate">
-                                {chosen
-                                    ? tradeLabel(trade)
-                                    : 'Get work from holiday lets across Dumfries & Galloway.'}
-                            </p>
-                        </div>
-
-                        <Link
-                            href="/business"
-                            aria-label="Close"
-                            className="shrink-0 w-9 h-9 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-500"
-                        >
+                            )
+                        ) : (
+                            <span className="w-9" aria-hidden />
+                        )}
+                        <span className="text-sm font-bold tracking-tight text-slate-900">Galloway Getaways</span>
+                        <Link href="/business" aria-label="Close" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition">
                             <X className="w-5 h-5" />
                         </Link>
                     </div>
-
-                    {/* THE STEP INDICATOR.
-                        Built from stepsFor(trade), so it counts only the steps
-                        this trade actually has. A cleaner has no registration
-                        number and no skills, so she sees four dots and "Step 2
-                        of 4" — not five with one that never arrives.
-
-                        The dots carry the count on a phone and the labels
-                        appear when there is room for them; a label under every
-                        dot at 375px is four words fighting for sixty pixels. */}
-                    <div className="mt-3.5">
-                        {/* Nothing is drawn until a trade is picked, for the
-                            same reason no total is announced: how many steps
-                            there are depends on the answer to the step they
-                            are looking at. Four segments here would be the
-                            cleaner's count shown to a plumber, and it would
-                            grow by one under him the moment he tapped. */}
-                        {chosen && (
-                        <div className="flex items-center gap-1.5" role="list" aria-label={'Step ' + position + ' of ' + total}>
-                            {steps.map((s, i) => {
-                                const done = i + 1 < position;
-                                const here = s.key === step;
-
-                                return (
-                                    <div key={s.key} role="listitem" className="flex-1 min-w-0">
-                                        <div
-                                            className={`h-1.5 rounded-full transition-colors ${
-                                                here ? 'bg-emerald-700' : done ? 'bg-emerald-300' : 'bg-slate-200'
-                                            }`}
-                                        />
-                                        <span
-                                            className={`hidden sm:flex items-center gap-1 text-[11px] mt-1.5 truncate ${
-                                                here ? 'font-semibold text-slate-900' : 'text-slate-500'
-                                            }`}
-                                        >
-                                            {done && <Check className="w-3 h-3 text-emerald-700 shrink-0" />}
-                                            <span className="truncate">{s.label}</span>
-                                        </span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        )}
-
-                        {/* No total until a trade is picked. How many steps
-                            there are depends on the trade — a cleaner has four
-                            and a plumber five — so announcing a number here
-                            would be a guess, and one that changes under them
-                            the moment they tap a card. */}
-                        <p className={(chosen ? 'sm:hidden ' : '') + 'text-[11px] text-slate-500' + (chosen ? ' mt-1.5' : '')}>
-                            {chosen ? 'Step ' + position + ' of ' + total + ' · ' + stepMeta.label : 'Step 1 of a few — it depends what you do'}
-                        </p>
-                    </div>
                 </div>
-
-                )}
 
                 {/* For a guest, a two-column body on wide screens: the named-
                     section rail on the left, the scrolling question column on
                     the right. Below lg the rail is hidden and the section name
                     rides as an eyebrow at the top of each screen instead. A host
                     trade keeps its single column (`contents` adds no wrapper). */}
-                <div className={isGuest ? 'flex-1 flex min-h-0 overflow-hidden' : 'contents'}>
-                    {isGuest && currentSection && flowSections.length > 0 && (
+                <div className="relative flex-1 flex min-h-0 overflow-hidden">
+                    {/* When collapsed the rail folds to zero width — no strip of
+                        icons left behind to push the question column off-centre — and
+                        this floating chevron is how it comes back. Its twin is the
+                        rail's own "Collapse" button, visible only when open. Because
+                        the rail and the right-hand spacer are always the same width,
+                        the centred column sits dead centre in either state, so
+                        collapsing never moves it. */}
+                    {currentSection && flowSections.length > 0 && railCollapsed && (
+                        <button
+                            type="button"
+                            onClick={toggleRail}
+                            aria-label="Expand sections"
+                            className="hidden lg:flex absolute left-3 top-4 z-10 h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:text-slate-800"
+                        >
+                            <ChevronRight className="h-5 w-5" />
+                        </button>
+                    )}
+                    {currentSection && flowSections.length > 0 && (
                         <nav aria-label="Sections"
-                            className={'hidden lg:flex shrink-0 flex-col overflow-y-auto border-r border-slate-100 py-12 transition-[width] duration-300 ease-out '
-                                + (railCollapsed ? 'w-16 px-2' : 'w-72 px-6')}>
+                            className={'hidden lg:flex shrink-0 flex-col overflow-y-auto overflow-x-hidden border-r transition-[width] duration-300 ease-out '
+                                + (railCollapsed ? 'w-0 px-0 py-0 border-transparent' : 'w-72 px-6 py-12 border-slate-100')}>
                             <div className={'flex flex-col ' + (railCollapsed ? 'gap-1' : 'gap-0.5')}>
                                 {flowSections.map((sec) => {
                                     const st = sectionStatus(sec);
@@ -3857,32 +3462,41 @@ function ApplicationForm() {
                     )}
 
                 {/* ---- the questions ---- */}
-                <div id="signup-panel" className={isGuest
-                    ? ('flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 '
-                        + (step === 'trade'
-                            /* Screen one sits lower with more air above it, and
-                               widens so the five cards sit on a single row. */
+                {/* ONE panel layout, keyed on the STEP, shared by both audiences —
+                    so a trade page and its guest equivalent can never sit in
+                    different positions or drift apart again. Only two screens
+                    differ by audience, and only because their CONTENT genuinely
+                    does: the picker (a five-card guest grid vs a host trade grid)
+                    and the finish screen (a full-width guest listing preview vs the
+                    host account panel). Every question screen — the shared years
+                    opener, the About-you hub, the business screens — resolves to
+                    the same class for both. */}
+                <div id="signup-panel" className={'flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 '
+                    + (step === 'trade'
+                        ? (isGuest
+                            /* Guest: sits lower with more air, and widens so the
+                               five category cards sit on a single row. */
                             ? 'max-w-5xl pt-20 pb-10 sm:pt-28 sm:pb-12'
-                            : step === 'g_subtype'
-                                ? 'max-w-3xl py-10 sm:py-12'
-                                /* The years opener is a flex column so its
-                                   stepper can centre in the space under the
-                                   question rather than sit high with a void. */
-                                : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')
-                                    ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
-                                    /* Finish is the widest content screen: it is a
-                                       full-width preview of the listing about to be
-                                       submitted, so it uses the space rather than
-                                       sitting in a half-width column. */
-                                    : step === 'finish'
-                                        ? 'max-w-6xl py-10 sm:py-12'
-                                        /* The made-to-order fork and the slot choice
-                                           forks centre their cards in the space on
-                                           desktop, like the steppers. */
-                                        : (guestMtoArea || guestSlotChoice)
-                                            ? 'max-w-2xl py-10 sm:py-12 sm:flex sm:flex-col'
-                                            : 'max-w-2xl py-10 sm:py-12'))
-                    : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
+                            : 'max-w-3xl pt-14 pb-10 sm:pt-16 sm:pb-12')
+                        : step === 'g_subtype'
+                            ? 'max-w-3xl py-10 sm:py-12'
+                            /* The centred-stepper screens are a flex column so the
+                               stepper centres in the space under the question rather
+                               than sitting high with a void. g_you is SHARED, so a
+                               host trade now gets exactly the guest's centred years
+                               layout. */
+                            : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')
+                                ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
+                                : step === 'finish'
+                                    /* Guest finish is a full-width listing preview;
+                                       a host's is the narrower account panel. */
+                                    ? (isGuest ? 'max-w-6xl py-10 sm:py-12' : 'max-w-3xl py-10 sm:py-12')
+                                    /* The made-to-order fork and the slot choice
+                                       forks centre their cards in the space on
+                                       desktop, like the steppers. */
+                                    : (guestMtoArea || guestSlotChoice)
+                                        ? 'max-w-2xl py-10 sm:py-12 sm:flex sm:flex-col'
+                                        : 'max-w-2xl py-10 sm:py-12')}>
                     {/* One big question a screen. The picker screens (group,
                         sub-type) and the years opener centre it — over the cards
                         for the pickers, over the big stepper for the years, both
@@ -3892,15 +3506,37 @@ function ApplicationForm() {
                         section — the mobile stand-in for the rail, and a quiet
                         anchor on desktop too. The pickers (trade, g_subtype)
                         have no section, so it shows nothing there. */}
-                    {isGuest && currentSection && (
+                    {currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length' || step === 'g_title') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
+                    {/* A host trade's per-screen heading — the question, as a body
+                        h1, the way the guest screens carry theirs (it used to live
+                        in the modal header). The finish step has its own heading;
+                        the trade picker's h1 is rendered with its tiles below; and
+                        g_creds (the expertise hub) renders its OWN heading with the
+                        photo, so the generic step title is suppressed there — the
+                        same exclusion the guest branch below makes. */}
+                    {!isGuest && step !== 'finish' && step !== 'trade' && step !== 'g_creds' && (
+                        <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
+                            /* The years opener is one centred column — eyebrow,
+                               heading and counter together — exactly like the guest
+                               years screen (same mb-10 + text-center). Every other
+                               host screen is a left-aligned form. */
+                            + (step === 'g_you' ? 'mb-10 text-center' : 'mb-8')}>
+                            {step === 'credentials' ? coverHeading : stepMeta.title}
+                        </h1>
+                    )}
+                    {!isGuest && step === 'trade' && (
+                        <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl mb-8 text-center">
+                            {stepMeta.title}
+                        </h1>
+                    )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_slot_basis' || step === 'g_slot_where') ? 'mb-10 text-center'
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_where' || step === 'g_title') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
                                    Airbnb) with a tight gap so "Add at least 3 photos."
                                    reads as a subtitle, not a stranded paragraph. */
@@ -3920,7 +3556,9 @@ function ApplicationForm() {
                                     : (step === 'g_area' && shape === 'made_to_order')
                                         ? GUEST_SCREEN_COPY.fulfilmentHeading
                                     : (step === 'g_area' && shape === 'slot')
-                                        ? (fulfilment === 'delivery'
+                                        ? (fulfilment === 'both'
+                                            ? GUEST_SCREEN_COPY.slotPlaceHeadingBoth
+                                            : fulfilment === 'delivery'
                                             ? GUEST_SCREEN_COPY.slotPlaceHeadingTravel
                                             : slotIsMeetingPoint(guestCategory)
                                                 ? GUEST_SCREEN_COPY.slotPlaceHeadingMeeting
@@ -4043,9 +3681,20 @@ function ApplicationForm() {
                             </p>
                         </>
                     ) : (
+                        /* A live-status banner, not a heading. A bare bold
+                           "Live" read as a section title; a provider glancing at
+                           it could not tell it was telling them their state. The
+                           pulsing dot and the pill say "this is your status"
+                           before the words are read. */
                         <>
-                            <p className="font-semibold text-emerald-900">{summary.label}</p>
-                            <p className="text-sm text-emerald-900/80 mt-1">{summary.detail}</p>
+                            <div className="flex items-center gap-2">
+                                <span className="relative flex h-2.5 w-2.5" aria-hidden>
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-600" />
+                                </span>
+                                <span className="text-xs font-bold uppercase tracking-wider text-emerald-800">{summary.label}</span>
+                            </div>
+                            <p className="text-sm text-emerald-900/80 mt-1.5">{summary.detail}</p>
                         </>
                     )}
 
@@ -4150,8 +3799,16 @@ function ApplicationForm() {
                     );
                 }
 
-                const entries = pickerEntries(mine, 'host');
-                const left = unclaimedTrades(mine, 'host');
+                // One flat list of every trade — no "Maintenance & repairs"
+                // folder. Cleaning stays in the list but as a "Coming soon" tile
+                // (visible, not selectable). An "Other" tile lets someone whose
+                // trade isn't listed type their own.
+                const claimedKeys = mine.map((x: any) => String(x.trade || ''));
+                const flat = tradesFor('host').filter((t) => t.key !== 'other' && claimedKeys.indexOf(t.key) === -1);
+                // Coming-soon trades are not joinable, so they do not count as
+                // trades still "left" to sign up for — keeps the picker grid and
+                // the "signed up for everything" line agreeing.
+                const left = unclaimedTrades(mine, 'host').filter((t) => !isTradeComingSoon(t.key));
 
                 return (
                     <div>
@@ -4195,7 +3852,7 @@ function ApplicationForm() {
                             </div>
                         )}
 
-                        {entries.length > 0 && (
+                        {(flat.length > 0 || true) && (
                             <>
                                 {mine.length > 0 && (
                                     <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
@@ -4203,18 +3860,26 @@ function ApplicationForm() {
                                     </h2>
                                 )}
                                 <TradeTileGrid>
-                                    {entries.map((entry) => (
-                                        <TradeTile
-                                            key={entry.kind + ':' + entry.key}
-                                            tradeKey={entry.kind === 'trade' ? entry.key : undefined}
-                                            groupKey={entry.kind === 'group' ? entry.key : undefined}
-                                            label={entry.label}
-                                            hint={entry.kind === 'group' ? entry.hint : undefined}
-                                            onClick={() =>
-                                                entry.kind === 'group' ? setOpenGroup(entry.key) : chooseTrade(entry.key)
-                                            }
-                                        />
+                                    {flat.map((t) => (
+                                        isTradeComingSoon(t.key) ? (
+                                            <TradeTile key={t.key} tradeKey={t.key} label={t.label} comingSoon />
+                                        ) : (
+                                            <TradeTile
+                                                key={t.key}
+                                                tradeKey={t.key}
+                                                label={t.label}
+                                                onClick={() => chooseTrade(t.key)}
+                                            />
+                                        )
                                     ))}
+                                    {/* Their trade isn't on the list — they type it. */}
+                                    <TradeTile
+                                        key="__other"
+                                        tradeKey="other"
+                                        label="Something else"
+                                        hint="Tell us your trade"
+                                        onClick={() => setOtherOpen(true)}
+                                    />
                                 </TradeTileGrid>
                             </>
                         )}
@@ -4222,6 +3887,24 @@ function ApplicationForm() {
                         {left.length === 0 && mine.length > 0 && (
                             <p className="text-sm text-slate-500">You have signed up for every trade we cover.</p>
                         )}
+
+                        <SubFlowModal
+                            open={otherOpen}
+                            title="What's your trade?"
+                            onClose={() => setOtherOpen(false)}
+                            saveLabel="Continue"
+                            saveDisabled={!otherText.trim()}
+                            onSave={() => { setOtherOpen(false); chooseTrade('other'); }}
+                        >
+                            <input
+                                type="text"
+                                value={otherText}
+                                onChange={(e) => setOtherText(e.target.value)}
+                                placeholder="e.g. Chimney sweep, Locksmith, Pest control"
+                                className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                            />
+                            <p className="mt-2 text-sm text-slate-500">We&apos;ll list you under this — you can change it later.</p>
+                        </SubFlowModal>
                     </div>
                 );
             })()}
@@ -4272,7 +3955,7 @@ function ApplicationForm() {
             <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
-                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length') ? ' flex-1 flex flex-col' : '')
+                + (step === 'g_you' || (isGuest && (step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')) ? ' flex-1 flex flex-col' : '')
                 /* Same fill on the made-to-order fork and the slot choice forks,
                    but desktop only — mobile keeps its natural top-down stack. */
                 + (guestMtoArea || guestSlotChoice ? ' sm:flex-1 sm:flex sm:flex-col' : '')}>
@@ -4281,12 +3964,14 @@ function ApplicationForm() {
                     is"), beside the description, so they never answer it twice. */}
                 {onStep('business') && (
                     <section className="mb-8">
-                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
+                        {/* One question a screen now: just the name here. The
+                            "What's your business called?" heading is the step h1
+                            above, so the field needs no second label of its own. */}
                         <input
                             type="text"
                             value={businessName}
                             onChange={(e) => setBusinessName(e.target.value)}
-                            placeholder="Solway Sparkle"
+                            placeholder="Solway Joinery"
                             className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
                         {problemFor('business_name') && (
@@ -4301,84 +3986,23 @@ function ApplicationForm() {
                     photos over a phone signal in somebody's driveway is not
                     what should stand between a tradesman and the rest of the
                     questions. */}
-                {onStep('finish') && (imageryFor(trade) === 'logo' ? (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your logo</h2>
-                        <p className="text-sm text-slate-500 mb-3">
-                            Optional. If you have not got one we will show your initials.
-                            {!session && ' You can add one as soon as this is sent — it does not hold up your listing, and you will not have to fill anything in again.'}
-                        </p>
-
-                        <div className="flex items-center gap-4">
-                            <div className="w-20 h-20 shrink-0 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-xl font-semibold">
-                                {logo ? (
-                                    <img src={getImageUrl(logo)} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    initialsFor(businessName) || <Sparkles className="w-6 h-6" strokeWidth={1.5} />
-                                )}
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                                <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
-                                    <Plus className="w-4 h-4" />
-                                    {uploadingLogo ? 'Uploading…' : logo ? 'Replace' : 'Add a logo'}
-                                    <input
-                                        type="file"
-                                        accept="image/png, image/jpeg"
-                                        onChange={uploadLogo}
-                                        className="hidden"
-                                        disabled={uploadingLogo}
-                                    />
-                                </label>
-
-                                {logo && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setLogo(null)}
-                                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                        Remove
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </section>
-                ) : (
-                    // Guest trades have no separate gallery any more — the photos
-                    // ARE the menu items, added beside each price on the business
-                    // step. A guest picks the cake from the cake's own picture,
-                    // not from a strip that doesn't say which is which. So this
-                    // step shows nothing for them; the item photos and the
-                    // headshot are the whole of their imagery.
-                    null
-                ))}
+                {/* No separate logo step any more. A trade already adds a photo of
+                    themselves on "Tell hosts about yourself" (the g_creds headshot),
+                    and that photo is what a listing shows now — so a second "Add a
+                    logo" screen asked for an image we had already taken. A guest
+                    never had one (its photos ARE its menu items). Legacy logos still
+                    display as a fallback where a provider set one before. */}
 
                 {/* The trade chip is gone: it said what they picked, and the
                     modal header now says that on every step. */}
 
-                {/* HOST/TRADE only: the business description (their name is the
-                    standalone business step above). A guest is never asked this —
-                    there is no naming step at all now: the listing title is their
-                    account name (or a trading name they set in account settings),
-                    and "what happens" (Details) plus the item descriptions carry
-                    the rest. */}
-                {!isGuest && onStep('business') && (
-                <section className="mb-8">
-                    {/* Capped to a measure rather than the window: past about 70
-                        characters a line is harder to read. */}
-                    <textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        rows={5}
-                        placeholder="What do you offer? Describe your business."
-                        className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-                    {problemFor('description') && (
-                        <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
-                    )}
-                </section>
-                )}
+                {/* The host's "Tell us about yourself" free-text description has
+                    moved off the business step and become the expertise hub
+                    (g_creds, "Tell hosts about yourself"): a profile photo, a
+                    professional title and optional qualifications/endorsements,
+                    the same hub a guest fills. The business step now carries only
+                    the name, coverage and contact. The stored `description` column
+                    is derived from the hub at submit (see the payloads). */}
 
                 {/* THE BOOKING SHAPE IS INFERRED, NEVER ASKED. The old "How do
                     guests get it?" screen made a sauna owner classify our internal
@@ -4394,7 +4018,7 @@ function ApplicationForm() {
                     safety in your hands" note lives inside that modal now, so the
                     hub itself stays clean. Built on the reusable HubRow /
                     SubFlowModal primitives, which later screens will want too. */}
-                {onStep('g_creds') && isGuest && (() => {
+                {onStep('g_creds') && (() => {
                     const titleFilled = professionalTitle.trim() !== '';
                     const titleSummary = professionalTitle.trim();
                     const qualsFilled = qualifications.trim() !== '';
@@ -4450,7 +4074,7 @@ function ApplicationForm() {
                                     className="hidden" onChange={uploadHeadshot} disabled={uploadingHeadshot} />
                             </div>
                             <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">
-                                {GUEST_SCREEN_COPY.expertiseHeading}
+                                {isGuest ? GUEST_SCREEN_COPY.expertiseHeading : 'Tell hosts about yourself'}
                             </h1>
                             <p className="mt-2 text-sm text-slate-500 [text-wrap:balance]">
                                 {GUEST_SCREEN_COPY.expertiseSubtext}
@@ -4473,14 +4097,21 @@ function ApplicationForm() {
                                 summary={titleSummary}
                                 onOpen={() => setExpertiseModal('title')}
                             />
-                            <HubRow
-                                filled={qualsFilled}
-                                label={GUEST_SCREEN_COPY.qualsRowLabel}
-                                suffix={catQualsRequired ? undefined : GUEST_SCREEN_COPY.optionalSuffix}
-                                prompt={GUEST_SCREEN_COPY.qualsRowPrompt}
-                                summary={qualifications.trim()}
-                                onOpen={() => setExpertiseModal('quals')}
-                            />
+                            {/* Qualifications. For a guest, prompted only where a
+                                formal qualification genuinely matters (the
+                                physical-safety categories). For a host trade it is
+                                always offered — a certificate or a scheme is worth
+                                showing on any trade. Optional either way. */}
+                            {(catAsksQuals || !isGuest) && (
+                                <HubRow
+                                    filled={qualsFilled}
+                                    label={GUEST_SCREEN_COPY.qualsRowLabel}
+                                    suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                    prompt={GUEST_SCREEN_COPY.qualsRowPrompt}
+                                    summary={qualifications.trim()}
+                                    onOpen={() => setExpertiseModal('quals')}
+                                />
+                            )}
                             <HubRow
                                 filled={recognitionFilled}
                                 label={GUEST_SCREEN_COPY.recognitionRowLabel}
@@ -4492,9 +4123,10 @@ function ApplicationForm() {
                         </div>
 
 
-                        {/* ---- Your title (the listing's display name): one
-                            borderless field, no caption, counter at the right
-                            above the underline. ---- */}
+                        {/* ---- Your title (the person's PROFESSIONAL title — a
+                            credential shown in the About block, NOT the listing
+                            name, which is g_title): one borderless field, no
+                            caption, counter at the right above the underline. ---- */}
                         <SubFlowModal
                             open={expertiseModal === 'title'}
                             title={GUEST_SCREEN_COPY.titleModalTitle}
@@ -4507,7 +4139,11 @@ function ApplicationForm() {
                                     type="text"
                                     value={professionalTitle}
                                     onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
-                                    placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
+                                    /* The guest example ("Cold-water swimming
+                                       guide") is guest copy — it must not leak onto a
+                                       trade page. A trade just gets the field under
+                                       its "Your title" heading, no placeholder. */
+                                    placeholder={isGuest ? GUEST_SCREEN_COPY.titlePlaceholder : ''}
                                     className={bigInput}
                                 />
                                 <span className={counterField}>{professionalTitle.length}/40</span>
@@ -4521,14 +4157,16 @@ function ApplicationForm() {
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
                             saveDisabled={!qualifications.trim()}
-                            note={catQualsRequired ? GUEST_SCREEN_COPY.qualsRequiredNote : GUEST_SCREEN_COPY.qualsOptionalNote}
+                            note={GUEST_SCREEN_COPY.qualsOptionalNote}
                         >
                             <div className={fieldWrap}>
                                 <textarea
                                     value={qualifications}
                                     onChange={(e) => setQualifications(e.target.value.slice(0, 150))}
                                     rows={4}
-                                    placeholder={GUEST_SCREEN_COPY.qualsPlaceholder}
+                                    /* Guest wording ("A guest chooses you on this")
+                                       stays off the trade page — empty for a trade. */
+                                    placeholder={isGuest ? GUEST_SCREEN_COPY.qualsPlaceholder : ''}
                                     className={bigArea + ' pr-12'}
                                 />
                                 <span className={counterField}>{qualifications.length}/150</span>
@@ -4579,26 +4217,56 @@ function ApplicationForm() {
                     // single row with no add and its price unit read off the
                     // private/shared answer rather than picked here.
                     const isSlot = shape === 'slot';
+                    // The one-at-a-time shape (massage): a repeating list of
+                    // treatments, each with its OWN length, priced whole for one
+                    // person. It is neither the single-offering slot (sauna) nor a
+                    // 'both' provider — a third presentation: the menu hub's
+                    // repeating list, plus a duration step in the item sub-flow.
+                    const perItemShape = isSlot && slotDurationPerItem(guestCategory);
+                    // The mixed shape (yoga, pottery, painting): the menu is a
+                    // repeating list and EACH item chooses, in its own sub-flow,
+                    // between a shared class (per-person, untimed — the provider
+                    // length) and a one-at-a-time booking (flat, with its own
+                    // duration). Both live on one provider.
+                    const mixedShape = isSlot && slotMixedDuration(guestCategory);
+                    // A traveller's session is EXCLUSIVE by definition — nobody books
+                    // a place in a class held in someone else's cottage — so the
+                    // shared-vs-private question is only asked of a come-to-me
+                    // provider. Fulfilment is answered at g_slot_where (or defaulted),
+                    // both BEFORE this menu screen, so it is known here. A travelling
+                    // mixed provider is treated like the pure one-at-a-time shape:
+                    // every item is a private session, timed, no question.
+                    // Provider-level travel: true only when the whole listing travels
+                    // ('delivery'). A 'both' provider is false here and resolves travel
+                    // PER ITEM below (itemTravels), where the item's location is known.
+                    const travels = fulfilment === 'delivery';
                     // 'offer both' is the only slot where the unit is ambiguous, so
                     // it alone lets the provider add items and choose each one's unit
                     // (session vs person) as a step in the sub-flow. private/shared
                     // stay a single item whose unit is derived, never asked.
                     const slotBoth = isSlot && slotOffer === 'both';
-                    const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null };
+                    const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null, duration: '' };
 
                     const UNIT_WORD: Record<string, string> = GUEST_SCREEN_COPY.priceUnitLabels;
                     const unitWord = (r: { unit: string }) => isSlot
                         ? (String(r.unit) === 'person' ? 'per person' : 'for the session')
                         : (UNIT_WORD[r.unit || 'flat'] || '');
-                    const rowSummary = (r: { price: string; unit: string }) => {
+                    const rowSummary = (r: { price: string; unit: string; duration?: string }) => {
                         const p = String(r.price || '').trim();
-                        return p !== '' && Number(p) > 0
-                            ? '£' + p + (unitWord(r) ? ' · ' + unitWord(r) : '')
-                            : GUEST_SCREEN_COPY.menuRowPrompt;
+                        if (!(p !== '' && Number(p) > 0)) return GUEST_SCREEN_COPY.menuRowPrompt;
+                        // For a treatment, the length is the useful qualifier ("£60 ·
+                        // 60 min"), not a per-person/session unit that never varies.
+                        // A timed row (a treatment, or a mixed provider's flat 1:1)
+                        // reads by its length; a shared class reads by its unit.
+                        const timedRow = perItemShape || (mixedShape && String(r.unit) === 'flat');
+                        const qualifier = timedRow
+                            ? (Number(r.duration) > 0 ? String(Math.round(Number(r.duration))) + ' min' : '')
+                            : unitWord(r);
+                        return '£' + p + (qualifier ? ' · ' + qualifier : '');
                     };
                     // An item is done only when it has BOTH a name and a real price —
-                    // the tick has to mean that. A seeded 'both' row ('Private hire',
-                    // 'Per person') has a name from the start, so keying the tick off
+                    // the tick has to mean that. A seeded 'both' row ('For the whole
+                    // thing', 'Per person') has a name from the start, so keying the tick off
                     // the name alone showed it as done while it still read "Name it
                     // and set a price". This is the completeness the row displays.
                     const isRowComplete = (r: { name: string; price: string }) =>
@@ -4627,7 +4295,7 @@ function ApplicationForm() {
                     const extraRows = items.map((r, i) => ({ r, i })).filter(({ i }) => !usedIdx.has(i));
 
                     const rows = items;
-                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
+                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit' | 'duration' | 'fulfilment', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
                     const openEdit = (i: number) => { setMenuIndex(i); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
@@ -4639,7 +4307,7 @@ function ApplicationForm() {
                     // dropped on cancel and kept OUT of the draft until it has a price
                     // (see the draft filter) — the suggestion itself persists nothing.
                     const openGuidance = (unit: string) => {
-                        setItems((prev) => [...prev, { id: undefined as string | undefined, name: '', description: '', price: '', unit, image: null as string | null }]);
+                        setItems((prev) => [...prev, { id: undefined as string | undefined, name: '', description: '', price: '', unit, image: null as string | null, duration: '' }]);
                         setMenuIndex(items.length); setUnitLocked(true); setMenuStep(0); setPayoutOpen(false);
                     };
                     // On close, a slot drops any item with no real price — so a
@@ -4656,15 +4324,46 @@ function ApplicationForm() {
                     const nameFilled = !!it && String(it.name || '').trim() !== '';
                     const priceNum = it ? (Number(it.price) || 0) : 0;
                     const priceFilled = priceNum > 0;
+                    // PER-ITEM LOCATION. A provider who answered 'both' to "where does
+                    // it happen?" (fulfilment === 'both') sets each item's location in
+                    // its own sub-flow. So `travels` becomes a per-ITEM fact here — a
+                    // travelling item drives the same forced-private+timed path the
+                    // pure-delivery provider gets, a studio item the come-to-me path.
+                    // Until the item's location is answered it reads as not-travelling.
+                    const locationPerItem = isSlot && fulfilment === 'both';
+                    const itemTravels = travels || (locationPerItem && String(it && it.fulfilment) === 'delivery');
+                    const mixedChoiceItem = mixedShape && !itemTravels;
+                    const forcedOneToOneItem = perItemShape || (mixedShape && itemTravels);
                     // The sub-flow is one question a screen. A 'both' slot gets the
                     // unit-choice screen between price and description — but only when
                     // the unit is not already decided by the shape the host opened
                     // (unitLocked). Steps are addressed by KIND, not a bare index.
-                    const stepKinds: Array<'name' | 'price' | 'unit' | 'desc' | 'photo'> = (slotBoth && !unitLocked)
-                        ? ['name', 'price', 'unit', 'desc', 'photo']
-                        : ['name', 'price', 'desc', 'photo'];
+                    // One question a screen. The per-treatment shape inserts DURATION
+                    // between name and price — the one added screen, same craft, no
+                    // per-person/unit step (a treatment is always flat). 'both' keeps
+                    // its unit step; everything else is name → price → desc → photo.
+                    // A come-to-me mixed provider is asked HOW IT IS BOOKED after the
+                    // name (a shared class vs a private session), and only a private
+                    // session (unit 'flat') then gets the duration screen; a class
+                    // skips it and uses the provider length. Massage and a TRAVELLING
+                    // mixed provider skip the question entirely — every item is a
+                    // private session, so it goes straight to the duration screen.
+                    const mixedTimed = mixedChoiceItem && String(it && it.unit) === 'flat';
+                    // A 'both' provider is asked the item's LOCATION right after its
+                    // name — before booked/duration, which depend on whether it travels.
+                    const locStep: Array<'location'> = locationPerItem ? ['location'] : [];
+                    const stepKinds: Array<'name' | 'location' | 'booked' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = forcedOneToOneItem
+                        ? ['name', ...locStep, 'duration', 'price', 'desc', 'photo']
+                        : mixedChoiceItem
+                            ? (mixedTimed
+                                ? ['name', ...locStep, 'booked', 'duration', 'price', 'desc', 'photo']
+                                : ['name', ...locStep, 'booked', 'price', 'desc', 'photo'])
+                            : (slotBoth && !unitLocked)
+                                ? ['name', 'price', 'unit', 'desc', 'photo']
+                                : ['name', ...locStep, 'price', 'desc', 'photo'];
                     const LAST = stepKinds.length - 1;
                     const stepKind = stepKinds[menuStep] ?? 'name';
+                    const durationFilled = !!it && (Number(it.duration) || 0) > 0;
 
                     // The borderless fields shared with the expertise hub sub-flow.
                     const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
@@ -4690,7 +4389,7 @@ function ApplicationForm() {
                             </div>
 
                             <div className="mt-8 space-y-1">
-                                {isSlot ? (
+                                {(isSlot && !perItemShape && !mixedShape) ? (
                                     // A slot's shapes as named rows: a priced one shows
                                     // the host's real item; an unfilled one is guidance
                                     // (the shape's name + what it means) that persists
@@ -4764,16 +4463,19 @@ function ApplicationForm() {
                                     open
                                     title={
                                         stepKind === 'name' ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
-                                            : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
-                                                : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
-                                                    : stepKind === 'desc' ? GUEST_SCREEN_COPY.menuDescTitle
-                                                        : GUEST_SCREEN_COPY.menuPhotoTitle
+                                            : stepKind === 'location' ? GUEST_SCREEN_COPY.menuLocationTitle
+                                            : stepKind === 'booked' ? GUEST_SCREEN_COPY.menuBookedTitle
+                                            : stepKind === 'duration' ? 'How long is it?'
+                                                : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
+                                                    : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
+                                                        : stepKind === 'desc' ? GUEST_SCREEN_COPY.menuDescTitle
+                                                            : GUEST_SCREEN_COPY.menuPhotoTitle
                                     }
                                     onClose={closeItem}
                                     onBack={menuStep > 0 ? () => setMenuStep((s) => s - 1) : undefined}
-                                    onRemove={(!isSlot || slotBoth) ? () => removeItem(menuIndex) : undefined}
+                                    onRemove={(!isSlot || slotBoth || perItemShape || mixedShape) ? () => removeItem(menuIndex) : undefined}
                                     saveLabel={menuStep === LAST ? GUEST_SCREEN_COPY.save : GUEST_SCREEN_COPY.menuNext}
-                                    saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'price' && !priceFilled)}
+                                    saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'location' && !String(it.fulfilment || '')) || (stepKind === 'duration' && !durationFilled) || (stepKind === 'price' && !priceFilled)}
                                     onSave={menuStep === LAST ? closeItem : () => setMenuStep((s) => s + 1)}
                                     note={menuStep === LAST ? GUEST_SCREEN_COPY.menuPhotoPrompt : undefined}
                                 >
@@ -4785,6 +4487,110 @@ function ApplicationForm() {
                                                 placeholder={GUEST_SCREEN_COPY.menuNameExamples[guestCategory] ?? GUEST_SCREEN_COPY.menuNameExampleFallback}
                                                 className={bigInput}
                                             />
+                                        </div>
+                                    )}
+                                    {stepKind === 'location' && (
+                                        // The per-item location, for a provider who runs
+                                        // both studio and travelling sessions. Picking
+                                        // "I come to the guest" makes the item a private
+                                        // session (unit 'flat') — nobody joins a class held
+                                        // in someone else's cottage — so the shared/private
+                                        // question is skipped for it and it goes straight to
+                                        // its own length. A studio item keeps the normal
+                                        // path (a class or a private session, its choice).
+                                        <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuLocationTitle} className="mx-auto w-full max-w-md space-y-3">
+                                            {([
+                                                ['collection', GUEST_SCREEN_COPY.slotWhereAtPlace, GUEST_SCREEN_COPY.slotWhereAtPlaceHint],
+                                                ['delivery', GUEST_SCREEN_COPY.slotWhereTravel, GUEST_SCREEN_COPY.slotWhereTravelHint],
+                                            ] as const).map(([f, label, hint]) => {
+                                                const on = String(it.fulfilment) === f;
+                                                return (
+                                                    <button
+                                                        key={f}
+                                                        type="button"
+                                                        role="radio"
+                                                        aria-checked={on}
+                                                        onClick={() => {
+                                                            setField(menuIndex, 'fulfilment', f);
+                                                            // A travelling item is always private.
+                                                            if (f === 'delivery') setField(menuIndex, 'unit', 'flat');
+                                                        }}
+                                                        className={'flex w-full items-start gap-3 rounded-2xl border px-4 py-4 text-left transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                    >
+                                                        <span className={'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                            <Check className="h-4 w-4" strokeWidth={3} />
+                                                        </span>
+                                                        <span>
+                                                            <span className="block font-semibold text-slate-900">{label}</span>
+                                                            <span className="block text-sm text-slate-500">{hint}</span>
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    {stepKind === 'booked' && (
+                                        // The per-item timed-or-not choice for a mixed
+                                        // provider. A shared class is per-person and uses
+                                        // the provider's session length; a one-at-a-time
+                                        // booking is a whole session for one, with its own
+                                        // length asked next. Switching to a class clears any
+                                        // length it may have carried.
+                                        <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuBookedTitle} className="mx-auto w-full max-w-md space-y-3">
+                                            {([
+                                                ['person', GUEST_SCREEN_COPY.menuBookedSharedLabel, GUEST_SCREEN_COPY.menuBookedSharedHint],
+                                                ['flat', GUEST_SCREEN_COPY.menuBookedPrivateLabel, GUEST_SCREEN_COPY.menuBookedPrivateHint],
+                                            ] as const).map(([u, label, hint]) => {
+                                                const on = String(it.unit) === u;
+                                                return (
+                                                    <button
+                                                        key={u}
+                                                        type="button"
+                                                        role="radio"
+                                                        aria-checked={on}
+                                                        onClick={() => {
+                                                            setField(menuIndex, 'unit', u);
+                                                            if (u === 'person') setField(menuIndex, 'duration', '');
+                                                        }}
+                                                        className={'flex w-full items-start gap-3 rounded-2xl border px-4 py-4 text-left transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                    >
+                                                        <span className={'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                            <Check className="h-4 w-4" strokeWidth={3} />
+                                                        </span>
+                                                        <span>
+                                                            <span className="block font-semibold text-slate-900">{label}</span>
+                                                            <span className="block text-sm text-slate-500">{hint}</span>
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    {stepKind === 'duration' && (
+                                        // The one added screen for the per-treatment
+                                        // shape — the same NumberStepper the single
+                                        // provider-length used, now per treatment, in
+                                        // 15-minute steps. The guest sees this length;
+                                        // the day reserves it (plus any reset gap).
+                                        //
+                                        // NOT solid: this is the one gated stepper — its
+                                        // Next is disabled until a duration is set
+                                        // (durationFilled). Greyed means the first press
+                                        // of + or − adopts the shown 60 (staying, not
+                                        // jumping to 75) and turns it solid, so accepting
+                                        // the suggestion is one press, not a round trip.
+                                        <div className="flex flex-col items-center">
+                                            <NumberStepper
+                                                value={it.duration || ''}
+                                                onChange={(v: string) => setField(menuIndex, 'duration', v)}
+                                                min={15} max={480} step={15} suggestion={60}
+                                                size="lg" suffix=" min"
+                                            />
+                                            <p className="mt-4 text-center text-sm text-slate-500">How long a guest books this treatment for.</p>
                                         </div>
                                     )}
                                     {stepKind === 'price' && (
@@ -4977,12 +4783,32 @@ function ApplicationForm() {
                     way made-to-order's own fork does, so g_area then shows an
                     address or the coverage regions. The centred H1 asks the
                     question; here are the two cards. */}
+                {/* THE BOOKING-SHAPE FORK — 'something else' only. Three cards in
+                    what the provider sells; the pick sets shape (and a matching
+                    fulfilment default) so everything after follows a real category
+                    of that shape. Sits before g_area, which reads the shape. */}
+                {onStep('g_shape') && isGuest && (
+                <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        {[
+                            { v: 'slot', t: GUEST_SCREEN_COPY.shapeSlotLabel, d: GUEST_SCREEN_COPY.shapeSlotHint },
+                            { v: 'made_to_order', t: GUEST_SCREEN_COPY.shapeMadeLabel, d: GUEST_SCREEN_COPY.shapeMadeHint },
+                            { v: 'comes_to_you', t: GUEST_SCREEN_COPY.shapeTravelLabel, d: GUEST_SCREEN_COPY.shapeTravelHint },
+                        ].map((o) => (
+                            <ChoiceCard key={o.v} selected={shape === o.v} onSelect={() => pickShape(o.v)} title={o.t} hint={o.d} />
+                        ))}
+                    </div>
+                </section>
+                )}
+
                 {onStep('g_slot_where') && isGuest && shape === 'slot' && (
                 <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-3">
                         {[
                             { v: 'collection', t: GUEST_SCREEN_COPY.slotWhereAtPlace, d: GUEST_SCREEN_COPY.slotWhereAtPlaceHint },
                             { v: 'delivery', t: GUEST_SCREEN_COPY.slotWhereTravel, d: GUEST_SCREEN_COPY.slotWhereTravelHint },
+                            // 'both' moves the location into each item's sub-flow.
+                            { v: 'both', t: GUEST_SCREEN_COPY.slotWhereBoth, d: GUEST_SCREEN_COPY.slotWhereBothHint },
                         ].map((o) => (
                             <ChoiceCard key={o.v} selected={fulfilment === o.v} onSelect={() => setFulfilment(o.v)} title={o.t} hint={o.d} />
                         ))}
@@ -5000,103 +4826,6 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {onStep('g_slot_hours') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
-                    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                    const dayOpen = (d: number) => schedule.some((r) => r.day === d);
-                    const selected = schedule.slice().sort((a, b) => a.day - b.day);
-                    // Tap a day on/off. A newly opened day takes the shared hours as
-                    // its starting point (the same in either mode); the schedule is
-                    // empty until this first tap, so nothing is written before it.
-                    const toggleDay = (d: number) => {
-                        if (dayOpen(d)) setSchedule(schedule.filter((r) => r.day !== d));
-                        else setSchedule([...schedule, { day: d, open: sharedOpen, close: sharedClose }].sort((a, b) => a.day - b.day));
-                    };
-                    // The one hours control: change it and every chosen day follows.
-                    const setShared = (field: 'open' | 'close', val: string) => {
-                        if (field === 'open') setSharedOpen(val); else setSharedClose(val);
-                        setSchedule(schedule.map((r) => ({ ...r, [field]: val })));
-                    };
-                    const setDayTime = (d: number, field: 'open' | 'close', val: string) =>
-                        setSchedule(schedule.map((r) => (r.day === d ? { ...r, [field]: val } : r)));
-                    // Fold the per-day hours back to one set: adopt the first open
-                    // day's hours for all, so the simple control shows the truth.
-                    const collapseToSimple = () => {
-                        const first = selected[0];
-                        const o = first ? first.open : sharedOpen;
-                        const c = first ? first.close : sharedClose;
-                        setSharedOpen(o); setSharedClose(c);
-                        setSchedule(schedule.map((r) => ({ ...r, open: o, close: c })));
-                        setHoursMode('simple');
-                    };
-                    // Select-all: turns every day on (keeping any hours already set,
-                    // new days taking the shared hours), and clears when all are on.
-                    // Writes nothing until pressed, like the day toggles themselves.
-                    const allDaysOn = schedule.length === 7;
-                    const toggleAllDays = () => {
-                        if (allDaysOn) { setSchedule([]); return; }
-                        const byDay = new Map(schedule.map((r) => [r.day, r]));
-                        setSchedule([0, 1, 2, 3, 4, 5, 6].map((d) => byDay.get(d) || { day: d, open: sharedOpen, close: sharedClose }));
-                    };
-                    const timeField = 'rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-700';
-                    // ONE decision then an optional refinement: pick the days, set one
-                    // set of hours for all of them, and only reach for per-day hours
-                    // if you actually want them. No seven-row settings table.
-                    return (
-                        <section className="mb-8 md:max-w-xl md:mx-auto">
-                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center">When are you open?</h1>
-                            <p className="mt-2 text-center text-sm leading-relaxed text-slate-500">Pick your days, then set the hours. You can give particular days their own hours after.</p>
-
-                            <div className="mt-10 flex flex-col items-center gap-8">
-                                {/* One row of seven day toggles, then a select-all. */}
-                                <div className="flex flex-wrap items-center justify-center gap-2">
-                                    {DAYS.map((label, d) => {
-                                        const on = dayOpen(d);
-                                        return (
-                                            <button key={d} type="button" onClick={() => toggleDay(d)} aria-pressed={on} title={label}
-                                                className={'h-11 w-11 rounded-full text-sm font-semibold transition ' + (on ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
-                                                {label[0]}<span className="sr-only">{label}</span>
-                                            </button>
-                                        );
-                                    })}
-                                    <button type="button" onClick={toggleAllDays} aria-pressed={allDaysOn}
-                                        className={'h-11 rounded-full px-4 text-sm font-semibold transition ' + (allDaysOn ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
-                                        {allDaysOn ? 'Clear' : 'Every day'}
-                                    </button>
-                                </div>
-
-                                {/* The hours — a single control for all the chosen days,
-                                    or, if refined, one row per day. Shown once a day is on. */}
-                                {selected.length > 0 && (hoursMode === 'simple' ? (
-                                    <div className="flex flex-col items-center gap-4">
-                                        <div className="flex items-center gap-3 text-lg">
-                                            <input type="time" value={sharedOpen} onChange={(e) => setShared('open', e.target.value)} className={timeField} aria-label="Opening time" />
-                                            <span className="text-slate-400">to</span>
-                                            <input type="time" value={sharedClose} onChange={(e) => setShared('close', e.target.value)} className={timeField} aria-label="Closing time" />
-                                        </div>
-                                        <button type="button" onClick={() => setHoursMode('perday')} className="text-sm font-medium text-emerald-700 underline-offset-2 hover:underline">
-                                            Set different hours for particular days
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex w-full flex-col items-center gap-3">
-                                        {selected.map((r) => (
-                                            <div key={r.day} className="flex items-center gap-3">
-                                                <span className="w-10 text-sm font-semibold text-slate-700">{DAYS[r.day]}</span>
-                                                <input type="time" value={r.open} onChange={(e) => setDayTime(r.day, 'open', e.target.value)} className={timeField} aria-label={DAYS[r.day] + ' opening time'} />
-                                                <span className="text-slate-400">to</span>
-                                                <input type="time" value={r.close} onChange={(e) => setDayTime(r.day, 'close', e.target.value)} className={timeField} aria-label={DAYS[r.day] + ' closing time'} />
-                                            </div>
-                                        ))}
-                                        <button type="button" onClick={collapseToSimple} className="mt-1 text-sm font-medium text-emerald-700 underline-offset-2 hover:underline">
-                                            Use the same hours for every day
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-
-                        </section>
-                    );
-                })()}
 
                 {/* Who they are — a guest trade only. A guest is choosing
                     someone to come into the cottage they are staying in, so the
@@ -5113,121 +4842,16 @@ function ApplicationForm() {
                     down to zero (a business started this year has none and we'd
                     still take them), and it shows a suggestion but stores nothing
                     until touched — the same rule as the where-and-when counts. */}
-                {/* VERIFY YOUR EMAIL — the account gate, straight after the
-                    category pick. A one-time code, so the rest of the wizard runs
-                    signed in: photos upload, everything saves to the database, and
-                    the finish screen is a real submit. No password here — the code
-                    is the proof, and it is what stops anyone building on an address
-                    they don't control. */}
-                {onStep('g_verify') && isGuest && (
-                <section className="mb-8 md:max-w-md">
-                    <p className="text-slate-600 [text-wrap:pretty]">
-                        We’ll email you a code to confirm this address. Enter it and you’re in —
-                        everything you add from here is saved to your account as you go.
-                    </p>
-
-                    <div className="mt-8 space-y-5">
-                        <div>
-                            <label htmlFor="otp-name" className="block text-xs font-medium text-slate-500 mb-2">
-                                Your name <span className="text-slate-400">(optional)</span>
-                            </label>
-                            {/* Captured here, at the account step, because it is
-                                account information — it becomes your listing title,
-                                since a guest experience is a person, not a business.
-                                Not asked again later in the flow. */}
-                            <input
-                                id="otp-name"
-                                type="text"
-                                autoComplete="name"
-                                value={otpName}
-                                onChange={(e) => setOtpName(e.target.value)}
-                                disabled={otpSent}
-                                placeholder={GUEST_SCREEN_COPY.verifyNamePlaceholder}
-                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="otp-email" className="block text-xs font-medium text-slate-500 mb-2">
-                                Your email
-                            </label>
-                            <input
-                                id="otp-email"
-                                type="email"
-                                inputMode="email"
-                                autoComplete="email"
-                                value={otpEmail}
-                                onChange={(e) => setOtpEmail(e.target.value)}
-                                disabled={otpSent}
-                                placeholder={GUEST_SCREEN_COPY.verifyEmailPlaceholder}
-                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
-                            />
-                        </div>
-
-                        {!otpSent ? (
-                            <button
-                                type="button"
-                                onClick={sendOtp}
-                                // Email alone unlocks the code. The name must not
-                                // block a stranger on the first screen — it's the
-                                // cheapest place to give up. Blank is no worse than
-                                // before; it's captured at creation when given, and
-                                // can be set later otherwise.
-                                disabled={otpBusy || !otpEmail.trim()}
-                                className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
-                                    + (otpBusy || !otpEmail.trim()
-                                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                        : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
-                            >
-                                {otpBusy ? 'Sending…' : 'Email me a code'}
-                            </button>
-                        ) : (
-                            <>
-                                <div>
-                                    <label htmlFor="otp-code" className="block text-xs font-medium text-slate-500 mb-2">
-                                        The code we emailed you
-                                    </label>
-                                    <input
-                                        id="otp-code"
-                                        type="text"
-                                        inputMode="numeric"
-                                        autoComplete="one-time-code"
-                                        value={otpCode}
-                                        onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))}
-                                        placeholder="123456"
-                                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-2xl tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                    />
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={verifyOtp}
-                                    disabled={otpBusy || !otpCode.trim()}
-                                    className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
-                                        + (otpBusy || !otpCode.trim()
-                                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                            : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
-                                >
-                                    {otpBusy ? 'Checking…' : 'Verify and carry on'}
-                                </button>
-                                <p className="text-sm text-slate-500">
-                                    No code yet? Check spam, or{' '}
-                                    <button type="button" onClick={sendOtp} disabled={otpBusy}
-                                        className="font-semibold text-emerald-700 hover:text-emerald-800 underline disabled:opacity-60">
-                                        send another
-                                    </button>.
-                                </p>
-                            </>
-                        )}
-
-                        {otpError && (
-                            <p data-problem className="text-sm text-rose-700">{otpError}</p>
-                        )}
-                    </div>
-                </section>
-                )}
-
-                {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
+                {/* The years opener — shared by both flows now. A host trade opens
+                    on this same counter, saved the same way (guest_details.
+                    years_experience). */}
+                {onStep('g_you') && (
                 <section className="flex-1 flex flex-col items-center justify-center">
-                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={YEARS_DEFAULT} size="lg" solid />
+                    {/* NOT solid: the suggested 5 shows greyed as a placeholder, not
+                        as a black already-answered value. The first press of + or −
+                        adopts it and turns it black; Next stays greyed until then
+                        (see the disabled logic in the footer). */}
+                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={YEARS_DEFAULT} size="lg" />
                 </section>
                 )}
 
@@ -5246,9 +4870,9 @@ function ApplicationForm() {
                 <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
                     <div className="grid gap-3 sm:grid-cols-3">
                         {([
-                            { v: 'private', t: 'One group at a time', d: 'The whole thing is theirs — a private hire. One booking fills it.' },
-                            { v: 'shared', t: 'Several people join', d: 'A class or a tasting. Priced per person, up to a number you set.' },
-                            { v: 'both', t: 'Offer both', d: 'Let guests pick a private hire or a single place.' },
+                            { v: 'private', t: GUEST_SCREEN_COPY.slotBasisPrivateLabel, d: GUEST_SCREEN_COPY.slotBasisPrivateHint },
+                            { v: 'shared', t: GUEST_SCREEN_COPY.slotBasisSharedLabel, d: GUEST_SCREEN_COPY.slotBasisSharedHint },
+                            { v: 'both', t: GUEST_SCREEN_COPY.slotBasisBothLabel, d: GUEST_SCREEN_COPY.slotBasisBothHint },
                         ] as const).map((o) => (
                             <ChoiceCard key={o.v} selected={slotOffer === o.v} onSelect={() => applyOffer(o.v)} title={o.t} hint={o.d} />
                         ))}
@@ -5267,10 +4891,33 @@ function ApplicationForm() {
                     ceiling (g_capacity) is the max above it, so the stepper caps
                     there; default 1 = no minimum. The route is the real gate —
                     this is the convenience floor. */}
-                {onStep('g_slot_min') && isGuest && shape === 'slot' && offeringHasShared(slotOffer) && (
+                {onStep('g_slot_min') && isGuest && shape === 'slot' && (offeringHasShared(slotOffer) || slotMixedComeToMe) && (
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={slotMinPeople} onChange={setSlotMinPeople} min={1} max={Math.max(1, parseInt(maxGuests, 10) || CAPACITY_DEFAULT_SLOT)} suggestion={1} size="lg" solid suffix={GUEST_SCREEN_COPY.slotMinSuffix} />
                 </section>
+                )}
+
+                {/* THE LISTING'S NAME — what the experience is called. The h1 a
+                    guest reads, written to business_name. One centred field, like
+                    the years/guests openers; the professional title (a credential)
+                    is asked separately on g_creds and shows in the About block. */}
+                {onStep('g_title') && isGuest && (
+                    <section className="mb-8 md:max-w-xl md:mx-auto">
+                        <p className="-mt-6 mb-10 text-center text-sm text-slate-500 [text-wrap:balance]">
+                            {GUEST_SCREEN_COPY.experienceTitleSubtext}
+                        </p>
+                        <div className="relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400">
+                            <input
+                                type="text"
+                                value={listingTitle}
+                                onChange={(e) => setListingTitle(e.target.value.slice(0, 60))}
+                                placeholder={GUEST_SCREEN_COPY.experienceTitlePlaceholder}
+                                className="w-full bg-transparent pr-12 text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none"
+                                autoFocus
+                            />
+                            <span className="pointer-events-none absolute bottom-1 right-0 text-xs text-slate-400">{listingTitle.length}/60</span>
+                        </div>
+                    </section>
                 )}
 
                 {/* WHAT A GUEST CAN EXPECT — rebuilt to the flow's own craft: no
@@ -5480,376 +5127,84 @@ function ApplicationForm() {
                     Deliberately not saved anywhere: there is no column for
                     them on a provider and there should not be one, so the
                     panel says so rather than quietly losing what is typed. */}
-                {onStep('prices') && trade === 'droplet' && (
+                {/* What you charge — one shape for every trade. Tick "I provide
+                    a quote", or give an hourly rate or a flat fee; a call-out fee
+                    is optional on top. A row is valid with a quote, an hourly rate
+                    or a flat fee. No bedroom or plot-size bands any more.
+
+                    Window cleaning is the one exception: a window cleaner quotes
+                    the job (the price turns on the property, which the bands used
+                    to stand in for), so it shows only the quote tick and an
+                    optional call-out fee — no hourly rate or flat fee. */}
+                {onStep('prices') && (
                     <section className="mb-8">
-                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
-                            <div className="flex items-start justify-between gap-3 mb-1">
-                                <h2 className="text-sm font-semibold text-slate-900">About the property</h2>
-                                <span className="shrink-0 text-xs font-semibold text-slate-500 bg-slate-200 rounded-full px-2.5 py-1">
-                                    Preview
-                                </span>
-                            </div>
-                            <p className="text-sm text-slate-500 mb-5">
-                                The owner will answer these, not you. Shown here so you can see what you
-                                will be given before you price a job. Nothing here is saved yet.
-                            </p>
-
-                            {/* Not two equal halves: the pane count is a ten-rem box and the
-                                building types are four short words that want one line.
-                                An even split gave the buttons 416px when they need 463,
-                                so the last one wrapped with space beside it. */}
-                            <div className="md:grid md:grid-cols-[1fr_auto] md:gap-6 md:items-start">
-                            <div className="mb-5 md:mb-0">
-                                <div className="text-sm font-semibold text-slate-900 mb-2">What kind of building</div>
-                                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                                    {BUILDING_TYPES.map((b) => {
-                                        const on = buildingType === b.key;
-                                        return (
-                                            <button
-                                                key={b.key}
-                                                type="button"
-                                                onClick={() => setBuildingType(on ? '' : b.key)}
-                                                aria-pressed={on}
-                                                className={`rounded-xl border px-3 py-2.5 text-sm text-left transition ${
-                                                    on
-                                                        ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900'
-                                                        : 'border-slate-300 text-slate-700 hover:border-slate-400 bg-white'
-                                                }`}
-                                            >
-                                                {b.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label htmlFor="panes" className="block text-sm font-semibold text-slate-900 mb-2">
-                                    Number of panes
-                                </label>
-                                <input
-                                    id="panes"
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={panes}
-                                    onChange={(e) => setPanes(e.target.value)}
-                                    placeholder="24"
-                                    className="w-full sm:max-w-[10rem] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                />
-                            </div>
-                            </div>
-                        </div>
-                    </section>
-                )}
-
-                {/* What they charge. Driven by the trade rather than by a
-                    choice, so two cleaners are always comparable and a host is
-                    never asked to weigh a price against a rate. */}
-                {/* The either/or, and the first thing on the prices step for
-                    a cleaner. Every cleaner sees it, a public applicant
-                    included — the in-house gate came off on 29 Aug 2026. What
-                    it costs is written down in lib/serviceProviders.ts above
-                    offersHourlyChoice: an external cleaner on hourly has no
-                    knowable total at acceptance, so her commission cannot be
-                    computed there. Deferred to enquiries, where the hours are
-                    agreed, and nothing is on a live money path yet. */}
-                {onStep('prices') && hourlyAllowed && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">How do you charge?</h2>
-                        <p className="text-sm text-slate-500 mb-3">
-                            One or the other. You can change it later.
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">What you charge</h2>
+                        <p className="text-sm text-slate-500 mb-4">
+                            {trade === 'droplet'
+                                ? <>Tick &ldquo;I provide a quote&rdquo;. Add a call-out fee if you charge one.</>
+                                : <>Tick &ldquo;I provide a quote&rdquo;, or give an hourly rate or a flat fee. Add a call-out fee if you charge one.</>}
                         </p>
 
-                        <div className="flex flex-wrap gap-2">
-                            {[
-                                { key: 'bands', label: 'A price per clean' },
-                                { key: 'hourly', label: 'A price per hour' },
-                            ].map((option) => (
-                                <button
-                                    key={option.key}
-                                    type="button"
-                                    onClick={() => setPricingChoice(option.key as 'bands' | 'hourly')}
-                                    aria-pressed={pricingChoice === option.key}
-                                    className={`rounded-full border px-5 py-2.5 text-sm font-semibold transition ${
-                                        pricingChoice === option.key
-                                            ? 'border-emerald-700 bg-emerald-700 text-white'
-                                            : 'border-slate-300 text-slate-700 hover:border-slate-500'
-                                    }`}
-                                >
-                                    {option.label}
-                                </button>
-                            ))}
-                        </div>
-                    </section>
-                )}
-
-                {/* The hourly half: what she charges, and which sizes she will
-                    take. The second question is not optional dressing — a
-                    blank band means "I do not cover this", so without an
-                    explicit answer an hourly cleaner would drop out of every
-                    band-filtered list at once and look like nobody had
-                    searched for her. */}
-                {onStep('prices') && onHourly && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your hourly rate</h2>
-                        <p className="text-sm text-slate-500 mb-3">
-                            What you charge for an hour of cleaning.
-                        </p>
-
-                        <div className="flex items-center gap-2 md:max-w-xs">
-                            <span className="text-slate-500">&pound;</span>
+                        <label className="flex items-start gap-2.5 mb-5 text-sm text-slate-800">
                             <input
-                                type="text"
-                                inputMode="decimal"
-                                value={billableHourlyRate}
-                                onChange={(e) => setBillableHourlyRate(e.target.value)}
-                                placeholder="18"
-                                className="w-full min-w-0 rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                type="checkbox"
+                                checked={provideQuote}
+                                onChange={(e) => setProvideQuote(e.target.checked)}
+                                className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
                             />
-                            <span className="text-sm text-slate-500 whitespace-nowrap">an hour</span>
-                        </div>
-                        {problemFor('billable_hourly_rate') && (
-                            <p data-problem className="text-sm text-rose-700 mt-1.5">
-                                {problemFor('billable_hourly_rate')!.message}
-                            </p>
-                        )}
+                            <span>
+                                <span className="font-semibold">I provide a quote</span>
+                                <span className="block text-slate-500">You&apos;ll price the job after a look, so there&apos;s no set price up front.</span>
+                            </span>
+                        </label>
 
-                        <h3 className="text-sm font-semibold text-slate-900 mt-6 mb-1.5">
-                            Which sizes will you take?
-                        </h3>
-                        <p className="text-sm text-slate-500 mb-3">
-                            Owners search by the size of the property. Leave one off and you will not be
-                            shown for it.
-                        </p>
-
-                        <div className="space-y-2">
-                            {bands.map((band) => {
-                                const on = coveredBands.indexOf(band.key) !== -1;
-
-                                return (
-                                    <label
-                                        key={band.key}
-                                        className={`flex items-center gap-3 rounded-xl border p-3.5 cursor-pointer transition ${
-                                            on ? 'border-emerald-700 bg-emerald-50/40' : 'border-slate-300'
-                                        }`}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={on}
-                                            onChange={() =>
-                                                setCoveredBands(on
-                                                    ? coveredBands.filter((b) => b !== band.key)
-                                                    : [...coveredBands, band.key])
-                                            }
-                                            className="w-4 h-4 rounded border-slate-300 shrink-0"
-                                        />
-                                        <span className="text-sm font-medium text-slate-900">{band.label}</span>
-                                    </label>
-                                );
-                            })}
-                        </div>
-                        {problemFor('covered_bands') && (
-                            <p data-problem className="text-sm text-rose-700 mt-2">
-                                {problemFor('covered_bands')!.message}
-                            </p>
-                        )}
-                    </section>
-                )}
-
-                {onStep('prices') && model === 'bands' && !onHourly && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your prices</h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            Leave blank any size you do not cover.
-                        </p>
-
-                        <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
-                            {bands.map((band) => {
-                                const entry = prices[band.key] || { price: '', typical_hours: '' };
-                                const priceProblem = problemFor('price_' + band.key);
-                                const hoursProblem = problemFor('hours_' + band.key);
-
-                                return (
-                                    <div key={band.key} className="rounded-xl border border-slate-300 p-3.5">
-                                        <div className="text-sm font-medium text-slate-900 mb-2.5">{band.label}</div>
-
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 mb-1">Price per visit</label>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-slate-500">&pound;</span>
-                                                <input
-                                                    type="text"
-                                                    inputMode="decimal"
-                                                    value={entry.price}
-                                                    onChange={(e) => setBand(band.key, 'price', e.target.value)}
-                                                    placeholder="Leave blank if you do not cover this"
-                                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                />
-                                            </div>
-                                            {priceProblem && (
-                                                <p data-problem className="text-xs text-rose-700 mt-1">{priceProblem.message}</p>
-                                            )}
-
-                                            {/* Optional, and the single biggest
-                                                thing on the page for the least
-                                                it does — so it is a link until
-                                                somebody wants it. */}
-                                            {!showsTimeGuide(trade) ? null : hoursOpen[band.key] ? (
-                                                <div className="mt-2.5">
-                                                    <label className="block text-xs font-semibold text-slate-500 mb-1">
-                                                        Usually takes
-                                                    </label>
-                                                    <div className="flex items-center gap-2">
-                                                        <input
-                                                            type="text"
-                                                            inputMode="decimal"
-                                                            value={entry.typical_hours}
-                                                            onChange={(e) => setBand(band.key, 'typical_hours', e.target.value)}
-                                                            placeholder="2"
-                                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                        />
-                                                        <span className="text-sm text-slate-500 whitespace-nowrap">hours</span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setBand(band.key, 'typical_hours', '');
-                                                                setHoursOpen((prev) => ({ ...prev, [band.key]: false }));
-                                                            }}
-                                                            aria-label="Remove the time guide"
-                                                            className="shrink-0 w-8 h-8 rounded-full border border-slate-300 flex items-center justify-center text-slate-500"
-                                                        >
-                                                            <X className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    </div>
-                                                    {hoursProblem && (
-                                                        <p data-problem className="text-xs text-rose-700 mt-1">{hoursProblem.message}</p>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setHoursOpen((prev) => ({ ...prev, [band.key]: true }))}
-                                                    className="mt-2 text-xs font-semibold text-emerald-700 hover:text-emerald-800 underline"
-                                                >
-                                                    Add a time guide
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        {entry.price && Number(entry.price) > 0 && (
-                                            <p className="text-xs text-slate-500 mt-2.5">
-                                                Shows as &ldquo;&pound;{entry.price} per visit
-                                                {entry.typical_hours && Number(entry.typical_hours) > 0
-                                                    ? ', usually about ' + entry.typical_hours + ' hours'
-                                                    : ''}
-                                                &rdquo;
-                                            </p>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {problemFor('prices') && (
-                            <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('prices')!.message}</p>
-                        )}
-
-                        {/* Beside the number it governs, not a section away.
-                            This is the one a provider will argue about later. */}
-                        <p className="text-sm text-slate-600 mt-3">
-                            <strong className="font-semibold text-slate-900">Your price is the most you can charge.</strong>
-                        </p>
-
-                    </section>
-                )}
-
-                {onStep('prices') && trade === 'droplet' && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Other ways to price</h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            Fill in whichever you actually use and leave the rest blank. We are asking
-                            window cleaners which of these fits before we settle on one.
-                        </p>
-
-                        <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4 md:items-start">
-                            <div className="rounded-xl border border-slate-300 p-4">
-                                <h3 className="text-sm font-semibold text-slate-900 mb-3">
-                                    Call-out plus a rate per pane
-                                </h3>
-                                <div className="space-y-2.5">{priceRows('pane_flat')}</div>
-                            </div>
-
-                            <div className="rounded-xl border border-slate-300 p-4">
-                                <h3 className="text-sm font-semibold text-slate-900 mb-1">
-                                    A rate per pane, by storey
-                                </h3>
-                                <p className="text-sm text-slate-500 mb-3">
-                                    For where the ladder work is what costs.
-                                </p>
-                                <div className="space-y-2.5">{priceRows('pane_storey')}</div>
-                            </div>
-
-                        </div>
-                    </section>
-                )}
-
-                {/* Rates, for the trades that cannot be sized in advance.
-                    Two shapes behind one section:
-
-                      callout_hourly  turn up, diagnose, charge for the time.
-                      quoted          look at it, then say what it costs.
-
-                    The quoted trades used to be asked for an hourly rate as
-                    well, which no roofer has for a re-slate — so the number
-                    would have been invented to get past the form, and an
-                    invented number is one a host can hold them to. */}
-                {onStep('prices') && isCallout && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your rates</h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            {model === 'callout_hourly'
-                                ? 'A repair cannot be sized in advance, so this is an hourly rate — with a call-out fee on top if you charge one — rather than a price per property size.'
-                                : 'This work is quoted once you have seen it, so there is nothing to set here beyond a call-out fee if you charge one.'}
-                        </p>
-
-                        <div className="grid sm:grid-cols-2 gap-4">
+                        <div className="grid sm:grid-cols-2 gap-4 md:max-w-xl">
+                            {trade !== 'droplet' && (
                             <div>
-                                {/* Optional on both models, so the label says
-                                    so on both. It read as required for the
-                                    hourly trades while behaving optional,
-                                    which is the worst of the three. */}
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">
-                                    Call-out fee
-                                    <span className="font-normal text-slate-400"> (optional)</span>
+                                    Hourly rate <span className="font-normal text-slate-400">(optional)</span>
                                 </label>
                                 <div className="flex items-center gap-2">
                                     <span className="text-slate-500">&pound;</span>
-                                    {/* No placeholder and no suggested amount.
-                                        If every roofer showed the same figure
-                                        it would read as a platform charge
-                                        rather than as their own price. */}
-                                    <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={calloutFee}
-                                        onChange={(e) => setCalloutFee(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                    />
+                                    <input type="text" inputMode="decimal" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                </div>
+                                {problemFor('hourly_rate') && (
+                                    <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('hourly_rate')!.message}</p>
+                                )}
+                            </div>
+                            )}
+                            {trade !== 'droplet' && (
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                    Flat fee <span className="font-normal text-slate-400">(optional)</span>
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">&pound;</span>
+                                    <input type="text" inputMode="decimal" value={flatFee} onChange={(e) => setFlatFee(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                </div>
+                                {problemFor('flat_fee') && (
+                                    <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('flat_fee')!.message}</p>
+                                )}
+                            </div>
+                            )}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                    Call-out fee <span className="font-normal text-slate-400">(optional)</span>
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">&pound;</span>
+                                    <input type="text" inputMode="decimal" value={calloutFee} onChange={(e) => setCalloutFee(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
                                 </div>
                                 {problemFor('callout_fee') && (
                                     <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('callout_fee')!.message}</p>
                                 )}
-
-                                {/* Their offer, not our rule. Only worth asking
-                                    once there is a fee for it to apply to. */}
                                 {calloutFee.trim() !== '' && (
                                     <label className="flex items-start gap-2.5 mt-2.5 text-sm text-slate-800">
-                                        <input
-                                            type="checkbox"
-                                            checked={calloutWaived}
-                                            onChange={(e) => setCalloutWaived(e.target.checked)}
-                                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
-                                        />
+                                        <input type="checkbox" checked={calloutWaived} onChange={(e) => setCalloutWaived(e.target.checked)}
+                                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0" />
                                         <span>
                                             Waived if the job goes ahead
                                             {calloutLine(calloutFee, calloutWaived) && (
@@ -5861,164 +5216,44 @@ function ApplicationForm() {
                                     </label>
                                 )}
                             </div>
-
-                            {model === 'callout_hourly' && (
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-500 mb-1">Hourly rate</label>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-slate-500">&pound;</span>
-                                        <input
-                                            type="text"
-                                            inputMode="decimal"
-                                            value={hourlyRate}
-                                            onChange={(e) => setHourlyRate(e.target.value)}
-                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                        />
-                                    </div>
-                                    {problemFor('hourly_rate') && (
-                                        <p data-problem className="text-xs text-rose-700 mt-1">{problemFor('hourly_rate')!.message}</p>
-                                    )}
-                                </div>
-                            )}
                         </div>
+
+                        {problemFor('prices') && (
+                            <p data-problem className="text-sm text-rose-700 mt-3">
+                                {trade === 'droplet'
+                                    ? 'Tick “I provide a quote”.'
+                                    : problemFor('prices')!.message}
+                            </p>
+                        )}
                     </section>
                 )}
 
-                {/* Registration. Above the extras rather than among them,
-                    because it is not something they offer — it is what decides
-                    whether the listing may go up at all.
-
-                    An owner sees the answer on the listing, not after asking:
-                    somebody with a dead boiler needs to know which plumbers
-                    can legally touch it before they pick up the phone. */}
-                {onStep('credentials') && (asksAboutFuel(trade) || trade === 'electrician') && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                            Registration
-                        </h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            We check this before you go live, and owners can see it on your listing.
-                        </p>
-
-                        {asksAboutFuel(trade) && (
-                            <div className="space-y-2 mb-4">
-                                <label className="flex items-start gap-2.5 text-sm text-slate-800">
-                                    <input
-                                        type="checkbox"
-                                        checked={doesGas}
-                                        onChange={(e) => setDoesGas(e.target.checked)}
-                                        className="mt-0.5 w-4 h-4 rounded border-slate-300"
-                                    />
-                                    <span>
-                                        Gas Safe registered
-                                        <span className="block text-slate-500">
-                                            Boilers, hobs and fires on mains gas or LPG.
-                                        </span>
-                                    </span>
-                                </label>
-
-                                <label className="flex items-start gap-2.5 text-sm text-slate-800">
-                                    <input
-                                        type="checkbox"
-                                        checked={doesOil}
-                                        onChange={(e) => setDoesOil(e.target.checked)}
-                                        className="mt-0.5 w-4 h-4 rounded border-slate-300"
-                                    />
-                                    <span>
-                                        OFTEC registered
-                                        <span className="block text-slate-500">
-                                            Oil boilers, burners and tanks.
-                                        </span>
-                                    </span>
-                                </label>
-                            </div>
-                        )}
-
-                        {/* An electrician chooses their scheme; there is no
-                            such thing as a Part P number, only membership of
-                            one of these. A plumber gets no choice — the work
-                            they ticked decides which body it has to be. */}
-                        {trade === 'electrician' && (
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-slate-900 mb-1.5">
-                                    Which competent person scheme are you with?
-                                </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                    {PART_P_SCHEMES.map((scheme) => {
-                                        const chosen = String(registrations[scheme] || '') !== ''
-                                            || (registrations[scheme] === '' && scheme in registrations);
-                                        return (
-                                            <button
-                                                key={scheme}
-                                                type="button"
-                                                onClick={() => {
-                                                    // One scheme at a time: the
-                                                    // others are cleared, so a
-                                                    // number left behind from a
-                                                    // change of mind is never
-                                                    // sent for checking.
-                                                    const next: Record<string, string> = {};
-                                                    for (const key of Object.keys(registrations)) {
-                                                        if (!isPartP(key)) next[key] = registrations[key];
-                                                    }
-                                                    next[scheme] = registrations[scheme] || '';
-                                                    setRegistrations(next);
-                                                }}
-                                                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-                                                    chosen
-                                                        ? 'border-emerald-700 bg-emerald-50 text-emerald-900'
-                                                        : 'border-slate-300 text-slate-700 hover:border-slate-500'
-                                                }`}
-                                            >
-                                                {schemeLabel(scheme)}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                {problemFor('registration_part_p') && (
-                                    <p data-problem className="text-xs text-rose-700 mt-1.5">
-                                        {problemFor('registration_part_p')!.message}
-                                    </p>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="space-y-3">
-                            {showableSchemes
-                                .filter((scheme) => !isPartP(scheme) || scheme in registrations)
-                                .map((scheme) => (
-                                    <div key={scheme}>
-                                        <label
-                                            htmlFor={'reg-' + scheme}
-                                            className="block text-sm font-medium text-slate-900 mb-1.5"
-                                        >
-                                            {schemeNumberLabel(scheme)}
-                                        </label>
-                                        <input
-                                            id={'reg-' + scheme}
-                                            type="text"
-                                            inputMode="numeric"
-                                            value={registrations[scheme] || ''}
-                                            onChange={(e) =>
-                                                setRegistrations({ ...registrations, [scheme]: e.target.value })
-                                            }
-                                            className="w-full sm:w-64 rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                        />
-                                        {problemFor('registration_' + scheme) && (
-                                            <p data-problem className="text-xs text-rose-700 mt-1">
-                                                {problemFor('registration_' + scheme)!.message}
-                                            </p>
-                                        )}
-                                    </div>
-                                ))}
-                        </div>
-
-                        {showableSchemes.length > 0 && (
-                            <p className="text-xs text-slate-500 mt-3">
-                                Your number appears on your listing. These registers are public, so an owner
-                                can look you up themselves — which is rather the point of it.
-                            </p>
-                        )}
+                {/* Availability — two optional ticks, both selectable, at the top of
+                    "What you do". They show on the trade's profile and hosts filter
+                    on them when browsing. The registration number no longer lives on
+                    this page: a trade without their number to hand would abandon, so
+                    it moved to account settings, where they add it later and hosts
+                    then see it on the profile. */}
+                {onStep('credentials') && (
+                    <section className="mb-8 space-y-3">
+                        {([
+                            ['emergency', doesEmergency, setDoesEmergency, 'Emergency call-outs', 'Urgent jobs at short notice.'],
+                            ['scheduled', doesScheduled, setDoesScheduled, 'Scheduled work', 'Booked-in jobs planned ahead.'],
+                        ] as const).map(([key, checked, set, label, hint]) => (
+                            <label key={key} className={'flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition '
+                                + (checked ? 'border-emerald-600 bg-emerald-50/60 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
+                                <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => set(e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-emerald-600"
+                                />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-slate-900">{label}</span>
+                                    <span className="block text-[13px] text-slate-500">{hint}</span>
+                                </span>
+                            </label>
+                        ))}
                     </section>
                 )}
 
@@ -6046,22 +5281,8 @@ function ApplicationForm() {
                     Split per entry rather than per trade: the electrician's
                     EICR fee and the roofer's one priced entry stay with the
                     prices, because those genuinely are prices. */}
-                {onStep('credentials') && capability.length > 0 && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                            {hasFaults ? 'What do you get called out for?' : 'What do you take on?'}
-                        </h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            {hasFaults
-                                ? 'All optional, but this is how owners find you. Somebody with a problem searches for the problem, not for a trade.'
-                                : 'All optional. Owners compare on these, so it is worth saying yes to what you actually do.'}
-                        </p>
-
-                        {toggleBlock('faults', groupLabel('faults'))}
-                        {toggleBlock('planned', groupLabel('planned'))}
-                        {toggleBlock('availability', groupLabel('availability'))}
-                    </section>
-                )}
+                {/* The pre-filled per-trade capability checklist has been
+                    replaced by the search below, which every trade now gets. */}
 
                 {/* Skills sit UNDER the tick boxes above, not over them.
                     The standard set is the common case for every handyman;
@@ -6070,38 +5291,17 @@ function ApplicationForm() {
                     thing before the usual one. */}
                 {onStep('credentials') && hasSkills && (
                     <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                            What else can you turn your hand to?
-                        </h2>
-                        <p className="text-sm text-slate-500 mb-1.5">
-                            The things that do not fit a tick box &mdash; bricklaying, fencing, laying slabs,
-                            dyking.
-                        </p>
-                        {/* Not small print. "Pick from the list" is the whole
-                            anti-fragmentation mechanism: somebody offered
-                            "bricklaying" takes it, and somebody who reads past
-                            this types "brick laying" and splits the tag. It is
-                            an instruction, so it is weighted like one. */}
-                        <p className="text-sm font-medium text-slate-800 mb-4">
-                            Pick from the list where you can &mdash; it is how owners looking for that job
-                            find you.
-                        </p>
-
+                        {/* The heading above (the personalised "What do you cover
+                            as a joiner?") carries the instruction now; the box's own
+                            prompt sits under it, below. */}
                         {skills.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-3">
                                 {skills.map((label) => (
                                     <span
                                         key={label}
-                                        className={`inline-flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 text-sm ${
-                                            reasonFor(label)
-                                                ? 'border border-amber-300 bg-amber-50 text-amber-900'
-                                                : 'border border-slate-300 bg-slate-50 text-slate-900'
-                                        }`}
+                                        className="inline-flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 text-sm border border-slate-300 bg-slate-50 text-slate-900"
                                     >
                                         {label}
-                                        {reasonFor(label) && (
-                                            <span className="text-xs font-semibold">will not show</span>
-                                        )}
                                         <button
                                             type="button"
                                             onClick={() => setSkills(skills.filter((x) => x !== label))}
@@ -6135,12 +5335,22 @@ function ApplicationForm() {
                             className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
 
-                        {skillsListOpen && (
+                        {/* The prompt sits under the box, and steps aside once they
+                            start typing and the matching services appear. */}
+                        {skillTyped.trim() === '' && (
+                            <p className="mt-2 text-[13px] text-slate-500">Start typing to add a service</p>
+                        )}
+
+                        {/* Search-only: the list appears once something is typed
+                            and shows the existing services that match — no
+                            browse-everything list on focus, no "Show all". A word
+                            that matches nothing offers "add your own" below. */}
+                        {skillsListOpen && skillTyped.trim() !== '' && (
                             <div className="mt-3 md:max-w-sm">
                                 {tagsToShow.length > 0 && (
                                     <>
                                         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                                            {skillTyped.trim() === '' ? 'Tap any that fit' : 'Matching'}
+                                            Matching
                                         </p>
                                         <div className="flex flex-wrap gap-2">
                                             {tagsToShow.map((tag: any) => (
@@ -6158,57 +5368,24 @@ function ApplicationForm() {
                                     </>
                                 )}
 
-                                {/* Once open it stays open, deliberately.
-                                    Closing on blur is the obvious thing and it
-                                    is wrong twice: blur fires before a chip's
-                                    click lands, so the chips become untappable,
-                                    and somebody adding four tags would have to
-                                    re-open the list between each one.
-
-                                    So there is a way out instead of a rule. */}
-                                <div className="flex items-center gap-4 mt-3">
-                                    {matchingTags.length > TAGS_SHOWN_CLOSED && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setAllTagsOpen(!allTagsOpen)}
-                                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline"
-                                        >
-                                            {allTagsOpen ? 'Show fewer' : 'Show all ' + matchingTags.length}
-                                        </button>
-                                    )}
-
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSkillsListOpen(false);
-                                            setAllTagsOpen(false);
-                                        }}
-                                        className="text-sm font-semibold text-slate-500 hover:text-slate-800 underline"
-                                    >
-                                        Hide the list
-                                    </button>
-                                </div>
-
-                                {/* The fallback, for the job that genuinely is
-                                    not on the list. Offered last and looking
-                                    different, so taking an existing tag stays
-                                    the easier of the two — that preference is
-                                    the whole anti-fragmentation mechanism. */}
-                                {skillIsNew && skillTyped.trim() !== '' && (
+                                {/* The fallback, for the job that genuinely is not
+                                    on the list. Offered ONLY when nothing matched —
+                                    when there are matches, taking one of them is the
+                                    only offer, so somebody can't split "Electrical
+                                    testing" by adding "Eicr" as their own past a list
+                                    that already had it. */}
+                                {skillIsNew && tagsToShow.length === 0 && skillTyped.trim() !== '' && (
                                     <button
                                         type="button"
                                         onClick={() => addSkill(skillTyped)}
-                                        className="block w-full text-left rounded-lg px-3 py-2 mt-3 text-sm text-emerald-800 bg-emerald-50 hover:bg-emerald-100"
+                                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-800 bg-emerald-50 hover:bg-emerald-100"
                                     >
                                         Add &ldquo;{(skillKey(skillTyped) || { label: skillTyped }).label}&rdquo; as a new one
                                     </button>
                                 )}
 
-                                {/* Typed something that matches nothing and is
-                                    not new either — it exists but is regulated
-                                    or already held. The panel below says which,
-                                    so this only has to stop the list looking
-                                    broken. */}
+                                {/* Typed something that matches nothing and isn't a
+                                    new tag either (an alias of one already held). */}
                                 {tagsToShow.length === 0 && !skillIsNew && skillTyped.trim() !== '' && (
                                     <p className="text-sm text-slate-500">
                                         Nothing matches that.
@@ -6217,35 +5394,11 @@ function ApplicationForm() {
                             </div>
                         )}
 
-                        {/* Said while they type, and again for anything they
-                            are already holding — because "boiler repair" is a
-                            reasonable thing for a handyman to think he can
-                            list, and finding out afterwards that it never
-                            appeared is the bad version of this.
-
-                            The valuable part is the routing, not the refusal.
-                            "Needs proof" tells somebody nothing: not what
-                            proof, not why, and not what to do instead. So it
-                            says which registration, that we do not ask this
-                            trade for it, and where the tag would show. */}
-                        {(typedReason || blockedHeld.length > 0) && (
-                            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 md:max-w-lg">
-                                {typedReason && (
-                                    <p className="text-sm text-amber-900">{typedReason}</p>
-                                )}
-
-                                {blockedHeld.map((x) => (
-                                    <p key={x.label} className="text-sm text-amber-900 mt-1 first:mt-0">
-                                        {x.reason}
-                                    </p>
-                                ))}
-
-                                <p className="text-xs text-amber-900/70 mt-2">
-                                    You can leave it on if you like &mdash; everything else you have added still
-                                    shows.
-                                </p>
-                            </div>
-                        )}
+                        {/* No "will not show" warning and nothing about Part P or
+                            competent-person schemes: we don't police what a trade
+                            lists. They pick the services they do; the search offers
+                            every matching one (regulated or not), and the listing
+                            shows what they chose. */}
                     </section>
                 )}
 
@@ -6329,21 +5482,37 @@ function ApplicationForm() {
                                                                     {extra.label}
                                                                 </label>
                                                                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                                    <span className="text-slate-500">&pound;</span>
-                                                                    <input
-                                                                        id={'rate-' + extra.key}
-                                                                        type="text"
-                                                                        inputMode="decimal"
-                                                                        value={entry.price}
-                                                                        onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
-                                                                        placeholder={perUnit ? '8' : '25'}
-                                                                        className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                                    />
-                                                                    {perUnit && (
-                                                                        <span className="text-sm text-slate-500 whitespace-nowrap">per bed</span>
+                                                                    {entry.quote ? (
+                                                                        <span className="text-sm text-slate-500">Priced by quote</span>
+                                                                    ) : (
+                                                                        <>
+                                                                            <span className="text-slate-500">&pound;</span>
+                                                                            <input
+                                                                                id={'rate-' + extra.key}
+                                                                                type="text"
+                                                                                inputMode="decimal"
+                                                                                value={entry.price}
+                                                                                onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
+                                                                                placeholder={perUnit ? '8' : '25'}
+                                                                                className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                                            />
+                                                                            {perUnit && (
+                                                                                <span className="text-sm text-slate-500 whitespace-nowrap">per job</span>
+                                                                            )}
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             </div>
+                                                            {/* Each extra can be priced by quote instead of a set figure. */}
+                                                            <label className="mt-1.5 ml-0 flex items-center gap-2 text-xs text-slate-600">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={!!entry.quote}
+                                                                    onChange={(e) => setExtra(extra.key, 'quote', e.target.checked)}
+                                                                    className="w-3.5 h-3.5 rounded border-slate-300"
+                                                                />
+                                                                I provide a quote for this
+                                                            </label>
                                                             {problem && (
                                                                 <p data-problem className="text-xs text-rose-700 mt-1">{problem.message}</p>
                                                             )}
@@ -6410,7 +5579,7 @@ function ApplicationForm() {
                 )}
 
 
-                {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('business')) && (
+                {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('b_area')) && (
                 <section className={'mb-8'
                     /* Vertically centre the fork (and whatever it reveals below it)
                        in the space between the question and the footer on desktop.
@@ -6428,26 +5597,24 @@ function ApplicationForm() {
                         load and re-save exactly as before. */}
                     {!isGuest && (
                         <>
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1.5">{HOST_LOCATION_COPY.heading}</h2>
-                            <p className="text-sm text-slate-500 mb-4">{HOST_LOCATION_COPY.subtext}</p>
+                            {/* Host trades now pick coverage as REGIONS — the same
+                                model as the guest experience sign-up ("All of
+                                Dumfries and Galloway" or a named region), pick as
+                                many as they like. The single town-and-radius picker
+                                is gone. Stored the same way as the guest regions:
+                                the region label in service_areas with radius 0. */}
+                            {/* The "Where do you cover?" heading is the step h1
+                                above now (its own screen), so this is just the
+                                one-line hint under it. */}
+                            <p className="text-sm text-slate-500 mb-4 -mt-4">Pick the areas you work in — as many as you like.</p>
 
                             <div className="space-y-1 md:max-w-xl">
                                 {areas.map((a, i) => (
-                                    <HubRow
-                                        key={i}
-                                        filled
-                                        label={a.town}
-                                        prompt=""
-                                        summary={HOST_LOCATION_COPY.rowWithin + ' ' + Number(a.radius_miles) + ' ' + HOST_LOCATION_COPY.radiusSuffix}
-                                        onOpen={() => openHostArea(i)}
-                                    />
+                                    <HubRow key={i} filled label={a.town} prompt="" summary={regionHintFor(a.town)} onOpen={() => setAreaPickerOpen(true)} />
                                 ))}
-                                <HubRow
-                                    filled={false}
-                                    label={HOST_LOCATION_COPY.addRow}
-                                    prompt={HOST_LOCATION_COPY.addPrompt}
-                                    onOpen={() => openHostArea(null)}
-                                />
+                                {!areasHasAll && (
+                                    <HubRow filled={false} label="Add an area" prompt="Pick the regions you cover" onOpen={() => setAreaPickerOpen(true)} />
+                                )}
                             </div>
 
                             {problemFor('areas') && (
@@ -6455,46 +5622,30 @@ function ApplicationForm() {
                             )}
 
                             <SubFlowModal
-                                open={areaModalOpen}
-                                title={HOST_LOCATION_COPY.modalTitle}
-                                onClose={() => setAreaModalOpen(false)}
-                                saveLabel={GUEST_SCREEN_COPY.save}
-                                saveDisabled={!areaDraftTown.trim()}
-                                onSave={saveHostArea}
-                                onRemove={areaEditIndex !== null ? removeHostArea : undefined}
+                                open={areaPickerOpen}
+                                title="Where do you cover?"
+                                onClose={() => setAreaPickerOpen(false)}
+                                saveLabel={GUEST_SCREEN_COPY.locationPickerDone}
+                                saveDisabled={areas.length === 0}
                             >
-                                <div className="mx-auto w-full max-w-md">
-                                    <label className="mb-2 block text-xs font-medium text-slate-500">{HOST_LOCATION_COPY.townLabel}</label>
-                                    <div className="space-y-2">
-                                        {COVERAGE_TOWNS.map((t) => {
-                                            const on = areaDraftTown === t.label;
-                                            return (
-                                                <button key={t.key} type="button" onClick={() => setAreaDraftTown(t.label)} aria-pressed={on}
-                                                    className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
-                                                        + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
-                                                    <span className={'flex h-5 w-5 flex-none items-center justify-center rounded-full border transition '
-                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
-                                                        <Check className="h-3 w-3" strokeWidth={3} />
-                                                    </span>
-                                                    <span className="font-semibold text-slate-900">{t.label}</span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-
-                                    <label className="mb-2 mt-6 block text-xs font-medium text-slate-500">{HOST_LOCATION_COPY.radiusLabel}</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {[5, 10, 15, 20, 30, 50].map((m) => {
-                                            const on = Number(areaDraftRadius) === m;
-                                            return (
-                                                <button key={m} type="button" onClick={() => setAreaDraftRadius(m)} aria-pressed={on}
-                                                    className={'rounded-full border px-4 py-2 text-sm font-semibold transition '
-                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-emerald-400')}>
-                                                    {m} {HOST_LOCATION_COPY.radiusSuffix}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                <div className="mx-auto w-full max-w-md space-y-2">
+                                    {GUEST_REGIONS.map((r) => {
+                                        const on = regionPicked(r.label);
+                                        return (
+                                            <button key={r.key} type="button" onClick={() => toggleRegion(r)} aria-pressed={on}
+                                                className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                    + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
+                                                <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
+                                                    + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                    <Check className="h-4 w-4" strokeWidth={3} />
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="block font-semibold text-slate-900">{r.label}</span>
+                                                    <span className="block text-sm text-slate-500">{r.hint}</span>
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </SubFlowModal>
                         </>
@@ -6520,6 +5671,10 @@ function ApplicationForm() {
                         const delivers = fulfilment === 'delivery' || fulfilment === 'both';
                         const showRegions = usesFulfilment ? delivers : true;
                         const showCollection = usesFulfilment && collects;
+                        // A 'both' slot shows the two together — the only screen in
+                        // the wizard with two answers. Each gets its own sub-heading
+                        // and a gap so it reads as two questions, not one form.
+                        const bothPlaces = showRegions && showCollection;
                         // Slot copy forks on premises vs meeting point (outdoors,
                         // water) — data identical, wording only.
                         const slotMeeting = shape === 'slot' && slotIsMeetingPoint(guestCategory);
@@ -6569,7 +5724,12 @@ function ApplicationForm() {
                                     {shape === 'made_to_order' ? (
                                         <label className="block text-xs font-medium text-slate-500 mb-3">{GUEST_SCREEN_COPY.locationHeadingDeliver}</label>
                                     ) : (
-                                        <p className="text-sm text-slate-500 mb-4 md:max-w-xl">{GUEST_SCREEN_COPY.locationSubtextTravel}</p>
+                                        <>
+                                            {bothPlaces && (
+                                                <h2 className="text-lg font-semibold text-slate-900 mb-1">{GUEST_SCREEN_COPY.slotBothAreasHeading}</h2>
+                                            )}
+                                            <p className="text-sm text-slate-500 mb-4 md:max-w-xl">{GUEST_SCREEN_COPY.locationSubtextTravel}</p>
+                                        </>
                                     )}
 
                                     <div className="space-y-1 md:max-w-xl">
@@ -6595,12 +5755,22 @@ function ApplicationForm() {
                                 confirmed order (see the order page). Optional
                                 postcode lookup on top; manual entry always works. */}
                             {showCollection && (
-                                <div className="mt-8 md:max-w-xl">
-                                    <span className="block text-xs font-medium text-slate-500 mb-2">{
-                                        shape === 'slot'
-                                            ? (slotMeeting ? GUEST_SCREEN_COPY.slotAddressLabelMeeting : GUEST_SCREEN_COPY.slotAddressLabelPremises)
-                                            : GUEST_SCREEN_COPY.collectionAddressLabel
-                                    }</span>
+                                <div className={(bothPlaces ? 'mt-12' : 'mt-8') + ' md:max-w-xl'}>
+                                    {bothPlaces ? (
+                                        // The second answer on the 'both' screen: its own
+                                        // heading and subtext, matching the areas block, with
+                                        // a wider gap above so the two don't run together.
+                                        <>
+                                            <h2 className="text-lg font-semibold text-slate-900 mb-1">{GUEST_SCREEN_COPY.slotBothAddressHeading}</h2>
+                                            <p className="text-sm text-slate-500 mb-4">{GUEST_SCREEN_COPY.slotBothAddressSubtext}</p>
+                                        </>
+                                    ) : (
+                                        <span className="block text-xs font-medium text-slate-500 mb-2">{
+                                            shape === 'slot'
+                                                ? (slotMeeting ? GUEST_SCREEN_COPY.slotAddressLabelMeeting : GUEST_SCREEN_COPY.slotAddressLabelPremises)
+                                                : GUEST_SCREEN_COPY.collectionAddressLabel
+                                        }</span>
+                                    )}
 
                                     {showCollectionFields ? (
                                         // FIELDS MODE — a chosen or hand-typed address. The
@@ -6739,162 +5909,136 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* Host/trade contact details (name/email/phone) live on the
-                    'business' step. A guest experience has no contact step: they
-                    signed in up front, so the account address is their contact
-                    address (written from the session at submit), the phone lives
-                    on their account profile, and the single responsibility
-                    confirmation that replaced the old checks is folded onto the
-                    finish screen below. So this section is host/trade only. */}
-                {audienceForTrade(trade) !== 'guest' && onStep('business') && (
-                <section className="mb-8 grid sm:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-2">
-                            Email for us to reach you on
-                        </label>
-                        <input
-                            value={contactEmail}
-                            onChange={(e) => setContactEmail(e.target.value)}
-                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                        {problemFor('contact_email') && (
-                            <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('contact_email')!.message}</p>
-                        )}
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-2">
-                            Phone <span className="text-slate-400">(optional)</span>
-                        </label>
-                        <input
-                            value={contactPhone}
-                            onChange={(e) => setContactPhone(e.target.value)}
-                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-
-                        {/* One short line, not a policy paragraph. The opt-out sits
-                            with it so a mobile number isn't removed to avoid texts. */}
-                        <p className="text-sm text-slate-500 mt-2">
-                            A mobile only gets a text for an owner’s emergency; everything else is email.
-                        </p>
-
-                        <label className="flex items-start gap-2.5 mt-3 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={smsOptOut}
-                                onChange={(e) => setSmsOptOut(e.target.checked)}
-                                className="mt-1"
-                            />
-                            <span className="text-sm text-slate-700">
-                                Don&rsquo;t text me — email only
-                                <span className="block text-xs text-slate-500">
-                                    You will still get every enquiry, just not as quickly.
-                                </span>
-                            </span>
-                        </label>
-                    </div>
-
-                    <p className="sm:col-span-2 text-sm text-slate-500">
-                        Neither goes on your listing — we use them to reach you about your work.
-                    </p>
-                </section>
-                )}
+                {/* There is no contact step any more. The email we reach a trade on
+                    is the one they signed in with (set from the session, editable
+                    later in account settings); the optional phone and the don't-text
+                    tick moved to the finish screen below. */}
             </fieldset>
 
 
 
-            {/* The account, inline, made out of what they have already typed.
-                This was a login wall: a tradesman filled in the whole form and
-                then met a door. Now the last field on the form is a password
-                and the button that sends it also makes the account.
+            {/* The finish screen for a host trade: a short recap of what they're
+                sending, so the last screen is their own listing rather than a blank
+                page with a Send button. The old finish carried a logo uploader
+                here; that's gone (the About-you headshot is the listing image now),
+                which would otherwise have left this screen empty — every applicant
+                reaches it signed in, so the signed-out account panel never shows. */}
+            {onStep('finish') && !isGuest && !locked && (() => {
+                const coverageVal = (areas || []).map((a) => a.town).filter(Boolean).join(', ') || '—';
+                const priceVal = provideQuote
+                    ? 'Priced per job'
+                    : [
+                        hourlyRate.trim() ? '£' + hourlyRate.trim() + ' an hour' : '',
+                        flatFee.trim() ? '£' + flatFee.trim() + ' a job' : '',
+                    ].filter(Boolean).join(' · ') || '—';
+                const servicesVal = (skills || []).length ? skills.join(', ') : '—';
+                const availVal = [
+                    doesEmergency ? 'Emergency call-outs' : '',
+                    doesScheduled ? 'Scheduled work' : '',
+                ].filter(Boolean).join(' · ') || '—';
+                const facts: [string, string][] = [
+                    ['Trade', tradeLabel(trade)],
+                    ['Covers', coverageVal],
+                    ['Charges', priceVal],
+                    ['Services', servicesVal],
+                    ['Availability', availVal],
+                ];
+                return (
+                    <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                        <div className="flex items-center gap-4">
+                            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-slate-100 flex items-center justify-center font-semibold text-slate-500">
+                                {headshot
+                                    ? <img src={getImageUrl(headshot)} alt="" className="h-full w-full object-cover" />
+                                    : (initialsFor(businessName) || <User className="h-6 w-6" strokeWidth={1.5} />)}
+                            </div>
+                            <div className="min-w-0">
+                                <p className="truncate text-lg font-semibold text-slate-900">{businessName || tradeLabel(trade)}</p>
+                                {professionalTitle.trim() && (
+                                    <p className="truncate text-[13px] text-slate-500">{professionalTitle.trim()}</p>
+                                )}
+                            </div>
+                        </div>
+                        <dl className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-3">
+                            {facts.map(([k, v]) => (
+                                <div key={k}>
+                                    <dt className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{k}</dt>
+                                    <dd className="text-sm text-slate-800">{v}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                        <p className="mt-4 text-sm text-slate-500">
+                            Send it and we will check it over — usually within a day — and email you when
+                            you are live. You can change anything until then.
+                        </p>
+                    </section>
+                );
+            })()}
 
-                No second email box. Their contact address is the account
-                address — asking again is asking a question we know the answer
-                to, and two addresses that can disagree is a support problem
-                waiting to happen. */}
-            {onStep('finish') && !session && !lodged && (
-                <div className="rounded-2xl border border-slate-300 p-5 mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                        Where we will send your link
-                    </h2>
-                    {/* NO PASSWORD FIELD HERE ANY MORE, and that is the change.
-                        This press used to create a real account from a public
-                        form, so a stranger could type your address in and you
-                        had an account you never made — you could not sign up
-                        later, and you got a confirmation email you never asked
-                        for. The password now belongs on the page the emailed
-                        link opens, because that is the first moment anybody has
-                        shown they can receive mail at this address. */}
+            {/* Optional phone and the don't-text tick, on the finish screen now
+                (they used to be their own contact step). The email we reach them on
+                is the account email — shown here, not asked, and changed later in
+                account settings. Neither the phone nor the email goes on the public
+                listing. */}
+            {onStep('finish') && !isGuest && !locked && (
+                <section className="mb-8">
+                    <h2 className="text-sm font-semibold text-slate-900 mb-1">How we reach you</h2>
                     <p className="text-sm text-slate-500 mb-4">
                         We will email{' '}
-                        <strong className="text-slate-900">{contactEmail.trim() || 'the address above'}</strong>{' '}
-                        a link. Open it, pick a password, and your application goes to us. Everything
-                        you have typed is saved either way.
+                        <strong className="text-slate-900">{contactEmail.trim() || 'your account address'}</strong>{' '}
+                        about jobs — change it any time in your account. A phone is optional and never
+                        goes on your listing.
                     </p>
-
-                    {/* What it costs, beside the tick box that agrees to it.
-                        Nothing on the site said this before — the model lived
-                        in conversations — and this is the one moment somebody
-                        is agreeing to something, so it is the one place it has
-                        to appear. Worded by lib/serviceProviders.ts planTerms,
-                        so this and the approval email cannot differ. */}
-                    <p className="text-sm text-slate-600 mt-4 rounded-xl bg-slate-50 border border-slate-200 p-3.5">
-                        {planTerms(trade)}
-                    </p>
-
-                    <label className="flex items-start gap-2.5 mt-3 text-sm text-slate-800">
+                    <label htmlFor="finish-phone" className="block text-xs font-medium text-slate-500 mb-2">
+                        Phone <span className="text-slate-400">(optional)</span>
+                    </label>
+                    <input
+                        id="finish-phone"
+                        value={contactPhone}
+                        onChange={(e) => setContactPhone(e.target.value)}
+                        className="w-full sm:max-w-sm rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+                    <label className="flex items-start gap-2.5 mt-3 cursor-pointer">
                         <input
                             type="checkbox"
-                            checked={acctConsent}
-                            onChange={(e) => { setAcctConsent(e.target.checked); setAcctError(''); }}
-                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                            checked={smsOptOut}
+                            onChange={(e) => setSmsOptOut(e.target.checked)}
+                            className="mt-1"
                         />
-                        <span>I am happy for you to email me a link</span>
+                        <span className="text-sm text-slate-700">
+                            Don&rsquo;t text me — email only
+                            <span className="block text-xs text-slate-500">
+                                You will still get every enquiry, just not as quickly.
+                            </span>
+                        </span>
                     </label>
-
-                    {acctError && (
-                        <p data-problem className="text-sm text-rose-700 mt-2">{acctError}</p>
-                    )}
-
-                    {/* Offered, not imposed. Somebody who has been here before
-                        should not be made to invent a second account, but most
-                        people at this point have none — so it is a link rather
-                        than half the panel. */}
-                    {!showSignIn ? (
-                        <button
-                            type="button"
-                            onClick={() => setShowSignIn(true)}
-                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline mt-4"
-                        >
-                            I already have an account
-                        </button>
-                    ) : (
-                        <div data-signin className="mt-4 pt-4 border-t border-slate-200">
-                            <p className="text-sm text-slate-600 mb-3">
-                                Sign in and we will save this straight to your account. Nothing you have
-                                typed is lost.
-                            </p>
-                            <LoginModel />
-                        </div>
-                    )}
-                </div>
+                </section>
             )}
 
-            {/* Email confirmation is on, so signUp gave us a user and no
-                session and nothing can be written yet. Saying so matters: a
-                button that silently does nothing looks broken, and the form is
-                safe in local storage whether or not they believe us. */}
-            {/* It is lodged. The email is a separate errand, and it says so:
-                nothing about the application is waiting on it. The old panel
-                here asked them to open a link, come back, and press send — and
-                if anything went wrong in between, the application had never
-                been written at all. */}
-            {/* The address already has an account. Deliberately the same
-                weight as the success panel: the two were being confused, and
-                the one that means "nothing was sent" cannot be the quieter of
-                them. Both ways forward are here — signing in is offered right
-                below, and changing the address is a button rather than an
-                instruction, because the field is two steps back and telling
-                somebody to go and find it is how they give up. */}
+            {/* The agreements, the last thing before Send — the Guest Terms (which
+                every account accepts) and the Tradesperson Agreement on top, each
+                the same one-line tick box (lib/agreements). Taken here, at the end
+                of sign-up, rather than as a pop-up part-way through it. */}
+            {onStep('finish') && !isGuest && !locked && needsGuestTick && (
+                <section className="mb-4">
+                    <AgreementTick
+                        doc="guest"
+                        checked={guestAgreed}
+                        onChange={(v) => { setGuestAgreed(v); setGuestTermsError(''); }}
+                        error={guestTermsError}
+                    />
+                </section>
+            )}
+            {onStep('finish') && !isGuest && !locked && needsAgreementTick && (
+                <section className="mb-8">
+                    <AgreementTick
+                        doc="tradesperson"
+                        checked={termsAgreed}
+                        onChange={(v) => { setTermsAgreed(v); setTermsError(''); }}
+                        error={termsError}
+                    />
+                </section>
+            )}
+
             {/* The finish screen for a guest: a full-width PREVIEW of what they're
                 submitting — cover photo, name, category, price, coverage, and what
                 they wrote — so their last impression after ten screens is their own
@@ -6903,7 +6047,7 @@ function ApplicationForm() {
                 REQUIRED to send — the save() guard and the gated button both hold
                 on `termsAgreed`; the acceptance (version + timestamp) is recorded
                 in the declarations jsonb (guestProviderFields). */}
-            {onStep('finish') && isGuest && !locked && !lodged && (() => {
+            {onStep('finish') && isGuest && !locked && (() => {
                 const catLabel = guestCategoryByKey(guestCategory)?.label || GUEST_SCREEN_COPY.finishSummaryCategory;
                 const priceVal = (items || [])
                     .filter((i) => String(i.price || '').trim())
@@ -6925,9 +6069,14 @@ function ApplicationForm() {
                             : (areaList || '—'))
                     // A slot follows its fulfilment: a come-to-me slot has no
                     // regions but a public town (the address they gave); a
-                    // travelling slot shows the areas it covers.
+                    // travelling slot shows the areas it covers; a 'both' slot
+                    // shows the studio town AND the areas it travels to.
                     : shape === 'slot'
-                        ? (fulfilment === 'delivery' ? (areaList || '—') : (collectionTown.trim() || '—'))
+                        ? (fulfilment === 'delivery'
+                            ? (areaList || '—')
+                            : fulfilment === 'both'
+                                ? ((collectionTown.trim() || '—') + (areaList ? GUEST_SCREEN_COPY.finishCoverageTravelSuffix + areaList : ''))
+                                : (collectionTown.trim() || '—'))
                         : (areaList || '—');
                 const whenVal = shape === 'slot'
                     ? `${(schedule || []).length} weekly time${(schedule || []).length === 1 ? '' : 's'}`
@@ -7043,225 +6192,56 @@ function ApplicationForm() {
                         </div>
                     </div>
 
-                    {/* The terms, one line: a tickbox with the terms behind a link.
-                        The link is a button INSIDE the label — clicking it opens the
-                        modal and does not toggle the box (an interactive descendant
-                        doesn't fire the label's control). */}
-                    <div className="mt-6">
-                        <div className="flex items-start gap-3">
-                            <input
-                                id="agree-terms"
-                                type="checkbox"
-                                checked={termsAgreed}
-                                onChange={(e) => { setTermsAgreed(e.target.checked); setTermsError(''); }}
-                                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
+                    {/* The agreements, one line each: the Guest Terms (which every
+                        account accepts) and the Experience Provider Agreement on
+                        top, each behind an underlined link. Taken here, at the end
+                        of sign-up, not as a pop-up part-way through it. */}
+                    {needsGuestTick && (
+                        <div className="mt-6">
+                            <AgreementTick
+                                doc="guest"
+                                checked={guestAgreed}
+                                onChange={(v) => { setGuestAgreed(v); setGuestTermsError(''); }}
+                                error={guestTermsError}
                             />
-                            <label htmlFor="agree-terms" className="text-sm text-slate-800">
-                                {GUEST_SCREEN_COPY.termsAgreePrefix}{' '}
-                                <button
-                                    type="button"
-                                    onClick={(e) => { e.preventDefault(); setTermsModalOpen(true); }}
-                                    className="font-semibold text-emerald-700 underline hover:text-emerald-800"
-                                >
-                                    {GUEST_SCREEN_COPY.termsLinkText}
-                                </button>.
-                                <span className="mt-0.5 block text-xs text-slate-400">
-                                    Version {PROVIDER_TERMS.version}
-                                </span>
-                            </label>
                         </div>
-                        {termsError && (
-                            <p data-problem className="mt-2 text-sm text-rose-700">{termsError}</p>
-                        )}
-                    </div>
+                    )}
+                    {needsAgreementTick && (
+                        <div className={needsGuestTick ? 'mt-3' : 'mt-6'}>
+                            <AgreementTick
+                                doc="experience_provider"
+                                checked={termsAgreed}
+                                onChange={(v) => { setTermsAgreed(v); setTermsError(''); }}
+                                error={termsError}
+                            />
+                        </div>
+                    )}
                 </section>
                 );
             })()}
 
-            {/* The terms modal: the full terms in a scrollable panel with a close
-                button. No scroll-to-bottom gate. Opened from the agree line. */}
-            {termsModalOpen && (
-                <div
-                    className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 sm:items-center sm:p-6"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={PROVIDER_TERMS.title}
-                    onClick={() => setTermsModalOpen(false)}
-                >
-                    <div
-                        className="flex max-h-[85vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
-                            <h3 className="text-base font-bold text-slate-900">{PROVIDER_TERMS.title}</h3>
-                            <button
-                                type="button"
-                                onClick={() => setTermsModalOpen(false)}
-                                aria-label={GUEST_SCREEN_COPY.termsModalClose}
-                                className="rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-                            >
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-                        <div className="scroll-always space-y-4 overflow-y-auto px-5 py-5 text-sm text-slate-700 sm:px-6">
-                            {PROVIDER_TERMS.draftNotice && (
-                                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                                    {PROVIDER_TERMS.draftNotice}
-                                </p>
-                            )}
-                            {PROVIDER_TERMS.sections.map((sec) => (
-                                <div key={sec.heading} className="space-y-1.5">
-                                    <h4 className="font-semibold text-slate-900">{sec.heading}</h4>
-                                    {sec.body.map((p, i) => <p key={i}>{p}</p>)}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {onStep('finish') && accountExists && !lodged && (
-                <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-5 mb-8">
-                    <p className="font-semibold text-amber-900">
-                        Nothing has been sent — that address already has an account.
-                    </p>
-                    <p className="text-sm text-amber-900/90 mt-1.5">
-                        <strong className="font-semibold">{contactEmail.trim()}</strong> is already
-                        registered here. Your application is still on this page and nothing has been
-                        lost. Two ways on:
-                    </p>
-                    <div className="flex flex-wrap gap-3 mt-4">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setAccountExists(false);
-                                setShowSignIn(true);
-                                setStep('finish');
-                                // The sign-in block is below; put them at it.
-                                setTimeout(() => {
-                                    const el = document.querySelector('[data-signin]');
-                                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                }, 50);
-                            }}
-                            className="rounded-full bg-amber-700 hover:bg-amber-800 text-white px-5 py-2.5 text-sm font-semibold transition"
-                        >
-                            Sign in and send it from that account
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setAccountExists(false);
-                                setShowSignIn(false);
-                                // The email lives on the business step. Take
-                                // them to it rather than describing where it is.
-                                setStep('business');
-                                scrollPanelToTop();
-                            }}
-                            className="rounded-full border border-amber-600 px-5 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100 transition"
-                        >
-                            Use a different address
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {onStep('finish') && lodged && (
-                <div className="rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5 mb-8">
-                    <p className="font-semibold text-emerald-900">Saved. One step left.</p>
-                    <p className="text-sm text-emerald-900/80 mt-1">
-                        Everything you typed is with us — the work you cover, your areas, your prices.
-                        Nothing here is lost whatever happens next.
-                    </p>
-                    {audienceForTrade(trade) === 'guest' && (
-                        <p className="text-sm text-emerald-900/80 mt-3">
-                            A person reads what you described and decides whether it’s a fit for guests,
-                            and what category it takes. That’s ours to do — your listing is with us and
-                            we’ll be in touch.
-                        </p>
-                    )}
-                    {verificationEmailed ? (
-                        <p className="text-sm text-emerald-900/80 mt-3">
-                            We have sent a link to <strong>{contactEmail.trim()}</strong>. Open it, pick a
-                            password, and your application goes straight to us — usually answered within{' '}
-                            {REVIEW_WITHIN_HOURS} hours. The link works for 14 days, and if you miss it we
-                            will send another.
-                        </p>
-                    ) : (
-                        /* The send was refused. Saying "we have sent a link"
-                           here would have them watching an inbox for something
-                           that was never accepted — and the application, which
-                           IS in, is the part that matters. */
-                        <p className="text-sm text-amber-900 mt-3 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
-                            We could not send the link to <strong>{contactEmail.trim()}</strong> just
-                            now — so do not sit waiting for one. Everything you typed is saved and we
-                            can see it. Press the button below to try again, or leave it with us and we
-                            will chase you ourselves.
-                        </p>
-                    )}
-
-                    {/* Offered whether or not the first one went. "It says it
-                        sent but nothing arrived" is at least as common as a
-                        refusal, and both have the same answer. It asks for the
-                        email belonging to THIS application — there is nowhere
-                        to type an address, which is what keeps it from being a
-                        way to mail somebody else. */}
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
-                        <button
-                            type="button"
-                            onClick={askAgainForEmail}
-                            disabled={resending}
-                            className="rounded-full border border-emerald-700 px-5 py-2.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 transition disabled:opacity-60"
-                        >
-                            {resending ? 'Sending…' : 'Send the confirmation email again'}
-                        </button>
-                        {resendSaid && (
-                            <span className="text-sm text-emerald-900/80">{resendSaid}</span>
-                        )}
-                    </div>
-                </div>
-            )}
-
             {/* "Save and finish later" now lives in the footer, on the same line
                 as the send button (see the footer below). What stays here is the
-                live-business note, and — signed out — the reassurance that the
-                form is safe on the device. The block renders only when it has
-                something to say, so an empty divider never shows. */}
-            {onStep('finish') && !locked && !lodged && (status === 'approved' || !session) && (
+                live-business note. The block renders only when it has something
+                to say, so an empty divider never shows. */}
+            {onStep('finish') && !locked && status === 'approved' && (
                 <div className="border-t border-slate-200 pt-6">
-                    {status === 'approved' ? (
-                        <>
-                            <p className="text-sm text-slate-600 mb-4">
-                                You will stay live while we look. Changing your{' '}
-                                <strong className="font-semibold text-slate-800">
-                                    business name, category, description, logo, or who you sell to
-                                </strong>{' '}
-                                means we check it again and email you — your listing stays up the whole
-                                time. Contact details and the areas you cover change straight away, with
-                                nothing to wait for.
-                            </p>
-                        </>
-                    ) : (
-                        <div className="flex flex-wrap items-center gap-3">
-                            {/* Signed out there is nowhere to save TO, so instead
-                                of a button this says what actually happens: the
-                                form is in this browser and will be here when they
-                                come back. */}
-                            {(
-                                <p className="text-sm text-slate-500">
-                                    Everything you have typed stays on this device, so you can close
-                                    this and come back to it.
-                                </p>
-                            )}
-                        </div>
-                    )}
-
+                    <p className="text-sm text-slate-600 mb-4">
+                        You will stay live while we look. Changing your{' '}
+                        <strong className="font-semibold text-slate-800">
+                            business name, category, description, logo, or who you sell to
+                        </strong>{' '}
+                        means we check it again and email you — your listing stays up the whole
+                        time. Contact details and the areas you cover change straight away, with
+                        nothing to wait for.
+                    </p>
                 </div>
             )}
 
             {/* Only a draft, and only one they have actually started. Its own
                 block (not nested in the note above), so a signed-in returning
                 draft can still remove it. */}
-            {onStep('finish') && !locked && !lodged && status === 'draft' && providerId && (
+            {onStep('finish') && !locked && status === 'draft' && providerId && (
                 <div className="mt-8 pt-6 border-t border-slate-200">
                     {!confirmRemove ? (
                         <button
@@ -7309,10 +6289,10 @@ function ApplicationForm() {
                     Without it the panel centres in the rail-left-only space and the
                     whole column slides by half the rail's width change every time
                     the rail collapses/expands. Hidden below lg, like the rail. */}
-                {isGuest && currentSection && flowSections.length > 0 && (
+                {currentSection && flowSections.length > 0 && (
                     <div aria-hidden
                         className={'hidden lg:block shrink-0 transition-[width] duration-300 ease-out '
-                            + (railCollapsed ? 'w-16' : 'w-72')} />
+                            + (railCollapsed ? 'w-0' : 'w-72')} />
                 )}
                 </div>{/* /the two-column body (rail + questions) */}
 
@@ -7348,10 +6328,9 @@ function ApplicationForm() {
 
                     {/* "Save and finish later" sits at the left of the footer on
                         the finish step, on the same line as the send button, rather
-                        than floating in the content where it was easy to miss. Only
-                        when signed in (there is somewhere to save to) and not a live
-                        business re-applying. */}
-                    {onStep('finish') && !locked && !lodged && status !== 'approved' && session && (
+                        than floating in the content where it was easy to miss. Not
+                        for a live business re-applying. */}
+                    {onStep('finish') && !locked && status !== 'approved' && (
                         <button
                             type="button"
                             onClick={() => save(false)}
@@ -7371,7 +6350,7 @@ function ApplicationForm() {
                     )}
                     {stepIsOptional && (
                         <p className="text-sm text-slate-400 pr-1">
-                            {step === 'g_creds' ? GUEST_SCREEN_COPY.expertiseFootnote : 'Optional — you can skip this'}
+                            {step === 'g_creds' && isGuest ? GUEST_SCREEN_COPY.expertiseFootnote : 'Optional — you can skip this'}
                         </p>
                     )}
 
@@ -7385,14 +6364,32 @@ function ApplicationForm() {
                         The last step has no Next either -- it has send, which
                         is already in the panel above with the words about what
                         it does. */}
-                    {!lastStep && step !== 'g_verify' && (step !== 'trade' || isGuest) && (() => {
-                        const disabled = isGuest && (
+                    {!lastStep && (step !== 'trade' || isGuest) && (() => {
+                        // A host trade now greys Next until the step's required
+                        // details are filled, the same as the guest flow (it used
+                        // to leave Next live and show errors only after a press).
+                        // The shared About-you steps use the same rules as the
+                        // guest: g_you never gates (its shown number is the
+                        // answer), g_creds gates on the professional title.
+                        // Everything else on a host step comes through stepProblems.
+                        const disabled =
+                            // The years opener gates on a touch, both flows: the
+                            // shown 5 is a suggestion, not an answer, so Next stays
+                            // greyed until they press + or − (which fills yearsDoing).
+                            step === 'g_you' ? !yearsDoing.trim()
+                            : !isGuest ? (
+                            step === 'g_creds' ? !professionalTitle.trim()
+                            : stepProblems.length > 0
+                        ) : (
                             step === 'trade' ? !guestGroup
                             : step === 'g_subtype' ? !guestCategory
-                            // g_you has no gate: Next is enabled from load. The
-                            // shown number is the accepted answer, stored on Next.
-                            : step === 'g_creds' ? (!professionalTitle.trim() || (catQualsRequired && !qualifications.trim()))
+                            : step === 'g_creds' ? !professionalTitle.trim()
+                            // The listing needs a name — it is the h1 and the card.
+                            : step === 'g_title' ? !listingTitle.trim()
                             : step === 'g_photos' ? photos.length === 0
+                            // The booking-shape fork ('something else') must be
+                            // answered — it decides the location screen and the rest.
+                            : step === 'g_shape' ? !shape
                             // The pricing basis must be answered before moving on —
                             // it sets the unit and decides the next screen.
                             : step === 'g_slot_basis' ? slotOffer === null
@@ -7411,7 +6408,8 @@ function ApplicationForm() {
                             if (isGuest && step === 'g_subtype') return advanceFromSubtype();
                             // Pass the years screen without touching it: the shown
                             // number is the answer they accepted, so store it now.
-                            if (isGuest && step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
+                            // Both flows share this step, so it is not gated on isGuest.
+                            if (step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
                             // Same rule for max guests: an untouched pass stores
                             // the shown default; a loaded value is left as it is.
                             if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));
@@ -7446,33 +6444,26 @@ function ApplicationForm() {
                         to press was the only one they had to go looking for.
 
                         `min-w-0` and the truncating label are what stop it
-                        colliding with Back at 375: "Save and email me a link" is
-                        the longest label the form has, and the two buttons plus
+                        colliding with Back at 375: the two buttons plus
                         their padding do not fit a phone otherwise. */}
                     {lastStep && !locked && (
                         <button
                             type="button"
                             onClick={() => save(true)}
-                            // A guest must agree to the terms before send. The
-                            // save() guard enforces it too; disabling the button
-                            // makes it visible, with the agree box and its gate
-                            // line right above on the finish screen.
-                            disabled={saving || acctBusy || (isGuest && !termsAgreed)}
+                            // Every provider must agree to their role's agreement
+                            // before send. The save() guard enforces it too; greying
+                            // the button makes it visible (matching how Next greys on
+                            // the other steps), with the agree box right above on the
+                            // finish screen.
+                            disabled={saving || (needsGuestTick && !guestAgreed) || (needsAgreementTick && !termsAgreed)}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >
                             <span className="block truncate">
                                 {status === 'approved'
                                     ? (saving ? 'Saving…' : 'Save changes')
-                                    : acctBusy
-                                        ? 'Saving…'
-                                        : saving
-                                            ? 'Sending…'
-                                            : session
-                                                ? 'Send for review'
-                                                /* Not "create account" any more: this press
-                                                   creates nothing. It saves the application and
-                                                   emails a link. */
-                                                : 'Save and email me a link'}
+                                    : saving
+                                        ? 'Sending…'
+                                        : 'Send for review'}
                             </span>
                         </button>
                     )}

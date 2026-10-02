@@ -7,8 +7,11 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { MapPin } from 'lucide-react';
 import ListingCard, { type CardListing } from '@/components/ListingCard';
+import TownSearch from '@/components/TownSearch';
 import { townKey } from '@/lib/places';
 import { AREAS, areaBySlug, hasCopy, type Area } from '@/config/areas';
+import { COVERAGE_TOWNS } from '@/lib/serviceProviders';
+import AreaExperiences from '@/components/AreaExperiences';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -33,7 +36,7 @@ async function listingsForArea(area: Area): Promise<CardListing[]> {
     // fails the build for one. Same list the home page grid asks for.
     const { data } = await supabase
         .from('listings')
-        .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities')
+        .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude')
         .eq('status', 'published')
         .order('created_at', { ascending: false });
 
@@ -232,11 +235,7 @@ export default async function AreaPage({ params }: { params: { area: string } })
                     </h2>
 
                     {listings.length > 0 ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-                            {listings.map((listing) => (
-                                <ListingCard key={listing.id} listing={listing} />
-                            ))}
-                        </div>
+                        <TownSearch listings={listings} />
                     ) : (
                         /* Said plainly rather than dressed up. A page that
                            promises cottages and shows an empty grid is the
@@ -256,6 +255,23 @@ export default async function AreaPage({ params }: { params: { area: string } })
                         </div>
                     )}
                 </section>
+
+                {/* Experiences based in or covering this town — self-gates to
+                    nothing while the feature is dormant or nothing matches. The
+                    town centre comes from the coverage towns the rest of the
+                    site measures from (matched to this area's town keys). */}
+                {(() => {
+                    const town = COVERAGE_TOWNS.find((t) => area.townKeys.indexOf(townKey(t.label)) !== -1);
+                    return (
+                        <AreaExperiences
+                            lat={town?.lat ?? null}
+                            lng={town?.lng ?? null}
+                            townLabel={area.name}
+                            heading={`Experiences in and around ${area.name}`}
+                            intro={`Local chefs, bakers, saunas and guides who come to ${area.name} — add one to a stay.`}
+                        />
+                    );
+                })()}
 
                 {/* --- things to do --- */}
                 <section className="mt-14 max-w-3xl">
@@ -290,11 +306,15 @@ export default async function AreaPage({ params }: { params: { area: string } })
                 </section>
 
                 {/* --- FAQs --- */}
-                <section className="mt-14 max-w-3xl">
-                    <h2 className="text-xl md:text-2xl font-bold text-stone-900 mb-4">
-                        Common questions about staying in {area.name}
-                    </h2>
-                    {area.faqs.length ? (
+                {/* Nothing at all when there are no questions, not a lone
+                    heading over empty space. The FAQ JSON-LD is already
+                    suppressed when faqs is empty, so an empty heading was the
+                    one thin remnant a crawler (and a reader) still saw. */}
+                {area.faqs.length > 0 && (
+                    <section className="mt-14 max-w-3xl">
+                        <h2 className="text-xl md:text-2xl font-bold text-stone-900 mb-4">
+                            Common questions about staying in {area.name}
+                        </h2>
                         <dl className="space-y-6">
                             {area.faqs.map((faq, i) => (
                                 <div key={i}>
@@ -303,10 +323,8 @@ export default async function AreaPage({ params }: { params: { area: string } })
                                 </div>
                             ))}
                         </dl>
-                    ) : (
-                        <Placeholder what={`three or four questions people ask about ${area.name}`} />
-                    )}
-                </section>
+                    </section>
+                )}
 
                 {/* --- the sideways links that stop every page being a dead end --- */}
                 {nearbyAreas.length > 0 && (

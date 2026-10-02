@@ -1,13 +1,19 @@
 import HostReservations from '@/components/HostReservations';
-import { townKey } from '@/lib/places';
+import { townKey, publicArea } from '@/lib/places';
+import { getImageUrl } from '@/lib/utils';
+import PriceMap from '@/components/PriceMap';
 import { icalBlockedListingIds } from '@/lib/availability';
 import Hero from '@/components/base/Hero';
+import ComingSoonBanner from '@/components/base/ComingSoonBanner';
+import { businessSignupsOpen } from '@/lib/serviceOrders';
 import UpcomingTrip from '@/components/UpcomingTrip';
+import UpcomingExperience from '@/components/UpcomingExperience';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
 import ListingCard from '@/components/ListingCard';
+import HomeExperiences from '@/components/HomeExperiences';
 import TownsCarousel from '@/components/TownsCarousel';
 import { AREAS, hasCopy } from '@/config/areas';
 import fs from 'fs';
@@ -114,7 +120,7 @@ export default async function HomePage({
 
     let query = supabase
         .from('listings')
-        .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities')
+        .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude')
         .eq('status', 'published')
         .order('created_at', { ascending: false });
 
@@ -222,13 +228,26 @@ export default async function HomePage({
 
     return (
         <main className="min-h-screen bg-stone-50">
+            {/* Opening soon: the one route in for hosts and trades while sign-up
+          sits behind the coming-soon tiles. Above the hero, seen first. Follows
+          the same switch as the /business tiles, so it goes the moment they open. */}
+            {!businessSignupsOpen() && <ComingSoonBanner />}
+
             {/* Kirkcudbright Hero Banner */}
             <Hero />
 
             {/* Someone with a stay coming up sees it before anything else. Returns
           nothing at all for a signed-out visitor or a guest with no booking.
           In hosting mode the same slot shows the next arrivals instead. */}
-            {mode === 'host' ? <HostReservations /> : <UpcomingTrip />}
+            {mode === 'host' ? <HostReservations /> : (
+                <>
+                    {/* The stay leads (it's the anchor of the holiday); a booked
+                        experience gets its own peer card below. Each self-gates and
+                        renders nothing when there's none — no empty shelf. */}
+                    <UpcomingTrip />
+                    <UpcomingExperience />
+                </>
+            )}
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
                 {/* Section Heading */}
@@ -289,6 +308,42 @@ export default async function HomePage({
                     </div>
                 )}
 
+                {/* Every live property on one map — Airbnb's search map, under
+                    the grid rather than beside it here. A white price pin each,
+                    a mini card on tap that links to the listing. Street-level
+                    approx points only, zoom capped. Hidden while a search is on,
+                    like the sections below. */}
+                {!searching && (() => {
+                    const mapPoints = (data || [])
+                        .filter((l: any) => l.approx_latitude != null && l.approx_longitude != null)
+                        .map((l: any) => ({
+                            id: l.id,
+                            title: l.title,
+                            price: l.price_per_night,
+                            image: l.images && l.images[0] ? getImageUrl(l.images[0]) : null,
+                            area: publicArea(l.location),
+                            lat: Number(l.approx_latitude),
+                            lng: Number(l.approx_longitude),
+                            href: `/homes/${l.id}`,
+                        }));
+                    return mapPoints.length ? (
+                        <section className="mt-16 pt-10 border-t border-stone-200">
+                            <h2 className="text-2xl md:text-3xl font-bold text-stone-900">Where our places are</h2>
+                            <p className="text-stone-600 text-sm md:text-base mt-1 mb-6">
+                                Every property, with its nightly price on the pin — tap one for the place.
+                            </p>
+                            <PriceMap points={mapPoints} frameClassName="h-[440px] md:h-[560px]" />
+                        </section>
+                    ) : null;
+                })()}
+
+                {/* Experiences, alongside the properties. Below the grid so the
+                    cottages lead, above the editorial so it reads as a second
+                    thing to book. Self-gating on the launch flag and on there
+                    being any to show; hidden while a property search is on, the
+                    same as the towns carousel below. */}
+                {!searching && <HomeExperiences />}
+
                 {!searching && <TownsCarousel towns={carouselTowns} />}
 
                 {/* The homepage's editorial, below the grid on purpose: the
@@ -302,7 +357,7 @@ export default async function HomePage({
                                 Book direct, and the money stays here
                             </h2>
                             <p className="text-stone-600 leading-relaxed mt-3">
-                                Every cottage on Galloway Getaways is let by the person who owns it.
+                                Every place on Galloway Getaways is let by the person who owns it.
                                 When you book, you are dealing with them — not an agency, and not a
                                 call centre in another country. If you want to know whether the wood
                                 burner is easy to light or where to park a van, you are asking
@@ -324,7 +379,7 @@ export default async function HomePage({
                                 Why we started this
                             </h3>
                             <p className="text-stone-600 leading-relaxed mt-3">
-                                We were born and raised in Dumfries and Galloway, and we let cottages
+                                We were born and raised in Dumfries and Galloway, and we let places
                                 here ourselves. The big platforms take a large share of every
                                 booking, and the guest never finds out who owns the place they stayed
                                 in. Our fees are about half, so more of it stays with the host and
@@ -352,7 +407,7 @@ export default async function HomePage({
                                 and it does not feel like either.
                             </p>
                             <p className="text-stone-600 leading-relaxed mt-4">
-                                Our cottages sit in and around Kirkcudbright, the harbour town on the
+                                The places we list sit in and around Kirkcudbright, the harbour town on the
                                 Dee. Some take dogs. One has a hot tub. All of them are places we
                                 would stay ourselves.
                             </p>
@@ -364,7 +419,7 @@ export default async function HomePage({
                             </h2>
                             <p className="text-stone-600 leading-relaxed mt-3">
                                 Once you have booked, you can arrange the rest through us. A local
-                                chef to cook dinner in the cottage on your first night. A cake for
+                                chef to cook dinner where you’re staying on your first night. A cake for
                                 the birthday you are down for. The fridge filled before you arrive.
                                 Someone to walk the dog while you are out for the day.
                             </p>
@@ -377,7 +432,7 @@ export default async function HomePage({
 
                         <div>
                             <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
-                                Own a cottage in the region?
+                                Own a place to let in the region?
                             </h2>
                             <p className="text-stone-600 leading-relaxed mt-3">
                                 If you let a property in Dumfries &amp; Galloway, you can list it

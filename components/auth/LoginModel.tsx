@@ -6,7 +6,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import GoogleButton from './GoogleButton';
 
-const LoginModel = ({ next }: { next?: string } = {}) => {
+const LoginModel = ({ next, variant = 'menu' }: { next?: string; variant?: 'menu' | 'button' } = {}) => {
     const [isOpen, setIsOpen] = useState(false);
     // The overlay is rendered into document.body rather than where this
     // component sits. See the comment above the portal below.
@@ -27,7 +27,17 @@ const LoginModel = ({ next }: { next?: string } = {}) => {
             password,
         });
         if (error) {
-            setError(error.message);
+            // "Invalid login credentials" is what Supabase returns BOTH for a
+            // wrong password and for an email that has no account at all — shown
+            // bare it reads as "wrong password" to someone who has never signed
+            // up. Say the true either/or and point new visitors at Sign Up (in
+            // the account menu this modal opens from, and on the host gate).
+            const message = error.message || '';
+            if (/invalid login credentials/i.test(message)) {
+                setError('We couldn’t sign you in. Either the password is wrong, or there’s no account for that email yet — if you’re new, use Sign Up to create one.');
+            } else {
+                setError(message || 'Something went wrong signing you in. Please try again.');
+            }
             return;
         }
 
@@ -97,10 +107,24 @@ const LoginModel = ({ next }: { next?: string } = {}) => {
 
     return (
         <>
-            {/* A button rather than a clickable <li>: this and Sign Up were the
-                only two items in the account menu that were not links, so they
-                were the two a keyboard could not reach — which meant nobody
-                using one could sign in at all. */}
+            {/* Two triggers, one modal. The default is the account-menu item
+                (a left-aligned row in the navbar popover). variant="button" is a
+                proper full-width primary button — used where the sign-in is the
+                page's main action, like the booking box on a listing, rather
+                than a stray link tucked in a corner. */}
+            {variant === 'button' ? (
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(true)}
+                    className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition"
+                >
+                    Log in
+                </button>
+            ) : (
+            // A button rather than a clickable <li>: this and Sign Up were the
+            // only two items in the account menu that were not links, so they
+            // were the two a keyboard could not reach — which meant nobody
+            // using one could sign in at all.
             <li className="list-none">
                 <button
                     type="button"
@@ -110,6 +134,7 @@ const LoginModel = ({ next }: { next?: string } = {}) => {
                     Log In
                 </button>
             </li>
+            )}
 
             {isOpen && mounted && createPortal((
                 // WHY THIS IS A PORTAL AND NOT JUST A FIXED DIV.
@@ -155,7 +180,7 @@ const LoginModel = ({ next }: { next?: string } = {}) => {
                             <div>
                                 <input
                                     type="email"
-                                    placeholder="Enter your e-mail"
+                                    placeholder="Enter email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     className="w-full p-3 border rounded-xl text-sm"
@@ -165,7 +190,7 @@ const LoginModel = ({ next }: { next?: string } = {}) => {
                             <div>
                                 <input
                                     type="password"
-                                    placeholder="Enter strong password"
+                                    placeholder="Enter password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="w-full p-3 border rounded-xl text-sm"

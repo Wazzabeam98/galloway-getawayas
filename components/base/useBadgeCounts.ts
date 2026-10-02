@@ -30,9 +30,11 @@ const POLL_MS = 120000;
 interface Counts {
     unread: number;
     pending: number;
+    // Requests waiting on a trade to answer (the provider mirror of `pending`).
+    requests: number;
 }
 
-let counts: Counts = { unread: 0, pending: 0 };
+let counts: Counts = { unread: 0, pending: 0, requests: 0 };
 let timer: ReturnType<typeof setInterval> | null = null;
 let inFlight: Promise<void> | null = null;
 
@@ -68,6 +70,7 @@ async function refresh(): Promise<void> {
             publish({
                 unread: Number(data.unread) || 0,
                 pending: Number(data.pending) || 0,
+                requests: Number(data.requests) || 0,
             });
         } catch (err) {
             // A missing badge is not worth surfacing to anyone.
@@ -136,5 +139,5 @@ export default function useBadgeCounts(enabled = true): Counts {
         };
     }, [enabled]);
 
-    return enabled ? local : { unread: 0, pending: 0 };
+    return enabled ? local : { unread: 0, pending: 0, requests: 0 };
 }

@@ -32,7 +32,7 @@ export function isExclusiveShape(provider: any): boolean {
 export function shapeCue(shape: string): string {
     const map: Record<Shape, string> = {
         made_to_order: 'Made for your dates',
-        comes_to_you: 'Comes to your cottage',
+        comes_to_you: 'Comes to where you’re staying',
         slot: 'Book a time',
     };
     return map[shapeOf({ shape })];
@@ -50,6 +50,13 @@ export function shapeCue(shape: string): string {
 export interface Availability { day_of_week: number; open_time: string; close_time: string; }
 
 export interface GeneratedSession { date: string; time: string; }
+
+// A partial block: a range [startMin, endMin) on one date that no booking may
+// touch. The database is the authority (a block is a slot_sessions row counted by
+// the no-overlap exclusion); this shape is what the wizard-free surfaces — the
+// guest grid and the claim's legibility check — use to grey/skip covered starts,
+// so the guest never even sees a start the database would then refuse.
+export interface PartialBlock { date: string; startMin: number; endMin: number; }
 
 /** "HH:MM[:SS]" → minutes past midnight. */
 function toMinutes(t: string): number {
@@ -78,31 +85,49 @@ function nextDay(dateKey: string): string {
  * Every bookable session between fromDate and toDate inclusive (date-only keys),
  * from the weekly template, minus blocked days. Ordered by date then time.
  *
- * lengthMinutes is the step; a session at open_time, then every length until the
- * last one that still finishes by close_time. A guard caps the horizon so a
+ * stepMinutes is the spacing between starts; fitMinutes is how much room a start
+ * needs before close_time to be offered. They are the same for a fixed-grid
+ * provider (one length back-to-back). They DIFFER for the per-treatment shape:
+ * the grid steps by duration + turnaround (so consecutive bookings never overlap
+ * once the reset gap is counted), while a start only has to leave room for the
+ * treatment itself (duration) before close — the trailing turnaround after the
+ * last booking of the day is not required. fitMinutes defaults to stepMinutes, so
+ * every existing caller keeps today's exact grid. A guard caps the horizon so a
  * malformed template can never spin.
  */
 export function generateSessions(
     availability: Availability[],
     blocks: string[],
-    lengthMinutes: number,
+    stepMinutes: number,
     fromDate: string,
-    toDate: string
+    toDate: string,
+    fitMinutes?: number,
+    partialBlocks?: PartialBlock[]
 ): GeneratedSession[] {
-    const length = Math.max(1, Number(lengthMinutes) || 0);
+    const step = Math.max(1, Number(stepMinutes) || 0);
+    const fit = Math.max(1, Number(fitMinutes) || step);
     const blocked = new Set(blocks);
     const byDow: Record<number, Availability[]> = {};
     for (const a of availability || []) (byDow[a.day_of_week] = byDow[a.day_of_week] || []).push(a);
+    // Partial blocks grouped by date. A start is dropped when the interval a
+    // booking there would occupy — [start, start + step), the same span the
+    // database exclusion measures — overlaps a block. Mirrors the DB guard so the
+    // grid never offers a start the claim would then refuse.
+    const blocksByDate: Record<string, PartialBlock[]> = {};
+    for (const pb of partialBlocks || []) (blocksByDate[pb.date] = blocksByDate[pb.date] || []).push(pb);
 
     const out: GeneratedSession[] = [];
     let date = fromDate;
     for (let guard = 0; guard < 400 && date <= toDate; guard++, date = nextDay(date)) {
         if (blocked.has(date)) continue;
+        const dayBlocks = blocksByDate[date] || [];
         const windows = byDow[dowOf(date)] || [];
         for (const w of windows) {
             const open = toMinutes(w.open_time);
             const close = toMinutes(w.close_time);
-            for (let start = open; start + length <= close; start += length) {
+            for (let start = open; start + fit <= close; start += step) {
+                const busy = { startMin: start, endMin: start + step };
+                if (dayBlocks.some((pb) => intervalsOverlap(busy, { startMin: pb.startMin, endMin: pb.endMin }))) continue;
                 out.push({ date, time: toClock(start) });
             }
         }
@@ -233,6 +258,27 @@ export function slotClaimKind(
 export type OptionReason = 'open' | 'other-mode' | 'full' | 'too-small' | 'misconfigured';
 export interface OptionAvailability { possible: boolean; seatsLeft: number; reason: OptionReason; }
 
+/**
+ * The effective seats and minimum for ONE item — the phased per-item override.
+ * The item's own value wins when set; a null item value falls back to the
+ * provider's slot_capacity / slot_min_people. This is the single resolver every
+ * surface calls (the guest panel, the book route, the host diary) before it hands
+ * the seat engine a config below, so the DISPLAY and the ENFORCEMENT can never
+ * read a different number. It returns a provider-shaped object, so
+ * optionAvailability / sessionCapacity take it unchanged — the seat engine itself
+ * is not cut, only fed the right value.
+ */
+export function seatConfig(
+    itemCapacity: number | null | undefined,
+    itemMinPeople: number | null | undefined,
+    provider: { slot_capacity?: number | null; slot_min_people?: number | null },
+): { slot_capacity: number | null; slot_min_people: number | null } {
+    return {
+        slot_capacity: itemCapacity != null ? Number(itemCapacity) : (provider.slot_capacity ?? null),
+        slot_min_people: itemMinPeople != null ? Number(itemMinPeople) : (provider.slot_min_people ?? null),
+    };
+}
+
 export function optionAvailability(
     row: { capacity: number; seats_taken: number; private: boolean } | null | undefined,
     unit: string | null | undefined,
@@ -271,14 +317,108 @@ export function optionAvailability(
  * a shared table with fewer seats left than its minimum group. Used by the host
  * diary to mark a time "closed". `units` are the provider's own item units.
  */
+// `items` are the provider's own items, each carrying its unit and its per-item
+// seats/minimum (null = fall back to the provider). Per-item capacity means two
+// per-person items can have DIFFERENT seat counts, so the check resolves each
+// item's own config — deduped by the effective (mode, seats, minimum) so
+// identical options don't each cost a call.
 export function sessionClosedToAll(
     row: { capacity: number; seats_taken: number; private: boolean } | null | undefined,
-    units: Array<string | null | undefined>,
+    items: Array<{ unit?: string | null; capacity?: number | null; min_people?: number | null }>,
     provider: { slot_capacity?: number | null; slot_min_people?: number | null },
 ): boolean {
-    const distinct = Array.from(new Set((units || []).map((u) => (bookingIsPrivate(u) ? 'flat' : 'person'))));
-    if (!distinct.length) return false;
-    return distinct.every((u) => !optionAvailability(row, u, provider).possible);
+    if (!items || !items.length) return false;
+    const seen = new Set<string>();
+    for (const it of items) {
+        const cfg = seatConfig(it.capacity, it.min_people, provider);
+        const key = bookingIsPrivate(it.unit) ? 'flat' : ('person:' + cfg.slot_capacity + ':' + cfg.slot_min_people);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (optionAvailability(row, it.unit, cfg).possible) return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// INTERVAL OVERLAP — the per-treatment shape's collision rule
+// ---------------------------------------------------------------------------
+//
+// When session length belonged to the provider, every session was the same
+// length and the day tiled into non-overlapping cells, so a start-time alone
+// stood in for "this provider is busy". With per-treatment durations that stops
+// being true: a 90-minute booking at 10:00 and a 30-minute booking at 11:00 have
+// different start-times but the same masseuse is double-booked 11:00–11:30.
+//
+// A booked session therefore BLOCKS an interval on the provider's day —
+// [start, start + duration + turnaround) minutes from midnight — and two
+// bookings for one provider on one date collide when those half-open intervals
+// overlap. The DATABASE is the authority on this (the slot_sessions_no_overlap
+// exclusion constraint); these pure functions are what the claim's courtesy
+// check and the guest panel's greying use, so all three agree on the same rule.
+// The turnaround is folded into the BLOCK, never the displayed duration: the
+// guest sees "60 min" while the day reserves 70.
+
+export interface DayInterval { startMin: number; endMin: number; }
+
+/** "HH:MM[:SS]" → minutes past midnight. Tolerant of either width. */
+export function minutesOfDay(clock: string): number {
+    return toMinutes(String(clock));
+}
+
+/** The length a booking of this item runs: the item's own, else the provider's. */
+export function resolvedDuration(
+    item: { duration_minutes?: number | null } | null | undefined,
+    provider: { slot_length_minutes?: number | null } | null | undefined,
+): number {
+    const perItem = Number(item && item.duration_minutes);
+    if (Number.isInteger(perItem) && perItem > 0) return perItem;
+    return Math.max(1, Number(provider && provider.slot_length_minutes) || 60);
+}
+
+/** True when the item carries its own duration — the per-treatment shape's tell. */
+export function itemHasOwnDuration(item: { duration_minutes?: number | null } | null | undefined): boolean {
+    const n = Number(item && item.duration_minutes);
+    return Number.isInteger(n) && n > 0;
+}
+
+/** The [start, start + duration + turnaround) block a booking reserves, in minutes. */
+export function blockInterval(time: string, durationMinutes: number, turnaroundMinutes: number): DayInterval {
+    const startMin = minutesOfDay(time);
+    const len = Math.max(0, Number(durationMinutes) || 0) + Math.max(0, Number(turnaroundMinutes) || 0);
+    return { startMin, endMin: startMin + len };
+}
+
+/** Half-open overlap: [aStart,aEnd) and [bStart,bEnd) share a minute. */
+export function intervalsOverlap(a: DayInterval, b: DayInterval): boolean {
+    return a.startMin < b.endMin && b.startMin < a.endMin;
+}
+
+export interface BookedBlock {
+    session_time: string;
+    duration_minutes?: number | null;
+    turnaround_minutes?: number | null;
+}
+
+/**
+ * Does a booking of `durationMinutes` (+ turnaround) at `time` overlap any of the
+ * provider's already-booked sessions? A booked session at the SAME start-time is
+ * not an overlap — it is the one session this booking would join or establish, so
+ * the caller passes only OTHER sessions (or this returns on same-start as its own
+ * interval, which the caller filters). Used by the claim before it touches Stripe
+ * and by the guest panel to grey overlapping starts.
+ */
+export function overlapsBooked(
+    time: string,
+    durationMinutes: number,
+    turnaroundMinutes: number,
+    booked: BookedBlock[],
+): boolean {
+    const want = blockInterval(time, durationMinutes, turnaroundMinutes);
+    for (const b of booked || []) {
+        const bi = blockInterval(b.session_time, Number(b.duration_minutes) || 0, Number(b.turnaround_minutes) || 0);
+        if (intervalsOverlap(want, bi)) return true;
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------

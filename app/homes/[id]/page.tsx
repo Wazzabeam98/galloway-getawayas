@@ -6,21 +6,27 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { capitializeFirst, displayName, getImageUrl, formatTime } from '@/lib/utils';
+import Image from 'next/image';
+import { capitializeFirst, getImageUrl, formatTime, firstName } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
+import ShowAllReviews from '@/components/ShowAllReviews';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
-import { areaForTownKey, hasCopy } from '@/config/areas';
+import { plural } from '@/lib/plural';
+import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
+import { areaForTownKey, areaBySlug, hasCopy } from '@/config/areas';
+import ListingCard, { CardListing } from '@/components/ListingCard';
 import PropertyMap from '@/components/PropertyMap';
 import HouseRules from '@/components/HouseRules';
 import ShowMoreText from '@/components/ShowMoreText';
 import AmenityList from '@/components/AmenityList';
 import MobileBookingBar from '@/components/MobileBookingBar';
+import AreaExperiences from '@/components/AreaExperiences';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Clock } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
@@ -251,34 +257,35 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         .eq('id', params.id)
         .single();
 
-    let hostName = 'Host';
+    // One sensible fallback for a nameless host, shared with the trip page
+    // ("your host") rather than the old inconsistent "Host".
+    let hostName = 'your host';
     let hostAvatar: string | null = null;
     let hostSinceYear: number | null = null;
     let hostBio: string | null = null;
-    // Stripe has been through this host's identity documents. It is a check on
-    // the person, not on the property, and the badge below says so.
+    // The host block is read through the SERVICE ROLE, not the visitor's client.
     //
-    // TWO READS, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
+    // The name columns (full_name, preferred_name, show_full_name) are no longer
+    // readable by the anon role: a logged-out REST caller must never be able to
+    // pull a person's legal surname off /rest/v1/profiles (revoked in
+    // 20260924174233_profiles_revoke_anon_name.sql). show_full_name was only ever
+    // a render-layer curtain — the grant was the real gate. So the display name is
+    // resolved server-side here and only the FIRST name is ever sent to the
+    // browser (see hostFirstName below); the surname stays on the server.
     //
-    // The name and the avatar are what a stranger is meant to see, and they
-    // come back as the visitor — most people here are signed out.
-    //
-    // `stripe_payouts_enabled` is not. It says only "this host can be paid",
-    // which is mild on its own, but it tells anyone reading which hosts are
-    // NOT set up to take money, and one Stripe column left public is the
-    // exception that gets forgotten and later extended. It is revoked from
-    // both browser roles by 20260828230825_profiles_private_columns.sql, so it
-    // is read here through the service role — this is a server component, so
-    // that costs a query and nothing else, and the flag never leaves the
-    // server except as the boolean below.
+    // stripe_payouts_enabled is service-role-only for its own reasons (it says
+    // which hosts are NOT set up to take money; revoked from both browser roles by
+    // 20260828230825_profiles_private_columns.sql). Both now come back in one read.
+    // This is a server component, so the service-role query costs nothing extra
+    // and nothing private leaves the server except the booleans/first name below.
     let hostVerified = false;
     if (home?.host_id) {
-        const { data: hostProfile } = await supabase
+        const { data: hostProfile } = await adminClient()
             .from('profiles')
-            .select('full_name, preferred_name, show_full_name, avatar_url, created_at, host_bio')
+            .select('full_name, preferred_name, show_full_name, avatar_url, created_at, host_bio, stripe_payouts_enabled')
             .eq('id', home.host_id)
-            .single();
-        hostName = displayName(hostProfile, 'Host');
+            .maybeSingle();
+        hostName = firstName(hostProfile, 'your host');
         hostAvatar = hostProfile?.avatar_url || null;
         hostBio = (hostProfile?.host_bio || '').trim() || null;
         // When they joined — the tenure line a guest looks for on a page
@@ -288,18 +295,15 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
             const y = new Date(hostProfile.created_at).getFullYear();
             if (!isNaN(y)) hostSinceYear = y;
         }
-
-        const { data: payoutFlag } = await adminClient()
-            .from('profiles')
-            .select('stripe_payouts_enabled')
-            .eq('id', home.host_id)
-            .maybeSingle();
-        hostVerified = payoutFlag?.stripe_payouts_enabled === true;
+        hostVerified = hostProfile?.stripe_payouts_enabled === true;
     }
 
     // Guests see a first name only — a surname on a public page is more
-    // than anyone needs, and it's how the big platforms do it.
-    const hostFirstName = capitializeFirst((hostName || 'Host').split(' ')[0]);
+    // than anyone needs, and it's how the big platforms do it. A nameless host
+    // stays "your host" (never the bare word "Your" from splitting the fallback).
+    const hostFirstName = hostName === 'your host'
+        ? 'your host'
+        : capitializeFirst(hostName.split(' ')[0]);
     const highlights = propertyHighlights(home);
 
     // Rounded to about 110m before it ever left the database. PropertyMap
@@ -381,27 +385,66 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const reviewerIds = Array.from(new Set((reviews || []).map((r) => r.reviewer_id)));
     let reviewerNames: Record<string, string> = {};
     if (reviewerIds.length) {
-        const { data: reviewers } = await supabase.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds);
-        (reviewers || []).forEach((p) => { reviewerNames[p.id] = displayName(p, 'Guest'); });
+        // Service role: the reviewer name columns are no longer anon-readable
+        // (see the host block above). The name is resolved server-side and the
+        // list renders a first name only.
+        const { data: reviewers } = await adminClient().from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds);
+        (reviewers || []).forEach((p) => { reviewerNames[p.id] = firstName(p, 'Guest'); });
     }
 
     const { data: { user: viewer } } = await supabase.auth.getUser();
     const isHostViewing = viewer?.id === home.host_id;
 
-    // The stored average is maintained by a database trigger, so it's the
-    // same number everywhere. Falls back to computing it if a listing
-    // predates that trigger.
-    const avgRating = home.rating_avg
-        ? Number(home.rating_avg)
-        : reviews && reviews.length
-            ? reviews.reduce((sum, r) => sum + Number(r.rating), 0) / reviews.length
-            : 0;
+    // ONE rating source for the whole site: the stored aggregate columns,
+    // rating_avg and rating_count, maintained by a database trigger. They are
+    // the same two columns the listing cards and the area grids read, so the
+    // score under the title matches the score on the card that linked here.
+    // reviews.length (the length of the list actually rendered further down)
+    // and a from-scratch average are deliberately NOT used for the number:
+    // three sources for one rating is three chances to disagree, which is
+    // exactly what was happening.
+    const ratingAvg = Number(home.rating_avg) || 0;
 
     // A handful of reviews is not a rating yet, so a listing stays "New" until
     // it has MIN_PUBLIC_REVIEWS of them rather than publishing a number that
     // one more review could swing by a whole star.
-    const reviewCount = reviews?.length || 0;
-    const showScore = hasPublicScore(reviewCount);
+    const ratingCount = Number(home.rating_count) || 0;
+    const showScore = hasPublicScore(ratingCount);
+
+    // More places nearby — so a listing is not a dead end. Until now a property
+    // linked only UP to its area page; nothing linked one cottage to another,
+    // for a guest or a crawler. This fills that in: other published listings in
+    // the same town first, then the neighbouring areas the area config already
+    // names (area.nearby), capped at a tidy row. Named columns only — anon has
+    // no table grant, and the card needs just these.
+    const townForNearby = townKey(home.location);
+    const areaForNearby = areaForTownKey(townForNearby);
+    const nearbyKeys = new Set<string>();
+    if (areaForNearby) {
+        areaForNearby.townKeys.forEach((k) => nearbyKeys.add(k));
+        areaForNearby.nearby.forEach((slug) => {
+            const nb = areaBySlug(slug);
+            if (nb) nb.townKeys.forEach((k) => nearbyKeys.add(k));
+        });
+    } else if (townForNearby) {
+        nearbyKeys.add(townForNearby);
+    }
+
+    let nearbyListings: CardListing[] = [];
+    if (nearbyKeys.size) {
+        const { data: candidates } = await supabase
+            .from('listings')
+            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude')
+            .eq('status', 'published')
+            .neq('id', home.id)
+            .order('created_at', { ascending: false })
+            .limit(60);
+        const inArea = (candidates || []).filter((l) => nearbyKeys.has(townKey(l.location)));
+        // Same town ahead of a neighbouring one, so the closest places show first.
+        const sameTown = inArea.filter((l) => townKey(l.location) === townForNearby);
+        const neighbour = inArea.filter((l) => townKey(l.location) !== townForNearby);
+        nearbyListings = sameTown.concat(neighbour).slice(0, 4);
+    }
 
     // The way back up. Until the area pages existed a listing linked to
     // nothing at all — every property on the site was a dead end, for a guest
@@ -434,6 +477,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     };
 
     return (
+        <div className='min-h-screen bg-slate-50'>
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 pb-24 lg:pb-0'>
             <script
                 type="application/ld+json"
@@ -441,14 +485,14 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
             />
             <div className='mt-4'>
                 {showArea && area && (
-                    <nav aria-label="Breadcrumb" className='mb-3 text-sm text-slate-500'>
-                        <Link href="/" className='hover:text-slate-900 underline underline-offset-4'>
+                    <nav aria-label="Breadcrumb" className='mb-3 -my-1.5 flex flex-wrap items-center text-sm text-slate-500'>
+                        <Link href="/" className='inline-flex items-center min-h-[44px] py-1.5 hover:text-slate-900 underline underline-offset-4'>
                             Home
                         </Link>
                         <span className='mx-2' aria-hidden="true">/</span>
                         <Link
                             href={`/holiday-cottages/${area.slug}`}
-                            className='hover:text-slate-900 underline underline-offset-4'
+                            className='inline-flex items-center min-h-[44px] py-1.5 hover:text-slate-900 underline underline-offset-4'
                         >
                             Holiday cottages in {area.name}
                         </Link>
@@ -463,14 +507,14 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (
                         <>
-                            <ReviewStars value={Math.round(avgRating)} size={15} />
-                            <span className='font-semibold text-slate-900'>{avgRating.toFixed(1)}</span>
-                            <span>· {reviewCount} review{reviewCount > 1 ? 's' : ''}</span>
+                            <ReviewStars value={Math.round(ratingAvg)} size={15} />
+                            <span className='font-semibold text-slate-900'>{ratingAvg.toFixed(1)}</span>
+                            <span>· {ratingCount} review{ratingCount > 1 ? 's' : ''}</span>
                         </>
-                    ) : reviewCount > 0 ? (
+                    ) : ratingCount > 0 ? (
                         <span className='inline-flex items-center gap-1.5 font-semibold text-slate-900'>
                             <span className='bg-emerald-50 text-emerald-800 text-xs px-2 py-0.5 rounded-full'>New</span>
-                            {reviewCount} review{reviewCount > 1 ? 's' : ''} so far
+                            {ratingCount} review{ratingCount > 1 ? 's' : ''} so far
                         </span>
                     ) : (
                         <span className='bg-emerald-50 text-emerald-800 text-xs px-2 py-0.5 rounded-full font-semibold'>New</span>
@@ -523,8 +567,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 ? {
                                       aggregateRating: {
                                           '@type': 'AggregateRating',
-                                          ratingValue: avgRating.toFixed(2),
-                                          reviewCount: reviewCount,
+                                          ratingValue: ratingAvg.toFixed(2),
+                                          reviewCount: ratingCount,
                                           bestRating: 5,
                                           worstRating: 1,
                                       },
@@ -551,15 +595,33 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         </h2>
 
                         <p className='mt-1 text-slate-600'>
-                            {home.max_guests} guests · {home.bedrooms} bedrooms · {home.beds} beds · {home.bathrooms} bathrooms
+                            {plural(home.max_guests, 'guest')} · {plural(home.bedrooms, 'bedroom')} · {plural(home.beds, 'bed')} · {plural(home.bathrooms, 'bathroom')}
                         </p>
+                        {(() => {
+                            // Only for a cottage outside our main towns — see lib/nearestTown.
+                            const near = nearestTown(home.location, home.approx_latitude, home.approx_longitude);
+                            return near ? (
+                                <p className='mt-1 text-sm text-slate-500'>{nearestTownLabel(near)}</p>
+                            ) : null;
+                        })()}
 
                         <div className='flex items-center gap-3 mt-5 pt-5 border-t'>
                             <div className='w-11 h-11 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center font-semibold flex-shrink-0'>
                                 {hostAvatar ? (
-                                    <img
+                                    // next/image, NOT a plain <img>. This renders into a
+                                    // 44px circle (w-11 h-11), and a plain tag hands the
+                                    // browser whatever the host uploaded at full size: one
+                                    // real avatar measured 2,173 KB here, which was 99% of
+                                    // this page's image weight on a phone and all of it
+                                    // thrown away by the CSS. width/height let the
+                                    // optimiser resize AND re-encode at the source, so the
+                                    // wire carries a 48px (96px on a 2x screen) WebP.
+                                    // Constraining it in CSS alone does not save a byte.
+                                    <Image
                                         src={getImageUrl(hostAvatar)}
                                         alt={`${hostFirstName}, host`}
+                                        width={44}
+                                        height={44}
                                         className='w-full h-full object-cover'
                                     />
                                 ) : (
@@ -587,11 +649,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                     {hostSinceYear && (
                                         <span>Hosting since {hostSinceYear}</span>
                                     )}
-                                    {hostSinceYear && reviews && reviews.length > 0 && (
+                                    {hostSinceYear && ratingCount > 0 && (
                                         <span aria-hidden='true'>·</span>
                                     )}
-                                    {reviews && reviews.length > 0 && (
-                                        <span>{reviews.length} review{reviews.length > 1 ? 's' : ''} from guests</span>
+                                    {ratingCount > 0 && (
+                                        <span>{ratingCount} review{ratingCount > 1 ? 's' : ''} from guests</span>
                                     )}
                                 </div>
                             </div>
@@ -678,89 +740,15 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
+                        {/* The map, kept in the left column so the booking card
+                            sits beside it and finishes level with the bottom of
+                            the map — that is where the sticky card releases. */}
                         {coords && (
                             <PropertyMap
                                 latitude={coords.latitude}
                                 longitude={coords.longitude}
                                 area={placeSummary(home.location)}
                             />
-                        )}
-
-                        {/* House rules — same shared component and wording the
-                            guest sees again on their trip card after booking. */}
-                        <HouseRules listing={home} variant="page" />
-
-                        {(!reviews || reviews.length === 0) && (
-                            <div className='mt-8 pt-8 border-t'>
-                                <h2 className='text-xl font-semibold mb-2'>Reviews</h2>
-                                <div className='border rounded-2xl p-6 bg-slate-50'>
-                                    <div className='font-semibold text-slate-900 mb-1'>
-                                        No reviews yet
-                                    </div>
-                                    <p className='text-sm text-slate-600'>
-                                        This place is newly listed, so nobody has stayed and reviewed it
-                                        through Galloway Getaways yet. Reviews appear here once guests
-                                        have checked out — and being one of the first to stay means
-                                        yours will be the one others read.
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        {reviews && reviews.length > 0 && (
-                            <div className='mt-8'>
-                                {showScore && (
-                                    <ReviewsSummary
-                                        reviews={reviews}
-                                        ratingAvg={avgRating}
-                                        ratingCount={home.rating_count || reviewCount}
-                                        categoryAverages={{
-                                            cleanliness: home.rating_cleanliness,
-                                            accuracy: home.rating_accuracy,
-                                            checkin: home.rating_checkin,
-                                            communication: home.rating_communication,
-                                            location: home.rating_location,
-                                            value: home.rating_value,
-                                        }}
-                                    />
-                                )}
-
-                                <h2 className='text-xl font-semibold my-6 flex items-center gap-2'>
-                                    {showScore ? (
-                                        <>
-                                            <ReviewStars value={Math.round(avgRating)} size={18} />
-                                            {avgRating.toFixed(1)} · {reviewCount} review{reviewCount > 1 ? 's' : ''}
-                                        </>
-                                    ) : (
-                                        <>{reviewCount} review{reviewCount > 1 ? 's' : ''}</>
-                                    )}
-                                </h2>
-                                {!showScore && (
-                                    <p className='text-sm text-slate-600 -mt-3 mb-6'>
-                                        An overall score appears once this place has{' '}
-                                        {MIN_PUBLIC_REVIEWS} reviews.
-                                    </p>
-                                )}
-                                <div className='space-y-5'>
-                                    {reviews.map((r) => (
-                                        <div key={r.id} className='border-b pb-5'>
-                                            <div className='flex items-center justify-between mb-1'>
-                                                <span className='font-semibold text-slate-900'>{capitializeFirst(reviewerNames[r.reviewer_id] || 'Guest')}</span>
-                                                <ReviewStars value={r.rating} size={14} />
-                                            </div>
-                                            <p className='text-sm text-slate-700'>{r.comment}</p>
-                                            {isHostViewing ? (
-                                                <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
-                                            ) : r.host_reply ? (
-                                                <div className='mt-3 ml-4 pl-4 border-l-2 border-slate-200'>
-                                                    <p className='text-xs font-semibold text-slate-500 mb-1'>Response from the host</p>
-                                                    <p className='text-sm text-slate-700'>{r.host_reply}</p>
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
                         )}
                     </div>
 
@@ -789,12 +777,121 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         />
                     </div>
                 </div>
+
+                {/* Full-width, below the two-column region: the sticky booking
+                    card has released level with the bottom of the map in the
+                    column above, so the house rules and reviews run full-width
+                    beneath rather than the card riding the page to the bottom. */}
+                <div>
+                    {/* House rules — same shared component and wording the
+                        guest sees again on their trip card after booking. */}
+                    <HouseRules listing={home} variant="page" />
+
+                    {(!reviews || reviews.length === 0) && (
+                        <div className='mt-8 pt-8 border-t'>
+                            <h2 className='text-xl font-semibold mb-2'>Reviews</h2>
+                            <div className='border rounded-2xl p-6 bg-slate-50'>
+                                <div className='font-semibold text-slate-900 mb-1'>
+                                    No reviews yet
+                                </div>
+                                <p className='text-sm text-slate-600'>
+                                    This place is newly listed, so nobody has stayed and reviewed it
+                                    through Galloway Getaways yet. Reviews appear here once guests
+                                    have checked out — and being one of the first to stay means
+                                    yours will be the one others read.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {reviews && reviews.length > 0 && (
+                        <div className='mt-8'>
+                            {showScore && (
+                                <ReviewsSummary
+                                    reviews={reviews}
+                                    ratingAvg={ratingAvg}
+                                    ratingCount={ratingCount}
+                                    categoryAverages={{
+                                        cleanliness: home.rating_cleanliness,
+                                        accuracy: home.rating_accuracy,
+                                        checkin: home.rating_checkin,
+                                        communication: home.rating_communication,
+                                        location: home.rating_location,
+                                        value: home.rating_value,
+                                    }}
+                                />
+                            )}
+
+                            <h2 className='text-xl font-semibold my-6 flex items-center gap-2'>
+                                {showScore ? (
+                                    <>
+                                        <ReviewStars value={Math.round(ratingAvg)} size={18} />
+                                        {ratingAvg.toFixed(1)} · {ratingCount} review{ratingCount > 1 ? 's' : ''}
+                                    </>
+                                ) : (
+                                    <>{ratingCount} review{ratingCount > 1 ? 's' : ''}</>
+                                )}
+                            </h2>
+                            {!showScore && (
+                                <p className='text-sm text-slate-600 -mt-3 mb-6'>
+                                    An overall score appears once this place has{' '}
+                                    {MIN_PUBLIC_REVIEWS} reviews.
+                                </p>
+                            )}
+                            <ShowAllReviews initial={4} className='space-y-5'>
+                                {reviews.map((r) => (
+                                    <div key={r.id} className='border-b pb-5 last:border-0 last:pb-0'>
+                                        <div className='flex items-center justify-between mb-1'>
+                                            <span className='font-semibold text-slate-900'>{capitializeFirst(reviewerNames[r.reviewer_id] || 'Guest')}</span>
+                                            <ReviewStars value={r.rating} size={14} />
+                                        </div>
+                                        <p className='text-sm text-slate-700'>{r.comment}</p>
+                                        {isHostViewing ? (
+                                            <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
+                                        ) : r.host_reply ? (
+                                            <div className='mt-3 ml-4 pl-4 border-l-2 border-slate-200'>
+                                                <p className='text-xs font-semibold text-slate-500 mb-1'>Response from the host</p>
+                                                <p className='text-sm text-slate-700'>{r.host_reply}</p>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ))}
+                            </ShowAllReviews>
+                        </div>
+                    )}
+                </div>
             </div>
+
+            {nearbyListings.length > 0 && (
+                <section className='mt-12 pt-10 border-t'>
+                    <h2 className='text-xl md:text-2xl font-bold text-slate-900'>More places nearby</h2>
+                    <p className='mt-1 text-sm text-slate-500'>
+                        Other cottages {areaForNearby ? `in and around ${areaForNearby.name}` : 'nearby'}.
+                    </p>
+                    <div className='mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6'>
+                        {nearbyListings.map((l) => (
+                            <ListingCard key={l.id} listing={l} />
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {/* Experiences a guest on THIS stay could have — based in the town or
+                covering this point. Self-gates to nothing while the feature is
+                dormant or nothing matches. */}
+            <AreaExperiences
+                lat={home.approx_latitude != null ? Number(home.approx_latitude) : null}
+                lng={home.approx_longitude != null ? Number(home.approx_longitude) : null}
+                townLabel={area?.name || null}
+                intro={`Local chefs, bakers, saunas and guides who come to ${area?.name || 'this area'} — add one to your stay.`}
+            />
+
             <MobileBookingBar
                 pricePerNight={home.price_per_night}
                 label={home.instant_book === true ? 'Reserve' : 'Request to book'}
                 targetId='book'
             />
+        </div>
         </div>
     )
 }

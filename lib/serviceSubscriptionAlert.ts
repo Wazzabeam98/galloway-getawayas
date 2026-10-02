@@ -1,12 +1,12 @@
 // The six emails that are the only reason anybody ever pays.
 //
-// Nobody has a card on file until the end of the ninety days, so this ladder
+// Nobody has a card on file until the end of the six months, so this ladder
 // is not a courtesy — it is the mechanism. If these do not go out, the
 // subscription does not exist.
 //
 // The shape: one email that asks for nothing before any email that asks for
 // something, and nothing at all after the card is in. A tradesman who has had
-// ninety free days and then gets a bill out of nowhere is a tradesman who
+// six free months and then gets a bill out of nowhere is a tradesman who
 // leaves; a tradesman chased for something he has already done is a tradesman
 // who stops reading. Both failures are avoided by the same two rules and both
 // live in lib/serviceSubscription.ts, not here.
@@ -23,10 +23,11 @@ import {
     button,
     detailRows,
     SITE_URL,
+    NEUTRAL_SUBTITLE,
 } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { logError } from '@/lib/logError';
-import { SUBSCRIPTION_MONTHLY, TRIAL_DAYS } from '@/lib/serviceProviders';
+import { SUBSCRIPTION_MONTHLY, TRIAL_PERIOD_LABEL } from '@/lib/serviceProviders';
 import { GRACE_DAYS, Reminder, graceEndsAt, reminderByKey } from '@/lib/serviceSubscription';
 
 const FOOT = 'You are receiving this because you list a business on Galloway Getaways.';
@@ -59,13 +60,15 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
         return emailLayout(
             p('Somebody has asked for <strong>' + name + '</strong> through Galloway Getaways, '
                 + 'so your free period has started today.')
-            + p('You have <strong>' + TRIAL_DAYS + ' free days</strong>, running to <strong>'
+            + p('You have <strong>' + TRIAL_PERIOD_LABEL + ' free</strong>, running to <strong>'
                 + escapeHtml(ends) + '</strong>. There is nothing to pay and nothing to set up '
                 + 'until then — we will write to you well before anything is due.')
             + terms()
             + p('It starts now rather than when you were approved because what you are paying '
                 + 'for is the work we send you, and this is the first of it.'),
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -76,7 +79,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
             + p('Nothing to do today — this is just so the date is not a surprise. We will ask you '
                 + 'for a card a fortnight before it ends.')
             + terms(),
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -89,7 +94,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
                 + 'rather than later.')
             + terms()
             + cta,
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -100,7 +107,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
             + p('Nothing is taken before then. If you would rather not carry on, ignore this and '
                 + 'the listing will come down on its own — there is nothing to cancel.')
             + cta,
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -111,7 +120,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
             + p('If a card is not added, your listing stays up for another ' + GRACE_DAYS
                 + ' days and then comes off the site. Nothing else happens, and nothing is charged.')
             + cta,
-            FOOT
+            FOOT,
+            undefined,
+            NEUTRAL_SUBTITLE
         );
     }
 
@@ -133,7 +144,9 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
             + 'details and no second review.')
         + terms()
         + cta,
-        FOOT
+        FOOT,
+        undefined,
+        NEUTRAL_SUBTITLE
     );
 }
 
@@ -187,6 +200,6 @@ export async function sendTrialStarted(provider: any): Promise<boolean> {
     const reminder = reminderByKey('trial_started');
     if (!reminder) return false;
 
-    // No card link in this one — there is nothing to pay for ninety days.
+    // No card link in this one — there is nothing to pay for six months.
     return sendReminder(reminder, provider, null);
 }

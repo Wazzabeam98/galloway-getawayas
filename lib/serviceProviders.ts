@@ -27,6 +27,11 @@ export const TRADES = [
     { key: 'roofer', label: 'Roofer' },
     { key: 'painter', label: 'Painter & decorator' },
     { key: 'handyman', label: 'Handyman' },
+    // "Something else" — a host trade the applicant types themselves when theirs
+    // isn't on the list (a chimney sweep, a locksmith, a pest controller). The
+    // typed name is stored in custom_label; this key just says "a host trade,
+    // shape unknown", so it takes the plain host steps and the flat pricing.
+    { key: 'other', label: 'Other' },
     // A guest experience — a private chef, a baker, a wild-swimming guide, a
     // whisky tasting, anyone offering something to guests staying nearby. There
     // is no preset list of these and no category the applicant picks: they
@@ -44,6 +49,36 @@ export function tradeLabel(key: string): string {
     return found ? found.label : 'Service';
 }
 
+// The trade as a WORKER NOUN, for a sentence like "What do you cover as a
+// joiner?". For most host trades the key already IS the noun (joiner, plumber,
+// electrician, roofer, painter, handyman), so it is used as-is. The few whose key
+// is an icon name, or whose label is an activity rather than a person, get an
+// explicit noun so the sentence never reads "as a window cleaning". 'other' is
+// not handled here — the applicant's typed trade (custom_label) is used instead,
+// by the caller. Unknown falls back to 'tradesperson'.
+const TRADE_NOUNS: Record<string, string> = {
+    sponge: 'cleaner',
+    bin: 'waste removal service',
+    trees: 'gardener',
+    droplet: 'window cleaner',
+    electrician: 'electrician',
+    joiner: 'joiner',
+    plumber: 'plumber',
+    roofer: 'roofer',
+    painter: 'painter and decorator',
+    handyman: 'handyman',
+};
+export function tradeNoun(key: string): string {
+    return TRADE_NOUNS[String(key || '')] || 'tradesperson';
+}
+
+// "a" or "an" for a noun, by its first sound (vowel letter is a good-enough
+// proxy here — the trade nouns are all ordinary words). Used so "an electrician"
+// reads right where "a joiner" also does.
+export function indefiniteArticle(noun: string): string {
+    return /^[aeiou]/i.test(String(noun || '').trim()) ? 'an' : 'a';
+}
+
 // Which sign-up a trade belongs to.
 //
 // Two pages, not one page with a question. A business arriving at the host
@@ -57,11 +92,45 @@ export function tradeLabel(key: string): string {
 export const HOST_TRADES = [
     'sponge', 'bin', 'trees', 'droplet',
     'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
+    'other',
 ] as const;
 // One guest trade now, not a preset list. Everyone offering something to guests
 // is 'guest'; what kind of thing they offer is the owner-assigned category, not
 // a trade. See GUEST-EXPERIENCES-ONE-FORM.md.
 export const GUEST_TRADES = ['guest'] as const;
+
+// Trades that are not open for business yet: they stay VISIBLE wherever hosts or
+// guests browse trades — so somebody who came for one is told it is on the way
+// rather than concluding the site does not do it — but they are marked "Coming
+// soon", cannot be selected or requested, and are not offered on the sign-up
+// picker so no new provider joins under them.
+//
+// Cleaning is here (decision, 28 September 2026): it is coming soon rather than
+// available. It stays a member of HOST_TRADES so it keeps appearing in the shop
+// and so an existing cleaning provider's row still resolves an audience; the
+// coming-soon rule is layered on top of that membership, not carved out of it.
+export const COMING_SOON_TRADES = ['sponge'] as const;
+
+export function isTradeComingSoon(trade: string): boolean {
+    return (COMING_SOON_TRADES as readonly string[]).indexOf(String(trade || '')) !== -1;
+}
+
+// Where a trade's list lives now that there is no page per trade: the one list
+// at /services, filtered to that trade. A guest experience is not a host trade,
+// so it goes to the cottages (an experience is booked against a stay); a
+// coming-soon trade has nobody to show, so it lands on the unfiltered list.
+//
+// Every "send them back to the trade's list" goes through this, so it is one
+// hop — never to /services/<trade>, which is itself only a redirect. The
+// permanent redirects in next.config.js spell the same answers out by hand
+// (config cannot import TypeScript); tests/old-services-routes.test.ts holds
+// the two together.
+export function tradeListHref(trade: string): string {
+    const key = String(trade || '');
+    if (audienceForTrade(key) === 'guest') return '/';
+    if (isTradeComingSoon(key)) return '/services';
+    return '/services?trade=' + encodeURIComponent(key);
+}
 
 // ---------------------------------------------------------------------------
 // GUEST CATEGORIES — the picker a guest provider starts from.
@@ -161,6 +230,93 @@ export function guestCategoryIsFood(key: string | null | undefined): boolean {
     return !!(c && c.food);
 }
 
+// Accessibility and parking are pick-from-a-list, not prose: a provider ticks
+// the nearest option and a guest reads a consistent phrase, not a paragraph. The
+// stored value is the KEY; the label is what a guest sees. An empty/unknown key
+// means "not said" and the row is dropped.
+export const ACCESSIBILITY_OPTIONS: { key: string; label: string }[] = [
+    { key: 'step_free', label: 'Step-free access' },
+    { key: 'some_steps', label: 'Some steps' },
+    { key: 'not_accessible', label: 'Not step-free' },
+    { key: 'ask', label: 'Ask the host' },
+];
+export const PARKING_OPTIONS: { key: string; label: string }[] = [
+    { key: 'on_site', label: 'Parking on site' },
+    { key: 'nearby', label: 'Parking nearby' },
+    { key: 'street', label: 'Street parking' },
+    { key: 'none', label: 'No parking' },
+];
+// What an experience includes, as ticks — a provider picks from a shared list
+// rather than writing prose, and the same keys render a "What's included" list on
+// the guest listing. Deliberately general so one list spans every category (a
+// sauna, a chef, a pottery class): "what's provided" (things they bring/lay on)
+// and "on site" (what's there when you arrive). Stored as guest_details.amenities
+// (an array of keys); the label is what a guest reads.
+export const EXPERIENCE_AMENITY_GROUPS: { group: string; items: { key: string; label: string }[] }[] = [
+    {
+        group: 'What’s provided',
+        items: [
+            { key: 'equipment', label: 'All equipment provided' },
+            { key: 'materials', label: 'Materials included' },
+            { key: 'safety_gear', label: 'Safety gear' },
+            { key: 'towels', label: 'Towels' },
+            { key: 'refreshments', label: 'Hot drinks & refreshments' },
+            { key: 'food', label: 'Food included' },
+            { key: 'takehome', label: 'Take home what you make' },
+            { key: 'photos', label: 'Photos of your session' },
+        ],
+    },
+    {
+        group: 'On site',
+        items: [
+            { key: 'changing', label: 'Changing facilities' },
+            { key: 'showers', label: 'Showers' },
+            { key: 'toilets', label: 'Toilets' },
+            { key: 'shelter', label: 'Shelter from the weather' },
+            { key: 'seating', label: 'Seating area' },
+            { key: 'lockers', label: 'Lockers / storage' },
+            { key: 'wifi', label: 'Wifi' },
+        ],
+    },
+];
+export const EXPERIENCE_AMENITIES = EXPERIENCE_AMENITY_GROUPS.flatMap((g) => g.items);
+const EXPERIENCE_AMENITY_KEYS = new Set(EXPERIENCE_AMENITIES.map((a) => a.key));
+export function experienceAmenityLabel(key: string | null | undefined): string | null {
+    return EXPERIENCE_AMENITIES.find((a) => a.key === String(key || '').trim())?.label || null;
+}
+// Drop anything not in the known list, and de-dupe, keeping the canonical order —
+// so a stored value can never render an unknown or duplicate "included" line.
+export function knownExperienceAmenities(keys: any): string[] {
+    const set = new Set((Array.isArray(keys) ? keys : []).map((k: any) => String(k || '').trim()).filter((k: string) => EXPERIENCE_AMENITY_KEYS.has(k)));
+    return EXPERIENCE_AMENITIES.filter((a) => set.has(a.key)).map((a) => a.key);
+}
+// Cancellation as a named choice for a guest experience — window-based (which
+// fits a timed session), not the holiday-let's day-before tiers. "No refund" is
+// the new option a bare hours field couldn't express. The window presets set the
+// existing cancellation_window_hours; "No refund" sets a no_refund flag instead.
+export const EXPERIENCE_CANCELLATION_OPTIONS: { key: string; label: string; hours: number; noRefund?: boolean; blurb: string }[] = [
+    { key: 'flexible', label: 'Flexible', hours: 24, blurb: 'Free to cancel up to 24 hours before.' },
+    { key: 'standard', label: 'Standard', hours: 48, blurb: 'Free to cancel up to 48 hours before.' },
+    { key: 'firm', label: 'Firm', hours: 168, blurb: 'Free to cancel up to 7 days before.' },
+    { key: 'none', label: 'No refund', hours: 0, noRefund: true, blurb: 'Non-refundable once booked.' },
+];
+// The named policy a provider is on, from what's stored — no_refund wins, else
+// the nearest window preset (so a legacy hours value still names cleanly).
+export function experienceCancellationOption(hours: number | null | undefined, noRefund: boolean | null | undefined) {
+    if (noRefund) return EXPERIENCE_CANCELLATION_OPTIONS.find((o) => o.key === 'none')!;
+    const h = Math.max(0, Number(hours) || 0);
+    return EXPERIENCE_CANCELLATION_OPTIONS
+        .filter((o) => !o.noRefund)
+        .reduce((best, o) => (Math.abs(o.hours - h) < Math.abs(best.hours - h) ? o : best));
+}
+
+export function accessibilityLabel(key: string | null | undefined): string | null {
+    return ACCESSIBILITY_OPTIONS.find((o) => o.key === String(key || '').trim())?.label || null;
+}
+export function parkingLabel(key: string | null | undefined): string | null {
+    return PARKING_OPTIONS.find((o) => o.key === String(key || '').trim())?.label || null;
+}
+
 // WHERE A SLOT HAPPENS — the come-to-me / travel fork, per category.
 //
 // A slot is a session at a time, and the axis is the same one made-to-order
@@ -187,6 +343,42 @@ export function slotAsksWhereFork(category: string | null | undefined): boolean 
     return SLOT_WHERE_FORK_CATEGORIES.indexOf(String(category || '')) !== -1;
 }
 
+// The ONE-AT-A-TIME slot categories: a provider selling their own time in
+// variable lengths, who can't be in two places at once — session length belongs
+// to the ITEM (the treatment), not the provider. Massage is the first; barbers,
+// physios, dog groomers, driving instructors and mobile hairdressers are the same
+// shape and join by being ADDED here, with no change to the booking code — it
+// keys off the per-item duration the wizard then writes, never off this list.
+//
+// This list only shapes the WIZARD (ask duration per treatment; don't ask a
+// provider length, a pricing basis, or a capacity — a treatment is one person at
+// a time, priced whole). What the booking model does with the result is decided
+// structurally, by whether an item carries its own duration.
+const SLOT_PER_ITEM_DURATION_CATEGORIES = ['massage'];
+
+export function slotDurationPerItem(category: string | null | undefined): boolean {
+    return SLOT_PER_ITEM_DURATION_CATEGORIES.indexOf(String(category || '')) !== -1;
+}
+
+// The MIXED categories — a provider who genuinely runs both shapes: a yoga
+// teacher with group classes AND 1:1s, a potter with a group wheel class AND
+// private tuition. Unlike massage (pure one-at-a-time, every item timed), these
+// ask the timed-or-not question PER ITEM: a shared class is untimed and uses the
+// provider's one session length + capacity; a one-at-a-time booking is flat with
+// its OWN duration. The booking code doesn't branch on this — it keys off the
+// item's duration either way; this only shapes the wizard.
+const SLOT_MIXED_DURATION_CATEGORIES = ['yoga', 'pottery', 'painting'];
+
+export function slotMixedDuration(category: string | null | undefined): boolean {
+    return SLOT_MIXED_DURATION_CATEGORIES.indexOf(String(category || '')) !== -1;
+}
+
+// Does this category's item sub-flow ask a per-treatment duration at all — either
+// because every item is timed (massage) or because some may be (the mixed ones)?
+export function slotAsksItemDuration(category: string | null | undefined): boolean {
+    return slotDurationPerItem(category) || slotMixedDuration(category);
+}
+
 export function slotIsMeetingPoint(category: string | null | undefined): boolean {
     return SLOT_MEETING_POINT_CATEGORIES.indexOf(String(category || '')) !== -1;
 }
@@ -200,28 +392,55 @@ export function defaultSlotFulfilment(category: string | null | undefined): stri
     return slotAsksWhereFork(category) ? '' : 'collection';
 }
 
+// PER-ITEM LOCATION — a slot provider who answers 'both' to "where does it
+// happen?" runs some sessions at their studio and travels for others, so the
+// location is asked once PER ITEM. Every provider who picks a single place
+// answers it once and every item inherits it (item.fulfilment stays null).
+export function slotLocationPerItem(providerFulfilment: string | null | undefined): boolean {
+    return String(providerFulfilment || '') === 'both';
+}
+
+// The effective location of one item: its own answer for a 'both' provider, else
+// the provider's single answer. 'delivery' = travelled to the guest's cottage,
+// 'collection' = at the provider's place. Null only for a 'both' provider whose
+// item has not been answered yet (an unresolved, unbookable state).
+export function itemFulfilment(
+    item: { fulfilment?: string | null } | null | undefined,
+    providerFulfilment: string | null | undefined,
+): string | null {
+    const own = String((item && item.fulfilment) || '');
+    if (own === 'collection' || own === 'delivery') return own;
+    const prov = String(providerFulfilment || '');
+    return prov === 'both' ? null : (prov || null);
+}
+
+// A travelling item — the provider goes to the guest. Always private, no cap:
+// one group at one fixed price whoever turns up. The counterpart of the
+// provider-level travellingMixedSlot, but keyed on the ITEM.
+export function itemTravels(
+    item: { fulfilment?: string | null } | null | undefined,
+    providerFulfilment: string | null | undefined,
+): boolean {
+    return itemFulfilment(item, providerFulfilment) === 'delivery';
+}
+
 // HOW HARD WE ASK ABOUT THE PERSON BEHIND THE EXPERIENCE.
 //
-// Not every category should be asked its years and qualifications, and forcing
-// them everywhere turns away the wrong people. The line, decided category by
-// category (Sep 2026):
+// Qualifications are always OPTIONAL — they never gate the flow. We only PROMPT
+// for them where a formal qualification genuinely matters: the categories where
+// the host holds someone's physical safety — a guide, on the water, a massage, a
+// yoga / movement class. Everywhere else the qualifications row is not shown at
+// all: a potter's work speaks for itself, a private chef's food-hygiene
+// registration is a separate check, and even asking for a certificate would turn
+// away exactly the people we want. An unfilled qualification is never displayed
+// (see HostCredentials), so there is never an empty row.
 //
-//   - A MADE-TO-ORDER product (a cake, a hamper) skips both screens entirely.
-//     You are buying the thing, not the maker; the photos and the price sell it,
-//     and food registration (a separate check) does the safety work.
-//   - The four where someone's PHYSICAL SAFETY is in their hands — a guide, on
-//     the water, a massage, a yoga class — require both years and
-//     qualifications. This is the whole reason to ask.
-//   - A private chef requires YEARS (a real track record) but not a formal
-//     qualification: a brilliant self-taught cook doing supper clubs may have no
-//     certificate, and food hygiene registration is already a check. Requiring a
-//     qualification would turn away exactly the people we want.
-//   - Everything else asks both, but they are optional — a potter's work speaks
-//     for itself, a whisky host's licence is the real gate.
+// Years is a separate, sterner ask (below) — a real track record still gates the
+// safety four and the food experiences where the person is the draw.
 //
-// Keyed off the category (and its inferred shape for the made-to-order skip), so
-// the wizard, its Next gate and any later review all read the same rule.
-const GUEST_QUALS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga'];
+// Keyed off the category, so the wizard, its Next gate and any later review all
+// read the same rule.
+const GUEST_QUALS_PROMPTED = ['outdoors', 'water', 'massage', 'yoga'];
 // Years required, qualifications optional, for the food experiences where the
 // person is the draw: the private chef in your kitchen, the tasting host whose
 // knowledge is the product, and the cooking class where you're paying to be
@@ -248,10 +467,22 @@ export function guestAsksExpertise(category: string | null | undefined): boolean
     return GUEST_EXPERTISE_SKIP.indexOf(c.key) === -1;
 }
 
-// Whether qualifications must be filled in before Next. The four safety
-// categories only.
-export function guestQualificationsRequired(category: string | null | undefined): boolean {
-    return GUEST_QUALS_REQUIRED.indexOf(String(category || '')) !== -1;
+// Whether the qualifications row is PROMPTED in the sign-up. Only the categories
+// where a formal qualification matters (physical safety); it is optional even
+// there, so it never gates Next — it is simply not asked at all elsewhere.
+export function guestAsksQualifications(category: string | null | undefined): boolean {
+    return GUEST_QUALS_PROMPTED.indexOf(String(category || '')) !== -1;
+}
+
+// Whether this category needs the booking-shape question asked in the flow. Every
+// real sub-type declares its shape, so the question is answered by the sub-type
+// pick and never shown. "Something else" (and any future category with a null
+// shape) declares none, so it must be ASKED — otherwise shape falls to a default
+// nobody chose (made_to_order at submit) while the location screen reads as a
+// traveller. Keyed off the declared shape being null, not a hand-coded key.
+export function guestNeedsShapeChoice(category: string | null | undefined): boolean {
+    const c = guestCategoryByKey(category);
+    return !!c && (c.shape === null || c.shape === undefined);
 }
 
 // Whether the years field must be filled in before Next. The four, plus the
@@ -394,7 +625,7 @@ export function reviewContentFrom(source: {
 // on the finish screen. What they agreed to, and when, is recorded in the
 // `declarations` jsonb (terms_version + terms_agreed_at) — the acceptance store,
 // no longer a set of tickboxes. The terms text is the single source in
-// lib/providerTerms.ts.
+// components/legal/agreements/text/experience-provider.ts (lib/agreements.ts).
 
 // A heading on the picker, not a thing anybody is.
 //
@@ -434,7 +665,9 @@ export function pickerEntries(
     existing: Array<{ trade?: string | null }> | null | undefined,
     audience: string
 ): Array<{ kind: 'trade' | 'group'; key: string; label: string; hint?: string; left?: number }> {
-    const left = unclaimedTrades(existing, audience);
+    // A coming-soon trade is browsable but not joinable, so it never appears on
+    // the picker even though it is still an unclaimed host trade.
+    const left = unclaimedTrades(existing, audience).filter((t) => !isTradeComingSoon(t.key));
     const entries: Array<{ kind: 'trade' | 'group'; key: string; label: string; hint?: string; left?: number }> = [];
     const seenGroups: string[] = [];
 
@@ -513,16 +746,18 @@ export function audienceLabel(audience: string): string {
 //   commission    10%, held in `commission_rate` on the row and snapshotted
 //                 onto each enquiry, the same way bookings.commission_rate
 //                 already works — so changing the rate later never rewrites
-//                 what somebody already agreed to. Cleaning and waste, and
-//                 the four guest trades.
-//   subscription  £20 a month after 90 free days, and the commission rate
-//                 resolves to zero. Every other host trade.
+//                 what somebody already agreed to. Cleaning, and the guest
+//                 trades. (Cleaning is also coming soon, so no new provider
+//                 joins under it — see COMING_SOON_TRADES.)
+//   subscription  £20 a month after the free period, and the commission rate
+//                 resolves to zero. Every host trade except cleaning — waste
+//                 included, since 28 September 2026.
 //
 // THE RULE, AND WHAT IT IS NOT
 //
-// Every host trade except cleaning and waste is on the subscription. That is
-// the rule as it stands; it is a decision about these trades rather than
-// something falling out of a property they share.
+// Every host trade except cleaning is on the subscription. That is the rule as
+// it stands; it is a decision about these trades rather than something falling
+// out of a property they share.
 //
 // It used to be justified as "the work is quoted on site and paid
 // off-platform", which described the six maintenance trades exactly. It no
@@ -581,10 +816,19 @@ const TRADE_PLANS: Record<string, ProviderPlan> = {
     painter: 'subscription',
     trees: 'subscription',
     droplet: 'subscription',
+    // "Something else" — a typed-in host trade — is on the subscription like
+    // every other host trade but cleaning.
+    other: 'subscription',
 
-    // The two host trades that stay on commission.
+    // Waste is on the subscription, on the same terms as every other host trade
+    // (decision, 28 September 2026): the free period then £20 a month, and no
+    // per-job commission. It used to sit on commission alongside cleaning.
+    bin: 'subscription',
+
+    // Cleaning is the one host trade still on commission — and it is coming soon
+    // rather than open (see COMING_SOON_TRADES), so no new provider joins under
+    // it. The plan is kept here for any existing cleaning provider's row.
     sponge: 'commission',
-    bin: 'commission',
 
     // The one guest trade — always commission (10% on the sale), never a
     // subscription. A guest experience bills nothing until a guest buys.
@@ -593,9 +837,9 @@ const TRADE_PLANS: Record<string, ProviderPlan> = {
 
 // The host trades that pay a percentage instead of a subscription. Named here
 // so the rule is stated once: the map above and the test that guards it both
-// read this, rather than each carrying its own copy of "except cleaning and
-// waste".
-export const COMMISSION_HOST_TRADES = ['sponge', 'bin'] as const;
+// read this, rather than each carrying its own copy of the exception. Waste
+// moved to the subscription on 28 September 2026, leaving cleaning alone here.
+export const COMMISSION_HOST_TRADES = ['sponge'] as const;
 
 // Commission is the safe default for a trade nobody has placed: it bills
 // nothing until there is a job, where an unplaced trade defaulting to a
@@ -604,8 +848,20 @@ export function planForTrade(trade: string): ProviderPlan {
     return TRADE_PLANS[String(trade || '')] || 'commission';
 }
 
-// Ninety days, from approval.
-export const TRIAL_DAYS = 90;
+// Six months free, from the first enquiry. This is the one place the length of
+// the free period is defined — everything that states it reads from here, so a
+// page, an email and the admin screen cannot disagree. It was ninety days until
+// 28 September 2026, when it became six months for every subscription trade.
+export const TRIAL_MONTHS = 6;
+
+// The free period in words, for any copy that names its length. Kept beside the
+// number so the sentence and the arithmetic move together.
+export const TRIAL_PERIOD_LABEL = 'six months';
+
+// The nominal length in days, DERIVED from the months above. It is used only by
+// the reminder ladder's start-of-trial marker and by day-offset arithmetic; the
+// real end of a trial is a calendar date (see trialEndsAt), not this count.
+export const TRIAL_DAYS = TRIAL_MONTHS * 30;
 
 // £20 a month, said in one place so a page and an email cannot disagree.
 export const SUBSCRIPTION_MONTHLY = 20;
@@ -616,7 +872,7 @@ export const SUBSCRIPTION_MONTHLY = 20;
 //
 // It is stamped when the FIRST ENQUIRY IS SENT to him, not when he is
 // approved. A tradesman approved in September who hears nothing until January
-// should not burn his free ninety days waiting for the site to find him work.
+// should not burn his free six months waiting for the site to find him work.
 // What is being sold is the lead, so the lead is what starts the clock.
 //
 // It is the enquiry being SENT rather than answered, which is a smaller rule
@@ -624,7 +880,7 @@ export const SUBSCRIPTION_MONTHLY = 20;
 // three endings and all three would start it, so every enquiry starts it, and
 // the only question left is the date — sent, or settled. The gap between those
 // is bounded by the expiry windows in lib/serviceEnquiries.ts: twenty minutes
-// for an emergency, five days at the very most. Five days against ninety is
+// for an emergency, five days at the very most. Five days against six months is
 // noise, and stamping at the send is one write in one place that cannot be
 // gamed by sitting on the email.
 //
@@ -633,8 +889,17 @@ export const SUBSCRIPTION_MONTHLY = 20;
 // app/api/services/enquiries/route.ts, which stamps only on a true.
 export function trialEndsAt(approvedAt: Date | string): string {
     const from = approvedAt instanceof Date ? approvedAt : new Date(String(approvedAt));
+
+    // Six calendar months, so "six months" is literally true rather than an
+    // approximate day count. Clamped to the end of the target month rather than
+    // rolled over, so 31 August + 6 months lands on 28 (or 29) February, not
+    // 2 or 3 March — JS setUTCMonth would otherwise spill into the next month.
+    const y = from.getUTCFullYear();
+    const m = from.getUTCMonth();
+    const d = from.getUTCDate();
+    const lastOfTarget = new Date(Date.UTC(y, m + TRIAL_MONTHS + 1, 0)).getUTCDate();
     const end = new Date(from.getTime());
-    end.setUTCDate(end.getUTCDate() + TRIAL_DAYS);
+    end.setUTCFullYear(y, m + TRIAL_MONTHS, Math.min(d, lastOfTarget));
     return end.toISOString();
 }
 
@@ -679,7 +944,7 @@ export function commissionRateFor(provider: any): number {
 // appears in the email sent when the clock actually starts.
 export function planTerms(trade: string): string {
     return planForTrade(trade) === 'subscription'
-        ? 'Nothing to pay for your first ' + TRIAL_DAYS + ' days once we send you your '
+        ? 'Nothing to pay for your first ' + TRIAL_PERIOD_LABEL + ' once we send you your '
             + 'first enquiry, then £' + SUBSCRIPTION_MONTHLY + ' a month. We take no '
             + 'commission — you quote and get paid direct.'
         : 'Nothing to pay to be listed. We take 10% of a job when you accept one through '
@@ -709,7 +974,7 @@ export function trialState(provider: any, now?: Date): TrialState {
     return ends > (now || new Date()).getTime() ? 'running' : 'ended';
 }
 
-// Whether this enquiry should start his ninety days.
+// Whether this enquiry should start his six-month trial.
 //
 // Pure, so the rule is testable without a database and is stated once. The
 // caller does the write, and does it guarded on the column still being null so
@@ -1157,11 +1422,11 @@ export function canBeBooked(trade: string): boolean {
 //               A gardener in the shop would show every host a blank where
 //               the price goes. It joins the day the form asks, and that is
 //               a one-line change to this list.
-//   sponge      cleaning and waste take 10% at acceptance. A commission needs
-//   bin         a total, a total needs a completion step, and that is a
-//               booking rather than an enquiry. They are also the two trades
-//               where a host can already see a real price from the bands, so
-//               sending them down the enquiry route would be a downgrade.
+//   sponge      cleaning is booked from the bands, not enquired about — a host
+//   bin         can already see a real price, so the enquiry route would be a
+//               downgrade — and it is coming soon in any case. Waste sits out
+//               of the enquiry shop for the same booked-from-bands reason; it is
+//               on the subscription like the rest and takes no per-job cut.
 //   chef        the four guest trades are sold to somebody on holiday and
 //   cake        have their own shop. Nothing about this one applies.
 //   basket
@@ -1196,10 +1461,8 @@ export function enquirableTrades(): Array<{ key: string; label: string }> {
 // cleaner and found silence assumes the page is broken.
 export function comingSoonNote(trade: string): string | null {
     if (canBeEnquiredAbout(trade)) return null;
-    if (trade === 'sponge' || trade === 'bin') {
-        return 'Booked, not enquired about — coming shortly.';
-    }
-    if (trade === 'trees') return 'Coming shortly.';
+    if (isTradeComingSoon(trade)) return 'Coming soon.';
+    if (trade === 'bin' || trade === 'trees') return 'Coming shortly.';
     return null;
 }
 
@@ -1207,8 +1470,12 @@ export interface PricingDraft {
     trade?: string | null;
     prices?: Record<string, { price?: any; typical_hours?: any }> | null;
     callout_fee?: any;
+    callout_waived?: boolean | null;
     // Display only, maintenance trades. Never multiplied by anything.
     hourly_rate?: any;
+    // The unified pricing for every trade: a quote tick and an optional flat fee.
+    provides_quote?: boolean | null;
+    flat_fee?: any;
     extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
 
     // The per-hour route, cleaning and in-house only. `kind` is here because
@@ -1227,90 +1494,39 @@ export interface PricingDraft {
 // band is blank and the provider would reach nobody.
 export function pricingProblems(draft: PricingDraft): Problem[] {
     const problems: Problem[] = [];
-    const model = pricingModelFor(String(draft.trade || ''));
 
-    // The hourly rate is the one that is load-bearing: for a trade that bills
-    // by the hour it IS the price, and a listing without it tells a host
-    // nothing.
+    // One rule for every trade a host hires now. There are no bedroom or
+    // plot-size bands: a provider either quotes the job after a look, or gives an
+    // hourly rate, or a flat fee. A call-out fee is optional on top. Cleaning is
+    // coming-soon and never reaches this, so the old in-house hourly exception is
+    // gone with it.
     //
-    // The call-out fee is optional, and used to be compulsory. Plenty of
-    // handymen charge an hourly rate with no call-out at all, or a day rate —
-    // so requiring it made them invent a number to get past the form, which is
-    // the same fault as asking a roofer to price a re-slate by the hour. An
-    // invented number is worse than a missing one, because a host can hold
-    // them to it.
-    if (model === 'callout_hourly') {
-        const hourly = Number(draft.hourly_rate);
+    // Guest experiences price per menu item, not here, and an application with no
+    // trade yet has no pricing shape to complain about — both fall outside this
+    // gate, which is why it applies only once the trade is a host one.
+    if (audienceForTrade(String(draft.trade || '')) !== 'host') return problems;
 
-        if (!(hourly > 0)) {
-            problems.push({ field: 'hourly_rate', message: 'Add your hourly rate.' });
-        }
-        return problems;
+    const num = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? null : Number(v);
+    const hourly = num((draft as any).hourly_rate);
+    const flat = num((draft as any).flat_fee);
+    const callout = num((draft as any).callout_fee);
+    const quote = (draft as any).provides_quote === true;
+
+    // A figure that IS given has to be a real, positive amount — a host can hold
+    // a provider to a number they typed.
+    if (hourly !== null && !(hourly > 0)) {
+        problems.push({ field: 'hourly_rate', message: 'That is not an hourly rate. Leave it blank if you do not charge one.' });
+    }
+    if (flat !== null && !(flat > 0)) {
+        problems.push({ field: 'flat_fee', message: 'That is not a flat fee. Leave it blank if you do not charge one.' });
+    }
+    if (callout !== null && !(callout > 0)) {
+        problems.push({ field: 'callout_fee', message: 'That is not a call-out fee. Leave it blank if you do not charge one.' });
     }
 
-    if (model !== 'bands') return problems;
-
-    // The hourly cleaner. She sets no band prices, so the "price at least one
-    // size" rule below would refuse her for ever — and she needs two answers
-    // the banded route gets for free: what she charges, and which house sizes
-    // she will take.
-    //
-    // pricingChoiceFor reads the permission as well as the value, so a row
-    // carrying 'hourly' that is no longer in-house falls back to bands and is
-    // validated as a banded cleaner. There is no path where the form accepts a
-    // rate the database would then refuse.
-    if (pricingChoiceFor(draft) === 'hourly') {
-        const rate = Number((draft as any).billable_hourly_rate);
-
-        if (!(rate > 0)) {
-            problems.push({ field: 'billable_hourly_rate', message: 'Add your hourly rate.' });
-        }
-
-        const covered = Array.isArray((draft as any).covered_bands)
-            ? (draft as any).covered_bands
-            : [];
-
-        if (covered.length === 0) {
-            problems.push({
-                field: 'covered_bands',
-                message: 'Tick the house sizes you will take, so owners with those properties can find you.',
-            });
-        }
-
-        return problems;
-    }
-
-    const bands = bandsFor(String(draft.trade || ''));
-    const prices = draft.prices || {};
-    let priced = 0;
-
-    for (const band of bands) {
-        const entry = prices[band.key] || {};
-        const raw = entry.price;
-
-        if (raw === undefined || raw === null || String(raw).trim() === '') continue;
-
-        const price = Number(raw);
-        if (!(price > 0)) {
-            problems.push({ field: 'price_' + band.key, message: 'That is not a price. Leave it blank if you do not cover it.' });
-            continue;
-        }
-        priced++;
-
-        const hoursRaw = entry.typical_hours;
-        if (hoursRaw !== undefined && hoursRaw !== null && String(hoursRaw).trim() !== '') {
-            const hours = Number(hoursRaw);
-            if (!(hours > 0)) {
-                problems.push({ field: 'hours_' + band.key, message: 'Hours have to be a number, or left blank.' });
-            }
-        }
-    }
-
-    if (priced === 0) {
-        problems.push({
-            field: 'prices',
-            message: 'Price at least one size — a provider who prices nothing reaches nobody.',
-        });
+    // And at least one way to price the work, so a listing tells a host something.
+    if (!quote && !(hourly && hourly > 0) && !(flat && flat > 0)) {
+        problems.push({ field: 'prices', message: 'Tick “I provide a quote”, or give an hourly rate or a flat fee.' });
     }
 
     return problems;
@@ -1593,7 +1809,7 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     },
     {
         key: 'elec_eicr_fee', trade: 'electrician', type: 'priced', group: 'priced',
-        label: 'EICR for a typical cottage',
+        label: 'EICR for a typical property',
         hint: 'Leave blank if it depends too much to say.',
     },
 
@@ -1894,7 +2110,7 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     },
     {
         key: 'paint_out_of_season', trade: 'painter', type: 'toggle', group: 'planned',
-        label: 'I can work out of season, when the cottage is empty',
+        label: 'I can work out of season, when the property is empty',
     },
 
     {
@@ -2169,13 +2385,14 @@ export function asksAboutFuel(trade: string): boolean {
 // joinery; both are already described by their trade and their offerings, so
 // a tag box is a blank field to fill in for no gain.
 //
-// A handyman is the case where the trade name genuinely does not say what he
-// does — bricklaying, fencing, dyking — and where a host would otherwise have
-// no way to know without asking.
-//
-// This was briefly on all six. It was friction on five of them.
+// Now EVERY host trade is asked what services it covers, as a searchable list
+// that offers an existing entry first and only creates a new one when nothing
+// matches (the anti-fragmentation mechanism). It replaced the pre-filled
+// per-trade capability checklist: a roofer, a gardener and a "something else"
+// all describe their own work rather than tick a list somebody wrote for them.
+// Guests keep their own flow and never see this.
 export function asksAboutSkills(trade: string): boolean {
-    return trade === 'handyman';
+    return audienceForTrade(trade) === 'host';
 }
 
 export interface RegistrationDraft {
@@ -2358,9 +2575,18 @@ const GUEST_MCC_LABEL: Record<string, string> = {
 // requires — so the card never reads a bland "Local experience" for want of a
 // hand-typed word. Only a provider with neither (which the gate should prevent)
 // gets the neutral label.
-export function guestCategory(provider: { trade?: string | null; custom_label?: string | null; stripe_mcc?: string | null }): string {
+export function guestCategory(provider: { trade?: string | null; custom_label?: string | null; stripe_mcc?: string | null; guest_details?: any }): string {
     const label = String(provider.custom_label || '').trim();
     if (label) return label;
+    // The owner's own word is gone, so fall back to the CANONICAL name for the
+    // sub-type they picked — read from the persisted key rather than guessed
+    // from the Stripe code. ('other' has no canonical label, so it drops through
+    // to the code lookup below.)
+    const key = provider.guest_details && typeof provider.guest_details === 'object'
+        ? String(provider.guest_details.category || '').trim()
+        : '';
+    const byKey = key ? guestCategoryByKey(key) : null;
+    if (byKey && byKey.label) return byKey.label;
     const byMcc = GUEST_MCC_LABEL[String(provider.stripe_mcc || '').trim()];
     return byMcc || 'Local experience';
 }
@@ -2505,7 +2731,17 @@ export interface ProviderDraft {
     callout_fee?: any;
     hourly_rate?: any;
     callout_waived?: boolean | null;
-    extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
+    // The unified pricing shape: a quote tick, a flat fee, and (gas/electrical)
+    // a free-text registration number. Declared here for the same reason as the
+    // cleaner's fields below — submitProblems hands the whole draft to
+    // pricingProblems, and an undeclared field is silently dropped en route.
+    provides_quote?: boolean | null;
+    flat_fee?: any;
+    registration_number?: string | null;
+    // The host expertise hub's required field — the professional title, which for
+    // a host trade stands in for the old free-text description in the submit gate.
+    professional_title?: string | null;
+    extras?: Record<string, { offered?: boolean; price?: any; notes?: any; quote?: boolean }> | null;
     does_gas?: boolean | null;
     does_oil?: boolean | null;
     registrations?: RegistrationRow[] | null;
@@ -2611,11 +2847,27 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'trade', message: 'Choose the trade that fits best.' });
     }
 
-    if (description.length < MIN_DESCRIPTION) {
-        problems.push({
-            field: 'description',
-            message: 'Say a bit more about what you do — at least a sentence or two.',
-        });
+    // A guest describes the experience (the g_expect "what to expect" field
+    // becomes the description) and is held to a sentence or two. A host trade no
+    // longer has a free-text description at all — its "about you" is the expertise
+    // hub (a professional title, plus optional qualifications and endorsements),
+    // the same hub the guest fills — so the host is held to the title instead,
+    // and its description is derived from the hub at submit.
+    if (audienceForTrade(draft.trade || '') === 'guest') {
+        if (description.length < MIN_DESCRIPTION) {
+            problems.push({
+                field: 'description',
+                message: 'Say a bit more about what you do — at least a sentence or two.',
+            });
+        }
+    } else {
+        const title = String((draft as any).professional_title || '').trim();
+        if (title.length < 2) {
+            problems.push({
+                field: 'professional_title',
+                message: 'Add your title — a host reads it as your credential.',
+            });
+        }
     }
 
     // A host/trade types the address we reach them on. A guest experience does
@@ -2668,15 +2920,13 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'collection_address', message: GUEST_SCREEN_COPY.collectionAddressGate });
     }
 
-    // A guest slot provider with no weekly hours would finish sign-up and then
-    // be invisible — no availability, no sessions, dropped from the shop, with
-    // no error to tell them why. Require at least one row before they can send.
-    if (draft.audience === 'guest' && draft.shape === 'slot' && !(Number(draft.scheduleCount) > 0)) {
-        problems.push({
-            field: 'availability',
-            message: 'Add your weekly hours so guests can book a time — without them your listing can’t be booked.',
-        });
-    }
+    // Weekly hours are no longer asked at sign-up — they moved to the listing
+    // editor's Availability section (one home for the weekly template). So the
+    // wizard no longer gates submit on them: a slot provider finishes create with
+    // a length but no hours, and sets hours in the editor before they go live.
+    // Being invisible until then is expected (a slot with no hours generates no
+    // sessions and is dropped), and the editor surfaces it with a go-live prompt
+    // rather than the wizard blocking on a field it no longer shows.
 
     // A guest listing with no PRICED item is a dead end: the marketplace only
     // lists providers with an item priced above zero, so a no-price listing never
@@ -2704,16 +2954,52 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
     for (const problem of pricingProblems(draft)) problems.push(problem);
     for (const problem of extrasProblems(draft)) problems.push(problem);
 
-    // Restricted work needs its number before it can be sent, not before it
-    // goes live — otherwise the first time somebody hears they need one is
-    // after a decline, which is a slower way of saying the same thing.
-    for (const problem of registrationProblems(draft, draft.registrations)) problems.push(problem);
+    // Registration is no longer a submit gate. The sign-up now collects a single
+    // OPTIONAL free-text "Registration number" (electricians and plumbers/gas
+    // engineers only) instead of a per-scheme picker, so there is no scheme for
+    // requiredSchemes to insist on — an applicant who hasn't got their number to
+    // hand can still finish, and adding it just shows it on their profile.
+    // registrationProblems / requiredSchemes stay for any existing per-scheme
+    // rows and the admin side; they are simply not part of the sign-up gate.
 
     return problems;
 }
 
 export function canSubmit(draft: ProviderDraft): boolean {
     return submitProblems(draft).length === 0;
+}
+
+// The server-side wall on submitting a HOST trade for review, expressed against
+// a stored service_providers ROW (not the wizard draft). It re-checks the two
+// rules the wizard already enforces in the browser — a non-empty description,
+// and at least one way to price the job (a quote tick, an hourly rate or a flat
+// fee) — so a listing cannot reach 'pending_review' without them however it was
+// posted. Returns the reason to refuse, or null when the row may be submitted.
+//
+// A guest experience (audience 'guest') prices per menu item and its description
+// is the what-to-expect field, a different shape with its own gate, so it is
+// exempt here. This mirrors the SQL in submit_service_provider() one-for-one; if
+// either rule changes, change both.
+export function tradeSubmitBlock(row: {
+    audience?: string | null;
+    description?: any;
+    provides_quote?: any;
+    hourly_rate?: any;
+    flat_fee?: any;
+}): string | null {
+    if (String(row.audience || '') === 'guest') return null;
+
+    if (String(row.description || '').trim() === '') {
+        return 'This trade listing needs a description before it can be submitted.';
+    }
+
+    const num = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? 0 : Number(v);
+    const hasPrice = row.provides_quote === true || num(row.hourly_rate) > 0 || num(row.flat_fee) > 0;
+    if (!hasPrice) {
+        return 'This trade listing needs a way to price the job (a quote, an hourly rate or a flat fee) before it can be submitted.';
+    }
+
+    return null;
 }
 
 // Distance between two points on the earth, in miles. Used to decide whether a

@@ -28,6 +28,7 @@ import {
     SITE_URL,
 } from '@/lib/email';
 import { formatTime } from '@/lib/utils';
+import { formatGBPAmount } from '@/lib/formatMoney';
 
 function round2(value: number): number {
     return Math.round(Number(value || 0) * 100) / 100;
@@ -86,12 +87,12 @@ export function guestBookedEmail(input: GuestBookedInput): { subject: string; ht
 
     const moneyRows = [
         ...(paidSoFar > 0
-            ? [{ label: 'Paid so far', value: '&pound;' + paidSoFar.toFixed(2) }]
+            ? [{ label: 'Paid so far', value: '&pound;' + formatGBPAmount(paidSoFar) }]
             : []),
         ...(balanceLeft > 0
             ? [{
                 label: 'Still to pay',
-                value: '&pound;' + balanceLeft.toFixed(2)
+                value: '&pound;' + formatGBPAmount(balanceLeft)
                     + (input.balanceDueDate
                         ? ', taken from the same card on '
                             + escapeHtml(formatDate(input.balanceDueDate))
@@ -104,7 +105,7 @@ export function guestBookedEmail(input: GuestBookedInput): { subject: string; ht
                 label: 'Free cancellation',
                 value: 'Cancel by ' + escapeHtml(formatDate(input.freeCancelUntil))
                     + ' and you get back everything you have paid'
-                    + (paidSoFar > 0 ? ' — &pound;' + paidSoFar.toFixed(2) + ' today' : '')
+                    + (paidSoFar > 0 ? ' — &pound;' + formatGBPAmount(paidSoFar) + ' today' : '')
                     + '. After that a share is kept, depending on how close to your stay it is.',
             }]
             : [{
@@ -123,7 +124,7 @@ export function guestBookedEmail(input: GuestBookedInput): { subject: string; ht
             { label: 'Dates', value: nights },
             ...(input.arrivalLine ? [{ label: 'Times', value: escapeHtml(input.arrivalLine + '.') }] : []),
             { label: 'Guests', value: String(input.guests || 1) },
-            { label: 'Total', value: '&pound;' + Number(input.total || 0).toFixed(2) },
+            { label: 'Total', value: '&pound;' + formatGBPAmount(Number(input.total || 0)) },
             ...moneyRows,
         ]) +
         button(SITE_URL + '/trips', 'View your trip'),
@@ -131,6 +132,70 @@ export function guestBookedEmail(input: GuestBookedInput): { subject: string; ht
     );
 
     return { subject: "You're booked — Galloway Getaways", html };
+}
+
+export interface GuestRequestReceivedInput {
+    guestFirst: string;        // display first name, unescaped
+    listingTitle: string;      // raw
+    checkIn: string;
+    checkOut: string;
+    guests: number | string;
+    total: number;
+    amountPaid: number;
+}
+
+// The request-to-book guest's "we've got it" — sent the moment they pay, before
+// the host has done anything.
+//
+// This email had no home. Instant Book confirms itself in the webhook and its
+// guest gets "You're booked" there; a request-to-book guest's confirmation is
+// only sent later, by the notify route, WHEN THE HOST ACCEPTS. So a guest who
+// has paid and is waiting — the one most likely to worry — was told nothing at
+// all until the host acted, and nothing if the host never did.
+//
+// The three things a guest who has just paid and is waiting needs to know:
+// their money arrived, the dates are only held (not confirmed) until the host
+// says yes, and — the anxious one — exactly how they get their money back if the
+// host declines or simply never replies. There is no timed auto-decline, so the
+// honest answer is that they are in control: a full refund is one tap away from
+// Your trips at any time before the host confirms, and a decline refunds them in
+// full automatically. We say that plainly rather than leave them guessing.
+export function guestRequestReceivedEmail(input: GuestRequestReceivedInput): { subject: string; html: string } {
+    const listingTitle = escapeHtml(input.listingTitle || 'your stay');
+    const guestFirst = escapeHtml(input.guestFirst || 'there');
+    const nights = escapeHtml(formatDate(input.checkIn) + ' to ' + formatDate(input.checkOut));
+    const paid = round2(Number(input.amountPaid || 0));
+
+    const heading = 'Request received';
+    const intro = 'We&rsquo;ve taken your payment and passed your'
+        + ' request on to the host of ' + listingTitle + '. Your dates are held for you, but the'
+        + ' stay isn&rsquo;t confirmed until the host says yes.';
+
+    const html = emailLayout(
+        '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">' + heading + '</h1>' +
+        '<p style="margin:0 0 16px 0;">Hi ' + guestFirst + ' &mdash; ' + intro + '</p>' +
+        '<p style="margin:0 0 16px 0;">We&rsquo;ll email you the moment the host confirms &mdash; that&rsquo;s'
+        + ' when your stay becomes final and you&rsquo;ll get your full booking confirmation.</p>' +
+        detailRows([
+            { label: 'Property', value: listingTitle },
+            { label: 'Dates', value: nights },
+            { label: 'Guests', value: String(input.guests || 1) },
+            { label: 'Total', value: '&pound;' + formatGBPAmount(Number(input.total || 0)) },
+            ...(paid > 0 ? [{ label: 'Paid and held', value: '&pound;' + formatGBPAmount(paid) }] : []),
+        ]) +
+        '<p style="margin:0 0 8px 0;font-weight:600;color:#111827;">If you don&rsquo;t hear back</p>' +
+        '<p style="margin:0 0 16px 0;">You&rsquo;re never left waiting with no way out. If the host'
+        + ' declines, everything you&rsquo;ve paid'
+        + (paid > 0 ? ' &mdash; &pound;' + formatGBPAmount(paid) + ' &mdash;' : '')
+        + ' is refunded to your card automatically. And if the host simply doesn&rsquo;t reply and'
+        + ' you&rsquo;d rather not keep waiting, you can cancel the request yourself any time before'
+        + ' it&rsquo;s confirmed and get a full refund &mdash; just open Your trips. Refunds take five'
+        + ' to ten days to show on your statement.</p>' +
+        button(SITE_URL + '/trips', 'View your request'),
+        "You're receiving this because you have a booking request with Galloway Getaways. Booking emails can't be switched off."
+    );
+
+    return { subject: 'Request received — Galloway Getaways', html };
 }
 
 export interface HostNewBookingInput {
@@ -141,6 +206,9 @@ export interface HostNewBookingInput {
     checkOut: string;
     guests: number | string;
     total: number;
+    // What the host is paid (total less commission). Shown as "You earn" in
+    // place of the guest's total, as Airbnb's host email does.
+    hostEarns?: number;
     instant: boolean;
     bookingId: string;
 }
@@ -166,7 +234,9 @@ export function hostNewBookingEmail(input: HostNewBookingInput): { subject: stri
             { label: 'Guest', value: guestFirst },
             { label: 'Dates', value: nights },
             { label: 'Guests', value: String(input.guests || 1) },
-            { label: 'Total', value: '&pound;' + Number(input.total || 0).toFixed(2) },
+            input.hostEarns !== undefined
+                ? { label: 'You earn', value: '&pound;' + formatGBPAmount(Number(input.hostEarns)) }
+                : { label: 'Total', value: '&pound;' + formatGBPAmount(Number(input.total || 0)) },
         ]) +
         button(SITE_URL + '/dashboard/bookings/' + input.bookingId, input.instant ? 'View the booking' : 'Review this request'),
         "You're receiving this because you host on Galloway Getaways. Booking emails can't be switched off."

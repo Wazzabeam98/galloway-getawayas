@@ -5,8 +5,12 @@ import { NextResponse } from 'next/server';
 import { issueRefunds } from '@/lib/refundSpread';
 import { refundDue } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
-import { sendEmail, emailLayout, escapeHtml } from '@/lib/email';
+import { logMoneyFailure } from '@/lib/moneyAlert';
+import { sendEmail, emailLayout, escapeHtml, button, formatDate, SITE_URL } from '@/lib/email';
+import { firstName } from '@/lib/utils';
+import { londonDayKey } from '@/lib/dayKey';
 import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
+import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +43,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, check_in, status, payment_status, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -60,12 +64,10 @@ export async function POST(request: Request) {
 
         // A stay that has started can't be called off from here — that's a
         // conversation with the host, not a button.
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const checkIn = new Date(booking.check_in);
-        checkIn.setHours(0, 0, 0, 0);
-
-        if (checkIn.getTime() <= today.getTime()) {
+        // Compared as London calendar days: the server runs in UTC, and
+        // between midnight and 1am BST on check-in day it used to still say
+        // "tomorrow" and let the cancel through.
+        if (String(booking.check_in).slice(0, 10) <= londonDayKey()) {
             return NextResponse.json(
                 {
                     ok: false,
@@ -85,15 +87,25 @@ export async function POST(request: Request) {
         const alreadyRefunded = Number(booking.amount_refunded || 0);
         const refundable = round2(paid - alreadyRefunded);
 
-        // One rule, in lib/cancellation.ts, shared with /api/stripe/refund,
-        // the balance job and the two screens that predict this figure.
-        const amount = refundDue({
-            amountPaid: paid,
-            alreadyRefunded: alreadyRefunded,
-            cleaningFee: booking.cleaning_fee,
-            checkIn: booking.check_in,
-            policy: listing && listing.cancellation_policy,
-        });
+        // A REQUEST-TO-BOOK the host has NOT yet confirmed (status 'pending') is a
+        // request being WITHDRAWN, not a confirmed stay being cancelled. The
+        // cancellation policy governs confirmed stays — its date tiers have no
+        // business docking money the host never accepted — so the guest gets
+        // everything back, whatever the dates. This is what the "Request received"
+        // email promises: a full refund any time before the host confirms. (A
+        // pending booking has had no payout, so there is nothing to claw back.)
+        // A confirmed stay still follows the one shared rule in lib/cancellation.ts,
+        // used by /api/stripe/refund, the balance job and the two screens that
+        // predict this figure.
+        const amount = booking.status === 'pending'
+            ? refundable
+            : refundDue({
+                amountPaid: paid,
+                alreadyRefunded: alreadyRefunded,
+                cleaningFee: booking.cleaning_fee,
+                checkIn: booking.check_in,
+                policy: listing && listing.cancellation_policy,
+            });
 
         // The money goes back before the booking changes. If Stripe refuses,
         // the guest still has their stay rather than neither.
@@ -122,7 +134,7 @@ export async function POST(request: Request) {
             );
 
             if (issued.refundedPence <= 0) {
-                await logError(
+                await logMoneyFailure(
                     '[bookings/cancel] a guest cancelled but nothing could be refunded, '
                         + 'so the stay has been left as it is',
                     issued.failure || { booking_id: booking.id, due: amount },
@@ -143,7 +155,7 @@ export async function POST(request: Request) {
             // which. Silently writing the full figure here is how a guest ends
             // up recorded as made whole when they are short.
             if (issued.refundedPence < Math.round(amount * 100)) {
-                await logError(
+                await logMoneyFailure(
                     '[bookings/cancel] the guest is owed \u00A3' + amount.toFixed(2)
                         + ' but only \u00A3' + refundedNow.toFixed(2) + ' could be refunded',
                     issued.failure || { booking_id: booking.id, due: amount, sent: refundedNow },
@@ -162,19 +174,80 @@ export async function POST(request: Request) {
             }
         }
 
-        const totalRefunded = round2(alreadyRefunded + refundedNow);
+        // The refunded total moves atomically in the database, not
+        // read-then-written here: a host goodwill refund or a second cancel
+        // landing in the window of this one must SUM, not overwrite the figure
+        // this one read before the money moved. record_booking_refund locks
+        // the row, adds what we just refunded (clamped at what was paid) and
+        // returns the new total, how much actually fit, and the payment_status
+        // derived from it. When nothing was refunded there is nothing to add
+        // and payment_status is left exactly as it was.
+        if (refundedNow > 0) {
+            const { data: appliedRow, error: refundWriteError } = await admin
+                .rpc('record_booking_refund', { p_booking: booking.id, p_amount: refundedNow })
+                .maybeSingle();
+            // The RPC's row type is not in the generated Supabase types. It
+            // returns the amount_paid it saw under the lock, which is the
+            // authoritative current figure — not the one this route read before
+            // the refund.
+            const applied = appliedRow as { applied: number; amount_paid: number } | null;
 
+            if (refundWriteError || !applied) {
+                // The guest's money has already gone back, so failing to record
+                // it is the dangerous case — the booking then looks less
+                // refunded than it is and its refundable guard reads wrong.
+                await logMoneyFailure(
+                    '[bookings/cancel] refunded £' + refundedNow.toFixed(2)
+                        + ' but could not record it against the booking',
+                    refundWriteError || { booking_id: booking.id, amount: refundedNow },
+                    { path: 'api/bookings/cancel', userId: user.id }
+                );
+            } else {
+                if (round2(Number(applied.applied)) < refundedNow) {
+                    // Less was added than we asked to: the total hit what was
+                    // paid because a concurrent refund took the headroom. The
+                    // money left at Stripe, so a person has to reconcile it.
+                    await logMoneyFailure(
+                        '[bookings/cancel] £' + refundedNow.toFixed(2) + ' was refunded but only £'
+                            + round2(Number(applied.applied)).toFixed(2)
+                            + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
+                        Object.assign({ booking_id: booking.id }, applied),
+                        { path: 'api/bookings/cancel', userId: user.id }
+                    );
+                }
+
+                // Race-safety against the balance charge. This route read
+                // amount_paid before the refund and worked the refund out from
+                // it; if the balance job charged the stay in that window, the
+                // locked amount_paid the RPC saw is higher than the one the
+                // refund was based on, so the guest paid more than we gave back
+                // — the £X-kept-on-a-cancelled-stay case. It cannot be undone
+                // from here without racing again, so it is surfaced: the books
+                // are right (amount_refunded is what actually went back), and
+                // the shortfall is flagged for a person to settle.
+                if (round2(Number(applied.amount_paid)) !== round2(paid)) {
+                    await logMoneyFailure(
+                        '[bookings/cancel] booking ' + booking.id + ': the amount paid changed from £'
+                            + round2(paid).toFixed(2) + ' to £' + round2(Number(applied.amount_paid)).toFixed(2)
+                            + ' while this cancellation was in flight (a balance charge landed underneath it), so '
+                            + 'the £' + refundedNow.toFixed(2) + ' refunded was worked out on the old figure. '
+                            + 'Check what the guest is owed on the amount actually paid and reconcile.',
+                        Object.assign({ booking_id: booking.id, refunded: refundedNow, paid_at_read: round2(paid) }, applied),
+                        { path: 'api/bookings/cancel', userId: user.id }
+                    );
+                }
+            }
+        }
+
+        // The stay is off. status / balance / who-called-it-off are not the
+        // contended money column, so they are set here on the booking id and
+        // are idempotent if this races another writer. payment_status is owned
+        // by the RPC above (or left unchanged when nothing was refunded), so it
+        // is deliberately not written here.
         await admin
             .from('bookings')
             .update({
                 status: 'cancelled',
-                amount_refunded: totalRefunded,
-                payment_status:
-                    totalRefunded <= 0
-                        ? booking.payment_status
-                        : totalRefunded >= round2(paid)
-                            ? 'refunded'
-                            : 'partially_refunded',
                 // Nothing further is owed on a stay that isn't happening, so
                 // the balance charge won't pick it up.
                 balance_amount: 0,
@@ -187,6 +260,9 @@ export async function POST(request: Request) {
                 cancelled_by_role: 'guest',
             })
             .eq('id', booking.id);
+
+        // Close anything still open against this now-cancelled stay.
+        await closeOpenBookingRequests(admin, booking.id);
 
         // THE GUEST'S OWN RECEIPT.
         //
@@ -210,7 +286,9 @@ export async function POST(request: Request) {
                 const refundLine = refundedNow > 0
                     ? 'A refund of <strong>£' + refundedNow.toFixed(2)
                         + '</strong> is on its way back to your card. It usually takes five to ten days to appear.'
-                    : 'Under the cancellation policy for these dates, no refund was due on what you had already paid.';
+                    : 'Under the cancellation policy for these dates, no refund was due on what you had'
+                        + ' already paid. You can see the policy and the full details of this booking from'
+                        + ' your trips page.';
 
                 await sendEmail(
                     user.email,
@@ -219,6 +297,7 @@ export async function POST(request: Request) {
                         '<p style="margin:0 0 16px;font-size:16px;">You have cancelled your stay at <strong>'
                             + title + '</strong>. This is your confirmation.</p>'
                         + '<p style="margin:0 0 16px;font-size:16px;">' + refundLine + '</p>'
+                        + button(SITE_URL + '/trips', 'View booking')
                         + '<p style="margin:0;font-size:16px;">We hope to welcome you to Dumfries &amp; Galloway another time.</p>',
                         'You’re receiving this because you cancelled a booking with Galloway Getaways.'
                     )
@@ -228,6 +307,45 @@ export async function POST(request: Request) {
             await logError(
                 '[bookings/cancel] the guest cancellation receipt could not be sent',
                 receiptErr,
+                { path: 'bookings/cancel', userId: user.id }
+            );
+        }
+
+        // THE HOST IS TOLD TOO.
+        //
+        // A guest cancelling changed nothing the host could see except the
+        // booking quietly turning grey — their dates were open again and nobody
+        // said so. Airbnb sends the host "Reservation cancelled"; so do we.
+        // First name only, through the guest's privacy switch. No money line:
+        // what the host keeps shows on their reservation once the payout runs.
+        // Best-effort, like the receipt above.
+        try {
+            const [{ data: hostUser }, { data: guestProfile }, { data: hx }] = await Promise.all([
+                admin.auth.admin.getUserById(booking.host_id),
+                admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', booking.guest_id).maybeSingle(),
+                admin.from('listings').select('title').eq('id', booking.listing_id).maybeSingle(),
+            ]);
+            const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
+            if (hostEmail) {
+                const guestFirst = escapeHtml(firstName(guestProfile, 'Your guest'));
+                const hostTitle = escapeHtml((hx && hx.title) || 'your listing');
+                await sendEmail(
+                    hostEmail,
+                    'Reservation cancelled — ' + ((hx && hx.title) || 'Galloway Getaways'),
+                    emailLayout(
+                        '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">Reservation cancelled</h1>'
+                        + '<p style="margin:0 0 16px;">' + guestFirst + ' has cancelled their stay at <strong>' + hostTitle
+                        + '</strong> from ' + escapeHtml(formatDate(booking.check_in)) + ' to ' + escapeHtml(formatDate(booking.check_out))
+                        + '. Those dates are open on your calendar again.</p>'
+                        + button(SITE_URL + '/dashboard/bookings/' + booking.id, 'View the reservation'),
+                        "You're receiving this because you host on Galloway Getaways. Booking emails can't be switched off."
+                    )
+                );
+            }
+        } catch (hostMailErr: any) {
+            await logError(
+                '[bookings/cancel] the host was not told about the cancellation',
+                hostMailErr,
                 { path: 'bookings/cancel', userId: user.id }
             );
         }
@@ -250,7 +368,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, refunded: refundedNow });
     } catch (err: any) {
         console.error('[bookings/cancel]', err && err.message);
-        await logError('[bookings/cancel] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/cancel' });
+        await logMoneyFailure('[bookings/cancel] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/cancel' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not cancel' },
             { status: 500 }

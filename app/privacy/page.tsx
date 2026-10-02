@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 
 export const metadata: Metadata = {
     title: 'Privacy Policy',
@@ -16,8 +17,9 @@ export default function PrivacyPage() {
             <div className="text-slate-700 space-y-4">
                 <h2 className="text-xl font-bold text-slate-900 pt-4">Who we are</h2>
                 <p>
-                    Galloway Getaways Ltd is the data controller for the information described here. We are
-                    registered in Scotland (company number SC899385). For anything about your data,
+                    {COMPANY.name} is the data controller for the information described here. We are
+                    registered in {COMPANY.registeredIn} (company number {COMPANY.number}), and our registered
+                    office is {REGISTERED_OFFICE}. For anything about your data,
                     email{' '}
                     <a href="mailto:hello@gallowaygetaways.co.uk" className="text-emerald-700 underline">
                         hello@gallowaygetaways.co.uk

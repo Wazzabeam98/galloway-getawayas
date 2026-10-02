@@ -1,144 +1,283 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Calendar } from 'react-date-range';
-import 'react-date-range/dist/styles.css';
-import 'react-date-range/dist/theme/default.css';
-import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
-import { optionAvailability, bookingIsPrivate, type OptionAvailability } from '@/lib/serviceSlots';
-import { itemPriceLabel, unitPhrase, dateLabel, timeLabel } from '@/components/marketplace/present';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { unitMultiplies } from '@/lib/serviceOrders';
+import { hasExtraGuests } from '@/lib/extraGuests';
+import { generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
+import { dateLabel, priceParts, cancellationBadge } from '@/components/marketplace/present';
+import { childrenAllowed } from '@/lib/guestAges';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import { CalendarDays } from 'lucide-react';
+import BookingDialog, { type BookArgs, type DialogOpenSession } from '@/components/marketplace/BookingDialog';
+import DatePreview from '@/components/marketplace/DatePreview';
+import { RequestBookingDialog, RequestDatePreview, type RequestBookArgs } from '@/components/marketplace/RequestBooking';
+import { useRequestBooking } from '@/components/marketplace/RequestBookingContext';
+import { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
+import { AGREEMENTS } from '@/lib/agreements';
 
-interface PanelItem { id: string; name: string; description: string | null; price: number; unit: string; image: string | null; }
+interface PanelItem {
+    id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
+    duration_minutes?: number | null;
+    fulfilment?: string | null;
+    capacity: number | null;
+    minPeople: number | null;
+    includedGuests?: number | null;
+    extraAdultFee?: number | null;
+    extraChildFee?: number | null;
+    maxParty?: number | null;
+    isCustom?: boolean;
+}
 interface PanelSession {
     date: string; time: string;
-    // The pinned seat row for this time, or null if nobody has booked it yet.
     row: { capacity: number; seats_taken: number; private: boolean } | null;
 }
+interface PanelBookedBlock {
+    date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null;
+    capacity: number; seats_taken: number; private: boolean;
+}
+interface PanelDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 interface PanelProvider {
     id: string; business_name: string; who: string; shape: string; isFood: boolean;
-    items: PanelItem[]; sessions: PanelSession[]; leadTimeDays: number;
-    // Per-person slots only: the smallest group a single booking may be. 1 = no
-    // minimum. Floors the quantity picker; the booking route is the real gate.
+    fulfilment?: string | null;
+    items: PanelItem[]; sessions: PanelSession[]; declaredSessions?: PanelDeclared[]; leadTimeDays: number;
     minPeople: number;
-    // The whole-table size, so a per-person option can be sized on a fresh time.
     slotCapacity: number;
+    perItemDurations?: boolean;
+    turnaround?: number;
+    slotLength?: number;
+    slotAvailability?: Array<{ day_of_week: number; open_time: string; close_time: string }>;
+    slotBlocks?: string[];
+    partialBlocks?: PartialBlock[];
+    bookedBlocks?: PanelBookedBlock[];
+    // Comes-to-you: the dates the provider is already booked on — greyed and
+    // unpickable in the dialog (one booking a day blocks the whole day).
+    bookedDates?: string[];
+    cancellationHours?: number | null;
+    noRefund?: boolean | null;
+    minAge?: number | null;
+    // Request shapes: the times the provider offers, and how far ahead a
+    // standalone booking may reach. Empty / unset when not applicable.
+    offeredTimes?: string[];
+    horizonDays?: number;
+    maxGuests?: number | null;
 }
 
-// A word for why an option can't be booked on a time, from the shared helper's
-// reason. Kept human: the guest sees "why not", never a silent dead button.
-function unavailableLabel(a: OptionAvailability, unit: string): string {
-    if (a.reason === 'other-mode') return bookingIsPrivate(unit) ? 'Shared table' : 'Private hire';
-    if (a.reason === 'too-small') return 'Almost full';
-    return 'Full';
-}
+const dayKeyFromNow = (days: number) => shiftDayKey(londonDayKey(), days);
+const lastNight = (checkOut: string) => shiftDayKey(String(checkOut).slice(0, 10), -1);
+const maxKey = (a: string, b: string) => (a > b ? a : b);
 
-// Between a yyyy-mm-dd key and a local Date at midnight. Constructing from the
-// parts (not new Date(key), which parses as UTC) keeps the calendar day the guest
-// clicks and the key we send to the server the same, in any timezone.
-// The common ones as one-tap chips, so a guest names an allergy even when they
-// wouldn't type it out. Free text below still catches anything not listed.
-const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
-
-function keyToDate(key: string): Date {
-    const [y, m, d] = key.split('-').map(Number);
-    return new Date(y, (m || 1) - 1, d || 1);
-}
-function dateToKey(dt: Date): string {
-    const y = dt.getFullYear();
-    const m = String(dt.getMonth() + 1).padStart(2, '0');
-    const d = String(dt.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
-// yyyy-mm-dd for (today + days), on the London calendar via the shared helper.
-function dayKeyFromNow(days: number): string {
-    return shiftDayKey(londonDayKey(), days);
-}
-function lastNight(checkOut: string): string {
-    return shiftDayKey(String(checkOut).slice(0, 10), -1);
-}
-function maxKey(a: string, b: string): string { return a > b ? a : b; }
-
-export default function BookingPanel({ bookingId, checkIn, checkOut, provider }: {
-    bookingId: string; checkIn: string; checkOut: string; provider: PanelProvider;
+// The booking box a guest sees for a SLOT or a COMES-TO-YOU experience. (A
+// made-to-order listing is served by the food-ordering layout — FoodMenu +
+// FoodBasket — not this component.) Two ways in:
+//   • Against a cottage stay (bookingId + checkIn/checkOut given): the date is
+//     bounded by the stay and the party capped by who's staying.
+//   • Standalone (no booking): bookable by anyone; the date runs to the
+//     provider's horizon, the party is capped by the item's own maximum, and a
+//     comes-to-you chef asks for an address.
+// Both shapes are compact — price, cancellation, a "Show dates" button and a few
+// suggested days — with the picking (guest count, calendar, time) in the dialog.
+export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdults, cottageChildren, standalone: standaloneProp, signedIn, provider }: {
+    bookingId?: string; checkIn?: string; checkOut?: string; cottageGuests?: number;
+    cottageAdults?: number | null; cottageChildren?: number | null;
+    stay?: { title: string | null; town: string | null };
+    standalone?: boolean;
+    // False on the public browse page when nobody is signed in — an anonymous
+    // standalone checkout. Omitted (against a stay), the booker is always signed
+    // in, so it defaults to signed-in.
+    signedIn?: boolean;
+    provider: PanelProvider;
 }) {
     const isSlot = provider.shape === 'slot';
-    const [itemId, setItemId] = useState<string>(provider.items.length === 1 ? provider.items[0].id : '');
-    const [qty, setQty] = useState<number>(1);
-    const [date, setDate] = useState<string>('');
-    const [session, setSession] = useState<PanelSession | null>(null);
-    const [dayIdx, setDayIdx] = useState<number>(0);
-    const [allergy, setAllergy] = useState<string>('');
-    const [allergyTags, setAllergyTags] = useState<string[]>([]);
-    const [note, setNote] = useState<string>('');
+    const isComesToYou = provider.shape === 'comes_to_you';
+    const standalone = standaloneProp ?? !bookingId;
+    // An anonymous standalone checkout: no account yet — it is minted from the
+    // Stripe payer email after payment. Against a stay is always signed in.
+    const anonymous = standalone && signedIn === false;
+    const [open, setOpen] = useState(false);
+    const [initialDate, setInitialDate] = useState<string | null>(null);
+    // The option chosen on the listing (via ChooseMenu) — locks the dialog to it
+    // and removes the option list. Null on a plain "Show dates" open, which then
+    // defaults to the cheapest option below.
+    const [lockedItemId, setLockedItemId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Does this guest still owe the Guest Terms? Booking an experience is a
+    // checkout too, so — like a stay — they accept them here, in the dialog above
+    // the Book button, rather than through a sign-in pop-up. A signed-in guest who
+    // owes them records here before the order; an anonymous booker has no account
+    // to record against yet, so they always tick and the version rides on the
+    // order to be recorded when the account is minted.
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(anonymous);
+    useEffect(() => {
+        if (anonymous) { setNeedsGuestTerms(true); return; }
+        let cancelled = false;
+        fetchAgreementStatus().then((st) => {
+            if (!cancelled) setNeedsGuestTerms(!!(st && st.documents.guest && !st.documents.guest.agreed));
+        });
+        return () => { cancelled = true; };
+    }, [anonymous]);
 
-    // The guest's chosen product, for every shape. A single-item provider
-    // auto-selects it (itemId defaults to the one id above); a provider offering
-    // two — a private hire and a shared table — is picked below.
-    const item = provider.items.find((i) => i.id === itemId) || null;
-    const multiplies = !!item && unitMultiplies(item.unit);
+    // The Guest Terms step before an order is created. A signed-in guest who owes
+    // them records them now (against their account); an anonymous one carries the
+    // ticked version on the order, so this returns the fields to add to the POST
+    // body. Returns null to STOP the booking when a signed-in record fails.
+    async function guestTermsForOrder(): Promise<{ guestTermsVersion?: string } | null> {
+        if (!needsGuestTerms) return {};
+        if (anonymous) return { guestTermsVersion: AGREEMENTS.guest.version };
+        const failed = await recordAgreement('guest', 'experience_checkout');
+        if (failed) { setError(failed); setBusy(false); return null; }
+        setNeedsGuestTerms(false);
+        return {};
+    }
 
-    // The provider config the shared helper reads — the SAME optionAvailability
-    // the booking route checks and the host diary renders, so what the guest is
-    // shown as bookable is exactly what the claim will accept. A time impossible
-    // for the chosen option is greyed here, not discovered at the claim.
-    const cfg = { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople };
-    const availOf = (s: PanelSession, unit: string): OptionAvailability => optionAvailability(s.row, unit, cfg);
-    // The chosen option's availability on the chosen time.
-    const sel = isSlot && session && item ? availOf(session, item.unit) : null;
+    const declaredSessions = provider.declaredSessions || [];
+    // The provider's notice period is the earliest a date can be picked — for a
+    // comes-to-you chef as much as a made-to-order baker. A two-day notice on the
+    // 22nd first offers the 24th; a stay still can't be booked inside the notice.
+    const reqLead = Math.max(0, provider.leadTimeDays || 0);
+    const minDate = standalone
+        ? dayKeyFromNow(reqLead)
+        : maxKey(String(checkIn).slice(0, 10), dayKeyFromNow(reqLead));
+    const maxDate = standalone
+        ? dayKeyFromNow(Math.max(1, provider.horizonDays || 90))
+        : lastNight(String(checkOut));
 
-    // Sessions grouped by day, for the slot picker.
-    const days = useMemo(() => {
-        const m: Record<string, PanelSession[]> = {};
-        for (const s of provider.sessions) (m[s.date] = m[s.date] || []).push(s);
-        return Object.keys(m).sort().map((d) => ({ date: d, times: m[d].sort((a, b) => a.time.localeCompare(b.time)) }));
-    }, [provider.sessions]);
+    const cheapest = provider.items.length ? provider.items.reduce((a, b) => (a.price <= b.price ? a : b)) : null;
+    const priceParts_ = cheapest ? priceParts(cheapest.price, cheapest.unit) : null;
+    const showFrom = provider.items.length > 1;
+    const cancel = cancellationBadge(provider.cancellationHours, provider.noRefund);
 
-    const seatCap = sel ? Math.min(MAX_ORDER_QUANTITY, sel.seatsLeft) : MAX_ORDER_QUANTITY;
-    // The per-person floor: the smallest group this session runs for. A
-    // convenience only — the booking route is the real gate. Applies only when
-    // the unit multiplies; 1 (no minimum) otherwise.
-    const minPeople = isSlot && multiplies ? Math.max(1, provider.minPeople || 1) : 1;
-    const quantity = multiplies ? Math.min(Math.max(minPeople, Math.floor(qty) || minPeople), seatCap) : 1;
-    const total = item ? orderTotal(item.price, quantity) : 0;
+    // ---- SLOT ---------------------------------------------------------------
+    const bookedRowByKey = useMemo(() => {
+        const m = new Map<string, PanelSession['row']>();
+        for (const b of provider.bookedBlocks || []) m.set(b.date + ' ' + b.time, { capacity: b.capacity, seats_taken: b.seats_taken, private: b.private });
+        return m;
+    }, [provider.bookedBlocks]);
+    const sessionsForItem = useCallback((selItemId: string): DialogOpenSession[] => {
+        if (!provider.perItemDurations) return provider.sessions;
+        const item = provider.items.find((i) => i.id === selItemId);
+        if (!item) return [];
+        const dur = resolvedDuration(item, { slot_length_minutes: provider.slotLength });
+        const turn = Math.max(0, provider.turnaround || 0);
+        const nowMs = Date.now();
+        return generateSessions(provider.slotAvailability || [], provider.slotBlocks || [], dur + turn, minDate, maxDate, dur, provider.partialBlocks || [])
+            .filter((s) => new Date(s.date + 'T' + s.time + ':00Z').getTime() > nowMs)
+            .map((s) => ({ date: s.date, time: s.time, row: bookedRowByKey.get(s.date + ' ' + s.time) || null }));
+    }, [provider, minDate, maxDate, bookedRowByKey]);
 
-    // Enough picked to book. Drives the mobile bottom bar: when it isn't ready,
-    // the bar scrolls up to the form rather than firing a hidden error.
-    const ready = !!item && (isSlot ? (!!session && (!sel || sel.possible)) : !!date);
-    const ctaLabel = busy
-        ? (isSlot ? 'Booking…' : 'Sending…')
-        : isSlot ? (total ? `Book · £${total.toFixed(2)}` : 'Book') : 'Send request';
-    const scrollToForm = () => {
-        if (typeof document !== 'undefined') {
-            document.getElementById('booking-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-    };
+    const hasSlotAvailability = isSlot && (provider.sessions.length > 0 || declaredSessions.length > 0 || !!provider.perItemDurations);
 
-    const minDate = maxKey(checkIn.slice(0, 10), dayKeyFromNow(provider.shape === 'made_to_order' ? provider.leadTimeDays : 0));
-    const maxDate = lastNight(checkOut);
-
-    async function go() {
-        setError(null);
-        if (!item) { setError('Pick one first.'); return; }
-        if (isSlot && !session) { setError('Pick a time first.'); return; }
-        if (!isSlot && !date) { setError('Pick a date first.'); return; }
-        setBusy(true);
+    async function bookSlot(args: BookArgs) {
+        setBusy(true); setError(null);
+        const gt = await guestTermsForOrder();
+        if (!gt) return;
         try {
-            const url = isSlot ? '/api/services/slots/book' : '/api/services/order';
-            const trimmedNote = note.trim();
-            // Ticked chips first, then anything typed — one string the provider
-            // reads on its own line / badge.
-            const trimmedAllergy = provider.isFood
-                ? [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '')
-                : '';
-            const body = isSlot
-                ? { providerId: provider.id, itemId: item.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, note: trimmedNote, allergy: trimmedAllergy }
-                : { itemId: item.id, bookingId, serviceDate: date, quantity, note: trimmedNote, allergy: trimmedAllergy };
-            const res = await fetch(url, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+            const res = await fetch('/api/services/slots/book', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    providerId: provider.id, itemId: args.itemId, bookingId, sessionDate: args.date, sessionTime: args.time,
+                    quantity: args.quantity, attendees: args.attendees,
+                    adults: args.adults, children: args.children, allergy: args.allergy,
+                    ...gt,
+                }),
+            });
+            const d = await res.json();
+            if (d && d.ok && d.url) { window.location.href = d.url; return; }
+            setError((d && d.error) || 'Could not start that.'); setBusy(false);
+        } catch { setError('Could not start that.'); setBusy(false); }
+    }
+
+    const previewDefault = provider.items.filter((i) => i.price > 0).sort((a, b) => a.price - b.price).find((i) => unitMultiplies(i.unit)) || provider.items[0] || null;
+    const previewSessions = provider.perItemDurations && previewDefault ? sessionsForItem(previewDefault.id) : provider.sessions;
+    const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
+
+    // Open the comes-to-you dialog on a specific OPTION (chosen on the listing)
+    // and optionally a date. A null option falls back to the cheapest — that's
+    // what a plain "Show dates" or a suggested day does.
+    const requestBooking = useRequestBooking();
+    const openRequest = useCallback((itemId: string | null, d: string | null) => {
+        setLockedItemId(itemId || cheapest?.id || null);
+        setInitialDate(d);
+        setOpen(true);
+    }, [cheapest]);
+    // A Choose press on the listing menu (ChooseMenu) parks a request in the
+    // context; open the dialog on that option.
+    useEffect(() => {
+        const p = requestBooking?.pending;
+        if (!p) return;
+        openRequest(p.itemId, p.date);
+        requestBooking?.consume();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestBooking?.pending?.nonce]);
+
+    // ---- COMES-TO-YOU -------------------------------------------------------
+    // A comes-to-you chef only travels, so standalone it asks for an address.
+    const needsAddress = standalone && isComesToYou;
+    const offered = provider.offeredTimes || [];
+
+    const bookableDays = useMemo(() => {
+        const out: string[] = []; let d = minDate;
+        for (let i = 0; i < 92 && d <= maxDate; i++) { out.push(d); d = shiftDayKey(d, 1); }
+        return out;
+    }, [minDate, maxDate]);
+
+    // The available days and their start times, generated from the provider's
+    // weekly opening hours (the single place hours are set). A legacy provider
+    // with no hours but named offered_times falls back to those on every bookable
+    // day.
+    const reqTimes = useMemo(() => {
+        const byDate: Record<string, string[]> = {};
+        const days = new Set<string>();
+        if (!isComesToYou) return { days, byDate };
+        // A date the provider is already booked on is dropped entirely — one
+        // booking a day blocks the whole day, so it never enters the day list and
+        // (being absent from calDays) shows greyed and disabled in the calendar.
+        const booked = new Set(provider.bookedDates || []);
+        for (const s of generateSessions(provider.slotAvailability || [], provider.slotBlocks || [], 30, minDate, maxDate, 30, provider.partialBlocks || [])) {
+            if (booked.has(s.date)) continue;
+            (byDate[s.date] = byDate[s.date] || []).push(s.time);
+            days.add(s.date);
+        }
+        return { days, byDate };
+    }, [isComesToYou, provider.slotAvailability, provider.slotBlocks, provider.partialBlocks, provider.bookedDates, minDate, maxDate]);
+    const useHours = isComesToYou && reqTimes.days.size > 0;
+    const calDays = useMemo(
+        () => (useHours ? reqTimes.days : new Set(bookableDays)),
+        [useHours, reqTimes.days, bookableDays],
+    );
+    const reqDialogTimes = useMemo<Record<string, string[]>>(() => {
+        if (useHours) return reqTimes.byDate;
+        const m: Record<string, string[]> = {};
+        if (isComesToYou && offered.length) for (const d of bookableDays) m[d] = offered;
+        return m;
+    }, [useHours, reqTimes.byDate, isComesToYou, offered, bookableDays]);
+
+    // Submit a comes-to-you request from the DIALOG's own state. The money fields
+    // are derived from the chosen item's kind so the request matches the total the
+    // dialog showed: extra-guests → adults/children; per-person → a head count as
+    // quantity; flat → one.
+    async function bookRequest(args: RequestBookArgs) {
+        const it = provider.items.find((i) => i.id === args.itemId);
+        if (!it) { setError('Pick one first.'); return; }
+        const eg = { unit: it.unit, price: it.price, included_guests: it.includedGuests ?? null, extra_adult_fee: it.extraAdultFee ?? null, extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null };
+        const isExtra = hasExtraGuests(eg);
+        const perPerson = unitMultiplies(it.unit);
+        const kids = childrenAllowed(provider.minAge ?? null) ? args.children : 0;
+        setBusy(true); setError(null);
+        const gt = await guestTermsForOrder();
+        if (!gt) return;
+        try {
+            const res = await fetch('/api/services/order', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    itemId: it.id, bookingId, serviceDate: args.date, serviceTime: args.time,
+                    ...(isExtra
+                        ? { adults: Math.max(1, args.adults), children: kids }
+                        : { quantity: perPerson ? Math.max(1, args.adults + kids) : 1 }),
+                    serviceAddress: needsAddress ? args.address : undefined,
+                    allergy: provider.isFood ? args.allergy : '',
+                    ...gt,
+                }),
             });
             const d = await res.json();
             if (d && d.ok && d.url) { window.location.href = d.url; return; }
@@ -147,276 +286,122 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
         setBusy(false);
     }
 
-    return (
-        <div id="booking-panel" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
-            <div className="flex items-baseline justify-between gap-3">
-                <div className="text-2xl font-semibold text-slate-900">
-                    {item ? itemPriceLabel(item.price, item.unit) : (provider.items.length ? itemPriceLabel(Math.min(...provider.items.map((i) => i.price)), provider.items[0].unit) : '')}
-                </div>
-                {provider.items.length > 1 && !item ? (
-                    <span className="text-sm text-slate-400">choose below</span>
-                ) : null}
-            </div>
-
-            {/* How it books — a badge, so instant and 48-hour-hold don't rely on
-                one line of small print above the button to tell them apart. */}
-            <div className="mt-2">
-                {isSlot ? (
-                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
-                        Instant book — confirmed straight away
-                    </span>
-                ) : (
-                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
-                        Request — {provider.who} has 48 hours to confirm
-                    </span>
-                )}
-            </div>
-
-            {/* Menu pick — any provider offering more than one product, slots
-                included (a private hire vs a shared table are two items). */}
-            {provider.items.length > 1 && (
-                <fieldset className="mt-4">
-                    <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
-                    <div className="mt-2 space-y-1.5">
-                        {provider.items.map((it) => {
-                            const on = itemId === it.id;
-                            return (
-                                <label key={it.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 ${on ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
-                                    <input type="radio" name="item" checked={on} onChange={() => {
-                                        setItemId(it.id);
-                                        // A time picked for the old option may be
-                                        // impossible for this one (a private hire on a
-                                        // shared table, say) — drop it rather than let
-                                        // the guest book what would be refused.
-                                        if (session && !availOf(session, it.unit).possible) setSession(null);
-                                    }} className="accent-emerald-600" />
-                                    {it.image ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={it.image} alt="" className="h-9 w-9 rounded-md object-cover" />
-                                    ) : null}
-                                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{it.name}</span>
-                                    <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
-                                </label>
-                            );
-                        })}
+    if (isSlot) {
+        return (
+            <div id="booking-panel" className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        {priceParts_ && (
+                            <div className="text-slate-900">
+                                <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
+                                {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
+                            </div>
+                        )}
+                        <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                        {!standalone && checkIn && (
+                            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                                <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                                <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
+                            </p>
+                        )}
                     </div>
-                </fieldset>
-            )}
-
-            {/* Slot picker — pick a DAY first (a row of day pills), then the
-                times for that day, so it's never a wall of every day's slots at
-                once. "N left" shows only when a SHARED session is genuinely low;
-                a whole-hire session (capacity 1) never shows "1 left", which read
-                as false scarcity on every slot. */}
-            {isSlot && (
-                <div className="mt-4">
-                    {days.length === 0 ? (
-                        <p className="mt-2 text-sm text-slate-500">No times left during your stay.</p>
-                    ) : (() => {
-                        const active = Math.min(dayIdx, days.length - 1);
-                        const day = days[active];
-                        return (
-                            <>
-                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a day</div>
-                                <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
-                                    {days.map((d, i) => {
-                                        const on = i === active;
-                                        return (
-                                            <button key={d.date} type="button" onClick={() => setDayIdx(i)}
-                                                className={`flex-none rounded-lg border px-3 py-1.5 text-sm transition ${on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
-                                                {dateLabel(d.date)}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a time</div>
-                                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                    {day.times.map((s) => {
-                                        const on = session && session.date === s.date && session.time === s.time;
-                                        // Per the CHOSEN option: impossible times are
-                                        // greyed with the reason, not hidden and not
-                                        // left to fail at the claim. Only per-person
-                                        // shows "N left"; a whole-hire time never reads
-                                        // "1 left" (false scarcity on every slot).
-                                        const a = item ? availOf(s, item.unit) : null;
-                                        const disabled = !!a && !a.possible;
-                                        const low = !!item && !bookingIsPrivate(item.unit) && !!a && a.possible && a.seatsLeft >= 1 && a.seatsLeft <= 2;
-                                        return (
-                                            <button key={s.time} type="button" disabled={disabled} aria-disabled={disabled}
-                                                onClick={() => { if (disabled) return; setSession(s); setQty(minPeople); }}
-                                                title={disabled && a && item ? unavailableLabel(a, item.unit) : undefined}
-                                                className={`rounded-lg border px-2.5 py-1.5 text-sm transition ${
-                                                    disabled ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
-                                                        : on ? 'border-emerald-600 bg-emerald-600 text-white'
-                                                            : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
-                                                {timeLabel(s.time)}
-                                                {disabled && a && item ? <span className="ml-1 text-[10px] font-medium text-slate-400">{unavailableLabel(a, item.unit)}</span> : null}
-                                                {low && a ? <span className={`ml-1 text-[10px] ${on ? 'text-emerald-100' : 'text-amber-600'}`}>{a.seatsLeft} left</span> : null}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </>
-                        );
-                    })()}
-                </div>
-            )}
-
-            {/* Quantity — only when the price multiplies */}
-            {item && multiplies && (isSlot ? !!session : true) && (
-                <label className="mt-4 block">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        {unitPhrase(item.unit) === 'per person' ? 'How many people?' : 'How many?'}
-                    </span>
-                    <input type="number" min={minPeople} max={seatCap} inputMode="numeric" value={qty}
-                        onChange={(e) => setQty(Math.min(Math.max(minPeople, Math.floor(Number(e.target.value) || minPeople)), seatCap))}
-                        className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                    {isSlot && sel ? <span className="ml-2 text-xs text-slate-400">{sel.seatsLeft} place{sel.seatsLeft === 1 ? '' : 's'} left</span> : null}
-                    {minPeople > 1 ? <p className="mt-1 text-xs text-slate-500">This session is for {minPeople} people or more.</p> : null}
-                </label>
-            )}
-
-            {/* Date — request shapes. A real calendar, matching the cottage
-                booking: the dates inside the stay are live, everything else is
-                greyed. minDate/maxDate do the greying; the same yyyy-mm-dd the
-                server re-validates is what a click produces. */}
-            {!isSlot && (
-                <div className="mt-4">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date during your stay</span>
-                    <div className="airbnb-compact-calendar mt-1.5 overflow-hidden rounded-xl border border-slate-200">
-                        <Calendar
-                            date={date ? keyToDate(date) : undefined}
-                            onChange={(d: Date) => setDate(dateToKey(d))}
-                            minDate={keyToDate(minDate)}
-                            maxDate={keyToDate(maxDate)}
-                            shownDate={keyToDate(minDate)}
-                            color="#047857"
-                            months={1}
-                            showMonthAndYearPickers={false}
-                            weekdayDisplayFormat="EEEEE"
-                        />
-                    </div>
-                    {provider.shape === 'made_to_order' && provider.leadTimeDays > 0 ? (
-                        <span className="mt-1 block text-xs text-slate-400">{provider.who} needs {provider.leadTimeDays} day{provider.leadTimeDays === 1 ? '' : 's'} notice.</span>
-                    ) : null}
-                </div>
-            )}
-
-            {/* For a food business, allergies get their own field — safety
-                information a cook must not skim past, kept separate so it routes
-                on its own (its own line in the email, its own badge). */}
-            {provider.isFood && (
-                <label className="mt-4 block">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-rose-700">
-                        Allergies &amp; dietary needs
-                        <span className="ml-1 font-normal normal-case tracking-normal text-slate-400">(optional)</span>
-                    </span>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                        {COMMON_ALLERGENS.map((a) => {
-                            const on = allergyTags.includes(a);
-                            return (
-                                <button key={a} type="button"
-                                    aria-pressed={on}
-                                    onClick={() => setAllergyTags((prev) => on ? prev.filter((x) => x !== a) : [...prev, a])}
-                                    className={`rounded-full border px-2.5 py-1 text-xs transition ${on ? 'border-rose-500 bg-rose-500 text-white' : 'border-rose-300 text-rose-700 hover:border-rose-400'}`}>
-                                    {a}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <textarea
-                        value={allergy}
-                        onChange={(e) => setAllergy(e.target.value.slice(0, 500))}
-                        rows={2}
-                        maxLength={500}
-                        placeholder="e.g. one coeliac, one severe nut allergy"
-                        className="mt-1 block w-full resize-y rounded-lg border border-rose-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                    />
-                    <span className="mt-1 block text-xs text-slate-400">
-                        {provider.who} sees this {isSlot ? 'with your booking' : 'before they confirm'}. Name any allergy — they’ll be in touch if they can’t safely cater for it.
-                    </span>
-                </label>
-            )}
-
-            {/* The general note, on every shape — access, timing, a request. */}
-            <label className="mt-4 block">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Anything {provider.who} should know?
-                    <span className="ml-1 font-normal normal-case tracking-normal text-slate-400">(optional)</span>
-                </span>
-                <textarea
-                    value={note}
-                    onChange={(e) => setNote(e.target.value.slice(0, 500))}
-                    rows={2}
-                    maxLength={500}
-                    placeholder={provider.shape === 'made_to_order'
-                        // A made-to-order thing isn't a party: it has a size, a
-                        // message, and collection or delivery — not a headcount.
-                        ? 'e.g. collection Saturday morning, or drop-off at the cottage; and a message to write on it.'
-                        : provider.isFood
-                            ? 'Anything else — e.g. “it’s mum’s 60th, could you pipe a message”.'
-                            : 'e.g. “we’re on the top floor, the buzzer doesn’t work” — or a special request.'}
-                    className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                />
-            </label>
-
-            {/* Total, spelled out when it multiplies */}
-            {item && multiplies && (
-                <div className="mt-4 text-sm text-slate-700">
-                    {itemPriceLabel(item.price, item.unit)} × {quantity}
-                    <span className="mx-1">=</span>
-                    <span className="font-semibold text-slate-900">£{total.toFixed(2)}</span>
-                </div>
-            )}
-
-            {/* The reassurance, per shape */}
-            <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
-                {isSlot ? (
-                    <><span className="font-semibold text-slate-900">Paid now, confirmed straight away.</span> Your place is held while you pay.</>
-                ) : (
-                    <><span className="font-semibold text-slate-900">Your card isn’t charged yet.</span> {provider.who} has 48 hours to confirm; if they decline or don’t reply, nothing is taken.</>
-                )}
-            </p>
-
-            {/* Desktop keeps the button inline at the foot of the panel; on a
-                phone the fixed bar below is the primary action, so it isn't
-                doubled up. */}
-            <button type="button" onClick={go} disabled={busy}
-                className="mt-3 hidden w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60 lg:block">
-                {ctaLabel}
-            </button>
-
-            {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
-
-            <p className="mt-3 text-[11px] leading-snug text-slate-400">
-                You’re booking {provider.business_name}. Galloway Getaways takes the payment on their
-                behalf and is not the provider.
-            </p>
-
-            {/* The fixed "Book · £X" bar — the mobile standard, always within
-                thumb reach however far down the form the guest has scrolled. When
-                nothing is picked yet it scrolls up to the form instead of firing a
-                hidden error. Desktop hides it (the inline button is right there). */}
-            <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-4px_16px_rgba(15,23,42,0.06)] backdrop-blur lg:hidden">
-                <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-                    <div className="min-w-0">
-                        <div className="text-base font-semibold text-slate-900">
-                            {item ? itemPriceLabel(item.price, item.unit) : (provider.items.length ? itemPriceLabel(Math.min(...provider.items.map((i) => i.price)), provider.items[0].unit) : '')}
-                        </div>
-                        <div className="truncate text-[11px] text-slate-500">
-                            {ready
-                                ? (multiplies && total ? `Total £${total.toFixed(2)}` : (isSlot ? 'Paid now' : 'Card not charged yet'))
-                                : (isSlot ? 'Pick a time' : 'Pick a date')}
-                        </div>
-                    </div>
-                    <button type="button" onClick={ready ? go : scrollToForm} disabled={busy}
-                        className="flex-none rounded-xl bg-emerald-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60">
-                        {ctaLabel}
+                    <button type="button" onClick={() => setOpen(true)} disabled={!hasSlotAvailability}
+                        className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+                        {hasSlotAvailability ? 'Show dates' : 'No times'}
                     </button>
                 </div>
+                <DatePreview
+                    items={provider.items}
+                    sessions={previewSessions}
+                    declaredSessions={declaredSessions}
+                    providerCapacity={provider.slotCapacity}
+                    providerMinPeople={provider.minPeople}
+                    slotLength={provider.slotLength}
+                    busy={busy}
+                    onPickDay={(d) => openOn(d)}
+                    onShowAll={() => openOn(null)}
+                />
+                {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+                {open && (
+                    <BookingDialog
+                        who={provider.who}
+                        items={provider.items}
+                        sessions={provider.sessions}
+                        sessionsForItem={provider.perItemDurations ? sessionsForItem : undefined}
+                        declaredSessions={declaredSessions}
+                        providerCapacity={provider.slotCapacity}
+                        providerMinPeople={provider.minPeople}
+                        providerFulfilment={provider.fulfilment}
+                        isFood={provider.isFood}
+                        minAge={provider.minAge}
+                        initialDate={initialDate}
+                        prefillAdults={cottageAdults}
+                        prefillChildren={cottageChildren}
+                        hasStay={!standalone}
+                        needsGuestTerms={needsGuestTerms}
+                        busy={busy}
+                        error={error}
+                        onBook={bookSlot}
+                        onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
+                    />
+                )}
             </div>
-            {/* Keeps the fixed bar from covering the foot of the form on a phone. */}
-            <div className="h-16 lg:hidden" aria-hidden />
+        );
+    }
+
+    // ---- comes-to-you: the compact box + dialog, like the slot experiences ----
+    // Price, the free-cancellation line, a "Show dates" button and a few suggested
+    // days; the option, guest count, calendar and time all live in the dialog.
+    return (
+        <div id="booking-panel" className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    {priceParts_ && (
+                        <div className="text-slate-900">
+                            <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
+                            {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
+                        </div>
+                    )}
+                    <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                    {!standalone && checkIn && (
+                        <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                            <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                            <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
+                        </p>
+                    )}
+                </div>
+                <button type="button" onClick={() => openRequest(null, null)} disabled={calDays.size === 0}
+                    className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+                    {calDays.size ? 'Show dates' : 'No dates'}
+                </button>
+            </div>
+
+            <RequestDatePreview calDays={calDays} timesByDate={reqDialogTimes} busy={busy} onPickDay={(d) => openRequest(null, d)} />
+
+            {error && !open && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+
+            {open && (
+                <RequestBookingDialog
+                    who={provider.who}
+                    items={provider.items}
+                    minAge={provider.minAge}
+                    isFood={provider.isFood}
+                    needsAddress={needsAddress}
+                    calDays={calDays}
+                    timesByDate={reqDialogTimes}
+                    providerMax={provider.maxGuests}
+                    prefillAdults={cottageAdults}
+                    prefillChildren={cottageChildren}
+                    initialDate={initialDate}
+                    lockedItemId={lockedItemId}
+                    hasStay={!standalone}
+                    needsGuestTerms={needsGuestTerms}
+                    busy={busy}
+                    error={error}
+                    onBook={bookRequest}
+                    onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setLockedItemId(null); setError(null); } }}
+                />
+            )}
         </div>
     );
 }

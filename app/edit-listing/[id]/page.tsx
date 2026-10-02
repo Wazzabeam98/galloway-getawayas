@@ -26,7 +26,7 @@ import {
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
     Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
     LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange,
-    RefreshCw, Percent, ShieldAlert, RotateCcw, X,
+    RefreshCw, Percent, ShieldAlert, X,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
@@ -147,10 +147,13 @@ const SECTIONS = [
     { key: 'description', label: 'Description', icon: FileText },
     { key: 'amenities', label: 'Amenities', icon: Sparkles },
     { key: 'photos', label: 'Photos', icon: ImageIcon },
-    { key: 'rates', label: 'Rates', icon: PoundSterling },
-    { key: 'availability', label: 'Availability', icon: CalendarRange },
+    { key: 'rates', label: 'Nightly price', icon: PoundSterling },
+    // Cancellation, instant book, the extra fees, deposit and stay length all
+    // gathered here so they're findable and changeable in one place, rather than
+    // scattered across Rates / Availability / Cancellation (and, for instant
+    // book, only on the Account page).
+    { key: 'booking', label: 'Booking settings', icon: CalendarRange },
     { key: 'rules', label: 'House rules', icon: ShieldAlert },
-    { key: 'cancellation', label: 'Cancellation policy', icon: RotateCcw },
     { key: 'calendar', label: 'Calendar sync', icon: RefreshCw },
     { key: 'discounts', label: 'Discounts', icon: Percent },
 ];
@@ -217,6 +220,10 @@ export default function EditListing() {
     const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
     const [monthlyDiscount, setMonthlyDiscount] = useState(false);
+    // Extra-guest fee: charged per guest per night above a set number. Used at
+    // booking AND when a reservation is changed to add guests.
+    const [extraGuestFee, setExtraGuestFee] = useState('');
+    const [extraGuestAfter, setExtraGuestAfter] = useState('');
     const [icalToken, setIcalToken] = useState('');
     const [isCoHost, setIsCoHost] = useState(false);
     // Set when an owner opens somebody else's listing. Everything it turns on
@@ -238,6 +245,14 @@ export default function EditListing() {
     const [additionalRules, setAdditionalRules] = useState('');
     const [cancellationPolicy, setCancellationPolicy] = useState('Moderate');
     const [nonRefundableOption, setNonRefundableOption] = useState(false);
+    // Booking settings gathered in one place (were scattered or, for instant
+    // book, only on the Account page). Defaults are unchanged — an empty fee is
+    // still no fee, request-to-book is still the default.
+    const [cleaningFee, setCleaningFee] = useState('');
+    const [petFee, setPetFee] = useState('');
+    const [damageDeposit, setDamageDeposit] = useState('');
+    const [instantBook, setInstantBook] = useState(false);
+    const [instantBookRequiresPhone, setInstantBookRequiresPhone] = useState(false);
 
     const [submitting, setSubmitting] = useState(false);
     const [processingPhotos, setProcessingPhotos] = useState(false);
@@ -326,6 +341,8 @@ export default function EditListing() {
             setNewListingPromo(listing.new_listing_promo ?? true);
             setLastMinuteDiscount(listing.last_minute_discount ?? false);
             setWeeklyDiscount(listing.weekly_discount ?? false);
+            setExtraGuestFee(listing.extra_guest_fee != null ? String(listing.extra_guest_fee) : '');
+            setExtraGuestAfter(listing.extra_guest_after != null ? String(listing.extra_guest_after) : '');
             setMonthlyDiscount(listing.monthly_discount ?? false);
             setIcalToken(listing.ical_token || '');
             setMinNights(String(listing.min_nights ?? 1));
@@ -346,11 +363,23 @@ export default function EditListing() {
             setAdditionalRules(listing.additional_rules || '');
             setCancellationPolicy(listing.cancellation_policy || 'Moderate');
             setNonRefundableOption(listing.non_refundable_option ?? false);
+            setCleaningFee(listing.cleaning_fee != null ? String(listing.cleaning_fee) : '');
+            setPetFee(listing.pet_fee != null ? String(listing.pet_fee) : '');
+            setDamageDeposit(listing.damage_deposit != null ? String(listing.damage_deposit) : '');
+            setInstantBook(listing.instant_book ?? false);
+            setInstantBookRequiresPhone(listing.instant_book_requires_phone ?? false);
 
             setLoading(false);
         };
         load();
     }, [supabase, listingId]);
+
+    // Open a specific tab from ?section= (the Account page links straight to
+    // Booking settings, so a host lands on the controls they came for).
+    useEffect(() => {
+        const s = new URLSearchParams(window.location.search).get('section');
+        if (s && SECTIONS.some((x) => x.key === s)) setActiveSection(s);
+    }, []);
 
     const toggleAmenity = (name: string) => {
         setAmenities((prev) => (prev.includes(name) ? prev.filter((a) => a !== name) : [...prev, name]));
@@ -468,7 +497,13 @@ export default function EditListing() {
 
         setSubmitting(true);
         try {
-            const orderedPhotos = [photos[coverIndex], ...photos.filter((_, i) => i !== coverIndex)];
+            // Cover first, then the rest — but only when there IS a cover. On a
+            // listing with no photos, photos[coverIndex] is undefined, and the old
+            // [undefined, ...] array threw "reading 'kind'" below, so the save
+            // crashed before it ever ran. Filter guards it either way.
+            const cover = photos[coverIndex];
+            const orderedPhotos = (cover ? [cover, ...photos.filter((_, i) => i !== coverIndex)] : [...photos])
+                .filter(Boolean);
             const finalPaths: string[] = [];
 
             for (const photo of orderedPhotos) {
@@ -499,6 +534,8 @@ export default function EditListing() {
                     street_address: buildStreetAddress(null, null, streetAddress) || null,
                     postcode: locPostcode.trim() ? tidyPostcode(locPostcode) : null,
                     price_per_night: Number(price),
+                    extra_guest_fee: extraGuestFee.trim() ? Number(extraGuestFee) : null,
+                    extra_guest_after: extraGuestAfter.trim() ? Number(extraGuestAfter) : null,
                     max_guests: guests,
                     images: finalPaths,
                     property_type: propertyType,
@@ -532,6 +569,11 @@ export default function EditListing() {
                     additional_rules: additionalRules,
                     cancellation_policy: cancellationPolicy,
                     non_refundable_option: nonRefundableOption,
+                    cleaning_fee: cleaningFee.trim() ? Number(cleaningFee) : null,
+                    pet_fee: petFee.trim() ? Number(petFee) : null,
+                    damage_deposit: damageDeposit.trim() ? Number(damageDeposit) : null,
+                    instant_book: instantBook,
+                    instant_book_requires_phone: instantBook ? instantBookRequiresPhone : false,
             };
 
             const saveRes = await fetch('/api/listings/save', {
@@ -1005,7 +1047,8 @@ export default function EditListing() {
 
                         {activeSection === 'rates' && (
                             <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-4">Rates</h2>
+                                <h2 className="text-xl font-bold text-slate-900 mb-1">Nightly price</h2>
+                                <p className="text-sm text-slate-500 mb-4">The extra fees, deposit and stay length live under <span className="font-medium text-slate-700">Booking settings</span>.</p>
                                 <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-3 max-w-xs">
                                     <span className="text-2xl font-black text-slate-900 mr-2">£</span>
                                     <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="text-2xl font-black text-slate-900 outline-none w-full" />
@@ -1029,38 +1072,175 @@ export default function EditListing() {
                             </section>
                         )}
 
-                        {activeSection === 'availability' && (
-                            <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-1">Availability</h2>
-                                <p className="text-sm text-slate-500 mb-6">Control how short or long a stay can be.</p>
-                                <div className="grid grid-cols-2 gap-4 max-w-md">
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-800 mb-1">Minimum nights</label>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            value={minNights}
-                                            onChange={(e) => setMinNights(e.target.value)}
-                                            onBlur={() => {
-                                                const n = Number(minNights);
-                                                if (!minNights || isNaN(n) || n < 1) setMinNights('1');
-                                            }}
-                                            className="w-full p-3 border rounded-xl text-sm"
-                                        />
+                        {activeSection === 'booking' && (
+                            <section className="max-w-lg space-y-8">
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-1">Booking settings</h2>
+                                    <p className="text-sm text-slate-500">How guests book, what you charge on top of the nightly price, your deposit, how long a stay can be, and how flexible you are on cancellation. Each starts at a sensible default — change any of them here.</p>
+                                </div>
+
+                                {/* How guests book — moved here from the Account page. */}
+                                <div>
+                                    <h3 className="font-semibold text-slate-900 mb-1">How guests book</h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setInstantBook(false)}
+                                            className={`text-left px-4 py-3.5 rounded-xl border transition ${!instantBook ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}
+                                        >
+                                            <div className={`text-sm ${!instantBook ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>Request to book</div>
+                                            <div className="text-xs text-slate-500 mt-0.5">You approve each booking before the guest is charged.</div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setInstantBook(true)}
+                                            className={`text-left px-4 py-3.5 rounded-xl border transition ${instantBook ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}
+                                        >
+                                            <div className={`text-sm ${instantBook ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>Instant book</div>
+                                            <div className="text-xs text-slate-500 mt-0.5">Guests book and pay straight away, no approval needed.</div>
+                                        </button>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-800 mb-1">Maximum nights</label>
-                                        <input
-                                            type="number"
-                                            min={Number(minNights) || 1}
-                                            value={maxNights}
-                                            onChange={(e) => setMaxNights(e.target.value)}
-                                            placeholder="No limit"
-                                            className="w-full p-3 border rounded-xl text-sm"
-                                        />
+                                    {instantBook && (
+                                        <label className="mt-3 flex items-center justify-between gap-4 rounded-xl border p-4">
+                                            <span>
+                                                <span className="block text-sm font-medium text-slate-800">Require a phone number</span>
+                                                <span className="block text-xs text-slate-500">Guests add a verified phone before they can instant-book.</span>
+                                            </span>
+                                            <button
+                                                type="button"
+                                                aria-checked={instantBookRequiresPhone}
+                                                role="switch"
+                                                onClick={() => setInstantBookRequiresPhone(!instantBookRequiresPhone)}
+                                                className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors ${instantBookRequiresPhone ? 'bg-emerald-700' : 'bg-slate-300'}`}
+                                            >
+                                                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${instantBookRequiresPhone ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                                            </button>
+                                        </label>
+                                    )}
+                                </div>
+
+                                {/* Extra fees on top of the nightly price. Blank = none. */}
+                                <div>
+                                    <h3 className="font-semibold text-slate-900 mb-1">Fees &amp; deposit</h3>
+                                    <p className="text-xs text-slate-500 mb-3">All optional. Leave any blank for none.</p>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Cleaning fee</label>
+                                            <p className="text-[12px] text-slate-500 mb-1.5">A one-off charge per stay. Always refunded in full if the guest cancels.</p>
+                                            <div className="flex items-center border-2 rounded-xl px-3 py-2 max-w-[10rem]">
+                                                <span className="text-slate-500 mr-1">£</span>
+                                                <input type="number" inputMode="decimal" value={cleaningFee} onChange={(e) => setCleaningFee(e.target.value)} placeholder="0" className="outline-none w-full text-slate-900" />
+                                                <span className="text-slate-500 text-sm ml-1">/ stay</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Extra guest fee</label>
+                                            <p className="text-[12px] text-slate-500 mb-1.5">Charged per extra guest, per night, above the number included. Also applies when a booking is changed to add guests.</p>
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center border-2 rounded-xl px-3 py-2 max-w-[10rem]">
+                                                    <span className="text-slate-500 mr-1">£</span>
+                                                    <input type="number" inputMode="decimal" value={extraGuestFee} onChange={(e) => setExtraGuestFee(e.target.value)} placeholder="0" className="outline-none w-full text-slate-900" />
+                                                    <span className="text-slate-500 text-sm ml-1">/ night</span>
+                                                </div>
+                                                <div>
+                                                    <span className="block text-[12px] text-slate-500 mb-1">Guests included first</span>
+                                                    <input type="number" inputMode="numeric" min={1} value={extraGuestAfter} onChange={(e) => setExtraGuestAfter(e.target.value)} placeholder="1" className="border-2 rounded-xl px-3 py-2 w-20 outline-none text-slate-900" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Pet fee</label>
+                                            <p className="text-[12px] text-slate-500 mb-1.5">{amenities.includes('Pets allowed') ? 'Charged per stay when a guest brings a pet.' : 'Only charged if you allow pets (turn that on under Amenities).'}</p>
+                                            <div className="flex items-center border-2 rounded-xl px-3 py-2 max-w-[10rem]">
+                                                <span className="text-slate-500 mr-1">£</span>
+                                                <input type="number" inputMode="decimal" value={petFee} onChange={(e) => setPetFee(e.target.value)} placeholder="0" className="outline-none w-full text-slate-900" />
+                                                <span className="text-slate-500 text-sm ml-1">/ stay</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Damage deposit</label>
+                                            <p className="text-[12px] text-slate-500 mb-1.5">Held against damage and released after the stay. Leave blank for none.</p>
+                                            <div className="flex items-center border-2 rounded-xl px-3 py-2 max-w-[10rem]">
+                                                <span className="text-slate-500 mr-1">£</span>
+                                                <input type="number" inputMode="decimal" value={damageDeposit} onChange={(e) => setDamageDeposit(e.target.value)} placeholder="0" className="outline-none w-full text-slate-900" />
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                                <p className="text-xs text-slate-400 mt-2">Leave maximum nights blank for no limit.</p>
+
+                                {/* Stay length. */}
+                                <div>
+                                    <h3 className="font-semibold text-slate-900 mb-1">Stay length</h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-800 mb-1">Minimum nights</label>
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                value={minNights}
+                                                onChange={(e) => setMinNights(e.target.value)}
+                                                onBlur={() => {
+                                                    const n = Number(minNights);
+                                                    if (!minNights || isNaN(n) || n < 1) setMinNights('1');
+                                                }}
+                                                className="w-full p-3 border rounded-xl text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-800 mb-1">Maximum nights</label>
+                                            <input
+                                                type="number"
+                                                min={Number(minNights) || 1}
+                                                value={maxNights}
+                                                onChange={(e) => setMaxNights(e.target.value)}
+                                                placeholder="No limit"
+                                                className="w-full p-3 border rounded-xl text-sm"
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-2">Leave maximum nights blank for no limit.</p>
+                                </div>
+
+                                {/* Cancellation policy — the four tiers. */}
+                                <div>
+                                    <h3 className="font-semibold text-slate-900 mb-1">Cancellation policy</h3>
+                                    <p className="text-xs text-slate-500 mb-3">
+                                        All refunds exclude the Galloway Getaways service fee. Cleaning fees are always returned in full, since the clean doesn&apos;t happen.
+                                    </p>
+                                    <div className="space-y-3">
+                                        {CANCELLATION_POLICIES.map((policy) => (
+                                            <button
+                                                key={policy.key}
+                                                type="button"
+                                                onClick={() => setCancellationPolicy(policy.key)}
+                                                className={`w-full text-left p-4 rounded-2xl border-2 transition ${cancellationPolicy === policy.key ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
+                                            >
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="font-semibold text-slate-900">{policy.key}</span>
+                                                    {cancellationPolicy === policy.key && <Check className="w-4 h-4 text-slate-900" />}
+                                                </div>
+                                                <ul className="text-xs text-slate-500 list-disc pl-4 space-y-0.5">
+                                                    {policy.bullets.map((b) => <li key={b}>{b}</li>)}
+                                                </ul>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="mt-4 p-4 border rounded-2xl flex items-start justify-between gap-4">
+                                        <div>
+                                            <div className="font-semibold text-slate-900 text-sm mb-1">Non-refundable option</div>
+                                            <p className="text-xs text-slate-500">
+                                                For short-term stays, guests pay 10% less in exchange for you keeping your full payout if they cancel.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setNonRefundableOption(!nonRefundableOption)}
+                                            className={`flex-shrink-0 w-11 h-6 rounded-full relative transition ${nonRefundableOption ? 'bg-slate-900' : 'bg-slate-300'}`}
+                                        >
+                                            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${nonRefundableOption ? 'left-5' : 'left-0.5'}`} />
+                                        </button>
+                                    </div>
+                                </div>
                             </section>
                         )}
 
@@ -1166,50 +1346,6 @@ export default function EditListing() {
                             </section>
                         )}
 
-                        {activeSection === 'cancellation' && (
-                            <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-1">Cancellation policy</h2>
-                                <p className="text-sm text-slate-500 mb-2">Choose how flexible you want to be with cancellations.</p>
-                                <p className="text-xs text-slate-500 mb-6">
-                                    All refunds exclude the Galloway Getaways service fee. Cleaning fees are always
-                                    returned in full, since the clean doesn&apos;t happen.
-                                </p>
-                                <div className="space-y-3 max-w-lg">
-                                    {CANCELLATION_POLICIES.map((policy) => (
-                                        <button
-                                            key={policy.key}
-                                            type="button"
-                                            onClick={() => setCancellationPolicy(policy.key)}
-                                            className={`w-full text-left p-4 rounded-2xl border-2 transition ${cancellationPolicy === policy.key ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
-                                        >
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span className="font-semibold text-slate-900">{policy.key}</span>
-                                                {cancellationPolicy === policy.key && <Check className="w-4 h-4 text-slate-900" />}
-                                            </div>
-                                            <ul className="text-xs text-slate-500 list-disc pl-4 space-y-0.5">
-                                                {policy.bullets.map((b) => <li key={b}>{b}</li>)}
-                                            </ul>
-                                        </button>
-                                    ))}
-                                </div>
-
-                                <div className="mt-6 p-4 border rounded-2xl flex items-start justify-between max-w-lg gap-4">
-                                    <div>
-                                        <div className="font-semibold text-slate-900 text-sm mb-1">Non-refundable option</div>
-                                        <p className="text-xs text-slate-500">
-                                            For short-term stays, guests pay 10% less in exchange for you keeping your full payout if they cancel.
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setNonRefundableOption(!nonRefundableOption)}
-                                        className={`flex-shrink-0 w-11 h-6 rounded-full relative transition ${nonRefundableOption ? 'bg-slate-900' : 'bg-slate-300'}`}
-                                    >
-                                        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${nonRefundableOption ? 'left-5' : 'left-0.5'}`} />
-                                    </button>
-                                </div>
-                            </section>
-                        )}
 
                         {activeSection === 'calendar' && (
                             <section>
@@ -1306,7 +1442,11 @@ export default function EditListing() {
                             </div>
                         )}
 
-                        {formError && <p className="text-red-600 text-sm mt-8">{formError}</p>}
+                        {formError && (
+                            <div role="alert" className="mt-8 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                                {formError}
+                            </div>
+                        )}
 
                         <button type="submit" disabled={submitting || (moderating && moderationReason.trim().length < 3)}
                             className="w-full mt-8 py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60">

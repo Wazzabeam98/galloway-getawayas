@@ -5,6 +5,10 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { formatUk } from '@/lib/cancellation';
+import { foldOrderFamily } from '@/lib/orderFamily';
+import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
+import { loadBookingSeats } from '@/lib/groupSeats';
+import { displayName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +23,58 @@ async function bookedBy(admin: any, bookingId: string, userId: string) {
 
     if (!data || data.guest_id !== userId) return null;
     return data;
+}
+
+// The order equivalent: only the guest who booked the EXPERIENCE can invite to
+// it. A seat row belongs to a booking OR an order (never both), so every
+// seat-scoped action authorises through whichever parent it carries.
+async function orderedBy(admin: any, orderId: string, userId: string) {
+    const { data } = await admin
+        .from('service_orders')
+        .select('id, guest_id, status, attendees, quantity, item_unit, item_name, shape, service_date, service_time, provider_business_name')
+        .eq('id', orderId)
+        .maybeSingle();
+
+    if (!data || data.guest_id !== userId) return null;
+    return data;
+}
+
+// The current seats on an order, plus the profiles behind any that are taken,
+// returned from every order mutation so the block updates from the response —
+// it never reads booking_guests through RLS (service_orders isn't authenticated-
+// readable, so the RLS subquery would come back empty). Server-authoritative.
+async function loadOrderSeats(admin: any, orderId: string) {
+    const { data: seatRows } = await admin
+        .from('booking_guests')
+        .select('id, user_id, name, email, status, invite_token, seat_index, link_sent_at')
+        .eq('order_id', orderId)
+        .neq('status', 'removed')
+        .order('seat_index');
+    const seats = seatRows || [];
+    const ids = seats.filter((s: any) => s.user_id).map((s: any) => s.user_id);
+    const profiles: Record<string, any> = {};
+    if (ids.length) {
+        const { data: profRows } = await admin
+            .from('profiles')
+            .select('id, avatar_url, full_name, preferred_name, show_full_name')
+            .in('id', ids);
+        (profRows || []).forEach((p: any) => { profiles[p.id] = p; });
+    }
+    return { seats, profiles };
+}
+
+// Authorise a seat row by its parent, for the actions that load a row first.
+// Returns { order } or { booking } when the caller owns the parent, else null.
+async function ownsRowParent(admin: any, row: any, userId: string) {
+    if (row && row.order_id) {
+        const order = await orderedBy(admin, row.order_id, userId);
+        return order ? { order } : null;
+    }
+    if (row && row.booking_id) {
+        const booking = await bookedBy(admin, row.booking_id, userId);
+        return booking ? { booking } : null;
+    }
+    return null;
 }
 
 export async function POST(request: Request) {
@@ -46,6 +102,39 @@ export async function POST(request: Request) {
         // with nothing to add first. Idempotent: it only tops up the shortfall,
         // so re-opening the sheet mints nothing new.
         if (action === 'ensure-seats') {
+            // The experience twin: one seat per place BOOKED minus the booker's,
+            // capped by the order's attendee count (someone who booked two places
+            // gets one companion seat). Same atomic top-up, its own RPC.
+            const orderId: string = body.orderId;
+            if (orderId) {
+                const order = await orderedBy(admin, orderId, user.id);
+                if (!order) {
+                    return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+                }
+                if (order.status === 'cancelled' || order.status === 'refunded' || order.status === 'declined' || order.status === 'expired') {
+                    return NextResponse.json({ ok: false, error: 'This experience is no longer live.' }, { status: 400 });
+                }
+                // The invite list runs to the seats PAID FOR, minus the booker's
+                // own place — folding in any confirmed per-person top-ups, so this
+                // hint agrees with the ensure_order_seats RPC (which sums the same
+                // family). Using attendees alone reported 0 for a per-person order.
+                const { data: kids } = await admin
+                    .from('service_orders')
+                    .select('quantity, attendees, item_unit')
+                    .eq('parent_order_id', orderId)
+                    .eq('status', 'confirmed');
+                const capacity = Math.max(0, foldOrderFamily(order as any, (kids as any[]) || []).headcount - 1);
+                const { data: minted, error: seatErr } = await admin
+                    .rpc('ensure_order_seats', { p_order: orderId, p_inviter: user.id });
+                if (seatErr) {
+                    await logError('booking-guests/ensure-seats: could not top up the experience seats', seatErr, {
+                        path: 'api/booking-guests', userId: user.id,
+                    });
+                    return NextResponse.json({ ok: false, error: 'Could not set up the seats.' }, { status: 500 });
+                }
+                return NextResponse.json({ ok: true, capacity, minted: minted ?? 0, ...(await loadOrderSeats(admin, orderId)) });
+            }
+
             const bookingId: string = body.bookingId;
             if (!bookingId) {
                 return NextResponse.json({ ok: false, error: 'Which booking?' }, { status: 400 });
@@ -58,7 +147,9 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'This booking has been cancelled.' }, { status: 400 });
             }
 
-            // The booker is one of the party; the rest are companion seats.
+            // The booker is one of the party; the rest are companion seats. This
+            // is the SAME count the party-total column (guests) carries — adults
+            // plus children — so the sheet and the card agree.
             const capacity = Math.max(0, ((booking.guests as number) || 1) - 1);
 
             // Atomic top-up in one statement, guarded by a partial unique index on
@@ -74,7 +165,11 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Could not set up the seats.' }, { status: 500 });
             }
 
-            return NextResponse.json({ ok: true, capacity, minted: minted ?? 0 });
+            // Return the seats server-authoritatively — the booker can't read
+            // booking_guests from the browser (the order-guests RLS policy touches
+            // service_orders, which authenticated can't read, so the select
+            // errors), so the sheet reads them here, exactly as the order side does.
+            return NextResponse.json({ ok: true, capacity, minted: minted ?? 0, ...(await loadBookingSeats(admin, bookingId)) });
         }
 
         // ---- Label or bind a seat (optional, on the seat's own row) --------
@@ -96,14 +191,13 @@ export async function POST(request: Request) {
 
             const { data: row } = await admin
                 .from('booking_guests')
-                .select('id, booking_id, status')
+                .select('id, booking_id, order_id, status')
                 .eq('id', guestRowId)
                 .maybeSingle();
             if (!row || row.status === 'removed') {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
-            const booking = await bookedBy(admin, row.booking_id, user.id);
-            if (!booking) {
+            if (!(await ownsRowParent(admin, row, user.id))) {
                 return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
             }
             // Someone already on the seat isn't relabelled from here.
@@ -128,7 +222,7 @@ export async function POST(request: Request) {
                     { status: 400 }
                 );
             }
-            return NextResponse.json({ ok: true });
+            return NextResponse.json({ ok: true, ...(row.order_id ? await loadOrderSeats(admin, row.order_id) : {}) });
         }
 
         // ---- Add someone along --------------------------------------------
@@ -218,14 +312,13 @@ export async function POST(request: Request) {
             const guestRowId: string = body.guestId;
             const { data: row } = await admin
                 .from('booking_guests')
-                .select('id, booking_id')
+                .select('id, booking_id, order_id')
                 .eq('id', guestRowId)
                 .maybeSingle();
             if (!row) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
-            const booking = await bookedBy(admin, row.booking_id, user.id);
-            if (!booking) {
+            if (!(await ownsRowParent(admin, row, user.id))) {
                 return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
             }
 
@@ -254,14 +347,13 @@ export async function POST(request: Request) {
             const guestRowId: string = body.guestId;
             const { data: row } = await admin
                 .from('booking_guests')
-                .select('id, booking_id')
+                .select('id, booking_id, order_id')
                 .eq('id', guestRowId)
                 .maybeSingle();
             if (!row) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
-            const booking = await bookedBy(admin, row.booking_id, user.id);
-            if (!booking) {
+            if (!(await ownsRowParent(admin, row, user.id))) {
                 return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
             }
             await admin
@@ -271,50 +363,138 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: true });
         }
 
-        // ---- Send (or resend) the branded invite email for one companion ----
-        if (action === 'email') {
-            const guestRowId: string = body.guestId;
+        // ---- Attach a KNOWN person (the prefill tap) -----------------------
+        // The order is attached to a stay, so the picker offered the people
+        // already on that booking as tappable names. Tapping one fills an empty
+        // order seat with that known user directly — they are already a real
+        // account on the trip, so there is nothing to accept: the seat goes
+        // straight to active. Capped because only attendees-1 seats exist.
+        if (action === 'attach-known') {
+            const guestRowId: string = body.guestId;   // the empty ORDER seat
+            const personId: string = body.userId;       // a profiles.id from the stay
             const { data: row } = await admin
                 .from('booking_guests')
-                .select('id, booking_id, email, name, invite_token, status')
+                .select('id, booking_id, order_id, status')
                 .eq('id', guestRowId)
                 .maybeSingle();
             if (!row || row.status === 'removed') {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
-            const booking = await bookedBy(admin, row.booking_id, user.id);
-            if (!booking) {
+            const parent = await ownsRowParent(admin, row, user.id);
+            if (!parent || !row.order_id) {
                 return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
             }
+            if (row.status === 'active') {
+                return NextResponse.json({ ok: false, error: 'That seat is taken.' }, { status: 400 });
+            }
+            if (!personId || personId === user.id) {
+                return NextResponse.json({ ok: false, error: 'Pick someone else on the trip.' }, { status: 400 });
+            }
+            const { data: prof } = await admin
+                .from('profiles').select('id, full_name, preferred_name').eq('id', personId).maybeSingle();
+            if (!prof) {
+                return NextResponse.json({ ok: false, error: 'That person could not be found.' }, { status: 404 });
+            }
+            const { error } = await admin
+                .from('booking_guests')
+                .update({
+                    user_id: personId,
+                    name: (prof.preferred_name || prof.full_name) || null,
+                    status: 'active',
+                    accepted_at: new Date().toISOString(),
+                    invite_token: crypto.randomUUID(),   // retire the unused link
+                })
+                .eq('id', guestRowId);
+            if (error) {
+                const duplicate = (error.message || '').indexOf('unique') !== -1;
+                return NextResponse.json({ ok: false, error: duplicate ? 'They’re already coming.' : error.message }, { status: 400 });
+            }
+            return NextResponse.json({ ok: true, ...(await loadOrderSeats(admin, row.order_id)) });
+        }
 
-            const { data: listing } = await admin
-                .from('listings').select('title').eq('id', booking.listing_id).maybeSingle();
+        // ---- Send (or resend) the branded invite email for one companion ----
+        if (action === 'email') {
+            const guestRowId: string = body.guestId;
+            const { data: row } = await admin
+                .from('booking_guests')
+                .select('id, booking_id, order_id, email, name, invite_token, status')
+                .eq('id', guestRowId)
+                .maybeSingle();
+            if (!row || row.status === 'removed') {
+                return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+            }
+            const parent = await ownsRowParent(admin, row, user.id);
+            if (!parent) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+            if (!row.email) {
+                return NextResponse.json({ ok: false, error: 'Add an email first, or share the link.' }, { status: 400 });
+            }
+
+            // Name the booker to the invitee the way the rest of the site names
+            // one person to another: through displayName (which honours
+            // show_full_name) and reduced to a first name — matching the notify
+            // route. The old code took preferred_name || full_name raw, so it put
+            // the booker's full legal name in the subject and body regardless of
+            // their privacy setting.
             const { data: bookerProfile } = await admin
-                .from('profiles').select('full_name, preferred_name').eq('id', user.id).maybeSingle();
-            const bookerName =
-                (bookerProfile && (bookerProfile.preferred_name || bookerProfile.full_name)) || 'Someone';
+                .from('profiles').select('full_name, preferred_name, show_full_name').eq('id', user.id).maybeSingle();
+            const bookerName = displayName(bookerProfile, 'Someone').split(' ')[0] || 'Someone';
 
-            await sendEmail(
-                row.email,
-                bookerName + ' has added you to a trip',
-                emailLayout(
-                    '<p style="margin:0 0 16px;font-size:16px;"><strong>'
-                        + escapeHtml(bookerName)
-                        + '</strong> has added you to their stay at <strong>'
-                        + escapeHtml((listing && listing.title) || 'a property')
-                        + '</strong>, '
-                        + formatUk(new Date(booking.check_in))
-                        + ' to '
-                        + formatUk(new Date(booking.check_out))
-                        + '.</p>'
-                        + '<p style="margin:0 0 16px;font-size:16px;">Accept and you\u2019ll be able to see where you\u2019re going, when, how to get in (the door code and wifi), and message the host directly if you need anything.</p>'
-                        + '<p style="margin:0 0 16px;font-size:14px;color:#6b7280;">Sign in with <strong>'
-                        + escapeHtml(row.email)
-                        + '</strong> \u2014 the address this was sent to \u2014 to accept. You won\u2019t be able to change or cancel the booking, and you won\u2019t see what was paid.</p>'
-                        + button(SITE_URL + '/trip-invite/' + row.invite_token, 'See the trip'),
-                    'You\u2019re receiving this because someone added you to their trip.'
-                )
-            );
+            // An experience invite reads about the experience \u2014 its name and date,
+            // never the cottage secrets or the price. A stay invite keeps its
+            // existing wording.
+            if ((parent as any).order) {
+                const o = (parent as any).order;
+                // Comes-to-you leads with the listing name and carries its item as
+                // a detail; every other shape keeps the item name as the title.
+                const { title: invTitle, detail: invDetail } = experienceBookingTitle(o);
+                await sendEmail(
+                    row.email,
+                    bookerName + ' has invited you to an experience',
+                    emailLayout(
+                        '<p style="margin:0 0 16px;font-size:16px;"><strong>'
+                            + escapeHtml(bookerName)
+                            + '</strong> has invited you to <strong>'
+                            + escapeHtml(invTitle || 'an experience')
+                            + '</strong>'
+                            + (invDetail ? ' — ' + escapeHtml(invDetail) : '')
+                            + (o.service_date ? ' on ' + formatUk(new Date(String(o.service_date))) : '')
+                            + '.</p>'
+                            + '<p style="margin:0 0 16px;font-size:16px;">Accept and you\u2019ll see where to go and when, and can message the host. You won\u2019t be able to change or cancel the booking, and you won\u2019t see what was paid.</p>'
+                            + '<p style="margin:0 0 16px;font-size:14px;color:#6b7280;">Sign in with <strong>'
+                            + escapeHtml(row.email)
+                            + '</strong> \u2014 the address this was sent to \u2014 to accept.</p>'
+                            + button(SITE_URL + '/trip-invite/' + row.invite_token, 'See the experience'),
+                        'You\u2019re receiving this because someone invited you to an experience.'
+                    )
+                );
+            } else {
+                const booking = (parent as any).booking;
+                const { data: listing } = await admin
+                    .from('listings').select('title').eq('id', booking.listing_id).maybeSingle();
+                await sendEmail(
+                    row.email,
+                    bookerName + ' has added you to a trip',
+                    emailLayout(
+                        '<p style="margin:0 0 16px;font-size:16px;"><strong>'
+                            + escapeHtml(bookerName)
+                            + '</strong> has added you to their stay at <strong>'
+                            + escapeHtml((listing && listing.title) || 'a property')
+                            + '</strong>, '
+                            + formatUk(new Date(booking.check_in))
+                            + ' to '
+                            + formatUk(new Date(booking.check_out))
+                            + '.</p>'
+                            + '<p style="margin:0 0 16px;font-size:16px;">Accept and you\u2019ll be able to see where you\u2019re going, when, how to get in (the door code and wifi), and message the host directly if you need anything.</p>'
+                            + '<p style="margin:0 0 16px;font-size:14px;color:#6b7280;">Sign in with <strong>'
+                            + escapeHtml(row.email)
+                            + '</strong> \u2014 the address this was sent to \u2014 to accept. You won\u2019t be able to change or cancel the booking, and you won\u2019t see what was paid.</p>'
+                            + button(SITE_URL + '/trip-invite/' + row.invite_token, 'See the trip'),
+                        'You\u2019re receiving this because someone added you to their trip.'
+                    )
+                );
+            }
 
             await admin
                 .from('booking_guests')
@@ -334,7 +514,7 @@ export async function POST(request: Request) {
 
             const { data: row } = await admin
                 .from('booking_guests')
-                .select('id, booking_id, user_id')
+                .select('id, booking_id, order_id, user_id')
                 .eq('id', guestRowId)
                 .maybeSingle();
 
@@ -342,12 +522,15 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
 
-            const booking = await bookedBy(admin, row.booking_id, user.id);
+            const owns = await ownsRowParent(admin, row, user.id);
 
-            // The booker can empty anyone's seat; anyone can leave their own.
+            // The booker can empty anyone's seat; anyone can leave their own. This
+            // is the over-capacity answer too: if a place is later cancelled and
+            // the list is over the cap, an already-accepted companion is NEVER
+            // auto-evicted — the booker removes someone deliberately, here.
             const isSelf = row.user_id === user.id;
 
-            if (!booking && !isSelf) {
+            if (!owns && !isSelf) {
                 return NextResponse.json({ ok: false, error: 'Not permitted' }, { status: 403 });
             }
 
@@ -364,7 +547,7 @@ export async function POST(request: Request) {
                 })
                 .eq('id', guestRowId);
 
-            return NextResponse.json({ ok: true });
+            return NextResponse.json({ ok: true, ...(row.order_id ? await loadOrderSeats(admin, row.order_id) : {}) });
         }
 
         return NextResponse.json({ ok: false, error: 'Unknown action' }, { status: 400 });

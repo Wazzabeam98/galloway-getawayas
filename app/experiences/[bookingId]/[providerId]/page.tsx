@@ -1,21 +1,38 @@
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadMarketplace, pickProvider } from '@/lib/experiencesData';
-import { shapeCue } from '@/lib/serviceSlots';
-import { dietaryOptionLabel } from '@/lib/serviceProviders';
-import { itemPriceLabel, unitPhrase, cancellationSentence, coverageLabel } from '@/components/marketplace/present';
-import { MapPin } from 'lucide-react';
+import { loadExperienceReviews } from '@/lib/experienceReviews';
+import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import BookingPanel from '@/components/marketplace/BookingPanel';
+import { FoodCartProvider } from '@/components/marketplace/FoodCart';
+import FoodMenu from '@/components/marketplace/FoodMenu';
+import FoodBasket from '@/components/marketplace/FoodBasket';
+import { RequestBookingProvider } from '@/components/marketplace/RequestBookingContext';
+import ChooseMenu from '@/components/marketplace/ChooseMenu';
+import { PackageStaysProvider } from '@/components/marketplace/PackageNotice';
+import { loadStayWindows } from '@/lib/packageNotice';
+import { londonDayKey } from '@/lib/dayKey';
 
 export const dynamic = 'force-dynamic';
 
-// A provider's listing page — the room the trip page never had. Their gallery,
-// who they are, the whole menu or the week of times, the cancellation policy in
-// plain words, and a booking panel that fits the shape.
+// The browser tab carries the provider's name — "Loch Sauna | Galloway Getaways"
+// (the root layout appends the suffix). Private (behind a booking), so noindex.
+export async function generateMetadata(
+    { params }: { params: { bookingId: string; providerId: string } }
+): Promise<import('next').Metadata> {
+    const admin = adminClient();
+    const { data } = await admin
+        .from('service_providers').select('business_name').eq('id', params.providerId).maybeSingle();
+    return { title: (data && data.business_name) || 'Experience', robots: { index: false, follow: false } };
+}
+
+// A provider's listing, reached from inside a cottage booking: the stay supplies
+// the guest, the dates and the address, so the booking panel is pre-filled and
+// the whole page is gated on owning the booking. The public/standalone twin lives
+// at /experiences/browse/[providerId] and shares the same body.
 export default async function ListingPage(
     { params }: { params: { bookingId: string; providerId: string } }
 ) {
@@ -29,185 +46,88 @@ export default async function ListingPage(
     const p = pickProvider(mp, params.providerId);
     if (!p) redirect(`/experiences/${params.bookingId}`);
 
-    // The person a guest is booking — their first name only (never a surname),
-    // for the byline and image alts. Falls back to the Title, never to a stored
-    // name snapshot.
     const who = p.byline || p.business_name;
-    const gallery = Array.from(new Set(p.items.map((i) => i.image).filter(Boolean))) as string[];
+    const reviews = await loadExperienceReviews(admin, p.id, user.id);
+    // The guest's own confirmed, paid stays, as dates only — the checkout draws
+    // the package notice when the picked day falls inside one (lib/packageNotice).
+    const packageStays = await loadStayWindows(admin, user.id, londonDayKey());
+
+    // Made-to-order reads like a food-ordering site here too: menu + basket, one
+    // cart, with the date bounded by the guest's stay.
+    if (p.shape === 'made_to_order') {
+        return (
+            <PackageStaysProvider stays={packageStays}>
+            <FoodCartProvider items={p.items}>
+                <ExperienceListingBody
+                    p={p}
+                    backHref={`/experiences/${params.bookingId}`}
+                    backLabel="All experiences"
+                    reviews={reviews}
+                    menu={<FoodMenu leadTimeDays={p.lead_time_days} />}
+                    panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} bookingId={params.bookingId} providerId={p.id} signedIn={!!user} checkIn={mp.stay.check_in} checkOut={mp.stay.check_out} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} />}
+                />
+            </FoodCartProvider>
+            </PackageStaysProvider>
+        );
+    }
+
+    // A comes-to-you experience: the guest chooses the option on the listing
+    // (ChooseMenu), which opens the panel's dialog on it — so the whole page is
+    // wrapped in the provider that connects the two.
+    const isComesToYou = p.shape === 'comes_to_you';
+
+    const body = (
+        <ExperienceListingBody
+            p={p}
+            backHref={`/experiences/${params.bookingId}`}
+            backLabel="All experiences"
+            reviews={reviews}
+            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
+            panel={
+                <BookingPanel
+                    bookingId={params.bookingId}
+                    checkIn={mp.stay.check_in}
+                    checkOut={mp.stay.check_out}
+                    cottageGuests={mp.stay.guests}
+                    cottageAdults={mp.stay.adults}
+                    cottageChildren={mp.stay.children}
+                    stay={{ title: mp.listing?.title || null, town: mp.listing?.location || null }}
+                    provider={{
+                        id: p.id,
+                        business_name: p.business_name,
+                        who,
+                        shape: p.shape,
+                        fulfilment: p.fulfilment,
+                        isFood: p.isFood,
+                        items: p.items,
+                        sessions: p.sessions,
+                        declaredSessions: p.declaredSessions,
+                        leadTimeDays: p.lead_time_days,
+                        minPeople: p.minPeople,
+                        slotCapacity: p.slotCapacity,
+                        perItemDurations: p.perItemDurations,
+                        turnaround: p.turnaround,
+                        slotLength: p.slotLength,
+                        slotAvailability: p.slotAvailability,
+                        slotBlocks: p.slotBlocks,
+                        partialBlocks: p.partialBlocks,
+                        bookedBlocks: p.bookedBlocks,
+                        bookedDates: p.bookedDates,
+                        cancellationHours: p.cancellation_window_hours,
+                        noRefund: p.noRefund,
+                        minAge: p.minAge,
+                        offeredTimes: p.offeredTimes,
+                        horizonDays: p.horizonDays,
+                        maxGuests: p.maxGuests,
+                    }}
+                />
+            }
+        />
+    );
 
     return (
-        <div className="min-h-screen bg-slate-50">
-            {/* Gallery — the listing leads on the work. One good image fills the
-                width; a set becomes a framed strip beside the lead. */}
-            <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-6">
-                <Link href={`/experiences/${params.bookingId}`} className="text-sm font-medium text-slate-500 hover:text-slate-800">
-                    ← All experiences
-                </Link>
-            </div>
-
-            <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-4">
-                {gallery.length ? (
-                    <div className={`grid gap-2 overflow-hidden rounded-2xl ${gallery.length === 1 ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-4'}`}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={gallery[0]} alt={who} loading="eager"
-                            className={`w-full object-cover ${gallery.length === 1 ? 'aspect-[16/9]' : 'col-span-2 sm:col-span-2 sm:row-span-2 aspect-square sm:aspect-auto sm:h-full'}`} />
-                        {gallery.slice(1, 5).map((src) => (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img key={src} src={src} alt="" loading="lazy" className="aspect-square w-full object-cover" />
-                        ))}
-                    </div>
-                ) : (
-                    <div className="flex aspect-[16/9] w-full items-center justify-center rounded-2xl bg-slate-100 text-slate-300">
-                        <span className="text-6xl font-semibold">{who.slice(0, 1)}</span>
-                    </div>
-                )}
-            </div>
-
-            <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-10">
-                <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_360px]">
-                    {/* Left — who and what */}
-                    <div className="min-w-0">
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">{p.category}</p>
-                        <h1 className="mt-1.5 text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900">{p.business_name}</h1>
-
-                        <div className="mt-4 flex items-center gap-3">
-                            {p.headshot ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={p.headshot} alt={who} className="h-12 w-12 rounded-full object-cover ring-1 ring-slate-200" />
-                            ) : null}
-                            <div>
-                                {/* The heading (h1) is the Title now; the person's
-                                    first name is the byline beneath their photo, so
-                                    a guest sees who they're booking — no surname. */}
-                                {p.byline ? (
-                                    <div className="font-medium text-slate-800">{p.byline}</div>
-                                ) : null}
-                                {p.based_line ? <div className="text-sm text-slate-500">{p.based_line}</div> : null}
-                            </div>
-                            <span className="ml-auto rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                                {shapeCue(p.shape)}
-                            </span>
-                        </div>
-
-                        {coverageLabel(p) ? (
-                            <p className="mt-4 flex items-center gap-1.5 text-sm text-slate-500">
-                                <MapPin className="h-4 w-4 flex-none" aria-hidden />
-                                <span>Covers {coverageLabel(p)}</span>
-                            </p>
-                        ) : null}
-
-                        {p.description ? (
-                            <p className="mt-6 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.description}</p>
-                        ) : null}
-
-                        {/* What happens — the provider's own walk-through of the
-                            experience, start to finish. Only shown when they wrote
-                            one; the description and the menu carry the rest. */}
-                        {p.what_happens ? (
-                            <div className="mt-8">
-                                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">What happens</h2>
-                                <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
-                            </div>
-                        ) : null}
-
-                        {/* The menu — the whole list, each with its photo, for a
-                            provider that makes things. A slot's single offering is
-                            shown in the panel with its times, so it isn't repeated
-                            here. */}
-                        {p.shape !== 'slot' && (
-                            <div className="mt-8">
-                                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                                    {p.items.length > 1 ? 'The menu' : 'What you get'}
-                                </h2>
-                                <ul className="mt-3 divide-y divide-slate-200 rounded-2xl bg-white ring-1 ring-slate-200/80">
-                                    {p.items.map((it) => (
-                                        <li key={it.id} className="flex gap-4 p-4">
-                                            {it.image ? (
-                                                // eslint-disable-next-line @next/next/no-img-element
-                                                <img src={it.image} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-lg object-cover" />
-                                            ) : <div className="h-16 w-16 flex-none rounded-lg bg-slate-100" />}
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-baseline justify-between gap-3">
-                                                    <span className="font-medium text-slate-900">{it.name}</span>
-                                                    <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
-                                                </div>
-                                                {it.description ? <p className="mt-0.5 text-sm text-slate-500">{it.description}</p> : null}
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Allergies & dietary — food only. Silence is the failure
-                            mode: a guest reading nothing assumes it's fine. So when
-                            the provider hasn't said, the listing says THAT, plainly,
-                            and points the guest at the allergy field. */}
-                        {p.isFood && (
-                            <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-4">
-                                <h3 className="text-sm font-semibold text-slate-900">Allergies &amp; dietary</h3>
-                                {(p.dietary_options.length > 0 || p.dietary_note) ? (
-                                    <>
-                                        {/* What they can cater for, as chips — a
-                                            capability, read alongside the note, which
-                                            is where the caveats live. */}
-                                        {p.dietary_options.length > 0 && (
-                                            <ul className="mt-2 flex flex-wrap gap-2">
-                                                {p.dietary_options.map((k) => (
-                                                    <li key={k} className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
-                                                        {dietaryOptionLabel(k)}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
-                                        {p.dietary_note ? (
-                                            <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.dietary_note}</p>
-                                        ) : null}
-                                    </>
-                                ) : (
-                                    /* Silence is the failure mode: when they've said
-                                       nothing at all — no chips, no note — say THAT
-                                       plainly and point the guest at the allergy field. */
-                                    <p className="mt-1 text-sm leading-relaxed text-slate-500">
-                                        {who} hasn’t said what they can cater for. Add any allergy or dietary need when
-                                        you book{p.shape === 'slot'
-                                            ? ' — they’ll see it with your booking.'
-                                            : ' and they’ll confirm if they can cater for it.'}
-                                    </p>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-4">
-                            <h3 className="text-sm font-semibold text-slate-900">Cancellation</h3>
-                            <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                                {cancellationSentence(p.shape, p.cancellation_window_hours, who)}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Right — the booking panel, sticky on desktop */}
-                    <div className="lg:sticky lg:top-6 lg:self-start">
-                        <BookingPanel
-                            bookingId={params.bookingId}
-                            checkIn={mp.stay.check_in}
-                            checkOut={mp.stay.check_out}
-                            provider={{
-                                id: p.id,
-                                business_name: p.business_name,
-                                who,
-                                shape: p.shape,
-                                isFood: p.isFood,
-                                items: p.items,
-                                sessions: p.sessions,
-                                leadTimeDays: p.lead_time_days,
-                                minPeople: p.minPeople,
-                                slotCapacity: p.slotCapacity,
-                            }}
-                        />
-                    </div>
-                </div>
-            </div>
-        </div>
+        <PackageStaysProvider stays={packageStays}>
+            {isComesToYou ? <RequestBookingProvider>{body}</RequestBookingProvider> : body}
+        </PackageStaysProvider>
     );
 }

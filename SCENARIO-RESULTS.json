@@ -1,7 +1,7 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-09-03T10:37:11.930Z",
+      "ranAt": "2026-09-30T13:29:14.385Z",
       "target": "http://localhost:3100",
       "passed": 7,
       "failed": 0,
@@ -52,9 +52,9 @@
       ]
     },
     "refund": {
-      "ranAt": "2026-09-03T10:38:08.539Z",
+      "ranAt": "2026-09-30T13:30:37.925Z",
       "target": "http://localhost:3100",
-      "passed": 7,
+      "passed": 8,
       "failed": 0,
       "untestable": 0,
       "scenarios": [
@@ -99,13 +99,19 @@
           "title": "Guest cancels a deposit-only booking — they get back what they paid",
           "status": "passed",
           "failedChecks": []
+        },
+        {
+          "number": "14c",
+          "title": "Three simultaneous refunds on one booking are all recorded, not lost",
+          "status": "passed",
+          "failedChecks": []
         }
       ]
     },
     "balance": {
-      "ranAt": "2026-09-03T10:38:58.416Z",
+      "ranAt": "2026-09-30T13:31:44.356Z",
       "target": "http://localhost:3100",
-      "passed": 7,
+      "passed": 8,
       "failed": 0,
       "untestable": 0,
       "scenarios": [
@@ -150,13 +156,19 @@
           "title": "Fourth run cancels the booking and refunds per the tier in force",
           "status": "passed",
           "failedChecks": []
+        },
+        {
+          "number": "3b",
+          "title": "A dangling claim from a crashed run is replayed at Stripe, not charged again",
+          "status": "passed",
+          "failedChecks": []
         }
       ]
     },
     "crosscutting": {
-      "ranAt": "2026-09-03T10:39:56.972Z",
+      "ranAt": "2026-09-30T13:34:48.137Z",
       "target": "http://localhost:3100",
-      "passed": 6,
+      "passed": 8,
       "failed": 0,
       "untestable": 0,
       "scenarios": [
@@ -195,31 +207,103 @@
           "title": "A webhook delivered twice, or a scheduled job run twice",
           "status": "passed",
           "failedChecks": []
+        },
+        {
+          "number": "30",
+          "title": "A guest cancel racing the balance charge stays consistent, whichever wins",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "wh1",
+          "title": "A guest is charged and the webhook never arrives",
+          "status": "passed",
+          "failedChecks": []
+        }
+      ]
+    },
+    "change": {
+      "ranAt": "2026-09-30T13:32:59.694Z",
+      "target": "http://localhost:3100",
+      "passed": 6,
+      "failed": 0,
+      "untestable": 0,
+      "scenarios": [
+        {
+          "number": "cg1",
+          "title": "Guest shortens a deposit booking — balance drops, no card refund",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cg2",
+          "title": "Guest shortens a fully-paid stay INSIDE the free window — full refund",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cg3",
+          "title": "Guest shortens a fully-paid stay OUTSIDE the free window (Firm) — 50% back",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cg4",
+          "title": "Guest shortens a fully-paid stay in the NON-REFUNDABLE window (Firm) — nothing back",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "ch1",
+          "title": "Host shortens a stay already paid out — full refund and host clawback",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cm1",
+          "title": "Guest MOVES onto pricier nights — charges the difference, no penalty",
+          "status": "passed",
+          "failedChecks": []
         }
       ]
     }
   },
-  "updatedAt": "2026-09-03T10:39:56.972Z",
+  "updatedAt": "2026-09-30T13:34:48.137Z",
   "fingerprint": {
-    "app/api/cron/host-payouts/route.ts": "2caeb83a83858c1b",
-    "app/api/cron/balance-charges/route.ts": "5a298e8ba66478b3",
-    "app/api/stripe/refund/route.ts": "668329efa9c7eee5",
-    "app/api/stripe/checkout/route.ts": "ae8ce787fff52ea6",
-    "app/api/stripe/webhook/route.ts": "8822785c1cdcf436",
-    "app/api/bookings/cancel/route.ts": "5635a762f6572270",
-    "app/api/bookings/host-refund/route.ts": "fd88f68757c99a95",
-    "lib/clawback.ts": "11a032e0004870fa",
+    "app/api/cron/host-payouts/route.ts": "8dfc0dc200e0cc2e",
+    "app/api/cron/balance-charges/route.ts": "15cd14065f417fa9",
+    "app/api/stripe/refund/route.ts": "3834afda9bbcdfa6",
+    "app/api/stripe/checkout/route.ts": "450033b0793b0489",
+    "app/api/stripe/webhook/route.ts": "727040b935627b37",
+    "lib/settlePaidBooking.ts": "612cb33de450647d",
+    "lib/bookingPaymentReconcile.ts": "ab21bb02f3adbf0c",
+    "app/api/cron/booking-payments/route.ts": "88ec284847e39a4c",
+    "app/api/bookings/cancel/route.ts": "41084368aa739ccd",
+    "app/api/bookings/host-refund/route.ts": "b27ec84c9e4fb175",
+    "lib/clawback.ts": "ffc6fbe7ed85de29",
     "lib/payoutSource.ts": "b00c942802e9f678",
     "lib/payoutTiming.ts": "5c9fe4cce4f9d03c",
     "lib/hostDebt.ts": "3dccd9c9ee9d8459",
     "lib/refundSpread.ts": "fad761755dc4b85b",
     "lib/fees.ts": "eee8370bca28610e",
-    "lib/pricing.ts": "409f796fc35cbc12",
-    "lib/cancellation.ts": "17829661b2f52ab4",
-    "scripts/seed-payments.mjs": "9228438aa5af1424",
+    "lib/pricing.ts": "b448a43e9bc66e81",
+    "lib/cancellation.ts": "797c533bffb95819",
+    "lib/changeMoney.ts": "4c017db0168381f2",
+    "lib/quoteChange.ts": "53c00619cc539cf0",
+    "lib/bookingChange.ts": "b1a3efdde7d06bb3",
+    "lib/applyBookingChange.ts": "21926d3799a439c8",
+    "app/api/bookings/change/route.ts": "12c418bcb3f18f6c",
+    "app/api/bookings/change/quote/route.ts": "d54a815c876ad958",
+    "app/api/bookings/change/respond/route.ts": "33ab17b6d3efd09c",
+    "lib/resolutions.ts": "c74b513840d49807",
+    "app/api/bookings/resolutions/route.ts": "da1da258081f142f",
+    "app/api/bookings/resolutions/respond/route.ts": "907c8533d6489e58",
+    "app/api/bookings/resolutions/host-decide/route.ts": "aec631c035c6c142",
+    "scripts/seed-payments.mjs": "f14f2648316024f5",
     "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
-    "scripts/refund-scenarios.mjs": "ce35c9d173e4ff52",
-    "scripts/balance-scenarios.mjs": "dc0bc43fe0254c51",
-    "scripts/crosscutting-scenarios.mjs": "fd1f8b683ad60f1a"
+    "scripts/refund-scenarios.mjs": "e26d179dc89d7a68",
+    "scripts/balance-scenarios.mjs": "cd9d045653faf651",
+    "scripts/change-scenarios.mjs": "fedc558161c3c6fe",
+    "scripts/crosscutting-scenarios.mjs": "24d89c436a1a18b5"
   }
 }

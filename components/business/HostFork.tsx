@@ -34,10 +34,23 @@ const CHOICES: Choice[] = [
     { key: 'service', href: '/services/join', title: 'Offer a service', Icon: Wrench },
 ];
 
-export default function HostFork() {
+// All three tiles are held until the host/provider terms are back from the
+// solicitor. The `signupsOpen` flag (read on the server in app/business/page.tsx
+// and passed in — it is server-only and a client component cannot read it)
+// decides whether the tiles are live or shown as "coming soon": held on
+// production, open on previews and local. Nothing about the flows behind the
+// tiles changes; when the one flag flips, all three tiles come back together.
+export default function HostFork({ signupsOpen = true }: { signupsOpen?: boolean }) {
     const router = useRouter();
     const [selected, setSelected] = useState<string | null>(null);
-    const chosen = CHOICES.find((c) => c.key === selected) || null;
+
+    // Every tile is available only while sign-ups are open; held, they all show
+    // "coming soon" and none can be chosen.
+    const isAvailable = (_key: string) => signupsOpen;
+
+    // Only an available tile can be the chosen one — so a held tile can never
+    // arm the Next button, even if its key somehow reached `selected`.
+    const chosen = CHOICES.find((c) => c.key === selected && isAvailable(c.key)) || null;
 
     return (
         <div className="fixed inset-0 z-50 flex flex-col bg-white">
@@ -55,8 +68,10 @@ export default function HostFork() {
                 </Link>
             </header>
 
-            {/* The one question. */}
-            <main className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10">
+            {/* The one question. Tinted, not white, so the white tiles have
+                something to lift off — a white card on a white page can't read
+                as raised. Header and footer stay white to frame it. */}
+            <main className="flex flex-1 flex-col items-center justify-center overflow-y-auto bg-slate-50 px-4 py-10">
                 <div className="w-full max-w-4xl">
                     <div className="mx-auto max-w-xl text-center">
                         <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
@@ -69,6 +84,32 @@ export default function HostFork() {
 
                     <div className="mt-12 grid gap-5 sm:grid-cols-3">
                         {CHOICES.map(({ key, title, Icon }) => {
+                            const available = isAvailable(key);
+
+                            // Held tile: greyed, not a button, cannot be chosen —
+                            // so nobody starts a twelve-screen sign-up that can't
+                            // finish. The "Coming soon" line says why it is inert
+                            // rather than leaving it looking broken.
+                            if (!available) {
+                                return (
+                                    <div
+                                        key={key}
+                                        aria-disabled="true"
+                                        className="flex cursor-not-allowed flex-col items-center gap-6 rounded-2xl border-2 border-dashed border-slate-200 bg-white px-6 py-10 text-center opacity-60"
+                                    >
+                                        <span className="flex h-28 items-center justify-center sm:h-36">
+                                            <Icon className="h-16 w-16 text-slate-400 sm:h-24 sm:w-24" strokeWidth={1.5} aria-hidden />
+                                        </span>
+                                        <span className="flex flex-col items-center gap-1.5">
+                                            <span className="text-lg font-semibold text-slate-500">{title}</span>
+                                            <span className="rounded-full bg-slate-200 px-3 py-0.5 text-xs font-medium text-slate-600">
+                                                Coming soon
+                                            </span>
+                                        </span>
+                                    </div>
+                                );
+                            }
+
                             const isOn = selected === key;
                             return (
                                 <button
@@ -77,11 +118,15 @@ export default function HostFork() {
                                     aria-pressed={isOn}
                                     onClick={() => setSelected(key)}
                                     className={
-                                        'group flex flex-col items-center gap-6 rounded-3xl border-2 bg-white px-6 py-10 text-center transition '
+                                        // The same lift as the booking and trip cards — soft
+                                        // shadow, hairline border, radius (reused, no variant):
+                                        // three tiles you pick between is the act-on case. The
+                                        // chosen one adds an emerald ring, not a different lift.
+                                        'group flex flex-col items-center gap-6 rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center shadow-[0_6px_16px_rgba(0,0,0,0.12)] transition '
                                         + 'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
                                         + (isOn
-                                            ? 'border-emerald-600 shadow-md'
-                                            : 'border-slate-200 hover:border-slate-300 hover:shadow-md')
+                                            ? 'border-emerald-600 ring-2 ring-emerald-600'
+                                            : 'hover:border-slate-300')
                                     }
                                 >
                                     {/* The illustration zone — large and dominant, Airbnb-style.

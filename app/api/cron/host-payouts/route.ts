@@ -5,6 +5,7 @@ import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { DEFAULT_COMMISSION_PERCENT, netOfFee, feeAmount } from '@/lib/fees';
 import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { logMoneyFailure, alertDirectorsNow } from '@/lib/moneyAlert';
 import { outstandingOf, spread } from '@/lib/hostDebt';
 import { readSchedule, arrivalSentence } from '@/lib/payoutTiming';
 import { chargeToDrawOn } from '@/lib/payoutSource';
@@ -56,7 +57,16 @@ async function sourceChargeFor(booking: any, amountPence: number): Promise<strin
     }
 }
 
+// Stop starting new payouts this long into the run. maxDuration is 60 seconds
+// and a payout is roughly ten network calls; a run killed by the platform
+// mid-loop sends nothing more and — worse — reports nothing at all, so the
+// directors' summary below would never go. Stopping early leaves time to say
+// which stays were not reached. They are still due, so tomorrow's run takes
+// them.
+const STOP_STARTING_AFTER_MS = 42000;
+
 export async function GET(request: Request) {
+    const startedAt = Date.now();
     const secret = process.env.CRON_SECRET;
     const auth = request.headers.get('authorization');
 
@@ -90,7 +100,7 @@ export async function GET(request: Request) {
     // run would report a cheerful ok:true with nothing sent — identical to a
     // day with no payouts due. Hosts would simply not be paid, quietly.
     if (dueError) {
-        await logError('host-payouts: could not load the bookings due for payout', dueError, {
+        await logMoneyFailure('host-payouts: could not load the bookings due for payout — no host was paid today', dueError, {
             path: '/api/cron/host-payouts',
         });
         return NextResponse.json(
@@ -114,7 +124,23 @@ export async function GET(request: Request) {
     // gone on an earlier run and only the bookkeeping was missing.
     let reconciled = 0;
 
-    for (const booking of due || []) {
+    // Every stay this run meant to pay and did not, with why — mailed to the
+    // directors in one summary at the end rather than one email per stay.
+    const problems: Array<{ booking: string; host: string; what: string }> = [];
+    const dueRows = due || [];
+    let notReached = 0;
+
+    for (let index = 0; index < dueRows.length; index++) {
+        const booking = dueRows[index];
+
+        if (Date.now() - startedAt > STOP_STARTING_AFTER_MS) {
+            notReached = dueRows.length - index;
+            for (let j = index; j < dueRows.length; j++) {
+                problems.push({ booking: dueRows[j].id, host: dueRows[j].host_id, what: 'not reached — the run stopped before its time limit' });
+            }
+            break;
+        }
+
         try {
             // HAS THIS STAY ALREADY BEEN TRANSFERRED?
             //
@@ -172,6 +198,7 @@ export async function GET(request: Request) {
                     alreadySentError,
                     { path: '/api/cron/host-payouts', userId: booking.host_id }
                 );
+                problems.push({ booking: booking.id, host: booking.host_id, what: 'not paid — could not read the payout ledger' });
                 skipped++;
                 continue;
             }
@@ -321,7 +348,24 @@ export async function GET(request: Request) {
                     'payout-' + booking.id
                 );
 
-                await admin.from('payouts').insert({
+                // The transfer has gone. Two independent records are meant to
+                // stop the next run sending it again, and BOTH were written with
+                // their error thrown away — the one case this route never
+                // defended, because the failure it feared was the transfer, not
+                // the bookkeeping after it.
+                //
+                //   the payouts row (status 'succeeded')  the reconcile guard at
+                //       the top of this loop reads it and stamps paid_out_at
+                //   paid_out_at on the booking            the due-query excludes
+                //       any booking that has it
+                //
+                // While EITHER lands, the stay cannot be paid twice — so both are
+                // still attempted, in that order, before we judge the result. If
+                // one failed the other has covered it; what must never happen is
+                // that we then report this as a clean payout, so the errors are
+                // captured and a failure stops the iteration here (no "you've been
+                // paid" email over a payout we could not record).
+                const { error: ledgerError } = await admin.from('payouts').insert({
                     booking_id: booking.id,
                     host_id: booking.host_id,
                     amount: toSend,
@@ -331,7 +375,7 @@ export async function GET(request: Request) {
                     note: deduction > 0 ? 'After £' + deduction.toFixed(2) + ' owed was deducted' : null,
                 });
 
-                await admin
+                const { error: stampError } = await admin
                     .from('bookings')
                     .update({
                         paid_out_at: new Date().toISOString(),
@@ -339,6 +383,41 @@ export async function GET(request: Request) {
                         payout_transfer_id: transfer && transfer.id,
                     })
                     .eq('id', booking.id);
+
+                if (ledgerError || stampError) {
+                    // If BOTH failed, neither record exists: the next run will
+                    // re-select this stay (paid_out_at still null) and clear the
+                    // reconcile guard (no succeeded row), and once Stripe's 24-hour
+                    // idempotency key has expired — one daily run later — it sends
+                    // a genuine second transfer. That window cannot be closed from
+                    // the database alone, because the money moves at Stripe before
+                    // any row is written; it is logged at the severity that gets it
+                    // reconciled by hand before the next run, with the transfer id
+                    // as the proof of what already went. A lone failure is not
+                    // dangerous (the other record guards it) but still must not
+                    // read as paid — so either way this counts as failed, never
+                    // sent, and the deduction/settlement/email steps below (which
+                    // all assume a clean payout) are skipped.
+                    failed++;
+                    problems.push({ booking: booking.id, host: booking.host_id, what: 'transfer SENT (' + (transfer && transfer.id) + ') but not recorded' });
+                    // Emailed on its own, now, not only in the summary: if both
+                    // records failed, the next run can pay this stay again.
+                    await logMoneyFailure(
+                        (ledgerError && stampError)
+                            ? 'host-payouts: transfer SENT but NEITHER the payout row nor paid_out_at was written — the next run may pay this stay again once Stripe’s 24h key expires; reconcile by hand now'
+                            : 'host-payouts: transfer sent but recording it was incomplete — do not re-pay, reconcile',
+                        {
+                            booking_id: booking.id,
+                            transfer_id: transfer && transfer.id,
+                            amount: toSend,
+                            deduction: deduction > 0 ? deduction : 0,
+                            ledger_error: ledgerError ? ledgerError.message : null,
+                            stamp_error: stampError ? stampError.message : null,
+                        },
+                        { path: '/api/cron/host-payouts', userId: booking.host_id }
+                    );
+                    continue;
+                }
             } else {
                 // The whole payout went towards what was owed.
                 await admin.from('payouts').insert({
@@ -557,6 +636,7 @@ export async function GET(request: Request) {
                 path: '/api/cron/host-payouts',
                 userId: booking.host_id,
             });
+            problems.push({ booking: booking.id, host: booking.host_id, what: 'transfer failed: ' + ((err && err.message) || 'unknown error') });
 
             await admin.from('payouts').insert({
                 booking_id: booking.id,
@@ -593,6 +673,29 @@ export async function GET(request: Request) {
         );
     }
 
+    // THE DIRECTORS HEAR ABOUT A BAD RUN NOW.
+    //
+    // Any stay that was due and did not end the run paid — a failed transfer,
+    // a transfer that went but was not written down, a ledger that could not
+    // be read, or a stay the run never reached — is one email, straight away.
+    // Hosts waiting to onboard are not in it: that is a standing position,
+    // already reported to /admin/errors daily, not a failure of this run.
+    if (problems.length) {
+        await alertDirectorsNow({
+            headline: 'Host payouts: ' + problems.length + ' stay' + (problems.length === 1 ? '' : 's')
+                + ' due today did not complete',
+            lines: [
+                'The payout run finished with ' + sent + ' sent, ' + failed + ' failed'
+                    + (notReached ? ' and ' + notReached + ' not reached before the time limit' : '') + '.',
+                'Stays not paid are still due and the next run will try them again. A transfer marked SENT must NOT be sent again by hand — reconcile it instead.',
+            ],
+            facts: problems.slice(0, 25).reduce(function (acc: Record<string, string>, p) {
+                acc[p.booking] = p.what;
+                return acc;
+            }, {}),
+        });
+    }
+
     return NextResponse.json({
         ok: true,
         sent: sent,
@@ -605,5 +708,7 @@ export async function GET(request: Request) {
         // Named separately from `skipped`, which also counts stays that
         // collected nothing and have no host to chase.
         hostsWaitingToOnboard: waiting.size,
+        notReached: notReached,
+        problems: problems.length,
     });
 }

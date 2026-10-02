@@ -10,6 +10,10 @@ import ChromeGate from '@/components/base/ChromeGate';
 import { ToastContainer } from 'react-toastify';
 import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
+import AgreementGate from '@/components/legal/AgreementGate';
+import { Analytics } from '@vercel/analytics/next';
+import { socialUrls } from '@/config/social';
+import { COMPANY } from '@/config/company';
 import type { Metadata } from 'next';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
@@ -18,11 +22,11 @@ export const metadata: Metadata = {
   // Every page title gets " | Galloway Getaways" appended automatically,
   // so individual pages only need to say what they are.
   title: {
-    default: 'Self Catering Cottages in Dumfries & Galloway',
+    default: 'Holiday Cottages & Accommodation in Dumfries & Galloway',
     template: '%s | Galloway Getaways',
   },
   description:
-    'Book self catering holiday cottages and apartments across Dumfries & Galloway. Booked direct with the people who own them — no booking fee, ever.',
+    'Book holiday cottages and accommodation across Dumfries & Galloway. Booked direct with the people who own them — no booking fee, ever.',
 
   // Tells search engines which address is the real one, so the www and
   // vercel.app versions don't compete with this one.
@@ -46,9 +50,9 @@ export const metadata: Metadata = {
     locale: 'en_GB',
     url: SITE_URL,
     siteName: 'Galloway Getaways',
-    title: 'Self Catering Holiday Cottages in Dumfries & Galloway',
+    title: 'Holiday Cottages & Accommodation in Dumfries & Galloway',
     description:
-      'Handpicked self catering cottages and apartments across Dumfries & Galloway. Book direct with local hosts.',
+      'Handpicked holiday cottages and accommodation across Dumfries & Galloway. Book direct with local hosts.',
     images: [
       {
         url: '/images/hero-1.jpg',
@@ -61,9 +65,9 @@ export const metadata: Metadata = {
 
   twitter: {
     card: 'summary_large_image',
-    title: 'Self Catering Holiday Cottages in Dumfries & Galloway',
+    title: 'Holiday Cottages & Accommodation in Dumfries & Galloway',
     description:
-      'Handpicked self catering cottages and apartments across Dumfries & Galloway.',
+      'Handpicked holiday cottages and accommodation across Dumfries & Galloway.',
     images: ['/images/hero-1.jpg'],
   },
 
@@ -84,19 +88,36 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // The accounts this business also appears as. One place defines them
+  // (config/social.ts); the footer renders the same list.
+  const sameAs = socialUrls();
+
   // Tells Google this is a real local business in Dumfries & Galloway,
   // which is what regional searches are matched against.
   const organisationSchema = {
     '@context': 'https://schema.org',
     '@type': 'LodgingBusiness',
-    name: 'Galloway Getaways',
+    // The legal identity, matching Companies House — the trading name rides
+    // along as alternateName so a search for "Galloway Getaways" still ties up.
+    name: COMPANY.name,
+    legalName: COMPANY.name,
+    alternateName: 'Galloway Getaways',
+    identifier: {
+      '@type': 'PropertyValue',
+      propertyID: 'Companies House company number',
+      value: COMPANY.number,
+    },
     description:
       'Self catering holiday cottages and apartments across Dumfries & Galloway, Scotland.',
     url: SITE_URL,
     logo: `${SITE_URL}/icon.svg`,
     image: `${SITE_URL}/images/hero-1.jpg`,
+    // The registered office.
     address: {
       '@type': 'PostalAddress',
+      streetAddress: COMPANY.registeredOffice[0],
+      addressLocality: COMPANY.registeredOffice[1],
+      postalCode: COMPANY.registeredOffice[2],
       addressRegion: 'Dumfries & Galloway',
       addressCountry: 'GB',
     },
@@ -104,6 +125,11 @@ export default function RootLayout({
       '@type': 'AdministrativeArea',
       name: 'Dumfries & Galloway, Scotland',
     },
+    // Ties the Facebook and Instagram accounts to this business, so Google
+    // reads them as one entity rather than three things sharing a name.
+    // Left off entirely when there are none: an empty array is a claim
+    // ("this business has no other profiles"), not the absence of one.
+    ...(sameAs.length ? { sameAs } : {}),
     priceRange: '££',
   };
 
@@ -125,6 +151,13 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <Toast />
         </Suspense>
+        {/* The sign-in prompt for a missing or out-of-date agreement — one
+            document at a time (lib/agreements.ts). */}
+        <AgreementGate />
+        {/* Vercel Web Analytics — privacy-friendly visitor and page-view trends.
+            It only reports once deployed on Vercel with Analytics switched on for
+            the project; locally it no-ops. */}
+        <Analytics />
       </body>
     </html>
   );

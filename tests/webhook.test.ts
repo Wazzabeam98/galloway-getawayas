@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stubModule, clearModule, installAliases } from './helpers/stub';
+import { stubModule, clearModule, installAliases, updateChain } from './helpers/stub';
 
 installAliases();
 
@@ -49,8 +49,7 @@ function load(options: { booking?: any; confirmError?: any } = {}) {
                     return chain;
                 },
                 update(patch: any) {
-                    return {
-                        eq: async (_c: string, id: string) => {
+                    return updateChain(async (id: string) => {
                             updates.push({ table, patch, id });
                             // Only the confirming write is refused; the one
                             // that calls the stay off afterwards must succeed.
@@ -59,8 +58,7 @@ function load(options: { booking?: any; confirmError?: any } = {}) {
                                 if (confirmsSeen === 1) return { data: null, error: options.confirmError };
                             }
                             return { data: null, error: null };
-                        },
-                    };
+                    });
                 },
                 insert: async (row: any) => {
                     inserts.push({ table, row });
@@ -107,6 +105,7 @@ function load(options: { booking?: any; confirmError?: any } = {}) {
     // test after the first in this file silently reused the first one's fake
     // database, and passed or failed on data it was never given.
     clearModule('@/lib/supabaseAdmin');
+    clearModule('@/lib/settlePaidBooking');
     clearModule(ROUTE);
     const route = require('../app/api/stripe/webhook/route');
     return { route, updates, inserts, emails, stripeCalls };

@@ -5,14 +5,18 @@ import TemplateGapWarning from "@/components/TemplateGapWarning";
 import ArrivalNudge from "@/components/ArrivalNudge";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { getImageUrl } from "@/lib/utils";
+import { getImageUrl, displayName } from "@/lib/utils";
 import { publicArea } from "@/lib/places";
 import { createClient } from "@supabase/supabase-js";
 import { accessibleListings } from "@/lib/access";
 import LeaveListingBtn from "@/components/LeaveListingBtn";
 import HideListingBtn from "@/components/HideListingBtn";
 import Link from "next/link";
-import { ChevronRight, Eye, Home, Plus, Wrench } from "lucide-react";
+import { ChevronRight, Eye, Home, Plus, Wrench, Star } from "lucide-react";
+
+// A guest can be reviewed for 14 days after they check out — the same window the
+// review page and the reminder cron use. After that the chance has passed.
+const REVIEW_WINDOW_DAYS = 14;
 
 function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
     const editHref = isDraft ? `/addhome?draft=${item.id}` : `/edit-listing/${item.id}`;
@@ -160,6 +164,46 @@ export default async function Dashboard() {
     const owned = (homes || []).filter((h) => ownedIds.indexOf(h.id) !== -1);
     const helping = (homes || []).filter((h) => helpingIds.indexOf(h.id) !== -1);
 
+    // "Your follow-ups" — guests who have checked out and are still inside the
+    // review window, whom this host hasn't reviewed yet. One card each, so the
+    // review a host means to leave doesn't quietly lapse. Only the host's own
+    // stays (host_id), checked out, within the last REVIEW_WINDOW_DAYS.
+    const uid = user.user?.id || '';
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - REVIEW_WINDOW_DAYS * 86400000).toISOString();
+    const { data: pastStays } = uid
+        ? await admin
+            .from('bookings')
+            .select('id, guest_id, listing_id, check_out')
+            .eq('host_id', uid)
+            .eq('status', 'confirmed')
+            .lt('check_out', now.toISOString())
+            .gte('check_out', windowStart)
+            .order('check_out', { ascending: false })
+        : { data: [] };
+    const { data: doneReviews } = uid && (pastStays || []).length
+        ? await admin.from('reviews').select('booking_id').eq('reviewer_id', uid).eq('review_type', 'host_to_guest')
+        : { data: [] };
+    const reviewedIds = new Set((doneReviews || []).map((r: any) => r.booking_id));
+    const followUps = (pastStays || []).filter((b: any) => !reviewedIds.has(b.id));
+    const fuGuestIds = Array.from(new Set(followUps.map((b: any) => b.guest_id)));
+    const fuListingIds = Array.from(new Set(followUps.map((b: any) => b.listing_id)));
+    const { data: fuGuests } = fuGuestIds.length
+        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url').in('id', fuGuestIds)
+        : { data: [] };
+    const { data: fuListings } = fuListingIds.length
+        ? await admin.from('listings').select('id, title').in('id', fuListingIds)
+        : { data: [] };
+    const fuGuestMap: Record<string, any> = {};
+    (fuGuests || []).forEach((g: any) => { fuGuestMap[g.id] = g; });
+    const fuListingMap: Record<string, string> = {};
+    (fuListings || []).forEach((l: any) => { fuListingMap[l.id] = l.title; });
+    const daysLeftToReview = (checkOut: string): number => {
+        const deadline = new Date(String(checkOut).slice(0, 10) + 'T23:59:59');
+        deadline.setDate(deadline.getDate() + REVIEW_WINDOW_DAYS);
+        return Math.max(0, Math.ceil((deadline.getTime() - now.getTime()) / 86400000));
+    };
+
     const accessIdOf = (listingId: string) =>
         access.find((a) => a.listingId === listingId && !a.isOwner)?.accessId || null;
 
@@ -173,6 +217,24 @@ export default async function Dashboard() {
     );
     const drafts = owned.filter((h) => h.status === 'draft');
 
+    // A host with no name shows to guests as "your host" everywhere. Nudge them
+    // to set one — this is the other half of the fix for the "Your" bug: stop it
+    // rendering ungrammatically AND ask hosts to fill the name in.
+    const { data: myProfile } = uid
+        ? await admin.from('profiles').select('full_name, preferred_name, stripe_account_id, stripe_payouts_enabled').eq('id', uid).maybeSingle()
+        : { data: null };
+    const hostNeedsName = !!uid && !!myProfile
+        && !((myProfile.preferred_name || myProfile.full_name || '') as string).trim();
+
+    // A listing is live on approval now, payouts or not (the Airbnb order), so
+    // the dashboard asks for a payout method the moment a host has an approved
+    // listing and none set up — the same ask as the approval email, and the
+    // same link. Their payouts are held until then, and released automatically
+    // on the first payout run after Stripe enables them.
+    const approvedListing = owned.some((h) => h.status === 'published' || h.status === 'hidden');
+    const hostNeedsPayouts = !!uid && !!myProfile && approvedListing && myProfile.stripe_payouts_enabled !== true;
+    const payoutsStarted = !!(myProfile && myProfile.stripe_account_id);
+
     return (
         <div>
             <Toast />
@@ -183,6 +245,80 @@ export default async function Dashboard() {
             <div className="max-w-7xl mx-auto px-6 pt-6">
                 <ArrivalNudge userId={(user && user.user && user.user.id) || ''} />
             </div>
+
+            {hostNeedsPayouts && (
+                <div className="max-w-7xl mx-auto px-6 pt-4">
+                    <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                            <h2 className="font-semibold text-slate-900">{payoutsStarted ? 'Finish adding your payout method' : 'Add a payout method'}</h2>
+                            <p className="text-sm text-slate-700 mt-0.5">
+                                Your listing is live and guests can book it. Tell us where to send your money so we can pay you — until then, we hold your payouts safely.
+                            </p>
+                        </div>
+                        <Link href="/payouts/setup" className="flex-none self-start sm:self-auto rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+                            {payoutsStarted ? 'Finish setup' : 'Add payout method'}
+                        </Link>
+                    </div>
+                </div>
+            )}
+
+            {hostNeedsName && (
+                <div className="max-w-7xl mx-auto px-6 pt-4">
+                    <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                            <h2 className="font-semibold text-slate-900">Add your name</h2>
+                            <p className="text-sm text-slate-700 mt-0.5">Guests currently see “your host” instead of your name on their trip and on your listing. Add a name so they know who they’re booking with.</p>
+                        </div>
+                        <Link href="/account" className="flex-none self-start sm:self-auto rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+                            Set your name
+                        </Link>
+                    </div>
+                </div>
+            )}
+
+            {/* Your follow-ups — a review to leave for each guest who has just
+                checked out, before the 14-day window closes. Airbnb's shape: the
+                guest's photo, "Leave [name] a review", the property and the days
+                left, each linking to the review form. */}
+            {followUps.length > 0 && (
+                <div className="max-w-7xl mx-auto px-6 pt-4">
+                    <h2 className="text-lg font-semibold text-slate-900 mb-4">Your follow-ups</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {followUps.map((b: any) => {
+                            const g = fuGuestMap[b.guest_id];
+                            const full = displayName(g, '');
+                            const first = full ? (full.split(' ')[0] || 'your guest') : 'your guest';
+                            const avatar = g?.avatar_url ? getImageUrl(String(g.avatar_url)) : null;
+                            const left = daysLeftToReview(b.check_out);
+                            return (
+                                <Link
+                                    key={b.id}
+                                    href="/dashboard/reviews"
+                                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)] transition hover:border-slate-300"
+                                >
+                                    {avatar ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={avatar} alt="" className="h-11 w-11 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                    ) : (
+                                        <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{first.slice(0, 1)}</span>
+                                    )}
+                                    <span className="min-w-0 flex-1">
+                                        <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                                            <Star className="h-3.5 w-3.5 flex-none text-amber-400" /> Leave {first} a review
+                                        </span>
+                                        <span className="mt-0.5 block truncate text-[13px] text-slate-500">{fuListingMap[b.listing_id] || 'your listing'}</span>
+                                        <span className={'mt-0.5 block text-[12px] font-medium ' + (left <= 3 ? 'text-amber-700' : 'text-slate-400')}>
+                                            {left === 0 ? 'Last day to review' : left === 1 ? '1 day left' : `${left} days left`}
+                                        </span>
+                                    </span>
+                                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+                                </Link>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             <div className="max-w-7xl mx-auto px-6 py-10">
                 {/* A host's second revenue line, made visible on the page
                     itself rather than left seven items down a menu. Kept to one
@@ -210,7 +346,7 @@ export default async function Dashboard() {
                     <Link
                         href="/addhome"
                         title="Create a new listing"
-                        className="w-10 h-10 rounded-full border border-slate-300 hover:bg-slate-100 flex items-center justify-center text-slate-800 transition flex-shrink-0"
+                        className="w-11 h-11 rounded-full border border-slate-300 hover:bg-slate-100 flex items-center justify-center text-slate-800 transition flex-shrink-0"
                     >
                         <Plus className="w-5 h-5" />
                     </Link>
@@ -266,7 +402,7 @@ export default async function Dashboard() {
                 {drafts.length > 0 && (
                     <div className="mb-10">
                         <h2 className="text-lg font-semibold text-slate-800 mb-4">In progress</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {drafts.map((item) => (
                                 <ListingCard key={item.id} item={item} isDraft />
                             ))}
@@ -277,7 +413,7 @@ export default async function Dashboard() {
                 {published.length > 0 && (
                     <div>
                         {drafts.length > 0 && <h2 className="text-lg font-semibold text-slate-800 mb-4">Published</h2>}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {published.map((item) => (
                                 <ListingCard key={item.id} item={item} isDraft={false} />
                             ))}

@@ -136,16 +136,37 @@ function load(routePath: string, options: Options = {}) {
             });
             return chain;
         },
-        // The cancellation penalty now goes through the database function
-        // instead of a read-add-write on profiles. Modelled here the same way,
-        // and recorded where the profiles update used to be.
-        async rpc(name: string, args: any) {
-            if (name !== 'adjust_payout_balance') return { data: null, error: null };
-            const current = Number(rows.profiles.payout_balance_owed || 0);
-            const next = Math.max(0, Math.round((current + Number(args.p_delta)) * 100) / 100);
-            rows.profiles.payout_balance_owed = next;
-            updates.push({ table: 'profiles', patch: { payout_balance_owed: next } });
-            return { data: next, error: null };
+        // The cancellation penalty AND the refund total now go through database
+        // functions instead of a read-add-write. Modelled here the same way,
+        // and recorded where the row update used to be. Returned as an object
+        // that is both awaited directly (adjust_payout_balance) and chained
+        // through .maybeSingle() (record_booking_refund), matching the two call
+        // shapes the routes use.
+        rpc(name: string, args: any) {
+            let result: any = { data: null, error: null };
+            if (name === 'adjust_payout_balance') {
+                const current = Number(rows.profiles.payout_balance_owed || 0);
+                const next = Math.max(0, Math.round((current + Number(args.p_delta)) * 100) / 100);
+                rows.profiles.payout_balance_owed = next;
+                updates.push({ table: 'profiles', patch: { payout_balance_owed: next } });
+                result = { data: next, error: null };
+            } else if (name === 'record_booking_refund') {
+                const paid = Math.round(Number(rows.bookings.amount_paid || 0) * 100) / 100;
+                const old = Math.round(Number(rows.bookings.amount_refunded || 0) * 100) / 100;
+                const next = Math.min(paid, Math.round((old + Number(args.p_amount)) * 100) / 100);
+                const status = next >= paid ? 'refunded' : 'partially_refunded';
+                rows.bookings.amount_refunded = next;
+                rows.bookings.payment_status = status;
+                updates.push({ table: 'bookings', patch: { amount_refunded: next, payment_status: status } });
+                result = {
+                    data: {
+                        new_amount_refunded: next, amount_paid: paid,
+                        applied: Math.round((next - old) * 100) / 100, payment_status: status,
+                    },
+                    error: null,
+                };
+            }
+            return { then: (r: any) => r(result), maybeSingle: async () => result };
         },
     };
 

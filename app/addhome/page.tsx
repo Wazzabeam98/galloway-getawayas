@@ -2,23 +2,27 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
-import LoginModel from '@/components/auth/LoginModel';
+import EmailFirstStep from '@/components/auth/EmailFirstStep';
+import AgreementTick from '@/components/legal/AgreementTick';
+import { agreementProblem, versionForTick } from '@/lib/agreements';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
-import { generateRandomNumber, timeInputValue } from '@/lib/utils';
+import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { DEFAULT_COMMISSION_PERCENT, feeAmount, netOfFee } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
+import { plural } from '@/lib/plural';
 import {
     problemAtStep as ruleAtStep,
     firstPublishProblem as firstProblemIn,
+    NEW_LISTING_MIN_PHOTOS,
 } from '@/lib/listingRules';
 
 export default function AddHome() {
@@ -40,10 +44,21 @@ export default function AddHome() {
     const [state, setState] = useState(DEFAULT_REGION);
     const [description, setDescription] = useState('');
     const [homeCategories, setHomeCategories] = useState<string[]>([]);
-    const [photos, setPhotos] = useState<File[]>([]);
+    // Each photo is uploaded the moment it is added (as on Airbnb) and held here
+    // by its storage path, so a saved draft carries its photos and a resumed
+    // draft shows them again. They used to live only as File objects in memory,
+    // uploaded at publish — so any resume came back with none.
+    const [photos, setPhotos] = useState<{ path: string; url: string }[]>([]);
     const [coverIndex, setCoverIndex] = useState(0);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
+    // The host terms. `termsOnRecord` is whether this host has already agreed to
+    // the current version (asked of the server — the record is not browser-
+    // readable); null until known. The agree box shows only when they haven't.
+    const [termsOnRecord, setTermsOnRecord] = useState<boolean | null>(null);
+    const [termsTicked, setTermsTicked] = useState(false);
+    // Autosave: 'idle' until the first save, then saving / saved / error.
+    const [autosave, setAutosave] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
     // Airbnb-style wizard state
     const [step, setStep] = useState(1);
@@ -224,8 +239,23 @@ export default function AddHome() {
                     setLastMinuteDiscount(draft.last_minute_discount ?? false);
                     setWeeklyDiscount(draft.weekly_discount ?? false);
                     setMonthlyDiscount(draft.monthly_discount ?? false);
+                    // The photos, saved cover-first — so the cover is index 0.
+                    setPhotos(((draft.images || []) as string[]).filter(Boolean).map((path) => ({ path, url: getImageUrl(path) })));
+                    setCoverIndex(0);
+                    // And the step they were on, so they pick up where they left off.
+                    try {
+                        const saved = Number(window.localStorage.getItem('gg.addhome.step.' + draft.id));
+                        if (saved >= 1 && saved <= 9) setStep(saved);
+                    } catch { /* storage unavailable — start at step 1 */ }
                     setShowListingForm(true);
                 }
+            }
+
+            if (session?.user) {
+                fetch('/api/host/terms')
+                    .then((r) => r.json())
+                    .then((b) => setTermsOnRecord(!!(b && b.agreed)))
+                    .catch(() => setTermsOnRecord(false));
             }
 
             setLoading(false);
@@ -234,57 +264,120 @@ export default function AddHome() {
         checkUser();
     }, [supabase]);
 
-    const saveDraft = async () => {
-        const user = await supabase.auth.getUser();
-        if (!user.data.user) return;
+    // The listing's content in the shape of a listings row — ONE builder for the
+    // draft save, the autosave and the submit, so they can never save different
+    // things. Photos go cover-first. Never a status: a browser may create a draft
+    // but may not change a status (20260829020000); the server does that.
+    const draftFields = () => ({
+        title: title.trim(),
+        description,
+        location: buildLocation(city, state),
+        street_address: buildStreetAddress(flat, propertyName, street) || null,
+        postcode: postcode.trim() ? tidyPostcode(postcode) : null,
+        price_per_night: price ? Number(price) : 0,
+        max_guests: guests,
+        images: photos.length
+            ? [photos[coverIndex] || photos[0], ...photos.filter((_, i) => i !== coverIndex)].filter(Boolean).map((p) => p.path)
+            : [],
+        property_type: propertyType,
+        privacy_type: privacyType,
+        bedrooms,
+        beds,
+        bathrooms,
+        amenities,
+        check_in_method: checkInMethod || null,
+        check_in_time: checkInTime || '15:00',
+        check_in_end_time: checkInEndTime || null,
+        check_out_time: checkOutTime || '11:00',
+        latitude,
+        longitude,
+        new_listing_promo: newListingPromo,
+        last_minute_discount: lastMinuteDiscount,
+        weekly_discount: weeklyDiscount,
+        monthly_discount: monthlyDiscount,
+    });
 
-        setSavingDraft(true);
-        try {
-            const location = buildLocation(city, state);
-            const payload = {
-                host_id: user.data.user.id,
-                title: title.trim(),
-                description,
-                location,
-                street_address: buildStreetAddress(flat, propertyName, street) || null,
-                postcode: postcode.trim() ? tidyPostcode(postcode) : null,
-                price_per_night: price ? Number(price) : 0,
-                max_guests: guests,
-                property_type: propertyType,
-                privacy_type: privacyType,
-                bedrooms,
-                beds,
-                bathrooms,
-                amenities,
-                check_in_method: checkInMethod || null,
-                check_in_time: checkInTime || '15:00',
-                check_in_end_time: checkInEndTime || null,
-                check_out_time: checkOutTime || '11:00',
-                latitude,
-                longitude,
-                new_listing_promo: newListingPromo,
-                last_minute_discount: lastMinuteDiscount,
-                weekly_discount: weeklyDiscount,
-                monthly_discount: monthlyDiscount,
-                status: 'draft',
-            };
-
-            if (draftId) {
-                await supabase.from('listings').update(payload).eq('id', draftId);
-            } else {
-                const { data } = await supabase.from('listings').insert(payload).select('id').single();
-                if (data?.id) setDraftId(data.id);
-            }
-
-            toast.success('Saved — you can finish this listing later from your dashboard.', { theme: 'colored' });
-            router.push('/dashboard');
-        } catch (err: any) {
-            toast.error(err?.message || 'Could not save your progress.', { theme: 'colored' });
-        } finally {
-            setSavingDraft(false);
+    // Write the draft: create it the first time, update it after. The update is
+    // held to rows still in 'draft', so a listing already submitted for review is
+    // never overwritten from an old tab. Returns the draft id, or null on failure.
+    const draftIdRef = useRef<string | null>(null);
+    draftIdRef.current = draftId;
+    // One write at a time. Without this, a slow first save (the INSERT) still
+    // in flight when the next autosave fires would insert a second draft.
+    const writeLock = useRef<Promise<unknown>>(Promise.resolve());
+    const writeDraft = (): Promise<string | null> => {
+        const run = writeLock.current.then(() => writeDraftNow(), () => writeDraftNow());
+        writeLock.current = run;
+        return run;
+    };
+    const writeDraftNow = async (): Promise<string | null> => {
+        const uid = session?.user?.id;
+        if (!uid) return null;
+        const fields = draftFields();
+        if (draftIdRef.current) {
+            const { error } = await supabase.from('listings').update(fields).eq('id', draftIdRef.current).eq('status', 'draft');
+            return error ? null : draftIdRef.current;
         }
+        const { data, error } = await supabase.from('listings').insert({ host_id: uid, status: 'draft', ...fields }).select('id').single();
+        if (error || !data?.id) return null;
+        draftIdRef.current = data.id;
+        setDraftId(data.id);
+        // Put the draft in the address bar, so a refresh or a reopened tab
+        // resumes this draft rather than starting a blank one.
+        router.replace('/addhome?draft=' + encodeURIComponent(data.id), { scroll: false });
+        return data.id;
     };
 
+    const saveDraft = async () => {
+        setSavingDraft(true);
+        const id = await writeDraft();
+        setSavingDraft(false);
+        if (!id) {
+            toast.error('We couldn\u2019t save your progress. Check your connection and try again.', { theme: 'colored' });
+            return;
+        }
+        toast.success('Saved — you can finish this listing later from your dashboard.', { theme: 'colored' });
+        router.push('/dashboard');
+    };
+
+    // AUTOSAVE. A second and a half after the host stops changing anything, the
+    // draft is written — so closing the tab, a flat battery or a refresh loses
+    // nothing. Starts once they've picked a property type (before that there is
+    // nothing worth a row). The step is remembered in this browser so a resume
+    // lands where they were.
+    const snapshot = JSON.stringify(draftFields());
+    const dirty = useRef(false);
+    useEffect(() => {
+        if (!session?.user || !showListingForm || !propertyType || submitting) return;
+        dirty.current = true;
+        const t = setTimeout(async () => {
+            setAutosave('saving');
+            const id = await writeDraft();
+            dirty.current = false;
+            setAutosave(id ? 'saved' : 'error');
+        }, 1500);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [snapshot, session, showListingForm, submitting]);
+
+    useEffect(() => {
+        if (!draftId) return;
+        try { window.localStorage.setItem('gg.addhome.step.' + draftId, String(step)); } catch { /* ignore */ }
+    }, [draftId, step]);
+
+    // Warn before leaving only while a change is genuinely unsaved.
+    useEffect(() => {
+        const warn = (e: BeforeUnloadEvent) => {
+            if (dirty.current || autosave === 'saving' || processingPhotosRef.current) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+        window.addEventListener('beforeunload', warn);
+        return () => window.removeEventListener('beforeunload', warn);
+    }, [autosave]);
+
+    const processingPhotosRef = useRef(false);
     const [processingPhotos, setProcessingPhotos] = useState(false);
 
     const handlePhotosChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -296,19 +389,34 @@ export default function AddHome() {
         // often hand over HEIC. Shrinking and re-encoding here means the
         // guest never sees a size error.
         setProcessingPhotos(true);
+        processingPhotosRef.current = true;
         setFormError('');
 
-        const ready: File[] = [];
+        // Each photo is shrunk, then uploaded straight away, so it is saved with
+        // the draft from this moment on.
         for (const file of files) {
+            let ready: File;
             try {
-                ready.push(await compressImage(file));
+                ready = await compressImage(file);
             } catch (err) {
                 setFormError('One of those photos couldn\u2019t be read. Try a different one.');
+                continue;
             }
+            const path = Date.now() + '_' + generateRandomNumber();
+            const { data: up, error: upErr } = await supabase.storage.from(Env.S3_BUCKET).upload(path, ready);
+            if (upErr || !up?.path) {
+                // Storage speaks in routes and buckets ("Route POST:/object/… not
+                // found"); the host needs to know only that this one didn't go.
+                console.error('[addhome] photo upload failed', upErr);
+                setFormError('A photo didn\u2019t upload. Check your connection and add it again.');
+                continue;
+            }
+            const saved = up.path;
+            setPhotos((prev) => [...prev, { path: saved, url: getImageUrl(saved) }]);
         }
 
-        if (ready.length) setPhotos((prev) => [...prev, ...ready]);
         setProcessingPhotos(false);
+        processingPhotosRef.current = false;
     };
 
     const removePhoto = (index: number) => {
@@ -381,10 +489,24 @@ export default function AddHome() {
             return;
         }
 
-        const tooBig = photos.find((p) => p.size / 1048576 >= 5);
-        if (tooBig) {
-            setFormError('One of those photos is still too large. Please try a different one.');
+        // A new listing needs at least five photos to go live (the Airbnb bar).
+        // The server enforces it too; this is the friendlier, in-flow version so a
+        // host isn't bounced by the API. Step 6 is the photos step.
+        if (photos.length < NEW_LISTING_MIN_PHOTOS) {
+            setFormError(`Please add at least ${NEW_LISTING_MIN_PHOTOS} photos of your place before publishing — you have ${photos.length}.`);
+            setStep(6);
             return;
+        }
+
+        // The terms, before anything is submitted — the same rule the server
+        // enforces (lib/hostTerms). Only asked of a host with no current
+        // agreement on record.
+        if (termsOnRecord !== true) {
+            const termsMsg = agreementProblem('host', null, versionForTick('host', termsTicked));
+            if (termsMsg) {
+                setFormError(termsMsg);
+                return;
+            }
         }
 
         setSubmitting(true);
@@ -398,75 +520,19 @@ export default function AddHome() {
                 return;
             }
 
-            // Upload every photo, cover photo first so it lands at images[0].
-            const orderedPhotos = [photos[coverIndex], ...photos.filter((_, i) => i !== coverIndex)];
-            const uploadedPaths: string[] = [];
-            for (const photo of orderedPhotos) {
-                const uniquePath = Date.now() + '_' + generateRandomNumber();
-                const { data: imgData, error: imgErr } = await supabase.storage
-                    .from(Env.S3_BUCKET)
-                    .upload(uniquePath, photo);
+            // Photos are already uploaded (each one as it was added), so the
+            // content is written as it stands — WITHOUT a status. Publishing is
+            // not something the browser may do (20260829020000); the row is
+            // saved as a draft and handed to /api/listings/publish, the one place
+            // allowed to submit it. A draft that fails to submit is still saved.
+            const fields = draftFields();
 
-                if (imgErr) {
-                    // Storage speaks in routes and buckets. A host saw
-                    // "Route POST:/object/1788213666530_1948 not found", which
-                    // says nothing they can act on and does not tell them the
-                    // important part: their listing has NOT been saved, because
-                    // photos upload before the row is written.
-                    console.error('[addhome] photo upload failed', imgErr);
-                    const msg = 'We couldn\u2019t upload your photos, so nothing has been saved yet. '
-                        + 'Your details are still on this page \u2014 try again in a moment, or use '
-                        + '\u201CSave & finish later\u201D to keep them.';
-                    toast.error(msg, { theme: 'colored' });
-                    setFormError(msg);
-                    return;
-                }
-                if (imgData?.path) uploadedPaths.push(imgData.path);
-            }
-
-            // `location` is the public one — town and region only. The street
-            // goes to its own column below, and the postcode, country, flat and
-            // property name are not part of it at all. Built by the same helper
-            // the draft save uses, so a draft and a published listing cannot
-            // disagree about what this listing's location is.
-            const location = buildLocation(city, state);
-
-            // The content is written WITHOUT a status. Publishing is no longer
-            // something the browser may do — 20260829020000 lets a browser role
-            // create a draft and change no status at all — so the row is saved
-            // as a draft and then handed to /api/listings/publish, which is the
-            // one place allowed to make it live (and where the review gate will
-            // one day sit). A draft that fails to publish is still saved, so
-            // nothing the host typed is lost.
-            const fields = {
-                title: title.trim(),
-                description,
-                location,
-                street_address: buildStreetAddress(flat, propertyName, street) || null,
-                postcode: postcode.trim() ? tidyPostcode(postcode) : null,
-                price_per_night: Number(price),
-                max_guests: guests,
-                images: uploadedPaths,
-                property_type: propertyType,
-                privacy_type: privacyType,
-                bedrooms,
-                beds,
-                bathrooms,
-                amenities,
-                check_in_method: checkInMethod || null,
-                check_in_time: checkInTime || '15:00',
-                check_in_end_time: checkInEndTime || null,
-                check_out_time: checkOutTime || '11:00',
-                latitude,
-                longitude,
-                new_listing_promo: newListingPromo,
-                last_minute_discount: lastMinuteDiscount,
-                weekly_discount: weeklyDiscount,
-                monthly_discount: monthlyDiscount,
-            };
-
-            const { data: saved, error: listingErr } = draftId
-                ? await supabase.from('listings').update(fields).eq('id', draftId).select('id').single()
+            // Let any autosave still in flight land first, so this write is
+            // the last word and the draft id is settled.
+            await writeLock.current.catch(() => null);
+            const currentDraftId = draftIdRef.current;
+            const { data: saved, error: listingErr } = currentDraftId
+                ? await supabase.from('listings').update(fields).eq('id', currentDraftId).select('id').single()
                 : await supabase.from('listings').insert({ host_id: user.data.user.id, ...fields }).select('id').single();
 
             if (listingErr) {
@@ -475,18 +541,26 @@ export default function AddHome() {
                 return;
             }
 
-            const listingId = saved?.id || draftId;
+            const listingId = saved?.id || currentDraftId;
 
             const publishRes = await fetch('/api/listings/publish', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId }),
+                body: JSON.stringify({ listingId, termsVersion: termsOnRecord === true ? undefined : versionForTick('host', termsTicked) }),
             });
             const publishBody = await publishRes.json().catch(() => ({}));
 
             if (!publishRes.ok || !publishBody.ok) {
                 const msg = (publishBody && publishBody.error)
                     || 'Your listing was saved as a draft but could not be published. Please try again.';
+                // The server has no agreement on record (or the terms changed
+                // since this page loaded): show the agree box.
+                if (publishBody && publishBody.needsTerms) {
+                    setTermsOnRecord(false);
+                    setTermsTicked(false);
+                    setFormError(msg);
+                    return;
+                }
                 toast.error(msg, { theme: 'colored' });
                 setFormError(msg);
                 return;
@@ -514,17 +588,27 @@ export default function AddHome() {
     }
 
     if (!session) {
+        // The shared first step every sign-up now opens on: email, a 6-digit
+        // code, signed in. It replaced a narrow "Create account / Log in" card
+        // asking for a name and a password twice. The name is asked inside the
+        // step only when the account has none; a password still works for an
+        // account that has one.
         return (
-            <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-6 text-center px-4">
-                <Logo />
-                <h1 className="text-2xl font-bold text-slate-900">Sign in to become a host</h1>
-                <p className="text-slate-600 max-w-md">
-                    You need to be logged into your Galloway Getaways account to create and manage listings.
-                </p>
-                <div className="flex space-x-4">
-                    <LoginModel />
-                </div>
-            </div>
+            <EmailFirstStep
+                eyebrow="List your place"
+                intro="Sign in or create your free host account. You only pay a commission when you get a booking."
+                exitHref="/business"
+                onSignedIn={(s) => {
+                    // A ?draft= link loads its draft only for a signed-in owner,
+                    // on load — so reload to open it now that they are one.
+                    if (searchParams?.get('draft')) {
+                        window.location.reload();
+                        return;
+                    }
+                    setSession(s);
+                    setUserName(s.user.user_metadata?.name || s.user.email?.split('@')[0] || 'Host');
+                }}
+            />
         );
     }
 
@@ -582,6 +666,12 @@ export default function AddHome() {
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-2xl font-extrabold text-emerald-800">Galloway Getaways</h1>
                     <div className="flex items-center gap-4">
+                        {/* Autosave status, quiet, as on Airbnb. */}
+                        {autosave !== 'idle' && (
+                            <span className={'hidden sm:inline text-xs ' + (autosave === 'error' ? 'text-rose-600' : 'text-slate-400')} aria-live="polite">
+                                {autosave === 'saving' ? 'Saving\u2026' : autosave === 'saved' ? 'Saved' : 'Not saved \u2014 check your connection'}
+                            </span>
+                        )}
                         <button
                             onClick={saveDraft}
                             disabled={savingDraft}
@@ -817,14 +907,14 @@ export default function AddHome() {
                 {step === 6 && (
                     <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Add photos of your place</h2>
-                        <p className="text-slate-600 mb-2">Upload as many as you like, then click the star on your favourite to make it the cover photo guests see first.</p>
+                        <p className="text-slate-600 mb-2">Add at least {NEW_LISTING_MIN_PHOTOS} to go live, then click the star on your favourite to make it the cover photo guests see first.</p>
                         <p className="text-xs text-slate-400 mb-8">Drag photos to reorder them — the order here is the order guests see them in.</p>
 
                         {photos.length > 0 && (
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                                 {photos.map((photo, i) => (
                                     <div
-                                        key={i}
+                                        key={photo.path}
                                         draggable
                                         onDragStart={() => setDraggedIndex(i)}
                                         onDragEnter={() => {
@@ -847,7 +937,7 @@ export default function AddHome() {
                                         }`}
                                     >
                                         <img
-                                            src={URL.createObjectURL(photo)}
+                                            src={photo.url}
                                             alt={`Photo ${i + 1}`}
                                             className="w-full h-full object-cover pointer-events-none"
                                         />
@@ -882,7 +972,7 @@ export default function AddHome() {
 
                         <label className="h-32 rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-400 flex flex-col items-center justify-center cursor-pointer text-slate-500 text-sm">
                             <span className="font-semibold mb-1">+ Add photos</span>
-                            <span>{processingPhotos ? 'Preparing your photos...' : 'Straight from your phone is fine'}</span>
+                            <span>{processingPhotos ? 'Uploading your photos\u2026' : 'Straight from your phone is fine'}</span>
                             <input
                                 type="file"
                                 accept="image/*"
@@ -903,7 +993,7 @@ export default function AddHome() {
                                 type="text"
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
-                                placeholder="e.g. Cosy stone cottage near the coast"
+                                placeholder="e.g. Cosy coastal retreat near the harbour"
                                 // A title is a headline, not a paragraph. Left
                                 // uncapped it becomes a wall of text in the page
                                 // <h1> and browser tab; 80 is roomy for a real one.
@@ -1041,7 +1131,7 @@ export default function AddHome() {
                             <ul className="text-sm text-slate-600 space-y-1">
                                 <li><span className="font-medium text-slate-800">Type:</span> {propertyType || '—'} · {privacyType}</li>
                                 <li><span className="font-medium text-slate-800">Location:</span> {[city, state].filter(Boolean).join(', ') || '—'}</li>
-                                <li><span className="font-medium text-slate-800">Guests:</span> {guests} · {bedrooms} bedrooms · {beds} beds · {bathrooms} bathrooms</li>
+                                <li><span className="font-medium text-slate-800">Guests:</span> {plural(guests, 'guest')} · {plural(bedrooms, 'bedroom')} · {plural(beds, 'bed')} · {plural(bathrooms, 'bathroom')}</li>
                                 <li><span className="font-medium text-slate-800">Amenities:</span> {amenities.length ? amenities.join(', ') : 'None selected'}</li>
                                 <li><span className="font-medium text-slate-800">Title:</span> {title || '—'}</li>
                                 <li><span className="font-medium text-slate-800">Discounts:</span> {[
@@ -1054,6 +1144,21 @@ export default function AddHome() {
                         </div>
 
                         {formError && <p className="text-red-600 text-sm mb-4">{formError}</p>}
+
+                        {/* THE HOST TERMS. Shown only to a host with no agreement to
+                            the current version on record. Ticking it and publishing
+                            records the version and time against them (server-side,
+                            in /api/listings/publish). The underlined link opens the
+                            full Host Agreement (/terms/hosts). */}
+                        {termsOnRecord === false && (
+                            <div className="mb-4">
+                                <AgreementTick
+                                    doc="host"
+                                    checked={termsTicked}
+                                    onChange={(v) => { setTermsTicked(v); setFormError(''); }}
+                                />
+                            </div>
+                        )}
 
                         <button
                             type="submit"

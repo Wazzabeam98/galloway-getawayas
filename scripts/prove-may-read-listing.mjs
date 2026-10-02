@@ -69,7 +69,14 @@ async function main() {
     // a real confirmed booking for legit on the HIDDEN listing (service role)
     await db.insert('bookings', [{ listing_id: hidden.id, guest_id: legit.id, host_id: host.id, check_in: day(1), check_out: day(3), total_price: 100, status: 'confirmed', payment_status: 'paid', confirmed_at: new Date().toISOString() }]);
 
-    const reads = async (tok, id) => { const r = await asUser(tok, '/listings?id=eq.' + id + '&select=id,status,street_address'); return Array.isArray(r.data) && r.data.length === 1; };
+    // Select only id,status — NOT street_address. This guard proves ROW-LEVEL
+    // access (does may_read_listing let a planted booking see the row at all),
+    // which is independent of column grants. street_address had its SELECT grant
+    // revoked later (PII walling), so selecting it 401s for everyone and made
+    // every read return false — the guard reported a false 1/4 while the
+    // protection it exists to prove was intact. Keep the columns it reads to ones
+    // any reader of a visible row may have, so a grant change can't blind it again.
+    const reads = async (tok, id) => { const r = await asUser(tok, '/listings?id=eq.' + id + '&select=id,status'); return Array.isArray(r.data) && r.data.length === 1; };
 
     // reset to vulnerable baseline
     await runSql(ORIGINAL);

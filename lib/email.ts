@@ -8,8 +8,23 @@
 
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { logError } from '@/lib/logError';
+import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
+import { ukDate, londonDayKey as dayKeyOf } from '@/lib/dayKey';
 
 export const SITE_URL = 'https://gallowaygetaways.co.uk';
+
+// Where a person is sent back to after paying at Stripe. On production that is
+// the site. On a Vercel preview it must be the preview itself: the booking only
+// exists on the test database the preview writes to, so returning to the live
+// domain landed a tester on a 404 for a booking they had just paid for.
+// VERCEL_BRANCH_URL is set by Vercel (not by us, not by a request), so it can't
+// be pointed anywhere else. Emails keep SITE_URL.
+export function returnUrl(): string {
+    if (process.env.VERCEL_ENV === 'preview' && process.env.VERCEL_BRANCH_URL) {
+        return 'https://' + process.env.VERCEL_BRANCH_URL;
+    }
+    return SITE_URL;
+}
 
 // Booking-related mail comes from bookings@. Account and auth mail is
 // sent by Supabase from hello@, configured in the Supabase dashboard.
@@ -28,18 +43,16 @@ export function escapeHtml(value: string | null | undefined): string {
         .split("'").join('&#39;');
 }
 
+// DD/MM/YYYY — the one date format the site shows, in email too. A bare day
+// key ('2026-10-09') is formatted from its parts; a timestamp is first turned
+// into its London calendar day, so a payout sent at 00:30 BST is dated that
+// day and not the UTC one before it.
 export function formatDate(value: string | null | undefined): string {
     if (!value) return '';
-    try {
-        return new Date(value).toLocaleDateString('en-GB', {
-            weekday: 'short',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-        });
-    } catch (err) {
-        return String(value);
-    }
+    const text = String(value);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return ukDate(text);
+    const at = new Date(text);
+    return isNaN(at.getTime()) ? text : ukDate(dayKeyOf(at));
 }
 
 // Everything on this site happens in one place, so the clock that matters is
@@ -135,8 +148,22 @@ export function detailRows(rows: Array<{ label: string; value: string }>): strin
     return html + '</table>';
 }
 
+// The header subtitle under "Galloway Getaways". The default is the
+// self-catering line, which is right for the stay/booking emails. But an
+// experience, service, provider or delivery email has a provider as the
+// merchant of record, not a self-catering let — telling a foraging-walk
+// customer they've booked a self-catering stay is simply wrong. Those emails
+// pass NEUTRAL_SUBTITLE instead.
+export const COTTAGE_SUBTITLE = 'SELF-CATERING STAYS IN DUMFRIES & GALLOWAY';
+export const NEUTRAL_SUBTITLE = 'STAYS & EXPERIENCES IN DUMFRIES & GALLOWAY';
+
 // The shared shell — same design as the Supabase auth templates.
-export function emailLayout(bodyHtml: string, footnote: string, unsubscribeUrl?: string): string {
+export function emailLayout(
+    bodyHtml: string,
+    footnote: string,
+    unsubscribeUrl?: string,
+    subtitle: string = COTTAGE_SUBTITLE
+): string {
     const unsubscribe = unsubscribeUrl
         ? '<div style="padding-top:10px;"><a href="' + unsubscribeUrl + '" style="color:#9ca3af;text-decoration:underline;">Unsubscribe from these emails</a></div>'
         : '';
@@ -148,7 +175,7 @@ export function emailLayout(bodyHtml: string, footnote: string, unsubscribeUrl?:
 
         '<tr><td style="background-color:#047857;padding:26px 32px;">' +
         '<div style="color:#ffffff;font-size:21px;font-weight:700;letter-spacing:0.2px;line-height:1.2;">Galloway Getaways</div>' +
-        '<div style="color:#a7f3d0;font-size:12px;padding-top:4px;letter-spacing:0.4px;">SELF-CATERING STAYS IN DUMFRIES &amp; GALLOWAY</div>' +
+        '<div style="color:#a7f3d0;font-size:12px;padding-top:4px;letter-spacing:0.4px;">' + escapeHtml(subtitle) + '</div>' +
         '</td></tr>' +
 
         '<tr><td style="padding:34px 32px 30px 32px;color:#111827;font-size:16px;line-height:1.6;">' +
@@ -156,8 +183,9 @@ export function emailLayout(bodyHtml: string, footnote: string, unsubscribeUrl?:
         '</td></tr>' +
 
         '<tr><td style="background-color:#f9fafb;border-top:1px solid #e5e7eb;padding:22px 32px;color:#6b7280;font-size:12px;line-height:1.7;">' +
-        '<strong style="color:#374151;">Galloway Getaways Ltd</strong><br>' +
-        'Dumfries &amp; Galloway, Scotland &middot; Company number SC899385<br>' +
+        '<strong style="color:#374151;">' + escapeHtml(COMPANY.name) + '</strong><br>' +
+        'Registered in ' + escapeHtml(COMPANY.registeredIn) + ' &middot; Company number ' + escapeHtml(COMPANY.number) + '<br>' +
+        'Registered office: ' + escapeHtml(REGISTERED_OFFICE) + '<br>' +
         '<a href="' + SITE_URL + '" style="color:#047857;text-decoration:none;">gallowaygetaways.co.uk</a>' +
         '&nbsp;&middot;&nbsp;' +
         '<a href="mailto:' + REPLY_TO + '" style="color:#047857;text-decoration:none;">' + REPLY_TO + '</a>' +
@@ -341,4 +369,32 @@ export async function sendEmailToAll(
     }
 
     return { sent, failed };
+}
+
+// A guest's note (allergies, access, a request), rendered as a bordered amber
+// block so it can't be skimmed past in an email. Empty note → empty string, so
+// it simply drops out of the body. Shared by the Stripe webhook and the request
+// -order reconcile so both render a provider notice the same way.
+export function noteCallout(n: unknown): string {
+    const text = n ? String(n).trim() : '';
+    if (!text) return '';
+    return '<div style="margin:16px 0;padding:12px 14px;border:1px solid #f59e0b;'
+        + 'border-radius:10px;background:#fffbeb">'
+        + '<div style="font-size:12px;font-weight:600;text-transform:uppercase;'
+        + 'letter-spacing:0.04em;color:#92400e">From the guest</div>'
+        + '<div style="margin-top:4px;color:#451a03;white-space:pre-line">'
+        + escapeHtml(text) + '</div></div>';
+}
+
+// The allergy, louder than a note — red, and it leads the email. Safety
+// information a cook must not skim past, so it gets its own block.
+export function allergyCallout(a: unknown): string {
+    const text = a ? String(a).trim() : '';
+    if (!text) return '';
+    return '<div style="margin:0 0 16px;padding:12px 14px;border:2px solid #e11d48;'
+        + 'border-radius:10px;background:#fff1f2">'
+        + '<div style="font-size:12px;font-weight:700;text-transform:uppercase;'
+        + 'letter-spacing:0.04em;color:#9f1239">⚠ Allergy / dietary need</div>'
+        + '<div style="margin-top:4px;color:#4c0519;white-space:pre-line">'
+        + escapeHtml(text) + '</div></div>';
 }

@@ -1,8 +1,7 @@
 'use client';
 
 import { MenuIcon } from 'lucide-react';
-import useUnreadCount from './useUnreadCount';
-import usePendingCount from './usePendingCount';
+import useBadgeCounts from './useBadgeCounts';
 
 // The hamburger with a dot on it when something is waiting.
 //
@@ -18,19 +17,28 @@ import usePendingCount from './usePendingCount';
 export default function MenuUnreadDot({
     enabled = true,
     host = false,
+    provider = false,
 }: {
     enabled?: boolean;
     host?: boolean;
+    // A trade: light the dot for enquiries waiting on them too, the same way it
+    // lights for a host's booking requests.
+    provider?: boolean;
 }) {
-    const unread = useUnreadCount(enabled);
-    const pending = usePendingCount(enabled && host);
+    const counts = useBadgeCounts(enabled);
+    const unread = enabled ? counts.unread : 0;
+    const pending = enabled && host ? counts.pending : 0;
+    const requests = enabled && provider ? counts.requests : 0;
 
-    const waiting = unread > 0 || pending > 0;
+    const waiting = unread > 0 || pending > 0 || requests > 0;
 
     const label = () => {
         const parts: string[] = [];
         if (pending > 0) {
             parts.push(`${pending} booking request${pending === 1 ? '' : 's'} to answer`);
+        }
+        if (requests > 0) {
+            parts.push(`${requests} request${requests === 1 ? '' : 's'} to answer`);
         }
         if (unread > 0) {
             parts.push(`${unread} unread message${unread === 1 ? '' : 's'}`);

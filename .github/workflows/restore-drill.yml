@@ -1,0 +1,110 @@
+# The quarterly database restore drill, run by a machine instead of a diary note.
+#
+# WHY THIS EXISTS. A backup nobody has restored is a hope. The insurer asked for
+# recovery to be tested; a manual test gets tested once and then forgotten. This
+# restores a full copy of the production APPLICATION data into a throwaway
+# Postgres, checks every table came back intact, records the result where the 8am
+# digest can see it, and emails the owner either way — with no human in the loop
+# and no laptop that has to be at hand.
+#
+# WHAT IT IS NOT. It does not restore Supabase's own login records (the `auth`
+# schema) — those are covered by Supabase's managed backups, not this drill. This
+# proves the business data (listings, bookings, orders, messages, everything the
+# platform is) restores and verifies.
+#
+# SAFETY. Production is only ever READ, through a dedicated role that can select
+# the data and insert its own result row and do nothing else. The restore target
+# is a throwaway container that is destroyed when the job ends. The role's
+# connection string is the single secret this needs; see docs/BACKUP-AND-RESTORE.md.
+
+name: restore-drill
+
+on:
+  # 06:00 UTC on the 1st of January, April, July and October — quarterly.
+  schedule:
+    - cron: '0 6 1 1,4,7,10 *'
+  # And on demand, to prove it or to re-run after a fix.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The throwaway target. Torn down automatically when the job finishes, so the
+    # production copy it briefly holds never outlives the run.
+    services:
+      target:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: drill
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      SOURCE_DB_URL: ${{ secrets.RESTORE_DRILL_DB_URL }}
+      TARGET_DB_URL: postgresql://postgres:drill@127.0.0.1:5432/restore_drill
+      RESEND_API_KEY: ${{ secrets.RESTORE_DRILL_RESEND_KEY }}
+      ALERT_EMAIL: ${{ secrets.RESTORE_DRILL_ALERT_EMAIL }}
+      DRILL_TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      # Production runs Postgres 17, and a v16 pg_dump refuses a v17 server, so
+      # the runner needs the v17 client explicitly — ubuntu ships an older one.
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Check the drill role secret is set
+        run: |
+          if [ -z "$SOURCE_DB_URL" ]; then
+            echo "RESTORE_DRILL_DB_URL is not set — add it as a repository secret (see docs/BACKUP-AND-RESTORE.md)."
+            exit 1
+          fi
+
+      - name: Create the throwaway database
+        run: psql "postgresql://postgres:drill@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "create database restore_drill"
+
+      - name: Dump production application data (read-only)
+        run: |
+          pg_dump "$SOURCE_DB_URL" \
+            --format=custom --no-owner --no-acl \
+            --schema=public --schema=storage \
+            --file=prod.dump
+          ls -lh prod.dump
+
+      # pg_restore exits non-zero over the Supabase-managed policies/roles that
+      # don't exist in a bare Postgres. That is expected and is NOT the drill's
+      # verdict — the verify step is. So we record the fact and carry on.
+      - name: Restore into the throwaway
+        run: |
+          pg_restore --no-owner --no-acl --dbname="$TARGET_DB_URL" prod.dump \
+            || echo "pg_restore reported ignored errors (expected: Supabase auth/role policies, btree_gist)"
+
+      - name: Verify every table and the listings content hash
+        run: node scripts/restore-drill-verify.mjs
+
+      # Record on production and email — either way. always() so a FAILED verify
+      # (which fails the step above and would otherwise stop the job) is still
+      # filed and still emailed.
+      - name: Record the result and email
+        if: always()
+        run: node scripts/restore-drill-report.mjs

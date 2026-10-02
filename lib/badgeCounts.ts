@@ -99,3 +99,33 @@ export async function pendingFor(uid: string): Promise<number> {
 
     return count || 0;
 }
+
+/**
+ * Requests waiting on a trade to answer — the provider mirror of pendingFor.
+ *
+ * A trade's "Requests" menu line badges the same way a host's "Your reservations"
+ * does: the number of enquiries still to answer across every business this
+ * account owns. Guest-experience providers confirm orders, not enquiries, so
+ * this is nought for them and their menu carries no badge here.
+ *
+ * Counted with the service key: an enquiry belongs to a provider row this user
+ * owns, and 'sent' / 'viewed' are the two states still awaiting the trade.
+ */
+export async function providerRequestsFor(uid: string): Promise<number> {
+    const admin = adminClient();
+    const { data: providers } = await admin
+        .from('service_providers')
+        .select('id')
+        .eq('owner_id', uid)
+        .eq('audience', 'host');
+    const ids = (providers || []).map((p: any) => p.id);
+    if (ids.length === 0) return 0;
+
+    const { count } = await admin
+        .from('service_enquiries')
+        .select('id', { count: 'exact', head: true })
+        .in('provider_id', ids)
+        .in('status', ['sent', 'viewed']);
+
+    return count || 0;
+}

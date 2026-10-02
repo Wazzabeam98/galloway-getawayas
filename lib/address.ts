@@ -86,6 +86,30 @@ export function mapAddress(result: IdealAddressResult) {
 }
 
 
+// The four labelled fields a delivery address collapses to on the guest's
+// address form. `house` is a house name or flat/sub-building (optional); `street`
+// the number-and-street line; `town` and `postcode` place it. The postcode is the
+// only required one — a rural address may be a house name and a postcode alone.
+// Kept here (not in the client component) so it can be composed and tested as a
+// pure value.
+export interface AddressParts {
+    house: string;
+    street: string;
+    town: string;
+    postcode: string;
+}
+
+export const EMPTY_ADDRESS: AddressParts = { house: '', street: '', town: '', postcode: '' };
+
+// The one composed line the food basket submits as serviceAddress and the
+// provider reads — "Rose Cottage, 18 Dovecroft, Kirkcudbright, DG6 4JA".
+// buildStreetAddress folds a house/flat into the street line the same way
+// add-a-property does; the town and postcode follow.
+export function composeAddressLine(a: AddressParts): string {
+    const street = buildStreetAddress(a.house || '', '', a.street || '');
+    return [street, a.town, a.postcode].map((p) => (p || '').trim()).filter(Boolean).join(', ');
+}
+
 // The private address line, assembled from the three boxes that are not the
 // town, the region or the postcode. This is what goes in `street_address` —
 // "Flat 2, Rose Cottage, 18 Dovecroft". None of it reaches a guest-facing

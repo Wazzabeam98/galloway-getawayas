@@ -5,6 +5,7 @@ import { MessageCircle } from 'lucide-react';
 import { unitMultiplies, unitNoun, unitLabel } from '@/lib/serviceOrders';
 import { whenLabel, partyMatters } from '@/components/marketplace/present';
 import OrderThread from '@/components/marketplace/OrderThread';
+import { formatGBP } from '@/lib/formatMoney';
 
 // What an approved guest-trade provider does after approval: set up payouts,
 // and answer the requests that come in.
@@ -24,7 +25,13 @@ interface Order {
     service_date: string;
     service_time: string | null;
     guests: number | null;
+    // The party split, when the guest gave one — so the provider reads "2 adults,
+    // 1 child", not just a head count. NULL for orders taken before the split
+    // existed, which fall back to the plain guest count.
+    adults: number | null;
+    children: number | null;
     price: number;
+    amount_refunded?: number | null;
     item_name: string | null;
     // How it was priced and how many — so a chef reads "6 people", not just a
     // total. Snapshotted on the order, released like everything else.
@@ -43,6 +50,12 @@ interface Order {
     // not miss it. Null (not empty) when the guest stated none.
     allergy: string | null;
     expires_at: string | null;
+    // An authorised CHILD surfaced as a request to add places.
+    isChangeRequest?: boolean;
+    // A pending DATE-change request on a confirmed order, and its 48h deadline.
+    pending_service_date?: string | null;
+    pending_change_expires_at?: string | null;
+    pending_change_by?: 'guest' | 'provider' | null;
 }
 
 // What the provider is turning up to, when the price is a rate: "6 people ·
@@ -53,8 +66,24 @@ function countLine(o: Order): string | null {
     if (!o.item_unit || !unitMultiplies(o.item_unit) || !o.quantity) return null;
     const noun = unitNoun(o.item_unit);
     const plural = o.quantity === 1 ? noun : (noun === 'person' ? 'people' : noun + 's');
-    const each = o.unit_price != null ? ' · £' + o.unit_price.toFixed(2) + ' ' + unitLabel(o.item_unit) : '';
+    const each = o.unit_price != null ? ' · ' + formatGBP(o.unit_price) + ' ' + unitLabel(o.item_unit) : '';
     return o.quantity + ' ' + plural + each;
+}
+
+// The party line the provider reads beside a booking — the adults/children split
+// when the guest gave one ("2 adults, 1 child"), else the plain head count. Empty
+// for a shape where the party doesn't matter.
+function partyText(o: Order): string {
+    if (!partyMatters(o.shape)) return '';
+    const a = o.adults, c = o.children;
+    if (a != null || c != null) {
+        const na = Number(a) || 0, nc = Number(c) || 0;
+        const parts: string[] = [];
+        if (na > 0) parts.push(na + (na === 1 ? ' adult' : ' adults'));
+        if (nc > 0) parts.push(nc + (nc === 1 ? ' child' : ' children'));
+        if (parts.length) return ' · ' + parts.join(', ');
+    }
+    return o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : '';
 }
 
 const STATUS_WORD: Record<string, string> = {
@@ -66,8 +95,8 @@ const STATUS_WORD: Record<string, string> = {
     refunded: 'Refunded',
 };
 
-export default function ProviderExperienceDashboard(props: { providerId: string }) {
-    const { providerId } = props;
+export default function ProviderExperienceDashboard(props: { providerId: string; live?: boolean }) {
+    const { providerId, live: liveToGuests = false } = props;
 
     const [payouts, setPayouts] = useState<null | { connected: boolean; payouts_enabled: boolean }>(null);
     const [orders, setOrders] = useState<Order[]>([]);
@@ -114,7 +143,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
         setBusy(null);
     }
 
-    async function answer(orderId: string, decision: 'confirm' | 'decline' | 'refund') {
+    async function answer(orderId: string, decision: 'confirm' | 'decline' | 'refund' | 'accept_date' | 'decline_date') {
         // A refund gives the guest their money back — worth a beat before it
         // happens by accident.
         if (decision === 'refund' && typeof window !== 'undefined'
@@ -138,7 +167,10 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
         setBusy(null);
     }
 
-    const live = payouts && payouts.payouts_enabled;
+    // The same truth the marketplace filters on (isLiveToGuests, passed from the
+    // server), not a live Stripe fetch — so the dashboard and browse agree. The
+    // payouts fetch stays only for the connect button's wording.
+    const live = liveToGuests;
     const waiting = orders.filter((o) => o.status === 'authorised');
     const confirmed = orders.filter((o) => o.status === 'confirmed');
     const other = orders.filter((o) => o.status !== 'authorised' && o.status !== 'confirmed');
@@ -177,11 +209,11 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                             // (/services/dashboard#order-<id>) lands on this row and
                             // the :target highlight rings it — not the whole inbox.
                             <div key={o.id} id={'order-' + o.id} className="scroll-mt-24 rounded-xl border border-gray-200 p-4 target:ring-2 target:ring-emerald-500 target:ring-offset-2">
-                                {o.item_name ? <div className="text-sm font-semibold text-gray-900">{o.item_name}</div> : null}
+                                {o.item_name ? <div className="text-sm font-semibold text-gray-900">{o.item_name}{(o as any).isChangeRequest ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Extra places requested</span> : null}</div> : null}
                                 <div className="text-sm text-gray-600">
                                     {whenLabel(o.shape, o.service_date, o.service_time)}
-                                    {partyMatters(o.shape) && o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
-                                    {' · £' + o.price.toFixed(2)}
+                                    {partyText(o)}
+                                    {' · ' + formatGBP(Number(o.price) - (Number(o.amount_refunded) || 0))}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="text-sm text-gray-500">For {o.guest_name}</div> : null}
@@ -193,7 +225,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 ) : null}
                                 {o.note ? (
                                     <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
-                                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">From the guest</div>
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">In the guest’s words</div>
                                         <p className="mt-0.5 text-sm text-amber-950 whitespace-pre-line">{o.note}</p>
                                     </div>
                                 ) : null}
@@ -235,11 +267,29 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 {o.item_name ? <div className="text-sm font-semibold text-gray-900">{o.item_name}</div> : null}
                                 <div className="text-sm text-gray-600">
                                     {whenLabel(o.shape, o.service_date, o.service_time)}
-                                    {partyMatters(o.shape) && o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
-                                    {' · £' + o.price.toFixed(2)}
+                                    {partyText(o)}
+                                    {' · ' + formatGBP(Number(o.price) - (Number(o.amount_refunded) || 0))}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="mt-0.5 text-sm text-gray-700">For {o.guest_name}</div> : null}
+                                {o.pending_service_date && (!o.pending_change_expires_at || new Date(o.pending_change_expires_at) > new Date()) ? (
+                                    o.pending_change_by === 'provider' ? (
+                                        // A change YOU proposed — the guest answers it, not you.
+                                        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                                            <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Waiting on the guest</div>
+                                            <p className="mt-0.5 text-sm text-amber-950">You proposed moving this to {whenLabel(o.shape, o.pending_service_date, null)}.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                                            <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Date change requested</div>
+                                            <p className="mt-0.5 text-sm text-amber-950">The guest would like to move this to {whenLabel(o.shape, o.pending_service_date, null)}.</p>
+                                            <div className="mt-2 flex gap-2">
+                                                <button type="button" disabled={busy === o.id} onClick={() => answer(o.id, 'accept_date')} className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60">{busy === o.id ? '…' : 'Accept date'}</button>
+                                                <button type="button" disabled={busy === o.id} onClick={() => answer(o.id, 'decline_date')} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 disabled:opacity-60">Decline</button>
+                                            </div>
+                                        </div>
+                                    )
+                                ) : null}
                                 {o.allergy ? (
                                     <div className="mt-2 rounded-lg border-2 border-rose-400 bg-rose-50 px-3 py-2">
                                         <div className="text-xs font-bold uppercase tracking-wide text-rose-800">⚠ Allergy / dietary need</div>
@@ -248,7 +298,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 ) : null}
                                 {o.note ? (
                                     <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
-                                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">From the guest</div>
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">In the guest’s words</div>
                                         <p className="mt-0.5 text-sm text-amber-950 whitespace-pre-line">{o.note}</p>
                                     </div>
                                 ) : null}
@@ -321,7 +371,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                     <ul className="mt-2 space-y-1 text-sm text-gray-500">
                         {other.map((o) => (
                             <li key={o.id}>
-                                {whenLabel(o.shape, o.service_date, o.service_time)} · £{o.price.toFixed(2)} · {STATUS_WORD[o.status] || o.status}
+                                {whenLabel(o.shape, o.service_date, o.service_time)} · {formatGBP(Number(o.price) - (Number(o.amount_refunded) || 0))} · {STATUS_WORD[o.status] || o.status}
                             </li>
                         ))}
                     </ul>

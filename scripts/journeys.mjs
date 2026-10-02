@@ -37,7 +37,7 @@
 // literal anywhere but target.mjs, comments included, because a URL in a
 // comment is how a stale default gets copied back into code.)
 
-import { loadEnv, TEST_PROJECT_REF } from './seed-lib.mjs';
+import { loadEnv, TEST_PROJECT_REF, guardFetch } from './seed-lib.mjs';
 import { resolveTarget, PREVIEW_URL } from './target.cjs';
 
 const env = loadEnv();
@@ -67,8 +67,12 @@ const APPLICANT = `auto-applicant@${AUTO_DOMAIN}`;
 const PROJECT_REF = new URL(SUPABASE_URL).hostname.split('.')[0];
 const COOKIE_NAME = `sb-${PROJECT_REF}-auth-token`;
 
-const admin = (path, init = {}) =>
-    fetch(`${SUPABASE_URL}${path}`, {
+const SERVICE_HEADERS = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
+const admin = async (path, init = {}) => {
+    // Refuses to delete or lock out a protected real account (protectedAccounts.cjs).
+    await guardFetch(SUPABASE_URL, SERVICE_HEADERS, init.method || 'GET', path,
+        typeof init.body === 'string' ? JSON.parse(init.body) : init.body);
+    return fetch(`${SUPABASE_URL}${path}`, {
         ...init,
         headers: {
             apikey: SERVICE_KEY,
@@ -77,6 +81,7 @@ const admin = (path, init = {}) =>
             ...(init.headers || {}),
         },
     });
+};
 
 /* ------------------------------------------------------------- accounts */
 

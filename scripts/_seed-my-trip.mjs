@@ -68,6 +68,13 @@ async function main() {
     await db.update('listings', '?id=eq.' + listing.id, {
         street_address: 'Harbour Row, Garlieston',
         postcode: 'DG8 8BQ',
+        // The address is Garlieston, so the town and the map pin must be
+        // Garlieston too — the base listing carried Kirkcudbright coordinates, so
+        // the reservation map dropped a pin ~25km from the address. These are the
+        // Garlieston harbour coordinates, matching Harbour Row / DG8 8BQ.
+        location: 'Garlieston, Dumfries and Galloway',
+        latitude: 54.7906,
+        longitude: -4.3684,
         // A genuine landscape cottage photo (copied from a real production
         // listing into the test bucket), so the card shows an actual photo
         // rather than a placeholder.

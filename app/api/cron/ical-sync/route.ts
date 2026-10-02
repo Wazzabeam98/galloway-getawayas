@@ -1,6 +1,7 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { fetchIcalText } from '@/lib/feedFetch';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -48,14 +49,14 @@ export async function GET(request: Request) {
 
     for (const feed of feeds || []) {
         try {
-            const response = await fetch(feed.url, {
-                headers: { 'User-Agent': 'GallowayGetawaysCalendarSync/1.0' },
-                signal: AbortSignal.timeout(15000),
-            });
+            // Fetched through the shared safe fetch: public-https only, private /
+            // loopback / link-local / metadata addresses (and redirects to them)
+            // refused, so a host-supplied url can't point the sync at an internal
+            // service. null means unsafe OR unreachable \u2014 either way the feed
+            // failed this run and drops into the failure ladder below.
+            const text = await fetchIcalText(feed.url, { timeoutMs: 15000 });
 
-            if (!response.ok) throw new Error('The other site returned status ' + response.status);
-
-            const text = await response.text();
+            if (text === null) throw new Error('That calendar link couldn\u2019t be fetched (it must be a public https address)');
 
             // A link to a web page or an image will fetch happily and parse to
             // nothing, which would look like an empty calendar and block no

@@ -130,6 +130,7 @@ test('the storey bands say what the cleaner faces, not how many floors', () => {
 const HOST_KEYS = [
     'sponge', 'bin', 'trees', 'droplet',
     'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
+    'other',
 ];
 
 test('somebody with nothing yet is offered every host trade', () => {
@@ -313,101 +314,68 @@ test('what is not in the shop, and why', () => {
 
 // --- what has to be filled in ----------------------------------------------
 
-const priced = (bands: Record<string, any>) => ({ trade: 'sponge', prices: bands });
+// One pricing rule for EVERY trade now: a quote tick, or an hourly rate, or a
+// flat fee. A call-out fee is optional on top and is not, on its own, a way to
+// price the work. No bedroom or plot-size bands.
 
-test('a blank band is a real answer, not a mistake', () => {
-    const problems = pricingProblems(priced({ beds_1_2: { price: '60' } }));
-    assert.deepEqual(problems, [], 'not covering 5-beds is allowed and says so by being blank');
+test('a quote is a complete answer on its own', () => {
+    assert.deepEqual(pricingProblems({ trade: 'plumber', provides_quote: true }), []);
 });
 
-test('pricing nothing at all is a problem — that provider reaches nobody', () => {
-    const problems = pricingProblems(priced({}));
-    assert.equal(problems.length, 1);
-    assert.equal(problems[0].field, 'prices');
+test('an hourly rate is a complete answer on its own', () => {
+    assert.deepEqual(pricingProblems({ trade: 'plumber', hourly_rate: '30' }), []);
 });
 
-test('a price that is not a number is caught', () => {
-    const problems = pricingProblems(priced({ beds_1_2: { price: 'sixty' } }));
-    assert.equal(problems.some((p: any) => p.field === 'price_beds_1_2'), true);
+test('a flat fee is a complete answer on its own', () => {
+    assert.deepEqual(pricingProblems({ trade: 'plumber', flat_fee: '120' }), []);
 });
 
-test('a negative or zero price is caught', () => {
-    assert.equal(pricingProblems(priced({ beds_1_2: { price: '0' } })).some((p: any) => p.field === 'price_beds_1_2'), true);
-    assert.equal(pricingProblems(priced({ beds_1_2: { price: '-10' } })).some((p: any) => p.field === 'price_beds_1_2'), true);
+test('nothing at all is a problem — a quote, an hourly rate or a flat fee is needed', () => {
+    const problems = pricingProblems({ trade: 'plumber' });
+    assert.equal(problems.some((p: any) => p.field === 'prices'), true);
 });
 
-test('typical hours are optional', () => {
-    assert.deepEqual(pricingProblems(priced({ beds_1_2: { price: '60' } })), []);
-    assert.deepEqual(pricingProblems(priced({ beds_1_2: { price: '60', typical_hours: '2' } })), []);
-    assert.deepEqual(pricingProblems(priced({ beds_1_2: { price: '60', typical_hours: '' } })), []);
+test('a call-out fee alone is not a way to price the work', () => {
+    const problems = pricingProblems({ trade: 'plumber', callout_fee: '45' });
+    assert.equal(problems.some((p: any) => p.field === 'prices'), true,
+        'a call-out fee sits on top of a price; it is not the price');
 });
 
-test('typical hours that are not a number are caught', () => {
-    const problems = pricingProblems(priced({ beds_1_2: { price: '60', typical_hours: 'a while' } }));
-    assert.equal(problems.some((p: any) => p.field === 'hours_beds_1_2'), true);
+test('a figure that is given has to be a real, positive amount', () => {
+    assert.equal(pricingProblems({ trade: 'plumber', hourly_rate: 'thirty' }).some((p: any) => p.field === 'hourly_rate'), true);
+    assert.equal(pricingProblems({ trade: 'plumber', flat_fee: '0' }).some((p: any) => p.field === 'flat_fee'), true);
+    assert.equal(pricingProblems({ trade: 'plumber', provides_quote: true, callout_fee: '-5' }).some((p: any) => p.field === 'callout_fee'), true);
 });
 
-test('an hourly trade needs an hourly rate, and only that', () => {
-    assert.deepEqual(pricingProblems({ trade: 'plumber', callout_fee: '45', hourly_rate: '30' }), []);
-
-    // The call-out fee used to be compulsory here. Plenty of handymen charge
-    // an hourly rate and no call-out, or a day rate — so requiring it made
-    // them invent a number to get past the form, which is the same fault as
-    // asking a roofer to price a re-slate by the hour.
-    assert.deepEqual(pricingProblems({ trade: 'plumber', hourly_rate: '30' }), [],
-        'a call-out fee is theirs to charge or not');
-
-    const noRate = pricingProblems({ trade: 'plumber', callout_fee: '45' });
-    assert.equal(noRate.some((p: any) => p.field === 'hourly_rate'), true,
-        'the hourly rate IS the price for a trade that bills by the hour');
-});
-
-test('all three hourly trades are the same about it', () => {
-    for (const trade of ['plumber', 'electrician', 'handyman']) {
-        assert.deepEqual(pricingProblems({ trade, hourly_rate: '30' }), [],
-            trade + ' can apply with no call-out fee');
-        assert.equal(
-            pricingProblems({ trade, callout_fee: '45' }).some((p: any) => p.field === 'hourly_rate'),
-            true,
-            trade + ' still needs an hourly rate'
-        );
+test('every host trade uses the same rule', () => {
+    for (const trade of ['sponge', 'bin', 'trees', 'droplet', 'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman', 'other']) {
+        assert.deepEqual(pricingProblems({ trade, provides_quote: true }), [], trade + ' can price by quote');
+        assert.equal(pricingProblems({ trade }).some((p: any) => p.field === 'prices'), true, trade + ' needs a way to price');
     }
-});
-
-// The mirror. A roofer with nothing filled in is a complete application: the
-// job is quoted once they have seen it, and a call-out fee is theirs to charge
-// or not.
-test('a quoted trade needs no numbers at all', () => {
-    for (const trade of ['roofer', 'joiner', 'painter']) {
-        assert.deepEqual(pricingProblems({ trade }), [], trade + ' can apply with nothing priced');
-        assert.deepEqual(pricingProblems({ trade, callout_fee: '40' }), [],
-            trade + ' can give a call-out fee and no hourly rate');
-    }
-});
-
-test('a quote-per-job trade needs no prices at all', () => {
-    assert.deepEqual(pricingProblems({ trade: 'cake' }), []);
 });
 
 // --- pricing is part of the one submit gate --------------------------------
 
 const complete = {
-    business_name: 'Solway Sparkle',
-    trade: 'sponge',
-    description: 'Changeover cleans and deep cleans for holiday cottages across the Stewartry.',
-    contact_email: 'hello@solwaysparkle.test',
+    business_name: 'Solway Joinery',
+    trade: 'joiner',
+    // A host's "about you" gate is the professional title (the expertise hub),
+    // not a free-text description; supply it so pricing is the only thing left to
+    // test here.
+    professional_title: 'Joiner and kitchen fitter',
+    contact_email: 'hello@solwayjoinery.test',
     audience: 'host',
     areaCount: 1,
 };
 
-test('a cleaner cannot be sent for review with no prices', () => {
+test('a trade cannot be sent for review with no way to price', () => {
     const problems = submitProblems(complete);
     assert.equal(problems.some((p: any) => p.field === 'prices'), true,
         'pricing is not a separate gate — it is part of the one that already exists');
 });
 
-test('the same cleaner with one band priced can be sent', () => {
-    const problems = submitProblems({ ...complete, prices: { beds_3_4: { price: '75' } } });
+test('the same trade with a quote ticked can be sent', () => {
+    const problems = submitProblems({ ...complete, provides_quote: true });
     assert.deepEqual(problems, []);
 });
 
@@ -477,7 +445,7 @@ test('the host sign-up offers the property trades and nothing else', () => {
     const keys = tradesFor('host').map((t: any) => t.key);
 
     assert.deepEqual(keys.slice().sort(), [
-        'bin', 'droplet', 'electrician', 'handyman', 'joiner',
+        'bin', 'droplet', 'electrician', 'handyman', 'joiner', 'other',
         'painter', 'plumber', 'roofer', 'sponge', 'trees',
     ]);
     assert.equal(keys.indexOf('cake'), -1, 'a baker is not supplying a property owner');

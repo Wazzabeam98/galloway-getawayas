@@ -7,6 +7,7 @@ import { londonDayKey, daysBetweenKeys } from '@/lib/dayKey';
 import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { loadBookingSeats } from '@/lib/groupSeats';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { compareTripsByStart } from '@/lib/bookingOrder';
 import { publicArea } from '@/lib/places';
@@ -17,7 +18,6 @@ import CopyField from '@/components/arrival/CopyField';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import TripGroup from '@/components/TripGroup';
 import HomeCancelPanel from '@/components/HomeCancelPanel';
-import GuestExperiences from '@/components/GuestExperiences';
 import { MessageSquare, CalendarDays } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
@@ -121,7 +121,8 @@ export default async function UpcomingTrip() {
     // wrote it and never prints a negative day count.
     const { phase, daysUntilCheckIn } = stayCountdown(booking, now);
     const headline =
-        phase === 'during' ? 'You’re here'
+        phase === 'during' && String(booking.check_out).slice(0, 10) === londonDayKey(now) ? 'You check out today'
+        : phase === 'during' ? 'You’re here'
             : phase === 'today' ? 'You arrive today'
                 : phase === 'tomorrow' ? 'You arrive tomorrow'
                     : 'You arrive in ' + daysUntilCheckIn + ' days';
@@ -187,13 +188,23 @@ export default async function UpcomingTrip() {
         </>
     );
 
-    const groupEl = (booking.status !== 'cancelled' && booking.status !== 'declined') ? (
+    // The party's seats, read server-side (the browser can't select
+    // booking_guests — see lib/groupSeats) and handed to TripGroup as its initial
+    // data. This card is the guest's own upcoming stay, so they are the booker.
+    const showGroup = booking.status !== 'cancelled' && booking.status !== 'declined';
+    const { seats: seatRows, profiles: seatProfiles } = showGroup
+        ? await loadBookingSeats(adminClient(), booking.id)
+        : { seats: [], profiles: {} };
+
+    const groupEl = showGroup ? (
         <div className="mt-4">
             <TripGroup
                 bookingId={booking.id}
                 guests={booking.guests}
                 cottage={listing.title}
                 when={formatUk(new Date(booking.check_in)) + ' → ' + formatUk(new Date(booking.check_out))}
+                initialSeats={seatRows as any}
+                initialProfiles={seatProfiles as any}
             />
         </div>
     ) : null;
@@ -241,7 +252,7 @@ export default async function UpcomingTrip() {
 
     const actionsEl = (
         <div className="flex flex-wrap gap-3 mt-8">
-            <Link href="/trips"
+            <Link href={'/trips/' + booking.id}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition">
                 <CalendarDays className="w-4 h-4" /> Your trip
             </Link>
@@ -257,7 +268,11 @@ export default async function UpcomingTrip() {
     // filled rather than left hanging under the image. The rail and the actions
     // run full width below both.
     const card = (
-        <div className="rounded-3xl border border-stone-200 bg-white p-6 md:p-8">
+        // Lifted to match the trips-page cards — the same soft shadow, hairline
+        // border and radius (reused, no variant). This is the featured trip you
+        // act on; the host-mode counterpart (HostReservations) stays flat because
+        // it's a grid of arrivals you scan, not one card.
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="md:flex md:items-start md:gap-8">
                 <div className="mb-6 md:mb-0 md:w-1/4 md:flex-none">
                     {photoEl}
@@ -291,21 +306,10 @@ export default async function UpcomingTrip() {
 
             {card}
 
-            {/* The guest experiences, below the trip — what's booked for the stay
-                and a way into browsing more, the same panel the trips page carries,
-                so the home page no longer has to send a guest to /trips to find
-                any of it. It shows its own "coming soon" when the marketplace is
-                closed, and nothing when there's neither a booking nor a provider. */}
-            {booking.status !== 'cancelled' && booking.status !== 'declined' && (
-                <div className="mt-8">
-                    <GuestExperiences
-                        bookingId={booking.id}
-                        checkIn={booking.check_in}
-                        checkOut={booking.check_out}
-                        town={publicArea(listing.location)}
-                    />
-                </div>
-            )}
+            {/* The booked-experiences list that used to sit here is gone: the
+                "Your upcoming experience" card is the treatment now. The full
+                per-stay panel — the browse link and every booked experience in
+                each state — still lives on /trips, reached from "Your trip". */}
         </section>
     );
 }

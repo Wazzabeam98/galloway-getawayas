@@ -1,10 +1,11 @@
 {
-  "ranAt": "2026-09-10T10:59:59.612Z",
-  "target": "http://localhost:3190",
-  "account": "acct_1UB72uA4n4otlrBz",
-  "passed": 8,
+  "ranAt": "2026-09-30T08:48:05.881Z",
+  "target": "http://localhost:3900",
+  "account": "acct_1U6iMxAJfMhUsIVc",
+  "passed": 29,
   "failed": 0,
   "lostWebhookReconciled": true,
+  "lostWebhookRequestReconciled": true,
   "scenarios": [
     {
       "number": "1",
@@ -13,7 +14,7 @@
         {
           "description": "slot/book accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1tmlIWAQgj6bOtGkepzn32IKVGw5gqsVEF0w7lVnuCAUpix562QccLMmo#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicGR"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Hg4joxkz3dfKFwKUjrHCzudVYvzTYqtd1tRMiVKM0jUA5t9rzjZNSpJ9#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "a holding order exists after booking",
@@ -43,7 +44,7 @@
         {
           "description": "the sweep ran",
           "ok": true,
-          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":0,\"reconciled\":1,\"failures\":[]}"
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":0,\"reconciled\":1,\"rebuilt\":0,\"dateRequestsCleared\":0,\"failures\":[]}"
         },
         {
           "description": "the sweep reported a reconciliation",
@@ -56,14 +57,19 @@
           "detail": "succeeded captured=6000"
         },
         {
-          "description": "STRIPE: the provider was paid — £6 fee to us, £54 transferred to them",
+          "description": "STRIPE: the money is HELD by us — no transfer and no application fee at payment",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UE5hSPTBrEa7mS70gUgkxaa"
+          "detail": "fee=null transfer=undefined"
         },
         {
-          "description": "STRIPE: the provider’s connected balance rose by ~£54 net",
+          "description": "STRIPE: the provider is the seller — the charge is on their behalf and their name is on the statement",
           "ok": true,
-          "detail": "delta £54"
+          "detail": "on_behalf_of=acct_1U6iMxAJfMhUsIVc statement=\"GALLOWAYGETAWAYS.CO.UK\" provider=\"GALLOWAYGETAWAYS.CO.UK\" platform=\"GALLOWAY GETAWAYS SAND\""
+        },
+        {
+          "description": "APP: the order is marked held with our frozen £6 fee",
+          "ok": true,
+          "detail": "held fee £6"
         },
         {
           "description": "APP: the order was RECONCILED to confirmed (not expired)",
@@ -73,7 +79,7 @@
         {
           "description": "APP: the order now carries the PaymentIntent id",
           "ok": true,
-          "detail": "pi_3UE5hSPTBrEa7mS70oN7UFtq"
+          "detail": "pi_3ULJ1xPTBrEa7mS71HJSRGcl"
         },
         {
           "description": "APP: the seat was KEPT (seats_taken still 1 — not resold)",
@@ -87,12 +93,12 @@
     },
     {
       "number": "2",
-      "title": "Request-and-confirm (chef): held on request, captured on confirm, 10% fee + 90% to provider",
+      "title": "Request-and-confirm (chef): held on request, captured on confirm — to us, not yet to the provider",
       "checks": [
         {
           "description": "services/order accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1eGzmxzgywZ6RZINJd8WqgrYRF5107nf2x3e04QbUYkLVF0tjgOuedOGh#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicGR"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1FQ392FNduwVw4SaqUqOWYyt2PsZDaDqa90Z7wD8MksupqIkrhagPOVbU#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "the card is HELD not charged (requires_capture)",
@@ -117,7 +123,7 @@
         {
           "description": "the order carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UE5hYPTBrEa7mS71uXHCJXw"
+          "detail": "pi_3ULJ2nPTBrEa7mS70g4oo9ER"
         },
         {
           "description": "orders/respond confirm succeeded",
@@ -130,19 +136,19 @@
           "detail": "succeeded captured=18000"
         },
         {
-          "description": "STRIPE: our fee is £18 and the transfer went to the provider",
+          "description": "STRIPE: captured to the platform — no transfer to the provider at confirm, no application fee",
           "ok": true,
-          "detail": "fee=1800"
+          "detail": "fee=null transfer=undefined"
         },
         {
-          "description": "STRIPE: the provider gained ~£162 net",
+          "description": "STRIPE: the provider is the seller — the charge is on their behalf and their name is on the statement",
           "ok": true,
-          "detail": "delta £162"
+          "detail": "on_behalf_of=acct_1U6iMxAJfMhUsIVc statement=\"GALLOWAYGETAWAYS.CO.UK\" provider=\"GALLOWAYGETAWAYS.CO.UK\" platform=\"GALLOWAY GETAWAYS SAND\""
         },
         {
-          "description": "APP: the order is confirmed",
+          "description": "APP: the order is confirmed, held, with our £18 fee frozen",
           "ok": true,
-          "detail": "confirmed"
+          "detail": "confirmed held £18"
         }
       ],
       "status": "passed",
@@ -168,9 +174,14 @@
           "detail": "succeeded"
         },
         {
-          "description": "STRIPE: fee £6, transfer to provider",
+          "description": "STRIPE: held by us — no transfer, no application fee",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UE5hePTBrEa7mS70MvvNHvG"
+          "detail": "fee=null transfer=undefined"
+        },
+        {
+          "description": "STRIPE: the provider is the seller — the charge is on their behalf and their name is on the statement",
+          "ok": true,
+          "detail": "on_behalf_of=acct_1U6iMxAJfMhUsIVc statement=\"GALLOWAYGETAWAYS.CO.UK\" provider=\"GALLOWAYGETAWAYS.CO.UK\" platform=\"GALLOWAY GETAWAYS SAND\""
         },
         {
           "description": "the webhook was accepted (200)",
@@ -221,7 +232,7 @@
         {
           "description": "the sweep ran",
           "ok": true,
-          "detail": "{\"ok\":true,\"released\":1,\"seatsReleased\":0,\"reconciled\":0,\"failures\":[]}"
+          "detail": "{\"ok\":true,\"released\":1,\"seatsReleased\":0,\"reconciled\":0,\"rebuilt\":0,\"dateRequestsCleared\":0,\"failures\":[]}"
         },
         {
           "description": "STRIPE: the hold was cancelled, nothing captured",
@@ -239,7 +250,7 @@
     },
     {
       "number": "6",
-      "title": "Cancel after payment, inside the window: provider keeps 90%, platform keeps its 10%, no refund",
+      "title": "Cancel after payment, inside the window: no refund — the money stays held for the provider’s payout",
       "checks": [
         {
           "description": "the order is confirmed and captured",
@@ -257,9 +268,9 @@
           "detail": "0"
         },
         {
-          "description": "STRIPE: our £18 application fee was NOT refunded",
+          "description": "STRIPE: still held by us — no transfer yet",
           "ok": true,
-          "detail": "fee=1800 refunded=false"
+          "detail": "undefined"
         },
         {
           "description": "APP: the order is cancelled and records the forfeit (cancel_ack)",
@@ -268,11 +279,11 @@
         }
       ],
       "status": "passed",
-      "note": "Provider keeps 90% and the platform keeps its 10% on an experience that will not happen — a policy choice for the solicitor."
+      "note": "The walk-away keeps the order payable: the payout run pays the provider their 90% the day after the date (cancel_ack marks it kept). A policy choice for the solicitor."
     },
     {
       "number": "7",
-      "title": "Refund issued: full refund to the guest, our 10% returned, the transfer reversed",
+      "title": "Refund before payout: full refund to the guest from the money we hold — no transfer to reverse",
       "checks": [
         {
           "description": "the order is confirmed and captured",
@@ -290,14 +301,9 @@
           "detail": "18000"
         },
         {
-          "description": "STRIPE: our application fee was refunded — commission UNWOUND",
+          "description": "STRIPE: a plain refund from us — no transfer existed, none reversed",
           "ok": true,
-          "detail": "refunded=true amount_refunded=1800"
-        },
-        {
-          "description": "STRIPE: the transfer to the provider was fully reversed",
-          "ok": true,
-          "detail": "reversed 18000/18000"
+          "detail": "transfer=undefined reversal=null"
         },
         {
           "description": "APP: the order is refunded",
@@ -306,7 +312,7 @@
         }
       ],
       "status": "passed",
-      "note": "No partial-refund path exists for experiences, so the cottage \"partial refund keeps the fee\" bug has no analogue here."
+      "note": "Our 10% goes back with it, as before — we simply keep none of a refunded order. No partial-refund path exists for experiences."
     },
     {
       "number": "8",
@@ -330,7 +336,7 @@
         {
           "description": "the sweep ran",
           "ok": true,
-          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":1,\"reconciled\":0,\"failures\":[]}"
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":1,\"reconciled\":0,\"rebuilt\":0,\"dateRequestsCleared\":0,\"failures\":[]}"
         },
         {
           "description": "APP: the unpaid order is EXPIRED",
@@ -345,6 +351,930 @@
       ],
       "status": "passed",
       "note": "Reconciliation rescues only paid holds; a genuinely unpaid one still expires and frees its seat."
+    },
+    {
+      "number": "9",
+      "title": "Lost webhook on a request (chef): the sweep reconciles against Stripe — rebuilds the authorised order, hold kept",
+      "checks": [
+        {
+          "description": "the card is HELD not charged (requires_capture)",
+          "ok": true,
+          "detail": "requires_capture"
+        },
+        {
+          "description": "the mis-signed webhook was rejected (400)",
+          "ok": true,
+          "detail": "HTTP 400"
+        },
+        {
+          "description": "APP: no order row exists yet (the webhook never landed)",
+          "ok": true,
+          "detail": "0 row(s)"
+        },
+        {
+          "description": "the sweep ran",
+          "ok": true,
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":0,\"reconciled\":0,\"rebuilt\":1,\"dateRequestsCleared\":0,\"failures\":[]}"
+        },
+        {
+          "description": "the sweep reported a rebuild",
+          "ok": true,
+          "detail": "rebuilt=1"
+        },
+        {
+          "description": "APP: an order row now exists (rebuilt from Stripe)",
+          "ok": true,
+          "detail": "1 row(s)"
+        },
+        {
+          "description": "APP: it is authorised, awaiting the provider",
+          "ok": true,
+          "detail": "authorised"
+        },
+        {
+          "description": "APP: it carries the held PaymentIntent",
+          "ok": true,
+          "detail": "pi_3ULJ4rPTBrEa7mS71wtiBHH1"
+        },
+        {
+          "description": "APP: it belongs to the right guest and provider",
+          "ok": true,
+          "detail": "5d311893-b6a8-41da-8231-8d178e2fbb80/d96488ae-0f19-4806-b313-6071f0f5829a"
+        },
+        {
+          "description": "STRIPE: the hold is still LIVE (requires_capture — nothing captured early, nothing lost)",
+          "ok": true,
+          "detail": "requires_capture"
+        },
+        {
+          "description": "the recovered order can be confirmed and captured",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"confirmed\"}"
+        },
+        {
+          "description": "STRIPE: the hold was captured on confirm (£180)",
+          "ok": true,
+          "detail": "true 18000"
+        }
+      ],
+      "status": "passed",
+      "note": "FIXED: a request order whose webhook was lost is rebuilt to authorised by the sweep — the provider is told and the held card is intact.",
+      "fixVerified": true
+    },
+    {
+      "number": "10",
+      "title": "Add guests: child-order top-up — race, abandon+sweep, cancel refunds both PIs + both seats, invite cap rises",
+      "checks": [
+        {
+          "description": "A: booked 5 of 6 places",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "A: the parent is confirmed",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "A: exactly one top-up won the last seat",
+          "ok": true,
+          "detail": "r1=200 r2=409"
+        },
+        {
+          "description": "A: the session is full (seats_taken = 6), never oversold",
+          "ok": true,
+          "detail": "6"
+        },
+        {
+          "description": "B: booked 1 place",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "B: top-up accepted (holding child + Checkout)",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "B: a holding child order exists",
+          "ok": true,
+          "detail": "holding"
+        },
+        {
+          "description": "B: the added seat was claimed (seats_taken = 2)",
+          "ok": true,
+          "detail": "2"
+        },
+        {
+          "description": "B: the sweep ran",
+          "ok": true,
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":1,\"reconciled\":0,\"rebuilt\":0,\"dateRequestsCleared\":0,\"failures\":[]}"
+        },
+        {
+          "description": "B: the abandoned child is EXPIRED",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "B: the added seat was released (back to 1)",
+          "ok": true,
+          "detail": "1"
+        },
+        {
+          "description": "C: booked 2 places",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "C: the parent is confirmed",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "D: invite cap is 1 before the top-up (2 seats − the booker)",
+          "ok": true,
+          "detail": "capacity=1"
+        },
+        {
+          "description": "D: ensure_order_seats minted 1 seat row for the 2-seat order",
+          "ok": true,
+          "detail": "seats=1"
+        },
+        {
+          "description": "C: top-up accepted",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "C: the top-up child is confirmed",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "C: the parent total was NOT rewritten (still £40)",
+          "ok": true,
+          "detail": "40"
+        },
+        {
+          "description": "D: invite cap rose to 2 after the top-up confirmed",
+          "ok": true,
+          "detail": "capacity=2"
+        },
+        {
+          "description": "D: ensure_order_seats minted a 2nd seat row once the top-up confirmed (family = 3 − booker)",
+          "ok": true,
+          "detail": "seats=2"
+        },
+        {
+          "description": "C: the session holds all 3 seats",
+          "ok": true,
+          "detail": "3"
+        },
+        {
+          "description": "C: cancel refunded (free window)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"refunded\"}"
+        },
+        {
+          "description": "C: STRIPE — the original £40 was refunded, from the held money (no transfer)",
+          "ok": true,
+          "detail": "refunded=4000 transfer=undefined"
+        },
+        {
+          "description": "C: STRIPE — the added £20 refunded SEPARATELY, from the held money",
+          "ok": true,
+          "detail": "refunded=2000 transfer=undefined"
+        },
+        {
+          "description": "C: APP — the parent and the top-up are both held orders",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "C: APP — both orders are refunded",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "C: BOTH seat claims were released (seats_taken back to 0)",
+          "ok": true,
+          "detail": "0"
+        }
+      ],
+      "status": "passed",
+      "note": "Add-guests reuses the slot machine: child order per added place, its own PI and seats, confirmed by the same webhook, swept if unpaid; a full cancel settles the whole family."
+    },
+    {
+      "number": "11",
+      "title": "Move a booking: the whole family (parent + top-up) moves together, or nobody does; a full target and a past-cutoff target are both refused",
+      "checks": [
+        {
+          "description": "A: paid family of 3 built (parent 2 + top-up 1)",
+          "ok": true,
+          "detail": "book HTTP 200"
+        },
+        {
+          "description": "A: the source holds all 3 seats before the move",
+          "ok": true,
+          "detail": "3"
+        },
+        {
+          "description": "A: move succeeded",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"moved\":2,\"seats\":3,\"serviceDate\":\"2026-10-06\",\"serviceTime\":\"10:00\",\"from\":{\"date\":\"2026-10-06\",\"time\":\"09:0"
+        },
+        {
+          "description": "A: the WHOLE family moved (2 rows, 3 seats)",
+          "ok": true,
+          "detail": "moved=2 seats=3"
+        },
+        {
+          "description": "A: the move names BOTH times (old → new)",
+          "ok": true,
+          "detail": "from={\"date\":\"2026-10-06\",\"time\":\"09:00\"} to=10:00"
+        },
+        {
+          "description": "A: parent repointed to the new session, re-dated, and stamped",
+          "ok": true,
+          "detail": "session=true time=10:00:00 from=true count=1"
+        },
+        {
+          "description": "A: the top-up child rode along (same new session, stamped)",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "A: the source released all 3 seats",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "description": "A: the target claimed all 3 seats",
+          "ok": true,
+          "detail": "3"
+        },
+        {
+          "description": "B: paid family of 3 built on a second session",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "B: the move was REFUSED (no room for the whole family)",
+          "ok": true,
+          "detail": "HTTP 409"
+        },
+        {
+          "description": "B: the family did NOT move (still on the source, never stamped)",
+          "ok": true,
+          "detail": "p.session=true count=0"
+        },
+        {
+          "description": "B: the source is untouched (still 3 seats)",
+          "ok": true,
+          "detail": "3"
+        },
+        {
+          "description": "B: the full target is untouched (still 4 seats)",
+          "ok": true,
+          "detail": "4"
+        },
+        {
+          "description": "C: a move into a slot past its own cutoff is REFUSED",
+          "ok": true,
+          "detail": "HTTP 409"
+        },
+        {
+          "description": "C: the family still did NOT move",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "C: the past-cutoff target claimed nobody",
+          "ok": true,
+          "detail": "0"
+        }
+      ],
+      "status": "passed",
+      "note": "The move is one atomic RPC: it locks the family and both sessions, re-checks capacity and the cutoff under lock, then claims the target and releases the source — or raises and rolls the whole thing back, leaving the source exactly as it was."
+    },
+    {
+      "number": "12",
+      "title": "Reductions are gone: a lower count is refused and nothing is refunded",
+      "checks": [
+        {
+          "description": "a confirmed per-person order, £165 for 3",
+          "ok": true,
+          "detail": "confirmed £165"
+        },
+        {
+          "description": "a per-person reduction is REFUSED (400)",
+          "ok": true,
+          "detail": "HTTP 400 {\"ok\":false,\"error\":\"You can only add places here. To lower your count, message the provider or cancel and rebook.\"}"
+        },
+        {
+          "description": "STRIPE — nothing was refunded",
+          "ok": true,
+          "detail": "refunded=0"
+        },
+        {
+          "description": "the order is untouched — still £165 for 3, no refund recorded",
+          "ok": true,
+          "detail": "£165 q3 refunded 0"
+        },
+        {
+          "description": "an extra-guests reduction is REFUSED (400)",
+          "ok": true,
+          "detail": "HTTP 400 {\"ok\":false,\"error\":\"You can only add guests here. To lower your party, message the provider or cancel and rebook.\"}"
+        },
+        {
+          "description": "the extra-guests order is untouched — still £300, party 6, nothing refunded",
+          "ok": true,
+          "detail": "£300 party 6 refunded 0"
+        }
+      ],
+      "status": "passed",
+      "note": "Guest-count reductions and the reduce-and-refund path are removed everywhere. To lower a party a guest cancels or messages the provider."
+    },
+    {
+      "number": "13",
+      "title": "Extra-guest fees are charged at booking, and the party is capped at the stay",
+      "checks": [
+        {
+          "description": "a party of 6 on the £220-for-4 item is accepted (stay is 8)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1FVJforutWf2OqPyEkNrUDdgaPcMr9WOL3WTE9i9Ix1XDABGQpb44Xnmt#fidnandhYHdWcXxpYCc%2"
+        },
+        {
+          "description": "the order records £300 for a party of 6 (220 + 2×£40)",
+          "ok": true,
+          "detail": "£300 party 6"
+        },
+        {
+          "description": "a party of 9 is REFUSED — over the stay of 8 / the item max",
+          "ok": true,
+          "detail": "HTTP 400"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "14",
+      "title": "An increase holds the extra on the card; the provider accepts and it is captured",
+      "checks": [
+        {
+          "description": "the increase is a REQUEST — a Checkout hold, not an instant charge",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Oh8aieg8Oba9RTLLvGF6r7vZNv95MiV9in4QWg7SSocApcnKN52Pols3#fidnandhYHdWcXxpYCc%2"
+        },
+        {
+          "description": "a holding child was written for the extra place (£55)",
+          "ok": true,
+          "detail": "holding £55"
+        },
+        {
+          "description": "the completed hold is now AUTHORISED — a request to answer",
+          "ok": true,
+          "detail": "authorised"
+        },
+        {
+          "description": "accept succeeds",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"confirmed\"}"
+        },
+        {
+          "description": "STRIPE — the £55 hold was CAPTURED on accept",
+          "ok": true,
+          "detail": "captured=true amt=5500"
+        },
+        {
+          "description": "APP — the accepted extra is its own held order, paid out with the rest",
+          "ok": true,
+          "detail": null
+        }
+      ],
+      "status": "passed",
+      "note": "The accepted extra is its own held charge, so the provider payout is the sum across the order family."
+    },
+    {
+      "number": "15",
+      "title": "A declined increase releases the hold; an unanswered one is released by the 48h sweep",
+      "checks": [
+        {
+          "description": "decline succeeds and the child is declined",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "STRIPE — the hold was released, nothing captured",
+          "ok": true,
+          "detail": "captured=false"
+        },
+        {
+          "description": "the unanswered hold is EXPIRED by the sweep",
+          "ok": true,
+          "detail": "expired"
+        },
+        {
+          "description": "STRIPE — the expired hold was released, nothing captured",
+          "ok": true,
+          "detail": "captured=false"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "16",
+      "title": "Past the window every change is closed; inside it a date change is a provider request",
+      "checks": [
+        {
+          "description": "change-count is CLOSED past the window (409)",
+          "ok": true,
+          "detail": "HTTP 409"
+        },
+        {
+          "description": "change-date is CLOSED past the window (409)",
+          "ok": true,
+          "detail": "HTTP 409"
+        },
+        {
+          "description": "a date change is a REQUEST, not an instant move",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"requested\":true,\"date\":\"2026-10-20\",\"time\":null}"
+        },
+        {
+          "description": "the requested date is parked and the order stays on its date",
+          "ok": true,
+          "detail": "pending=2026-10-20 date=2026-10-19"
+        },
+        {
+          "description": "the provider accepts the date and it applies",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "the booking is now on the new date, the request cleared",
+          "ok": true,
+          "detail": "date=2026-10-20"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "17",
+      "title": "A provider’s full refund records the full amount and reverses the payout to nothing",
+      "checks": [
+        {
+          "description": "the provider’s full refund succeeds",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"refunded\"}"
+        },
+        {
+          "description": "STRIPE — the full £220 was refunded to the card",
+          "ok": true,
+          "detail": "refunded=22000"
+        },
+        {
+          "description": "amount_refunded is set to the FULL amount and orderNet is £0",
+          "ok": true,
+          "detail": "refunded refunded £220 net £0.00"
+        }
+      ],
+      "status": "passed",
+      "note": "A provider refund writes amount_refunded = price, so orderNet reads zero — and the order is never paid out (it is no longer confirmed)."
+    },
+    {
+      "number": "18",
+      "title": "A lost change-request webhook: the rebuild sweep reconciles the hold; an expired one has its PaymentIntent cancelled",
+      "checks": [
+        {
+          "description": "the increase is a request — a holding child is written",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1csx9DkgIKqLJHEB66FW5AgA7dbSOBM1GNwFdMPmfDFHvuwThnnCNuMmw#f"
+        },
+        {
+          "description": "the rebuild sweep reconciled the lost hold to AUTHORISED",
+          "ok": true,
+          "detail": "authorised pi=pi_3ULJ8JPTBrEa7mS71jBqp8GG"
+        },
+        {
+          "description": "the hold is kept — the PaymentIntent still requires capture",
+          "ok": true,
+          "detail": "requires_capture"
+        },
+        {
+          "description": "the expired hold is marked expired",
+          "ok": true,
+          "detail": "expired"
+        },
+        {
+          "description": "STRIPE — the held PaymentIntent was CANCELLED, releasing the card",
+          "ok": true,
+          "detail": "canceled"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "19",
+      "title": "A made-to-order cart of standard items books and charges instantly",
+      "checks": [
+        {
+          "description": "the order is INSTANT (books straight away, not a request)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_b1l5vgK68CPHDkfYYmGZSAqkQqnqxmO0Zs9gBqF8OiRfbyerhb07zS5rnp#fidnandhYHdWcXxpYCc%2"
+        },
+        {
+          "description": "the order is CONFIRMED at once — no provider step",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "description": "it records the cart lines and the £72 total",
+          "ok": true,
+          "detail": "£72 · 2 lines"
+        },
+        {
+          "description": "STRIPE — the £72 was captured immediately",
+          "ok": true,
+          "detail": "captured=true amt=7200"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "20",
+      "title": "A made-to-order cart with a custom item is a request the provider accepts",
+      "checks": [
+        {
+          "description": "the order is a REQUEST (held, not instant)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_b1aQV3XnYfVgrDv7h2hjCVMuFYXISpUBbi1tGKforcGIekuvBCuQiR7jSd#fidnandhYHdWcXxpYCc%2"
+        },
+        {
+          "description": "the held order is AUTHORISED — a request to answer",
+          "ok": true,
+          "detail": "authorised"
+        },
+        {
+          "description": "it carries both cart lines and the £66 total",
+          "ok": true,
+          "detail": "£66"
+        },
+        {
+          "description": "the provider accepts and it is captured",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "STRIPE — the £66 hold was captured on accept",
+          "ok": true,
+          "detail": "captured=true amt=6600"
+        }
+      ],
+      "status": "passed",
+      "note": "Any custom item turns the whole order into a request; an all-standard cart is instant."
+    },
+    {
+      "number": "21",
+      "title": "Held money is paid the day after the experience: nothing before, total − 10% after, drawn on the charge, never twice",
+      "checks": [
+        {
+          "description": "APP: confirmed, held, £11 fee frozen, not yet paid out",
+          "ok": true,
+          "detail": "confirmed held £11 paid_out_at=null"
+        },
+        {
+          "description": "STRIPE: captured to us, no transfer at confirm",
+          "ok": true,
+          "detail": "undefined"
+        },
+        {
+          "description": "the payout run ran",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"sent\":1,\"skipped\":0,\"failed\":0,\"reconciled\":0,\"nothingToPay\":0,\"providersWaitingToOnboard\":0,\"notReached\":0,\"problems\":0}"
+        },
+        {
+          "description": "APP: the order is paid out — £99 (£110 less our £11)",
+          "ok": true,
+          "detail": "paid_out_at=2026-09-30T08:46:59.382+00:00 £99"
+        },
+        {
+          "description": "STRIPE: a £99 transfer to the provider’s account",
+          "ok": true,
+          "detail": "amount=9900 dest=acct_1U6iMxAJfMhUsIVc"
+        },
+        {
+          "description": "STRIPE: drawn on the order’s own charge (source_transaction), in the order’s transfer group",
+          "ok": true,
+          "detail": "source=ch_3ULJABPTBrEa7mS700F73854 group=service_order_2b5cce22-b7d1-48d7-bcae-93d62597196b"
+        },
+        {
+          "description": "APP: no order dated today or later was paid — only the day after",
+          "ok": true,
+          "detail": "11 future order(s), paid: 0"
+        },
+        {
+          "description": "a second run pays nothing more — one transfer in the group, the order unchanged",
+          "ok": true,
+          "detail": "transfers=1"
+        },
+        {
+          "description": "DB: a payout cannot be un-stamped (trigger refuses)",
+          "ok": true,
+          "detail": null
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "22",
+      "title": "Provider no-show: refunded in full from the money we hold — no transfer reversal, and the payout run then pays nothing",
+      "checks": [
+        {
+          "description": "STRIPE: the guest has the full £110 back",
+          "ok": true,
+          "detail": "11000"
+        },
+        {
+          "description": "STRIPE: no transfer existed and none was reversed",
+          "ok": true,
+          "detail": "transfer=undefined"
+        },
+        {
+          "description": "the payout run sends the provider nothing and settles the order at £0",
+          "ok": true,
+          "detail": "transfers=0 payout=£0"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "23",
+      "title": "Legacy order (paid under the old destination-charge flow): never paid again, and still refunds the old way",
+      "checks": [
+        {
+          "description": "APP: a pre-change session writes a DIRECT order",
+          "ok": true,
+          "detail": "direct"
+        },
+        {
+          "description": "STRIPE: the provider was paid by Stripe at capture (old flow)",
+          "ok": true,
+          "detail": "transfer=tr_3ULJAMPTBrEa7mS71tdF27su fee=1100"
+        },
+        {
+          "description": "DB: a paid direct order cannot be re-marked held (trigger refuses)",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "the payout run leaves it alone — no second payment",
+          "ok": true,
+          "detail": "paid_out_at=null transfers=0"
+        },
+        {
+          "description": "refunds the old way: guest refunded, our fee returned, the provider’s transfer reversed",
+          "ok": true,
+          "detail": "refunded=11000 fee_refunded=true reversed=11000"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "24",
+      "title": "Refund after payout: the guest is refunded from us and the provider’s payout is clawed back",
+      "checks": [
+        {
+          "description": "paid out £99 the day after",
+          "ok": true,
+          "detail": "£99"
+        },
+        {
+          "description": "the provider’s refund succeeds",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"refunded\"}"
+        },
+        {
+          "description": "STRIPE: the guest has the full £110 back",
+          "ok": true,
+          "detail": "11000"
+        },
+        {
+          "description": "STRIPE: the £99 payout was reversed in full",
+          "ok": true,
+          "detail": "reversed 9900"
+        },
+        {
+          "description": "APP: the reversal is recorded on the order, nothing owed",
+          "ok": true,
+          "detail": "reversed £99 owed £0 refunded"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "25",
+      "title": "Admin full refund BEFORE payout: refunded from the money we hold, the order refunded, and the payout run pays the provider nothing",
+      "checks": [
+        {
+          "description": "a non-admin (the provider) is refused and nothing moves",
+          "ok": true,
+          "detail": "HTTP 403"
+        },
+        {
+          "description": "a reason under the minimum is refused before any money moves",
+          "ok": true,
+          "detail": "HTTP 400"
+        },
+        {
+          "description": "more than was paid is refused (capped from Stripe, not the browser)",
+          "ok": true,
+          "detail": "HTTP 400 {\"ok\":false,\"error\":\"That is more than the £110.00 left to refund.\"}"
+        },
+        {
+          "description": "the admin refund succeeds",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"refunded\":110,\"remaining\":0,\"status\":\"refunded\",\"afterPayout\":false,\"reversed\":0,\"shortfall\":0}"
+        },
+        {
+          "description": "STRIPE: the guest has the full £110 back, as a plain refund (no transfer to reverse)",
+          "ok": true,
+          "detail": "refunded=11000 refunds=1"
+        },
+        {
+          "description": "STRIPE: the refund carries the audit row id, and the key was built from it",
+          "ok": true,
+          "detail": "f993c424-1879-45c3-b3a9-89e36e932ce4"
+        },
+        {
+          "description": "APP: the order is refunded, amount_refunded £110",
+          "ok": true,
+          "detail": "refunded £110"
+        },
+        {
+          "description": "AUDIT: who, what, why, when, flow, before payout, the Stripe refund id",
+          "ok": true,
+          "detail": "{\"id\":\"f993c424-1879-45c3-b3a9-89e36e932ce4\",\"order_id\":\"13e4a338-c914-4ff8-8df9-f2e2a06034cf\",\"provider_id\":\"d96488ae-0f19-4806-b313-6071f0f5829a\",\"admin_id\":\"dc5712e3-687e-4d8e-b130-174848b123b0\",\"amount\":110,\"reason\":"
+        },
+        {
+          "description": "the payout run sends the provider nothing — no transfer, never paid out",
+          "ok": true,
+          "detail": "transfers=0 payout=null"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "26",
+      "title": "Admin PART refund before payout (a double click sends one refund): the payout run pays the remainder less our fee",
+      "checks": [
+        {
+          "description": "a double click refunds ONCE — one 200, one refused, one refund at Stripe",
+          "ok": true,
+          "detail": "HTTP 200/409 refunds=1"
+        },
+        {
+          "description": "a late click from the stale page is refused (the refunded figure moved)",
+          "ok": true,
+          "detail": "HTTP 409"
+        },
+        {
+          "description": "APP: still confirmed, £30 recorded as refunded",
+          "ok": true,
+          "detail": "confirmed £30"
+        },
+        {
+          "description": "the payout run pays £72 — the £80 left less our £8 fee on it",
+          "ok": true,
+          "detail": "£72 transfer=7200"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "27",
+      "title": "Admin PART refund after payout: the guest is refunded and the provider's share of it is clawed back",
+      "checks": [
+        {
+          "description": "paid out £99 first",
+          "ok": true,
+          "detail": "£99"
+        },
+        {
+          "description": "the admin refund succeeds, after payout",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"refunded\":30,\"remaining\":80,\"status\":\"confirmed\",\"afterPayout\":true,\"reversed\":27,\"shortfall\":0}"
+        },
+        {
+          "description": "STRIPE: the guest has £30 back",
+          "ok": true,
+          "detail": "3000"
+        },
+        {
+          "description": "STRIPE: £27 of the £99 payout reversed — what the provider would not have been paid (£99 − £72)",
+          "ok": true,
+          "detail": "reversed 2700"
+        },
+        {
+          "description": "APP: payout_reversed £27, nothing owed, still confirmed",
+          "ok": true,
+          "detail": "reversed £27 owed £0"
+        },
+        {
+          "description": "AUDIT: after payout, the reversal id and £27 recorded",
+          "ok": true,
+          "detail": "{\"id\":\"e2adeecd-06e8-447e-9e2b-1e69bf0f44ec\",\"order_id\":\"83b823e4-78c3-4a0b-840e-5ad39a11bbd7\",\"provider_id\":\"d96488ae-0f19-4806-b313-6071f0f5829a\",\"admin_id\":\"dc5712e3-687e-4d8e-b130-174848b123b0\",\"a"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "28",
+      "title": "Admin full refund after payout with the provider's balance empty: the shortfall is owed on the order and the directors are told",
+      "checks": [
+        {
+          "description": "paid out £99 first",
+          "ok": true,
+          "detail": "£99"
+        },
+        {
+          "description": "the provider's available Stripe balance is empty before the refund",
+          "ok": true,
+          "detail": "£0 available"
+        },
+        {
+          "description": "the guest is still refunded in full",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"refunded\":110,\"remaining\":0,\"status\":\"refunded\",\"afterPayout\":true,\"reversed\":0,\"shortfall\":99}"
+        },
+        {
+          "description": "STRIPE: the guest has the full £110 back",
+          "ok": true,
+          "detail": "11000"
+        },
+        {
+          "description": "STRIPE: nothing reversed from an empty balance (the account is never driven negative)",
+          "ok": true,
+          "detail": "reversed 0"
+        },
+        {
+          "description": "APP: £99 owed on the order (payout_clawback_owed), order refunded",
+          "ok": true,
+          "detail": "owed £99 refunded"
+        },
+        {
+          "description": "AUDIT: the shortfall recorded against the refund",
+          "ok": true,
+          "detail": "{\"id\":\"615185b0-bea6-4bd9-81b0-9f00184f61e5\",\"order_id\":\"f8a001b3-80c8-45d7-a23e-6c5d50cc6c31\",\"provider_id\":\"d96488ae-0f19-4806-b313-6071f0f5829a\",\"admin_id\":\"dc5712e3-687e-4d8e-b130-174848b123b0\",\"a"
+        },
+        {
+          "description": "the director alert path fired (logMoneyFailure → alertDirectorsNow), naming the order",
+          "ok": true,
+          "detail": "1 alert row(s)"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "29",
+      "title": "Admin PART refund of a legacy direct order: the old way — our fee back and the provider's transfer reversed in proportion",
+      "checks": [
+        {
+          "description": "the admin refund succeeds on a direct order",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"refunded\":55,\"remaining\":55,\"status\":\"confirmed\",\"afterPayout\":false,\"reversed\":0,\"shortfall\":0}"
+        },
+        {
+          "description": "STRIPE: £55 back to the guest, half the transfer reversed, half our fee returned",
+          "ok": true,
+          "detail": "refunded=5500 reversed=5500/11000 fee_refunded=550"
+        },
+        {
+          "description": "AUDIT: direct flow, the transfer reversal id recorded",
+          "ok": true,
+          "detail": "{\"id\":\"775aceb0-11c6-48b8-9d16-a0a9f0325b04\",\"order_id\":\"e0b02e58-55fa-435d-bdf3-e3cbc483fb13\",\"provider_id\":\"d96488ae-0f19-4806-b313-6071f0f5829a\",\"admin_id\":\"dc5712e3-687e-4d8e-b130-174848b123b0\",\"a"
+        },
+        {
+          "description": "APP: still confirmed, £55 refunded, never paid out by us",
+          "ok": true,
+          "detail": "confirmed £55"
+        }
+      ],
+      "status": "passed",
+      "note": null
     }
   ]
 }

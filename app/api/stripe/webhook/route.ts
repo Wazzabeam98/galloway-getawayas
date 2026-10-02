@@ -1,15 +1,21 @@
 import { logError } from '@/lib/logError';
+import { logMoneyFailure } from '@/lib/moneyAlert';
 import { guidanceFor } from '@/lib/disputes';
-import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, detailRows, SITE_URL } from '@/lib/email';
+import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, noteCallout, allergyCallout, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
-import { expiryFrom } from '@/lib/serviceOrders';
-import { displayName } from '@/lib/utils';
-import { requestedWhen } from '@/lib/serviceEnquiries';
-import { tradeLabel } from '@/lib/serviceProviders';
-import { guestBookedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
-import { cancellationPosition } from '@/lib/cancellationView';
+import { formatTime } from '@/lib/utils';
+import { createRequestOrderFromSession } from '@/lib/requestOrder';
+import { settlePaidBookingSession } from '@/lib/settlePaidBooking';
+import { authoriseChangeRequest } from '@/lib/changeRequest';
+import { resolveGuestForPaidOrder, supabaseGuestStore, guestMagicLink } from '@/lib/guestAccount';
+import { recordOrderGuestTerms } from '@/lib/agreementRecords';
+import { notifyTopUpConfirmed } from '@/lib/slotNotify';
+import { issueRefunds } from '@/lib/refundSpread';
+import { round2 } from '@/lib/resolutions';
+import { applyBookingChange } from '@/lib/applyBookingChange';
+import { topUpHostForIncrease } from '@/lib/changePayout';
 
 export const dynamic = 'force-dynamic';
 
@@ -162,7 +168,20 @@ export async function POST(request: Request) {
     }
 
     if (!valid) {
-        console.error('[stripe/webhook] bad signature');
+        // Reported, not just printed. A rotated or mistyped signing secret
+        // refuses EVERY event, and until now the only trace was a Vercel log
+        // line nobody reads while guests were charged and left unconfirmed.
+        // The reconcile cron recovers the bookings; this is what tells you why
+        // it had to. The event id and type are read from the unverified body —
+        // for finding it in Stripe, never for acting on.
+        let claimed: any = null;
+        try { claimed = JSON.parse(rawBody); } catch { /* not even JSON */ }
+        await logError('[webhook] a Stripe event failed its signature check and was refused', {
+            signature_present: !!signature,
+            secrets_configured: secrets.length,
+            claimed_event_id: (claimed && claimed.id) || null,
+            claimed_event_type: (claimed && claimed.type) || null,
+        }, { path: 'stripe/webhook' });
         return NextResponse.json({ ok: false }, { status: 400 });
     }
 
@@ -253,33 +272,257 @@ export async function POST(request: Request) {
             const bookingId = (cs.metadata && cs.metadata.booking_id) || cs.client_reference_id;
             const kind = (cs.metadata && cs.metadata.kind) || 'full';
 
-            // A guest's note (allergies, access, a request), rendered as a
-            // bordered amber block so it can't be skimmed past in the email.
-            // Empty note → empty string, so it simply drops out of the body.
-            const noteCallout = (n: unknown): string => {
-                const text = n ? String(n).trim() : '';
-                if (!text) return '';
-                return '<div style="margin:16px 0;padding:12px 14px;border:1px solid #f59e0b;'
-                    + 'border-radius:10px;background:#fffbeb">'
-                    + '<div style="font-size:12px;font-weight:600;text-transform:uppercase;'
-                    + 'letter-spacing:0.04em;color:#92400e">From the guest</div>'
-                    + '<div style="margin-top:4px;color:#451a03;white-space:pre-line">'
-                    + escapeHtml(text) + '</div></div>';
-            };
+            // A CHANGE REQUEST (extra places on a made_to_order / comes_to_you
+            // booking) was AUTHORISED at Checkout — a manual-capture hold. Turn the
+            // 'holding' child into an 'authorised' request the provider answers
+            // within 48 hours: respond captures (accept) or cancels (decline), and
+            // the service-orders cron releases an unanswered hold. No money has
+            // moved yet. Guarded on 'holding' so a redelivery/late sweep is a no-op.
+            if (kind === 'change_request') {
+                const orderId = cs.metadata && cs.metadata.order_id;
+                const pi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
+                // The ONE transition, shared with the reconcile sweep so a lost
+                // webhook is rebuilt identically (see lib/changeRequest).
+                if (orderId && pi) await authoriseChangeRequest(admin, orderId, pi);
+                return NextResponse.json({ ok: true });
+            }
 
-            // The allergy, louder than a note — red, and it leads the email. It is
-            // safety information a cook must not skim past, so it gets its own block
-            // rather than sitting inside the general note.
-            const allergyCallout = (a: unknown): string => {
-                const text = a ? String(a).trim() : '';
-                if (!text) return '';
-                return '<div style="margin:0 0 16px;padding:12px 14px;border:2px solid #e11d48;'
-                    + 'border-radius:10px;background:#fff1f2">'
-                    + '<div style="font-size:12px;font-weight:700;text-transform:uppercase;'
-                    + 'letter-spacing:0.04em;color:#9f1239">⚠ Allergy / dietary need</div>'
-                    + '<div style="margin-top:4px;color:#4c0519;white-space:pre-line">'
-                    + escapeHtml(text) + '</div></div>';
-            };
+            // A GUEST PAID A MONEY REQUEST on a stay (extra services / damage). The
+            // money and the host's share have already moved (automatic capture with
+            // transfer_data + application_fee), so this just records the outcome.
+            // Guarded on 'pending' so a redelivery is a no-op; stripe_events dedupes
+            // too.
+            if (kind === 'resolution_request') {
+                const resolutionId = cs.metadata && cs.metadata.resolution_id;
+                const pi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
+                if (resolutionId) {
+                    // The guest accepts into 'awaiting_guest_payment' now; older
+                    // rows (before that state) paid straight from 'pending'. Both
+                    // move to 'paid' here, and the guarded update makes a
+                    // redelivery a no-op.
+                    const { data: moved } = await admin.from('booking_resolutions')
+                        .update({ status: 'paid', paid_at: new Date().toISOString(), stripe_payment_intent_id: pi, updated_at: new Date().toISOString() })
+                        .eq('id', resolutionId).in('status', ['awaiting_guest_payment', 'pending']).select('id, host_id, guest_id, amount, reason, booking_id');
+                    if (moved && moved.length) {
+                        const r = moved[0];
+                        // Record the guest's payment in the ledger. The money moved
+                        // (automatic capture with transfer + fee) but nothing wrote
+                        // it here, so it was missing from the accounts. Guarded on
+                        // the row-claim above, so it runs once; 23505 means a
+                        // redelivery already recorded it (the one-row-per-intent
+                        // index covers non-refund kinds).
+                        const { error: reqLedgerError } = await admin.from('payments').insert({
+                            booking_id: r.booking_id,
+                            kind: 'resolution_request',
+                            amount: round2(Number(r.amount)),
+                            status: 'succeeded',
+                            stripe_payment_intent_id: pi,
+                        });
+                        if (reqLedgerError && reqLedgerError.code !== '23505') {
+                            await logError('[webhook] a resolution request was paid but is missing from the payments ledger', reqLedgerError, { path: 'stripe/webhook' });
+                        }
+                        try {
+                            const { data: hostUser } = await admin.auth.admin.getUserById(r.host_id);
+                            const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
+                            if (hostEmail) {
+                                await sendEmail(hostEmail, 'Your guest paid £' + round2(Number(r.amount)).toFixed(2), emailLayout(
+                                    '<p style="margin:0 0 16px;font-size:16px;">Your guest has paid the £' + round2(Number(r.amount)).toFixed(2)
+                                    + ' you requested (' + escapeHtml(String(r.reason).replace('_', ' ')) + '). Your share is on its way to your account.</p>'
+                                    + button(SITE_URL + '/dashboard/bookings/' + r.booking_id, 'Open the booking'),
+                                    'You’re receiving this because you host with Galloway Getaways.'));
+                            }
+                        } catch (mailErr) { await logError('[webhook] resolution_request host email', mailErr, { path: 'stripe/webhook' }); }
+                    }
+                }
+                return NextResponse.json({ ok: true });
+            }
+
+            // A HOST FUNDED A REFUND ("send money"). Their one-off payment has
+            // cleared into the platform balance; now refund the guest the same
+            // amount to their original card, capped at what they have paid net of
+            // refunds, and record it against the booking. Guarded on
+            // 'awaiting_host_payment' so a redelivery never double-refunds.
+            if (kind === 'resolution_send') {
+                const resolutionId = cs.metadata && cs.metadata.resolution_id;
+                const hostPi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
+                if (resolutionId) {
+                    // REFUND FIRST, MARK COMPLETED SECOND.
+                    //
+                    // This used to claim the row ('completed') before refunding.
+                    // If the refund then failed, the row was already terminal, so
+                    // nothing ever retried it: the host had paid and the guest was
+                    // never refunded, silently. The order is reversed here — the
+                    // refund is idempotent per charge on the key below, so a
+                    // redelivery or a retry after a failure never double-pays, and
+                    // the row is only marked 'completed' once money has actually
+                    // gone back. A failed refund leaves it 'awaiting_host_payment',
+                    // i.e. retryable on the next delivery or the reconcile sweep.
+                    const { data: resRow } = await admin.from('booking_resolutions')
+                        .select('id, booking_id, guest_id, amount, status')
+                        .eq('id', resolutionId).maybeSingle();
+                    if (resRow && resRow.status === 'awaiting_host_payment') {
+                        const r = resRow;
+                        const { data: booking } = await admin.from('bookings')
+                            .select('id, listing_id, guest_id, host_id, amount_paid, amount_refunded, stripe_payment_intent_id, balance_payment_intent_id, payout_transfer_id, payout_amount')
+                            .eq('id', r.booking_id).maybeSingle();
+                        const amount = round2(Number(r.amount));
+                        if (!booking) {
+                            await logMoneyFailure('[webhook] resolution_send: the funded booking vanished — host paid but no guest refund could be issued, reconcile at Stripe', { resolution: r.id, booking_id: r.booking_id }, { path: 'stripe/webhook' });
+                            return NextResponse.json({ ok: true });
+                        }
+                        // Idempotent per charge — the same key never double-refunds
+                        // across deliveries/retries; issueRefunds never throws for a
+                        // refusal, it reports how much it managed.
+                        const issued = await issueRefunds(
+                            booking,
+                            amount,
+                            { booking_id: r.booking_id, reason: 'host_send', initiated_by: 'host' },
+                            (intentId: string) => 'resolution-send-' + r.id + '-' + intentId,
+                        );
+                        const refundedNow = round2(issued.refundedPence / 100);
+                        if (refundedNow <= 0) {
+                            // Nothing went back. Leave the row 'awaiting_host_payment'
+                            // so a redelivery or the reconcile sweep retries it.
+                            await logMoneyFailure('[webhook] resolution_send: host funded £' + amount.toFixed(2) + ' but nothing could be refunded to the guest yet — the request stays open to retry', issued.failure || { resolution: r.id }, { path: 'stripe/webhook' });
+                            return NextResponse.json({ ok: true, refunded: 0 });
+                        }
+                        // Money moved. Claim the row so the ledger rows, the
+                        // amount_refunded write-back, and the guest email happen
+                        // exactly once even under a concurrent redelivery. If
+                        // another delivery already completed it, the refunds we
+                        // just (re)issued were idempotent no-ops — stop here.
+                        const { data: claimed } = await admin.from('booking_resolutions')
+                            .update({ status: 'completed', paid_at: new Date().toISOString(), stripe_payment_intent_id: hostPi, updated_at: new Date().toISOString() })
+                            .eq('id', r.id).eq('status', 'awaiting_host_payment')
+                            .select('id');
+                        if (claimed && claimed.length) {
+                            for (let i = 0; i < issued.refunds.length; i++) {
+                                // Refund rows are outside the one-row-per-intent
+                                // index, and the row-claim above runs this once,
+                                // so any insert error here is genuinely unexpected
+                                // — logged, never excused.
+                                const { error: refLedgerError } = await admin.from('payments').insert({
+                                    booking_id: r.booking_id, kind: 'refund',
+                                    amount: round2(issued.shares[i] / 100), status: 'succeeded',
+                                    stripe_payment_intent_id: issued.charges[i].intentId,
+                                });
+                                if (refLedgerError) {
+                                    await logError('[webhook] resolution_send: a guest refund is missing from the payments ledger', refLedgerError, { path: 'stripe/webhook' });
+                                }
+                            }
+                            await admin.rpc('record_booking_refund', { p_booking: r.booking_id, p_amount: refundedNow });
+                            if (refundedNow < amount) {
+                                await logMoneyFailure('[webhook] resolution_send: host funded £' + amount.toFixed(2) + ' but only £' + refundedNow.toFixed(2) + ' could be refunded to the guest — reconcile at Stripe', issued.failure || { resolution: r.id }, { path: 'stripe/webhook' });
+                            }
+                            try {
+                                const { data: guestUser } = await admin.auth.admin.getUserById(r.guest_id);
+                                const guestEmail = (guestUser && guestUser.user && guestUser.user.email) || '';
+                                if (guestEmail) {
+                                    await sendEmail(guestEmail, 'Your host has sent you £' + refundedNow.toFixed(2), emailLayout(
+                                        '<p style="margin:0 0 16px;font-size:16px;">Your host has sent you <strong>£' + refundedNow.toFixed(2)
+                                        + '</strong>. It goes back to the card you paid with, usually within five to ten days.</p>'
+                                        + button(SITE_URL + '/trips', 'View your trip'),
+                                        'You’re receiving this because you have a booking with Galloway Getaways.'));
+                                }
+                            } catch (mailErr) {
+                                await logError('[webhook] resolution_send guest refund email', mailErr, { path: 'stripe/webhook' });
+                            }
+                        }
+                    }
+                }
+                return NextResponse.json({ ok: true });
+            }
+
+            // A GUEST PAID A PRICE INCREASE FROM A "CHANGE RESERVATION" (booking_change).
+            // The stay is rewritten HERE, after the money has landed (the house
+            // rule). Claim the change first so a redelivery is a no-op, apply the
+            // change (the exclusion constraint guards the new dates), then record
+            // the extra payment against the booking. If the dates were taken while
+            // the guest was paying, refund the difference and leave the booking as
+            // it was — the same shape as the oversold branch below.
+            if (kind === 'booking_change') {
+                const changeId = cs.metadata && cs.metadata.change_id;
+                const changePi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
+                if (changeId) {
+                    const { data: claimed } = await admin.from('booking_change_requests')
+                        .update({ status: 'accepted', responded_at: new Date().toISOString(), stripe_payment_intent_id: changePi, updated_at: new Date().toISOString() })
+                        .eq('id', changeId).in('status', ['pending', 'awaiting_guest_payment'])
+                        .select('id, booking_id, guest_id, host_id, new_check_in, new_check_out, new_guests, new_children, new_pets, new_total, price_delta');
+                    if (claimed && claimed.length) {
+                        const chg = claimed[0];
+                        const delta = round2(Number(chg.price_delta));
+                        const { data: booking } = await admin.from('bookings')
+                            .select('id, amount_paid, amount_refunded, stripe_payment_intent_id, balance_payment_intent_id')
+                            .eq('id', chg.booking_id).maybeSingle();
+                        if (!booking) {
+                            await logMoneyFailure('[webhook] booking_change: the booking vanished — guest paid but no change could be applied, reconcile at Stripe', { change: chg.id, booking_id: chg.booking_id }, { path: 'stripe/webhook' });
+                            return NextResponse.json({ ok: true });
+                        }
+                        const applied = await applyBookingChange(admin, chg as any);
+                        if (!applied.ok) {
+                            // The guest paid but the new dates are gone. Refund the
+                            // extra and leave the booking on its original stay.
+                            // Refund THIS CHANGE'S OWN charge in full — not the
+                            // original booking charges. The guest paid the extra on
+                            // a separate payment intent that was never folded into
+                            // amount_paid (the apply never happened), so the money
+                            // to give back is exactly that intent, and the booking's
+                            // paid/refunded figures are left untouched.
+                            try {
+                                if (changePi) {
+                                    await stripeRequest('POST', '/refunds', {
+                                        payment_intent: changePi,
+                                        metadata: { booking_id: chg.booking_id, change_id: chg.id, reason: 'booking_change_reverted', initiated_by: 'system' },
+                                    }, 'booking-change-revert-' + chg.id);
+                                    await admin.from('payments').insert({
+                                        booking_id: chg.booking_id, kind: 'refund', amount: delta, status: 'succeeded',
+                                        stripe_payment_intent_id: changePi,
+                                    });
+                                }
+                            } catch (revErr) {
+                                await logMoneyFailure('[webhook] booking_change: the booking was gone AND refunding the change payment failed — reconcile at Stripe', revErr, { path: 'stripe/webhook' });
+                            }
+                            await admin.from('booking_change_requests').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', chg.id);
+                            try {
+                                const { data: gu } = await admin.auth.admin.getUserById(chg.guest_id);
+                                const ge = (gu && gu.user && gu.user.email) || '';
+                                if (ge) await sendEmail(ge, 'Your change couldn’t be made — you’ve been refunded', emailLayout(
+                                    '<p style="margin:0 0 16px;font-size:16px;">We’re sorry — the change couldn’t be made (the booking or those dates were no longer available while you were paying), so the <strong>£' + delta.toFixed(2) + '</strong> you just paid has been sent straight back to your card.</p>'
+                                    + button(SITE_URL + '/trips', 'View your trip'),
+                                    'You’re receiving this because you have a booking with Galloway Getaways.'));
+                            } catch { /* email best effort */ }
+                            return NextResponse.json({ ok: true, reverted: true });
+                        }
+                        // Applied. Record the extra payment and fold it into the
+                        // booking's paid/balance figures.
+                        const { error: payErr } = await admin.from('payments').insert({
+                            booking_id: chg.booking_id, kind: 'booking_change', amount: delta, status: 'succeeded',
+                            stripe_payment_intent_id: changePi,
+                        });
+                        if (payErr && payErr.code !== '23505') {
+                            await logError('[webhook] booking_change: the extra payment is missing from the payments ledger', payErr, { path: 'stripe/webhook' });
+                        }
+                        const newPaid = round2(Number(booking.amount_paid || 0) + delta);
+                        const newBalance = round2(Math.max(0, Number(chg.new_total) - (newPaid - Number(booking.amount_refunded || 0))));
+                        await admin.from('bookings').update({ amount_paid: newPaid, balance_amount: newBalance }).eq('id', chg.booking_id);
+                        // If the host has ALREADY been paid out for this stay, the
+                        // payout cron won't revisit it — so send them their share of
+                        // the extra now (net of commission). If they're not yet paid
+                        // out, this is a no-op and the cron pays the new total.
+                        await topUpHostForIncrease(admin, chg.booking_id, delta, chg.id, changePi);
+                        await admin.from('booking_change_requests').update({ applied_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', chg.id);
+                        try {
+                            const { data: hu } = await admin.auth.admin.getUserById(chg.host_id);
+                            const he = (hu && hu.user && hu.user.email) || '';
+                            if (he) await sendEmail(he, 'Your guest paid for the change', emailLayout(
+                                '<p style="margin:0 0 16px;font-size:16px;">Your guest accepted and paid £' + delta.toFixed(2) + ' for the change. The booking now runs ' + escapeHtml(String(chg.new_check_in)) + ' to ' + escapeHtml(String(chg.new_check_out)) + '.</p>'
+                                + button(SITE_URL + '/dashboard/bookings/' + chg.booking_id, 'Open the booking'),
+                                'You’re receiving this because you host with Galloway Getaways.'));
+                        } catch { /* email best effort */ }
+                    }
+                }
+                return NextResponse.json({ ok: true });
+            }
 
             // A SLOT BOOKING WAS PAID.
             //
@@ -294,14 +537,84 @@ export async function POST(request: Request) {
                 const orderId = cs.metadata && cs.metadata.order_id;
                 const slotPi = (cs.payment_intent as string) || null;
                 if (orderId) {
+                    // MINT THE GUEST, IF THIS HOLD HAS NO OWNER. An anonymous
+                    // standalone booker paid without an account; the account is
+                    // created (or a returning guest reused) now that the money has
+                    // confirmed, keyed on the Stripe-proven payer address, and the
+                    // order attached to it. A signed-in booker's hold already has a
+                    // guest_id, so this is skipped for them and on any redelivery.
+                    const { data: hold } = await admin
+                        .from('service_orders')
+                        .select('guest_id, guest_email, guest_name, guest_phone, guest_terms_version, guest_terms_accepted_at')
+                        .eq('id', orderId)
+                        .maybeSingle();
+
+                    const payerEmail = (cs.customer_details && cs.customer_details.email) || cs.customer_email || null;
+                    const wasAnonymous = !!(hold && !hold.guest_id);
+                    let mintedGuestId: string | null = null;
+                    let mintedEmail: string | null = null;
+
+                    if (wasAnonymous) {
+                        try {
+                            const resolved = await resolveGuestForPaidOrder(supabaseGuestStore(admin), {
+                                typedEmail: hold!.guest_email,
+                                payerEmail,
+                                name: hold!.guest_name,
+                                phone: hold!.guest_phone,
+                            });
+                            mintedGuestId = resolved.id;
+                            mintedEmail = resolved.email;
+                        } catch (mintErr) {
+                            // The money is captured, so the confirm must not be lost
+                            // — but 'confirmed' with a null guest_id would fail the
+                            // guest_present_once_paid CHECK. So leave the row
+                            // 'holding' and let the reconcile sweep (which also
+                            // mints) confirm it on its next pass. Reported, not
+                            // swallowed.
+                            await logError(
+                                '[webhook] a slot order was paid but the guest account could not be minted — '
+                                    + 'the reconcile sweep will confirm it',
+                                mintErr,
+                                { path: 'stripe/webhook' }
+                            );
+                            return NextResponse.json({ ok: true, mint_deferred: true });
+                        }
+                    }
+
+                    const confirmPatch: Record<string, any> = { status: 'confirmed', stripe_payment_intent_id: slotPi };
+                    if (mintedGuestId) confirmPatch.guest_id = mintedGuestId;
+
+                    // With no contact form, the provider's view of who's coming comes
+                    // from what Stripe collected at Checkout — backfill the snapshot
+                    // for an anonymous order that carried none.
+                    if (wasAnonymous) {
+                        const payerName = (cs.customer_details && cs.customer_details.name) || null;
+                        if (!hold!.guest_email && (mintedEmail || payerEmail)) confirmPatch.guest_email = mintedEmail || payerEmail;
+                        if (!hold!.guest_name && payerName) confirmPatch.guest_name = payerName;
+                    }
+
                     const { data: slotRows, error: slotConfErr } = await admin
                         .from('service_orders')
-                        .update({ status: 'confirmed', stripe_payment_intent_id: slotPi })
+                        .update(confirmPatch)
                         .eq('id', orderId)
                         .eq('status', 'holding')
-                        .select('id, provider_id, service_date, service_time, item_name, quantity, price, note, allergy');
+                        .select('id, parent_order_id, provider_id, provider_business_name, guest_email, service_date, service_time, item_name, quantity, price, note, allergy');
                     if (slotConfErr) {
                         console.error('[webhook] slot-order confirm', orderId, slotConfErr.message);
+                    }
+
+                    // AN ANONYMOUS BOOKER'S GUEST TERMS. They ticked them at
+                    // checkout with no account to record against; now that the
+                    // account is minted, write the acceptance against it — with the
+                    // version and the checkout time carried on the order, not this
+                    // mint time. Only on the first confirm (a row was returned) and
+                    // only when we minted here. Best-effort: the fact stays on the
+                    // order, and a missing record is caught at next sign-in.
+                    if (mintedGuestId && slotRows && slotRows.length) {
+                        const { error: gtErr } = await recordOrderGuestTerms(admin, mintedGuestId, hold);
+                        if (gtErr) {
+                            await logError('[webhook] guest terms acceptance for a minted booker could not be recorded — it stays on the order', gtErr, { path: 'stripe/webhook' });
+                        }
                     }
 
                     // Both notifications for a slot booking. It books instantly
@@ -311,8 +624,14 @@ export async function POST(request: Request) {
                     // still 'holding', so a redelivered event updates nothing and
                     // sends nothing twice. A mail failure never touches the money.
                     const slotOrder = slotRows && slotRows[0];
-                    if (slotOrder) {
-                        const time = slotOrder.service_time ? String(slotOrder.service_time).slice(0, 5) : '';
+                    // AN ADDED PLACE (a per-person top-up) is not a new booking:
+                    // it sends the count-went-up emails, not the "new booking"
+                    // ones. Only on the first confirm (slotOrder is returned only
+                    // while the row was still 'holding'), so a redelivery is silent.
+                    if (slotOrder && slotOrder.parent_order_id) {
+                        await notifyTopUpConfirmed(admin, slotOrder);
+                    } else if (slotOrder) {
+                        const time = slotOrder.service_time ? formatTime(String(slotOrder.service_time)) : '';
                         const qty = Number(slotOrder.quantity) || 1;
                         const { data: prov } = await admin
                             .from('service_providers')
@@ -334,13 +653,14 @@ export async function POST(request: Request) {
                                         allergyCallout(slotOrder.allergy)
                                         + '<p>A guest has booked '
                                         + escapeHtml(slotOrder.item_name || business)
-                                        + ' for ' + escapeHtml(String(slotOrder.service_date))
+                                        + ' for ' + escapeHtml(formatDate(String(slotOrder.service_date)))
                                         + (time ? ' at ' + escapeHtml(time) : '')
                                         + (qty > 1 ? ' · ' + qty + ' places' : '')
                                         + '.</p>'
                                         + noteCallout(slotOrder.note)
                                         + button(SITE_URL + '/services/dashboard', 'View your bookings'),
-                                        'You’re receiving this because you offer experiences on Galloway Getaways.'
+                                        'You’re receiving this because you offer experiences on Galloway Getaways.',
+                                        undefined, NEUTRAL_SUBTITLE
                                     )
                                 );
                             }
@@ -353,8 +673,18 @@ export async function POST(request: Request) {
                         // and hears nothing. Email is the one that reaches them off
                         // the site.
                         try {
-                            const guestEmail = (cs.customer_details && cs.customer_details.email) || cs.customer_email || null;
+                            const guestEmail = mintedEmail || payerEmail;
                             if (guestEmail) {
+                                // The link back to the booking. A brand-new guest
+                                // (minted just now, no session in their browser)
+                                // gets a single-use magic link that signs them in on
+                                // the order page; a signed-in booker gets the plain
+                                // link. If the magic link can't be minted, fall back
+                                // to the plain link, which asks them to sign in.
+                                const orderPath = '/experiences/order/' + slotOrder.id;
+                                const viewUrl = wasAnonymous
+                                    ? ((await guestMagicLink(guestEmail, orderPath)) || (SITE_URL + orderPath))
+                                    : (SITE_URL + orderPath);
                                 await sendEmail(
                                     guestEmail,
                                     'Your booking is confirmed',
@@ -362,14 +692,15 @@ export async function POST(request: Request) {
                                         '<p>You’re booked'
                                         + (slotOrder.item_name ? ' for ' + escapeHtml(slotOrder.item_name) : '')
                                         + ' with ' + escapeHtml(business)
-                                        + ' on ' + escapeHtml(String(slotOrder.service_date))
+                                        + ' on ' + escapeHtml(formatDate(String(slotOrder.service_date)))
                                         + (time ? ' at ' + escapeHtml(time) : '')
                                         + (qty > 1 ? ', for ' + qty + ' places' : '')
                                         + '.</p>'
                                         + (slotOrder.price != null
                                             ? '<p>You paid £' + Number(slotOrder.price).toFixed(2) + '.</p>' : '')
-                                        + button(SITE_URL + '/experiences/order/' + slotOrder.id, 'View your booking'),
-                                        'You’re receiving this because you booked an experience on Galloway Getaways.'
+                                        + button(viewUrl, 'View your booking'),
+                                        'You’re receiving this because you booked an experience on Galloway Getaways.',
+                                        undefined, NEUTRAL_SUBTITLE
                                     )
                                 );
                             }
@@ -435,651 +766,21 @@ export async function POST(request: Request) {
             // the provider to confirm before a penny moves. Created here, once,
             // because the stripe_events unique insert above dedupes redelivery.
             if (kind === 'service_order') {
-                const md = cs.metadata || {};
-                const piId = (cs.payment_intent as string) || null;
-
-                const { data: prov } = await admin
-                    .from('service_providers')
-                    .select('id, business_name, trade, contact_email, exclusive_per_date')
-                    .eq('id', md.provider_id)
-                    .maybeSingle();
-
-                const { data: guest } = await admin
-                    .from('profiles')
-                    .select('id, full_name, preferred_name, show_full_name, phone, email')
-                    .eq('id', md.guest_id)
-                    .maybeSingle();
-
-                const guestsNum = md.guests ? parseInt(md.guests, 10) : null;
-                const nowIso = new Date().toISOString();
-
-                const { data: order, error: orderErr } = await admin
-                    .from('service_orders')
-                    .insert({
-                        provider_id: md.provider_id,
-                        guest_id: md.guest_id,
-                        listing_id: md.listing_id || null,
-                        booking_id: md.booking_id || null,
-                        trade: (prov && prov.trade) || null,
-                        // Snapshotted so the one-per-date unique index can see it
-                        // (an index predicate reads only its own table's columns).
-                        // A chef/masseur is exclusive; a baker is not.
-                        exclusive_per_date: !!(prov && prov.exclusive_per_date),
-                        service_date: md.service_date,
-                        guests: Number.isFinite(guestsNum as number) ? guestsNum : null,
-                        price: Number(cs.amount_total || 0) / 100,
-                        commission_rate: Number(md.commission_rate) || 0.10,
-                        status: 'authorised',
-                        // The provider is a third party — a chef, a photographer, a
-                        // guide — so this goes through displayName() like any other
-                        // place one person is named to another. It is stored rather
-                        // than looked up at read time, so an unhonoured value here
-                        // would outlive the setting that should have masked it.
-                        //
-                        // Empty fallback, stored as null: the provider's dashboard
-                        // omits the "For ..." line entirely when there is no name,
-                        // which reads better than "For Guest".
-                        guest_name: displayName(guest, '') || null,
-                        guest_phone: guest ? guest.phone : null,
-                        guest_email: (guest && guest.email) || cs.customer_details?.email || null,
-                        note: md.note || null,
-                        allergy: md.allergy || null,
-                        provider_business_name: prov ? prov.business_name : null,
-                        // The item the guest picked, snapshotted so editing or
-                        // removing it later never rewrites this order. item_id is
-                        // a soft link (null if that metadata is absent).
-                        item_id: md.item_id || null,
-                        item_name: md.item_name || null,
-                        item_description: md.item_description || null,
-                        // The unit, per-unit price and count, snapshotted with
-                        // the rest. price (above) is the total actually charged;
-                        // these say how it was arrived at — "6 × £30 per person".
-                        item_unit: md.item_unit || null,
-                        unit_price: md.unit_price ? Number(md.unit_price) : null,
-                        quantity: md.quantity ? parseInt(md.quantity, 10) : 1,
-                        stripe_payment_intent_id: piId,
-                        expires_at: expiryFrom(nowIso),
-                        created_at: nowIso,
-                    })
-                    .select('id')
-                    .single();
-
-                // LOST THE RACE (chefs only). Two guests can both pass the order
-                // route's pre-check for a chef in the same moment; the partial
-                // unique index (20260901160000, chef-only) then lets exactly one
-                // order exist and rejects the other. The rejected guest has a
-                // hold on their card for an evening that is no longer theirs —
-                // so release it here, at once, rather than leaving them held for
-                // 48 hours for nothing. A baker has no such index, so this never
-                // fires for them (they can take many orders per date).
-                //
-                // '23505' is a unique violation. Any other insert error is a
-                // real failure: the hold stands and the sweep will release it,
-                // and it is reported rather than swallowed.
-                if (orderErr) {
-                    const raced = (orderErr as any).code === '23505';
-                    if (raced && piId) {
-                        try {
-                            await stripeRequest(
-                                'POST',
-                                '/payment_intents/' + piId + '/cancel',
-                                undefined,
-                                'cancel-race-' + piId
-                            );
-                        } catch (cancelErr: any) {
-                            await logError('[webhook] could not release a raced service-order hold', cancelErr, { path: 'stripe/webhook' });
-                        }
-                    }
-                    await logError(
-                        raced
-                            ? '[webhook] a second guest lost the race for a slot; their hold was released'
-                            : '[webhook] a service order could not be recorded',
-                        orderErr,
-                        { path: 'stripe/webhook' }
-                    );
-                    // Handled: the event is dealt with, so Stripe should not retry.
-                    return NextResponse.json({ ok: true });
-                }
-
-                // Tell the provider there is something to answer. Best-effort:
-                // the hold is placed whether or not the mail sends, and the
-                // provider dashboard shows it regardless.
-                try {
-                    if (prov && prov.contact_email && order) {
-                        await sendEmail(
-                            prov.contact_email,
-                            md.allergy
-                                ? 'A guest would like to book you — allergy noted, please read'
-                                : (md.note ? 'A guest would like to book you — please read their note' : 'A guest would like to book you'),
-                            emailLayout(
-                                allergyCallout(md.allergy)
-                                + '<p>A guest staying nearby has asked to book '
-                                + escapeHtml(prov.business_name || 'your experience')
-                                + (md.item_name ? ' — ' + escapeHtml(String(md.item_name)) : '')
-                                + ' for ' + escapeHtml(String(md.service_date))
-                                + (Number.isFinite(guestsNum as number) && (guestsNum as number) > 0
-                                    ? ' · ' + guestsNum + ' guest' + (guestsNum === 1 ? '' : 's') : '')
-                                + '.</p>'
-                                + noteCallout(md.note)
-                                + '<p>Their card is held, not charged. Confirm within 48 hours to '
-                                + 'take the booking; if you can’t make it, decline and the hold is '
-                                + 'released.</p>'
-                                // Their dashboard, deep-linked to THIS request by
-                                // its id — the dashboard row carries a matching
-                                // anchor and highlights on arrival. The old link
-                                // carried ?section=orders, which nothing read, so
-                                // it dropped the chef on the trade picker; then a
-                                // bare /services/dashboard landed them on the whole
-                                // inbox. This lands on the request itself.
-                                + button(SITE_URL + '/services/dashboard#order-' + order.id, 'View the request'),
-                                'You’re receiving this because you offer experiences on Galloway Getaways.'
-                            )
-                        );
-                    }
-                } catch (mailErr) {
-                    console.error('[stripe/webhook] service order notify failed', mailErr);
-                }
-
+                // The order row is created here, from the completed session, the
+                // same one function the reconcile sweep calls when this webhook
+                // never lands — never two shapes drifting apart. It is idempotent
+                // on the held PaymentIntent, handles the chef one-per-date race
+                // (releasing the losing hold), and tells the provider. Every
+                // outcome is handled, so Stripe should not retry.
+                await createRequestOrderFromSession(admin, cs);
                 return NextResponse.json({ ok: true });
             }
 
+            // A COTTAGE STAY WAS PAID FOR (deposit, full, or a balance paid by
+            // hand). Settled by the one function the reconcile cron and the
+            // success page also call — see lib/settlePaidBooking.
             if (bookingId && cs.payment_status === 'paid') {
-                const amount = Number(cs.amount_total || 0) / 100;
-
-                // The card is saved on the PaymentIntent, so fetch it to
-                // record what to charge for the balance later.
-                let paymentMethodId: string | null = null;
-                let customerId: string | null = (cs.customer as string) || null;
-
-                try {
-                    if (cs.payment_intent) {
-                        const pi = await stripeRequest('GET', '/payment_intents/' + cs.payment_intent);
-                        paymentMethodId = pi.payment_method || null;
-                        if (!customerId) customerId = pi.customer || null;
-                    }
-                } catch (err) {
-                    // Not fatal — the guest has paid. Only the automatic
-                    // balance charge needs these, and there's a pay link
-                    // as a fallback.
-                    //
-                    // Reported all the same, because "not fatal" is doing a
-                    // lot of work in that sentence: without a saved card the
-                    // balance cannot be taken automatically 30 days out, so
-                    // the whole failure ladder is off for this booking and
-                    // the first anyone would know is a guest who never paid.
-                    // Whoever reads /admin/errors can go and fix the card on
-                    // file while there is still a month to do it in.
-                    console.error('[stripe/webhook] could not read payment intent', err);
-                    await logError(
-                        '[webhook] could not read the payment intent, so no card was saved — '
-                            + 'the balance for this booking cannot be charged automatically',
-                        err,
-                        { path: 'stripe/webhook' }
-                    );
-                }
-
-                const { data: booking } = await admin
-                    .from('bookings')
-                    .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, guest_id, check_in, check_out, host_id')
-                    .eq('id', bookingId)
-                    .maybeSingle();
-
-                // A balance paid by hand from the reminder email. The booking
-                // is already live, so only the money changes — the status and
-                // the deposit already recorded are left alone.
-                if (kind === 'balance') {
-                    // THE LEDGER ROW GOES FIRST, AND IT IS WHAT DECIDES.
-                    //
-                    // This used to update the booking first and then write the
-                    // ledger row, with amount_paid = amount_paid + amount.
-                    // Adding is the right sum — the deposit is already in that
-                    // column and the balance is on top of it — but it is right
-                    // exactly once, and nothing made it once. One £150 balance
-                    // handled twice left a £300 booking claiming £450 had been
-                    // paid. Refunds and host payouts are both worked out from
-                    // that figure. MONEY-IDEMPOTENCY.md has the run.
-                    //
-                    // The fix is not to set instead of add — setting it to
-                    // `amount` would forget the deposit and understate what
-                    // the guest paid, which is the same bug pointing the other
-                    // way. It is to know whether this payment has already been
-                    // counted, and the database is the only thing that can say
-                    // so for certain.
-                    //
-                    // So: insert the ledger row first, and let the unique index
-                    // from 20260829090000_payments_one_row_per_intent.sql
-                    // answer the question. A 23505 here is not a failure, it is
-                    // the answer "this payment intent is already in the ledger"
-                    // — so leave amount_paid alone.
-                    //
-                    // THIS NEEDS THAT MIGRATION APPLIED FIRST. Without the
-                    // index nothing ever conflicts, alreadyCounted is never
-                    // true, and this quietly goes back to double-counting.
-                    // AND IT NEEDS AN INTENT ID ON THE ROW. The index only
-                    // covers rows where stripe_payment_intent_id is not null —
-                    // it has to, because the balance job claims an `attempting`
-                    // row before a payment intent exists. So a balance row
-                    // written without one is not protected: nothing conflicts,
-                    // alreadyCounted is never true, and the double-count is
-                    // back, silently.
-                    //
-                    // Not hypothetical. Every `balance` row on production today
-                    // — three succeeded, three failed, all from mid-August —
-                    // has a null intent. They are historical and no two of them
-                    // are duplicates, but they are what this looks like when it
-                    // happens. A checkout session for a balance always carries
-                    // a payment intent, so if this ever fires something has
-                    // changed at Stripe's end and the protection is off.
-                    if (!cs.payment_intent) {
-                        await logError(
-                            '[webhook] a balance payment arrived with no payment intent, so it '
-                                + 'cannot be protected against being counted twice',
-                            { booking_id: bookingId, amount: amount, event_id: event.id },
-                            { path: 'stripe/webhook' }
-                        );
-                    }
-
-                    const { error: balanceLedgerError } = await admin.from('payments').insert({
-                        booking_id: bookingId,
-                        kind: 'balance',
-                        amount: amount,
-                        status: 'succeeded',
-                        stripe_payment_intent_id: cs.payment_intent || null,
-                    });
-
-                    const alreadyCounted =
-                        !!balanceLedgerError && balanceLedgerError.code === '23505';
-
-                    if (balanceLedgerError && !alreadyCounted) {
-                        await logError(
-                            '[webhook] a balance payment is missing from the payments ledger',
-                            balanceLedgerError,
-                            { path: 'stripe/webhook' }
-                        );
-                    }
-
-                    // Everything except the money is safe to write again:
-                    // 'paid' is 'paid', and a zero balance is a zero balance.
-                    const balancePatch: Record<string, any> = {
-                        payment_status: 'paid',
-                        balance_amount: 0,
-                        stripe_payment_intent_id: cs.payment_intent || null,
-                    };
-
-                    if (!alreadyCounted) {
-                        balancePatch.amount_paid =
-                            Math.round((Number((booking && booking.amount_paid) || 0) + amount) * 100) / 100;
-                    }
-
-                    const { error: balanceError } = await admin
-                        .from('bookings')
-                        .update(balancePatch)
-                        .eq('id', bookingId);
-
-                    if (balanceError) {
-                        await logError(
-                            '[webhook] a guest paid their balance and the booking could not be updated',
-                            balanceError,
-                            { path: 'stripe/webhook', userId: (booking && booking.guest_id) || undefined }
-                        );
-                    }
-
-                    return NextResponse.json({ ok: true, counted: !alreadyCounted });
-                }
-
-                // Instant Book listings confirm on payment; request
-                // bookings go back to pending for the host to accept.
-                let nextStatus = 'pending';
-                let listingTitle = 'your stay';
-                let listingRow: any = null;
-                if (booking) {
-                    const { data: listing } = await admin
-                        .from('listings')
-                        .select('instant_book, title, check_in_time, check_in_end_time, check_out_time, cancellation_policy')
-                        .eq('id', booking.listing_id)
-                        .maybeSingle();
-                    listingRow = listing || null;
-                    if (listing && listing.instant_book === true) nextStatus = 'confirmed';
-                    listingTitle = (listing && listing.title) || listingTitle;
-                }
-
-                const paidPatch: Record<string, any> = {
-                    payment_status: kind === 'deposit' ? 'deposit_paid' : 'paid',
-                    amount_paid: amount,
-                    paid_at: new Date().toISOString(),
-                    stripe_payment_intent_id: cs.payment_intent || null,
-                    stripe_customer_id: customerId,
-                    stripe_payment_method_id: paymentMethodId,
-                    status: nextStatus,
-                    confirmed_at: nextStatus === 'confirmed' ? new Date().toISOString() : null,
-                };
-
-                // Paid in full, so nothing is outstanding. Set here as well as
-                // at checkout, because this is the point the money landed.
-                if (kind !== 'deposit') {
-                    paidPatch.balance_amount = 0;
-                }
-
-                const { error: confirmError } = await admin
-                    .from('bookings')
-                    .update(paidPatch)
-                    .eq('id', bookingId);
-
-                // 23P01 is the exclusion constraint: somebody else's stay was
-                // confirmed for these nights while this guest was paying. The
-                // database is the only thing that can say so for certain, and
-                // it has just said so.
-                if (confirmError) {
-                    const oversold = confirmError.code === '23P01';
-
-                    await logError(
-                        oversold
-                            ? 'stripe/webhook: the dates were taken while the guest was paying'
-                            : 'stripe/webhook: a paid booking could not be updated',
-                        confirmError,
-                        { path: 'stripe/webhook', userId: (booking && booking.guest_id) || undefined }
-                    );
-
-                    if (!oversold || !cs.payment_intent) {
-                        // Not something a refund fixes. The money is here and
-                        // the booking is not updated, which is exactly what
-                        // /admin/errors is for.
-                        return NextResponse.json({ ok: true });
-                    }
-
-                    // The guest has paid for nights they cannot have. The money
-                    // goes back first, before the booking is touched, so they
-                    // are never told the stay is off while it is still here.
-                    // Keyed on the payment intent, so a redelivered event
-                    // refunds once.
-                    await stripeRequest(
-                        'POST',
-                        '/refunds',
-                        {
-                            payment_intent: cs.payment_intent,
-                            amount: Math.round(amount * 100),
-                            metadata: {
-                                booking_id: bookingId,
-                                reason: 'dates_taken_while_paying',
-                                initiated_by: 'system',
-                            },
-                        },
-                        'oversold-' + cs.payment_intent
-                    );
-
-                    const { error: refundLedgerError } = await admin.from('payments').insert({
-                        booking_id: bookingId,
-                        kind: 'refund',
-                        amount: amount,
-                        status: 'succeeded',
-                        stripe_payment_intent_id: cs.payment_intent,
-                    });
-
-                    if (refundLedgerError) {
-                        await logError(
-                            '[webhook] an oversold booking was refunded at Stripe but the refund is '
-                                + 'missing from the payments ledger',
-                            refundLedgerError,
-                            { path: 'stripe/webhook' }
-                        );
-                    }
-
-                    // Only now, with the money on its way back.
-                    await admin
-                        .from('bookings')
-                        .update({
-                            status: 'cancelled',
-                            payment_status: 'refunded',
-                            // What happened is recorded truthfully: they paid,
-                            // and they were paid back.
-                            amount_paid: amount,
-                            amount_refunded: amount,
-                            balance_amount: 0,
-                            // The overlap constraint fired: two confirmed
-                            // stays on one week, so this one was refunded
-                            // automatically. Nobody cancelled it, and it must
-                            // never be read as a host having done so.
-                            cancelled_at: new Date().toISOString(),
-                            cancelled_by_role: 'system',
-                            stripe_payment_intent_id: cs.payment_intent,
-                        })
-                        .eq('id', bookingId);
-
-                    const guestId = booking && booking.guest_id;
-                    const { data: guestUser } = guestId
-                        ? await admin.auth.admin.getUserById(guestId)
-                        : { data: null as any };
-                    const guestEmail = (guestUser && guestUser.user && guestUser.user.email) || '';
-
-                    if (guestEmail) {
-                        await sendEmail(
-                            guestEmail,
-                            'We\u2019re sorry \u2014 those dates went while you were paying',
-                            emailLayout(
-                                '<p style="margin:0 0 16px;font-size:16px;">We are very sorry. Somebody else\u2019s booking for <strong>'
-                                    + escapeHtml(listingTitle)
-                                    + '</strong> was confirmed for '
-                                    + formatDate(booking ? booking.check_in : '')
-                                    + ' in the moments while you were paying, so we cannot give you those nights.</p>'
-                                    + '<p style="margin:0 0 16px;font-size:16px;">You have not been charged. The full <strong>\u00A3'
-                                    + amount.toFixed(2)
-                                    + '</strong> has already been sent back to your card and usually takes five to ten days to appear.</p>'
-                                    + '<p style="margin:0 0 16px;font-size:16px;">This should not happen and it is our fault, not yours. If you would like help finding somewhere else for those dates, just reply to this email.</p>'
-                                    + button(SITE_URL, 'Find another place'),
-                                'You\u2019re receiving this because you tried to book with Galloway Getaways.'
-                            )
-                        );
-                    }
-
-                    return NextResponse.json({ ok: true, oversold: true, refunded: amount });
-                }
-
-                const { error: ledgerError } = await admin.from('payments').insert({
-                    booking_id: bookingId,
-                    kind: kind,
-                    amount: amount,
-                    status: 'succeeded',
-                    stripe_payment_intent_id: cs.payment_intent || null,
-                });
-
-                // The booking says the guest paid and the ledger does not.
-                // Nothing visible breaks — the guest has their stay — so this
-                // would be found at the year end, in the accounts, by which
-                // time nobody can say what happened.
-                //
-                // 23505 is NOT that. It is the unique index from
-                // 20260829090000_payments_one_row_per_intent.sql saying this
-                // payment is already recorded, which is a redelivery working
-                // exactly as intended. Caught by delivering a paid event twice
-                // against the running site: the ledger correctly held one row
-                // and /admin/errors got a "the payment is missing" alarm about
-                // a payment that was right there. A page of false alarms is a
-                // page nobody reads.
-                //
-                // Unlike the balance branch, nothing else here needs to know:
-                // this update SETS amount_paid to the amount of this payment
-                // rather than adding to it, so running it again writes the
-                // same number.
-                if (ledgerError && ledgerError.code !== '23505') {
-                    await logError(
-                        '[webhook] a booking was confirmed but the payment is missing from the '
-                            + 'payments ledger',
-                        ledgerError,
-                        { path: 'stripe/webhook' }
-                    );
-                }
-
-                // A WORK DAY JUST GOT A GUEST ON IT.
-                //
-                // The host asked a tradesman to come on a day this booking now
-                // covers. Neither blocks the other — a two-hour job the
-                // afternoon a guest arrives is fine — but it is a clash the host
-                // would otherwise find only by opening the calendar, and the
-                // whole point is that this booking arrived while they were not
-                // looking. So they are emailed: cottage, date, trade, enough to
-                // decide without opening anything.
-                //
-                // Guarded on the 23505 above: a redelivered paid event finds the
-                // payment already in the ledger, and must not send this twice.
-                // Only accepted, planned enquiries carry a date, so only they can
-                // land on a day. "Asked for", never "booked" — the wording comes
-                // from lib/serviceEnquiries and is the same line the calendar and
-                // the emails already hold.
-                const firstDelivery = !(ledgerError && ledgerError.code === '23505');
-
-                // THE TWO EMAILS THAT HAD NO HOME.
-                //
-                // The host is told a booking has come in — 'New booking' for
-                // Instant Book, 'New booking request' for one they must accept.
-                // Nothing called notify('booking_created'), so until now the
-                // host learned of a booking only by opening the dashboard.
-                //
-                // And an Instant-Book guest is told they're booked. The
-                // "You're booked" email is otherwise sent only when a host
-                // clicks accept; an Instant-Book stay confirms itself here with
-                // no click, so its guest — promised an email by /booking-confirmed
-                // — was never sent one. A request-flow guest still gets their
-                // confirmation from the host's acceptance, so is skipped here.
-                //
-                // Gated on firstDelivery so a redelivered paid event does not
-                // send either twice. Best-effort: the money has landed and the
-                // stay is live whether or not these send.
-                if (firstDelivery && booking && booking.host_id) {
-                    try {
-                        const [{ data: hostUser }, { data: guestUser }] = await Promise.all([
-                            admin.auth.admin.getUserById(booking.host_id),
-                            admin.auth.admin.getUserById(booking.guest_id),
-                        ]);
-                        const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
-                        const guestEmail = (guestUser && guestUser.user && guestUser.user.email) || '';
-
-                        const { data: names } = await admin
-                            .from('profiles')
-                            .select('id, full_name, preferred_name, show_full_name')
-                            .in('id', [booking.host_id, booking.guest_id]);
-                        const byId: Record<string, any> = {};
-                        (names || []).forEach((p: any) => { byId[p.id] = p; });
-                        const hostProfile = byId[booking.host_id] || {};
-                        const guestProfile = byId[booking.guest_id] || {};
-
-                        // The host greeted by their own name; the guest named to
-                        // the host through the privacy switch.
-                        const hostFirst = ((hostProfile.preferred_name || hostProfile.full_name || 'there')
-                            .trim().split(' ')[0]) || 'there';
-                        const guestFirst = (displayName(guestProfile, 'A guest').split(' ')[0]) || 'A guest';
-                        const instant = nextStatus === 'confirmed';
-
-                        const hostMail = hostNewBookingEmail({
-                            hostFirst,
-                            guestFirst,
-                            listingTitle,
-                            checkIn: booking.check_in,
-                            checkOut: booking.check_out,
-                            guests: booking.guests || 1,
-                            total: Number(booking.total_price || 0),
-                            instant,
-                            bookingId: booking.id,
-                        });
-                        if (hostEmail) await sendEmail(hostEmail, hostMail.subject, hostMail.html);
-
-                        // Only the Instant-Book guest — a request-flow guest is
-                        // told when the host accepts, and telling them now would
-                        // say "You're booked" while it is still pending.
-                        if (instant && guestEmail) {
-                            // The guest greeted by their own name, which does not
-                            // consult the privacy switch — it is their own name in
-                            // their own inbox.
-                            const guestOwnFirst = ((guestProfile.preferred_name || guestProfile.full_name || 'there')
-                                .trim().split(' ')[0]) || 'there';
-                            const guestMail = guestBookedEmail({
-                                guestFirst: guestOwnFirst,
-                                listingTitle,
-                                checkIn: booking.check_in,
-                                checkOut: booking.check_out,
-                                arrivalLine: arrivalLineFrom(listingRow || {}),
-                                guests: booking.guests || 1,
-                                total: Number(booking.total_price || 0),
-                                amountPaid: Number(booking.amount_paid || amount || 0),
-                                amountRefunded: Number(booking.amount_refunded || 0),
-                                balanceAmount: Number(booking.balance_amount || 0),
-                                balanceDueDate: booking.balance_due_date || null,
-                                // Live from the stamped policy, the same deadline
-                                // the cards show — not a stored column that lands
-                                // a day early under BST.
-                                freeCancelUntil: cancellationPosition({
-                                    checkIn: booking.check_in,
-                                    policy: listingRow && listingRow.cancellation_policy,
-                                }).freeUntilKey,
-                            });
-                            await sendEmail(guestEmail, guestMail.subject, guestMail.html);
-                        }
-                    } catch (err) {
-                        // A booking notification that fails must never affect the
-                        // booking: the money has landed and the stay is live.
-                        await logError(
-                            '[webhook] a booking was paid but the host/guest notification could not be sent',
-                            err,
-                            { path: 'stripe/webhook', userId: (booking && booking.guest_id) || undefined }
-                        );
-                    }
-                }
-
-                if (
-                    firstDelivery && booking
-                    && booking.listing_id && booking.check_in && booking.check_out && booking.host_id
-                ) {
-                    try {
-                        const { data: clashes } = await admin
-                            .from('service_enquiries')
-                            .select('trade, business_name, preferred_date, window_from, window_to')
-                            .eq('listing_id', booking.listing_id)
-                            .eq('status', 'accepted')
-                            .eq('urgency', 'planned')
-                            .gte('preferred_date', booking.check_in)
-                            .lt('preferred_date', booking.check_out);
-
-                        if (clashes && clashes.length) {
-                            const { data: hostUser } = await admin.auth.admin.getUserById(booking.host_id);
-                            const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
-
-                            if (hostEmail) {
-                                const rows = clashes.map((c: any) => ({
-                                    label: tradeLabel(c.trade) || 'Work',
-                                    // requestedWhen begins "Asked for" — dropped
-                                    // here only because the line above already
-                                    // says these are days you asked for.
-                                    value: (requestedWhen(c) || 'a day during this stay')
-                                        .replace(/^Asked for /, ''),
-                                }));
-
-                                await sendEmail(
-                                    hostEmail,
-                                    'A booking landed on a day you’ve got work coming — ' + listingTitle,
-                                    emailLayout(
-                                        '<p style="margin:0 0 16px;font-size:16px;">A new booking for <strong>'
-                                            + escapeHtml(listingTitle)
-                                            + '</strong> covers '
-                                            + formatDate(booking.check_in) + ' to ' + formatDate(booking.check_out)
-                                            + ', and that overlaps a day you have a trade coming to the cottage.</p>'
-                                        + '<p style="margin:0 0 8px;font-size:16px;">What you asked for on those dates:</p>'
-                                        + detailRows(rows)
-                                        + '<p style="margin:16px 0;font-size:16px;">Nothing is blocked and nothing has changed — a short job and a guest can share a day. But it is a different conversation with the tradesman, so we wanted you to know before it caught you out.</p>'
-                                        + button(SITE_URL + '/dashboard/calendar', 'Open your calendar'),
-                                        'You’re receiving this because a booking overlapped work you asked for on your Galloway Getaways cottage.'
-                                    )
-                                );
-                            }
-                        }
-                    } catch (err) {
-                        // A courtesy email that fails must never affect the
-                        // booking: the money has landed and the stay is live.
-                        await logError(
-                            '[webhook] could not warn the host that a booking overlaps work they asked for',
-                            err,
-                            { path: 'stripe/webhook' }
-                        );
-                    }
-                }
+                return NextResponse.json(await settlePaidBookingSession(admin, cs, event.id));
             }
         }
 
@@ -1311,7 +1012,7 @@ export async function POST(request: Request) {
         // The event id is in here on purpose: it is what you need to find the
         // event in Stripe, and to clear the stripe_events row by hand if you
         // decide to replay it after fixing the cause.
-        await logError(
+        await logMoneyFailure(
             '[webhook] handler threw on ' + event.type + ' — the event is recorded as delivered '
                 + 'and nothing was retried',
             {
