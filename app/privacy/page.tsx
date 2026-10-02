@@ -91,9 +91,16 @@ export default function PrivacyPage() {
                 <h2 className="text-xl font-bold text-slate-900 pt-4">How long we keep it</h2>
                 <p>
                     Booking and payment records are kept for six years, as UK tax law requires. Account
-                    information is kept while your account is open. If you delete your account, we remove
-                    your profile and personal details, though we must retain booking records for that
-                    six-year period.
+                    information is kept while your account is open.
+                </p>
+                <p>
+                    You can <strong>deactivate</strong> your account at any time, which hides your profile
+                    and any listings and suspends your sign-in but keeps everything, so we can bring it
+                    back if you ask. Or you can <strong>delete</strong> it permanently. When you delete,
+                    we remove your profile and personal details, but we must keep booking and payment
+                    records for the six-year period above, along with anything we need to resolve a
+                    dispute or meet a legal obligation. Reviews you wrote and messages you sent stay
+                    visible, shown as from a deleted user, so other people&apos;s records stay intact.
                 </p>
 
                 <h2 className="text-xl font-bold text-slate-900 pt-4">Your rights</h2>

@@ -32,6 +32,7 @@ import {
     CheckCircle2,
     Download,
     Clock,
+    PauseCircle,
 } from 'lucide-react';
 
 const SECTIONS = [
@@ -128,6 +129,13 @@ export default function AccountSettings() {
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deleting, setDeleting] = useState(false);
+    const [deactivateOpen, setDeactivateOpen] = useState(false);
+    const [deactivating, setDeactivating] = useState(false);
+    // When deactivation is refused because live reservations/requests remain,
+    // this holds the per-listing/experience/trade blockers the server returned.
+    const [deactivateBlockers, setDeactivateBlockers] = useState<
+        Array<{ kind: string; entityName: string; detail: string }>
+    >([]);
 
     // --- Privacy state ---
     const [privacyTab, setPrivacyTab] = useState<'sharing' | 'data'>('sharing');
@@ -414,6 +422,36 @@ export default function AccountSettings() {
         if (!res.ok) {
             setDeleting(false);
             toast.error(body?.error || 'Could not close your account.', { theme: 'colored' });
+            return;
+        }
+
+        await supabase.auth.signOut();
+        router.push('/');
+        router.refresh();
+    };
+
+    const deactivateAccount = async () => {
+        setDeactivating(true);
+        setDeactivateBlockers([]);
+
+        // Deactivation is reversible: it cancels the person's own upcoming trips
+        // (refunding under the policy), hides their profile and listings, stops
+        // any trade subscription, and suspends sign-in. Reactivation is a
+        // request to us, not a button here.
+        const res = await fetch('/api/account/deactivate', { method: 'POST' });
+        const body = await res.json().catch(() => ({}));
+
+        setDeactivating(false);
+
+        // 409: live reservations/requests block it. Show which listing/
+        // experience/trade to deal with first — the block sits on the listing.
+        if (res.status === 409 && Array.isArray(body?.blocked)) {
+            setDeactivateBlockers(body.blocked);
+            return;
+        }
+
+        if (!res.ok) {
+            toast.error(body?.error || 'Could not deactivate your account.', { theme: 'colored' });
             return;
         }
 
@@ -1076,54 +1114,72 @@ export default function AccountSettings() {
                                 </p>
                             </div>
 
-                            {/* Delete account */}
-                            <div className="border border-red-200 bg-red-50/40 rounded-2xl p-5">
+                            {/* Deactivate account (reversible). Permanent
+                                deletion lives under Privacy → Data. */}
+                            <div className="border border-amber-200 bg-amber-50/50 rounded-2xl p-5">
                                 <div className="flex items-center mb-1">
-                                    <Trash2 className="w-4 h-4 mr-2 text-red-700" />
-                                    <div className="font-semibold text-red-800 text-sm">Delete my account</div>
+                                    <PauseCircle className="w-4 h-4 mr-2 text-amber-700" />
+                                    <div className="font-semibold text-amber-900 text-sm">Deactivate my account</div>
                                 </div>
-                                <p className="text-xs text-red-700/80 mb-4">
-                                    This closes your account for good. Your personal details — your name, contact details, address and photos — are removed and you won&apos;t be able to sign back in. Your booking and payment records are kept, because they belong to other people&apos;s stays too and we&apos;re required to hold them, but they&apos;re no longer linked to a usable account. If you have upcoming or pending bookings, cancel them first — as either a guest or a host.
+                                <p className="text-xs text-amber-800/90 mb-4">
+                                    This takes your account off the site for now, and you can ask us to bring it back later. Your profile is hidden{hostListings.length > 0 ? ', and any listings you host are hidden' : ''}. Your details and history are kept. Deactivating is reversible; deleting your account for good is under Privacy.
                                 </p>
 
-                                {!deleteOpen ? (
+                                {!deactivateOpen ? (
                                     <button
                                         type="button"
-                                        onClick={() => setDeleteOpen(true)}
-                                        className="text-sm font-semibold text-red-700 underline hover:text-red-900"
+                                        onClick={() => { setDeactivateOpen(true); setDeactivateBlockers([]); }}
+                                        className="text-sm font-semibold text-amber-800 underline hover:text-amber-950"
                                     >
-                                        I want to delete my account
+                                        I want to deactivate my account
                                     </button>
                                 ) : (
-                                    <div className="max-w-sm">
-                                        <label className="text-xs text-red-800 font-medium">
-                                            Type DELETE to confirm
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={deleteConfirmText}
-                                            onChange={(e) => setDeleteConfirmText(e.target.value)}
-                                            placeholder="DELETE"
-                                            className="w-full p-2.5 border border-red-300 rounded-lg text-sm mt-1 mb-3 bg-white"
-                                        />
+                                    <div className="max-w-md">
+                                        {/* The plain-words spell-out, Airbnb-style. */}
+                                        <div className="text-sm font-semibold text-slate-900 mb-2">Here&apos;s what happens</div>
+                                        <ul className="text-xs text-slate-700 space-y-1.5 mb-4 list-disc pl-5">
+                                            <li>Your profile is hidden from everyone on Galloway Getaways.</li>
+                                            <li>Any upcoming trips you&apos;ve booked are cancelled, and you&apos;re refunded whatever the cancellation policy for those dates allows.</li>
+                                            <li>Any listings or experiences you host are hidden and stop taking bookings.</li>
+                                            <li>If you&apos;re a tradesperson, your subscription is stopped.</li>
+                                            <li>You won&apos;t be able to sign in. To come back, email us at hello@gallowaygetaways.co.uk and we&apos;ll reactivate you.</li>
+                                            <li>Nothing is deleted — your details and history are kept so your account can be brought back as it was.</li>
+                                        </ul>
+
+                                        {deactivateBlockers.length > 0 && (
+                                            <div className="border border-amber-300 bg-amber-50 rounded-xl p-4 mb-4">
+                                                <div className="text-xs font-semibold text-amber-900 mb-2">
+                                                    Deal with these first
+                                                </div>
+                                                <p className="text-xs text-amber-800/90 mb-3">
+                                                    These still have reservations or requests on them. You can&apos;t deactivate while other people are relying on them — see them out or cancel them, then try again.
+                                                </p>
+                                                <ul className="text-xs text-amber-900 space-y-1.5">
+                                                    {deactivateBlockers.map((b, i) => (
+                                                        <li key={i} className="flex items-start">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 mr-2 flex-shrink-0" />
+                                                            <span><strong>{b.entityName}</strong> — {b.detail}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+
                                         <div className="flex items-center space-x-3">
                                             <button
                                                 type="button"
-                                                onClick={() => {
-                                                    setDeleteOpen(false);
-                                                    setDeleteConfirmText('');
-                                                }}
+                                                onClick={() => { setDeactivateOpen(false); setDeactivateBlockers([]); }}
                                                 className="text-sm text-slate-600 hover:text-slate-900"
                                             >
                                                 Cancel
                                             </button>
                                             <button
                                                 type="button"
-                                                onClick={deleteAccount}
-                                                disabled={deleting || deleteConfirmText !== 'DELETE'}
-                                                className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                                onClick={deactivateAccount}
+                                                disabled={deactivating}
+                                                className="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
-                                                {deleting ? 'Closing...' : 'Close my account'}
+                                                {deactivating ? 'Deactivating…' : 'Deactivate my account'}
                                             </button>
                                         </div>
                                     </div>
@@ -1232,21 +1288,68 @@ export default function AccountSettings() {
                                         </button>
                                     </div>
 
-                                    <div className="border rounded-2xl p-5">
+                                    {/* Permanent deletion lives here, under
+                                        Privacy. Deactivation (reversible) is
+                                        under Login & security. */}
+                                    <div className="border border-red-200 bg-red-50/40 rounded-2xl p-5">
                                         <div className="flex items-center mb-1">
-                                            <Trash2 className="w-4 h-4 mr-2 text-slate-700" />
-                                            <div className="font-semibold text-slate-900 text-sm">Delete your account</div>
+                                            <Trash2 className="w-4 h-4 mr-2 text-red-700" />
+                                            <div className="font-semibold text-red-800 text-sm">Delete my account</div>
                                         </div>
-                                        <p className="text-xs text-slate-500 mb-4">
-                                            Permanently remove your account and everything attached to it. This can&apos;t be undone.
+                                        <p className="text-xs text-red-700/80 mb-4">
+                                            This is permanent. There&apos;s no undoing it and no getting your account back — if you only want to step away for a while, deactivate instead, under Login &amp; security.
                                         </p>
-                                        <button
-                                            type="button"
-                                            onClick={() => setActiveSection('security')}
-                                            className="text-sm font-semibold underline text-slate-700 hover:text-black"
-                                        >
-                                            Go to Login &amp; security to delete
-                                        </button>
+
+                                        {!deleteOpen ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setDeleteOpen(true)}
+                                                className="text-sm font-semibold text-red-700 underline hover:text-red-900"
+                                            >
+                                                I want to delete my account
+                                            </button>
+                                        ) : (
+                                            <div className="max-w-md">
+                                                {/* Plain-words spell-out, Airbnb-style. */}
+                                                <div className="text-sm font-semibold text-slate-900 mb-2">Here&apos;s what happens</div>
+                                                <ul className="text-xs text-slate-700 space-y-1.5 mb-4 list-disc pl-5">
+                                                    <li>Your personal details — your name, contact details, address and photos — are permanently removed, and you won&apos;t be able to sign back in.</li>
+                                                    <li>Reviews you&apos;ve written and messages you&apos;ve sent stay visible, shown as from a deleted user, so other people&apos;s history isn&apos;t torn up.</li>
+                                                    <li>Your booking and payment records are kept — the law requires us to hold them for six years — but they&apos;re no longer linked to an account you can use.</li>
+                                                    <li>This can&apos;t be undone. If you have any upcoming or pending bookings, cancel them first, as a guest or a host.</li>
+                                                </ul>
+                                                <label className="text-xs text-red-800 font-medium">
+                                                    Type DELETE to confirm
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={deleteConfirmText}
+                                                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                                    placeholder="DELETE"
+                                                    className="w-full max-w-xs p-2.5 border border-red-300 rounded-lg text-sm mt-1 mb-3 bg-white"
+                                                />
+                                                <div className="flex items-center space-x-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setDeleteOpen(false);
+                                                            setDeleteConfirmText('');
+                                                        }}
+                                                        className="text-sm text-slate-600 hover:text-slate-900"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={deleteAccount}
+                                                        disabled={deleting || deleteConfirmText !== 'DELETE'}
+                                                        className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    >
+                                                        {deleting ? 'Deleting…' : 'Delete my account'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}

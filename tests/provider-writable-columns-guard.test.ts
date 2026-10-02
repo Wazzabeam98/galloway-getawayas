@@ -76,6 +76,7 @@ const PLATFORM_ONLY: Record<string, string> = {
     delivery_fee: 'made-to-order delivery fee — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write',
     delivery_radius_miles: 'enforced delivery radius — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write',
     owner_paused: 'owner take-down flag — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write, so it is not in the write allow-list',
+    deactivated_at: 'reversible deactivation tombstone — written only by the SECURITY DEFINER deactivate/reactivate routines, never a browser write',
     reminders_sent: 'server-side reminder bookkeeping',
     notify_user_ids: 'server-managed notify list',
     // Stripe — every field is set by the connect/webhook flow under the service role.

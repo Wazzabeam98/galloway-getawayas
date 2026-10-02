@@ -41,7 +41,7 @@ function encodeForm(obj: Record<string, any>, prefix?: string): string {
 }
 
 export async function stripeRequest(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'DELETE',
     path: string,
     body?: Record<string, any>,
     idempotencyKey?: string,
@@ -72,6 +72,9 @@ export async function stripeRequest(
         headers['Content-Type'] = 'application/x-www-form-urlencoded';
         payload = body ? encodeForm(body) : '';
     } else if (body) {
+        // GET and DELETE both carry their parameters in the query string.
+        // DELETE /v1/subscriptions/{id} needs none, but a caller may still pass
+        // flags (e.g. prorate), so it is handled the same way as GET.
         const qs = encodeForm(body);
         if (qs) url = url + '?' + qs;
     }
