@@ -30,7 +30,7 @@ function BigStars({ value, onChange }: { value: number; onChange: (v: number) =>
                 >
                     <Star
                         className={`h-11 w-11 transition-colors md:h-14 md:w-14 ${
-                            n <= shown ? 'fill-amber-400 text-amber-400' : 'fill-slate-200 text-slate-200'
+                            n <= shown ? 'fill-stone-900 text-stone-900' : 'fill-slate-200 text-slate-200'
                         }`}
                     />
                 </button>

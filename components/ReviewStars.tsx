@@ -23,7 +23,7 @@ export default function ReviewStars({ value, onChange, size = 20 }: Props) {
                 >
                     <Star
                         style={{ width: size, height: size }}
-                        className={n <= value ? 'fill-amber-400 text-amber-400' : 'fill-slate-200 text-slate-200'}
+                        className={n <= value ? 'fill-stone-900 text-stone-900' : 'fill-slate-200 text-slate-200'}
                     />
                 </button>
             ))}

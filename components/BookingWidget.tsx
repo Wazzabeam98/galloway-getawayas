@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { formatGBP } from '@/lib/formatMoney';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
-import { addDays, addMonths } from 'date-fns';
+import { addMonths } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
@@ -13,7 +13,7 @@ import { toast } from 'react-toastify';
 import { Minus, Plus } from 'lucide-react';
 import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
-import { quoteBooking, dateKey } from '@/lib/pricing';
+import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
 import { plural } from '@/lib/plural';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
@@ -37,6 +37,14 @@ interface Props {
     instantBookRequiresPhone?: boolean;
     instantBookRequiresVerifiedId?: boolean;
     cancellationPolicy?: string | null;
+    // Read on the server by the listing page (lib/availability guestCalendar),
+    // so the calendar paints with the taken nights already struck out. It used
+    // to fetch them after mount, and a month showed wide open until they came.
+    blockedNights: string[];
+    priceOverrides: Record<string, number>;
+    // From the server too: whether the signed-in viewer still owes the Guest
+    // Terms. Null when the page did not know (signed out at render).
+    needsGuestTerms: boolean | null;
 }
 
 // Defined out here on purpose. A component declared inside another one is a
@@ -91,12 +99,17 @@ export default function BookingWidget({
     instantBook = false, instantBookRequiresPhone = false, instantBookRequiresVerifiedId = false,
     damageDeposit = 0,
     cancellationPolicy,
+    blockedNights,
+    priceOverrides,
+    needsGuestTerms: serverNeedsGuestTerms,
 }: Props) {
     const [payPlan, setPayPlan] = useState<'deposit' | 'full'>('deposit');
     const supabase = createClientComponentClient();
     const [session, setSession] = useState<any>(null);
     const [loadingSession, setLoadingSession] = useState(true);
-    const [disabledDates, setDisabledDates] = useState<Date[]>([]);
+    // Fixed for the life of the page: every night taken here, blocked by the
+    // host, or taken on another platform, as the server read it before paint.
+    const [disabledDates] = useState<Date[]>(() => blockedNights.map(dateFromKey));
     const calendarRef = useRef<HTMLDivElement>(null);
 
     // Which nights are already taken, as 'yyyy-mm-dd', so the day renderer can
@@ -199,7 +212,6 @@ export default function BookingWidget({
         // observer constantly. The window prop is what actually decides it.
     }, [disabledDates, availabilityWindow]);
 
-    const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
     const [pets, setPets] = useState(0);
@@ -246,11 +258,12 @@ export default function BookingWidget({
         }
     }, [draftReady, dateRange.startDate, dateRange.endDate, adults, children, pets]);
     // The Guest Terms are accepted at a guest's FIRST stay checkout, not forced
-    // on them the moment they make an account. `needsGuestTerms` is set from
-    // /api/agreements once we know who is signed in; the tick shows above the
+    // on them the moment they make an account. `needsGuestTerms` comes from the
+    // page (read on the server); if the page did not know, it starts TRUE —
+    // fail closed — until /api/agreements says otherwise. The tick shows above the
     // pay button until they accept, and the acceptance is recorded (version +
     // server time) before the booking is created.
-    const [needsGuestTerms, setNeedsGuestTerms] = useState(false);
+    const [needsGuestTerms, setNeedsGuestTerms] = useState(serverNeedsGuestTerms !== false);
     const [guestTicked, setGuestTicked] = useState(false);
     const [guestTermsError, setGuestTermsError] = useState('');
 
@@ -266,76 +279,22 @@ export default function BookingWidget({
             setSession(session);
             setLoadingSession(false);
 
-            // Does this guest still owe the Guest Terms? If so, they accept them
-            // here, at checkout, rather than through a sign-in pop-up.
-            if (session?.user) {
+            // Does this guest still owe the Guest Terms? The page usually knows
+            // already (serverNeedsGuestTerms); only ask when it did not.
+            if (session?.user && serverNeedsGuestTerms === null) {
                 const st = await fetchAgreementStatus();
                 // Fail CLOSED: only clear the tick when we have POSITIVELY
                 // confirmed this guest has agreed. If the lookup errors or the
                 // table is unreachable, fetchAgreementStatus returns null — and
                 // we must keep the tick (and the disabled pay button) rather than
-                // let someone pay with no agreement recorded. The server does not
-                // re-check a signed-in guest's Guest Terms, so this is the gate.
+                // let someone pay with no agreement recorded. The checkout route
+                // walls on it too (requireGuestTerms); this keeps the button honest.
                 setNeedsGuestTerms(!(st && st.documents && st.documents.guest && st.documents.guest.agreed));
             }
 
-            const { data: existing } = await supabase
-                // Busy nights, not bookings. A stranger can read no row of `bookings` at
-                // all — see 20260828231530_bookings_are_not_public.sql — and the
-                // view returns which listing, which nights and whether they are
-                // pending or confirmed. Nothing about who, nothing about money.
-                //
-                // This is also where the lost-booking bug was: the old policy only
-                // permitted 'confirmed', so a signed-out guest saw nights somebody
-                // was mid-checkout on as free, picked them, and was refused at the
-                // card. The view carries pending too.
-                .from('listing_busy_nights')
-                .select('check_in, check_out')
-                .eq('listing_id', listingId)
-                .in('status', ['pending', 'confirmed']);
-
-            const blocked: Date[] = [];
-            const addRange = (startStr: string, endStr: string) => {
-                let d = new Date(startStr);
-                const end = new Date(endStr);
-                while (d < end) {
-                    blocked.push(new Date(d));
-                    d = addDays(d, 1);
-                }
-            };
-
-            (existing || []).forEach((b) => addRange(b.check_in, b.check_out));
-
-            const { data: calOverrides } = await supabase
-                .from('calendar_overrides')
-                .select('date, is_blocked, price_override')
-                .eq('listing_id', listingId);
-
-            const prices: Record<string, number> = {};
-            (calOverrides || []).forEach((o) => {
-                if (o.is_blocked) blocked.push(new Date(o.date));
-                if (o.price_override) prices[o.date] = o.price_override;
-            });
-            setPriceOverrides(prices);
-
-            // The server merges every calendar this listing syncs with. It
-            // takes the listing id rather than a URL, so the host's private
-            // export links never reach the browser.
-            try {
-                const res = await fetch('/api/ical-import?listing=' + encodeURIComponent(listingId));
-                if (res.ok) {
-                    const data = await res.json();
-                    (data.events || []).forEach((ev: { start: string; end: string }) => addRange(ev.start, ev.end));
-                }
-            } catch {
-                // If an external calendar can't be reached, we simply don't
-                // block those dates — it shouldn't break booking altogether.
-            }
-
-            setDisabledDates(blocked);
         };
         load();
-    }, [supabase, listingId]);
+    }, [supabase, serverNeedsGuestTerms]);
 
     // Priced by the shared module, which is the same code the server runs
     // before taking any money — so what the guest is shown here and what
@@ -465,7 +424,13 @@ export default function BookingWidget({
             const res = await fetch('/api/stripe/checkout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bookingId: created.id, plan: payPlan }),
+                // The tick goes with it: the checkout route walls on the Guest
+                // Terms itself rather than trusting the record made above.
+                body: JSON.stringify({
+                    bookingId: created.id,
+                    plan: payPlan,
+                    guestTermsVersion: versionForTick('guest', guestTicked),
+                }),
             });
             const data = await res.json();
 

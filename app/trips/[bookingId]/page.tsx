@@ -316,7 +316,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                             click through — the same ≥3-reviews bar the listing uses. */}
                         {listing && Number(listing.rating_count) >= 3 && (
                             <Link href={`${homeHref}#reviews`} className="mt-1.5 inline-flex items-center gap-1 text-sm hover:underline">
-                                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                                <Star className="h-3.5 w-3.5 fill-stone-900 text-stone-900" />
                                 <span className="font-medium text-slate-900">{Number(listing.rating_avg).toFixed(1)}</span>
                                 <span className="text-slate-500">· {listing.rating_count} review{Number(listing.rating_count) === 1 ? '' : 's'}</span>
                             </Link>

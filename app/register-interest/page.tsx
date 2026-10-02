@@ -19,7 +19,19 @@ export const metadata: Metadata = {
 // Only while sign-ups are held. Once BUSINESS_SIGNUPS_OPEN is on there is
 // nothing to wait for, so an old link or bookmark goes straight to the real
 // start — the same switch as the homepage bar and the /business tiles.
-export default function RegisterInterestPage() {
+//
+// `?type=` preselects the tile when the visitor arrived from a section that
+// already said which kind of business it was asking for (the homepage's
+// experiences panel sends guest_experience). Anything else is ignored.
+const TYPES = ['holiday_let', 'guest_experience', 'tradesman'] as const;
+
+export default function RegisterInterestPage({
+    searchParams,
+}: {
+    searchParams: { type?: string | string[] };
+}) {
     if (businessSignupsOpen()) redirect('/business');
-    return <RegisterInterest />;
+    const type = typeof searchParams.type === 'string' ? searchParams.type : '';
+    const initial = (TYPES as readonly string[]).includes(type) ? (type as (typeof TYPES)[number]) : null;
+    return <RegisterInterest initialCategory={initial} />;
 }

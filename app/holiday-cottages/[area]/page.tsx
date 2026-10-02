@@ -36,7 +36,7 @@ async function listingsForArea(area: Area): Promise<CardListing[]> {
     // fails the build for one. Same list the home page grid asks for.
     const { data } = await supabase
         .from('listings')
-        .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude')
+        .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude, property_type')
         .eq('status', 'published')
         .order('created_at', { ascending: false });
 
