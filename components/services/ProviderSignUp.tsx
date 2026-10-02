@@ -123,6 +123,16 @@ interface AreaRow {
 // it on. Per trade, because somebody can be part-way through two.
 const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 
+// The existing record the server resolved for a signed-in owner, handed in so
+// a returning applicant sees their real state on the first paint rather than
+// the picker. See the note in app/services/join/page.tsx.
+export interface InitialResume {
+    id: string;
+    trade: string;
+    status: string;
+    business_name: string;
+}
+
 // The number the years opener shows from load. It is the accepted answer, not a
 // placeholder: someone whose real answer is this presses Next straight through
 // and it is stored (see the years case in the footer's onNext). Shown solid
@@ -409,7 +419,7 @@ const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
     prices: Tag,
 };
 
-function ApplicationForm() {
+function ApplicationForm({ initialResume = null }: { initialResume?: InitialResume | null }) {
     const router = useRouter();
     const params = useSearchParams();
 
@@ -427,12 +437,17 @@ function ApplicationForm() {
     const [loadFailed, setLoadFailed] = useState(false);
     const [session, setSession] = useState<any>(null);
 
-    const [providerId, setProviderId] = useState<string | null>(null);
-    const [status, setStatus] = useState('draft');
+    // Seeded from the server-resolved record where there is one, so the pending
+    // panel (or the payout gate) is on screen before the client's own lookup
+    // runs — and the guest category picker never flashes, because a truthy
+    // providerId is what tells it a category is no longer needed
+    // (guestNeedsCategory). The client load still refreshes all of this.
+    const [providerId, setProviderId] = useState<string | null>(initialResume?.id ?? null);
+    const [status, setStatus] = useState(initialResume?.status || 'draft');
     const [reviewNote, setReviewNote] = useState<string | null>(null);
 
-    const [businessName, setBusinessName] = useState('');
-    const [trade, setTrade] = useState(tradeFromUrl || 'sponge');
+    const [businessName, setBusinessName] = useState(initialResume?.business_name || '');
+    const [trade, setTrade] = useState(initialResume?.trade || tradeFromUrl || 'sponge');
     const [description, setDescription] = useState('');
     const [contactEmail, setContactEmail] = useState('');
     const [contactPhone, setContactPhone] = useState('');
@@ -459,7 +474,14 @@ function ApplicationForm() {
     // query string is for; the step is a position in a form somebody is
     // filling in, and putting it in the URL would put every keystroke's worth
     // of navigation into their browser history.
-    const [step, setStep] = useState<StepKey>('trade');
+    // A returning applicant already answered step one, so they open past the
+    // picker. 'g_you' is the About-you opener both flows share — it is where the
+    // hydrated openingStep lands a host, and a guest too for a category that
+    // asks about the person (the client's own effect nudges a no-expertise guest
+    // on to 'g_area' the instant it hydrates). Seeding it here only stops the
+    // picker — the category grid for a guest, the blank first step for a host —
+    // flashing under the status panel for the moment before hydration.
+    const [step, setStep] = useState<StepKey>(initialResume ? 'g_you' : 'trade');
 
     // Which steps they have pressed Next on. Errors on a step nobody has
     // reached yet stay hidden: a form that turns red before it has been
@@ -6473,12 +6495,12 @@ function ApplicationForm() {
     );
 }
 
-export default function ProviderSignUp() {
+export default function ProviderSignUp({ initialResume = null }: { initialResume?: InitialResume | null }) {
     // useSearchParams needs a boundary, the same as the query-string reader in
     // the root layout.
     return (
         <Suspense fallback={<div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-slate-500">Loading…</div>}>
-            <ApplicationForm />
+            <ApplicationForm initialResume={initialResume} />
         </Suspense>
     );
 }
