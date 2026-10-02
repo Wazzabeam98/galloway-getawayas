@@ -7,6 +7,7 @@ import ManageReservationSheet from '@/components/dashboard/reservation/ManageRes
 import RequestChangeRow from '@/components/trips/RequestChangeRow';
 import StayCancelRow from '@/components/trips/StayCancelRow';
 import { stayHasEnded, stayHasStarted } from '@/lib/stayWindow';
+import { ukDateTime } from '@/lib/dayKey';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Link from 'next/link';
@@ -716,12 +717,7 @@ export default function MessagesInboxPage() {
                                                 (mine ? 'text-emerald-100' : 'text-slate-400')
                                             }
                                         >
-                                            {new Date(m.created_at).toLocaleString('en-GB', {
-                                                day: 'numeric',
-                                                month: 'short',
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                            })}
+                                            {ukDateTime(m.created_at)}
                                         </div>
                                     </div>
                                 </div>
@@ -1156,12 +1152,7 @@ export default function MessagesInboxPage() {
                                                             (mine ? 'text-emerald-100' : 'text-slate-400')
                                                         }
                                                     >
-                                                        {new Date(m.created_at).toLocaleString('en-GB', {
-                                                            day: 'numeric',
-                                                            month: 'short',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit',
-                                                        })}
+                                                        {ukDateTime(m.created_at)}
                                                     </div>
                                                 </div>
                                             </div>
