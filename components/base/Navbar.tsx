@@ -6,7 +6,8 @@ import { cookies } from "next/headers";
 import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import ModeSwitch from '@/components/base/ModeSwitch';
-import { displayName as resolveName } from '@/lib/utils';
+import { displayName as resolveName, getImageUrl } from '@/lib/utils';
+import RememberAccount from '@/components/auth/RememberAccount';
 
 const Navbar = async () => {
     const cookieStore = cookies();
@@ -142,6 +143,14 @@ const Navbar = async () => {
                         </Link>
                     )}
 
+                    {data?.session?.user && (
+                        <RememberAccount
+                            firstName={firstName}
+                            avatarUrl={avatarUrl ? getImageUrl(avatarUrl) : null}
+                            email={data.session.user.email}
+                            phone={data.session.user.phone}
+                        />
+                    )}
                     <NavMenu
                         session={data?.session?.user}
                         experiencesOpen={experiencesOpen}

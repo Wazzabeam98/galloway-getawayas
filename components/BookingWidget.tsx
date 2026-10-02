@@ -8,6 +8,7 @@ import { addDays, addMonths } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
+import { dateToKey, keyToDate, readBookingDraft, writeBookingDraft } from '@/lib/bookingDraftParams';
 import { toast } from 'react-toastify';
 import { Minus, Plus } from 'lucide-react';
 import { notify } from '@/lib/notify';
@@ -210,6 +211,40 @@ export default function BookingWidget({
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [requested, setRequested] = useState(false);
+
+    // Dates and guests live in the listing's URL as well as here, so signing in
+    // part-way through — which reloads the page, or goes to Google, or to an
+    // email and back — returns to the same choices. Read once on arrival, then
+    // written back on every change. See lib/bookingDraftParams.
+    const [draftReady, setDraftReady] = useState(false);
+    useEffect(() => {
+        const d = readBookingDraft(new URLSearchParams(window.location.search), maxGuests);
+        if (d.checkIn) {
+            setDateRange({ startDate: keyToDate(d.checkIn), endDate: keyToDate(d.checkOut) || keyToDate(d.checkIn), key: 'selection' });
+        }
+        setAdults(d.adults);
+        setChildren(d.children);
+        setPets(petsAllowed ? d.pets : 0);
+        setDraftReady(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    useEffect(() => {
+        if (!draftReady) return;
+        const start = dateToKey(dateRange.startDate);
+        const end = dateToKey(dateRange.endDate);
+        const params = writeBookingDraft(new URLSearchParams(window.location.search), {
+            checkIn: start,
+            checkOut: end && start && end > start ? end : null,
+            adults,
+            children,
+            pets,
+        });
+        const query = params.toString();
+        const url = window.location.pathname + (query ? '?' + query : '') + window.location.hash;
+        if (url !== window.location.pathname + window.location.search + window.location.hash) {
+            window.history.replaceState(window.history.state, '', url);
+        }
+    }, [draftReady, dateRange.startDate, dateRange.endDate, adults, children, pets]);
     // The Guest Terms are accepted at a guest's FIRST stay checkout, not forced
     // on them the moment they make an account. `needsGuestTerms` is set from
     // /api/agreements once we know who is signed in; the tick shows above the
@@ -642,8 +677,8 @@ export default function BookingWidget({
                 <div className="text-center text-sm text-slate-400 py-2">Loading...</div>
             ) : !session ? (
                 <div>
-                    <p className="text-sm text-slate-500 mb-2 text-center">Log in to request this booking</p>
-                    <LoginModel variant="button" />
+                    <p className="text-sm text-slate-500 mb-2 text-center">Log in or sign up to request this booking</p>
+                    <LoginModel variant="button" label="Continue" />
                 </div>
             ) : (
                 <>
