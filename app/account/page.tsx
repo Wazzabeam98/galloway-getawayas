@@ -11,6 +11,7 @@ import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import MessageTemplates from '@/components/account/MessageTemplates';
 import LoginModel from '@/components/auth/LoginModel';
+import { forgetAccount } from '@/lib/signInMemory';
 import { toast } from 'react-toastify';
 import { getImageUrl, formatTime } from '@/lib/utils';
 import Env from '@/config/Env';
@@ -425,6 +426,8 @@ export default function AccountSettings() {
             return;
         }
 
+        // A closed account must not be greeted by name on the next visit.
+        forgetAccount();
         await supabase.auth.signOut();
         router.push('/');
         router.refresh();
@@ -455,6 +458,8 @@ export default function AccountSettings() {
             return;
         }
 
+        // A closed account must not be greeted by name on the next visit.
+        forgetAccount();
         await supabase.auth.signOut();
         router.push('/');
         router.refresh();
@@ -730,7 +735,7 @@ export default function AccountSettings() {
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-6 text-center px-4">
                 <Logo />
                 <h1 className="text-2xl font-bold text-slate-900">Sign in to view your account</h1>
-                <LoginModel />
+                <div className="w-full max-w-xs"><LoginModel variant="button" /></div>
             </div>
         );
     }

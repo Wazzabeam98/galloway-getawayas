@@ -13,6 +13,7 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { clearStayChoice } from '@/lib/staySignedIn'
 
 
 const SignOut = () => {
@@ -38,6 +39,9 @@ const SignOut = () => {
         } catch (err) {
             console.error('Local sign-out failed:', err);
         }
+
+        // The next sign-in on this device chooses again whether to stay.
+        clearStayChoice();
 
         // A FULL-DOCUMENT navigation, not router.push('/') + router.refresh().
         // The soft navigation left the sign-out looking like it did nothing for

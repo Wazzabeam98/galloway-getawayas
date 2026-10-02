@@ -4,13 +4,12 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'react-toastify';
 import LoginModel from '@/components/auth/LoginModel';
-import SignupModel from '@/components/auth/SignupModel';
 
 // Someone joining a trip is often doing it on a phone, from an email, having
 // never used the site before — so each case is said plainly, and crucially the
-// sign-in happens HERE. Password sign-in reloads this page and Google/sign-up
-// carry a return path (see SignupModel/GoogleButton), so a friend lands back on
-// the invite to accept, not on the home page wondering what happened.
+// sign-in happens HERE. The Log in or sign up panel is told to come back to
+// this invite (and Google carries the same return path), so a friend lands
+// back on it to accept, not on the home page wondering what happened.
 export default function AcceptTripInvite({
     token,
     inviteEmail,
@@ -108,15 +107,11 @@ export default function AcceptTripInvite({
                         </p>
                     </>
                 )}
-                {/* Rendered here so sign-in happens on the invite: a password
-                    sign-in reloads this page, and sign-up/Google carry a return
-                    path back to it. Both render as menu-item buttons (the site's
-                    auth convention), so a bordered list reads as two clean
-                    options. */}
-                <ul className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-800">
-                    <LoginModel next={'/trip-invite/' + token} />
-                    <SignupModel />
-                </ul>
+                {/* One door for both, as everywhere: the Log in or sign up
+                    panel, returning here to join once signed in. */}
+                <div className="mt-4">
+                    <LoginModel variant="button" next={'/trip-invite/' + token} />
+                </div>
             </div>
         );
     }

@@ -267,7 +267,7 @@ export default function ReviewPage() {
             <div className="max-w-md mx-auto px-6 py-24 text-center">
                 <h1 className="text-2xl font-bold text-slate-900 mb-2">Sign in to leave your review</h1>
                 <p className="text-slate-500 mb-6">You&apos;ll need to be signed in to the account that made the booking.</p>
-                <LoginModel />
+                <div className="w-full max-w-xs"><LoginModel variant="button" /></div>
             </div>
         );
     }

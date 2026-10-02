@@ -505,7 +505,7 @@ export default function CalendarPage() {
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-6 text-center px-4">
                 <Logo />
                 <h1 className="text-2xl font-bold text-slate-900">Sign in to manage your calendar</h1>
-                <LoginModel />
+                <div className="w-full max-w-xs"><LoginModel variant="button" /></div>
             </div>
         );
     }
