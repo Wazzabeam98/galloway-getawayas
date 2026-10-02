@@ -15,6 +15,7 @@ import {
 import { visibleInDirectory } from '@/lib/serviceSubscription';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostCredentials from '@/components/marketplace/HostCredentials';
+import { regionCoverageLine } from '@/components/marketplace/present';
 import { MapPin, ShieldCheck, BadgeCheck, Wrench, Clock, CalendarClock, ArrowRight } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -80,7 +81,10 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
     const gd = (provider.guest_details && typeof provider.guest_details === 'object') ? provider.guest_details as any : {};
     const years = String(gd.years_experience || '').trim();
     const title = String(gd.professional_title || '').trim();
-    const coverage = (areas || []).map((a: any) => a.label).filter(Boolean).join(' · ');
+    // Coverage reads from the ticked regions ("The Stewartry", "All of Dumfries &
+    // Galloway"), never the legacy "town and N miles" radius, and never the same
+    // region twice — the shared reader in marketplace/present drops both.
+    const coverage = regionCoverageLine((areas || []).map((a: any) => a.label));
 
     const priceLine = provider.provides_quote
         ? 'Priced per job — quoted after a look'
@@ -195,8 +199,8 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                             </section>
                         )}
 
-                        {/* No map here: a trade covers an AREA (a radius), not a
-                            fixed venue, and PropertyMap's "exact address shared once
+                        {/* No map here: a trade covers REGIONS (ticked areas like the
+                            Stewartry), not a fixed venue, and PropertyMap's "exact address shared once
                             your booking is confirmed" copy is a guest-booking line
                             that doesn't fit an off-platform trade. The coverage is
                             stated as a fact above. (A map belongs on the host's

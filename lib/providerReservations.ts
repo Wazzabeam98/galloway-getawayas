@@ -165,8 +165,14 @@ export function whereForOrder(o: any, provider: any): WhereField | null {
 // This is a job address the intended trade is entitled to, not a guest's private
 // detail, so there is no pre-accept town-only wall the way a stay withholds the
 // address until it is confirmed.
-export function whereForTradeJob(listing: any): WhereField {
-    if (!listing) return 'the property';
+// `areaFallback` is the area the owner named on the enquiry (area_key) — used when
+// no listing is attached, so the card never falls back to the bare placeholder
+// "the property" but shows the town the job is in.
+export function whereForTradeJob(listing: any, areaFallback?: string | null): WhereField {
+    if (!listing) {
+        const area = String(areaFallback || '').trim();
+        return area || 'the property';
+    }
     const town = townFromLocation(listing.location);
     const full = [listing.street_address, town, listing.postcode]
         .map((x: any) => String(x || '').trim()).filter(Boolean).join(', ') || listing.location || null;
@@ -331,7 +337,7 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
 async function loadTradeReservations(admin: any, provider: any, today: string, tomorrow: string, weekEnd: string): Promise<ProviderReservationsResult> {
     const { data: enquiries } = await admin
         .from('service_enquiries')
-        .select('id, status, summary, area_key, urgency, preferred_date, window_from, window_to, host_name, host_phone, listing_id, proposed_date, sent_at, expires_at')
+        .select('id, status, summary, area_key, urgency, preferred_date, window_from, window_to, host_id, host_name, host_phone, listing_id, proposed_date, sent_at, expires_at')
         .eq('provider_id', provider.id)
         .order('preferred_date', { ascending: true });
 
@@ -377,6 +383,18 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
         (ls || []).forEach((l: any) => { listings[l.id] = l; });
     }
 
+    // The owner's own photo, so an enquiry reads with the person's face the way a
+    // host's booking rail and reservation card show the guest's — not a generic
+    // calendar tile. host_name is the snapshot the owner handed over; the avatar is
+    // the low-sensitivity profile photo, shown the same as the name (never the phone,
+    // which stays gated until acceptance).
+    const hostIds = Array.from(new Set(relevant.map((e: any) => e.host_id).filter(Boolean)));
+    const hostAvatars: Record<string, string | null> = {};
+    if (hostIds.length) {
+        const { data: hps } = await admin.from('profiles').select('id, avatar_url').in('id', hostIds);
+        (hps || []).forEach((p: any) => { hostAvatars[p.id] = p.avatar_url ? getImageUrl(String(p.avatar_url)) : null; });
+    }
+
     const mapEnquiry = (e: any, mode: 'reply' | 'upcoming' | 'past'): ProviderReservation => {
         const needsReply = mode === 'reply';
         const dateKey = e.preferred_date ? String(e.preferred_date).slice(0, 10) : '';
@@ -415,11 +433,11 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             whenHeading: 'Asked for',
             personName: e.host_name || 'The owner',
             personFirst: hostFirst,
-            avatarUrl: null,
+            avatarUrl: (e.host_id && hostAvatars[e.host_id]) || null,
             photoUrl: (l && Array.isArray(l.images) && l.images[0]) ? getImageUrl(String(l.images[0])) : null,
             groupLabel: e.host_name || 'The property owner',
             partyLabel: null,
-            whereLabel: whereForTradeJob(l),
+            whereLabel: whereForTradeJob(l, e.area_key),
             note: null,
             allergy: null,
             status,

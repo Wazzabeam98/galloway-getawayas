@@ -56,7 +56,11 @@ function toCardData(r: ProviderReservation): ReservationCardData {
         // subline is emptied here (the job stays as the second subline); the list
         // row now shows a short date, not the full sentence.
         whenLabel: isTrade ? '' : r.whenLabel,
-        itemName: r.title,
+        // For a trade the job is not a quiet header subline — it is the point of the
+        // enquiry, so it moves to its own weighted block (jobHeadline) and is cleared
+        // from the header so it never reads twice.
+        itemName: isTrade ? '' : r.title,
+        jobHeadline: isTrade ? r.title : null,
         status: r.status,
         // A trade job gets a structured WHEN card (weekday / date / time), the same
         // shape a host's check-in card uses — set when a day is fixed. With no day
@@ -149,8 +153,25 @@ const FOLDERS: { key: FolderKey; label: string }[] = [
     { key: 'past', label: 'Past' },
 ];
 
-// The list rail row — shared by both the folder view and the chips view.
+// The owner's own photo as a round avatar — the way the host booking rail and the
+// reservation card show the other person, not a generic calendar tile. Falls back
+// to their initials on the same soft-green circle the reservation header uses.
+function HostAvatar({ r }: { r: ProviderReservation }) {
+    return r.avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={r.avatarUrl} alt="" className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+    ) : (
+        <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-emerald-50 text-sm font-semibold text-emerald-700">
+            {initials(r.personName)}
+        </span>
+    );
+}
+
+// The trade Enquiries rail row. The JOB leads — it is what the owner is asking for
+// and the thing the trade decides on — with the owner and the date as the quiet
+// second line beneath, and the owner's own photo alongside.
 function ListRow({ r, active, onClick }: { r: ProviderReservation; active: boolean; onClick: () => void }) {
+    const dateLabel = r.dateKey && r.dateKey !== '9999-12-31' ? ukDate(r.dateKey) : '';
     return (
         <button
             type="button"
@@ -158,17 +179,18 @@ function ListRow({ r, active, onClick }: { r: ProviderReservation; active: boole
             className={'flex w-full items-center gap-3 rounded-2xl border bg-white p-3 text-left transition hover:border-slate-300 '
                 + (active ? 'border-emerald-600 ring-1 ring-emerald-600 lg:border-emerald-600' : 'border-slate-200')}
         >
-            <AvatarOverPhoto r={r} />
+            <HostAvatar r={r} />
             <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                    {r.needsReply && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Needs a reply</span>}
-                    {r.soon && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-900">{r.soon}</span>}
-                    <span className="truncate text-[13px] text-slate-500">
-                        {r.kind === 'trade' ? (r.dateKey && r.dateKey !== '9999-12-31' ? ukDate(r.dateKey) : '') : r.whenLabel}
-                    </span>
+                {(r.needsReply || r.soon) && (
+                    <div className="mb-0.5 flex items-center gap-2">
+                        {r.needsReply && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">Needs a reply</span>}
+                        {r.soon && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-900">{r.soon}</span>}
+                    </div>
+                )}
+                <div className="truncate text-sm font-semibold text-slate-900">{r.title}</div>
+                <div className="truncate text-[13px] text-slate-500">
+                    {r.groupLabel}{dateLabel ? ' · ' + dateLabel : ''}
                 </div>
-                <div className="mt-0.5 truncate text-sm font-semibold text-slate-900">{r.groupLabel}</div>
-                <div className="truncate text-[13px] text-slate-500">{r.title}</div>
             </div>
             <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
         </button>
