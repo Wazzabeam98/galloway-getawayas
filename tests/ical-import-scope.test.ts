@@ -89,15 +89,21 @@ test('it verifies the caller rather than decoding their cookie', () => {
         'getSession would hand the host-only detail to anyone who wrote their own cookie');
 });
 
-test('the booking widget only ever used the two dates', () => {
-    // Which is why narrowing the anonymous response is safe. If this stops
-    // being true the widget needs updating in the same change.
+test('the booking widget only ever gets the nights, never a platform or a feed', () => {
+    // The widget no longer fetches /api/ical-import after paint — the listing
+    // page reads the nights on the server (lib/availability guestCalendar) and
+    // passes them in. Same promise as before, in its new place: a stranger's
+    // calendar is built from dates alone, and nothing about where a night went.
     const widget = read('components/BookingWidget.tsx');
-    const call = widget.slice(widget.indexOf('/api/ical-import'), widget.indexOf('/api/ical-import') + 400);
-    assert.match(call, /ev\.start/);
-    assert.match(call, /ev\.end/);
-    assert.ok(!/ev\.platform|ev\.feedId/.test(call),
-        'the public widget now reads a field a stranger is no longer given');
+    assert.ok(!widget.includes('/api/ical-import'), 'the widget should take its nights from the page, not fetch them');
+    assert.ok(!/ev\.platform|ev\.feedId|platformName/.test(widget),
+        'the public widget reads a field a stranger is not given');
+
+    const lib = read('lib/availability.ts');
+    const fn = lib.slice(lib.indexOf('export async function guestCalendar'), lib.indexOf('export async function icalBlockedListingIds'));
+    assert.match(fn, /from\('listing_ical_feeds'\)\s*\.select\('events'\)/,
+        'only the cached events are read — never the feed url (the host\'s private export link)');
+    assert.match(fn, /blockedNights: Array\.from\(nights\)/, 'and only night keys leave it');
 });
 
 test('the host calendar still asks for and uses the detail', () => {
