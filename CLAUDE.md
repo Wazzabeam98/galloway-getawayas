@@ -342,6 +342,23 @@ is how a codebase ends up with two cards that are nearly the same and nothing
 to say which one is right — and the near-miss is harder to spot than a
 difference, so it survives.
 
+## Calendars never mark today
+
+No calendar on the site marks today's date: no underline, ring, circle, bold
+or colour. That covers every calendar there is now and every one built later,
+guest, host or provider, whether it comes from `react-date-range` or is built
+by hand. Past days are greyed out, as on Airbnb, and that does the job. (Liam,
+3 October 2026. The library's underline only ever showed by accident: hidden
+under the starting selection, it popped onto today on the first tap and read
+as a stray focus mark.) `globals.css` hides the library's mark site-wide, so a
+new `react-date-range` calendar needs nothing. A hand-built one simply doesn't
+add one. A "Today" *button* that jumps back to the current month is
+navigation, not a marker, and is fine.
+
+Day cells show a focus style for **keyboard users only**: `:focus-visible` or
+`focus-visible:`, never `:focus` or `focus:`. A click or tap focuses the day
+too, and must not leave a ring behind.
+
 ## What Claude Code does not do here
 
 The first three are absolute. They hold in every session, on every branch,

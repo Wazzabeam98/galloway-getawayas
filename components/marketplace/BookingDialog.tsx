@@ -282,7 +282,7 @@ export default function BookingDialog({
                         {/* Scrollable month grid — the full month so a guest can jump to a
                             date. The same MonthCalendar the request shapes use inline. */}
                         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-                            <MonthCalendar availableDays={availableDays} selected={calSel} onSelect={setCalSel} today={today} />
+                            <MonthCalendar availableDays={availableDays} selected={calSel} onSelect={setCalSel} />
                         </div>
                         {/* Footer: confirm the picked date */}
                         <div className="border-t border-slate-100 px-5 py-4">

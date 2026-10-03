@@ -123,7 +123,6 @@ export default function UpcomingJobActions({
                             availableDays={availableDays}
                             selected={date || null}
                             onSelect={setDate}
-                            today={today}
                             emptyLabel="No days to ask for just now."
                         />
                     </div>

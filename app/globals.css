@@ -347,6 +347,26 @@ body {
   visibility: hidden !important;
 }
 
+/* 6-today. No "today" marker on any calendar (Liam, 03/10/2026; standing rule in
+   CLAUDE.md). The library underlines today, and it only ever showed by accident:
+   before a pick the seeded/empty range covers today and the library paints the
+   underline white, so it popped into view on the guest's first tap and read as
+   a stray focus mark. */
+.rdrDayToday .rdrDayNumber span:after {
+  display: none;
+}
+
+/* 6-focus. The library strips every day's focus outline (.rdrDay:focus
+   { outline: 0 }), so a keyboard user had no idea where they were. Shown on
+   :focus-visible only: a mouse click or tap focuses the day too, and must not
+   leave a ring on it. Two classes deep because the library's theme sheet loads
+   after this one and its .rdrDay:focus would otherwise win the tie. */
+.rdrCalendarWrapper .rdrDay:focus-visible {
+  outline: 2px solid #222222;
+  outline-offset: -2px;
+  border-radius: 9999px;
+}
+
 /* 6a. No colour until the guest chooses. react-date-range treats an empty range
    — startDate/endDate both undefined — as spanning every day, so it fills the
    whole month before anything is picked. That empty range is exactly how the
@@ -558,9 +578,6 @@ body {
   font-size: 13px;
 }
 
-.airbnb-compact-calendar .rdrDayToday .rdrDayNumber span:after {
-  background: #047857;
-}
 
 /* The single-date pick's emerald fill + white number now come from the global
    rule 5/6 above (the booking panel uses react-date-range's Calendar); this
