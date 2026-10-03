@@ -350,8 +350,11 @@ export default function Hero() {
   const whereChosen = whereSummary === 'Where to?' ? '' : whereSummary;
   const whenChosen = whenSummary === 'Add dates' ? '' : whenSummary;
   const guestChosen = guestSummary === 'Add guests' ? '' : guestSummary;
+  // Flexible with no month picked is not a choice on the phone pill: tapping
+  // the tab alone would otherwise turn "Start your search" into "Any week".
+  const pillWhen = dateTab === 'flexible' && selectedMonths.length === 0 ? '' : whenChosen;
   const pillSummary =
-    [whereChosen, whenChosen, guestChosen].filter(Boolean).join(' · ') || 'Start your search';
+    [whereChosen, pillWhen, guestChosen].filter(Boolean).join(' · ') || 'Start your search';
 
   // One search, run from both layouts. Anything the guest left alone is left
   // out of the URL entirely, so a bare `/` still means "show me everything".
