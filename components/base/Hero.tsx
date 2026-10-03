@@ -350,6 +350,8 @@ export default function Hero() {
   const whereChosen = whereSummary === 'Where to?' ? '' : whereSummary;
   const whenChosen = whenSummary === 'Add dates' ? '' : whenSummary;
   const guestChosen = guestSummary === 'Add guests' ? '' : guestSummary;
+  const pillSummary =
+    [whereChosen, whenChosen, guestChosen].filter(Boolean).join(' · ') || 'Start your search';
 
   // One search, run from both layouts. Anything the guest left alone is left
   // out of the URL entirely, so a bare `/` still means "show me everything".
@@ -760,12 +762,9 @@ export default function Hero() {
             className="flex h-14 w-full items-center justify-center gap-2.5 rounded-full border border-stone-100 bg-white px-6 text-center shadow-2xl"
           >
             <span className="flex-none text-emerald-700">{searchIcon('w-4 h-4')}</span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-stone-900">{whereSummary}</span>
-              <span className="block truncate text-xs text-stone-500">
-                {(whenSummary === 'Add dates' ? 'Any week' : whenSummary)} · {guestSummary}
-              </span>
-            </span>
+            {/* One line, as Airbnb's: their prompt until the guest has chosen
+                something, then only what they chose. 14px / 500, their values. */}
+            <span className="min-w-0 truncate text-sm font-medium text-stone-900">{pillSummary}</span>
           </button>
         </div>
 
