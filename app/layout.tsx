@@ -17,6 +17,26 @@ import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import { COMPANY } from '@/config/company';
 import type { Metadata } from 'next';
+import localFont from 'next/font/local';
+
+// One typeface on every device: variable Roboto, the face Android draws the
+// site in. With no font of its own the site fell back to each phone's system
+// font, and an iPhone's San Francisco is wider than Android's Roboto — so on
+// an iPhone "Start hosting" wrapped beside the logo, the hero heading took an
+// extra line and the filter chips ran further off the edge than on Android
+// at the same width. Variable (100–900), not Next's built-in Google Roboto,
+// whose list here stops at fixed weights with no 600: font-semibold is used
+// ~1,200 times and would have jumped to bold. Self-hosted from the
+// @fontsource-variable package, so no request leaves for Google.
+const roboto = localFont({
+  src: [
+    { path: '../node_modules/@fontsource-variable/roboto/files/roboto-latin-wght-normal.woff2', weight: '100 900', style: 'normal' },
+    { path: '../node_modules/@fontsource-variable/roboto/files/roboto-latin-ext-wght-normal.woff2', weight: '100 900', style: 'normal' },
+    { path: '../node_modules/@fontsource-variable/roboto/files/roboto-latin-wght-italic.woff2', weight: '100 900', style: 'italic' },
+  ],
+  variable: '--font-roboto',
+  display: 'swap',
+});
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -33,6 +53,28 @@ export const metadata: Metadata = {
   // Tells search engines which address is the real one, so the www and
   // vercel.app versions don't compete with this one.
   metadataBase: new URL(SITE_URL),
+
+  // maximum-scale=1 + user-scalable=no: Liam's call, 03/10/2026. iOS Safari
+  // zoomed the whole page the instant the sign-in field was tapped and kept
+  // that zoom for the visit; four fixes (16px then 17px fields, no forced
+  // focus, overflow guard) did not stop it on his iPhone 15. This stops
+  // Safari zooming on focus at all.
+  //
+  // What it costs, plainly: on Android (Chrome, Samsung Internet) nobody can
+  // pinch-zoom anywhere on the site unless they have turned on their
+  // browser's "force enable zoom" accessibility setting — people with low
+  // vision lose the easiest way to read small text and photos. On iPhone
+  // Safari has ignored both settings for pinching since iOS 10, so iPhone
+  // users can still pinch; only the automatic zoom-on-focus stops.
+  // Accessibility checkers (Lighthouse, WCAG 1.4.4) flag it. The narrower
+  // option — send these two only to iPhones, leave Android untouched — is
+  // in the PR and is his to decide.
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+  },
 
   // NO `alternates` HERE, DELIBERATELY.
   //
@@ -136,7 +178,7 @@ export default function RootLayout({
   };
 
   return (
-    <html lang="en-GB">
+    <html lang="en-GB" className={roboto.variable}>
       <body className="bg-white text-slate-900 antialiased">
         <script
           type="application/ld+json"
