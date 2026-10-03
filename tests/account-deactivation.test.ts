@@ -49,6 +49,28 @@ test('self-serve deactivation is available to a signed-in user', () => {
         'deactivate_own_account must be callable by the signed-in user');
 });
 
+test('the blocker set can only be asked about YOUR OWN account from the browser', () => {
+    const sql = read(MIGRATION);
+    // The caller-supplied-id form is SECURITY DEFINER, so granting it to
+    // `authenticated` would let any signed-in person pass someone else's id and
+    // learn their listings, reservation counts, and that they are away from home
+    // (mid-stay) until a date. It must stay server-only; the browser asks about
+    // its own account through the no-arg wrapper, where auth.uid() is the identity
+    // and there is no argument to spoof.
+    assert.doesNotMatch(sql, /grant execute on function public\.account_deactivation_blockers\(uuid\) to [^;]*\b(authenticated|anon)\b/,
+        'account_deactivation_blockers(uuid) must NOT be granted to authenticated/anon — it takes a caller-supplied id');
+    assert.match(sql, /grant execute on function public\.account_deactivation_blockers\(uuid\) to service_role;/,
+        'account_deactivation_blockers(uuid) stays the server/admin path');
+    assert.match(sql, /create or replace function public\.my_account_deactivation_blockers\(\)/,
+        'the self-only no-arg wrapper must exist');
+    assert.match(sql, /grant execute on function public\.my_account_deactivation_blockers\(\) to authenticated/,
+        'the wrapper is what the browser calls');
+    // The wrapper must scope to the caller, not an argument.
+    const wrapper = sql.slice(sql.indexOf('function public.my_account_deactivation_blockers'));
+    assert.match(wrapper.slice(0, 400), /account_deactivation_blockers\(auth\.uid\(\)\)/,
+        'the wrapper must call the blocker set with auth.uid(), never a passed-in id');
+});
+
 test('the deactivation worker checks blockers BEFORE it changes anything, and suspends the login', () => {
     const sql = read(MIGRATION);
     const worker = sql.slice(sql.indexOf('function public.admin_deactivate_account'));
