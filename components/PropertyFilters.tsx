@@ -7,14 +7,15 @@ import { SlidersHorizontal, X, Minus, Plus, Check } from 'lucide-react';
 import { amenityIcon } from '@/lib/amenityIcons';
 import { categories } from '@/config/categories';
 import {
-    ACCESSIBILITY_AMENITIES, FILTER_AMENITIES, QUICK_CHIPS, EMPTY_FILTERS,
+    ACCESSIBILITY_AMENITIES, AMENITY_LABELS, FILTER_AMENITIES, QUICK_CHIPS, RECOMMENDED, EMPTY_FILTERS,
     activeFilterCount, matchesFilters, readFilters, writeFilters,
     type FilterFacts, type FilterState,
 } from '@/lib/listingFilters';
 
 // Airbnb's filters, over the property grid: a "Filters" button with a count,
-// a row of one-tap chips beside it, and the full panel — Price range, Rooms and
-// beds, Amenities, Booking options, Property type, Accessibility features — in
+// a row of one-tap chips beside it, and the full panel — Recommended, Price
+// range, Rooms and beds, Amenities, Booking options, Property type,
+// Accessibility features — in
 // a modal (a full-screen sheet on a phone) whose button says how many places
 // it will show. Only what our listings carry is offered; see lib/listingFilters.
 //
@@ -22,7 +23,15 @@ import {
 // it. The count on the button is the shared rule run over it, so it is exactly
 // the number of cards the grid then shows.
 
+// Six fills the amenity grid exactly: two rows of three on a laptop, three rows
+// of two on a phone.
 const AMENITIES_SHOWN = 6;
+
+// Below this many priced places the histogram is a few lone blocks on an empty
+// baseline — it says nothing about where prices sit and looks broken. Until
+// then the handles stand on a plain track; the bars come back by themselves
+// once there are enough listings to make a shape.
+const HISTOGRAM_MIN_PLACES = 12;
 
 export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
     const router = useRouter();
@@ -53,6 +62,7 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
     }, [pool]);
     const ALWAYS = ['Pets allowed', 'Hot tub', 'Step-free guest entrance'];
     const chips = QUICK_CHIPS.filter((c) => ALWAYS.indexOf(c.amenity) !== -1 || present.has(c.amenity));
+    const recommended = RECOMMENDED.filter((r) => ALWAYS.indexOf(r.amenity) !== -1 || present.has(r.amenity)).slice(0, 4);
     const amenityOptions = FILTER_AMENITIES.filter((a) => a === 'Hot tub' || present.has(a));
     const typesPresent = categories.filter((c) => pool.some((l) => l.property_type === c.name));
     const prices = pool.map((l) => Number(l.price_per_night) || 0).filter((n) => n > 0);
@@ -148,10 +158,44 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-6">
+                            {/* Airbnb's "Recommended for you" row — the same amenities as the
+                                pills below, so a tile and its pill light up together. */}
+                            {recommended.length > 0 && (
+                                <Section title="Recommended">
+                                    <div className="grid grid-cols-4 gap-2 sm:gap-3">
+                                        {recommended.map((r) => (
+                                            <Tile key={r.amenity} label={r.label} icon={r.amenity} on={draft.amenities.indexOf(r.amenity) !== -1} onClick={() => toggleIn('amenities', r.amenity)} />
+                                        ))}
+                                    </div>
+                                </Section>
+                            )}
+
                             {/* Price range — per night, which is how our prices are shown. */}
                             {prices.length > 0 && (
                                 <Section title="Price range" sub="Nightly price">
-                                    <PriceBars prices={prices} min={draft.minPrice} max={draft.maxPrice} />
+                                    {/* One piece, as Airbnb draws it: the track is the bars' baseline
+                                        and the handles sit on it. The slider is laid over the bottom
+                                        edge of the bars, centred on it, rather than under them. */}
+                                    <div
+                                        className={`price-slider relative pb-[calc(var(--thumb)/2)] ${
+                                            prices.length >= HISTOGRAM_MIN_PLACES ? '' : 'pt-[calc(var(--thumb)/2)]'
+                                        }`}
+                                    >
+                                        {prices.length >= HISTOGRAM_MIN_PLACES && (
+                                            <div className="px-[calc(var(--thumb)/2)]">
+                                                <PriceBars prices={prices} min={draft.minPrice} max={draft.maxPrice} />
+                                            </div>
+                                        )}
+                                        {priceCeil > priceFloor && (
+                                            <PriceSlider
+                                                floor={priceFloor}
+                                                ceil={priceCeil}
+                                                min={draft.minPrice}
+                                                max={draft.maxPrice}
+                                                onChange={(minPrice, maxPrice) => setDraft((d) => ({ ...d, minPrice, maxPrice }))}
+                                            />
+                                        )}
+                                    </div>
                                     <div className="mt-4 grid grid-cols-2 gap-4">
                                         <PriceInput label="Minimum" placeholder={priceFloor} value={draft.minPrice} onChange={(v) => setDraft((d) => ({ ...d, minPrice: v }))} />
                                         <PriceInput label="Maximum" placeholder={priceCeil} value={draft.maxPrice} onChange={(v) => setDraft((d) => ({ ...d, maxPrice: v }))} />
@@ -167,9 +211,11 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
 
                             {amenityOptions.length > 0 && (
                                 <Section title="Amenities">
-                                    <div className="flex flex-wrap gap-3">
+                                    {/* An even grid rather than a wrapping row, so the second line
+                                        is never one pill and a gap. */}
+                                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                                         {(moreAmenities ? amenityOptions : amenityOptions.slice(0, AMENITIES_SHOWN)).map((a) => (
-                                            <Pill key={a} label={a} icon={a} on={draft.amenities.indexOf(a) !== -1} onClick={() => toggleIn('amenities', a)} />
+                                            <Pill key={a} fill label={AMENITY_LABELS[a] || a} icon={a} on={draft.amenities.indexOf(a) !== -1} onClick={() => toggleIn('amenities', a)} />
                                         ))}
                                     </div>
                                     {amenityOptions.length > AMENITIES_SHOWN && (
@@ -228,7 +274,7 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-between border-t border-stone-200 px-6 py-4">
+                        <div className="flex items-center justify-between border-t border-stone-200 px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
                             <button
                                 type="button"
                                 onClick={() => setDraft(EMPTY_FILTERS)}
@@ -263,19 +309,36 @@ function Section({ title, sub, children }: { title: string; sub?: string; childr
     );
 }
 
-function Pill({ label, icon, on, onClick }: { label: string; icon?: string; on: boolean; onClick: () => void }) {
+function Pill({ label, icon, on, onClick, fill }: { label: string; icon?: string; on: boolean; onClick: () => void; fill?: boolean }) {
     const Icon = icon ? amenityIcon(icon) : null;
     return (
         <button
             type="button"
             aria-pressed={on}
             onClick={onClick}
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm transition ${
+            className={`${fill ? 'flex w-full min-w-0' : 'inline-flex'} items-center gap-2 rounded-full border px-4 py-2.5 text-sm transition ${
                 on ? 'border-stone-900 bg-stone-100 font-semibold' : 'border-stone-300 hover:border-stone-900'
             }`}
         >
-            {Icon && <Icon className="h-4 w-4" />}
-            {label}
+            {Icon && <Icon className="h-4 w-4 flex-none" />}
+            <span className={fill ? 'truncate' : undefined}>{label}</span>
+        </button>
+    );
+}
+
+// A Recommended tile: Airbnb's square with the icon in it and the name beneath.
+function Tile({ label, icon, on, onClick }: { label: string; icon: string; on: boolean; onClick: () => void }) {
+    const Icon = amenityIcon(icon);
+    return (
+        <button type="button" aria-pressed={on} onClick={onClick} className="group flex min-w-0 flex-col items-center gap-2 text-center">
+            <span
+                className={`flex h-[72px] w-full items-center justify-center rounded-xl border transition sm:h-24 ${
+                    on ? 'border-2 border-stone-900 bg-stone-50' : 'border-stone-200 group-hover:border-stone-900'
+                }`}
+            >
+                <Icon className="h-7 w-7 text-stone-800 sm:h-8 sm:w-8" strokeWidth={1.5} />
+            </span>
+            <span className={`text-[13px] leading-tight sm:text-sm ${on ? 'font-semibold' : 'text-stone-700'}`}>{label}</span>
         </button>
     );
 }
@@ -317,6 +380,62 @@ function PriceInput({ label, placeholder, value, onChange }: { label: string; pl
     );
 }
 
+// Airbnb's two handles on the scale. Dragging either sets the minimum or
+// maximum, and the boxes below follow; typing in a box moves its handle. A
+// handle back at the end of the scale means "no limit" (null), the same as an
+// empty box. The handles cannot cross.
+function PriceSlider({ floor, ceil, min, max, onChange }: {
+    floor: number; ceil: number; min: number | null; max: number | null;
+    onChange: (min: number | null, max: number | null) => void;
+}) {
+    const clamp = (n: number) => Math.min(ceil, Math.max(floor, n));
+    const lo = clamp(min ?? floor);
+    const hi = Math.max(lo, clamp(max ?? ceil));
+    const pct = (n: number) => ((n - floor) / (ceil - floor)) * 100;
+    // Where a thumb's centre sits: inset by half a thumb at each end, as the
+    // browser draws it.
+    const at = (n: number) => `calc(var(--thumb) / 2 + (100% - var(--thumb)) * ${pct(n) / 100})`;
+    // With both handles pushed right, the minimum must sit on top or it could
+    // never be dragged back out from under the maximum.
+    const minOnTop = lo > floor + (ceil - floor) / 2;
+    return (
+        <div className="absolute inset-x-0 bottom-0 h-[var(--thumb)]">
+            <div className="absolute top-1/2 h-0.5 -translate-y-1/2 bg-stone-200" style={{ left: 'calc(var(--thumb) / 2)', right: 'calc(var(--thumb) / 2)' }} />
+            <div className="absolute top-1/2 h-0.5 -translate-y-1/2 bg-stone-900" style={{ left: at(lo), width: `calc((100% - var(--thumb)) * ${(pct(hi) - pct(lo)) / 100})` }} />
+            <input
+                type="range"
+                className="price-range"
+                style={{ zIndex: minOnTop ? 2 : 1 }}
+                min={floor}
+                max={ceil}
+                step={1}
+                value={lo}
+                aria-label="Minimum price"
+                aria-valuetext={`£${lo}`}
+                onChange={(e) => {
+                    const v = Math.min(Number(e.target.value), hi);
+                    onChange(v <= floor ? null : v, max);
+                }}
+            />
+            <input
+                type="range"
+                className="price-range"
+                style={{ zIndex: minOnTop ? 1 : 2 }}
+                min={floor}
+                max={ceil}
+                step={1}
+                value={hi}
+                aria-label="Maximum price"
+                aria-valuetext={`£${hi}`}
+                onChange={(e) => {
+                    const v = Math.max(Number(e.target.value), lo);
+                    onChange(min, v >= ceil ? null : v);
+                }}
+            />
+        </div>
+    );
+}
+
 // Airbnb's little histogram over the price inputs: where the prices sit, with
 // the bars outside the chosen range greyed out.
 function PriceBars({ prices, min, max }: { prices: number[]; min: number | null; max: number | null }) {
@@ -336,7 +455,7 @@ function PriceBars({ prices, min, max }: { prices: number[]; min: number | null;
                     <div
                         key={i}
                         className={`flex-1 rounded-t-sm ${inRange ? 'bg-stone-900' : 'bg-stone-200'}`}
-                        style={{ height: c ? Math.max(8, (c / peak) * 100) + '%' : '2px' }}
+                        style={{ height: c ? Math.max(8, (c / peak) * 100) + '%' : 0 }}
                     />
                 );
             })}

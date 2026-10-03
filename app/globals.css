@@ -735,3 +735,53 @@ body {
   color: #0f172a;
   padding: 2px 7px;
 }
+
+/* Price-range handles in the Filters panel (components/PropertyFilters.tsx).
+   Two native range inputs laid over one track, as Airbnb builds it: the
+   inputs ignore the pointer and only their round thumbs take it, so either
+   handle can be grabbed and a drag on the bare track scrolls the sheet. 32px
+   with a mouse (Airbnb's size); 44px on a touch screen, the minimum a finger
+   can hit reliably. */
+.price-range {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  outline: none;
+}
+.price-range::-webkit-slider-runnable-track { background: transparent; border: 0; }
+.price-range::-moz-range-track { background: transparent; border: 0; }
+.price-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: var(--thumb, 32px);
+  height: var(--thumb, 32px);
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid #d6d3d1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  cursor: grab;
+}
+.price-range::-moz-range-thumb {
+  pointer-events: auto;
+  width: var(--thumb, 32px);
+  height: var(--thumb, 32px);
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid #d6d3d1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  cursor: grab;
+}
+.price-range:active::-webkit-slider-thumb { cursor: grabbing; transform: scale(1.06); }
+.price-range:focus-visible::-webkit-slider-thumb { outline: 2px solid #1c1917; outline-offset: 2px; }
+.price-range:focus-visible::-moz-range-thumb { outline: 2px solid #1c1917; outline-offset: 2px; }
+.price-slider { --thumb: 32px; }
+@media (pointer: coarse) {
+  .price-slider { --thumb: 44px; }
+}

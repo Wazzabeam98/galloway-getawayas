@@ -52,6 +52,27 @@ export const QUICK_CHIPS: { amenity: string; label: string }[] = [
     { amenity: 'Waterfront', label: 'Waterfront' },
 ];
 
+// The "Recommended" tiles at the top of the panel — Airbnb's row of four, picked
+// for a Galloway cottage break rather than copied: dogs, a hot tub, a fire and
+// somewhere to leave the car are what guests here choose on. The panel shows
+// the first four that a listing in view has; Wifi and an EV charger stand in if
+// one is missing. Wifi is last on purpose — almost every place has it, so as a
+// filter it rarely narrows anything.
+export const RECOMMENDED: { amenity: string; label: string }[] = [
+    { amenity: 'Pets allowed', label: 'Dog friendly' },
+    { amenity: 'Hot tub', label: 'Hot tub' },
+    { amenity: 'Indoor fireplace', label: 'Fireplace' },
+    { amenity: 'Free parking on premises', label: 'Free parking' },
+    { amenity: 'EV charger', label: 'EV charger' },
+    { amenity: 'Wifi', label: 'Wifi' },
+];
+
+// Shorter words for the panel's pills, where the wizard's label is too long to
+// sit in an even grid. The stored string is unchanged.
+export const AMENITY_LABELS: Record<string, string> = {
+    'Free parking on premises': 'Free parking',
+};
+
 export interface FilterState {
     amenities: string[];      // every one must be present
     types: string[];          // any one (property_type, the wizard's category name)
