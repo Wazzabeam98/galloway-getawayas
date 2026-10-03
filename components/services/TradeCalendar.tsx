@@ -184,7 +184,7 @@ export default function TradeCalendar({
                                     <Wrench className="h-2.5 w-2.5" />
                                 </span>
                             )}
-                            <span className={`text-xs font-semibold ${isBlocked ? 'text-slate-400 line-through' : hasWork ? (isClash ? 'text-amber-900' : 'text-emerald-900') : 'text-slate-800'}`}>
+                            <span className={`text-xs font-medium ${isBlocked ? 'text-slate-400 line-through' : hasWork ? (isClash ? 'text-amber-900' : 'text-emerald-900') : 'text-[#222222]'}`}>
                                 {format(day, 'd')}
                             </span>
                             {/* A job day reads like a host's booking day, filled out:
