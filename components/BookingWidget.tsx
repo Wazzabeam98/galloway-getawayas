@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { formatGBP } from '@/lib/formatMoney';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
@@ -301,6 +301,21 @@ export default function BookingWidget({
     // submit guard and .rdr-unselected all read an empty choice, and which the
     // draft effect above writes back to the URL as no checkIn/checkOut.
     const [calendarKey, setCalendarKey] = useState(0);
+
+    // The month the guest is looking at, kept so Clear dates leaves them on it.
+    // The remount below opens on `shownDate`; without it react-date-range
+    // opens on the selection's month, and with no selection that is the
+    // current month — November, pick dates, Clear dates landed on October.
+    // A ref, not state: it only needs reading at that remount.
+    const shownMonth = useRef<Date | undefined>(undefined);
+
+    // One array per selection, not one per render. react-date-range re-aims
+    // its month whenever `ranges` is a new array, and with no dates picked it
+    // aims at the current month — so browsing to November and then pressing
+    // Adults + (or anything else that redraws this box) threw the calendar
+    // back to October.
+    const calendarRanges = useMemo(() => [dateRange], [dateRange]);
+
     const clearDates = () => {
         setError('');
         setDateRange({ startDate: undefined, endDate: undefined, key: 'selection' });
@@ -470,9 +485,12 @@ export default function BookingWidget({
                     // Remounted by Clear dates: the picker keeps its own note of
                     // which end it is choosing next, so after a check-in pick it
                     // would treat the guest's next tap as a check-out against an
-                    // empty start. A fresh mount starts back at check-in.
+                    // empty start. A fresh mount starts back at check-in, on
+                    // the month the guest had navigated to (shownDate).
                     key={calendarKey}
-                    ranges={[dateRange]}
+                    ranges={calendarRanges}
+                    shownDate={shownMonth.current}
+                    onShownDateChange={(d: Date) => { shownMonth.current = d; }}
                     onChange={handleSelect}
                     minDate={new Date()}
                     maxDate={maxBookableDate}
