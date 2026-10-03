@@ -14,14 +14,13 @@
 //
 // Nobody is ever shown more than one of these at a time.
 //
-// SWAPPING THE WORDING (e.g. when the solicitor's version comes back) is two
-// edits per document and nothing else:
+// CHANGING THE WORDING is two edits per document and nothing else:
 //
 //   1. the text, in the one file named by `textFile` below; and
 //   2. `version` (and `lastUpdated`) for that document, here.
 //
 // (Wording lives in markdown inside a .ts file, rendered by
-// components/legal/LegalMarkdown, so a new draft can be pasted straight in.)
+// components/legal/LegalMarkdown, so new wording can be pasted straight in.)
 //
 // Every account whose recorded version no longer matches is asked to accept the
 // new one the next time they sign in (components/legal/AgreementGate), and every
@@ -53,9 +52,6 @@ export interface Agreement {
     lastUpdated: string;
     // The one file that holds the wording, for whoever swaps it.
     textFile: string;
-    // True while the text is a placeholder or has not been reviewed by the
-    // solicitor. The page and the modal show a banner while it is.
-    draft: boolean;
 }
 
 export const AGREEMENTS: Record<AgreementKey, Agreement> = {
@@ -64,45 +60,38 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
         title: 'Guest Terms',
         audience: 'Everyone with an account — guests, hosts, providers and tradespeople.',
         path: '/terms/guests',
-        version: 'v1-draft-2026-09-29',
-        lastUpdated: '2026-09-29',
+        version: 'v1-2026-10-03',
+        lastUpdated: '2026-10-03',
         textFile: 'components/legal/agreements/text/guest.ts',
-        draft: true,
     },
     host: {
         key: 'host',
         title: 'Host Agreement',
         audience: 'Hosts who list a holiday let.',
         path: '/terms/hosts',
-        // Unchanged from lib/hostTerms' HOST_TERMS_VERSION: the host section was
-        // moved out of /terms word for word, so a host who agreed on 28/09/2026
-        // has agreed to exactly this and is not asked again.
-        version: '2026-09-28',
-        lastUpdated: '2026-09-28',
+        version: 'v1-2026-10-03',
+        lastUpdated: '2026-10-03',
         textFile: 'components/legal/agreements/HostAgreement.tsx',
-        draft: false,
     },
     experience_provider: {
         key: 'experience_provider',
         title: 'Experience Provider Agreement',
         audience: 'Local providers who offer guest experiences — a chef, a sauna, a cake, a photographer.',
         path: '/terms/experience-providers',
-        // The v1 draft replaces the 07/09/2026 provider terms
-        // (draft-2026-09-07), so a provider who agreed to those is asked again.
-        version: 'v1-draft-2026-09-29',
-        lastUpdated: '2026-09-29',
+        // Replaces the 07/09/2026 provider terms (draft-2026-09-07), so a
+        // provider who agreed to those is asked again.
+        version: 'v1-2026-10-03',
+        lastUpdated: '2026-10-03',
         textFile: 'components/legal/agreements/text/experience-provider.ts',
-        draft: true,
     },
     tradesperson: {
         key: 'tradesperson',
         title: 'Tradesperson Agreement',
         audience: 'Tradespeople who take jobs from hosts — plumbers, electricians, joiners and the rest.',
         path: '/terms/tradespeople',
-        version: 'v1-draft-2026-09-29',
-        lastUpdated: '2026-09-29',
+        version: 'v1-2026-10-03',
+        lastUpdated: '2026-10-03',
         textFile: 'components/legal/agreements/text/tradesperson.ts',
-        draft: true,
     },
 };
 

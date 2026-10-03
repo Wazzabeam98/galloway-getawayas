@@ -52,7 +52,7 @@ test('recordOrderGuestTerms records the carried version and tick time, not now',
     const tickedAt = '2026-01-02T03:04:05.000Z';   // long before "now"
 
     const { error } = await recordOrderGuestTerms(admin, 'user-1', {
-        guest_terms_version: 'v1-draft-2026-09-29',
+        guest_terms_version: 'v1-2026-10-03',
         guest_terms_accepted_at: tickedAt,
     });
 
@@ -60,7 +60,7 @@ test('recordOrderGuestTerms records the carried version and tick time, not now',
     assert.ok(captured.acceptance, 'an acceptance row was written');
     assert.equal(captured.acceptance.user_id, 'user-1');
     assert.equal(captured.acceptance.document, 'guest');
-    assert.equal(captured.acceptance.version, 'v1-draft-2026-09-29', 'the version the guest ticked');
+    assert.equal(captured.acceptance.version, 'v1-2026-10-03', 'the version the guest ticked');
     assert.equal(captured.acceptance.accepted_at, tickedAt, 'the checkout tick time, not now');
     assert.equal(captured.acceptance.source, 'experience_checkout_anon');
 });
@@ -75,7 +75,7 @@ test('recordOrderGuestTerms is a no-op for a signed-in order (no carried version
 test('recordOrderGuestTerms is a no-op when no account was minted', async () => {
     const { admin, captured } = acceptanceAdmin();
     const { error } = await recordOrderGuestTerms(admin, null, {
-        guest_terms_version: 'v1-draft-2026-09-29',
+        guest_terms_version: 'v1-2026-10-03',
         guest_terms_accepted_at: '2026-01-02T03:04:05.000Z',
     });
     assert.equal(error, null);

@@ -33,7 +33,7 @@ import { loadEnv, supabaseClient, TEST_PROJECT_REF } from './seed-lib.mjs';
 const SEED_DOMAIN = 'gallowaytrade.test';
 const LIAM_EMAIL = 'liamworrall18@hotmail.com';
 const PASSWORD = 'walk-the-trade-2026';
-const AGREEMENT_VERSION = 'v1-draft-2026-09-29'; // keep in sync with AGREEMENTS in lib/agreements.ts
+const AGREEMENT_VERSION = 'v1-2026-10-03'; // keep in sync with AGREEMENTS in lib/agreements.ts
 
 const env = loadEnv();
 if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.NEXT_PUBLIC_SUPABASE_URL.includes(TEST_PROJECT_REF)) {
