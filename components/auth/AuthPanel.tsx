@@ -311,6 +311,9 @@ export default function AuthPanelHost() {
         if (!target || busy) return;
         setBusy(true);
         setError('');
+        // Before verifying, so the choice is in place the moment the session
+        // starts (lib/staySignedIn: every sign-in route records it).
+        recordStayChoice(stay);
         const r = await verifySignInCode(supabase, target, code);
         if (!r.ok) {
             setBusy(false);
@@ -318,8 +321,6 @@ export default function AuthPanelHost() {
             return;
         }
         clearPending();
-        // The lifetime the middleware gives the sign-in cookie from the next page.
-        recordStayChoice(stay);
         if (!stay) forgetAccount();
         const s = r.value;
         setSession(s);

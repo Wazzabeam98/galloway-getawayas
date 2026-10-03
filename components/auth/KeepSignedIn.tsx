@@ -9,13 +9,14 @@ import { makeAuthCookiesSessionOnly, stayChoiceInBrowser } from '@/lib/staySigne
 // each refresh this asks the server to re-issue it with the chosen lifetime
 // (the middleware does that on /api/auth/keep), or, for someone who chose not
 // to stay signed in, turns it back into a cookie that ends with the browser.
-// See lib/staySignedIn.
+// The choice is read against this session's id, so one made for an earlier
+// sign-in does not count. See lib/staySignedIn.
 export default function KeepSignedIn() {
     useEffect(() => {
         const supabase = createClientComponentClient();
-        const { data } = supabase.auth.onAuthStateChange((event) => {
+        const { data } = supabase.auth.onAuthStateChange((event, session) => {
             if (event !== 'TOKEN_REFRESHED' && event !== 'SIGNED_IN') return;
-            if (stayChoiceInBrowser()) {
+            if (stayChoiceInBrowser(session?.access_token)) {
                 fetch('/api/auth/keep', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
             } else {
                 makeAuthCookiesSessionOnly();

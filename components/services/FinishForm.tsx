@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
+import { recordStayChoice } from '@/lib/staySignedIn';
 
 // One field. Everything else was typed on the wizard and is already saved.
 export default function FinishForm({ token, email, trade }: { token: string; email: string; trade?: string }) {
@@ -90,6 +91,7 @@ export default function FinishForm({ token, email, trade }: { token: string; ema
                 //
                 // The browser already holds the password they just chose, so
                 // this needs nothing from the server it does not have.
+                recordStayChoice(true);
                 const { error: signInError } = await supabase.auth.signInWithPassword({
                     email,
                     password,

@@ -12,6 +12,7 @@ import Logo from '@/components/base/Logo';
 import MessageTemplates from '@/components/account/MessageTemplates';
 import LoginModel from '@/components/auth/LoginModel';
 import { forgetAccount } from '@/lib/signInMemory';
+import { carryStayChoice, clearAuthCookies, clearStayChoice } from '@/lib/staySignedIn';
 import { toast } from 'react-toastify';
 import { getImageUrl, formatTime } from '@/lib/utils';
 import Env from '@/config/Env';
@@ -369,6 +370,9 @@ export default function AccountSettings() {
         // Supabase's updateUser does NOT ask for the existing password, so on its
         // own anyone at an unlocked laptop could change it. Re-signing in first
         // proves the person actually knows the current password.
+        // This signs in again, which starts a new session: keep this one's
+        // stay choice for it (lib/staySignedIn).
+        carryStayChoice();
         const { error: checkError } = await supabase.auth.signInWithPassword({
             email: session.user.email,
             password: currentPassword,
@@ -404,6 +408,10 @@ export default function AccountSettings() {
             return;
         }
 
+        // This device ended it on purpose. The others will report it as
+        // refused (lib/staySignedIn), which is expected after "everywhere".
+        clearAuthCookies();
+        clearStayChoice();
         toast.success('Signed out on all devices.', { theme: 'colored' });
         router.push('/');
         router.refresh();
@@ -429,6 +437,9 @@ export default function AccountSettings() {
         // A closed account must not be greeted by name on the next visit.
         forgetAccount();
         await supabase.auth.signOut();
+        // Ended on purpose: not a lost sign-in (lib/staySignedIn).
+        clearAuthCookies();
+        clearStayChoice();
         router.push('/');
         router.refresh();
     };
@@ -461,6 +472,9 @@ export default function AccountSettings() {
         // A closed account must not be greeted by name on the next visit.
         forgetAccount();
         await supabase.auth.signOut();
+        // Ended on purpose: not a lost sign-in (lib/staySignedIn).
+        clearAuthCookies();
+        clearStayChoice();
         router.push('/');
         router.refresh();
     };
