@@ -116,7 +116,14 @@ const Navbar = async () => {
                         </Link>
                     )}
                 </div>
-                <div className='flex items-center space-x-6'>
+                {/* gap, not space-x: space-x puts its margin on every child
+                    after the first, hidden ones included, so the phone-hidden
+                    "Welcome" link added a phantom 24px the moment anyone signed
+                    in. That, plus the logo, "Start hosting" and the menu not
+                    fitting a 320px screen, made the page wider than an iPhone —
+                    and iOS Safari then shows every page zoomed and panned right.
+                    gap counts only what is displayed; it tightens on phones. */}
+                <div className='flex items-center gap-3 sm:gap-6'>
                     {firstName && (
                         <Link href="/account" className="text-sm font-semibold text-slate-800 hidden sm:block hover:underline">
                             Welcome, {firstName}
@@ -138,7 +145,9 @@ const Navbar = async () => {
                             <ModeSwitch mode={mode} workHref='/services/dashboard' workLabel='providing' />
                         </div>
                     ) : (
-                        <Link href="/business" className="text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition text-slate-800">
+                        // Off below 360px: the logo, this and the menu need ~355px
+                        // and would push the page sideways. It is in the menu too.
+                        <Link href="/business" className="hidden min-[360px]:block text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition text-slate-800">
                             Start hosting
                         </Link>
                     )}
