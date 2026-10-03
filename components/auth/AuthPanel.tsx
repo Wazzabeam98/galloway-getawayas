@@ -156,7 +156,20 @@ export default function AuthPanelHost() {
     // Keep the site-wide terms prompt out of the way while the panel is up.
     useEffect(() => (open ? holdAgreementGate() : undefined), [open]);
 
-    useEffect(() => { if (open) firstField.current?.focus(); }, [open, screen]);
+    // Put the cursor in the first field when the panel opens — but only on a
+    // mouse. On a touch phone this focus is what still zoomed the panel in and
+    // pushed its top off the screen even after #254 made every input 16px: the
+    // trigger was never the font size (the field is a genuine 16px), it was
+    // forcing focus as the bottom sheet mounts, which brings up the keyboard and
+    // makes iOS Safari zoom and scroll to the caret. The guest taps the field
+    // themselves on a phone — as Airbnb's own panel leaves them to — so there is
+    // no forced focus to zoom against; the convenience stays on the desktop
+    // dialog, where there is no soft keyboard.
+    useEffect(() => {
+        if (!open) return;
+        if (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches) return;
+        firstField.current?.focus();
+    }, [open, screen]);
 
     useEffect(() => {
         if (wait <= 0) return;
