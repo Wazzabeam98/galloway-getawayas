@@ -301,7 +301,7 @@ export function RequestBookingDialog({
                 {calOpen ? (
                     <>
                         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-                            <MonthCalendar availableDays={calDays} selected={calSel} onSelect={setCalSel} today={today} />
+                            <MonthCalendar availableDays={calDays} selected={calSel} onSelect={setCalSel} />
                         </div>
                         <div className="border-t border-slate-100 px-5 py-4">
                             <button type="button" onClick={applyCalPick} disabled={!calSel}
@@ -584,7 +584,7 @@ export function DateOnlyDialog({ title, availableDays, selected, onSelect, onClo
                 {calOpen ? (
                     <>
                         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-                            <MonthCalendar availableDays={availableDays} selected={calSel} onSelect={setCalSel} today={today} />
+                            <MonthCalendar availableDays={availableDays} selected={calSel} onSelect={setCalSel} />
                         </div>
                         <div className="border-t border-slate-100 px-5 py-4">
                             <button type="button" onClick={() => { if (calSel) { onSelect(calSel); } }} disabled={!calSel}
