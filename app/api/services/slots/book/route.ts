@@ -16,6 +16,7 @@ import {
 } from '@/lib/serviceSlots';
 import { itemFulfilment } from '@/lib/serviceProviders';
 import { agreementProblem, anonGuestTermsRecord } from '@/lib/agreements';
+import { requireGuestTerms } from '@/lib/agreementRecords';
 import { childrenAllowed } from '@/lib/guestAges';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
@@ -78,9 +79,9 @@ export async function POST(request: Request) {
         const typedName: string = (body && body.guestName ? String(body.guestName) : '').slice(0, 120).trim();
         const typedEmail: string = (body && body.guestEmail ? String(body.guestEmail) : '').slice(0, 200).trim().toLowerCase();
         const typedPhone: string = (body && body.guestPhone ? String(body.guestPhone) : '').slice(0, 40).trim();
-        // The Guest Terms version an anonymous booker ticked at checkout — see the
-        // wall below. Ignored when signed in (recorded through /api/agreements
-        // before this POST). A string or null; never trusted beyond the wall.
+        // The Guest Terms version the booker ticked at checkout — see the walls
+        // below (anonymous, then signed in). A signed-in guest already on the
+        // current version sends none. A string or null; never trusted beyond them.
         const submittedGuestTerms: string | null =
             body && typeof body.guestTermsVersion === 'string' ? body.guestTermsVersion : null;
 
@@ -120,9 +121,9 @@ export async function POST(request: Request) {
                     { status: 429 }
                 );
             }
-            // THE GUEST TERMS WALL for an anonymous booker. A signed-in guest
-            // records them through /api/agreements before this POST and is held by
-            // its own wall; an anonymous one has no account yet, so the acceptance
+            // THE GUEST TERMS WALL for an anonymous booker. A signed-in guest is
+            // walled just below (requireGuestTerms); an anonymous one has no
+            // account yet, so the acceptance
             // rides on the order and is proved HERE — the same rule the browser's
             // disabled button and /api/agreements apply (lib/agreements). A missing
             // tick, or a page older than the current wording, is refused.
@@ -136,6 +137,17 @@ export async function POST(request: Request) {
         }
 
         const admin = adminClient();
+
+        // THE GUEST TERMS WALL for a signed-in booker, on the server — on record
+        // already, or the tick sent with this request is recorded against the
+        // account now. Its acceptance is stamped on the order below exactly as the
+        // anonymous one is, so every order says which terms its booker accepted.
+        let signedInTerms: { guest_terms_version: string; guest_terms_accepted_at: string } | null = null;
+        if (user) {
+            const wall = await requireGuestTerms(admin, user.id, submittedGuestTerms, 'experience_checkout');
+            if (!wall.ok) return NextResponse.json(wall.body, { status: wall.status });
+            signedInTerms = wall.stamp!;
+        }
 
         let booking: any = null;
         if (!standalone) {
@@ -596,11 +608,11 @@ export async function POST(request: Request) {
                 // (lib/linkedTravelNotice ltaNoticeRecord, the rule the page uses).
                 ...ltaNoticeRecord(!standalone, !!packageNotice, nowIso),
                 ...(packageNotice || {}),
-                // An anonymous booker's Guest Terms acceptance — the version they
-                // ticked and the checkout time — carried on the order until the
-                // webhook mints their account and records it against them. Nothing
-                // for a signed-in booker (recorded through /api/agreements already).
-                ...anonGuestTermsRecord(anonymous ? submittedGuestTerms : null, nowIso),
+                // The booker's Guest Terms acceptance — the version and when. For
+                // an anonymous booker it is carried here until the webhook mints
+                // their account and records it against them; for a signed-in one it
+                // is the acceptance the wall above found or recorded.
+                ...(signedInTerms || anonGuestTermsRecord(anonymous ? submittedGuestTerms : null, nowIso)),
                 // The buyer's contact, for the provider — written here for a
                 // standalone order (the webhook writes it for the against-a-stay one).
                 guest_name: standalone ? guestName : undefined,

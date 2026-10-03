@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { AGREEMENTS, AgreementKey, agreementProblem, versionForTick } from '@/lib/agreements';
+import { signOutThisDevice } from '@/lib/staySignedIn';
 import AgreementTick, {
     AGREEMENTS_CHANGED,
     GATE_HOLD_CHANGED,
@@ -114,7 +115,9 @@ export default function AgreementGate() {
     };
 
     const logOut = async () => {
-        await supabase.auth.signOut();
+        // This device only: saying "not now" here must not sign them out of
+        // their phone as well (lib/staySignedIn).
+        await signOutThisDevice(supabase);
         window.location.href = '/';
     };
 

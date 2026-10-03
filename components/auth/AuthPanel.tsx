@@ -25,7 +25,7 @@ import {
     savePending,
     secondsUntilResend,
 } from '@/lib/signInMemory';
-import { recordStayChoice } from '@/lib/staySignedIn';
+import { recordStayChoice, signOutThisDevice } from '@/lib/staySignedIn';
 import { getImageUrl } from '@/lib/utils';
 
 /**
@@ -381,7 +381,7 @@ export default function AuthPanelHost() {
 
     // The way out for someone who will not agree: signed out, panel closed.
     const leaveWithoutAgreeing = async () => {
-        await supabase.auth.signOut();
+        await signOutThisDevice(supabase);
         window.location.reload();
     };
 

@@ -1965,6 +1965,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // from the same source, so they can't disagree about the flow.
     const flowSections = sectionsFor(trade, stepCtx);
     const currentSection = sectionForStep(step);
+    // The left section rail (and its mirrored right spacer) show on the
+    // question steps. The finish step is a full-width review — nothing is
+    // ahead to navigate to — so it drops both and the recap uses the whole
+    // body width rather than a narrow centre column with blank space either
+    // side. Kept as one flag so the rail, its expand chevron and the spacer
+    // can never disagree about when it shows.
+    const showRail = Boolean(currentSection) && flowSections.length > 0 && step !== 'finish';
     const stepIndexInFlow = steps.findIndex((x) => x.key === step);
     // A section is done when its last live step sits before the current one;
     // active when the current step is one of its own; ahead otherwise.
@@ -3408,7 +3415,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         the rail and the right-hand spacer are always the same width,
                         the centred column sits dead centre in either state, so
                         collapsing never moves it. */}
-                    {currentSection && flowSections.length > 0 && railCollapsed && (
+                    {showRail && railCollapsed && (
                         <button
                             type="button"
                             onClick={toggleRail}
@@ -3418,7 +3425,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             <ChevronRight className="h-5 w-5" />
                         </button>
                     )}
-                    {currentSection && flowSections.length > 0 && (
+                    {showRail && (
                         <nav aria-label="Sections"
                             className={'hidden lg:flex shrink-0 flex-col overflow-y-auto overflow-x-hidden border-r transition-[width] duration-300 ease-out '
                                 + (railCollapsed ? 'w-0 px-0 py-0 border-transparent' : 'w-72 px-6 py-12 border-slate-100')}>
@@ -3513,9 +3520,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')
                                 ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
                                 : step === 'finish'
-                                    /* Guest finish is a full-width listing preview;
-                                       a host's is the narrower account panel. */
-                                    ? (isGuest ? 'max-w-6xl py-10 sm:py-12' : 'max-w-3xl py-10 sm:py-12')
+                                    /* Finish is a review step: the rail and its
+                                       spacer drop (see showRail), so the panel now
+                                       spans the body. The guest preview takes the
+                                       full width; the host recap is a single card,
+                                       so a 4xl cap keeps it generous without going
+                                       cavernous. */
+                                    ? (isGuest ? 'max-w-6xl py-10 sm:py-12' : 'max-w-4xl py-10 sm:py-12')
                                     /* The made-to-order fork and the slot choice
                                        forks centre their cards in the space on
                                        desktop, like the steppers. */
@@ -6103,8 +6114,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                 ? ((collectionTown.trim() || '—') + (areaList ? GUEST_SCREEN_COPY.finishCoverageTravelSuffix + areaList : ''))
                                 : (collectionTown.trim() || '—'))
                         : (areaList || '—');
+                // A slot with no weekly times yet: "0 weekly times" read as an
+                // error rather than a value, so the fact is left out entirely
+                // until there is a time to show (they add them before going
+                // live). A made-to-order or comes-to-you shape always has a When.
+                const slotCount = (schedule || []).length;
                 const whenVal = shape === 'slot'
-                    ? `${(schedule || []).length} weekly time${(schedule || []).length === 1 ? '' : 's'}`
+                    ? (slotCount ? `${slotCount} weekly time${slotCount === 1 ? '' : 's'}` : null)
                     : shape === 'made_to_order'
                         ? `${String(leadTimeDays || '0').trim()} days’ notice`
                         : 'arranged per booking';
@@ -6112,12 +6128,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 // cover leads. More than three crams; one or two fill the space
                 // rather than leaving gaps (see the layout below).
                 const shots = (photos || []).slice(0, 3).map((p) => getImageUrl(p));
-                const facts: [string, string][] = [
+                const facts: [string, string][] = ([
                     [GUEST_SCREEN_COPY.finishSummaryPrice, priceVal],
                     [GUEST_SCREEN_COPY.finishSummaryCoverage, coverageVal],
                     [GUEST_SCREEN_COPY.finishSummaryWhen, whenVal],
                     [GUEST_SCREEN_COPY.finishSummaryPhotos, String((photos || []).length)],
-                ];
+                ] as [string, string | null][]).filter((e): e is [string, string] => e[1] != null);
                 const wrote: [string, string][] = ([
                     [GUEST_SCREEN_COPY.finishWroteTitle, professionalTitle.trim()],
                     [GUEST_SCREEN_COPY.finishWroteExpect, whatToExpect.trim()],
@@ -6163,12 +6179,18 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             </div>
                         )}
                         <div className="p-6 sm:p-8">
-                            {/* The Title is the listing's display name; the
-                                category sits beneath it, and the provider's own
-                                photo + first name is the byline (who a guest is
-                                booking) — never a surname. */}
+                            {/* The heading is the listing's display name — the
+                                experience's own name (listingTitle → business_name),
+                                the very h1 a guest reads on the card and listing
+                                page, so the recap mirrors what they're publishing.
+                                The professional title (what the PERSON is, e.g.
+                                "Wild swimming guide") is a credential, shown below
+                                under "Your title", not as the heading. The category
+                                sits beneath, and the provider's own photo + first
+                                name is the byline (who a guest is booking) — never a
+                                surname. */}
                             <h3 className="text-2xl font-bold text-slate-900 [text-wrap:balance] sm:text-3xl">
-                                {professionalTitle.trim() || '—'}
+                                {listingTitle.trim() || '—'}
                             </h3>
                             <p className="mt-1 text-slate-500">{catLabel}</p>
 
@@ -6314,7 +6336,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     Without it the panel centres in the rail-left-only space and the
                     whole column slides by half the rail's width change every time
                     the rail collapses/expands. Hidden below lg, like the rail. */}
-                {currentSection && flowSections.length > 0 && (
+                {showRail && (
                     <div aria-hidden
                         className={'hidden lg:block shrink-0 transition-[width] duration-300 ease-out '
                             + (railCollapsed ? 'w-0' : 'w-72')} />
