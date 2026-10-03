@@ -143,7 +143,7 @@ export default function DatePicker({
                                 onClick={() => onChange(key)}
                                 aria-pressed={isSelected}
                                 className={
-                                    'w-full h-9 rounded-lg text-[13px] transition '
+                                    'w-full h-9 rounded-lg text-sm transition '
                                     + (isSelected
                                         ? 'bg-emerald-700 text-white font-semibold'
                                         : past

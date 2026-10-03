@@ -197,7 +197,7 @@
 
 /* 6. Day numbers — Airbnb's exact values, read off their booking calendar on
    03/10/2026 (computed style of an available date, desktop and 375px phone
-   alike): #222222 at font-weight 500. react-date-range's own theme sets
+   alike): #222222 at font-weight 500, 14px. react-date-range's own theme sets
    .rdrDayNumber to weight 300, which is why slate-900 still read grey beside
    theirs — the colour was dark enough, the strokes were too thin. The hand-built
    calendars (MonthCalendar, SlotCalendar, TradeCalendar, the host calendar,
@@ -207,6 +207,12 @@
    ends; #222 on the pale band. */
 .rdrDayNumber {
   font-weight: 500 !important;
+}
+/* 14px, Airbnb's size; the library's default is 12px (the wrapper's font-size).
+   Set on the digit only, so the cell sizes (in em off the wrapper) don't move.
+   The change sheets' own 15px (.rdr-move, below) still wins by specificity. */
+.rdrDayNumber span {
+  font-size: 14px;
 }
 .rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrDayNumber span {
   color: #222222;
