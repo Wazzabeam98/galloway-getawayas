@@ -174,8 +174,10 @@
    is struck through in grey — and the only colour on the calendar is the guest's
    own selection. The two ends of the stay (check-in and check-out, and a
    SINGLE-date pick — the change-date sheet, the booking panel — which react-date-
-   range marks with .rdrSelected) are a solid emerald circle; the nights in
-   between are a pale emerald band. Their shape, our colour, never their pink.
+   range marks with .rdrSelected) are a solid emerald circle, and the nights in
+   between are the SAME emerald, so the stay reads as one shape (Liam, 03/10/2026:
+   one shade throughout, not solid ends and a paler band). Their shape, our
+   colour, never their pink.
 
    react-date-range fills these with `background: currentColor`, so each class
    is given its own fill. .rdrSelected MUST get the solid fill alongside the
@@ -184,11 +186,9 @@
    selection colour for every react-date-range calendar in the app. */
 .rdrStartEdge,
 .rdrEndEdge,
-.rdrSelected {
-  background: #047857 !important;   /* emerald-700 — the two solid ends */
-}
+.rdrSelected,
 .rdrInRange {
-  background: #d1fae5 !important;    /* emerald-100 — the pale band between */
+  background: #047857 !important;   /* emerald-700 — the ends and the band alike */
 }
 
 /* 6. Day numbers — Airbnb's exact values, read off their booking calendar on
@@ -199,8 +199,8 @@
    calendars (MonthCalendar, SlotCalendar, TradeCalendar, the host calendar,
    services/DatePicker) use the same pair, as text-[#222222] font-medium.
    The number is a SIBLING of the fill element, not a child, so
-   `~ .rdrDayNumber span` is what actually colours the digit. White on the solid
-   ends; #222 on the pale band. */
+   `~ .rdrDayNumber span` is what actually colours the digit. White on the ends
+   and the band alike. */
 .rdrDayNumber {
   font-weight: 500 !important;
 }
@@ -222,7 +222,7 @@
    range (see 6a), and this rule outranks the plain grey one below, so without it
    past and booked days showed #222 like bookable ones until the guest tapped. */
 .rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrInRange ~ .rdrDayNumber span {
-  color: #222222 !important;
+  color: #fff !important;
 }
 
 .rdrDayDisabled {
