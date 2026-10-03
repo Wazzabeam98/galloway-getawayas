@@ -1,5 +1,7 @@
 'use client';
 
+import { Accessibility as AccessibilityIcon } from 'lucide-react';
+import { ACCESSIBILITY_AMENITIES } from '@/lib/listingFilters';
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useParams } from 'next/navigation';
@@ -79,6 +81,12 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
             { name: 'Beach access', icon: Umbrella },
             { name: 'Waterfront', icon: Anchor },
         ],
+    },
+    {
+        // Airbnb's step-free features — what the "Accessibility features"
+        // filter on the home page searches (lib/listingFilters).
+        category: 'Accessibility',
+        items: ACCESSIBILITY_AMENITIES.map((name) => ({ name, icon: AccessibilityIcon })),
     },
     {
         category: 'Safety',

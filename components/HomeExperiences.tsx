@@ -1,35 +1,37 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { guestExperiencesOpen } from '@/lib/serviceOrders';
+import { guestExperiencesOpen, businessSignupsOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace } from '@/lib/experiencesData';
 import ProviderCard from '@/components/marketplace/ProviderCard';
 
-// Experiences on the home page, alongside the properties, so a visitor who lands
-// on the site sees everything on offer without having to know the /experiences
-// URL. Below the property grid on purpose — the cottages are still the reason
-// most people are here — but above the editorial, so it reads as a second thing
-// to book rather than a footnote.
+// Experiences on the home page, directly under the property grid, so a visitor
+// sees everything on offer without having to know the /experiences URL.
 //
-// Self-gating: renders nothing while GUEST_EXPERIENCES_OPEN is unset (the whole
-// feature is dormant until then), and nothing when there are no live providers,
-// so the home page never advertises an empty shelf. Public — no auth needed to
-// see or to reach the browse page. Cards carry no rating: master's ProviderCard
-// deliberately shows the "Verified business" badge, not stars, until there are
-// reviews to mean one.
+// Two states. With live providers (GUEST_EXPERIENCES_OPEN on, at least one with
+// a real photo) it is the shelf of cards. Otherwise it is a "coming soon" panel
+// — never an empty shelf and never nothing: the section is there on purpose,
+// says what is coming, and asks local businesses to be among the first listed.
+// The ask goes where the business sign-up switch says it should: the real
+// guest-experience start once sign-ups open, register-interest until then.
+//
+// Cards carry no rating: master's ProviderCard deliberately shows the
+// "Verified business" badge, not stars, until there are reviews to mean one.
 const MAX_ON_HOME = 8;
 
-export default async function HomeExperiences() {
-    if (!guestExperiencesOpen()) return null;
-
-    const admin = adminClient();
-    const mp = await loadPublicMarketplace(admin, true);
-    if (!mp.open || mp.providers.length === 0) return null;
-
+async function liveProviders() {
+    if (!guestExperiencesOpen()) return [];
+    const mp = await loadPublicMarketplace(adminClient(), true);
+    if (!mp.open) return [];
     // Only ones with a real photo — a card on a bare gradient block reads as
     // unfinished, so it is not shown at all.
-    const withPhoto = mp.providers.filter((p) => !!p.hero);
-    if (withPhoto.length === 0) return null;
-    const shown = withPhoto.slice(0, MAX_ON_HOME);
+    return mp.providers.filter((p) => !!p.hero).slice(0, MAX_ON_HOME);
+}
+
+export default async function HomeExperiences() {
+    const shown = await liveProviders();
+
+    if (shown.length === 0) return <ExperiencesComingSoon />;
 
     return (
         <section className="mt-16 pt-10 border-t border-stone-200">
@@ -55,6 +57,61 @@ export default async function HomeExperiences() {
                 {shown.map((p) => (
                     <ProviderCard key={p.id} p={p} href={`/experiences/browse/${p.id}`} />
                 ))}
+            </div>
+        </section>
+    );
+}
+
+// The pair of licensed photographs the provider sign-up already uses on its
+// empty Photos screen (see public/images/experience-photos/README.md), so the
+// panel looks like the product it is announcing rather than a placeholder.
+function ExperiencesComingSoon() {
+    const href = businessSignupsOpen()
+        ? '/business?trade=guest'
+        : '/register-interest?type=guest_experience';
+
+    return (
+        <section className="mt-16 pt-10 border-t border-stone-200">
+            <div className="grid items-center gap-10 rounded-2xl bg-white border border-stone-200 p-6 sm:p-10 md:grid-cols-[1fr_auto]">
+                <div className="max-w-xl">
+                    <span className="inline-block rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
+                        Coming soon
+                    </span>
+                    <h2 className="mt-4 text-2xl md:text-3xl font-bold text-stone-900">
+                        Experiences
+                    </h2>
+                    <p className="mt-3 text-stone-600 leading-relaxed">
+                        A private chef on your first night, a wood-fired sauna by the shore, fresh
+                        bread on the doorstep, a guided day on the hills. Soon you’ll be able to
+                        book them alongside your stay, from local businesses across Dumfries &amp;
+                        Galloway.
+                    </p>
+
+                    <div className="mt-8 border-t border-stone-200 pt-6">
+                        <p className="font-semibold text-stone-900">
+                            Run an experience in the region?
+                        </p>
+                        <p className="mt-1 text-sm text-stone-600">
+                            We’re choosing the first businesses to list now. You set your prices
+                            and your times, and there’s no monthly fee.
+                        </p>
+                        <Link
+                            href={href}
+                            className="mt-4 inline-flex items-center rounded-lg bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-800"
+                        >
+                            Offer an experience
+                        </Link>
+                    </div>
+                </div>
+
+                <div className="relative mx-auto hidden h-[300px] w-[300px] sm:block" aria-hidden="true">
+                    <div className="absolute left-0 top-6 h-[240px] w-[192px] -rotate-6 overflow-hidden rounded-2xl shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                        <Image src="/images/experience-photos/sauna.jpg" alt="" fill sizes="192px" className="object-cover" />
+                    </div>
+                    <div className="absolute right-0 top-0 h-[240px] w-[192px] rotate-3 overflow-hidden rounded-2xl shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                        <Image src="/images/experience-photos/loaf.jpg" alt="" fill sizes="192px" className="object-cover" />
+                    </div>
+                </div>
             </div>
         </section>
     );

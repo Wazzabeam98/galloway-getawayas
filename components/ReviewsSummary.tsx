@@ -79,7 +79,7 @@ export default function ReviewsSummary({ reviews, ratingAvg, ratingCount, catego
         <div className="border rounded-2xl p-5 md:p-6">
             <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="flex items-baseline gap-2.5">
-                    <Star className="w-5 h-5 fill-amber-400 text-amber-400 self-center" />
+                    <Star className="w-5 h-5 fill-stone-900 text-stone-900 self-center" />
                     <span className="text-3xl font-bold text-slate-900 leading-none">{ratingAvg.toFixed(2)}</span>
                     <span className="text-slate-500 text-sm">
                         {ratingCount} review{ratingCount > 1 ? 's' : ''}

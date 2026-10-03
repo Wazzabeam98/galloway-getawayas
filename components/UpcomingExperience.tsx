@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { Home } from 'lucide-react';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
@@ -15,9 +15,11 @@ import WhenBadge from '@/components/WhenBadge';
 // order page uses (top-left); the big hero countdown stays reserved for the stay.
 //
 // Data comes from /api/services/to-review's `upcoming` (the guest's own confirmed
-// orders still to come). Renders NOTHING when there's none — no empty shelf.
+// orders still to come), read by the home page ON THE SERVER and passed in, so
+// the card is there in the first paint rather than popping in and pushing the
+// page down. Renders NOTHING when there's none — no empty shelf.
 
-interface Upcoming {
+export interface Upcoming {
     orderId: string;
     title: string;
     providerName: string | null;
@@ -45,19 +47,10 @@ function timeLabel(t: string | null): string {
     return h12 + (m ? ':' + String(m).padStart(2, '0') : '') + ampm;
 }
 
-export default function UpcomingExperience() {
-    const [list, setList] = useState<Upcoming[]>([]);
-    const [loaded, setLoaded] = useState(false);
+export default function UpcomingExperience({ list }: { list: Upcoming[] }) {
     const [expanded, setExpanded] = useState(false);
 
-    useEffect(() => {
-        fetch('/api/services/to-review')
-            .then((r) => r.json())
-            .then((d) => { setList((d && d.upcoming) || []); setLoaded(true); })
-            .catch(() => setLoaded(true));
-    }, []);
-
-    if (!loaded || list.length === 0) return null;
+    if (list.length === 0) return null;
 
     // Two side by side by default; "N more" reveals the rest IN PLACE (they used
     // to route to /trips, a holiday-let page the guest then had to scroll to the

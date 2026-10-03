@@ -55,7 +55,7 @@ export default function ReviewModerationRow({ review }: {
                 <span className="text-sm font-semibold text-slate-900">{review.reviewer}</span>
                 <span className="flex items-center gap-0.5 text-amber-500">
                     {[1, 2, 3, 4, 5].map((n) => (
-                        <Star key={n} className={`h-3.5 w-3.5 ${n <= review.rating ? 'fill-amber-400 text-amber-400' : 'fill-slate-200 text-slate-200'}`} />
+                        <Star key={n} className={`h-3.5 w-3.5 ${n <= review.rating ? 'fill-stone-900 text-stone-900' : 'fill-slate-200 text-slate-200'}`} />
                     ))}
                 </span>
                 <span className="text-xs text-slate-400">{new Date(review.when).toLocaleDateString('en-GB')}</span>
