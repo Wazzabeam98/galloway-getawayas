@@ -46,6 +46,11 @@ const tools = [
         blurb: 'Escalated money requests \u2014 declined or ignored \u2014 waiting on a decision.',
     },
     {
+        href: '/admin/listing-reports',
+        title: 'Listing reports',
+        blurb: 'What guests and visitors have flagged about a listing. Never shared with the host.',
+    },
+    {
         // This page existed and was linked from nowhere. You could only reach
         // it by knowing the URL, which for the one screen that holds people
         // waiting on you is the same as it not being there.
@@ -99,6 +104,12 @@ export default async function AdminHome() {
         ]);
 
         badges['/admin/providers'] = Number(toReview || 0) + Number(toChase || 0);
+
+        const { count: openReports } = await admin
+            .from('listing_reports')
+            .select('id', { count: 'exact', head: true })
+            .is('closed_at', null);
+        badges['/admin/listing-reports'] = Number(openReports || 0);
     } catch (err) {
         // See above.
     }
