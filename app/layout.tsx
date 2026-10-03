@@ -17,6 +17,8 @@ import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import { COMPANY } from '@/config/company';
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
+import { viewportFor } from '@/lib/viewport';
 import localFont from 'next/font/local';
 
 // One typeface on every device: variable Roboto, the face Android draws the
@@ -40,7 +42,7 @@ const roboto = localFont({
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   // Every page title gets " | Galloway Getaways" appended automatically,
   // so individual pages only need to say what they are.
   title: {
@@ -53,28 +55,6 @@ export const metadata: Metadata = {
   // Tells search engines which address is the real one, so the www and
   // vercel.app versions don't compete with this one.
   metadataBase: new URL(SITE_URL),
-
-  // maximum-scale=1 + user-scalable=no: Liam's call, 03/10/2026. iOS Safari
-  // zoomed the whole page the instant the sign-in field was tapped and kept
-  // that zoom for the visit; four fixes (16px then 17px fields, no forced
-  // focus, overflow guard) did not stop it on his iPhone 15. This stops
-  // Safari zooming on focus at all.
-  //
-  // What it costs, plainly: on Android (Chrome, Samsung Internet) nobody can
-  // pinch-zoom anywhere on the site unless they have turned on their
-  // browser's "force enable zoom" accessibility setting — people with low
-  // vision lose the easiest way to read small text and photos. On iPhone
-  // Safari has ignored both settings for pinching since iOS 10, so iPhone
-  // users can still pinch; only the automatic zoom-on-focus stops.
-  // Accessibility checkers (Lighthouse, WCAG 1.4.4) flag it. The narrower
-  // option — send these two only to iPhones, leave Android untouched — is
-  // in the PR and is his to decide.
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-  },
 
   // NO `alternates` HERE, DELIBERATELY.
   //
@@ -126,6 +106,17 @@ export const metadata: Metadata = {
     },
   },
 };
+
+// The viewport depends on the device: iPhones get maximum-scale=1 +
+// user-scalable=no, which stops iOS Safari zooming the page when a text field
+// is tapped (iOS still lets people pinch); everyone else keeps the plain
+// viewport, because Android obeys those two settings fully and would lose
+// pinch-zoom. Liam's call, 03/10/2026 — see lib/viewport.ts. The layout is
+// force-dynamic, so this runs per request and nothing caches one device's
+// answer for another.
+export async function generateMetadata(): Promise<Metadata> {
+  return { ...baseMetadata, viewport: viewportFor(headers().get('user-agent')) };
+}
 
 export default function RootLayout({
   children,
