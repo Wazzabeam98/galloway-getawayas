@@ -27,12 +27,6 @@ import {
 // of two on a phone.
 const AMENITIES_SHOWN = 6;
 
-// Below this many priced places the histogram is a few lone blocks on an empty
-// baseline — it says nothing about where prices sit and looks broken. Until
-// then the handles stand on a plain track; the bars come back by themselves
-// once there are enough listings to make a shape.
-const HISTOGRAM_MIN_PLACES = 12;
-
 export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
     const router = useRouter();
     const pathname = usePathname();
@@ -176,16 +170,10 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
                                     {/* One piece, as Airbnb draws it: the track is the bars' baseline
                                         and the handles sit on it. The slider is laid over the bottom
                                         edge of the bars, centred on it, rather than under them. */}
-                                    <div
-                                        className={`price-slider relative pb-[calc(var(--thumb)/2)] ${
-                                            prices.length >= HISTOGRAM_MIN_PLACES ? '' : 'pt-[calc(var(--thumb)/2)]'
-                                        }`}
-                                    >
-                                        {prices.length >= HISTOGRAM_MIN_PLACES && (
-                                            <div className="px-[calc(var(--thumb)/2)]">
-                                                <PriceBars prices={prices} min={draft.minPrice} max={draft.maxPrice} />
-                                            </div>
-                                        )}
+                                    <div className="price-slider relative pb-[calc(var(--thumb)/2)]">
+                                        <div className="px-[calc(var(--thumb)/2)]">
+                                            <PriceBars prices={prices} min={draft.minPrice} max={draft.maxPrice} />
+                                        </div>
                                         {priceCeil > priceFloor && (
                                             <PriceSlider
                                                 floor={priceFloor}
