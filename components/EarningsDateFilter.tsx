@@ -68,7 +68,7 @@ export default function EarningsDateFilter({ from, to, basePath = '/dashboard/ea
                                 weekStartsOn={1}
                                 direction="vertical"
                                 rangeColors={['#047857']}
-                                showMonthAndYearPickers={true}
+                                showMonthAndYearPickers={false}
                                 showDateDisplay={false}
                             />
                         </div>

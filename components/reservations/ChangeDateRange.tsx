@@ -85,17 +85,15 @@ export default function ChangeDateRange({
         );
     };
 
-    // react-date-range leaves its month/year selects and disabled days unlabelled;
-    // label them for screen readers, re-running whenever the month changes. Same
-    // observer the booking widget runs.
+    // react-date-range leaves its disabled days unlabelled and its month heading
+    // silent; mark them for screen readers, re-running whenever the month
+    // changes. Same observer the booking widget runs.
     useEffect(() => {
         const root = calendarRef.current;
         if (!root) return;
         const label = () => {
-            const month = root.querySelector('.rdrMonthPicker select');
-            if (month) month.setAttribute('aria-label', 'Month');
-            const year = root.querySelector('.rdrYearPicker select');
-            if (year) year.setAttribute('aria-label', 'Year');
+            const heading = root.querySelector('.rdrMonthAndYearPickers');
+            if (heading && !heading.hasAttribute('aria-live')) heading.setAttribute('aria-live', 'polite');
             root.querySelectorAll('.rdrDay').forEach((day) => {
                 if (day.classList.contains('rdrDayDisabled')) day.setAttribute('aria-disabled', 'true');
                 else day.removeAttribute('aria-disabled');
@@ -141,6 +139,7 @@ export default function ChangeDateRange({
                 weekStartsOn={1}
                 direction="vertical"
                 rangeColors={['#047857']}
+                showMonthAndYearPickers={false}
                 showDateDisplay={false}
                 staticRanges={[]}
                 inputRanges={[]}

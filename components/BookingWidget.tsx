@@ -145,13 +145,13 @@ export default function BookingWidget({
         );
     };
 
-    // react-date-range renders the month and year dropdowns itself and gives
-    // no way to label them, so they arrive as two selects a screen reader
-    // announces as nothing at all. Same for the day buttons it marks disabled:
-    // the class is there but the `disabled` property is false and there is no
-    // aria-disabled, so they read as ordinary buttons.
+    // react-date-range marks a disabled day with a class only: the `disabled`
+    // property is false and there is no aria-disabled, so a screen reader
+    // reads it as an ordinary button. The month heading ("October 2026") is
+    // plain text, so it is made a polite live region to announce the new
+    // month when the guest uses the arrows.
     //
-    // The observer is not decoration. Both sets of nodes are replaced whenever
+    // The observer is not decoration. The day nodes are replaced whenever
     // the guest changes month, and a one-off pass after mount would label the
     // first month and nothing after it.
     useEffect(() => {
@@ -159,11 +159,8 @@ export default function BookingWidget({
         if (!root) return;
 
         const label = () => {
-            const month = root.querySelector('.rdrMonthPicker select');
-            if (month) month.setAttribute('aria-label', 'Month');
-
-            const year = root.querySelector('.rdrYearPicker select');
-            if (year) year.setAttribute('aria-label', 'Year');
+            const heading = root.querySelector('.rdrMonthAndYearPickers');
+            if (heading && !heading.hasAttribute('aria-live')) heading.setAttribute('aria-live', 'polite');
 
             root.querySelectorAll('.rdrDay').forEach((day) => {
                 const off = day.classList.contains('rdrDayDisabled');
@@ -173,33 +170,6 @@ export default function BookingWidget({
                     day.removeAttribute('aria-disabled');
                 }
             });
-
-            // The month list always offers all twelve, whatever the window
-            // allows, and picking one outside it does nothing visible: the
-            // library clamps the shown date back to the edge and the guest is
-            // returned to the month they started on with no explanation.
-            //
-            // Observed on the live site: on a listing taking bookings to
-            // 28 August 2027, choosing October 2027 silently went back to
-            // August. Success and refusal looked identical, which is the shape
-            // this project keeps meeting.
-            //
-            // A month is offered only if any part of it is actually bookable.
-            // Both ends matter — the months earlier in this year are past and
-            // snap back exactly the same way.
-            if (month instanceof HTMLSelectElement && year instanceof HTMLSelectElement) {
-                const shownYear = Number(year.value);
-                const lower = new Date();
-                lower.setHours(0, 0, 0, 0);
-
-                Array.prototype.forEach.call(month.options, (option: HTMLOptionElement, index: number) => {
-                    const firstOfMonth = new Date(shownYear, index, 1);
-                    const lastOfMonth = new Date(shownYear, index + 1, 0);
-                    const tooEarly = lastOfMonth.getTime() < lower.getTime();
-                    const tooLate = !!maxBookableDate && firstOfMonth.getTime() > maxBookableDate.getTime();
-                    option.disabled = tooEarly || tooLate;
-                });
-            }
         };
 
         label();
@@ -207,10 +177,7 @@ export default function BookingWidget({
         const observer = new MutationObserver(label);
         observer.observe(root, { childList: true, subtree: true });
         return () => observer.disconnect();
-        // availabilityWindow, not maxBookableDate: the latter is a fresh Date
-        // on every render, so depending on it would tear down and rebuild the
-        // observer constantly. The window prop is what actually decides it.
-    }, [disabledDates, availabilityWindow]);
+    }, [disabledDates]);
 
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
@@ -515,6 +482,9 @@ export default function BookingWidget({
                     weekStartsOn={1}
                     direction="vertical"
                     rangeColors={['#047857']}
+                    // "October 2026" as one heading between the arrows, as
+                    // Airbnb has it, not a month dropdown beside a year one.
+                    showMonthAndYearPickers={false}
                     showDateDisplay={false}
                     // The preset sidebar this library ships with offers
                     // "Today", "Yesterday" and "Last Week", which mean nothing
