@@ -752,10 +752,15 @@ export default function Hero() {
             onClick={() => { setActivePopover('where'); setMobileSearchOpen(true); }}
             aria-haspopup="dialog"
             aria-expanded={mobileSearchOpen}
-            className="flex w-full items-center gap-3 rounded-full border border-stone-100 bg-white px-5 py-3 min-h-[56px] text-left shadow-2xl"
+            // Airbnb's phone pill, measured 03/10/2026 at 375px: 56px tall,
+            // fully rounded, icon and text centred together as one block.
+            // Left-aligned, ours left the right two-thirds of the pill empty.
+            // The shadow stays heavier than theirs (they sit on white, this
+            // sits on a photo).
+            className="flex h-14 w-full items-center justify-center gap-2.5 rounded-full border border-stone-100 bg-white px-6 text-center shadow-2xl"
           >
-            <span className="flex-none text-emerald-700">{searchIcon('w-5 h-5')}</span>
-            <span className="min-w-0 flex-1">
+            <span className="flex-none text-emerald-700">{searchIcon('w-4 h-4')}</span>
+            <span className="min-w-0">
               <span className="block truncate text-sm font-semibold text-stone-900">{whereSummary}</span>
               <span className="block truncate text-xs text-stone-500">
                 {(whenSummary === 'Add dates' ? 'Any week' : whenSummary)} · {guestSummary}
