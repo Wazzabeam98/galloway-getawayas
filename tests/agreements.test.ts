@@ -49,12 +49,29 @@ test('the shared rule: no tick is refused, a stale page is refused, the current 
 });
 
 test('the host wrapper still answers as lib/hostTerms did', () => {
-    assert.equal(hostTerms.HOST_TERMS_VERSION, '2026-09-28', 'unchanged, so hosts who agreed are not asked again');
-    assert.equal(hostTerms.hasAgreedToCurrentTerms('2026-09-28'), true);
+    const v = A.AGREEMENTS.host.version;
+    assert.equal(hostTerms.HOST_TERMS_VERSION, v, 'the wrapper reads the registry');
+    assert.equal(hostTerms.hasAgreedToCurrentTerms(v), true);
+    assert.equal(hostTerms.hasAgreedToCurrentTerms('2026-09-28'), false, 'the pre-final host terms are asked again');
     assert.equal(hostTerms.hasAgreedToCurrentTerms(null), false);
     assert.ok(hostTerms.termsProblem(null, undefined));
-    assert.equal(hostTerms.termsProblem(null, '2026-09-28'), null);
-    assert.equal(hostTerms.TERMS_LAST_UPDATED, '28/09/2026', 'DD/MM/YYYY from the day key');
+    assert.equal(hostTerms.termsProblem(null, v), null);
+    assert.equal(hostTerms.TERMS_LAST_UPDATED, '03/10/2026', 'DD/MM/YYYY from the day key');
+});
+
+test('the approved terms carry no draft marker, and each text states the version it is recorded as', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    for (const key of A.AGREEMENT_ORDER) {
+        const a = A.AGREEMENTS[key];
+        assert.doesNotMatch(a.version, /draft/i, key + ' version');
+        assert.equal('draft' in a, false, key + ' has no draft flag');
+        const src = fs.readFileSync(path.join(__dirname, '..', '..', a.textFile), 'utf8');
+        const body = src.slice(src.indexOf('export'));
+        assert.doesNotMatch(body, /draft|to be dated/i, key + ' wording');
+        const stated = body.match(/^Version: (.+)$/m);
+        if (stated) assert.equal(stated[1].trim(), a.version, key + ' Version line matches the registry');
+    }
 });
 
 test('the sign-in prompt: Guest Terms first, then only the role agreements the account holds', () => {
