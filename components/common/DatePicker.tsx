@@ -19,6 +19,7 @@ const DatePicker = ({ state, dateChangeCallback }: { state: any, dateChangeCallb
                     months={1}
                     weekStartsOn={1}
                     direction='horizontal'
+                    showMonthAndYearPickers={false}
                 />
             </div>
             <div className='md:hidden'>
@@ -29,6 +30,7 @@ const DatePicker = ({ state, dateChangeCallback }: { state: any, dateChangeCallb
                     months={1}
                     weekStartsOn={1}
                     direction='horizontal'
+                    showMonthAndYearPickers={false}
                 />
             </div>
         </div>

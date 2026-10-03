@@ -43,8 +43,7 @@
    and lift exactly those small controls to 16px, while deliberately larger ones
    (text-base and up — the 6-digit code field, the big wizard fields) keep their
    size, since these selectors never match them. Class-less controls stay covered
-   by the element rule. The react-date-range month/year pickers ship at 12px and
-   carry the library's own class, so they are lifted by name too. */
+   by the element rule. */
 @media (max-width: 767px) {
   input,
   select,
@@ -55,9 +54,6 @@
   select.text-sm,
   textarea.text-xs,
   textarea.text-sm {
-    font-size: 16px;
-  }
-  .rdrMonthAndYearPickers select {
     font-size: 16px;
   }
 }
@@ -259,6 +255,20 @@
   color: #222222 !important;
 }
 
+/* 6c. Month heading — Airbnb's, read off their booking calendar on 03/10/2026:
+   "October 2026" as one piece of text, centred between the two arrows, #222 at
+   16px / weight 500. Every react-date-range calendar sets
+   showMonthAndYearPickers={false}, so the library prints that text in place of
+   its month and year dropdowns; this sizes it (the library's default is 12px).
+   Two classes deep because the library's theme sheet loads after this one and
+   sets weight 600 on the single class. */
+.rdrMonthAndYearWrapper .rdrMonthAndYearPickers {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 20px;
+  color: #222222;
+}
+
 /* 6b. The in-app change calendars (the "Change date or time" experience modal and
    the change-reservation form) — fills its card and uses larger, comfortably-
    tappable day cells spread evenly across the width (the default .rdrMonth is a
@@ -276,10 +286,6 @@
    cells (above). A rounder circle to suit those taller cells: */
 .rdr-move .rdrSelected { border-radius: 1.35em !important; }
 
-/* The change-reservation calendar shows the month only — no year dropdown (the
-   prev/next arrows still roll the year over). Scoped to .change-cal so no other
-   react-date-range calendar is affected. */
-.change-cal .rdrYearPicker { display: none !important; }
 
 /* Make the change-reservation calendar fill its card. react-date-range pins
    intrinsic (inline-flex / fixed) widths on every level, so .rdrMonth at 100%

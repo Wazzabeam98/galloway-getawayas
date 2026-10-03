@@ -403,12 +403,12 @@ export default function Hero() {
             direction={variant === 'mobile' ? 'vertical' : 'horizontal'}
             showDateDisplay={false}
             moveRangeOnFirstSelection={false}
-            // The desktop styling hides these and labels each month with
-            // .rdrMonthName instead. Stacked vertically there is no such
-            // label on the first month, so the phone gets the real
-            // month/year pickers back — which are a better control on a
-            // touchscreen anyway. See .airbnb-mobile-calendar in globals.css.
-            showMonthAndYearPickers={variant === 'mobile'}
+            // No month/year dropdowns anywhere: the heading is plain
+            // "October 2026" text between the arrows. The desktop styling
+            // hides that bar and labels each month with .rdrMonthName instead;
+            // stacked vertically the first month has no such label, so the
+            // phone shows the bar. See .airbnb-mobile-calendar in globals.css.
+            showMonthAndYearPickers={false}
             minDate={new Date()}
             rangeColors={['#047857']}
             weekStartsOn={1}
