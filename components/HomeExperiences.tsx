@@ -2,24 +2,29 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen, businessSignupsOpen } from '@/lib/serviceOrders';
-import { loadPublicMarketplace } from '@/lib/experiencesData';
+import { loadPublicMarketplace, type MpProvider } from '@/lib/experiencesData';
 import ProviderCard from '@/components/marketplace/ProviderCard';
 
-// Experiences on the home page, directly under the property grid, so a visitor
-// sees everything on offer without having to know the /experiences URL.
-//
-// Two states. With live providers (GUEST_EXPERIENCES_OPEN on, at least one with
-// a real photo) it is the shelf of cards. Otherwise it is a "coming soon" panel
-// — never an empty shelf and never nothing: the section is there on purpose,
-// says what is coming, and asks local businesses to be among the first listed.
-// The ask goes where the business sign-up switch says it should: the real
-// guest-experience start once sign-ups open, register-interest until then.
+// Experiences on the home page, so a visitor sees everything on offer without
+// having to know the /experiences URL. Two states, and the page places each
+// where it belongs: with live providers (GUEST_EXPERIENCES_OPEN on, at least one
+// with a real photo) the shelf of cards sits directly under Our Properties;
+// while the shelf is still empty the "coming soon" panel drops down between the
+// towns row and the map instead, so an empty section never leads the page. Never
+// an empty shelf and never nothing — the coming-soon panel says what is coming
+// and asks local businesses to be among the first listed. The ask goes where the
+// business sign-up switch says: the real guest-experience start once sign-ups
+// open, register-interest until then.
 //
 // Cards carry no rating: master's ProviderCard deliberately shows the
 // "Verified business" badge, not stars, until there are reviews to mean one.
 const MAX_ON_HOME = 8;
 
-async function liveProviders() {
+// The live providers to show on the home shelf (an empty array means the shelf
+// is still coming soon). Exported so app/page.tsx can place each state where it
+// belongs, deciding from the same read it renders — without loading the (heavy)
+// marketplace twice.
+export async function liveHomeProviders(): Promise<MpProvider[]> {
     if (!guestExperiencesOpen()) return [];
     const mp = await loadPublicMarketplace(adminClient(), true);
     if (!mp.open) return [];
@@ -28,10 +33,13 @@ async function liveProviders() {
     return mp.providers.filter((p) => !!p.hero).slice(0, MAX_ON_HOME);
 }
 
-export default async function HomeExperiences() {
-    const shown = await liveProviders();
-
-    if (shown.length === 0) return <ExperiencesComingSoon />;
+// The shelf of live experience cards, placed by the page directly under Our
+// Properties. The empty state is ExperiencesComingSoon, placed lower down by the
+// page (between the towns row and the map), so this renders nothing when there
+// are no providers.
+export default function HomeExperiences({ providers }: { providers: MpProvider[] }) {
+    if (providers.length === 0) return null;
+    const shown = providers;
 
     return (
         <section className="mt-16 pt-10 border-t border-stone-200">
@@ -65,7 +73,7 @@ export default async function HomeExperiences() {
 // The pair of licensed photographs the provider sign-up already uses on its
 // empty Photos screen (see public/images/experience-photos/README.md), so the
 // panel looks like the product it is announcing rather than a placeholder.
-function ExperiencesComingSoon() {
+export function ExperiencesComingSoon() {
     const href = businessSignupsOpen()
         ? '/business?trade=guest'
         : '/register-interest?type=guest_experience';
