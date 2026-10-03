@@ -17,6 +17,27 @@ import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import { COMPANY } from '@/config/company';
 import type { Metadata } from 'next';
+import localFont from 'next/font/local';
+
+// One typeface on every device: variable Roboto, the face Android draws the
+// site in. With no font of its own the site fell back to each phone's system
+// font, and an iPhone's San Francisco is wider than Android's Roboto — so on
+// an iPhone "Start hosting" wrapped beside the logo, the hero heading took an
+// extra line and the filter chips ran further off the edge than on Android
+// at the same width. Variable (100–900), not Next's built-in Google Roboto,
+// whose list here stops at fixed weights with no 600: font-semibold is used
+// ~1,200 times and would have jumped to bold. Self-hosted from the
+// @fontsource-variable package, so no request leaves for Google.
+const roboto = localFont({
+  src: [
+    { path: '../node_modules/@fontsource-variable/roboto/files/roboto-latin-wght-normal.woff2', weight: '100 900', style: 'normal' },
+    { path: '../node_modules/@fontsource-variable/roboto/files/roboto-latin-ext-wght-normal.woff2', weight: '100 900', style: 'normal' },
+    { path: '../node_modules/@fontsource-variable/roboto/files/roboto-latin-wght-italic.woff2', weight: '100 900', style: 'italic' },
+  ],
+  variable: '--font-roboto',
+  display: 'swap',
+});
+
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
 export const metadata: Metadata = {
@@ -157,7 +178,7 @@ export default function RootLayout({
   };
 
   return (
-    <html lang="en-GB">
+    <html lang="en-GB" className={roboto.variable}>
       <body className="bg-white text-slate-900 antialiased">
         <script
           type="application/ld+json"

@@ -31,6 +31,11 @@ module.exports = {
       },
     },
     extend: {
+      // Roboto first everywhere (see app/layout.tsx), the system stack behind
+      // it for the moment before it loads.
+      fontFamily: {
+        sans: ['var(--font-roboto)', ...require('tailwindcss/defaultTheme').fontFamily.sans],
+      },
       colors: {
         brand: "#047857",
         border: "hsl(var(--border))",
