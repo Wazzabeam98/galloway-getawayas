@@ -329,6 +329,37 @@ export async function signIn(env, email, password) {
         (session.user && session.user.factors) ?? null,
     ]);
 
+    // A seeded account signs in as somebody who accepted the current Guest
+    // Terms at sign-up — what every real account has done. The checkout routes
+    // wall on it on the server now (lib/agreementRecords requireGuestTerms), so
+    // without this every scenario booking would be refused before it reached
+    // the thing it was written to prove. Idempotent (unique per user, document,
+    // version); a scenario that wants an un-agreed guest deletes the row.
+    if (session.user && session.user.id) {
+        const accepted = await fetch(env.NEXT_PUBLIC_SUPABASE_URL + '/rest/v1/agreement_acceptances?on_conflict=user_id,document,version', {
+            method: 'POST',
+            headers: {
+                apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY,
+                'Content-Type': 'application/json',
+                Prefer: 'resolution=ignore-duplicates,return=minimal',
+            },
+            body: JSON.stringify({ user_id: session.user.id, document: 'guest', version: currentGuestTermsVersion(), source: 'seed' }),
+        });
+        if (!accepted.ok) {
+            throw new Error('could not record the Guest Terms for ' + email + ': HTTP ' + accepted.status + ' ' + (await accepted.text()).slice(0, 200));
+        }
+    }
+
     const name = 'sb-' + TEST_PROJECT_REF + '-auth-token';
     return { session, cookie: name + '=' + encodeURIComponent(value) };
+}
+
+// The Guest Terms version in force, read from lib/agreements.ts — the one
+// place it is written — so a wording change cannot leave the seeds behind.
+export function currentGuestTermsVersion() {
+    const src = fs.readFileSync(path.join(ROOT, 'lib', 'agreements.ts'), 'utf8');
+    const m = src.match(/guest:\s*\{[^}]*?version:\s*'([^']+)'/);
+    if (!m) throw new Error('could not find the Guest Terms version in lib/agreements.ts');
+    return m[1];
 }

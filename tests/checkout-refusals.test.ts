@@ -183,6 +183,12 @@ function load(opts: {
                                 error: null,
                             };
                         }
+                        // The guest has accepted the current Guest Terms — the
+                        // normal state for somebody at checkout. The route walls
+                        // on it (requireGuestTerms) before anything below.
+                        if (table === 'agreement_acceptances') {
+                            return { data: { version: 'current', accepted_at: '2026-11-01T09:00:00Z' }, error: null };
+                        }
                         return { data: null, error: null };
                     };
                 }
