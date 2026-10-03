@@ -769,7 +769,9 @@ export default function Hero() {
         <div className="md:hidden my-auto w-full max-w-md text-stone-800">
           <button
             type="button"
-            onClick={() => { setActivePopover('where'); setMobileSearchOpen(true); }}
+            // Opens with every row folded to its label and value; a row
+            // expands only when the guest taps it.
+            onClick={() => { setActivePopover(null); setMobileSearchOpen(true); }}
             aria-haspopup="dialog"
             aria-expanded={mobileSearchOpen}
             // Airbnb's phone pill, measured 03/10/2026 at 375px: 56px tall,
