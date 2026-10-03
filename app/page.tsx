@@ -17,7 +17,7 @@ import ListingCard from '@/components/ListingCard';
 import PropertyFilters from '@/components/PropertyFilters';
 import { readFilters, matchesFilters, activeFilterCount, propertyTypeLabel, QUICK_CHIPS, type FilterFacts } from '@/lib/listingFilters';
 import { isSelfCheckIn } from '@/lib/checkInMethods';
-import HomeExperiences from '@/components/HomeExperiences';
+import HomeExperiences, { liveHomeProviders, ExperiencesComingSoon } from '@/components/HomeExperiences';
 import TownsCarousel from '@/components/TownsCarousel';
 import { AREAS, hasCopy } from '@/config/areas';
 import fs from 'fs';
@@ -251,6 +251,15 @@ export default async function HomePage({
         }))
         .filter((t): t is typeof t & { photo: string } => t.photo !== null);
 
+    // Experiences placement depends on whether the shelf is live. Loaded once
+    // here and used both to decide the layout and (for the live state) to render
+    // the cards, so the marketplace is read once. Live → the cards sit under Our
+    // Properties; empty → the coming-soon panel drops down between the towns row
+    // and the map instead, so an empty section never leads. Hidden while a
+    // property search is on, like the sections below.
+    const homeExperienceList = searching ? [] : await liveHomeProviders();
+    const experiencesLive = homeExperienceList.length > 0;
+
     // What the guest asked for, said back to them, so a short list reads as a
     // result rather than as an empty site.
     const criteria: string[] = [];
@@ -365,13 +374,21 @@ export default async function HomePage({
                     </div>
                 )}
 
-                {/* Experiences, straight under the properties so it reads as the
-                    second thing to book. Always present (a "coming soon" panel
-                    until there are live providers to show); hidden while a
-                    property search is on, like the sections below. */}
-                {!searching && <HomeExperiences />}
+                {/* Live experiences sit straight under the properties, the second
+                    thing to book. While the shelf is still empty nothing shows
+                    here — the coming-soon panel drops down between the towns row
+                    and the map instead (just below), so an empty section never
+                    leads. Hidden while a property search is on, like the sections
+                    below. */}
+                {!searching && experiencesLive && <HomeExperiences providers={homeExperienceList} />}
 
                 {!searching && <TownsCarousel towns={carouselTowns} />}
+
+                {/* Empty state only: the coming-soon panel, below the towns row
+                    and above the map. Once the first experience is live it is
+                    gone and the shelf of cards leads under Our Properties instead
+                    (above). */}
+                {!searching && !experiencesLive && <ExperiencesComingSoon />}
 
                 {/* Every live property on one map — Airbnb's search map. Below
                     the towns carousel: the places to stay lead, the map is for
