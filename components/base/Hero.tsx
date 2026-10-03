@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -182,6 +182,26 @@ export default function Hero() {
   // the selection colour is held back (via .rdr-unselected) until they pick.
   const [datesTouched, setDatesTouched] = useState(false);
 
+  // One array per selection, not one per render. react-date-range re-aims its
+  // months whenever `ranges` is a new array — and this hero redraws every 4.5s
+  // for the slideshow, so browsing to December snapped back to October on the
+  // next photo change.
+  const calendarRanges = useMemo(() => [dateRange], [dateRange]);
+
+  // The month the guest is looking at, kept so Clear dates leaves them on it
+  // (the remount below opens on `shownDate`, as the booking calendar does).
+  const shownMonth = useRef<Date | undefined>(undefined);
+  const [calendarKey, setCalendarKey] = useState(0);
+
+  // Back to the untouched state: the today/today seed, held uncoloured by
+  // .rdr-unselected. Remounted so the picker forgets it was mid-way through a
+  // pair and the next tap is a check-in again.
+  const clearDates = () => {
+    setDateRange({ startDate: today, endDate: today, key: 'selection' });
+    setDatesTouched(false);
+    setCalendarKey((k) => k + 1);
+  };
+
   const [stayDuration, setStayDuration] = useState('week');
   const [selectedMonths, setSelectedMonths] = useState<Date[]>([]);
 
@@ -192,6 +212,10 @@ export default function Hero() {
   const [pets, setPets] = useState(0);
 
   const heroRef = useRef<HTMLDivElement>(null);
+  // The desktop pill bar and its popovers. Anywhere outside this is "away",
+  // including the rest of the hero — as on Airbnb, where a tap on the page
+  // behind the calendar closes it.
+  const searchBarRef = useRef<HTMLDivElement>(null);
 
   // Rotating hero images
   const [heroIndex, setHeroIndex] = useState(0);
@@ -232,7 +256,7 @@ export default function Hero() {
       // The mobile sheet is portaled outside heroRef, so clicks inside it must
       // not be read as "outside" — that would close the field mid-interaction.
       if (sheetRef.current && sheetRef.current.contains(target)) return;
-      if (heroRef.current && !heroRef.current.contains(target)) {
+      if (searchBarRef.current && !searchBarRef.current.contains(target)) {
         setActivePopover(null);
       }
     };
@@ -245,6 +269,16 @@ export default function Hero() {
       document.removeEventListener('touchstart', handleClickOutside);
     };
   }, []);
+
+  // Escape closes a desktop popover. The phone sheet has its own handler.
+  useEffect(() => {
+    if (!activePopover || mobileSearchOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActivePopover(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [activePopover, mobileSearchOpen]);
 
   // The mobile search sheet is a full-screen layer, so it gets Escape-to-close
   // and holds the page still behind it while it is open.
@@ -262,16 +296,11 @@ export default function Hero() {
     };
   }, [mobileSearchOpen]);
 
+  // The calendar stays open once both dates are in, as Airbnb's does: the
+  // guest can see what they chose and change it, and closes it themselves.
   const handleSelectDates = (ranges: RangeKeyDict) => {
     setDatesTouched(true);
     setDateRange(ranges.selection);
-    if (
-      ranges.selection.startDate &&
-      ranges.selection.endDate &&
-      !isSameDay(ranges.selection.startDate, ranges.selection.endDate)
-    ) {
-      setActivePopover(null);
-    }
   };
 
   const toggleMonth = (month: Date) => {
@@ -395,7 +424,14 @@ export default function Hero() {
         >
           <DateRangePicker
             ariaLabels={MONTH_ARROW_LABELS}
-            ranges={[dateRange]}
+            key={calendarKey}
+            ranges={calendarRanges}
+            shownDate={shownMonth.current}
+            onShownDateChange={(d: Date) => { shownMonth.current = d; }}
+            // Picking a date never moves the months; only the arrows do.
+            // Without this, a check-in in the right-hand month slid it to the
+            // left and the month the guest was reading went off-screen.
+            preventSnapRefocus
             onChange={handleSelectDates}
             // One month on a phone. Two side by side is about 430px wide,
             // which does not fit; and react-date-range hides the extra month
@@ -416,6 +452,20 @@ export default function Hero() {
             weekStartsOn={1}
             className="text-xs"
           />
+        </div>
+      )}
+
+      {dateTab === 'dates' && (
+        // Bottom right, as on the booking calendar.
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={clearDates}
+            disabled={!datesTouched}
+            className="text-sm font-medium text-[#222222] underline underline-offset-2 rounded px-1 py-0.5 hover:bg-slate-100 disabled:text-slate-300 disabled:no-underline disabled:hover:bg-transparent disabled:cursor-default"
+          >
+            Clear dates
+          </button>
         </div>
       )}
 
@@ -715,7 +765,7 @@ export default function Hero() {
         </div>
 
         {/* Search Bar — desktop. Unchanged apart from being hidden on phones. */}
-        <div className="hidden md:flex w-full max-w-3xl bg-white rounded-full p-1.5 shadow-2xl text-stone-800 items-center relative border border-stone-100">
+        <div ref={searchBarRef} className="hidden md:flex w-full max-w-3xl bg-white rounded-full p-1.5 shadow-2xl text-stone-800 items-center relative border border-stone-100">
           
           {/* WHERE */}
           <div
