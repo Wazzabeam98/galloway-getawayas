@@ -172,42 +172,74 @@
 .cottage-cal .rdrMonthsVertical { display: flex; }
 .cottage-cal .rdrDay { width: 14.2857% !important; }
 
-/* 5. Emerald selection colors.
-   The range picker paints its edges with .rdrStartEdge/.rdrEndEdge/.rdrInRange;
-   a SINGLE-date Calendar (the change-date sheet, the booking panel) marks its
-   pick with .rdrSelected instead. react-date-range fills all of these with
-   `background: currentColor`, and rule 6 below forces their colour white — so
-   .rdrSelected MUST be given the emerald fill here alongside the range classes.
-   Leaving it out (the original bug) left the single-date pick white-on-white: an
-   empty ring with an invisible number. This one rule is the whole selection
-   colour for every react-date-range calendar in the app — no per-calendar
-   overrides. */
+/* 5. Selection colour — Airbnb's calendar treatment, in our emerald. Looked at
+   Airbnb's booking calendar on 03/10/2026: availability is NEVER shown with
+   colour — an available day is a plain dark number on white, an unavailable one
+   is struck through in grey — and the only colour on the calendar is the guest's
+   own selection. The two ends of the stay (check-in and check-out, and a
+   SINGLE-date pick — the change-date sheet, the booking panel — which react-date-
+   range marks with .rdrSelected) are a solid emerald circle; the nights in
+   between are a pale emerald band. Their shape, our colour, never their pink.
+
+   react-date-range fills these with `background: currentColor`, so each class
+   is given its own fill. .rdrSelected MUST get the solid fill alongside the
+   edges — leaving it out (the original bug) left the single-date pick white-on-
+   white, an empty ring with an invisible number. This block is the whole
+   selection colour for every react-date-range calendar in the app. */
 .rdrStartEdge,
 .rdrEndEdge,
-.rdrInRange,
 .rdrSelected {
-  background: #047857 !important;
+  background: #047857 !important;   /* emerald-700 — the two solid ends */
+}
+.rdrInRange {
+  background: #d1fae5 !important;    /* emerald-100 — the pale band between */
 }
 
-/* 6. White number on the selected / in-range day, and white text on the fill
-   elements themselves. The `~ .rdrDayNumber span` rule is what actually colours
-   the day's digit (the number is a sibling of the fill, not a child). */
-.rdrSelected,
-.rdrInRange {
-  color: white !important;
+/* 6. Day numbers. The number is a SIBLING of the fill element, not a child, so
+   `~ .rdrDayNumber span` is what actually colours the digit. Available days are
+   near-black (darkened, not bolded — bold on every date reads heavy and leaves
+   the selection nothing to stand out against), so they read clearly outdoors.
+   White on the solid ends; near-black on the pale band. */
+.rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrDayNumber span {
+  color: #0f172a;   /* slate-900, near-black */
 }
-.rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span,
-.rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span,
 .rdrDay:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span,
-.rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span {
+.rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span,
+.rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span {
   color: #fff !important;
+}
+.rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span {
+  color: #0f172a !important;
 }
 
 .rdrDayDisabled {
   background-color: transparent !important;
-  color: #d6d3d1 !important;
-}.rdrDayPassive {
+  color: #94a3b8 !important;
+}
+.rdrDayDisabled .rdrDayNumber span {
+  color: #94a3b8 !important;   /* slate-400 — the struck-through grey of an unavailable day */
+}
+.rdrDayPassive {
   visibility: hidden !important;
+}
+
+/* 6a. No colour until the guest chooses. react-date-range treats an empty range
+   — startDate/endDate both undefined — as spanning every day, so it fills the
+   whole month before anything is picked. That empty range is exactly how the
+   booking widget represents "no dates yet" (and must stay undefined, because the
+   quote and the submit guard read it), so the fix is visual only: while the
+   wrapper carries .rdr-unselected, the selection fills are cleared and every day
+   is a plain near-black number. The colour appears only once the guest's own
+   selection does — the moment they tap a day, startDate is set, the class comes
+   off, and the normal treatment above takes over. */
+.rdr-unselected .rdrInRange,
+.rdr-unselected .rdrStartEdge,
+.rdr-unselected .rdrEndEdge,
+.rdr-unselected .rdrSelected {
+  background: transparent !important;
+}
+.rdr-unselected .rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrDayNumber span {
+  color: #0f172a !important;
 }
 
 /* 6b. The in-app change calendars (the "Change date or time" experience modal and

@@ -488,7 +488,7 @@ export default function BookingWidget({
                 {weekendPrice && <span className="text-xs text-slate-400 block mt-0.5">£{weekendPrice} on Fri &amp; Sat nights</span>}
             </div>
 
-            <div ref={calendarRef} className="cottage-cal border rounded-xl overflow-hidden mb-4">
+            <div ref={calendarRef} className={`cottage-cal border rounded-xl overflow-hidden mb-4${dateRange.startDate ? '' : ' rdr-unselected'}`}>
                 <DateRangePicker
                     ranges={[dateRange]}
                     onChange={handleSelect}

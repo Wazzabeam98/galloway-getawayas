@@ -51,6 +51,13 @@ so and carry on with other work.
   shared helper.
 - Don't stop to check with Liam between steps: find out, fix it, walk it, and
   report at the end.
+- When you hand Liam a migration to apply, name the **branch** it lives on, not
+  just the filename. Twice now a corrected migration sat unmerged on a branch
+  while the superseded version was still live on master, and the one Liam applied
+  was master's — because master is the branch he was standing on (the IDOR
+  deactivation grant; the phone migration the day before nearly went the same
+  way). The command is incomplete without the branch, and if the authoritative
+  version is on an unmerged branch, say so and say to apply it from there.
 
 ## What it is
 

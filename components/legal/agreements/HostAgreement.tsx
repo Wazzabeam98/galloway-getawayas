@@ -2,9 +2,7 @@
 // when they first submit a holiday-let listing (lib/agreements.ts, key 'host').
 // The ONE copy: /terms/hosts renders it, and so does the listing flow's modal.
 //
-// This is the "If you are a host" section of the old /terms, moved out word for
-// word — which is why its version is unchanged (2026-09-28): a host who agreed
-// then agreed to exactly this.
+// The approved wording, final as of 03/10/2026 (version v1-2026-10-03).
 //
 // To change the wording: edit this file, then move `version` and `lastUpdated`
 // for 'host' in lib/agreements.ts. Every host is asked to accept the new

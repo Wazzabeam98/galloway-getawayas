@@ -174,6 +174,12 @@ export default function Hero() {
     endDate: today,
     key: 'selection',
   });
+  // react-date-range always holds a range (it is seeded with today so it never
+  // hits the empty-range-paints-everything quirk), so before the guest has
+  // touched it the calendar would show today as a lone emerald dot. Availability
+  // is never shown with colour here and that dot is not the guest's choice, so
+  // the selection colour is held back (via .rdr-unselected) until they pick.
+  const [datesTouched, setDatesTouched] = useState(false);
 
   const [stayDuration, setStayDuration] = useState('week');
   const [selectedMonths, setSelectedMonths] = useState<Date[]>([]);
@@ -256,6 +262,7 @@ export default function Hero() {
   }, [mobileSearchOpen]);
 
   const handleSelectDates = (ranges: RangeKeyDict) => {
+    setDatesTouched(true);
     setDateRange(ranges.selection);
     if (
       ranges.selection.startDate &&
@@ -383,7 +390,7 @@ export default function Hero() {
         <div
           className={`airbnb-compact-calendar ${
             variant === 'mobile' ? 'airbnb-mobile-calendar' : ''
-          } flex justify-center`}
+          } ${datesTouched ? '' : 'rdr-unselected'} flex justify-center`}
         >
           <DateRangePicker
             ranges={[dateRange]}

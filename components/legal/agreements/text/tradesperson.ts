@@ -1,19 +1,18 @@
-// The wording of this agreement, exactly as drafted (~/Desktop/TRADESPERSON-AGREEMENT-DRAFT.md,
-// 29/09/2026). THE ONE COPY — its page, the tick box's panel and the sign-in
-// prompt all render this. To swap in the solicitor's wording: replace the text
-// between the backticks with the new markdown, then move this document's
-// `version` and `lastUpdated` in lib/agreements.ts.
+// The approved wording of this agreement, final as of 03/10/2026. THE ONE
+// COPY — its page, the tick box's panel and the sign-in prompt all render this.
+// To change it: replace the text between the backticks with the new markdown,
+// then move this document's `version` and `lastUpdated` in lib/agreements.ts
+// and the Version line below to match (tests/agreements.test.ts checks they agree).
 //
 // {{COMPANY_NUMBER}} and {{REGISTERED_OFFICE}} are filled in from
 // config/company.ts when the text is drawn — the company details are written
-// in that one place only (tests/company-details.test.ts). Otherwise the text
-// is the draft word for word.
+// in that one place only (tests/company-details.test.ts).
 
 export const TRADESPERSON_AGREEMENT = String.raw`# Tradesperson Agreement
 
 **Galloway Getaways Ltd** (company number {{COMPANY_NUMBER}}), registered office {{REGISTERED_OFFICE}} ("we", "us", "Galloway Getaways") and you, the trade business listing on the platform ("you", "the Tradesperson").
 
-Version: v1-DRAFT — to be dated on approval.
+Version: v1-2026-10-03
 
 ---
 

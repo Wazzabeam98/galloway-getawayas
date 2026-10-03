@@ -147,8 +147,8 @@ export default function DatePicker({
                                     + (isSelected
                                         ? 'bg-emerald-700 text-white font-semibold'
                                         : past
-                                            ? 'text-slate-300'
-                                            : 'text-slate-800 hover:bg-emerald-50 hover:text-emerald-900')
+                                            ? 'text-slate-400 line-through decoration-2 decoration-slate-400'
+                                            : 'text-slate-900 hover:bg-emerald-50 hover:text-emerald-900')
                                 }
                             >
                                 {date.getDate()}

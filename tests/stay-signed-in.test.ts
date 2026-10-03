@@ -81,3 +81,60 @@ test('Supabase\'s cooldown is read as seconds left; the site-wide limit is not',
     assert.equal(code.retryAfterSeconds({ status: 429, code: 'over_email_send_rate_limit', message: 'email rate limit exceeded' }), 0);
     assert.equal(code.retryAfterSeconds({ status: 500, message: 'boom' }), 0);
 });
+
+/* ---------------------------------------------- signing out of this device */
+
+// A fake document.cookie: writes with Max-Age=0 delete, others set.
+function fakeBrowser(initial: Record<string, string>, protocol = 'https:') {
+    const jar = new Map(Object.entries(initial));
+    const writes: string[] = [];
+    const g: any = globalThis as any;
+    g.location = { protocol };
+    g.document = {
+        get cookie() { return Array.from(jar.entries()).map(([k, v]) => k + '=' + v).join('; '); },
+        set cookie(line: string) {
+            writes.push(line);
+            const [pair] = line.split(';');
+            const i = pair.indexOf('=');
+            const name = pair.slice(0, i);
+            if (/Max-Age=0/i.test(line)) jar.delete(name); else jar.set(name, pair.slice(i + 1));
+        },
+    };
+    return { jar, writes, done: () => { delete g.document; delete g.location; } };
+}
+
+test('log out ends THIS device only — scope local, never global', async () => {
+    const b = fakeBrowser({ [TOKEN]: 'x', gg_stay: '1' });
+    const calls: any[] = [];
+    await stay.signOutThisDevice({ auth: { signOut: async (o: any) => { calls.push(o); return { error: null }; } } });
+    b.done();
+    assert.deepEqual(calls, [{ scope: 'local' }]);
+    assert.equal(b.jar.has(TOKEN), false);
+    assert.equal(b.jar.has('gg_stay'), false, 'the next sign-in chooses afresh');
+});
+
+test('the cookie goes even when the server refuses (403 session not found) or throws', async () => {
+    for (const signOut of [
+        async () => ({ error: { status: 403, message: 'Session from session_id claim in JWT does not exist' } }),
+        async () => { throw new Error('offline'); },
+    ]) {
+        const b = fakeBrowser({ [TOKEN]: 'x', [TOKEN + '.1']: 'y', gg_mode: 'host' });
+        await stay.signOutThisDevice({ auth: { signOut } });
+        b.done();
+        assert.equal(b.jar.has(TOKEN), false);
+        assert.equal(b.jar.has(TOKEN + '.1'), false, 'every chunk');
+        assert.equal(b.jar.get('gg_mode'), 'host', 'other cookies are left alone');
+        assert.ok(b.writes.some((w) => w.startsWith(TOKEN + '=;') && /Secure/.test(w)), 'the Secure copy the middleware wrote is deleted too');
+    }
+});
+
+test('no per-device log out calls the global default any more', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const ROOT = path.resolve(__dirname, '..', '..');
+    for (const rel of ['components/common/SignOut.tsx', 'components/legal/AgreementGate.tsx', 'components/auth/AuthPanel.tsx', 'components/auth/EmailFirstStep.tsx']) {
+        const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+        assert.doesNotMatch(src, /auth\.signOut\(\s*\)/, rel + ' must not sign out every device');
+        assert.match(src, /signOutThisDevice\(supabase\)/, rel);
+    }
+});
