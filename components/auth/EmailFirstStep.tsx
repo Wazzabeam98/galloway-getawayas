@@ -18,6 +18,7 @@ import {
 } from '@/lib/emailCodeSignIn';
 import AgreementTick, { fetchAgreementStatus, holdAgreementGate, recordAgreement } from '@/components/legal/AgreementTick';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
+import { signOutThisDevice } from '@/lib/staySignedIn';
 
 /**
  * The shared first step of every sign-up: "What's your email?".
@@ -274,7 +275,7 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
     // started. The account exists (the code was verified before this screen) but
     // with no Guest Terms on record, so the next sign-in brings them here again.
     const logOutWithoutAgreeing = async () => {
-        await supabase.auth.signOut();
+        await signOutThisDevice(supabase);
         window.location.href = exitHref;
     };
 
