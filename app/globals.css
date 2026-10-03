@@ -14,14 +14,36 @@
   }
 }
 
-/* Nothing may make the page wider than the phone. One element past the right
-   edge lets iOS Safari pan and zoom the WHOLE page, and the scale then sticks
-   across client-side navigation — the "site unusable on an iPhone after
-   signing in" bug was the header doing exactly that. `clip` (not `hidden`) so
-   body does not become a scroll container and the sticky nav keeps sticking.
-   A backstop only: anything wide still needs fixing where it is. */
+/* THE ROOT GUARD: nothing on the site is ever wider than the screen.
+   The page's own width is pinned to the viewport at the root, so no element —
+   a long word, a wide table, a box mid-animation — can make the document wider
+   than the phone, and iOS Safari never has a reason to pan or rescale it.
+
+   `clip`, not `hidden`, on both: `hidden` turns body into a scroll container
+   (window scroll events stop, `position: sticky` on the nav stops sticking);
+   `clip` cuts the overflow without creating one. Safari 16+, Chrome 90+.
+   The @supports fallback for anything older puts `hidden` on html only, which
+   goes to the viewport and does not make a scroll container either.
+
+   `overflow-wrap: break-word` lets an unbroken string (an email address, a
+   URL, a booking reference) wrap at the edge instead of running past it.
+   Images and video are already capped at 100% by Tailwind's preflight.
+
+   This is a guard, not a fix: anything it would clip is still a layout bug and
+   gets fixed where it is. Checked at 320/375/393 in WebKit, signed in and out,
+   every frame of the sign-in, with this guard ignored: nothing reaches it. */
+html,
 body {
+  max-width: 100%;
   overflow-x: clip;
+}
+@supports not (overflow-x: clip) {
+  html {
+    overflow-x: hidden;
+  }
+}
+body {
+  overflow-wrap: break-word;
 }
 
 /* `.container` carries 2rem of side padding, which is 64px off a 375px screen
