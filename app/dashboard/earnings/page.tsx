@@ -8,12 +8,15 @@ import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee, feeAmount } from '@/lib/
 import { formatUk } from '@/lib/cancellation';
 import { createClient } from '@supabase/supabase-js';
 import { listingIdsFor } from '@/lib/access';
-import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from '@/lib/hostDebt';
+import { outstandingDebts, outstandingOf, debtAgainstStays, round2 } from '@/lib/hostDebt';
 import { readSchedule, payoutTimingText } from '@/lib/payoutTiming';
 import { formatGBP } from '@/lib/formatMoney';
+import { ukDate, londonDayKey } from '@/lib/dayKey';
+import { hostDebtsForHost, debtFigures, debtStatusLabel, debtTitle } from '@/lib/hostDebtView';
+import HostDebtsPanel, { type DebtCard } from '@/components/dashboard/HostDebtsPanel';
 
 
-export default async function EarningsPage({ searchParams }: { searchParams?: { from?: string; to?: string } }) {
+export default async function EarningsPage({ searchParams }: { searchParams?: { from?: string; to?: string; debt?: string } }) {
     const supabase = createServerComponentClient({ cookies });
     const { data: user } = await supabase.auth.getUser();
 
@@ -209,6 +212,37 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // does not add up.
     const owedBeyondQueue = round2(owedTotal - deductionTotal);
 
+    // Every debt of the viewer's own, itemised — what for, which booking, what
+    // has been recovered, what is left — with Pay now and Dispute. Due now when
+    // nothing coming can take it (no stay waiting to pay out, or more owed than
+    // those stays cover). See lib/hostDebtView.
+    const hasComing = myAwaiting.length > 0;
+    const dueNow = owedTotal > 0 && (!hasComing || owedBeyondQueue > 0);
+    const debtCards: DebtCard[] = (await hostDebtsForHost(admin, viewerId)).map((d) => {
+        const f = debtFigures(d);
+        return {
+            id: d.id,
+            title: debtTitle(d),
+            note: d.note,
+            status: d.status,
+            statusLabel: debtStatusLabel(d, hasComing && !dueNow),
+            original: f.original,
+            recovered: f.recovered,
+            waived: f.waived,
+            outstanding: d.status === 'owed' ? f.outstanding : 0,
+            created: ukDate(londonDayKey(new Date(d.created_at))),
+            booking: d.booking
+                ? {
+                    id: d.booking.id,
+                    stay: d.booking.listing_title || 'Your listing',
+                    dates: ukDate(d.booking.check_in) + ' – ' + ukDate(d.booking.check_out),
+                }
+                : null,
+            disputeReason: d.dispute_reason || null,
+            decisionNote: d.dispute_resolved_at ? d.dispute_note || null : null,
+        };
+    });
+
     const StatCard = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
         <div className="border rounded-2xl p-5">
             <div className="text-sm text-slate-500 mb-1">{label}</div>
@@ -244,6 +278,13 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 <MonthlyTrendChart months={months} />
             </div>
 
+            <HostDebtsPanel
+                debts={debtCards}
+                dueNow={dueNow}
+                owedTotal={owedTotal}
+                banner={searchParams?.debt === 'paid' ? 'paid' : searchParams?.debt === 'cancelled' ? 'cancelled' : null}
+            />
+
             <div className="border rounded-2xl p-6 mb-8">
                 <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
                     <h2 className="font-bold text-slate-900">Your payouts</h2>
@@ -256,29 +297,14 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 </p>
 
                 {/* A host used to find out about a deduction by receiving less
-                    than they expected, with nothing anywhere explaining it. */}
-                {owedTotal > 0 && (
-                    <div className="border border-amber-300 bg-amber-50 rounded-xl p-4 mb-5">
-                        <div className="font-semibold text-amber-900 text-sm">
-                            {formatGBP(owedTotal)} comes off your next payouts
-                        </div>
-                        <ul className="text-sm text-amber-800 mt-2 space-y-1">
-                            {debts.map((d) => (
-                                <li key={d.id}>
-                                    {formatGBP(outstandingOf(d))} &mdash; {debtReason(d.kind).toLowerCase()}
-                                </li>
-                            ))}
-                        </ul>
-                        <p className="text-xs text-amber-700 mt-2">
-                            {deductionTotal > 0
-                                ? 'Taken off the stays marked below, as each one pays out.'
-                                : 'It will come off as soon as you have a stay to pay out.'}
-                            {owedBeyondQueue > 0 && deductionTotal > 0
-                                ? ' ' + formatGBP(owedBeyondQueue) + ' of it is more than your'
-                                    + ' booked stays cover, so it waits for later ones.'
-                                : ''}
-                        </p>
-                    </div>
+                    than they expected, with nothing anywhere explaining it. The
+                    itemised debts, with Pay now and Dispute, are in "Money you
+                    owe" above; this says which of these payouts it comes off. */}
+                {owedTotal > 0 && deductionTotal > 0 && (
+                    <p className="text-sm text-amber-800 border border-amber-300 bg-amber-50 rounded-xl px-4 py-3 mb-5">
+                        {formatGBP(deductionTotal)} of what you owe comes off the stays marked below.{' '}
+                        <a href="#owed" className="font-semibold underline underline-offset-2">See what it’s for</a>
+                    </p>
                 )}
 
                 {awaiting.length === 0 ? (

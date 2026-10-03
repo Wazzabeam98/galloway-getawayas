@@ -1,8 +1,8 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-10-02T21:16:50.899Z",
-      "target": "http://localhost:3810",
+      "ranAt": "2026-10-03T09:25:29.740Z",
+      "target": "http://localhost:3000",
       "passed": 7,
       "failed": 0,
       "untestable": 0,
@@ -52,8 +52,8 @@
       ]
     },
     "refund": {
-      "ranAt": "2026-10-02T21:18:07.857Z",
-      "target": "http://localhost:3810",
+      "ranAt": "2026-10-03T09:26:38.070Z",
+      "target": "http://localhost:3000",
       "passed": 8,
       "failed": 0,
       "untestable": 0,
@@ -109,8 +109,8 @@
       ]
     },
     "balance": {
-      "ranAt": "2026-10-02T21:19:09.843Z",
-      "target": "http://localhost:3810",
+      "ranAt": "2026-10-03T09:27:33.205Z",
+      "target": "http://localhost:3000",
       "passed": 8,
       "failed": 0,
       "untestable": 0,
@@ -166,8 +166,8 @@
       ]
     },
     "crosscutting": {
-      "ranAt": "2026-10-02T21:22:06.199Z",
-      "target": "http://localhost:3810",
+      "ranAt": "2026-10-03T09:30:14.761Z",
+      "target": "http://localhost:3000",
       "passed": 8,
       "failed": 0,
       "untestable": 0,
@@ -223,8 +223,8 @@
       ]
     },
     "change": {
-      "ranAt": "2026-10-02T21:20:22.535Z",
-      "target": "http://localhost:3810",
+      "ranAt": "2026-10-03T09:28:38.748Z",
+      "target": "http://localhost:3000",
       "passed": 6,
       "failed": 0,
       "untestable": 0,
@@ -268,13 +268,13 @@
       ]
     }
   },
-  "updatedAt": "2026-10-02T21:22:06.199Z",
+  "updatedAt": "2026-10-03T09:30:14.761Z",
   "fingerprint": {
-    "app/api/cron/host-payouts/route.ts": "8dfc0dc200e0cc2e",
+    "app/api/cron/host-payouts/route.ts": "de591d905b0a68ac",
     "app/api/cron/balance-charges/route.ts": "15cd14065f417fa9",
     "app/api/stripe/refund/route.ts": "3834afda9bbcdfa6",
     "app/api/stripe/checkout/route.ts": "37842344767943fc",
-    "app/api/stripe/webhook/route.ts": "727040b935627b37",
+    "app/api/stripe/webhook/route.ts": "51313710c9f5f07d",
     "lib/settlePaidBooking.ts": "612cb33de450647d",
     "lib/bookingPaymentReconcile.ts": "ab21bb02f3adbf0c",
     "app/api/cron/booking-payments/route.ts": "88ec284847e39a4c",
@@ -283,7 +283,7 @@
     "lib/clawback.ts": "ffc6fbe7ed85de29",
     "lib/payoutSource.ts": "b00c942802e9f678",
     "lib/payoutTiming.ts": "5c9fe4cce4f9d03c",
-    "lib/hostDebt.ts": "3dccd9c9ee9d8459",
+    "lib/hostDebt.ts": "a0e70cfd5b641555",
     "lib/refundSpread.ts": "fad761755dc4b85b",
     "lib/fees.ts": "eee8370bca28610e",
     "lib/pricing.ts": "b448a43e9bc66e81",
@@ -299,7 +299,7 @@
     "app/api/bookings/resolutions/route.ts": "da1da258081f142f",
     "app/api/bookings/resolutions/respond/route.ts": "907c8533d6489e58",
     "app/api/bookings/resolutions/host-decide/route.ts": "aec631c035c6c142",
-    "scripts/seed-payments.mjs": "f14f2648316024f5",
+    "scripts/seed-payments.mjs": "d07b08bf51f0cb1d",
     "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
     "scripts/refund-scenarios.mjs": "e26d179dc89d7a68",
     "scripts/balance-scenarios.mjs": "cd9d045653faf651",

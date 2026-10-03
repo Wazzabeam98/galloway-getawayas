@@ -76,7 +76,7 @@ export default async function AdminPayouts() {
     // what it was for, so it can be traced back to a booking.
     const { data: debtRows } = await admin
         .from('payouts')
-        .select('id, booking_id, host_id, amount, kind, status, note, created_at, settled_amount')
+        .select('id, booking_id, host_id, amount, kind, status, note, created_at, settled_amount, waived_amount')
         .eq('status', 'owed')
         .order('created_at', { ascending: true });
 

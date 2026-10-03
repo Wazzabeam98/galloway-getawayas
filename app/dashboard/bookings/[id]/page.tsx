@@ -208,7 +208,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const { data: ownDebtRows } = showMoney
         ? await admin
             .from('payouts')
-            .select('id, booking_id, host_id, amount, kind, status, note, created_at, settled_amount')
+            .select('id, booking_id, host_id, amount, kind, status, note, created_at, settled_amount, waived_amount')
             .eq('booking_id', booking.id)
             .in('kind', ['penalty', 'reversal'])
         : { data: [] };
