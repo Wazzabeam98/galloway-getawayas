@@ -539,7 +539,11 @@ export default function AuthPanelHost() {
                                 value={code}
                                 onChange={(e) => { setCode(tidyCode(e.target.value)); setError(''); }}
                                 placeholder="– – – – – –"
-                                className={INPUT + ' mx-auto block max-w-[240px] text-center text-2xl tracking-[0.4em]'}
+                                // INPUT's text-base swapped out, not added to: with both
+                                // classes on, .text-base comes later in the built CSS
+                                // and won, so this box was really 16px — right on the
+                                // line where iOS Safari zooms on focus.
+                                className={INPUT.replace('text-base', 'text-2xl') + ' mx-auto block max-w-[240px] text-center tracking-[0.4em]'}
                             />
                             {error && <p role="alert" className="text-center text-sm text-red-600">{error}</p>}
                             {notice && <p className="text-center text-sm text-emerald-800">{notice}</p>}
