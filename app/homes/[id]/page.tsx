@@ -29,6 +29,7 @@ import ShowMoreText from '@/components/ShowMoreText';
 import AmenityList from '@/components/AmenityList';
 import MobileBookingBar from '@/components/MobileBookingBar';
 import AreaExperiences from '@/components/AreaExperiences';
+import ReportListing from '@/components/ReportListing';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Clock } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
@@ -885,6 +886,16 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* Report this listing — at the foot of the listing body, where
+                Airbnb keeps it. (Airbnb sits it under the price card; here the
+                booking column reorders above the content on a phone, so the
+                foot of the body is the placement that holds on both layouts.)
+                A signed-out visitor can see this page, so a signed-out visitor
+                can report — the modal and route both allow it. */}
+            <div className='mt-12 pt-8 border-t flex justify-center'>
+                <ReportListing listingId={home.id} title={home.title} />
             </div>
 
             {nearbyListings.length > 0 && (
