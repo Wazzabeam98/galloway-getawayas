@@ -1,0 +1,27 @@
+-- Revoke the leftover `authenticated` EXECUTE grant on
+-- account_deactivation_blockers(uuid).
+--
+-- WHY THIS EXISTS.
+-- The deactivation migration (20261002091040) first shipped granting EXECUTE on
+-- the two-arg, caller-supplied-id form to `authenticated`:
+--     grant execute on function public.account_deactivation_blockers(uuid)
+--       to authenticated, service_role;
+-- That is an IDOR — the function is SECURITY DEFINER, so any signed-in person
+-- could pass someone else's id and read their listings/experiences, reservation
+-- counts, and that they are mid-stay (away from home) until a date.
+--
+-- That first version was applied to PRODUCTION before the fix. The corrected
+-- version of 20261002091040 grants only to service_role and adds the no-arg
+-- auth.uid() wrapper (my_account_deactivation_blockers) — but GRANT is additive.
+-- Re-running the corrected file never removed the `authenticated` grant the first
+-- run had already made: the file only `revoke all ... from public` (the PUBLIC
+-- role), which does NOT touch a privilege granted explicitly to `authenticated`.
+-- So on any database where the original ran, `authenticated` still holds EXECUTE
+-- and the hole is still open. This closes it explicitly.
+--
+-- SAFE ANYWHERE. REVOKE of a privilege a role does not hold is a no-op in
+-- Postgres (no error), so this is harmless on a database that only ever ran the
+-- corrected version (e.g. a fresh one, where authenticated never had the grant).
+-- The server/admin path (service_role) and the browser's self-only wrapper
+-- (my_account_deactivation_blockers) are left exactly as they are.
+revoke execute on function public.account_deactivation_blockers(uuid) from authenticated;
