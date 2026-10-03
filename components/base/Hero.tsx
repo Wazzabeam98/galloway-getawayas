@@ -599,65 +599,80 @@ export default function Hero() {
   // flex child is allowed to be narrower than its text, so the ellipsis is
   // reachable. Without `min-w-0` a flex child refuses to shrink below its
   // content and the cell would push the grid wider instead.
-  const gridCell = (
+  // One row of the phone sheet: its label and value, and — when it is the open
+  // row — its control directly underneath, inside the same row. Airbnb's sheet
+  // (looked at 03/10/2026): one row open at a time, the others folded to their
+  // label and value. The control used to sit in a fourth box below WHO, so
+  // tapping WHERE changed nothing near the finger.
+  const sheetRow = (
     key: 'where' | 'when' | 'who',
     label: string,
     chosen: string,
     hint: string,
+    content: React.ReactNode,
     edges: string,
   ) => {
     const open = activePopover === key;
     return (
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setActivePopover(open ? null : key)}
-        className={`min-w-0 px-4 py-4 flex flex-col gap-1 text-left transition ${edges} ${
-          open ? 'bg-white/[0.45]' : 'bg-transparent'
-        }`}
-      >
-        {/* Stacked, phone-readable: a small-caps label over a 16px value, with
-            room to breathe. The compact one-line 10/11px version read as tiny on
-            a real handset. */}
-        <span className="text-xs font-bold tracking-wider uppercase text-stone-700">
-          {label}
-        </span>
-        {/* leading-5 on both states so the row is the same height whether it
-            holds a hint or a choice — otherwise picking a date would nudge the
-            whole card taller. */}
-        <span
-          className={`min-w-0 truncate text-base leading-5 ${
-            chosen ? 'font-medium text-stone-900' : 'font-normal text-stone-400'
-          }`}
+      <div className={edges}>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setActivePopover(open ? null : key)}
+          className="flex w-full min-w-0 flex-col gap-1 px-4 py-4 text-left"
         >
-          {chosen || hint}
-        </span>
-      </button>
+          {/* Stacked, phone-readable: a small-caps label over a 16px value, with
+              room to breathe. The compact one-line 10/11px version read as tiny
+              on a real handset. */}
+          <span className="text-xs font-bold tracking-wider uppercase text-stone-700">
+            {label}
+          </span>
+          {/* Grey while it is only a hint, dark once the guest has set it.
+              leading-5 on both so choosing doesn't change the row's height. */}
+          <span
+            className={`min-w-0 truncate text-base leading-5 ${
+              chosen ? 'font-medium text-stone-900' : 'font-normal text-stone-400'
+            }`}
+          >
+            {chosen || hint}
+          </span>
+        </button>
+        {open && <div className="px-4 pb-4">{content}</div>}
+      </div>
     );
   };
 
-  // Whichever cell is open, its control opens underneath the grid across the
-  // full width of the card. Putting it inside a cell would stretch that cell
-  // and pull the grid out of shape.
-  const openContent =
-    activePopover === 'where' ? (
-      <select
-        value={location}
-        onChange={(e) => setLocation(e.target.value)}
-        aria-label="Where"
-        className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-      >
-        {LOCATIONS.map((l) => (
-          <option key={l.value} value={l.value}>
-            {l.label}
-          </option>
-        ))}
-      </select>
-    ) : activePopover === 'when' ? (
-      whenContent('mobile')
-    ) : activePopover === 'who' ? (
-      guestContent('mobile')
-    ) : null;
+  // The destinations as a list inside the WHERE row, not a native dropdown: a
+  // pick folds WHERE and opens WHEN, as Airbnb's does.
+  const whereList = (
+    <ul className="-mx-2" aria-label="Destinations">
+      {LOCATIONS.filter((l) => l.value !== '').map((l) => {
+        const picked = location === l.value;
+        return (
+          <li key={l.value}>
+            <button
+              type="button"
+              aria-pressed={picked}
+              onClick={() => {
+                setLocation(l.value);
+                setActivePopover('when');
+              }}
+              className={`flex w-full items-center justify-between rounded-xl px-2 py-3 text-left text-base transition active:bg-stone-100 ${
+                picked ? 'font-semibold text-stone-900' : 'font-normal text-stone-700'
+              }`}
+            >
+              {l.label}
+              {picked && (
+                <svg className="h-5 w-5 flex-none text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   return (
     <div
@@ -922,13 +937,10 @@ export default function Hero() {
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <div className="overflow-hidden rounded-3xl border border-stone-200">
               <div className="flex flex-col">
-                {gridCell('where', 'Where', whereChosen, 'Anywhere', 'border-b border-stone-200')}
-                {gridCell('when', 'When', whenChosen, 'Any week', 'border-b border-stone-200')}
-                {gridCell('who', 'Who', guestChosen, 'Add guests', '')}
+                {sheetRow('where', 'Where', whereChosen, 'Anywhere', whereList, 'border-b border-stone-200')}
+                {sheetRow('when', 'When', whenChosen, 'Any week', whenContent('mobile'), 'border-b border-stone-200')}
+                {sheetRow('who', 'Who', guestChosen, 'Add guests', guestContent('mobile'), '')}
               </div>
-              {openContent && (
-                <div className="border-t border-stone-200 px-4 py-4">{openContent}</div>
-              )}
             </div>
           </div>
 
