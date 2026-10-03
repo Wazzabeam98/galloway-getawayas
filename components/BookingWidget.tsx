@@ -330,6 +330,16 @@ export default function BookingWidget({
         setDateRange(ranges.selection);
     };
 
+    // Back to "no dates yet": both ends undefined, which is how the quote, the
+    // submit guard and .rdr-unselected all read an empty choice, and which the
+    // draft effect above writes back to the URL as no checkIn/checkOut.
+    const [calendarKey, setCalendarKey] = useState(0);
+    const clearDates = () => {
+        setError('');
+        setDateRange({ startDate: undefined, endDate: undefined, key: 'selection' });
+        setCalendarKey((k) => k + 1);
+    };
+
     const handleRequest = async () => {
         setError('');
 
@@ -490,6 +500,11 @@ export default function BookingWidget({
 
             <div ref={calendarRef} className={`cottage-cal border rounded-xl overflow-hidden mb-4${dateRange.startDate ? '' : ' rdr-unselected'}`}>
                 <DateRangePicker
+                    // Remounted by Clear dates: the picker keeps its own note of
+                    // which end it is choosing next, so after a check-in pick it
+                    // would treat the guest's next tap as a check-out against an
+                    // empty start. A fresh mount starts back at check-in.
+                    key={calendarKey}
                     ranges={[dateRange]}
                     onChange={handleSelect}
                     minDate={new Date()}
@@ -510,20 +525,18 @@ export default function BookingWidget({
                     inputRanges={[]}
                     dayContentRenderer={renderDay}
                 />
+                {/* Bottom right, as on Airbnb's calendar. */}
+                <div className="flex justify-end px-3 pb-3">
+                    <button
+                        type="button"
+                        onClick={clearDates}
+                        disabled={!dateRange.startDate}
+                        className="text-sm font-medium text-[#222222] underline underline-offset-2 rounded px-1 py-0.5 hover:bg-slate-100 disabled:text-slate-300 disabled:no-underline disabled:hover:bg-transparent disabled:cursor-default"
+                    >
+                        Clear dates
+                    </button>
+                </div>
             </div>
-
-            {/*
-              Said before it is hit, not after. The greyed-out months stop a
-              guest choosing one they cannot have, but a control that simply
-              refuses still leaves them wondering whether the place is booked
-              solid or the site is broken. This is the sentence that answers it,
-              and it is why the fix is both halves rather than either.
-            */}
-            {maxBookableDate && (
-                <p className="text-xs text-slate-500 -mt-2 mb-4">
-                    This place takes bookings up to {formatUk(maxBookableDate)}.
-                </p>
-            )}
 
             <div className="mb-4 border rounded-xl px-3 divide-y">
                 <Counter label="Adults" sub="Ages 13+" value={adults} onChange={setAdults} min={1} />

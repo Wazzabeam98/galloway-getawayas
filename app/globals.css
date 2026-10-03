@@ -195,21 +195,32 @@
   background: #d1fae5 !important;    /* emerald-100 — the pale band between */
 }
 
-/* 6. Day numbers. The number is a SIBLING of the fill element, not a child, so
-   `~ .rdrDayNumber span` is what actually colours the digit. Available days are
-   near-black (darkened, not bolded — bold on every date reads heavy and leaves
-   the selection nothing to stand out against), so they read clearly outdoors.
-   White on the solid ends; near-black on the pale band. */
+/* 6. Day numbers — Airbnb's exact values, read off their booking calendar on
+   03/10/2026 (computed style of an available date, desktop and 375px phone
+   alike): #222222 at font-weight 500. react-date-range's own theme sets
+   .rdrDayNumber to weight 300, which is why slate-900 still read grey beside
+   theirs — the colour was dark enough, the strokes were too thin. The hand-built
+   calendars (MonthCalendar, SlotCalendar, TradeCalendar, the host calendar,
+   services/DatePicker) use the same pair, as text-[#222222] font-medium.
+   The number is a SIBLING of the fill element, not a child, so
+   `~ .rdrDayNumber span` is what actually colours the digit. White on the solid
+   ends; #222 on the pale band. */
+.rdrDayNumber {
+  font-weight: 500 !important;
+}
 .rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrDayNumber span {
-  color: #0f172a;   /* slate-900, near-black */
+  color: #222222;
 }
 .rdrDay:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span,
 .rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span,
 .rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span {
   color: #fff !important;
 }
-.rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span {
-  color: #0f172a !important;
+/* :not(.rdrDayDisabled) — before any pick react-date-range marks EVERY day in
+   range (see 6a), and this rule outranks the plain grey one below, so without it
+   past and booked days showed #222 like bookable ones until the guest tapped. */
+.rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrInRange ~ .rdrDayNumber span {
+  color: #222222 !important;
 }
 
 .rdrDayDisabled {
@@ -229,9 +240,9 @@
    booking widget represents "no dates yet" (and must stay undefined, because the
    quote and the submit guard read it), so the fix is visual only: while the
    wrapper carries .rdr-unselected, the selection fills are cleared and every day
-   is a plain near-black number. The colour appears only once the guest's own
+   is a plain #222 number. The colour appears only once the guest's own
    selection does — the moment they tap a day, startDate is set, the class comes
-   off, and the normal treatment above takes over. */
+   off, and the normal treatment above takes over. (Clear dates puts it back.) */
 .rdr-unselected .rdrInRange,
 .rdr-unselected .rdrStartEdge,
 .rdr-unselected .rdrEndEdge,
@@ -239,7 +250,7 @@
   background: transparent !important;
 }
 .rdr-unselected .rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrDayNumber span {
-  color: #0f172a !important;
+  color: #222222 !important;
 }
 
 /* 6b. The in-app change calendars (the "Change date or time" experience modal and
