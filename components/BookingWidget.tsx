@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { formatGBP } from '@/lib/formatMoney';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
+import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
 import { addMonths } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
@@ -75,14 +76,21 @@ function Counter({
                     type="button"
                     onClick={() => onChange(Math.max(min, value - 1))}
                     disabled={value <= min}
+                    // Icon-only, so named here — it was read out as "button".
+                    aria-label={`Fewer ${label.toLowerCase()}`}
                     className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
                 >
                     <Minus className="w-4 h-4" />
                 </button>
-                <span className="w-6 text-center text-sm">{value}</span>
+                {/* Announced as it changes, so the new count is heard after a tap. */}
+                <span className="w-6 text-center text-sm" aria-live="polite">
+                    <span aria-hidden="true">{value}</span>
+                    <span className="sr-only">{value} {label.toLowerCase()}</span>
+                </span>
                 <button
                     type="button"
                     onClick={() => onChange(value + 1)}
+                    aria-label={`More ${label.toLowerCase()}`}
                     className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
                 >
                     <Plus className="w-4 h-4" />
@@ -473,7 +481,7 @@ export default function BookingWidget({
     }
 
     return (
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 lg:p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="mb-4">
                 <span className="text-2xl font-bold text-slate-900">£{pricePerNight}</span>
                 <span className="text-slate-500"> / night</span>
@@ -482,6 +490,7 @@ export default function BookingWidget({
 
             <div ref={calendarRef} className={`cottage-cal border rounded-xl overflow-hidden mb-4${dateRange.startDate ? '' : ' rdr-unselected'}`}>
                 <DateRangePicker
+                    ariaLabels={MONTH_ARROW_LABELS}
                     // Remounted by Clear dates: the picker keeps its own note of
                     // which end it is choosing next, so after a check-in pick it
                     // would treat the guest's next tap as a check-out against an

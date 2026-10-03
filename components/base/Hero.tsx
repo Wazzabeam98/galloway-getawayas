@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
+import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
 import { format, addMonths, isSameDay } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
@@ -393,6 +394,7 @@ export default function Hero() {
           } ${datesTouched ? '' : 'rdr-unselected'} flex justify-center`}
         >
           <DateRangePicker
+            ariaLabels={MONTH_ARROW_LABELS}
             ranges={[dateRange]}
             onChange={handleSelectDates}
             // One month on a phone. Two side by side is about 430px wide,

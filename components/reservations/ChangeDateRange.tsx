@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
+import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 
@@ -131,6 +132,7 @@ export default function ChangeDateRange({
         // calendar is untouched.
         <div ref={calendarRef} className="rdr-move change-cal border rounded-xl overflow-hidden">
             <DateRangePicker
+                ariaLabels={MONTH_ARROW_LABELS}
                 ranges={[range]}
                 onChange={handleSelect}
                 minDate={minDate}
