@@ -50,6 +50,13 @@ async function reset() {
         ? '?select=id&or=(guest_id.in.' + inList + ',host_id.in.' + inList + ',listing_id.in.' + listingList + ')'
         : '?select=id&or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')';
     const bookings = await db.select('bookings', bookingFilter);
+
+    // A host's "Pay now" against a debt (host_debt_payments) is RESTRICT-linked
+    // to the debt's payouts row and to the host, so a seeded host who paid one
+    // would stop both the payouts delete below and the profiles delete. Clear
+    // them first — by seeded host, which covers every debt row they could own.
+    await db.remove('host_debt_payments', '?host_id=in.' + inList);
+
     if (bookings.length) {
         const bookingList = '(' + bookings.map((b) => b.id).join(',') + ')';
         // booking_resolutions is RESTRICT-linked to bookings (a resolution must
