@@ -34,13 +34,27 @@
 
 /* iOS Safari zooms the page whenever a focused control's font is below 16px, so
    every form control gets at least 16px at phone widths. Only the value; nothing
-   about the layout changes at or above 768px. The react-date-range month/year
-   pickers ship at 12px and carry the library's own class specificity, so they
-   are lifted by name as well as by the element rule. */
+   about the layout changes at or above 768px.
+
+   The bare `input` element selector (specificity 0,0,1) is beaten by any Tailwind
+   text-size class, because a class like `text-sm` is 0,1,0 — so inputs carrying
+   `text-sm` (14px) or `text-xs` (12px) ignored the element rule and still zoomed.
+   The `input.text-sm`/`input.text-xs` selectors (0,1,1) out-specify the utility
+   and lift exactly those small controls to 16px, while deliberately larger ones
+   (text-base and up — the 6-digit code field, the big wizard fields) keep their
+   size, since these selectors never match them. Class-less controls stay covered
+   by the element rule. The react-date-range month/year pickers ship at 12px and
+   carry the library's own class, so they are lifted by name too. */
 @media (max-width: 767px) {
   input,
   select,
-  textarea {
+  textarea,
+  input.text-xs,
+  input.text-sm,
+  select.text-xs,
+  select.text-sm,
+  textarea.text-xs,
+  textarea.text-sm {
     font-size: 16px;
   }
   .rdrMonthAndYearPickers select {
