@@ -87,7 +87,7 @@ function BigStars({ value, onChange }: { value: number; onChange: (v: number) =>
                 >
                     <Star
                         className={`w-10 h-10 md:w-12 md:h-12 transition-colors ${
-                            n <= shown ? 'fill-amber-400 text-amber-400' : 'fill-slate-200 text-slate-200'
+                            n <= shown ? 'fill-stone-900 text-stone-900' : 'fill-slate-200 text-slate-200'
                         }`}
                     />
                 </button>
@@ -267,7 +267,7 @@ export default function ReviewPage() {
             <div className="max-w-md mx-auto px-6 py-24 text-center">
                 <h1 className="text-2xl font-bold text-slate-900 mb-2">Sign in to leave your review</h1>
                 <p className="text-slate-500 mb-6">You&apos;ll need to be signed in to the account that made the booking.</p>
-                <LoginModel />
+                <div className="w-full max-w-xs"><LoginModel variant="button" /></div>
             </div>
         );
     }
@@ -373,7 +373,7 @@ export default function ReviewPage() {
                                     <span className="text-slate-600">{c.label}</span>
                                     <span className="flex items-center gap-1 font-semibold text-slate-900">
                                         {ratings[c.key] || 0}
-                                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                                        <Star className="w-3.5 h-3.5 fill-stone-900 text-stone-900" />
                                     </span>
                                 </button>
                             ))}

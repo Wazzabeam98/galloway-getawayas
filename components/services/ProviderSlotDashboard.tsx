@@ -138,8 +138,12 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
     const loadSessions = useCallback(async () => { try { const r = await fetch('/api/services/slots/sessions?provider=' + encodeURIComponent(providerId)); const d = await r.json(); if (d && d.ok) setSessions(d.sessions || []); } catch { setLoadFailed(true); } }, [providerId]);
     const loadPartialBlocks = useCallback(async () => { try { const r = await fetch('/api/services/slots/blocks?provider=' + encodeURIComponent(providerId)); const d = await r.json(); if (d && d.ok) setPartialBlocks(d.blocks || []); } catch { setLoadFailed(true); } }, [providerId]);
 
-    const reloadAll = useCallback(() => { setLoadFailed(false); loadPayouts(); loadOrders(); loadSchedule(); loadSessions(); loadPartialBlocks(); }, [loadPayouts, loadOrders, loadSchedule, loadSessions, loadPartialBlocks]);
-    useEffect(() => { reloadAll(); }, [reloadAll]);
+    const reloadAll = useCallback(() => { setLoadFailed(false); return Promise.all([loadPayouts(), loadOrders(), loadSchedule(), loadSessions(), loadPartialBlocks()]); }, [loadPayouts, loadOrders, loadSchedule, loadSessions, loadPartialBlocks]);
+    // The calendar is not drawn until the first load has answered: drawn from
+    // the empty lists it showed no bookings, no sessions and no days off, then
+    // filled in — a provider glancing at it would think the month was empty.
+    const [firstLoaded, setFirstLoaded] = useState(false);
+    useEffect(() => { reloadAll().finally(() => setFirstLoaded(true)); }, [reloadAll]);
     // Phones open on the day, not the month.
     useEffect(() => { if (isNarrow()) setView('day'); }, []);
     useEffect(() => { if (panel !== 'none' && isNarrow()) railRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [panel, activeKey, dayDate]);
@@ -424,7 +428,11 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
                 <button type="button" onClick={() => setView('day')} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ${view === 'day' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}><CalendarDays className="h-4 w-4" />Day</button>
             </div>
 
-            {view === 'month' ? (
+            {!firstLoaded ? (
+                <div className="flex h-[420px] items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm text-slate-500 animate-pulse" aria-busy="true">
+                    Loading your calendar…
+                </div>
+            ) : view === 'month' ? (
                 <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
                     <div>
                         <SlotCalendar shapeByDate={shapeByDate} todayIso={todayIso} selected={selected} onDayClick={onMonthDayClick} />

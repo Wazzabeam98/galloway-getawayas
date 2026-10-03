@@ -100,6 +100,10 @@ export default function ProviderExperienceDashboard(props: { providerId: string;
 
     const [payouts, setPayouts] = useState<null | { connected: boolean; payouts_enabled: boolean }>(null);
     const [orders, setOrders] = useState<Order[]>([]);
+    // Until the first load answers, the order sections are not drawn: with an
+    // empty list they simply weren't there, then popped in — a provider could
+    // take that as "no requests".
+    const [ordersLoaded, setOrdersLoaded] = useState(false);
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [openThread, setOpenThread] = useState<string | null>(null);
@@ -121,6 +125,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string;
             const d = await r.json();
             setOrders((d && d.orders) || []);
         } catch { /* ignore */ }
+        setOrdersLoaded(true);
     }, [providerId]);
 
     useEffect(() => { loadPayouts(); loadOrders(); }, [loadPayouts, loadOrders]);
@@ -197,6 +202,10 @@ export default function ProviderExperienceDashboard(props: { providerId: string;
 
             {live && (
                 <p className="text-sm text-emerald-800">Payouts are set up — you’re live to guests.</p>
+            )}
+
+            {!ordersLoaded && (
+                <p className="text-sm text-slate-500 animate-pulse" aria-busy="true">Loading your requests…</p>
             )}
 
             {/* Orders to answer */}

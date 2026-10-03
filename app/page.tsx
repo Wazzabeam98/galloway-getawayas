@@ -7,13 +7,17 @@ import Hero from '@/components/base/Hero';
 import ComingSoonBanner from '@/components/base/ComingSoonBanner';
 import { businessSignupsOpen } from '@/lib/serviceOrders';
 import UpcomingTrip from '@/components/UpcomingTrip';
-import UpcomingExperience from '@/components/UpcomingExperience';
+import UpcomingExperience, { type Upcoming } from '@/components/UpcomingExperience';
+import { guestExperienceLists } from '@/lib/guestExperienceLists';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
 import ListingCard from '@/components/ListingCard';
-import HomeExperiences from '@/components/HomeExperiences';
+import PropertyFilters from '@/components/PropertyFilters';
+import { readFilters, matchesFilters, activeFilterCount, propertyTypeLabel, QUICK_CHIPS, type FilterFacts } from '@/lib/listingFilters';
+import { isSelfCheckIn } from '@/lib/checkInMethods';
+import HomeExperiences, { liveHomeProviders, ExperiencesComingSoon } from '@/components/HomeExperiences';
 import TownsCarousel from '@/components/TownsCarousel';
 import { AREAS, hasCopy } from '@/config/areas';
 import fs from 'fs';
@@ -112,22 +116,37 @@ export default async function HomePage({
     const from = readParam(searchParams.from);
     const to = readParam(searchParams.to);
     const guests = Number(readParam(searchParams.guests)) || 0;
-    const wantsPets = readParam(searchParams.pets) === '1';
+    // The Filters panel and its chips (lib/listingFilters) — the hero's pets=1
+    // is read as the "Pets allowed" amenity, so the two agree.
+    const filters = readFilters(searchParams);
+    const filterCount = activeFilterCount(filters);
+    const wantsPets = filters.amenities.indexOf('Pets allowed') !== -1;
 
     // Only trust a date pair that is actually a stay.
     const hasDates = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from < to;
-    const searching = Boolean(where) || hasDates || guests > 0 || wantsPets;
+    const searching = Boolean(where) || hasDates || guests > 0 || filterCount > 0;
 
     let query = supabase
         .from('listings')
-        .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude')
+        .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude, property_type, bedrooms, beds, bathrooms, instant_book, check_in_method')
         .eq('status', 'published')
         .order('created_at', { ascending: false });
 
     if (guests > 0) query = query.gte('max_guests', guests);
-    // Pets are an amenity rather than a column of their own — this is the same
-    // string the listing page checks before it offers a pet count.
-    if (wantsPets) query = query.contains('amenities', ['Pets allowed']);
+    // Pets are an amenity rather than a column of their own, and are matched
+    // with the other filters below rather than here — the panel's count needs
+    // the places WITHOUT pets too, to say what turning it off would give.
+
+    // The signed-in guest's booked experiences still to come, read here so the
+    // card is in the first paint — the same lister the to-review endpoint uses,
+    // with the user identified by this page's own (server component) client.
+    // Nothing for a signed-out visitor or in hosting mode.
+    const upcomingExperiences: Promise<Upcoming[]> = mode === 'host'
+        ? Promise.resolve([])
+        : supabase.auth.getUser()
+            .then(({ data: { user } }): Promise<{ upcoming: any[] }> => (user ? guestExperienceLists(user.id) : Promise.resolve({ upcoming: [] })))
+            .then((d: any) => (d && d.upcoming) || [])
+            .catch(() => []);
 
     const { data } = await query;
     let listings = data || [];
@@ -180,6 +199,22 @@ export default async function HomePage({
         listings = listings.filter((l) => !unavailable.has(l.id));
     }
 
+    // The filters, last: `pool` is everything that matches where/when/who, and
+    // is what the panel counts against, so its "Show N places" is exactly the
+    // grid you get. Same rule (lib/listingFilters) here and in the browser.
+    const factsOf = (l: any): FilterFacts => ({
+        amenities: l.amenities,
+        property_type: l.property_type,
+        price_per_night: l.price_per_night,
+        bedrooms: l.bedrooms,
+        beds: l.beds,
+        bathrooms: l.bathrooms,
+        instant_book: l.instant_book,
+        self_check_in: isSelfCheckIn(l.check_in_method),
+    });
+    const pool = listings.map(factsOf);
+    listings = listings.filter((l) => matchesFilters(factsOf(l), filters));
+
     // Which area pages to offer. Same two conditions the sitemap uses: the
     // page has been written, and there is at least one property in it. An
     // unwritten area page is noindex, so linking to it from the busiest page
@@ -216,6 +251,15 @@ export default async function HomePage({
         }))
         .filter((t): t is typeof t & { photo: string } => t.photo !== null);
 
+    // Experiences placement depends on whether the shelf is live. Loaded once
+    // here and used both to decide the layout and (for the live state) to render
+    // the cards, so the marketplace is read once. Live → the cards sit under Our
+    // Properties; empty → the coming-soon panel drops down between the towns row
+    // and the map instead, so an empty section never leads. Hidden while a
+    // property search is on, like the sections below.
+    const homeExperienceList = searching ? [] : await liveHomeProviders();
+    const experiencesLive = homeExperienceList.length > 0;
+
     // What the guest asked for, said back to them, so a short list reads as a
     // result rather than as an empty site.
     const criteria: string[] = [];
@@ -225,6 +269,24 @@ export default async function HomePage({
     }
     if (guests > 0) criteria.push(`${guests} guest${guests > 1 ? 's' : ''}`);
     if (wantsPets) criteria.push('pets welcome');
+    // Amenities and types by name (a chip's own label where it has one); the
+    // rest — price, rooms, booking options — as a count.
+    filters.amenities
+        .filter((a) => a !== 'Pets allowed')
+        .forEach((a) => criteria.push((QUICK_CHIPS.find((c) => c.amenity === a) || { label: a }).label.toLowerCase()));
+    filters.types.forEach((t) => criteria.push(propertyTypeLabel(t) || t));
+    if (filters.minPrice != null || filters.maxPrice != null) {
+        criteria.push(
+            filters.maxPrice == null ? `from £${filters.minPrice}`
+                : filters.minPrice == null ? `up to £${filters.maxPrice}`
+                    : `£${filters.minPrice}–£${filters.maxPrice}`,
+        );
+    }
+    if (filters.bedrooms) criteria.push(`${filters.bedrooms}+ bedroom${filters.bedrooms > 1 ? 's' : ''}`);
+    if (filters.beds) criteria.push(`${filters.beds}+ bed${filters.beds > 1 ? 's' : ''}`);
+    if (filters.bathrooms) criteria.push(`${filters.bathrooms}+ bathroom${filters.bathrooms > 1 ? 's' : ''}`);
+    if (filters.instantBook) criteria.push('Instant Book');
+    if (filters.selfCheckIn) criteria.push('self check-in');
 
     return (
         <main className="min-h-screen bg-stone-50">
@@ -245,7 +307,7 @@ export default async function HomePage({
                         experience gets its own peer card below. Each self-gates and
                         renders nothing when there's none — no empty shelf. */}
                     <UpcomingTrip />
-                    <UpcomingExperience />
+                    <UpcomingExperience list={await upcomingExperiences} />
                 </>
             )}
 
@@ -272,6 +334,9 @@ export default async function HomePage({
                     )}
                 </div>
 
+                {/* Airbnb's Filters button and one-tap chips, over the grid. */}
+                <PropertyFilters pool={pool} />
+
                 {/* Property Grid */}
                 {listings && listings.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
@@ -287,8 +352,9 @@ export default async function HomePage({
                             No stays match that search
                         </h3>
                         <p className="text-stone-500 mt-1 max-w-md mx-auto">
-                            Nothing is free for {criteria.join(' · ')}. Try different dates, or a
-                            wider area.
+                            {hasDates
+                                ? <>Nothing is free for {criteria.join(' · ')}. Try different dates, or a wider area.</>
+                                : <>Nothing matches {criteria.join(' · ')} yet. Try removing a filter.</>}
                         </p>
                         <Link
                             href="/"
@@ -308,11 +374,27 @@ export default async function HomePage({
                     </div>
                 )}
 
-                {/* Every live property on one map — Airbnb's search map, under
-                    the grid rather than beside it here. A white price pin each,
-                    a mini card on tap that links to the listing. Street-level
-                    approx points only, zoom capped. Hidden while a search is on,
-                    like the sections below. */}
+                {/* Live experiences sit straight under the properties, the second
+                    thing to book. While the shelf is still empty nothing shows
+                    here — the coming-soon panel drops down between the towns row
+                    and the map instead (just below), so an empty section never
+                    leads. Hidden while a property search is on, like the sections
+                    below. */}
+                {!searching && experiencesLive && <HomeExperiences providers={homeExperienceList} />}
+
+                {!searching && <TownsCarousel towns={carouselTowns} />}
+
+                {/* Empty state only: the coming-soon panel, below the towns row
+                    and above the map. Once the first experience is live it is
+                    gone and the shelf of cards leads under Our Properties instead
+                    (above). */}
+                {!searching && !experiencesLive && <ExperiencesComingSoon />}
+
+                {/* Every live property on one map — Airbnb's search map. Below
+                    the towns carousel: the places to stay lead, the map is for
+                    somebody who wants to see where they all sit. A white price
+                    pin each, a mini card on tap that links to the listing.
+                    Street-level approx points only, zoom capped. */}
                 {!searching && (() => {
                     const mapPoints = (data || [])
                         .filter((l: any) => l.approx_latitude != null && l.approx_longitude != null)
@@ -336,15 +418,6 @@ export default async function HomePage({
                         </section>
                     ) : null;
                 })()}
-
-                {/* Experiences, alongside the properties. Below the grid so the
-                    cottages lead, above the editorial so it reads as a second
-                    thing to book. Self-gating on the launch flag and on there
-                    being any to show; hidden while a property search is on, the
-                    same as the towns carousel below. */}
-                {!searching && <HomeExperiences />}
-
-                {!searching && <TownsCarousel towns={carouselTowns} />}
 
                 {/* The homepage's editorial, below the grid on purpose: the
                     properties come first, and someone who already knows they
@@ -462,8 +535,11 @@ export default async function HomePage({
                     in it, so it does not appear at all before then. */}
                 {areaLinks.length > 0 && !searching && (
                     <section className="mt-16 pt-10 border-t border-stone-200">
+                        {/* Not the carousel's heading again — the carousel
+                            above already says "Where to stay…", and two h2s
+                            with one name read as a page repeating itself. */}
                         <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
-                            Where to stay in Dumfries &amp; Galloway
+                            Holiday cottages by town
                         </h2>
                         <p className="text-stone-600 text-sm md:text-base mt-1 mb-6">
                             Pick a town and see what we have there.

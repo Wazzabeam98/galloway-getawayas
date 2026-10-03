@@ -3,10 +3,10 @@ import {
     Popover,
     PopoverContent,
     PopoverTrigger,
+    PopoverClose,
 } from "@/components/ui/popover"
 import { UserIcon } from 'lucide-react'
 import LoginModel from '../auth/LoginModel'
-import SignupModel from '../auth/SignupModel'
 import SignOut from '../common/SignOut'
 import ModeSwitch from './ModeSwitch'
 import Link from 'next/link'
@@ -269,8 +269,12 @@ const NavMenu = ({
                         </>
                     ) : (
                         <>
-                            <LoginModel />
-                            <SignupModel />
+                            {/* One item for both, as on Airbnb: the panel works out
+                                whether you are new or returning. The menu closes
+                                as the panel opens, as Airbnb's does. */}
+                            <PopoverClose asChild>
+                                <LoginModel />
+                            </PopoverClose>
                             <li className={itemClass}>
                                 <Link href='/business'>Start hosting</Link>
                             </li>

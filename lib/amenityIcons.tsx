@@ -2,8 +2,9 @@ import {
     Wifi, Car, PawPrint, Waves, Flame, Tv, Thermometer, Plug, Laptop,
     Baby, Umbrella, Dumbbell, Armchair, Shirt, Droplet, Utensils,
     Bath, Trees, Snowflake, Coffee, Wind,
-    ShieldCheck, Sofa, Check, type LucideIcon,
+    ShieldCheck, Sofa, Check, Accessibility, type LucideIcon,
 } from 'lucide-react';
+import { ACCESSIBILITY_AMENITIES } from './listingFilters';
 
 // One icon per amenity, so "What this place offers" reads the way Airbnb's
 // does — a line icon beside each thing rather than a wall of grey pills. The
@@ -42,6 +43,7 @@ const ICONS: Record<string, LucideIcon> = {
     'Carbon monoxide alarm': ShieldCheck,
     'Sofa': Sofa,
 };
+ACCESSIBILITY_AMENITIES.forEach((name) => { ICONS[name] = Accessibility; });
 
 export function amenityIcon(name: string): LucideIcon {
     return ICONS[name] || Check;

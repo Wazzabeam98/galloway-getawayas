@@ -139,7 +139,32 @@ $$;
 
 alter function public.account_deactivation_blockers(uuid) owner to postgres;
 revoke all on function public.account_deactivation_blockers(uuid) from public;
-grant execute on function public.account_deactivation_blockers(uuid) to authenticated, service_role;
+-- The caller-supplied-id form is the ADMIN/server path only: service_role (the
+-- route's admin client, the support reactivation flow) can ask about any
+-- account. It is NOT granted to `authenticated` — this is SECURITY DEFINER, so
+-- a direct `authenticated` grant let any signed-in person pass someone else's
+-- id and read which listings/experiences they own, how many reservations they
+-- have, and that they are mid-stay (away from home) until a given date. The
+-- browser asks about its OWN account only, through the no-arg wrapper below.
+grant execute on function public.account_deactivation_blockers(uuid) to service_role;
+
+-- The self-only wrapper: a signed-in person asks for their OWN blockers and
+-- nobody else's. auth.uid() is the identity — there is no argument to spoof.
+-- This is what any browser/authenticated surface calls; the two-arg form stays
+-- server-only. Mirror of deactivate_own_account() wrapping admin_deactivate_account().
+create or replace function public.my_account_deactivation_blockers()
+    returns table (kind text, entity_id uuid, entity_name text, detail text)
+    language sql
+    stable
+    security definer
+    set search_path to 'public'
+as $$
+    select * from public.account_deactivation_blockers(auth.uid());
+$$;
+
+alter function public.my_account_deactivation_blockers() owner to postgres;
+revoke all on function public.my_account_deactivation_blockers() from public;
+grant execute on function public.my_account_deactivation_blockers() to authenticated, service_role;
 
 -- 3. The deactivation worker ----------------------------------------------
 -- Suspend a given account: hide the profile, hide the listings/experiences it

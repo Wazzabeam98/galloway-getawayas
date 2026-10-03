@@ -40,7 +40,7 @@ export default async function ExperienceReviewPage({ params }: { params: { order
             <div className="mx-auto max-w-md px-6 py-24 text-center">
                 <h1 className="mb-2 text-2xl font-bold text-slate-900">Sign in to leave your review</h1>
                 <p className="mb-6 text-slate-500">You’ll need to be signed in to the account that booked it.</p>
-                <LoginModel />
+                <div className="w-full max-w-xs"><LoginModel variant="button" /></div>
             </div>
         );
     }

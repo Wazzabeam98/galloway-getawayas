@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
@@ -36,9 +35,10 @@ export default function ChangeDateRange({
     checkOut: string;
     onChange: (checkIn: string, checkOut: string) => void;
 }) {
-    const supabase = createClientComponentClient();
     const calendarRef = useRef<HTMLDivElement>(null);
-    const [disabledDates, setDisabledDates] = useState<Date[]>([]);
+    // Null until the listing's calendar has loaded: the picker is not drawn
+    // before then, because an empty list would show every night as free.
+    const [disabledDates, setDisabledDates] = useState<Date[] | null>(null);
 
     // The booking's own nights, which stay pickable.
     const ownNights = useMemo(() => {
@@ -57,24 +57,21 @@ export default function ChangeDateRange({
     useEffect(() => {
         let live = true;
         (async () => {
+            // One request, the same helper the listing page reads on the server
+            // (lib/availability guestCalendar via /api/listings/calendar).
             const blocked = new Set<string>();
-            const addRange = (a: string, b: string) => { let d = fromKey(a); const e = fromKey(b); while (d < e) { blocked.add(key(d)); d = addDays(d, 1); } };
-            const { data: busy } = await supabase.from('listing_busy_nights').select('check_in, check_out').eq('listing_id', listingId).in('status', ['pending', 'confirmed']);
-            (busy || []).forEach((b: any) => addRange(b.check_in, b.check_out));
-            const { data: ov } = await supabase.from('calendar_overrides').select('date, is_blocked').eq('listing_id', listingId);
-            (ov || []).forEach((o: any) => { if (o.is_blocked) blocked.add(String(o.date).slice(0, 10)); });
             try {
-                const res = await fetch('/api/ical-import?listing=' + encodeURIComponent(listingId));
-                if (res.ok) { const data = await res.json(); (data.events || []).forEach((ev: any) => addRange(ev.start, ev.end)); }
-            } catch { /* an unreachable feed just doesn't block */ }
+                const res = await fetch('/api/listings/calendar?listing=' + encodeURIComponent(listingId));
+                if (res.ok) { const data = await res.json(); (data.blockedNights || []).forEach((k: string) => blocked.add(k)); }
+            } catch { /* fall through with what we have; the change route re-checks */ }
             // The guest already holds their own nights — never strike those out.
             ownNights.forEach((k) => blocked.delete(k));
             if (live) setDisabledDates(Array.from(blocked).map(fromKey));
         })();
         return () => { live = false; };
-    }, [supabase, listingId, ownNights]);
+    }, [listingId, ownNights]);
 
-    const disabledKeys = useMemo(() => new Set(disabledDates.map(key)), [disabledDates]);
+    const disabledKeys = useMemo(() => new Set((disabledDates || []).map(key)), [disabledDates]);
 
     // Struck-through numbers on unavailable nights — the same treatment the
     // booking widget uses, so grey is never the only signal.
@@ -121,6 +118,14 @@ export default function ChangeDateRange({
         if (!sel.startDate || !sel.endDate) return;
         onChange(key(sel.startDate), key(sel.endDate));
     };
+
+    if (disabledDates === null) {
+        return (
+            <div className="change-cal border rounded-xl h-[340px] flex items-center justify-center text-sm text-slate-500" aria-busy="true">
+                Loading availability…
+            </div>
+        );
+    }
 
     return (
         // rdr-move makes the month grid fill the card (the base .rdrMonth is a fixed

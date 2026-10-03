@@ -1,5 +1,7 @@
 'use client';
 
+import { Accessibility as AccessibilityIcon } from 'lucide-react';
+import { ACCESSIBILITY_AMENITIES } from '@/lib/listingFilters';
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useParams } from 'next/navigation';
@@ -79,6 +81,12 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
             { name: 'Beach access', icon: Umbrella },
             { name: 'Waterfront', icon: Anchor },
         ],
+    },
+    {
+        // Airbnb's step-free features — what the "Accessibility features"
+        // filter on the home page searches (lib/listingFilters).
+        category: 'Accessibility',
+        items: ACCESSIBILITY_AMENITIES.map((name) => ({ name, icon: AccessibilityIcon })),
     },
     {
         category: 'Safety',
@@ -636,7 +644,7 @@ export default function EditListing() {
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-6 text-center px-4">
                 <Logo />
                 <h1 className="text-2xl font-bold text-slate-900">Sign in to edit this listing</h1>
-                <LoginModel />
+                <div className="w-full max-w-xs"><LoginModel variant="button" /></div>
             </div>
         );
     }

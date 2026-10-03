@@ -11,6 +11,8 @@ import { createClient } from "@supabase/supabase-js";
 import { accessibleListings } from "@/lib/access";
 import LeaveListingBtn from "@/components/LeaveListingBtn";
 import HideListingBtn from "@/components/HideListingBtn";
+import DeleteListingBtn from "@/components/DeleteListingBtn";
+import { listingsWithRecords, removalFor } from "@/lib/listingRemoval";
 import Link from "next/link";
 import { ChevronRight, Eye, Home, Plus, Wrench, Star } from "lucide-react";
 
@@ -18,7 +20,7 @@ import { ChevronRight, Eye, Home, Plus, Wrench, Star } from "lucide-react";
 // review page and the reminder cron use. After that the chance has passed.
 const REVIEW_WINDOW_DAYS = 14;
 
-function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
+function ListingCard({ item, isDraft, booked }: { item: any; isDraft: boolean; booked: boolean }) {
     const editHref = isDraft ? `/addhome?draft=${item.id}` : `/edit-listing/${item.id}`;
     const isHidden = item.status === 'hidden';
     // Finished, sent, and waiting for an owner to look at it. Nothing writes
@@ -97,7 +99,7 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                 )}
             </Link>
 
-            <div className="absolute top-3 right-3 z-10 flex gap-2 opacity-0 group-hover:opacity-100 transition">
+            <div className="absolute top-3 right-3 z-10 flex gap-2 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition">
                 {!isDraft && !isHidden && !isWaiting && (
                     <Link
                         href={`/homes/${item.id}`}
@@ -108,30 +110,19 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                         View
                     </Link>
                 )}
-                {/* Hide, and no Delete.
-                    
-                    There was a delete button here. It had never worked: it ran
-                    `from('listings').delete()` as the browser user, `listings`
-                    has no DELETE policy, so RLS matched nothing and PostgREST
-                    answered 204. The row stayed and the dialog closed as though
-                    it had gone — while saying "this will permanently delete
-                    your added home and remove your data from our servers".
-                    
-                    It could not simply be granted. bookings.listing_id is ON
-                    DELETE CASCADE, and from bookings the messages, reviews and
-                    booking guests cascade too, while payments and payouts are
-                    SET NULL — leaving money in the ledger that can no longer be
-                    tied to a stay. A single dispute would block the whole thing
-                    with a foreign key error. And the privacy policy promises
-                    booking and payment records are kept for six years.
-                    
-                    Hiding is what a host actually wants: off the home page, out
-                    of the sitemap, noindexed, and still open for a guest holding
-                    a booking. Removing a listing for real is rare enough to be
-                    an email — see OUTSTANDING.md, where the alternatives are
-                    costed if that stops being true. */}
-                {!isDraft && (
-                    <HideListingBtn id={item.id} hidden={isHidden} title={item.title} />
+                {/* Delete or Hide — whichever applies, never a Delete that then
+                    refuses. A listing that has never had a booking can be
+                    deleted outright; one with any booking can only be hidden,
+                    because the booking and payment records hang off it
+                    (lib/listingRemoval). Hiding takes it off the home page,
+                    out of the sitemap and noindexed, and leaves it open for a
+                    guest holding a booking. Only owners reach this card — a
+                    co-host's listings render under "Listings you help with". */}
+                {!isDraft && !isWaiting && (
+                    <HideListingBtn id={item.id} hidden={isHidden} title={item.title} booked={booked} />
+                )}
+                {removalFor(booked) === 'delete' && (
+                    <DeleteListingBtn id={item.id} title={item.title} canHide={!isDraft && !isWaiting && !isHidden} />
                 )}
             </div>
         </div>
@@ -162,6 +153,16 @@ export default async function Dashboard() {
         : { data: [] };
 
     const owned = (homes || []).filter((h) => ownedIds.indexOf(h.id) !== -1);
+
+    // Which owned listings have ever had a booking — those get Hide, never
+    // Delete. A failed read offers nothing rather than a Delete it can't stand
+    // behind; the route would refuse a booked one anyway.
+    let bookedIds: Set<string>;
+    try {
+        bookedIds = await listingsWithRecords(admin, owned.map((h) => h.id));
+    } catch {
+        bookedIds = new Set(owned.map((h) => h.id));
+    }
     const helping = (homes || []).filter((h) => helpingIds.indexOf(h.id) !== -1);
 
     // "Your follow-ups" — guests who have checked out and are still inside the
@@ -304,7 +305,7 @@ export default async function Dashboard() {
                                     )}
                                     <span className="min-w-0 flex-1">
                                         <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-                                            <Star className="h-3.5 w-3.5 flex-none text-amber-400" /> Leave {first} a review
+                                            <Star className="h-3.5 w-3.5 flex-none text-stone-900" /> Leave {first} a review
                                         </span>
                                         <span className="mt-0.5 block truncate text-[13px] text-slate-500">{fuListingMap[b.listing_id] || 'your listing'}</span>
                                         <span className={'mt-0.5 block text-[12px] font-medium ' + (left <= 3 ? 'text-amber-700' : 'text-slate-400')}>
@@ -404,7 +405,7 @@ export default async function Dashboard() {
                         <h2 className="text-lg font-semibold text-slate-800 mb-4">In progress</h2>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {drafts.map((item) => (
-                                <ListingCard key={item.id} item={item} isDraft />
+                                <ListingCard key={item.id} item={item} isDraft booked={bookedIds.has(item.id)} />
                             ))}
                         </div>
                     </div>
@@ -415,7 +416,7 @@ export default async function Dashboard() {
                         {drafts.length > 0 && <h2 className="text-lg font-semibold text-slate-800 mb-4">Published</h2>}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {published.map((item) => (
-                                <ListingCard key={item.id} item={item} isDraft={false} />
+                                <ListingCard key={item.id} item={item} isDraft={false} booked={bookedIds.has(item.id)} />
                             ))}
                         </div>
                     </div>
