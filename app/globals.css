@@ -64,29 +64,54 @@ body {
   }
 }
 
-/* iOS Safari zooms the page whenever a focused control's font is below 16px, so
-   every form control gets at least 16px at phone widths. Only the value; nothing
-   about the layout changes at or above 768px.
+/* iOS Safari zooms the whole page the moment a focused text field's font is
+   under 16px, and the zoom then sticks for the rest of the visit. Every text
+   field on a phone or tablet is therefore at least 17px — not 16: confirmed on
+   a real iPhone 15 (03/10/2026) that tapping the sign-in field still zoomed at
+   a measured 16px (no transform, scale, zoom or rem drift anywhere on the
+   field's ancestors), so 16 sits exactly on Safari's line and 17 is the
+   headroom other sites use. Fields designed bigger (the 6-digit code box,
+   text-lg and up) keep their own size; only the small ones are lifted.
 
-   The bare `input` element selector (specificity 0,0,1) is beaten by any Tailwind
-   text-size class, because a class like `text-sm` is 0,1,0 — so inputs carrying
-   `text-sm` (14px) or `text-xs` (12px) ignored the element rule and still zoomed.
-   The `input.text-sm`/`input.text-xs` selectors (0,1,1) out-specify the utility
-   and lift exactly those small controls to 16px, while deliberately larger ones
-   (text-base and up — the 6-digit code field, the big wizard fields) keep their
-   size, since these selectors never match them. Class-less controls stay covered
-   by the element rule. */
-@media (max-width: 767px) {
+   When: narrow screens OR any touch screen — `(pointer: coarse)` is what
+   catches a phone in landscape (an iPhone 15 is 852px wide on its side, past
+   the 767px breakpoint) and an iPad, both of which zoom the same way.
+
+   Which: the bare element selectors cover class-less fields. A Tailwind size
+   class (0,1,0) beats a bare element (0,0,1), so the small size classes are
+   matched by name — as substrings, so responsive forms like `sm:text-sm`
+   (which apply from 640px, i.e. on a phone in landscape) are caught too, and
+   so are the arbitrary sizes (`text-[13px]` and friends) the old rule missed.
+   :is() keeps the specificity at 0,1,1, enough to outrank the utility. The
+   :not() list leaves alone a field that ALSO carries a bigger size — the code
+   box is the shared field style (text-base) plus text-2xl, and must stay 24px. */
+@media (max-width: 767px), (pointer: coarse) {
   input,
   select,
   textarea,
-  input.text-xs,
-  input.text-sm,
-  select.text-xs,
-  select.text-sm,
-  textarea.text-xs,
-  textarea.text-sm {
-    font-size: 16px;
+  :is(input, select, textarea):is(
+    [class*="text-xs"],
+    [class*="text-sm"],
+    [class*="text-base"],
+    [class*="text-[9px]"],
+    [class*="text-[10px]"],
+    [class*="text-[10.5px]"],
+    [class*="text-[11px]"],
+    [class*="text-[11.5px]"],
+    [class*="text-[12px]"],
+    [class*="text-[12.5px]"],
+    [class*="text-[13px]"],
+    [class*="text-[14px]"],
+    [class*="text-[15px]"],
+    [class*="text-[16px]"]
+  ):not(
+    [class*="text-lg"],
+    [class*="text-xl"],
+    [class*="text-2xl"],
+    [class*="text-3xl"],
+    [class*="text-4xl"]
+  ) {
+    font-size: 17px;
   }
 }
 
