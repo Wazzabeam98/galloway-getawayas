@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar } from 'react-date-range';
+import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { Loader2, ChevronRight, X, Check } from 'lucide-react';
@@ -232,6 +233,7 @@ export default function ChangeDateTime({ orderId, shape, className, endpoint: en
                                         <>
                                             <div className="rdr-move relative overflow-hidden rounded-xl border border-slate-200">
                                                 <Calendar
+                                                    ariaLabels={MONTH_ARROW_LABELS}
                                                     date={selectedKey ? dateFromKey(selectedKey) : undefined}
                                                     shownDate={currentDate}
                                                     onShownDateChange={(d: Date) => setShownDate(d)}
