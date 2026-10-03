@@ -691,6 +691,66 @@ body {
   overflow: visible;
 }
 
+/* Full width, booking-calendar cells. In the phone search sheet the calendar
+   was a fixed 18em month inside the row's padding: 41px x 35px cells. It now
+   spans the card (Hero's -mx-4) up to 7 x 47px = 329px, centred, and uses the
+   booking calendar's phone sizing (4c, Airbnb's measurements): a 47px pitch
+   both ways, every fill inset 1px so a picked day is a 45px circle, and the
+   stay's ends and the band's week/month edges fully round. Narrower than
+   that, the seven columns share whatever width there is. */
+.airbnb-mobile-calendar .rdrDateRangePickerWrapper,
+.airbnb-mobile-calendar .rdrDateRangeWrapper,
+.airbnb-mobile-calendar .rdrCalendarWrapper,
+.airbnb-mobile-calendar .rdrMonths,
+.airbnb-mobile-calendar .rdrMonthsVertical,
+.airbnb-mobile-calendar .rdrMonth,
+.airbnb-mobile-calendar .rdrMonthAndYearWrapper,
+.airbnb-mobile-calendar .rdrWeekDays,
+.airbnb-mobile-calendar .rdrDays {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.airbnb-mobile-calendar .rdrDateRangePickerWrapper {
+  max-width: 329px;
+}
+.airbnb-mobile-calendar .rdrMonth {
+  padding: 0 0 0.5em 0 !important;
+}
+.airbnb-mobile-calendar .rdrDay {
+  width: 14.2857% !important;
+  height: 47px !important;
+  line-height: 47px !important;
+}
+.airbnb-mobile-calendar .rdrDayNumber,
+.airbnb-mobile-calendar .rdrSelected,
+.airbnb-mobile-calendar .rdrInRange,
+.airbnb-mobile-calendar .rdrStartEdge,
+.airbnb-mobile-calendar .rdrEndEdge,
+.airbnb-mobile-calendar .rdrDayStartPreview,
+.airbnb-mobile-calendar .rdrDayInPreview,
+.airbnb-mobile-calendar .rdrDayEndPreview {
+  top: 1px;
+  bottom: 1px;
+}
+.airbnb-mobile-calendar .rdrStartEdge,
+.airbnb-mobile-calendar .rdrDayStartOfMonth .rdrInRange,
+.airbnb-mobile-calendar .rdrDayStartOfMonth .rdrEndEdge,
+.airbnb-mobile-calendar .rdrDayStartOfWeek .rdrInRange,
+.airbnb-mobile-calendar .rdrDayStartOfWeek .rdrEndEdge,
+.airbnb-mobile-calendar .rdrDayStartPreview {
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+.airbnb-mobile-calendar .rdrEndEdge,
+.airbnb-mobile-calendar .rdrDayEndOfMonth .rdrInRange,
+.airbnb-mobile-calendar .rdrDayEndOfMonth .rdrStartEdge,
+.airbnb-mobile-calendar .rdrDayEndOfWeek .rdrInRange,
+.airbnb-mobile-calendar .rdrDayEndOfWeek .rdrStartEdge,
+.airbnb-mobile-calendar .rdrDayEndPreview {
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
 /* The guest sign-up's screen-one → screen-two move. The category card the
    person chose lands pinned on the sub-type screen with a 3D swoosh — a card
    flying in and settling, not a jump cut. Its container sets the perspective;
