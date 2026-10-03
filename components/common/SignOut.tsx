@@ -13,7 +13,7 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { clearStayChoice } from '@/lib/staySignedIn'
+import { signOutThisDevice } from '@/lib/staySignedIn'
 
 
 const SignOut = () => {
@@ -23,25 +23,10 @@ const SignOut = () => {
     const logout = async () => {
         setLoading(true);
 
-        // Ask the server to revoke the session. This can legitimately fail —
-        // expired token, no connection, or an account that no longer exists.
-        try {
-            await supabase.auth.signOut();
-        } catch (err) {
-            console.error('Server sign-out failed:', err);
-        }
-
-        // Whatever the server said, clear the session held in this browser.
-        // Logout must never leave someone signed in on the device in front of
-        // them just because a network call failed.
-        try {
-            await supabase.auth.signOut({ scope: 'local' });
-        } catch (err) {
-            console.error('Local sign-out failed:', err);
-        }
-
-        // The next sign-in on this device chooses again whether to stay.
-        clearStayChoice();
+        // This device only — never the person's other devices — and the
+        // cookie goes whatever the server answers. The next sign-in on this
+        // device chooses again whether to stay. See lib/staySignedIn.
+        await signOutThisDevice(supabase);
 
         // A FULL-DOCUMENT navigation, not router.push('/') + router.refresh().
         // The soft navigation left the sign-out looking like it did nothing for

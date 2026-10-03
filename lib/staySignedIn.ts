@@ -156,3 +156,48 @@ export function makeAuthCookiesSessionOnly(): void {
         if (isAuthCookie(name)) document.cookie = name + '=' + pair.slice(i + 1) + '; Path=/; SameSite=Lax' + secure;
     });
 }
+
+// ---- signing out of THIS device ----------------------------------------------
+//
+// Every "Log out" a person presses goes through here: the account menu, "Not
+// now — log out" on the terms prompt, and the way out of a sign-up they will
+// not finish. It ends this device's session and nothing else.
+//
+// WHY THIS EXISTS. supabase.auth.signOut() with no options is scope 'global':
+// it ended the session on EVERY device. Logging out on a phone signed the
+// laptop out too — not at once (its access token stays valid for up to an
+// hour, so the laptop still looked signed in) but at its next visit, when the
+// refresh was refused and the welcome-back panel asked for a code, however the
+// "Stay signed in" tick had been set. The dialog has always said "You'll be
+// signed out on this device"; now that is what happens. Signing out
+// everywhere is its own button in Account, and closing or deactivating an
+// account still ends every session.
+//
+// AND THE COOKIE GOES WHATEVER THE SERVER SAYS. The library only clears its own
+// session when the server answers 200, 401 or 404. A session already ended
+// elsewhere answers 403 ("session not found"), the library kept the cookie,
+// and the middleware went on re-issuing that dead cookie for a year — so the
+// log out button appeared to do nothing until the hour ran out.
+
+// Delete every sign-in cookie this page can see, with and without Secure (the
+// middleware writes Secure on https; the page script writes it without).
+export function clearAuthCookies(): void {
+    if (typeof document === 'undefined') return;
+    document.cookie.split(/;\s*/).forEach((pair) => {
+        const i = pair.indexOf('=');
+        const name = i > 0 ? pair.slice(0, i) : '';
+        if (!isAuthCookie(name)) return;
+        document.cookie = name + '=; Path=/; Max-Age=0; SameSite=Lax';
+        if (location.protocol === 'https:') document.cookie = name + '=; Path=/; Max-Age=0; SameSite=Lax; Secure';
+    });
+}
+
+export async function signOutThisDevice(supabase: { auth: { signOut: (o: { scope: 'local' }) => Promise<unknown> } }): Promise<void> {
+    try {
+        await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+        // No connection, or the session was already gone: cleared below anyway.
+    }
+    clearAuthCookies();
+    clearStayChoice();
+}
