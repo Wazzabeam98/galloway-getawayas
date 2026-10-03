@@ -14,6 +14,16 @@
   }
 }
 
+/* Nothing may make the page wider than the phone. One element past the right
+   edge lets iOS Safari pan and zoom the WHOLE page, and the scale then sticks
+   across client-side navigation — the "site unusable on an iPhone after
+   signing in" bug was the header doing exactly that. `clip` (not `hidden`) so
+   body does not become a scroll container and the sticky nav keeps sticking.
+   A backstop only: anything wide still needs fixing where it is. */
+body {
+  overflow-x: clip;
+}
+
 /* `.container` carries 2rem of side padding, which is 64px off a 375px screen
    before any content gets a look in — the listing page was rendering its
    booking card at 247px and clipping Friday and Saturday out of the calendar.
