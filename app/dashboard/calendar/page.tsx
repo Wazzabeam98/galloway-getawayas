@@ -642,7 +642,7 @@ export default function CalendarPage() {
                                             <Wrench className="w-2.5 h-2.5" />
                                         </span>
                                     )}
-                                    <span className={`text-xs font-semibold ${booking || awayColour ? 'text-white' : override?.is_blocked ? 'line-through' : 'text-slate-800'}`}>
+                                    <span className={`text-xs font-medium ${booking || awayColour ? 'text-white' : override?.is_blocked ? 'line-through' : 'text-[#222222]'}`}>
                                         {format(day, 'd')}
                                     </span>
                                     {booking ? (

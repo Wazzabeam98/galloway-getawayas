@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
+import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 
@@ -85,17 +86,15 @@ export default function ChangeDateRange({
         );
     };
 
-    // react-date-range leaves its month/year selects and disabled days unlabelled;
-    // label them for screen readers, re-running whenever the month changes. Same
-    // observer the booking widget runs.
+    // react-date-range leaves its disabled days unlabelled and its month heading
+    // silent; mark them for screen readers, re-running whenever the month
+    // changes. Same observer the booking widget runs.
     useEffect(() => {
         const root = calendarRef.current;
         if (!root) return;
         const label = () => {
-            const month = root.querySelector('.rdrMonthPicker select');
-            if (month) month.setAttribute('aria-label', 'Month');
-            const year = root.querySelector('.rdrYearPicker select');
-            if (year) year.setAttribute('aria-label', 'Year');
+            const heading = root.querySelector('.rdrMonthAndYearPickers');
+            if (heading && !heading.hasAttribute('aria-live')) heading.setAttribute('aria-live', 'polite');
             root.querySelectorAll('.rdrDay').forEach((day) => {
                 if (day.classList.contains('rdrDayDisabled')) day.setAttribute('aria-disabled', 'true');
                 else day.removeAttribute('aria-disabled');
@@ -133,6 +132,7 @@ export default function ChangeDateRange({
         // calendar is untouched.
         <div ref={calendarRef} className="rdr-move change-cal border rounded-xl overflow-hidden">
             <DateRangePicker
+                ariaLabels={MONTH_ARROW_LABELS}
                 ranges={[range]}
                 onChange={handleSelect}
                 minDate={minDate}
@@ -141,6 +141,7 @@ export default function ChangeDateRange({
                 weekStartsOn={1}
                 direction="vertical"
                 rangeColors={['#047857']}
+                showMonthAndYearPickers={false}
                 showDateDisplay={false}
                 staticRanges={[]}
                 inputRanges={[]}

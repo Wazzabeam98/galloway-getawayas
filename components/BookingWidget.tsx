@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { formatGBP } from '@/lib/formatMoney';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
+import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
 import { addMonths } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
@@ -75,14 +76,21 @@ function Counter({
                     type="button"
                     onClick={() => onChange(Math.max(min, value - 1))}
                     disabled={value <= min}
+                    // Icon-only, so named here — it was read out as "button".
+                    aria-label={`Fewer ${label.toLowerCase()}`}
                     className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
                 >
                     <Minus className="w-4 h-4" />
                 </button>
-                <span className="w-6 text-center text-sm">{value}</span>
+                {/* Announced as it changes, so the new count is heard after a tap. */}
+                <span className="w-6 text-center text-sm" aria-live="polite">
+                    <span aria-hidden="true">{value}</span>
+                    <span className="sr-only">{value} {label.toLowerCase()}</span>
+                </span>
                 <button
                     type="button"
                     onClick={() => onChange(value + 1)}
+                    aria-label={`More ${label.toLowerCase()}`}
                     className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
                 >
                     <Plus className="w-4 h-4" />
@@ -145,13 +153,13 @@ export default function BookingWidget({
         );
     };
 
-    // react-date-range renders the month and year dropdowns itself and gives
-    // no way to label them, so they arrive as two selects a screen reader
-    // announces as nothing at all. Same for the day buttons it marks disabled:
-    // the class is there but the `disabled` property is false and there is no
-    // aria-disabled, so they read as ordinary buttons.
+    // react-date-range marks a disabled day with a class only: the `disabled`
+    // property is false and there is no aria-disabled, so a screen reader
+    // reads it as an ordinary button. The month heading ("October 2026") is
+    // plain text, so it is made a polite live region to announce the new
+    // month when the guest uses the arrows.
     //
-    // The observer is not decoration. Both sets of nodes are replaced whenever
+    // The observer is not decoration. The day nodes are replaced whenever
     // the guest changes month, and a one-off pass after mount would label the
     // first month and nothing after it.
     useEffect(() => {
@@ -159,11 +167,8 @@ export default function BookingWidget({
         if (!root) return;
 
         const label = () => {
-            const month = root.querySelector('.rdrMonthPicker select');
-            if (month) month.setAttribute('aria-label', 'Month');
-
-            const year = root.querySelector('.rdrYearPicker select');
-            if (year) year.setAttribute('aria-label', 'Year');
+            const heading = root.querySelector('.rdrMonthAndYearPickers');
+            if (heading && !heading.hasAttribute('aria-live')) heading.setAttribute('aria-live', 'polite');
 
             root.querySelectorAll('.rdrDay').forEach((day) => {
                 const off = day.classList.contains('rdrDayDisabled');
@@ -173,33 +178,6 @@ export default function BookingWidget({
                     day.removeAttribute('aria-disabled');
                 }
             });
-
-            // The month list always offers all twelve, whatever the window
-            // allows, and picking one outside it does nothing visible: the
-            // library clamps the shown date back to the edge and the guest is
-            // returned to the month they started on with no explanation.
-            //
-            // Observed on the live site: on a listing taking bookings to
-            // 28 August 2027, choosing October 2027 silently went back to
-            // August. Success and refusal looked identical, which is the shape
-            // this project keeps meeting.
-            //
-            // A month is offered only if any part of it is actually bookable.
-            // Both ends matter — the months earlier in this year are past and
-            // snap back exactly the same way.
-            if (month instanceof HTMLSelectElement && year instanceof HTMLSelectElement) {
-                const shownYear = Number(year.value);
-                const lower = new Date();
-                lower.setHours(0, 0, 0, 0);
-
-                Array.prototype.forEach.call(month.options, (option: HTMLOptionElement, index: number) => {
-                    const firstOfMonth = new Date(shownYear, index, 1);
-                    const lastOfMonth = new Date(shownYear, index + 1, 0);
-                    const tooEarly = lastOfMonth.getTime() < lower.getTime();
-                    const tooLate = !!maxBookableDate && firstOfMonth.getTime() > maxBookableDate.getTime();
-                    option.disabled = tooEarly || tooLate;
-                });
-            }
         };
 
         label();
@@ -207,10 +185,7 @@ export default function BookingWidget({
         const observer = new MutationObserver(label);
         observer.observe(root, { childList: true, subtree: true });
         return () => observer.disconnect();
-        // availabilityWindow, not maxBookableDate: the latter is a fresh Date
-        // on every render, so depending on it would tear down and rebuild the
-        // observer constantly. The window prop is what actually decides it.
-    }, [disabledDates, availabilityWindow]);
+    }, [disabledDates]);
 
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
@@ -328,6 +303,31 @@ export default function BookingWidget({
     const handleSelect = (ranges: RangeKeyDict) => {
         setError('');
         setDateRange(ranges.selection);
+    };
+
+    // Back to "no dates yet": both ends undefined, which is how the quote, the
+    // submit guard and .rdr-unselected all read an empty choice, and which the
+    // draft effect above writes back to the URL as no checkIn/checkOut.
+    const [calendarKey, setCalendarKey] = useState(0);
+
+    // The month the guest is looking at, kept so Clear dates leaves them on it.
+    // The remount below opens on `shownDate`; without it react-date-range
+    // opens on the selection's month, and with no selection that is the
+    // current month — November, pick dates, Clear dates landed on October.
+    // A ref, not state: it only needs reading at that remount.
+    const shownMonth = useRef<Date | undefined>(undefined);
+
+    // One array per selection, not one per render. react-date-range re-aims
+    // its month whenever `ranges` is a new array, and with no dates picked it
+    // aims at the current month — so browsing to November and then pressing
+    // Adults + (or anything else that redraws this box) threw the calendar
+    // back to October.
+    const calendarRanges = useMemo(() => [dateRange], [dateRange]);
+
+    const clearDates = () => {
+        setError('');
+        setDateRange({ startDate: undefined, endDate: undefined, key: 'selection' });
+        setCalendarKey((k) => k + 1);
     };
 
     const handleRequest = async () => {
@@ -481,7 +481,7 @@ export default function BookingWidget({
     }
 
     return (
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 lg:p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="mb-4">
                 <span className="text-2xl font-bold text-slate-900">£{pricePerNight}</span>
                 <span className="text-slate-500"> / night</span>
@@ -490,7 +490,16 @@ export default function BookingWidget({
 
             <div ref={calendarRef} className={`cottage-cal border rounded-xl overflow-hidden mb-4${dateRange.startDate ? '' : ' rdr-unselected'}`}>
                 <DateRangePicker
-                    ranges={[dateRange]}
+                    ariaLabels={MONTH_ARROW_LABELS}
+                    // Remounted by Clear dates: the picker keeps its own note of
+                    // which end it is choosing next, so after a check-in pick it
+                    // would treat the guest's next tap as a check-out against an
+                    // empty start. A fresh mount starts back at check-in, on
+                    // the month the guest had navigated to (shownDate).
+                    key={calendarKey}
+                    ranges={calendarRanges}
+                    shownDate={shownMonth.current}
+                    onShownDateChange={(d: Date) => { shownMonth.current = d; }}
                     onChange={handleSelect}
                     minDate={new Date()}
                     maxDate={maxBookableDate}
@@ -500,6 +509,9 @@ export default function BookingWidget({
                     weekStartsOn={1}
                     direction="vertical"
                     rangeColors={['#047857']}
+                    // "October 2026" as one heading between the arrows, as
+                    // Airbnb has it, not a month dropdown beside a year one.
+                    showMonthAndYearPickers={false}
                     showDateDisplay={false}
                     // The preset sidebar this library ships with offers
                     // "Today", "Yesterday" and "Last Week", which mean nothing
@@ -510,20 +522,18 @@ export default function BookingWidget({
                     inputRanges={[]}
                     dayContentRenderer={renderDay}
                 />
+                {/* Bottom right, as on Airbnb's calendar. */}
+                <div className="flex justify-end px-3 pb-3">
+                    <button
+                        type="button"
+                        onClick={clearDates}
+                        disabled={!dateRange.startDate}
+                        className="text-sm font-medium text-[#222222] underline underline-offset-2 rounded px-1 py-0.5 hover:bg-slate-100 disabled:text-slate-300 disabled:no-underline disabled:hover:bg-transparent disabled:cursor-default"
+                    >
+                        Clear dates
+                    </button>
+                </div>
             </div>
-
-            {/*
-              Said before it is hit, not after. The greyed-out months stop a
-              guest choosing one they cannot have, but a control that simply
-              refuses still leaves them wondering whether the place is booked
-              solid or the site is broken. This is the sentence that answers it,
-              and it is why the fix is both halves rather than either.
-            */}
-            {maxBookableDate && (
-                <p className="text-xs text-slate-500 -mt-2 mb-4">
-                    This place takes bookings up to {formatUk(maxBookableDate)}.
-                </p>
-            )}
 
             <div className="mb-4 border rounded-xl px-3 divide-y">
                 <Counter label="Adults" sub="Ages 13+" value={adults} onChange={setAdults} min={1} />

@@ -381,7 +381,9 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
                                         value={code}
                                         onChange={(e) => setCode(tidyCode(e.target.value))}
                                         placeholder="123456"
-                                        className={INPUT + ' text-center text-2xl tracking-[0.3em]'}
+                                        // text-base swapped, not added to: with both on, the
+                                        // later .text-base won and this box was 16px.
+                                        className={INPUT.replace('text-base', 'text-2xl') + ' text-center tracking-[0.3em]'}
                                     />
                                 </div>
                                 {error && <p role="alert" className="text-sm text-red-600">{error}</p>}

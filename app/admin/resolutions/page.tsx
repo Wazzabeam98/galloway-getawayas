@@ -9,6 +9,9 @@ import { formatUk } from '@/lib/cancellation';
 import { outcomeLabel } from '@/lib/adminResolutions';
 import ResolveResolutionForm from '@/components/admin/ResolveResolutionForm';
 import { formatGBP } from '@/lib/formatMoney';
+import DecideHostDebtForm from '@/components/admin/DecideHostDebtForm';
+import { outstandingOf } from '@/lib/hostDebt';
+import { DEBT_SELECT, attachBookings, debtTitle, debtFigures, type HostDebt } from '@/lib/hostDebtView';
 
 // The admin side of the stay Resolution Centre — where a money request the guest
 // declined, or let run past the 72h deadline, comes to be adjudicated. The
@@ -73,6 +76,22 @@ export default async function AdminResolutions() {
     (attachments || []).forEach((a: any) => {
         (attByResolution[a.resolution_id] = attByResolution[a.resolution_id] || []).push(a);
     });
+
+    // Host debts a host has disputed — money they owe the platform (a clawback
+    // shortfall, a cancellation fee) that they say is wrong. The same queue and
+    // the same alert email as an escalated request; these DO move money, in the
+    // sense that the decision decides whether the payout run takes it again.
+    const { data: disputedRows } = await admin
+        .from('payouts')
+        .select(DEBT_SELECT)
+        .eq('status', 'disputed')
+        .order('disputed_at', { ascending: true });
+    const disputedDebts = await attachBookings(admin, (disputedRows || []) as HostDebt[]);
+    const debtHostIds = Array.from(new Set(disputedDebts.map((d) => d.host_id)));
+    const { data: debtHosts } = debtHostIds.length
+        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', debtHostIds)
+        : { data: [] };
+    (debtHosts || []).forEach((p: any) => { nameById[p.id] = p.full_name || p.preferred_name || 'Unknown'; });
 
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
@@ -163,6 +182,58 @@ export default async function AdminResolutions() {
                     })}
                 </div>
             )}
+
+            <section id="host-debts" className="mt-12 scroll-mt-24">
+                <h2 className="text-lg font-bold text-slate-900">Host debts under dispute</h2>
+                <p className="text-sm text-slate-500 mb-5">
+                    Money a host owes the platform that they say is wrong. It is not being taken from
+                    their payouts while it waits here. Uphold, reduce or write it off; the host is told.
+                </p>
+                {disputedDebts.length === 0 ? (
+                    <div className="border rounded-2xl p-8 text-center text-sm text-slate-500">
+                        No disputed host debts.
+                    </div>
+                ) : (
+                    <div className="space-y-5">
+                        {disputedDebts.map((d) => {
+                            const f = debtFigures(d);
+                            return (
+                                <div key={d.id} className="border border-slate-200 rounded-2xl p-6">
+                                    <div className="flex items-baseline justify-between gap-4 flex-wrap">
+                                        <div className="font-bold text-slate-900">{debtTitle(d)}</div>
+                                        <div className="font-bold text-slate-900">{formatGBP(outstandingOf(d))}</div>
+                                    </div>
+                                    <div className="text-sm text-slate-500 mt-0.5">
+                                        {nameById[d.host_id] || 'Host'} owes the platform
+                                        {d.disputed_at ? ' · disputed ' + formatUk(new Date(d.disputed_at)) : ''}
+                                    </div>
+                                    <div className="text-sm text-slate-500 mt-3">
+                                        {d.booking
+                                            ? <>{d.booking.listing_title || 'Listing'} &middot; {formatUk(new Date(d.booking.check_in || ''))} &rarr; {formatUk(new Date(d.booking.check_out || ''))}</>
+                                            : 'Not tied to one booking'}
+                                        {' · '}{formatGBP(f.original)} charged, {formatGBP(f.recovered)} recovered so far
+                                    </div>
+                                    {d.note && <p className="text-sm text-slate-500 mt-2">{d.note}</p>}
+                                    {d.dispute_reason && (
+                                        <p className="text-sm text-slate-700 mt-3 whitespace-pre-line">
+                                            <span className="font-semibold">The host says: </span>{d.dispute_reason}
+                                        </p>
+                                    )}
+                                    {d.booking && (
+                                        <div className="mt-4">
+                                            <Link href={'/dashboard/bookings/' + d.booking.id}
+                                                className="px-4 py-2 border border-slate-300 hover:border-slate-900 text-sm font-semibold rounded-lg">
+                                                The booking
+                                            </Link>
+                                        </div>
+                                    )}
+                                    <DecideHostDebtForm payoutId={d.id} outstanding={outstandingOf(d)} />
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </section>
 
             {closed.length > 0 && (
                 <div className="mt-10">

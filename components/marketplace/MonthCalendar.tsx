@@ -75,8 +75,8 @@ export default function MonthCalendar({
                                             className={`flex h-10 w-10 items-center justify-center rounded-full text-sm transition sm:h-11 sm:w-11 ${
                                                 isSel ? 'bg-emerald-700 font-semibold text-white'
                                                 : !avail ? 'cursor-default text-slate-400 line-through decoration-2 decoration-slate-400'
-                                                : isToday ? 'font-medium text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100'
-                                                : 'font-medium text-slate-900 hover:bg-slate-100'}`}>
+                                                : isToday ? 'font-medium text-[#222222] ring-1 ring-slate-300 hover:bg-slate-100'
+                                                : 'font-medium text-[#222222] hover:bg-slate-100'}`}>
                                             {day}
                                         </button>
                                     </div>
