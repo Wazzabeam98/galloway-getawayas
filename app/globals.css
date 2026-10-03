@@ -225,6 +225,60 @@ body {
 .cottage-cal .rdrMonthsVertical { display: flex; }
 .cottage-cal .rdrDay { width: 14.2857% !important; }
 
+/* 4c. The booking calendar when the card is full width (phones and tablets —
+   below lg, where the card is not the desktop sidebar): Airbnb's phone
+   calendar, measured on an iPhone 15 width (393px) on 03/10/2026 — day cells
+   47px wide x 45px, a 2px gap between rows (47px pitch both ways), a selected
+   day a full 45px circle, numbers 14px / 500 (the same as desktop: Airbnb
+   makes the cells bigger on a phone, not the digits). Ours were 36px rows
+   with the selection inset 5px top and bottom — a 26px-tall pill.
+
+   Rows go to 47px and every fill (selection, range band, hover preview) is
+   inset 1px instead of 5, so a picked day is 45px tall with a 2px seam
+   between weeks. The ends of a stay, and the week/month edges of the band,
+   are fully round. Width comes from the card: at 393px the seven columns are
+   ~47px once the card's phone padding is 16px (BookingWidget). Desktop
+   (lg and up) is untouched. */
+@media (max-width: 1023px) {
+  .cottage-cal .rdrMonth {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  .cottage-cal .rdrDay {
+    height: 47px !important;
+    line-height: 47px !important;
+  }
+  .cottage-cal .rdrDayNumber,
+  .cottage-cal .rdrSelected,
+  .cottage-cal .rdrInRange,
+  .cottage-cal .rdrStartEdge,
+  .cottage-cal .rdrEndEdge,
+  .cottage-cal .rdrDayStartPreview,
+  .cottage-cal .rdrDayInPreview,
+  .cottage-cal .rdrDayEndPreview {
+    top: 1px;
+    bottom: 1px;
+  }
+  .cottage-cal .rdrStartEdge,
+  .cottage-cal .rdrDayStartOfMonth .rdrInRange,
+  .cottage-cal .rdrDayStartOfMonth .rdrEndEdge,
+  .cottage-cal .rdrDayStartOfWeek .rdrInRange,
+  .cottage-cal .rdrDayStartOfWeek .rdrEndEdge,
+  .cottage-cal .rdrDayStartPreview {
+    border-top-left-radius: 999px;
+    border-bottom-left-radius: 999px;
+  }
+  .cottage-cal .rdrEndEdge,
+  .cottage-cal .rdrDayEndOfMonth .rdrInRange,
+  .cottage-cal .rdrDayEndOfMonth .rdrStartEdge,
+  .cottage-cal .rdrDayEndOfWeek .rdrInRange,
+  .cottage-cal .rdrDayEndOfWeek .rdrStartEdge,
+  .cottage-cal .rdrDayEndPreview {
+    border-top-right-radius: 999px;
+    border-bottom-right-radius: 999px;
+  }
+}
+
 /* 5. Selection colour — Airbnb's calendar treatment, in our emerald. Looked at
    Airbnb's booking calendar on 03/10/2026: availability is NEVER shown with
    colour — an available day is a plain dark number on white, an unavailable one
