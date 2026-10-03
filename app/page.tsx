@@ -8,7 +8,7 @@ import ComingSoonBanner from '@/components/base/ComingSoonBanner';
 import { businessSignupsOpen } from '@/lib/serviceOrders';
 import UpcomingTrip from '@/components/UpcomingTrip';
 import UpcomingExperience, { type Upcoming } from '@/components/UpcomingExperience';
-import { GET as toReviewGET } from '@/app/api/services/to-review/route';
+import { guestExperienceLists } from '@/lib/guestExperienceLists';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { format, parseISO } from 'date-fns';
@@ -138,13 +138,13 @@ export default async function HomePage({
     // the places WITHOUT pets too, to say what turning it off would give.
 
     // The signed-in guest's booked experiences still to come, read here so the
-    // card is in the first paint. The same handler the endpoint runs (it reads
-    // this request's cookies), so the two can never disagree; nothing for a
-    // signed-out visitor or in hosting mode.
+    // card is in the first paint — the same lister the to-review endpoint uses,
+    // with the user identified by this page's own (server component) client.
+    // Nothing for a signed-out visitor or in hosting mode.
     const upcomingExperiences: Promise<Upcoming[]> = mode === 'host'
         ? Promise.resolve([])
-        : toReviewGET()
-            .then((r) => r.json())
+        : supabase.auth.getUser()
+            .then(({ data: { user } }): Promise<{ upcoming: any[] }> => (user ? guestExperienceLists(user.id) : Promise.resolve({ upcoming: [] })))
             .then((d: any) => (d && d.upcoming) || [])
             .catch(() => []);
 
