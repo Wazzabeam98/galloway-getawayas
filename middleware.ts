@@ -52,9 +52,18 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
   const hasAuthCookie = authCookies.length > 0;
   const seen = parseSeen(request.cookies.get(SEEN_COOKIE)?.value);
   const hasLegacyStay = request.cookies.has(LEGACY_STAY_COOKIE);
-  // A real page load, not a prefetch or a client-side router fetch.
+  // A real page load: not Next's router fetches or prefetches (RSC,
+  // Next-Router-Prefetch), not the browser's own speculative prefetches
+  // (Sec-Purpose / Purpose), and, where the browser says, a document.
+  const h = request.headers;
+  const dest = h.get("sec-fetch-dest");
   const isDocument =
-    request.method === "GET" && !request.headers.get("rsc") && !request.headers.get("next-router-prefetch") && !request.headers.get("purpose");
+    request.method === "GET" &&
+    !h.get("rsc") &&
+    !h.get("next-router-prefetch") &&
+    !h.get("sec-purpose") &&
+    !h.get("purpose") &&
+    (!dest || dest === "document");
 
   // Nobody signed in: nothing to keep alive, and no reason to ask Supabase.
   if (!hasAuthCookie) {
