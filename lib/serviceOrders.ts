@@ -217,11 +217,15 @@ export function stripeProfileForProvider(
 export function isLiveToGuests(provider: any): boolean {
     if (!provider) return false;
     // owner_paused is the provider's own take-down: approved and payout-ready, but
-    // hidden by their choice for now. Undefined (a caller that didn't select the
-    // column) reads as not-paused, so this stays inert everywhere but the
-    // marketplace reads that select it.
+    // hidden by their choice for now. admin_hidden_at is ours — an admin took it
+    // down (app/api/admin/providers/visibility). Undefined (a caller that didn't
+    // select the columns) reads as not-taken-down, so every caller that decides
+    // whether to SELL must select both — tests/provider-takedown-gates.test.ts
+    // holds each new-order route to that. (The order routes once forgot
+    // owner_paused, and a paused experience could still be ordered from a stale
+    // tab.)
     return provider.status === 'approved' && provider.stripe_payouts_enabled === true
-        && !provider.owner_paused;
+        && !provider.owner_paused && !provider.admin_hidden_at;
 }
 
 // A provider who has been approved but has not finished Stripe. Not a guest's

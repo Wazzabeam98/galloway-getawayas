@@ -221,9 +221,17 @@ export function remindersDue(provider: any, now?: Date): Reminder[] {
 // grace period is the human version of the same thing, and a listing that
 // flickers out on the first failed card and back on the retry is worse than
 // one that waits for the answer.
+//
+// The two take-downs close the window too: owner_paused (the trade's own
+// "Take it down") and admin_hidden_at (ours). Same rule as isLiveToGuests for
+// experiences, and the same rule the public SELECT policy keeps in the database
+// (20261004160000) — the browser-read directory can't see either column, so the
+// policy is what hides them there; this is what the service-role reads (the
+// enquiry route, the profile page) check, and they must select both columns.
 export function visibleInDirectory(provider: any): boolean {
     if (!provider) return false;
     if (String(provider.status || '') !== 'approved') return false;
+    if (provider.owner_paused || provider.admin_hidden_at) return false;
     return String(provider.subscription_status || 'none') !== 'unpaid';
 }
 

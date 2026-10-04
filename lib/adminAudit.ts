@@ -16,7 +16,11 @@ export type AdminAction =
     | 'listing_hidden'
     | 'listing_relisted'
     | 'listing_edited'
-    | 'listing_photo_removed';
+    | 'listing_photo_removed'
+    // An experience or a trade taken down / put back (admin_hidden_at). The row
+    // carries provider_id instead of listing_id.
+    | 'provider_hidden'
+    | 'provider_relisted';
 
 // The bucket a removed photo is moved into. Private: a host who disputes what
 // was taken down can still be shown the file, but nobody on the internet can
@@ -48,7 +52,9 @@ export async function isAdmin(userId: string | null | undefined): Promise<boolea
 export async function recordAdminAction(entry: {
     adminId: string;
     action: AdminAction;
-    listingId: string;
+    // One of the two: a listing, or a provider (experience or trade).
+    listingId?: string | null;
+    providerId?: string | null;
     hostId: string | null;
     reason: string;
     detail?: Record<string, unknown>;
@@ -62,7 +68,8 @@ export async function recordAdminAction(entry: {
         const { error } = await admin.from('admin_actions').insert({
             admin_id: entry.adminId,
             action: entry.action,
-            listing_id: entry.listingId,
+            listing_id: entry.listingId || null,
+            provider_id: entry.providerId || null,
             host_id: entry.hostId,
             reason: entry.reason.trim(),
             detail: entry.detail || {},
@@ -90,7 +97,8 @@ export async function recordAdminAction(entry: {
         await logError('[adminAudit] a moderation action was NOT recorded in the trail', {
             action: entry.action,
             admin_id: entry.adminId,
-            listing_id: entry.listingId,
+            listing_id: entry.listingId || null,
+            provider_id: entry.providerId || null,
             host_id: entry.hostId,
             reason: entry.reason.trim(),
             error: (err && err.message) || String(err),

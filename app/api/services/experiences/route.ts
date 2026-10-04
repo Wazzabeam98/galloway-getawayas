@@ -88,7 +88,7 @@ export async function GET(request: Request) {
         // nothing for a guest to buy, the same way one with no price used to.
         const { data: rows } = await admin
             .from('service_providers')
-            .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, photos, status, stripe_payouts_enabled')
+            .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, photos, status, stripe_payouts_enabled, owner_paused, admin_hidden_at')
             .eq('audience', 'guest')
             .eq('status', 'approved')
             .eq('stripe_payouts_enabled', true);

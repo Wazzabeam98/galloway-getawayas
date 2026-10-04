@@ -48,6 +48,7 @@ const PROVIDER_WRITABLE = new Set([
 // Everything else on service_providers: the platform sets it, never a browser
 // write. The value is the reason — the decision, in writing. Keep them true.
 const PLATFORM_ONLY: Record<string, string> = {
+    admin_hidden_at: 'admin take-down tombstone — set and cleared only by the admin provider-visibility route (service role); consulted server-side by isLiveToGuests/visibleInDirectory and by the public SELECT policy, never browser-read (mirrors owner_paused)',
     id: 'primary key',
     ical_token: 'system-generated calendar-export secret; never provider-written (default gen_random_uuid())',
     created_at: 'set once',

@@ -189,7 +189,7 @@ export async function POST(request: Request) {
             const byId = new Map<string, any>(cartItems.map((i: any) => [i.id, i]));
 
             const { data: prov } = await admin.from('service_providers')
-                .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_fee, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, guest_details')
+                .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_fee, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, owner_paused, admin_hidden_at, plan, commission_rate, guest_details')
                 .eq('id', providerId).maybeSingle();
             if (!prov || prov.shape !== 'made_to_order' || !isLiveToGuests(prov) || !prov.stripe_account_id) {
                 return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
@@ -374,7 +374,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, exclusive_per_date, guest_details')
+            .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, owner_paused, admin_hidden_at, plan, commission_rate, exclusive_per_date, guest_details')
             .eq('id', item.provider_id)
             .maybeSingle();
 

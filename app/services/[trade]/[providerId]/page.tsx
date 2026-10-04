@@ -45,12 +45,13 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
 
     const { data: provider } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, status, subscription_status, description, headshot, photos, guest_details, registration_number, callout_fee, callout_waived, hourly_rate, flat_fee, provides_quote, does_emergency, does_scheduled')
+        .select('id, business_name, trade, audience, status, subscription_status, owner_paused, admin_hidden_at, description, headshot, photos, guest_details, registration_number, callout_fee, callout_waived, hourly_rate, flat_fee, provides_quote, does_emergency, does_scheduled')
         .eq('id', params.providerId)
         .maybeSingle();
 
     // Not found, not a trade, the wrong trade's URL, or not publicly visible
-    // (pre-approval, or delisted for non-payment) → back to the directory,
+    // (pre-approval, delisted for non-payment, or taken down by the trade or by
+    // us) → back to the directory,
     // straight to the filtered list — not /services/<trade>, which is itself a
     // redirect and would make this two hops.
     if (!provider
