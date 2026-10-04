@@ -8,12 +8,13 @@ import { toast } from 'react-toastify';
 // The Reactivate button on /admin/accounts. Built like the take-down buttons
 // (AdminProviderTakedown, AdminListingRow): a confirm that says what will happen,
 // a reason that goes in admin_actions against your name.
-export default function AdminReactivateAccount({ userId, name, listings, providers, takenDownByUs }: {
+export default function AdminReactivateAccount({ userId, name, listings, providers, takenDownByUs, onSubscriptionPlan }: {
     userId: string;
     name: string;
     listings: string[];      // listings the deactivation hid — they stay hidden
     providers: string[];     // experiences/trades it hid — they come back paused
     takenDownByUs: string[]; // our own take-downs, which reactivation leaves alone
+    onSubscriptionPlan: boolean; // a trade on the £20 plan among what was hidden
 }) {
     const router = useRouter();
     const [open, setOpen] = useState(false);
@@ -75,7 +76,7 @@ export default function AdminReactivateAccount({ userId, name, listings, provide
                             ) : (
                                 <li>They had nothing listed when they left.</li>
                             )}
-                            {providers.length > 0 && (
+                            {onSubscriptionPlan && (
                                 <li>A cancelled trade subscription isn’t restarted. They’re sent the card link again, the same as after a Relist.</li>
                             )}
                         </ul>

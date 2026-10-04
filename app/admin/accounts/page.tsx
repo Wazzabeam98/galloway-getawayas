@@ -35,7 +35,7 @@ export default async function AdminAccounts() {
     const [{ data: listings }, { data: providers }] = ids.length
         ? await Promise.all([
             admin.from('listings').select('host_id, title').in('host_id', ids).not('deactivated_at', 'is', null),
-            admin.from('service_providers').select('owner_id, business_name, audience, admin_hidden_at, deactivated_at').in('owner_id', ids),
+            admin.from('service_providers').select('owner_id, business_name, audience, plan, admin_hidden_at, deactivated_at').in('owner_id', ids),
         ])
         : [{ data: [] as any[] }, { data: [] as any[] }];
 
@@ -71,7 +71,9 @@ export default async function AdminAccounts() {
                         const theirListings = (listings || []).filter((l: any) => l.host_id === p.id).map((l: any) => String(l.title || 'Untitled listing'));
                         const theirProviders = (providers || []).filter((x: any) => x.owner_id === p.id && x.deactivated_at).map((x: any) => String(x.business_name || 'Untitled'));
                         const takenDownByUs = (providers || []).filter((x: any) => x.owner_id === p.id && x.admin_hidden_at).map((x: any) => String(x.business_name || 'Untitled'));
-                        const name = adminName(p, 'Unnamed account');
+                        // A person with no name on file is shown by their email, not "Unnamed".
+                        const name = adminName(p, '') || emailById.get(p.id) || 'Unnamed account';
+                        const onPlan = (providers || []).some((x: any) => x.owner_id === p.id && x.deactivated_at && x.plan === 'subscription');
                         return (
                             <div key={p.id} className="border rounded-2xl p-4">
                                 <div className="font-semibold text-slate-900">{name}</div>
@@ -88,6 +90,7 @@ export default async function AdminAccounts() {
                                     listings={theirListings}
                                     providers={theirProviders}
                                     takenDownByUs={takenDownByUs}
+                                    onSubscriptionPlan={onPlan}
                                 />
                             </div>
                         );
