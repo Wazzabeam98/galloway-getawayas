@@ -20,7 +20,10 @@ export type AdminAction =
     // An experience or a trade taken down / put back (admin_hidden_at). The row
     // carries provider_id instead of listing_id.
     | 'provider_hidden'
-    | 'provider_relisted';
+    | 'provider_relisted'
+    // A deactivated account brought back. host_id is the person; listing_id
+    // and provider_id are null.
+    | 'account_reactivated';
 
 // The bucket a removed photo is moved into. Private: a host who disputes what
 // was taken down can still be shown the file, but nobody on the internet can

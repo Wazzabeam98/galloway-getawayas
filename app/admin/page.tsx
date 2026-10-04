@@ -59,6 +59,11 @@ const tools = [
         blurb: 'Applications to review, and the ones still waiting on the applicant.',
     },
     {
+        href: '/admin/accounts',
+        title: 'Deactivated accounts',
+        blurb: 'People who switched their account off. Reactivate one when they ask.',
+    },
+    {
         href: '/admin/reviews',
         title: 'Reviews',
         blurb: 'The latest reviews of stays and experiences. Take one down if it needs it, or put it back.',

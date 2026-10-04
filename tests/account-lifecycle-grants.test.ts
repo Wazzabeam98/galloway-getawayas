@@ -50,3 +50,14 @@ test('reactivation leaves listings hidden and providers paused, and never lifts 
     assert.match(body, /owner_paused = true/, 'providers come back paused');
     assert.doesNotMatch(body, /admin_hidden_at/, 'an admin take-down is never touched');
 });
+
+test('the Reactivate route is admin-only, needs a reason, logs it, and resets trade billing', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'app/api/admin/account/reactivate/route.ts'), 'utf8');
+    assert.match(src, /isAdmin\(user\.id\)/, 'admin checked on the server');
+    assert.match(src, /cleanReason\(/, 'a reason is required');
+    assert.match(src, /action: 'account_reactivated'/, 'an admin_actions row is written');
+    assert.match(src, /reactivationBillingPatches\(/, 'trade billing follows #295');
+    // Stamped rows are read BEFORE the RPC clears the stamps.
+    assert.ok(src.indexOf(".not('deactivated_at', 'is', null)") < src.indexOf("rpc('reactivate_account'"), 'read before the RPC');
+    assert.ok(src.indexOf("rpc('reactivate_account'") < src.indexOf('sendEmail('), 'emailed after the account is back');
+});
