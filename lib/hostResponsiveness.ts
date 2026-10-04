@@ -11,19 +11,37 @@
 // booking row, so it is computed here with the SERVICE ROLE (the same reason the
 // host block and co-host list on the listing page use adminClient).
 //
+// It measures THE HOST SIDE, not one person. The host side of a listing is the
+// host plus everyone they've given active access to — their co-hosts and staff.
+// A guest doesn't care who on that side wrote back, and neither does this: a
+// co-host's reply answers the guest just as the host's would. (The first version
+// counted only the host_id's own replies, so a listing whose messages are handled
+// by a co-host — e.g. Jamie answering for Liam's townhouse — read 0%, every real
+// reply invisible. That was the bug.)
+//
 // What counts, per booking thread (accommodation only — booking_id threads, not
 // the service-marketplace enquiry/order ones):
-//   - a thread "counts" once the guest has sent a message in it ("a message
-//     received", in Airbnb's words — one inquiry to answer);
-//   - it is "answered" if the host sent anything AFTER that first guest message
-//     (so a host's automatic welcome message sent BEFORE the guest wrote doesn't
-//     flatter the number);
-//   - reply time = first host message after the first guest message, minus that
-//     guest message.
-// Response rate = answered / received, and 100% when nothing has been received —
-// so it only ever DROPS below 100% when a guest's message went unanswered.
-// Typical time = median reply time, defaulting to "within a day" until real
-// replies build up.
+//   - the booking must be a REAL guest's, not the host side's own: a booking
+//     whose guest is the host or one of their co-hosts/staff (a test booking they
+//     made on their own place) is skipped entirely;
+//   - the thread must be GUEST-INITIATED — its first message is from that guest.
+//     A thread that opens with a host-side message (an automated check-in send, a
+//     host reaching out first) or where the guest is only replying is not an
+//     inquiry that "needed a reply", so it isn't counted;
+//   - it is "answered" if ANYONE on the host side wrote after that first guest
+//     message;
+//   - reply time = first host-side message after the first guest message, minus
+//     that guest message.
+// Response rate = answered / received, and 100% when nothing real has been
+// received — so it only ever DROPS below 100% when a real guest's opening message
+// to the host side went unanswered. Typical time = median reply time, defaulting
+// to "within a day" until real replies build up.
+//
+// One honest limitation: automated check-in sends are written as the host (there
+// is no flag on `messages` to mark them), so an auto-send that lands after a
+// guest's inquiry is counted as a reply. It can only ever flatter a rate, never
+// cause the 0% this fixes; marking automated sends so they're excluded as replies
+// wants a `messages.automated` column and is left as a follow-up.
 
 type Admin = any;
 
@@ -57,23 +75,51 @@ function median(values: number[]): number {
 export async function hostResponsiveness(admin: Admin, hostId: string): Promise<HostResponsiveness> {
     if (!hostId) return EMPTY;
 
-    // The host's bookings — each one is a potential guest↔host thread. Capped:
-    // a median and a rate are stable well before every booking a busy host has
-    // ever had, and this runs on a page a stranger loads.
+    // The host's bookings — each one is a potential guest↔host-side thread.
+    // Capped: a median and a rate are stable well before every booking a busy
+    // host has ever had, and this runs on a page a stranger loads.
     const { data: bookings } = await admin
         .from('bookings')
-        .select('id, guest_id, host_id')
+        .select('id, guest_id, host_id, listing_id')
         .eq('host_id', hostId)
         .order('created_at', { ascending: false })
         .limit(200);
 
-    const guestByBooking = new Map<string, string>();
-    for (const b of bookings || []) {
-        if (b?.id && b?.guest_id) guestByBooking.set(b.id, b.guest_id);
-    }
-    if (guestByBooking.size === 0) return EMPTY;
+    if (!bookings || bookings.length === 0) return EMPTY;
 
-    const bookingIds = Array.from(guestByBooking.keys());
+    // The host side per listing = the host plus that listing's active co-hosts
+    // and staff. A reply from any of them answers the guest; a booking whose
+    // "guest" is one of them is a test booking on their own place, not a guest.
+    const listingIds = Array.from(
+        new Set((bookings as any[]).map((b) => b.listing_id).filter(Boolean)),
+    );
+    const teamByListing = new Map<string, Set<string>>();
+    if (listingIds.length) {
+        const { data: access } = await admin
+            .from('listing_access')
+            .select('listing_id, user_id, status')
+            .in('listing_id', listingIds)
+            .eq('status', 'active');
+        for (const a of access || []) {
+            if (!a?.user_id || !a?.listing_id) continue;
+            if (!teamByListing.has(a.listing_id)) teamByListing.set(a.listing_id, new Set());
+            teamByListing.get(a.listing_id)!.add(a.user_id);
+        }
+    }
+    const hostSideFor = (listingId: string): Set<string> => {
+        const side = new Set<string>([hostId]);
+        const team = teamByListing.get(listingId);
+        if (team) team.forEach((u) => side.add(u));
+        return side;
+    };
+
+    // Keep only real guests' bookings — drop the host side's own/test bookings.
+    const guestBookings = (bookings as any[]).filter(
+        (b) => b?.id && b?.guest_id && !hostSideFor(b.listing_id).has(b.guest_id),
+    );
+    if (guestBookings.length === 0) return EMPTY;
+
+    const bookingIds = guestBookings.map((b) => b.id);
     const { data: messages } = await admin
         .from('messages')
         .select('booking_id, sender_id, created_at')
@@ -94,18 +140,24 @@ export async function hostResponsiveness(admin: Admin, hostId: string): Promise<
     let responded = 0;
     const replyMinutes: number[] = [];
 
-    for (const [bookingId, guestId] of Array.from(guestByBooking.entries())) {
-        const thread = byThread.get(bookingId);
+    for (const b of guestBookings) {
+        const thread = byThread.get(b.id);
         if (!thread || thread.length === 0) continue;
 
-        const firstGuest = thread.find((m) => m.sender === guestId);
-        if (!firstGuest) continue; // the guest never wrote — not a guest-started thread
+        // Guest-initiated only: the first message in the thread must be the
+        // guest's. A thread that opens with a host-side message, or where the
+        // guest is only replying, is not an inquiry that needed a reply.
+        const first = thread[0];
+        if (first.sender !== b.guest_id) continue;
         counted += 1;
 
-        const hostReply = thread.find((m) => m.sender === hostId && m.at > firstGuest.at);
-        if (hostReply) {
+        const hostSide = hostSideFor(b.listing_id);
+        const reply = thread.find(
+            (m) => m.at > first.at && m.sender !== b.guest_id && hostSide.has(m.sender),
+        );
+        if (reply) {
             responded += 1;
-            replyMinutes.push((hostReply.at - firstGuest.at) / 60000);
+            replyMinutes.push((reply.at - first.at) / 60000);
         }
     }
 

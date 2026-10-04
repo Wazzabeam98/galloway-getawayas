@@ -83,6 +83,13 @@ export default function MeetYourHost({
             stats.push({ value: months, label: months === 1 ? 'Month hosting' : 'Months hosting' });
         }
     }
+    // Response rate and time live in the stat column too, stacked under time
+    // hosting with the same thin dividers — so even a brand-new host's card has
+    // three real stats and never reads small and empty. Both always show: they
+    // start at 100% / "within a day" and only move with real history.
+    stats.push({ value: `${responseRatePercent}%`, label: 'Response rate' });
+    const responseTime = typicalLabel.charAt(0).toUpperCase() + typicalLabel.slice(1);
+    stats.push({ value: responseTime, label: 'Response time' });
 
     return (
         <section id="host" className="mt-8 pt-8 border-t scroll-mt-24">
@@ -136,7 +143,8 @@ export default function MeetYourHost({
                     )}
                 </div>
 
-                {/* Right: what verified means, co-hosts, host details, safety. */}
+                {/* Right: what verified means, co-hosts, safety. (Response rate
+                    and time moved into the stat column on the left.) */}
                 <div className="space-y-6">
                     {verified && (
                         <div>
@@ -166,17 +174,6 @@ export default function MeetYourHost({
                             </div>
                         </div>
                     )}
-
-                    {/* Response rate and time: every host has both. They start at
-                        100% and "within a day" and only move with real history,
-                        so this block always shows. */}
-                    <div>
-                        <div className="mb-2 text-sm font-semibold text-slate-900">Host details</div>
-                        <div className="space-y-1 text-sm text-slate-700">
-                            <div>Response rate: {responseRatePercent}%</div>
-                            <div>Responds {typicalLabel}</div>
-                        </div>
-                    </div>
 
                     <div className="flex items-start gap-2 border-t border-slate-100 pt-4 text-sm text-slate-500">
                         <ShieldCheck className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
