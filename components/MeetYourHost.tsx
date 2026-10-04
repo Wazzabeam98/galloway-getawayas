@@ -20,7 +20,7 @@ export default function MeetYourHost({
     verified,
     bio,
     sinceYear,
-    yearsHosting,
+    monthsHosting,
     ratingAvg,
     ratingCount,
     showScore,
@@ -33,13 +33,13 @@ export default function MeetYourHost({
     verified: boolean;
     bio: string | null;
     sinceYear: number | null;
-    yearsHosting: number | null;
+    monthsHosting: number | null;
     ratingAvg: number;
     ratingCount: number;
     showScore: boolean;
     coHosts: CoHost[];
-    responseRatePercent: number | null;
-    typicalLabel: string | null;
+    responseRatePercent: number;
+    typicalLabel: string;
 }) {
     const Avatar = ({ url, name, size }: { url: string | null; name: string; size: number }) => (
         <div
@@ -54,8 +54,11 @@ export default function MeetYourHost({
         </div>
     );
 
-    // The headline numbers down the right of the card. Rating only once a place
-    // has enough reviews to show a score, so a 0.0 never appears.
+    // The headline numbers down the right of the card. Reviews and rating show
+    // only once there are some (so a brand-new host never shows a 0 or a 0.0),
+    // but time hosting is ALWAYS shown — it is the one stat a new host has, and
+    // it's what stops the card reading as empty. Airbnb does exactly this: a new
+    // host's card is just photo, name and "Months hosting", sized to fit.
     const stats: { value: React.ReactNode; label: string }[] = [];
     if (ratingCount > 0) stats.push({ value: ratingCount, label: ratingCount === 1 ? 'Review' : 'Reviews' });
     if (showScore) {
@@ -69,20 +72,29 @@ export default function MeetYourHost({
             label: 'Rating',
         });
     }
-    if (yearsHosting && yearsHosting >= 1) {
-        stats.push({ value: yearsHosting, label: yearsHosting === 1 ? 'Year hosting' : 'Years hosting' });
+    if (monthsHosting != null) {
+        if (monthsHosting >= 12) {
+            const years = Math.floor(monthsHosting / 12);
+            stats.push({ value: years, label: years === 1 ? 'Year hosting' : 'Years hosting' });
+        } else {
+            // In their first year it reads in months ("3 / Months hosting"); the
+            // first few weeks round up to 1 so it never shows "0 months".
+            const months = Math.max(1, monthsHosting);
+            stats.push({ value: months, label: months === 1 ? 'Month hosting' : 'Months hosting' });
+        }
     }
-
-    const hasResponse = responseRatePercent != null || typicalLabel;
 
     return (
         <section id="host" className="mt-8 pt-8 border-t scroll-mt-24">
             <h2 className="text-xl md:text-2xl font-bold text-slate-900">Meet your host</h2>
 
             <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-12">
-                {/* Left: the raised identity card, then the bio below it. */}
+                {/* Left: the raised identity card, then the bio below it. The
+                    card is sized to its content (w-fit), so a new host with only
+                    one stat gets a compact card rather than a wide, empty one —
+                    the way Airbnb's new-host card hugs its content. */}
                 <div>
-                    <div className="max-w-sm rounded-2xl border border-slate-200 bg-white shadow-[0_6px_16px_rgba(0,0,0,0.12)] p-6">
+                    <div className="w-fit max-w-sm rounded-2xl border border-slate-200 bg-white shadow-[0_6px_16px_rgba(0,0,0,0.12)] p-6">
                         <div className="flex items-center gap-5">
                             <div className="flex flex-col items-center text-center">
                                 <div className="relative">
@@ -108,13 +120,19 @@ export default function MeetYourHost({
                                 </div>
                             )}
                         </div>
+
+                        {/* "Hosting since" lives inside the card now, under a thin
+                            rule — part of the host's identity, not a loose line
+                            floating beneath it. */}
+                        {sinceYear && (
+                            <div className="mt-5 border-t border-slate-100 pt-4 text-sm text-slate-500">
+                                Hosting since {sinceYear}
+                            </div>
+                        )}
                     </div>
 
-                    {sinceYear && (
-                        <div className="mt-4 text-sm text-slate-500">Hosting since {sinceYear}</div>
-                    )}
                     {bio && (
-                        <p className="mt-3 text-slate-600 whitespace-pre-line">{bio}</p>
+                        <p className="mt-4 text-slate-600 whitespace-pre-line">{bio}</p>
                     )}
                 </div>
 
@@ -149,15 +167,16 @@ export default function MeetYourHost({
                         </div>
                     )}
 
-                    {hasResponse && (
-                        <div>
-                            <div className="mb-2 text-sm font-semibold text-slate-900">Host details</div>
-                            <div className="space-y-1 text-sm text-slate-700">
-                                {responseRatePercent != null && <div>Response rate: {responseRatePercent}%</div>}
-                                {typicalLabel && <div>Responds {typicalLabel}</div>}
-                            </div>
+                    {/* Response rate and time: every host has both. They start at
+                        100% and "within a day" and only move with real history,
+                        so this block always shows. */}
+                    <div>
+                        <div className="mb-2 text-sm font-semibold text-slate-900">Host details</div>
+                        <div className="space-y-1 text-sm text-slate-700">
+                            <div>Response rate: {responseRatePercent}%</div>
+                            <div>Responds {typicalLabel}</div>
                         </div>
-                    )}
+                    </div>
 
                     <div className="flex items-start gap-2 border-t border-slate-100 pt-4 text-sm text-slate-500">
                         <ShieldCheck className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
