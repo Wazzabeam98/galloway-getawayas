@@ -174,6 +174,7 @@ export async function POST(request: Request) {
                 await admin.from('messages').insert({
                     booking_id: booking.id, sender_id: user.id, recipient_id: booking.host_id,
                     body: guestFirst + ' updated the booking — ' + what + '. No change to the price, so it’s applied.',
+                    automated: true, // a system-composed change notice, not typed
                 });
                 const { data: hostUser } = await admin.auth.admin.getUserById(booking.host_id);
                 const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';

@@ -106,6 +106,67 @@ test('a real guest inquiry nobody answered drops the rate below 100%', async () 
     assert.equal(r.responseRatePercent, 50, 'one of two guest inquiries went unanswered');
 });
 
+test('an automated send is not a reply — a guest left on auto-messages only drops the rate', async () => {
+    const admin = fakeAdmin({
+        bookings: [{ id: 'b7', guest_id: GUEST, host_id: HOST, listing_id: LISTING }],
+        listing_access: access,
+        // Guest asks; the only host-side message after is an automated send.
+        messages: [
+            { booking_id: 'b7', sender_id: GUEST, created_at: t(BASE, 0) },
+            { booking_id: 'b7', sender_id: HOST, created_at: t(BASE, 20), automated: true },
+        ],
+    });
+    const r = await hostResponsiveness(admin, HOST);
+    assert.equal(r.sampleSize, 1);
+    assert.equal(r.responseRatePercent, 0, 'an automated send does not answer the guest');
+});
+
+test('a human reply still counts even when an automated send went out too', async () => {
+    const admin = fakeAdmin({
+        bookings: [{ id: 'b8', guest_id: GUEST, host_id: HOST, listing_id: LISTING }],
+        listing_access: access,
+        messages: [
+            { booking_id: 'b8', sender_id: GUEST, created_at: t(BASE, 0) },
+            { booking_id: 'b8', sender_id: HOST, created_at: t(BASE, 15), automated: true },
+            { booking_id: 'b8', sender_id: COHOST, created_at: t(BASE, 40) }, // a person
+        ],
+    });
+    const r = await hostResponsiveness(admin, HOST);
+    assert.equal(r.responseRatePercent, 100);
+    assert.equal(r.typicalLabel, 'within an hour', 'reply time is to the human reply');
+});
+
+test('a guest merely replying to an automated message is not a counted inquiry', async () => {
+    const admin = fakeAdmin({
+        bookings: [{ id: 'b9', guest_id: GUEST, host_id: HOST, listing_id: LISTING }],
+        listing_access: access,
+        // Automated check-in message first, then the guest says thanks. Nothing
+        // needed a reply.
+        messages: [
+            { booking_id: 'b9', sender_id: HOST, created_at: t(BASE, 0), automated: true },
+            { booking_id: 'b9', sender_id: GUEST, created_at: t(BASE, 30) },
+        ],
+    });
+    const r = await hostResponsiveness(admin, HOST);
+    assert.equal(r.sampleSize, 0);
+    assert.equal(r.responseRatePercent, 100);
+});
+
+test('an automated guest-side notice opening a thread is not a counted inquiry', async () => {
+    const admin = fakeAdmin({
+        bookings: [{ id: 'b10', guest_id: GUEST, host_id: HOST, listing_id: LISTING }],
+        listing_access: access,
+        // The system-composed "guest updated the booking" notice (sent AS the
+        // guest) opens the thread; nobody replies. It must not count.
+        messages: [
+            { booking_id: 'b10', sender_id: GUEST, created_at: t(BASE, 0), automated: true },
+        ],
+    });
+    const r = await hostResponsiveness(admin, HOST);
+    assert.equal(r.sampleSize, 0);
+    assert.equal(r.responseRatePercent, 100);
+});
+
 test('no bookings at all starts at 100% / within a day', async () => {
     const admin = fakeAdmin({ bookings: [], listing_access: [], messages: [] });
     const r = await hostResponsiveness(admin, HOST);

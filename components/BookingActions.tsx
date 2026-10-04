@@ -201,6 +201,7 @@ export default function BookingActions({
                 sender_id: session.user.id,
                 recipient_id: booking.guest_id,
                 body: body,
+                automated: true, // the booking-confirmation template, sent on accept
             });
         } catch (err) {
             console.error('Welcome message could not be sent:', err);

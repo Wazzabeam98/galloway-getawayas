@@ -217,6 +217,7 @@ export async function POST(request: Request) {
                     await admin.from('messages').insert({
                         order_id: order.id, sender_id: user.id, recipient_id: prov.owner_id,
                         body: 'I’m no longer able to make this booking and would like to cancel — is a refund possible?',
+                        automated: true, // a canned cancel request, not a typed message
                     });
                 }
                 try {

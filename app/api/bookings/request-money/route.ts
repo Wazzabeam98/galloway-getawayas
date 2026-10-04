@@ -64,6 +64,7 @@ export async function POST(request: Request) {
             recipient_id: booking.guest_id,
             body: 'I’ve asked you for ' + pounds + ' for ' + where + ': ' + reason
                 + '. I’ll follow up here — reply if anything isn’t right.',
+            automated: true, // a canned money-request notice, not a typed reply
         });
 
         // And an email, so it doesn't sit unseen. It points them at the message

@@ -298,6 +298,7 @@ test('a booking accepted today for a stay months away still gets its welcome mes
     );
     assert.equal(messages.length, 1, 'the stay is in March; the message is due now');
     assert.match(messages[0].body, /thanks for booking Bookshop Flat/);
+    assert.equal(messages[0].automated, true, 'a scheduled send is flagged automated');
 });
 
 test('the extra query is only made when a booking-anchored template is live', async () => {
