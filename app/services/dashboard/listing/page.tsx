@@ -34,7 +34,7 @@ export default async function ProviderListingPage() {
             + 'photos, headshot, logo, dietary_note, guest_details, fulfilment, delivery_fee, delivery_radius_miles, '
             + 'collection_street, collection_town, collection_postcode, '
             + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, '
-            + 'lead_time_days, cancellation_window_hours, owner_paused')
+            + 'lead_time_days, cancellation_window_hours, owner_paused, admin_hidden_at')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -78,6 +78,7 @@ export default async function ProviderListingPage() {
                 description: provider.description || '',
                 status: provider.status,
                 owner_paused: provider.owner_paused === true,
+                admin_hidden: !!provider.admin_hidden_at,
                 photos: provider.photos || [],
                 headshot: provider.headshot || null,
                 logo: provider.logo || null,

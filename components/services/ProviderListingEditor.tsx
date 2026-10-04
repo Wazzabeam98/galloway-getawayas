@@ -18,6 +18,7 @@ import {
     ShoppingBag, MapPin, CalendarRange, CalendarClock, Sparkles, RotateCcw,
     Eye, EyeOff, ExternalLink, Check,
 } from 'lucide-react';
+import { savePaused, TakenDownBanner, ListingStatusSection } from '@/components/services/ListingPauseControl';
 
 // The guest-experience listing editor. A card list of sections; each opens,
 // edits and SAVES ON ITS OWN (its own button, its own POST), so changing a price
@@ -34,7 +35,7 @@ import {
 export interface EditorProvider {
     id: string; shape: string; isSlot: boolean; isFood: boolean;
     business_name: string; category_label: string; category: string; description: string;
-    status: string; owner_paused: boolean;
+    status: string; owner_paused: boolean; admin_hidden: boolean;
     photos: string[]; headshot: string | null; logo: string | null;
     dietary_note: string; fulfilment: string; delivery_fee: number; delivery_radius_miles: number;
     collection_street: string; collection_town: string; collection_postcode: string;
@@ -323,7 +324,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     async function togglePaused() {
         setPausing(true);
         const next = !paused;
-        const ok = await saveSection(p.id, 'status', { owner_paused: next });
+        const ok = await savePaused(p.id, next);
         if (ok) setPaused(next);
         setPausing(false);
     }
@@ -365,7 +366,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         { key: 'booking', label: 'Booking', icon: CalendarClock },
         ...((p.isSlot || p.shape === 'comes_to_you') ? [{ key: 'availability' as SectionKey, label: p.isSlot ? 'Availability' : 'Opening hours', icon: CalendarRange }] : []),
         { key: 'cancellation', label: 'Cancellation policy', icon: RotateCcw },
-        { key: 'status', label: 'Listing status', icon: paused ? EyeOff : Eye },
+        { key: 'status', label: 'Listing status', icon: (paused || p.admin_hidden) ? EyeOff : Eye },
     ];
 
     return (
@@ -383,27 +384,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 </Link>
             </div>
 
-            {/* Only when paused: an informative strip so a hidden listing is never a
-                silent surprise. The "take it down" control itself lives at the bottom,
-                in the Listing status section — the editor doesn't push a live provider
-                toward taking their listing down. */}
-            {paused && (
-                <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-start gap-2.5">
-                            <EyeOff className="mt-0.5 h-5 w-5 text-amber-700" />
-                            <div>
-                                <div className="font-semibold text-slate-900">Your listing is taken down</div>
-                                <p className="text-sm text-slate-600">Guests can’t find or book it. Bookings you’ve already confirmed still stand.</p>
-                            </div>
-                        </div>
-                        <button type="button" onClick={togglePaused} disabled={pausing}
-                            className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-60">
-                            {pausing ? '…' : 'Put it back up'}
-                        </button>
-                    </div>
-                </div>
-            )}
+            {/* Only when it's down: an informative strip so a hidden listing is never
+                a silent surprise. The "take it down" control itself lives at the
+                bottom, in the Listing status section — the editor doesn't push a
+                live provider toward taking their listing down. */}
+            <TakenDownBanner paused={paused} adminHidden={p.admin_hidden} pausing={pausing} onPutBack={togglePaused} who="guests" />
 
             {/* Go-live gate for a slot OR comes-to-you provider with no weekly
                 hours: both generate their booking times from the weekly hours, so
@@ -1050,28 +1035,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     )}
 
                     {active === 'status' && (
-                        <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-                            <h2 className="text-xl font-bold text-slate-900">Listing status</h2>
-                            <p className="mt-1 text-sm text-slate-500">
-                                {paused
-                                    ? 'Your listing is taken down — guests can’t find or book it.'
-                                    : 'Your listing is live and bookable.'}
-                            </p>
-                            <div className="mt-4 rounded-xl border border-slate-200 p-4">
-                                <div className="font-semibold text-slate-900">
-                                    {paused ? 'Put your listing back up' : 'Take your listing down for a while'}
-                                </div>
-                                <p className="mt-1 text-sm text-slate-600">
-                                    {paused
-                                        ? 'It goes back live immediately — no review. Guests can find and book it again.'
-                                        : 'It stops taking new bookings and disappears from the marketplace. Bookings you’ve already confirmed still stand and stay in your diary — putting it back up later is instant, with no re-approval.'}
-                                </p>
-                                <button type="button" onClick={togglePaused} disabled={pausing}
-                                    className={`mt-4 rounded-xl px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60 ${paused ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-slate-800 hover:bg-slate-900'}`}>
-                                    {pausing ? '…' : paused ? 'Put it back up' : 'Take it down'}
-                                </button>
-                            </div>
-                        </section>
+                        <ListingStatusSection paused={paused} adminHidden={p.admin_hidden} pausing={pausing} onToggle={togglePaused} who="guests" />
                     )}
                 </div>
             </div>

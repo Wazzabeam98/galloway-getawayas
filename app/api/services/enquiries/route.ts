@@ -85,7 +85,7 @@ export async function POST(req: Request) {
         // ---- who is being asked -------------------------------------------
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, owner_id, business_name, trade, status, kind, contact_email, contact_phone, sms_opt_out, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, notify_user_ids, plan, trial_ends_at, subscription_status')
+            .select('id, owner_id, business_name, trade, status, kind, contact_email, contact_phone, sms_opt_out, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, notify_user_ids, plan, trial_ends_at, subscription_status, owner_paused, admin_hidden_at')
             .eq('id', String(body.provider_id || ''))
             .maybeSingle();
 
@@ -103,7 +103,11 @@ export async function POST(req: Request) {
             );
         }
 
-        // NOR IF THEY HAVE STOPPED PAYING.
+        // NOR IF THEY HAVE STOPPED PAYING, OR THE LISTING IS TAKEN DOWN.
+        //
+        // visibleInDirectory also refuses a trade that took their own listing
+        // down (owner_paused) or that we took down (admin_hidden_at) — the same
+        // shop window. Enquiries already sent or accepted carry on either way.
         //
         // The same staleness argument as the check above: they came off the
         // directory when the grace period ran out, and a host holding an open

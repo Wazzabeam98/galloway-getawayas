@@ -12,6 +12,7 @@ const groupLabel = (key: string): string =>
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { ukDate } from '@/lib/dayKey';
 import ProviderBusinessEditor from '@/components/services/ProviderBusinessEditor';
+import TradeListingStatus from '@/components/services/TradeListingStatus';
 
 export const metadata = {
     title: 'Edit your business',
@@ -27,7 +28,7 @@ export default async function EditBusinessPage() {
 
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number, plan, trial_ends_at')
+        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number, plan, trial_ends_at, owner_paused, admin_hidden_at, stripe_subscription_id')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -94,6 +95,18 @@ export default async function EditBusinessPage() {
         g.items.push({ key: e.key, label: e.label, offered: offeredKeys.has(e.key) });
     }
 
+    // Down by their own choice (owner_paused) or ours (admin_hidden_at). Either
+    // way hosts can't find them, so the "Listed" pill and the public-profile
+    // link (which would bounce to the directory) give way to a taken-down pill.
+    const paused = provider.owner_paused === true;
+    const adminHidden = !!provider.admin_hidden_at;
+    const down = paused || adminHidden;
+    // What the take-down does to their bill: a card on file is paused; a free
+    // period keeps running; a commission trade has no bill.
+    const billing = provider.plan === 'subscription'
+        ? (provider.stripe_subscription_id ? 'subscription' as const : 'free' as const)
+        : null;
+
     return (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-24">
             <Link href="/services/dashboard" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
@@ -111,7 +124,13 @@ export default async function EditBusinessPage() {
                 so they live here, with a link to see the profile a host sees (the
                 way a host previews a listing). */}
             <div className="mt-5 flex flex-wrap items-center gap-3">
-                {provider.plan === 'subscription' && (
+                {down && (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                        <span className="h-2 w-2 rounded-full bg-slate-400" />
+                        Taken down · hosts can’t find you
+                    </span>
+                )}
+                {!down && provider.plan === 'subscription' && (
                     <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
                         <span className="h-2 w-2 rounded-full bg-emerald-500" />
                         Listed · hosts can find you
@@ -122,14 +141,18 @@ export default async function EditBusinessPage() {
                         {provider.trial_ends_at ? 'Free until ' + ukDate(provider.trial_ends_at) : 'Free for six months from your first enquiry'}
                     </span>
                 )}
-                <a
+                {!down && <a
                     href={`/services/${encodeURIComponent(provider.trade)}/${provider.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-4 py-1.5 text-sm font-semibold text-slate-700 hover:border-slate-500"
                 >
                     <ExternalLink className="h-4 w-4" /> View your public profile
-                </a>
+                </a>}
+            </div>
+
+            <div className="mt-6">
+                <TradeListingStatus place="banner" providerId={provider.id} paused={paused} adminHidden={adminHidden} billing={billing} />
             </div>
 
             <ProviderBusinessEditor
@@ -155,6 +178,10 @@ export default async function EditBusinessPage() {
                     verified: !!r.verified_at && String(r.verified_number || '').trim() === String(r.number || '').trim(),
                 }))}
             />
+
+            <div className="mt-10">
+                <TradeListingStatus place="section" providerId={provider.id} paused={paused} adminHidden={adminHidden} billing={billing} />
+            </div>
         </div>
     );
 }

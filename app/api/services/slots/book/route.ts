@@ -165,7 +165,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, fulfilment, guest_details')
+            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, owner_paused, admin_hidden_at, plan, commission_rate, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, fulfilment, guest_details')
             .eq('id', providerId)
             .maybeSingle();
 

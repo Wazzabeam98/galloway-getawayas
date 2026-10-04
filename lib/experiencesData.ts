@@ -331,13 +331,16 @@ export async function loadPublicMarketplace(
  */
 async function shapeProviders(admin: any, fromKey: string, toKey: string, pausedId?: string): Promise<MpProvider[]> {
     // pausedId: shape that ONE provider, and only if the single thing keeping it
-    // off the marketplace is its own pause (loadPausedProvider). Every other gate
-    // — approved, payout-ready, an MCC — still applies exactly as for a live one.
+    // off the marketplace is a take-down — its own pause, or ours
+    // (admin_hidden_at) — for loadPausedProvider. Every other gate — approved,
+    // payout-ready, an MCC — still applies exactly as for a live one.
     let query = admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
-    query = pausedId ? query.eq('id', pausedId).eq('owner_paused', true) : query.eq('owner_paused', false);
+    query = pausedId
+        ? query.eq('id', pausedId).or('owner_paused.eq.true,admin_hidden_at.not.is.null')
+        : query.eq('owner_paused', false).is('admin_hidden_at', null);
     const { data: rows } = await query;
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -394,7 +397,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
 
     const providers: MpProvider[] = [];
     for (const p of rows || []) {
-        if (!(isLiveToGuests(pausedId ? { ...p, owner_paused: false } : p) && mccForProvider(p))) continue;
+        if (!(isLiveToGuests(pausedId ? { ...p, owner_paused: false, admin_hidden_at: null } : p) && mccForProvider(p))) continue;
         const items = (itemsBy[p.id] || []).map((it: any) => ({
             id: it.id, name: it.name, description: it.description, price: Number(it.price),
             unit: normaliseUnit(it.unit), image: it.image ? getImageUrl(it.image) : null,
@@ -606,8 +609,8 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
 }
 
 /**
- * A provider its owner has PAUSED (owner_paused), shaped like a live one, for
- * the direct link only: the page still opens, with the booking panel replaced
+ * A provider that is TAKEN DOWN — paused by its owner (owner_paused) or by an
+ * admin (admin_hidden_at) — shaped like a live one, for the direct link only: the page still opens, with the booking panel replaced
  * by "not taking bookings" — the same treatment as a hidden cottage. Null for
  * anything else (not approved, not payout-ready, not paused, launch flag off),
  * so those still fall back to browse. Never used to sell: every order route

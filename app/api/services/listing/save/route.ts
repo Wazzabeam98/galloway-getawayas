@@ -15,8 +15,9 @@ export const dynamic = 'force-dynamic';
 // else is touched. It replaces "edit = re-run the twelve-screen wizard".
 //
 // Service-role on purpose: some of what a provider legitimately edits is NOT in
-// the browser write allow-list (cancellation_window_hours, slot_turnaround_minutes,
-// owner_paused). The ownership check here is the real gate — a provider writes
+// the browser write allow-list (cancellation_window_hours, slot_turnaround_minutes).
+// The take-down toggle (owner_paused) has its own route, /api/services/listing/pause,
+// shared with the trade editor because a trade's pause also pauses their billing. The ownership check here is the real gate — a provider writes
 // only their own row — so the route reads the caller's session, confirms they own
 // the provider, then writes with the admin client.
 //
@@ -363,12 +364,6 @@ export async function POST(request: Request) {
                 break;
             }
 
-            case 'status':
-                // The take-down toggle. Hides the listing and stops new bookings;
-                // confirmed bookings already made are untouched (nothing here
-                // cancels them). Coming back is immediate — no re-review.
-                patch = { owner_paused: data.owner_paused === true };
-                break;
 
             default:
                 return NextResponse.json({ ok: false, error: `Unknown section: ${section}` }, { status: 400 });
