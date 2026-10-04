@@ -683,6 +683,9 @@ body {
   position: static;
   width: 34px;
   height: 34px;
+  /* Centred over the first and last date columns: each side margin is half
+     of what a column (a seventh of the bar) leaves around the 34px button. */
+  margin: 0 calc((100% / 7 - 34px) / 2);
 }
 
 /* Each stacked month keeps its own heading, and the sheet itself does the
@@ -691,13 +694,14 @@ body {
   overflow: visible;
 }
 
-/* Full width, booking-calendar cells. In the phone search sheet the calendar
-   was a fixed 18em month inside the row's padding: 41px x 35px cells. It now
-   spans the card (Hero's -mx-4) up to 7 x 47px = 329px, centred, and uses the
-   booking calendar's phone sizing (4c, Airbnb's measurements): a 47px pitch
-   both ways, every fill inset 1px so a picked day is a 45px circle, and the
-   stay's ends and the band's week/month edges fully round. Narrower than
-   that, the seven columns share whatever width there is. */
+/* Edge to edge, thumb-sized. Airbnb's phone search calendar fills its sheet:
+   seven equal columns across the whole content width, not a narrower grid
+   centred inside it. Here the grid takes the full width of the sheet row's
+   content box (16px in from the card, the same as the WHERE and WHO text),
+   with no cap. Numbers are 16px (14px elsewhere) and rows 52px; every fill is
+   inset 3px top and bottom, so a picked day is a 46px circle — round at
+   iPhone widths, where a column is ~46px — and the stay's ends and the band's
+   week/month edges are fully round. */
 .airbnb-mobile-calendar .rdrDateRangePickerWrapper,
 .airbnb-mobile-calendar .rdrDateRangeWrapper,
 .airbnb-mobile-calendar .rdrCalendarWrapper,
@@ -710,16 +714,16 @@ body {
   width: 100% !important;
   box-sizing: border-box;
 }
-.airbnb-mobile-calendar .rdrDateRangePickerWrapper {
-  max-width: 329px;
-}
 .airbnb-mobile-calendar .rdrMonth {
   padding: 0 0 0.5em 0 !important;
 }
 .airbnb-mobile-calendar .rdrDay {
   width: 14.2857% !important;
-  height: 47px !important;
-  line-height: 47px !important;
+  height: 52px !important;
+  line-height: 52px !important;
+}
+.airbnb-mobile-calendar .rdrDayNumber span {
+  font-size: 16px;
 }
 .airbnb-mobile-calendar .rdrDayNumber,
 .airbnb-mobile-calendar .rdrSelected,
@@ -729,8 +733,8 @@ body {
 .airbnb-mobile-calendar .rdrDayStartPreview,
 .airbnb-mobile-calendar .rdrDayInPreview,
 .airbnb-mobile-calendar .rdrDayEndPreview {
-  top: 1px;
-  bottom: 1px;
+  top: 3px;
+  bottom: 3px;
 }
 .airbnb-mobile-calendar .rdrStartEdge,
 .airbnb-mobile-calendar .rdrDayStartOfMonth .rdrInRange,

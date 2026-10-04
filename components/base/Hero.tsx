@@ -424,9 +424,9 @@ export default function Hero() {
       {dateTab === 'dates' && (
         <div
           className={`airbnb-compact-calendar ${
-            // -mx-4 steps out of the sheet row's padding, so the phone
-            // calendar spans the card; globals.css sizes the cells.
-            variant === 'mobile' ? 'airbnb-mobile-calendar -mx-4' : ''
+            // The phone calendar fills the sheet row's content box, the same
+            // 16px in from the card as WHERE and WHO; globals.css sizes it.
+            variant === 'mobile' ? 'airbnb-mobile-calendar' : ''
           } ${datesTouched ? '' : 'rdr-unselected'} flex justify-center`}
         >
           <DateRangePicker
