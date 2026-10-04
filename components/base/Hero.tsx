@@ -78,8 +78,10 @@ const HERO_IMAGES = [
 // travel in the `where` search param, and the home page matches them against
 // `townKey(listing.location)` — see lib/places.ts.
 const LOCATIONS: { value: string; label: string }[] = [
-  { value: '', label: 'Search destinations' },
-  { value: 'all', label: 'All Dumfries & Galloway' },
+  // The empty value is the "show me everything" default, the way Airbnb's
+  // "Anywhere" is — runSearch leaves `where` out of the URL for it, so a bare
+  // search returns every listing. It is the first option, then the towns.
+  { value: '', label: 'Anywhere in Dumfries & Galloway' },
   { value: 'kirkcudbright', label: 'Kirkcudbright' },
   { value: 'castle-douglas', label: 'Castle Douglas' },
   { value: 'gatehouse-of-fleet', label: 'Gatehouse of Fleet' },
@@ -318,6 +320,10 @@ export default function Hero() {
   // wording: that bar has no labels above its fields, so its prompts have to
   // name the field as well as invite a value.
   const whereChosen = whereSummary === 'Where to?' ? '' : whereSummary;
+  // The collapsed phone pill has almost no width, so it shows the short
+  // "Anywhere" when no town is picked — the way Airbnb's pill does — rather
+  // than the full "Anywhere in Dumfries & Galloway", and never truncates.
+  const wherePill = whereChosen || 'Anywhere';
   const whenChosen = whenSummary === 'Add dates' ? '' : whenSummary;
   const guestChosen = guestSummary === 'Add guests' ? '' : guestSummary;
 
@@ -704,7 +710,7 @@ export default function Hero() {
           >
             <span className="flex-none text-emerald-700">{searchIcon('w-5 h-5')}</span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-stone-900">{whereSummary}</span>
+              <span className="block text-sm font-semibold text-stone-900">{wherePill}</span>
               <span className="block truncate text-xs text-stone-500">
                 {(whenSummary === 'Add dates' ? 'Any week' : whenSummary)} · {guestSummary}
               </span>
@@ -728,7 +734,13 @@ export default function Hero() {
             <select
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="w-full bg-transparent text-sm font-medium text-stone-900 focus:outline-none cursor-pointer border-none p-0 focus:ring-0 truncate"
+              // appearance-none drops the native up/down arrows so the field
+              // sits on one line with WHEN and WHO. Grey and non-bold until a
+              // town is picked — matching "Add dates"/"Add guests" — then the
+              // normal dark value colour.
+              className={`w-full bg-transparent appearance-none text-sm font-medium focus:outline-none cursor-pointer border-none p-0 focus:ring-0 truncate ${
+                location ? 'text-stone-900' : 'text-stone-400'
+              }`}
             >
               {LOCATIONS.map((l) => (
                 <option key={l.value} value={l.value}>
@@ -863,7 +875,7 @@ export default function Hero() {
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <div className="overflow-hidden rounded-3xl border border-stone-200">
               <div className="flex flex-col">
-                {gridCell('where', 'Where', whereChosen, 'Anywhere', 'border-b border-stone-200')}
+                {gridCell('where', 'Where', whereChosen, 'Anywhere in Dumfries & Galloway', 'border-b border-stone-200')}
                 {gridCell('when', 'When', whenChosen, 'Any week', 'border-b border-stone-200')}
                 {gridCell('who', 'Who', guestChosen, 'Add guests', '')}
               </div>
