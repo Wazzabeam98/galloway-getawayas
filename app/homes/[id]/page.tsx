@@ -32,6 +32,11 @@ import NotTakingBookings from '@/components/NotTakingBookings';
 import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import AreaExperiences from '@/components/AreaExperiences';
 import ReportListing from '@/components/ReportListing';
+import WhereYoullSleep from '@/components/WhereYoullSleep';
+import MeetYourHost from '@/components/MeetYourHost';
+import SafetyAndProperty from '@/components/SafetyAndProperty';
+import ListingStickyHeader from '@/components/ListingStickyHeader';
+import { hostResponsiveness } from '@/lib/hostResponsiveness';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Clock } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
@@ -172,7 +177,7 @@ const SITE_URL = 'https://gallowaygetaways.co.uk';
 // the account-deletion migration promises nothing of theirs is left reachable.
 // What /homes/[id] reads. A constant, not inline, so the old-link fallback
 // reads exactly the same columns as the visitor's own query.
-const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value';
+const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood';
 
 async function hiddenListingForOldLink(id: string, columns: string): Promise<any | null> {
     const admin = adminClient();
@@ -340,6 +345,44 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         }
         hostVerified = hostProfile?.stripe_payouts_enabled === true;
     }
+
+    // The co-hosts shown in "Meet your host". Read with the SERVICE ROLE: a
+    // co-host is not a party on the listing for the anon visitor's client, so
+    // listing_access returns nothing to anon (the RLS rule in CLAUDE.md). Only
+    // an accepted, active co-host (user_id set, status active) is a person; a
+    // still-pending invite is an email, not someone to name on a public page.
+    // First name only, same as the host and reviewers.
+    let coHosts: { name: string; avatarUrl: string | null }[] = [];
+    // Response rate and typical reply time, worked out from real booking-thread
+    // message history (service role — the same reason as above). Null-safe: a
+    // host with no messages yet simply shows neither line.
+    let responsiveness: { responseRatePercent: number | null; typicalLabel: string | null; sampleSize: number } =
+        { responseRatePercent: null, typicalLabel: null, sampleSize: 0 };
+    if (home?.host_id) {
+        const { data: coAccess } = await adminClient()
+            .from('listing_access')
+            .select('user_id')
+            .eq('listing_id', home.id)
+            .eq('role', 'co_host')
+            .eq('status', 'active');
+        const coIds = Array.from(new Set((coAccess || []).map((r: any) => r.user_id).filter(Boolean)));
+        if (coIds.length) {
+            const { data: coProfiles } = await adminClient()
+                .from('profiles')
+                .select('id, full_name, preferred_name, show_full_name, avatar_url')
+                .in('id', coIds);
+            coHosts = (coProfiles || []).map((p: any) => ({
+                name: capitializeFirst(firstName(p, 'Co-host')),
+                avatarUrl: p.avatar_url || null,
+            }));
+        }
+        responsiveness = await hostResponsiveness(adminClient(), home.host_id);
+    }
+
+    // "5 years hosting" — this calendar year minus the year they joined. Zero
+    // for a host in their first year, which MeetYourHost then simply omits
+    // rather than printing "0 years".
+    const yearsHosting = hostSinceYear ? new Date().getFullYear() - hostSinceYear : null;
 
     // Guests see a first name only — a surname on a public page is more
     // than anyone needs, and it's how the big platforms do it. A nameless host
@@ -541,8 +584,26 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         ],
     };
 
+    // The desktop sticky header's section links — only the sections this page
+    // actually renders, so a link never scrolls to nothing. Reviews is always
+    // present (the "No reviews yet" block still carries the anchor).
+    const stickyLinks = [
+        { id: 'photos', label: 'Photos' },
+        ...(home.amenities && home.amenities.length ? [{ id: 'amenities', label: 'Amenities' }] : []),
+        { id: 'reviews', label: 'Reviews' },
+        ...(coords ? [{ id: 'location', label: 'Location' }] : []),
+    ];
+    const reserveLabel = home.instant_book === true ? 'Reserve' : 'Request to book';
+
     return (
         <div className='min-h-screen bg-slate-50'>
+        {bookable && (
+            <ListingStickyHeader
+                links={stickyLinks}
+                pricePerNight={home.price_per_night}
+                reserveLabel={reserveLabel}
+            />
+        )}
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 pb-24 lg:pb-0'>
             <script
                 type="application/ld+json"
@@ -650,7 +711,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     }}
                 />
 
-                <PhotoGallery images={images} title={home.title} area={placeSummary(home.location)} />
+                <div id="photos" className="scroll-mt-24">
+                    <PhotoGallery images={images} title={home.title} area={placeSummary(home.location)} />
+                </div>
+                {/* Just below the photos: when this scrolls up past the nav, the
+                    desktop sticky header fades in (ListingStickyHeader watches it). */}
+                <div id="sticky-sentinel" aria-hidden="true" />
 
                 <div className='grid grid-cols-1 lg:grid-cols-3 gap-10 mt-5'>
                     <div className='order-2 lg:order-1 lg:col-span-2'>
@@ -670,18 +736,20 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             ) : null;
                         })()}
 
+                        {/* A compact host line for immediate context, the way
+                            Airbnb keeps "Hosted by X" up by the highlights. The
+                            photo, headline numbers, bio, co-hosts and how
+                            responsive they are all live in the full "Meet your
+                            host" card lower down (MeetYourHost), so this stays a
+                            single line and nothing is said twice.
+
+                            next/image, NOT a plain <img>: this renders into a 44px
+                            circle, and a plain tag ships whatever the host
+                            uploaded at full size — one real avatar was 2,173 KB,
+                            99% of this page's image weight on a phone. */}
                         <div className='flex items-center gap-3 mt-5 pt-5 border-t'>
                             <div className='w-11 h-11 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center font-semibold flex-shrink-0'>
                                 {hostAvatar ? (
-                                    // next/image, NOT a plain <img>. This renders into a
-                                    // 44px circle (w-11 h-11), and a plain tag hands the
-                                    // browser whatever the host uploaded at full size: one
-                                    // real avatar measured 2,173 KB here, which was 99% of
-                                    // this page's image weight on a phone and all of it
-                                    // thrown away by the CSS. width/height let the
-                                    // optimiser resize AND re-encode at the source, so the
-                                    // wire carries a 48px (96px on a 2x screen) WebP.
-                                    // Constraining it in CSS alone does not save a byte.
                                     <Image
                                         src={getImageUrl(hostAvatar)}
                                         alt={`${hostFirstName}, host`}
@@ -705,30 +773,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                         </span>
                                     )}
                                 </div>
-                                {hostVerified && (
-                                    <div className='text-sm text-slate-500'>
-                                        Stripe has confirmed {hostFirstName}&apos;s identity.
-                                    </div>
+                                {hostSinceYear && (
+                                    <div className='text-sm text-slate-500'>Hosting since {hostSinceYear}</div>
                                 )}
-                                <div className='text-sm text-slate-500 flex items-center gap-x-2 flex-wrap'>
-                                    {hostSinceYear && (
-                                        <span>Hosting since {hostSinceYear}</span>
-                                    )}
-                                    {hostSinceYear && ratingCount > 0 && (
-                                        <span aria-hidden='true'>·</span>
-                                    )}
-                                    {ratingCount > 0 && (
-                                        <span>{ratingCount} review{ratingCount > 1 ? 's' : ''} from guests</span>
-                                    )}
-                                </div>
                             </div>
                         </div>
-
-                        {hostBio && (
-                            <p className='mt-4 text-slate-600 whitespace-pre-line'>
-                                {hostBio}
-                            </p>
-                        )}
 
                         {(home.check_in_time || home.check_out_time) && (
                             <div className='mt-8 pt-8 lg:mt-5 lg:pt-5 border-t'>
@@ -771,8 +820,13 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
+                        {/* Where you'll sleep — the beds in each room, before the
+                            amenities, the order Airbnb uses. Renders nothing until
+                            the host has filled in a room's beds. */}
+                        <WhereYoullSleep arrangements={home.sleeping_arrangements} />
+
                         {home.amenities && home.amenities.length > 0 && (
-                            <div className='mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0'>
+                            <div id='amenities' className='mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0 scroll-mt-24'>
                                 <h2 className='text-xl font-semibold mb-3'>What this place offers</h2>
                                 <AmenityList amenities={home.amenities} />
                             </div>
@@ -805,15 +859,32 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
-                        {/* The map, kept in the left column so the booking card
-                            sits beside it and finishes level with the bottom of
-                            the map — that is where the sticky card releases. */}
-                        {coords && (
-                            <PropertyMap
-                                latitude={coords.latitude}
-                                longitude={coords.longitude}
-                                area={placeSummary(home.location)}
-                            />
+                        {/* "Where you'll be" — the map, then the host's own
+                            neighbourhood description beneath it, the way Airbnb
+                            runs prose under the map. PropertyMap carries its own
+                            heading, the approximate-area note and the pin, all
+                            left exactly as they were. Kept in the left column so
+                            the booking card finishes level with the bottom of it. */}
+                        {(coords || (home.neighbourhood && home.neighbourhood.trim())) && (
+                            <section id='location' className='scroll-mt-24'>
+                                {coords ? (
+                                    <PropertyMap
+                                        latitude={coords.latitude}
+                                        longitude={coords.longitude}
+                                        area={placeSummary(home.location)}
+                                    />
+                                ) : (
+                                    <h2 className='text-xl font-semibold mb-1'>Where you&apos;ll be</h2>
+                                )}
+                                {home.neighbourhood && home.neighbourhood.trim() && (
+                                    <div className={coords ? 'mt-5' : ''}>
+                                        <h3 className='font-semibold text-slate-900 mb-1'>The neighbourhood</h3>
+                                        <p className='text-slate-600 whitespace-pre-line'>
+                                            {home.neighbourhood.trim()}
+                                        </p>
+                                    </div>
+                                )}
+                            </section>
                         )}
                     </div>
 
@@ -858,6 +929,16 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         guest sees again on their trip card after booking. */}
                     <HouseRules listing={home} variant="page" />
 
+                    {/* Safety & property — sat under the house rules, as Airbnb
+                        does. The two alarms come from the amenities the host
+                        already ticks; the deposit from listings.damage_deposit. */}
+                    <SafetyAndProperty
+                        smokeAlarm={(home.amenities || []).indexOf('Smoke alarm') !== -1}
+                        carbonMonoxideAlarm={(home.amenities || []).indexOf('Carbon monoxide alarm') !== -1}
+                        damageDeposit={home.damage_deposit || 0}
+                    />
+
+                    <div id='reviews' className='scroll-mt-24'>
                     {(!reviews || reviews.length === 0) && (
                         <div className='mt-8 pt-8 border-t'>
                             <h2 className='text-xl font-semibold mb-2'>Reviews</h2>
@@ -930,6 +1011,26 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </ShowAllReviews>
                         </div>
                     )}
+                    </div>
+
+                    {/* Meet your host — the full Airbnb-style card: photo,
+                        headline numbers (reviews, rating, years hosting), the
+                        host's own words, the co-hosts, and how responsive they
+                        are. Full-width at the foot of the body. */}
+                    <MeetYourHost
+                        firstName={hostFirstName}
+                        avatarUrl={hostAvatar}
+                        verified={hostVerified}
+                        bio={hostBio}
+                        sinceYear={hostSinceYear}
+                        yearsHosting={yearsHosting}
+                        ratingAvg={ratingAvg}
+                        ratingCount={ratingCount}
+                        showScore={showScore}
+                        coHosts={coHosts}
+                        responseRatePercent={responsiveness.responseRatePercent}
+                        typicalLabel={responsiveness.typicalLabel}
+                    />
                 </div>
             </div>
 

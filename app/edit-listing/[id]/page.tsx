@@ -16,6 +16,8 @@ import { toast } from 'react-toastify';
 import { rateFor, feeAmount, netOfFee } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
+import SleepingArrangementsEditor from '@/components/SleepingArrangementsEditor';
+import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, type Room } from '@/lib/sleeping';
 import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
 import GuestBookableHere from '@/components/GuestBookableHere';
 import { PLOT_BANDS, STOREY_BANDS } from '@/lib/serviceProviders';
@@ -208,6 +210,11 @@ export default function EditListing() {
     const [bedrooms, setBedrooms] = useState(1);
     const [beds, setBeds] = useState(1);
     const [bathrooms, setBathrooms] = useState(1);
+    // Beds entered room by room; the two integers above are derived from this on
+    // save (deriveCounts) so they stay in sync. Seeded from the listing's
+    // arrangements, or from its bedroom count when it has none yet.
+    const [sleeping, setSleeping] = useState<Room[]>([]);
+    const [neighbourhood, setNeighbourhood] = useState('');
     const [plotBand, setPlotBand] = useState<string>('');
     const [storeyBand, setStoreyBand] = useState<string>('');
     const [amenities, setAmenities] = useState<string[]>([]);
@@ -342,6 +349,11 @@ export default function EditListing() {
             setBedrooms(listing.bedrooms ?? 1);
             setBeds(listing.beds ?? 1);
             setBathrooms(listing.bathrooms ?? 1);
+            {
+                const existing = normaliseArrangements(listing.sleeping_arrangements);
+                setSleeping(existing.length ? existing : roomsFromBedroomCount(listing.bedrooms ?? 1));
+            }
+            setNeighbourhood(listing.neighbourhood || '');
             setPlotBand(listing.plot_band || '');
             setStoreyBand(listing.storey_band || '');
             setAmenities(listing.amenities || []);
@@ -533,6 +545,18 @@ export default function EditListing() {
                 }
             }
 
+            // Beds entered room by room are the source of truth; the two flat
+            // integers are derived from them so they can't drift. A bedroom with
+            // no beds still counts as a room; a common space with no beds is
+            // dropped. When the host hasn't entered any beds yet (an older
+            // listing just opened on the seeded cards), keep the counts and
+            // arrangements it already had rather than zeroing them.
+            const cleanRooms: Room[] = sleeping
+                .map((r) => ({ ...r, beds: r.beds.filter((b) => b.count > 0) }))
+                .filter((r) => r.kind === 'bedroom' || r.beds.length > 0);
+            const derived = deriveCounts(cleanRooms);
+            const hasSleeping = derived.beds > 0;
+
             // Saved through the server so a co-host the owner trusted can
             // edit too — row-level security would block them otherwise.
             const patch = {
@@ -548,8 +572,9 @@ export default function EditListing() {
                     images: finalPaths,
                     property_type: propertyType,
                     privacy_type: privacyType,
-                    bedrooms,
-                    beds,
+                    bedrooms: hasSleeping ? derived.bedrooms : bedrooms,
+                    beds: hasSleeping ? derived.beds : beds,
+                    sleeping_arrangements: hasSleeping ? cleanRooms : (original?.sleeping_arrangements ?? []),
                     bathrooms,
                     plot_band: plotBand || null,
                     storey_band: storeyBand || null,
@@ -565,6 +590,7 @@ export default function EditListing() {
                     quiet_hours_enabled: quietHoursEnabled,
                     check_in_method: checkInMethod || null,
                     nearby: nearby.filter((n) => n.name.trim()),
+                    neighbourhood: neighbourhood.trim() || null,
                     quiet_hours_start: quietHoursStart,
                     quiet_hours_end: quietHoursEnd,
                     commercial_photography_allowed: commercialPhotographyAllowed,
@@ -830,9 +856,13 @@ export default function EditListing() {
                                 <section>
                                     <h2 className="text-xl font-bold text-slate-900 mb-2">Capacity</h2>
                                     <Counter label="Guests" value={guests} onChange={setGuests} min={1} />
-                                    <Counter label="Bedrooms" value={bedrooms} onChange={setBedrooms} min={0} />
-                                    <Counter label="Beds" value={beds} onChange={setBeds} min={1} />
                                     <Counter label="Bathrooms" value={bathrooms} onChange={setBathrooms} min={0.5} />
+                                    {/* Beds are entered room by room; the bedroom
+                                        and bed totals are derived from them, so
+                                        there are no separate counters for those. */}
+                                    <div className="mt-6 border-t pt-6">
+                                        <SleepingArrangementsEditor rooms={sleeping} onChange={setSleeping} />
+                                    </div>
                                 </section>
 
                                 {/* Asked once, and only because the services side
@@ -963,6 +993,24 @@ export default function EditListing() {
                                             + Add a place
                                         </button>
                                     )}
+                                </section>
+
+                                <section>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-1">Where you&apos;ll be</h2>
+                                    <p className="text-sm text-slate-500 mb-4">
+                                        A few lines about the area — the street, the walk into town, what&apos;s on
+                                        the doorstep. Shown under the map. Keep it about the surroundings, not the
+                                        house itself (the description covers that).
+                                    </p>
+                                    <textarea
+                                        value={neighbourhood}
+                                        onChange={(e) => setNeighbourhood(e.target.value)}
+                                        rows={6}
+                                        maxLength={2000}
+                                        placeholder="St Cuthbert Street runs through the heart of Kirkcudbright, a two-minute walk from the harbour and the galleries…"
+                                        className="w-full p-3 border rounded-xl text-sm"
+                                    />
+                                    <p className="mt-1 text-xs text-slate-400">{neighbourhood.length}/2000</p>
                                 </section>
                             </div>
                         )}
