@@ -78,8 +78,8 @@ export default async function BillingPage({
                     </p>
                 ) : null}
                 <p className="text-slate-500 text-sm mt-6">
-                    Your card is held by Stripe, not by us. Reply to any of our emails to change or
-                    cancel it.
+                    Your card is held by Stripe, not by us. You can cancel any time from Edit your
+                    business — your listing stays up until the end of the month you’ve paid for.
                 </p>
             </Frame>
         );
