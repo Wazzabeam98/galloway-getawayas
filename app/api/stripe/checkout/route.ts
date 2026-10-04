@@ -13,6 +13,7 @@ import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
 import { requireGuestTerms } from '@/lib/agreementRecords';
 import { anonGuestTermsMetadata } from '@/lib/agreements';
+import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,12 +91,22 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit')
+            .select('status, title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
         if (!listing) {
             return NextResponse.json({ ok: false, error: 'Listing not found' }, { status: 404 });
+        }
+
+        // A listing that has come down — the host's Hide, an admin hide, or the
+        // account deactivated or deleted — takes no NEW bookings, whatever link
+        // or stale tab the guest arrived from. The same gate as isLiveToGuests in
+        // the experience order route. Every booking reaching this route is unpaid
+        // (checked above), so a stay that already exists is never refused here:
+        // its balance goes through balance-checkout, which does not ask.
+        if (!isListingBookable(listing)) {
+            return NextResponse.json({ ok: false, error: NOT_TAKING_BOOKINGS + '.' }, { status: 409 });
         }
 
         const checkIn = dateFromKey(booking.check_in);

@@ -18,6 +18,7 @@ import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
 import { plural } from '@/lib/plural';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
+import { NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 
 interface Props {
     listingId: string;
@@ -414,8 +415,12 @@ export default function BookingWidget({
             }).select('id').single();
 
             if (insertErr) {
-                toast.error(insertErr.message, { theme: 'colored' });
-                setError(insertErr.message);
+                // 42501 is the INSERT policy refusing the row — in practice the
+                // listing came down while this tab was open. Say so in the page's
+                // own words rather than Postgres's.
+                const msg = insertErr.code === '42501' ? NOT_TAKING_BOOKINGS + '.' : insertErr.message;
+                toast.error(msg, { theme: 'colored' });
+                setError(msg);
                 return;
             }
 
