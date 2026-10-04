@@ -65,6 +65,10 @@ interface Props {
     // collects them on its own last screen — the provider/trade wizard's finish —
     // passes false so they are not asked twice.
     collectGuestTerms?: boolean;
+    // Shown under the email screen only (not the code, password or terms
+    // screens): the sign-up flows put their "Your questions, answered" here, for
+    // the person still deciding whether to start.
+    below?: ReactNode;
 }
 
 const INPUT = 'w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-700';
@@ -76,7 +80,7 @@ const LINK = 'font-semibold text-slate-900 underline underline-offset-2 hover:te
 // beats letting the press fail.
 const RESEND_WAIT_SECONDS = 60;
 
-export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, initialEmail = '', collectGuestTerms = true }: Props) {
+export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, initialEmail = '', collectGuestTerms = true, below }: Props) {
     const supabase = createClientComponentClient();
     const [screen, setScreen] = useState<Screen>('email');
     const [email, setEmail] = useState(initialEmail);
@@ -499,6 +503,9 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
                         </>
                     )}
                 </div>
+                {screen === 'email' && below && (
+                    <div className="border-t border-slate-100 px-4 pb-24 pt-12 sm:px-6">{below}</div>
+                )}
             </div>
         </div>
     );
