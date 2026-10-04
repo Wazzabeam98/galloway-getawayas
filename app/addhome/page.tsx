@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
+import RecruitFaq from '@/components/business/RecruitFaq';
 import AgreementTick from '@/components/legal/AgreementTick';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import { categories } from '@/config/categories';
@@ -617,6 +618,7 @@ export default function AddHome() {
                 eyebrow="List your place"
                 intro="Sign in or create your free host account. You only pay a commission when you get a booking."
                 exitHref="/business"
+                below={<RecruitFaq audience="host" />}
                 onSignedIn={(s) => {
                     // A ?draft= link loads its draft only for a signed-in owner,
                     // on load — so reload to open it now that they are one.
@@ -1210,6 +1212,9 @@ export default function AddHome() {
                         </button>
                     </div>
                 )}
+                {/* The first screen is where a new host is still deciding, so the
+                    questions they ask sit under it — not on the later steps. */}
+                {step === 1 && <RecruitFaq audience="host" className="mt-16 pb-8" />}
                 {step === TOTAL_STEPS && (
                     <button
                         type="button"

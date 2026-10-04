@@ -24,6 +24,7 @@ import {
     wouldCreateNew,
 } from '@/lib/serviceSkills';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
+import RecruitFaq from '@/components/business/RecruitFaq';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 import {
     tradeLabel,
@@ -3339,6 +3340,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     ? 'Sign in or create your free account to set up your experience. Everything you add is saved to your account as you go.'
                     : 'Sign in or create your free account to set up your business. Everything you add is saved to your account as you go.'}
                 exitHref="/business"
+                below={<RecruitFaq audience={isGuest ? 'experience' : 'trade'} />}
                 onSignedIn={() => window.location.reload()}
                 // The Guest Terms are taken on this wizard's own finish screen,
                 // with the role agreement — not here at account creation.
@@ -6326,6 +6328,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 </div>
             )}
 
+                {/* The first screen (the picker) is where a new provider is still
+                    deciding, so their questions sit under it — not on later steps. */}
+                {step === 'trade' && (
+                    <RecruitFaq audience={isGuest ? 'experience' : 'trade'} className="mt-16" />
+                )}
                 </div>{/* /the questions */}
 
                 {/* A right-side spacer mirroring the rail's width. The panel
