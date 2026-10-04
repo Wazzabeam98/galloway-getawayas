@@ -96,15 +96,16 @@ export default function MeetYourHost({
             <h2 className="text-xl md:text-2xl font-bold text-slate-900">Meet your host</h2>
 
             <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-12">
-                {/* Left: the raised identity card, then the bio below it. On a
-                    phone the card is full width (it stacks above everything else,
-                    so hugging its content left an awkward gap at the right edge).
-                    On desktop, where it sits beside the right column, it stays
-                    sized to its content (w-fit) the way Airbnb's card does. */}
+                {/* Left: the raised identity card, then the bio below it. The
+                    card is full width in its column on both phone and desktop; on
+                    desktop that makes it a wide landscape rectangle — the photo
+                    and name on one side, the stats on the other with more room
+                    between them, and tighter vertical padding so it reads wider
+                    than it is tall, the way Airbnb's card does. */}
                 <div>
-                    <div className="w-full lg:w-fit lg:max-w-sm rounded-2xl border border-slate-200 bg-white shadow-[0_6px_16px_rgba(0,0,0,0.12)] p-6">
-                        <div className="flex items-center gap-5">
-                            <div className="flex flex-col items-center text-center">
+                    <div className="w-full rounded-2xl border border-slate-200 bg-white shadow-[0_6px_16px_rgba(0,0,0,0.12)] p-6 lg:py-4">
+                        <div className="flex items-center gap-5 lg:gap-10">
+                            <div className="flex flex-col items-center text-center lg:flex-1">
                                 <div className="relative">
                                     <Avatar url={avatarUrl} name={firstName} size={104} />
                                     {verified && (
