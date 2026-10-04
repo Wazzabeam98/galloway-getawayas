@@ -172,7 +172,7 @@ export async function POST(request: Request) {
 
             const heading = instant ? 'New booking' : 'New booking request';
             const intro = instant
-                ? guestFirst + ' has booked ' + listingTitle + ' using Instant Book. The dates are already confirmed and blocked out on your calendar.'
+                ? guestFirst + ' has booked ' + listingTitle + ' instantly. The dates are already confirmed and blocked out on your calendar.'
                 : guestFirst + ' would like to book ' + listingTitle + '. Have a look and confirm or decline — until you do, the dates are held but not confirmed.';
 
             const html = emailLayout(

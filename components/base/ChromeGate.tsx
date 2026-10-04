@@ -23,5 +23,11 @@ export function isTakeoverRoute(pathname: string): boolean {
 export default function ChromeGate({ children }: { children: React.ReactNode }) {
     const pathname = usePathname() || '';
     if (isTakeoverRoute(pathname)) return null;
+    // On a listing page the main nav scrolls away (data-chrome="listing" +
+    // a rule in globals.css un-sticks it), so the in-page section bar can take
+    // its place at the very top — Airbnb's behaviour. See ListingStickyHeader.
+    if (pathname.startsWith('/homes/')) {
+        return <div data-chrome="listing">{children}</div>;
+    }
     return <>{children}</>;
 }

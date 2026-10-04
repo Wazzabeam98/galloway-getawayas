@@ -1513,7 +1513,7 @@ export default function AccountSettings() {
                         <div>
                             <h2 className="text-2xl font-bold text-slate-900 mb-1">Booking permissions</h2>
                             <p className="text-sm text-slate-500 mb-4">
-                                Decide how guests can book each of your places. Instant book, the fees, deposit,
+                                Decide how guests can book each of your places. Instant booking, the fees, deposit,
                                 stay length and cancellation policy all live together under
                                 <span className="font-medium text-slate-700"> Booking settings</span> on each
                                 listing&rsquo;s editor now — the toggles here still work and stay in step.
@@ -1630,7 +1630,7 @@ export default function AccountSettings() {
                                                         className={`w-full text-left px-4 py-3.5 rounded-xl border transition disabled:opacity-50 ${l.instant_book ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}
                                                     >
                                                         <div className={`text-sm ${l.instant_book ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>
-                                                            Instant Book
+                                                            Instant booking
                                                         </div>
                                                         <div className="text-xs text-slate-500 mt-0.5">
                                                             Guests book straight away without waiting for you. The dates block
