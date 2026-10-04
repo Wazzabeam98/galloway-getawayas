@@ -43,6 +43,15 @@ so and carry on with other work.
 
 **Standing rules.**
 
+- Start every task by fetching origin and working from the latest
+  `origin/master`, never from the local `master` or an old branch. Liam lands
+  commits from the work laptop mid-session, so the local tree goes stale without
+  a rejected push to warn you — `git fetch origin master` first, branch from
+  `origin/master`, and base any audit on `origin/master`'s files, not the local
+  checkout's. (A session edited a search-bar file off a local `master` that was
+  80+ commits behind; the file had been rewritten on `origin/master` in the
+  meantime, so the work had to be merged and re-applied against the current
+  version before it was right.)
 - Follow Airbnb's behaviour, wording and look at every decision.
 - All user-facing dates are DD/MM/YYYY from the shared formatter, built from the
   day key — never `toISOString`.
