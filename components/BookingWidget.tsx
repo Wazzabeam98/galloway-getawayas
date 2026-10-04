@@ -12,7 +12,7 @@ import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
 import { dateToKey, keyToDate, readBookingDraft, writeBookingDraft } from '@/lib/bookingDraftParams';
 import { toast } from 'react-toastify';
-import { Minus, Plus, X, ArrowLeft } from 'lucide-react';
+import { Minus, Plus, X, ArrowLeft, Star } from 'lucide-react';
 import { ukDate } from '@/lib/dayKey';
 import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
@@ -48,6 +48,11 @@ interface Props {
     // From the server too: whether the signed-in viewer still owes the Guest
     // Terms. Null when the page did not know (signed out at render).
     needsGuestTerms: boolean | null;
+    // The listing's public rating, for the phone bottom bar (shown under "Add
+    // dates for prices", the way Airbnb's does). showScore is the page's own
+    // gate for whether a listing has enough reviews to show a score at all.
+    showScore?: boolean;
+    ratingAvg?: number;
 }
 
 // Defined out here on purpose. A component declared inside another one is a
@@ -112,7 +117,7 @@ function Counter({
 // month and nothing after it).
 function CottageCalendar({
     hasSelection, calendarKey, ranges, shownMonth, onChange, minDate, maxDate,
-    disabledDates, renderDay, onClear,
+    disabledDates, renderDay, onClear, scroll = false, scrollHeight = 480, showClear = true,
 }: {
     hasSelection: boolean;
     calendarKey: number;
@@ -124,6 +129,14 @@ function CottageCalendar({
     disabledDates: Date[];
     renderDay: (date: Date) => JSX.Element;
     onClear: () => void;
+    // The phone sheet uses Airbnb's vertical scrolling calendar: the weekday
+    // row M T W T F S S stays fixed at the top and the labelled months scroll
+    // beneath it. The desktop card keeps its single month with arrows, so this
+    // is off there. showClear hides the inline "Clear dates" when the sheet
+    // carries its own in the header instead.
+    scroll?: boolean;
+    scrollHeight?: number;
+    showClear?: boolean;
 }) {
     const calendarRef = useRef<HTMLDivElement>(null);
 
@@ -158,7 +171,13 @@ function CottageCalendar({
     }, [disabledDates]);
 
     return (
-        <div ref={calendarRef} className={`cottage-cal border rounded-xl overflow-hidden mb-4${hasSelection ? '' : ' rdr-unselected'}`}>
+        <div
+            ref={calendarRef}
+            className={
+                (scroll ? 'cottage-cal cottage-cal-scroll h-full' : 'cottage-cal border rounded-xl overflow-hidden mb-4')
+                + (hasSelection ? '' : ' rdr-unselected')
+            }
+        >
             <DateRangePicker
                 ariaLabels={MONTH_ARROW_LABELS}
                 // Remounted by Clear dates: the picker keeps its own note of
@@ -174,7 +193,21 @@ function CottageCalendar({
                 minDate={minDate}
                 maxDate={maxDate}
                 disabledDates={disabledDates}
+                // In scroll mode the scrollable range is the whole min→max span;
+                // `months` only scales the viewport height (calendarHeight ×
+                // months), so it stays 1 and the viewport is the sheet height.
                 months={1}
+                // Airbnb's vertical scrolling calendar on the phone: one fixed
+                // weekday header, the labelled months scrolling beneath. On the
+                // desktop card it stays a single month navigated by arrows. The
+                // month heights are set to our 47px day rows so the virtualiser
+                // doesn't clip a six-week month or leave a big gap.
+                scroll={scroll ? { enabled: true, calendarHeight: scrollHeight, monthHeight: 280, longMonthHeight: 330 } : undefined}
+                // Single-letter weekday labels (M T W T F S S) and the full
+                // month name ("October 2026"), as Airbnb's scrolling calendar
+                // has — only in the sheet.
+                weekdayDisplayFormat={scroll ? 'EEEEE' : undefined}
+                monthDisplayFormat={scroll ? 'MMMM yyyy' : undefined}
                 // Monday-first, like every calendar on the site (and the UK).
                 weekStartsOn={1}
                 direction="vertical"
@@ -191,17 +224,19 @@ function CottageCalendar({
                 inputRanges={[]}
                 dayContentRenderer={renderDay}
             />
-            {/* Bottom right, as on Airbnb's calendar. */}
-            <div className="flex justify-end px-3 pb-3">
-                <button
-                    type="button"
-                    onClick={onClear}
-                    disabled={!hasSelection}
-                    className="text-sm font-medium text-[#222222] underline underline-offset-2 rounded px-1 py-0.5 hover:bg-slate-100 disabled:text-slate-300 disabled:no-underline disabled:hover:bg-transparent disabled:cursor-default"
-                >
-                    Clear dates
-                </button>
-            </div>
+            {showClear && (
+                // Bottom right, as on Airbnb's calendar.
+                <div className="flex justify-end px-3 pb-3">
+                    <button
+                        type="button"
+                        onClick={onClear}
+                        disabled={!hasSelection}
+                        className="text-sm font-medium text-[#222222] underline underline-offset-2 rounded px-1 py-0.5 hover:bg-slate-100 disabled:text-slate-300 disabled:no-underline disabled:hover:bg-transparent disabled:cursor-default"
+                    >
+                        Clear dates
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -216,6 +251,8 @@ export default function BookingWidget({
     blockedNights,
     priceOverrides,
     needsGuestTerms: serverNeedsGuestTerms,
+    showScore = false,
+    ratingAvg = 0,
 }: Props) {
     const [payPlan, setPayPlan] = useState<'deposit' | 'full'>('deposit');
     const supabase = createClientComponentClient();
@@ -271,27 +308,53 @@ export default function BookingWidget({
     const [requested, setRequested] = useState(false);
 
     // The phone flow. Below lg the inline card is hidden; a fixed bottom bar
-    // carries the price and opens this full-screen panel, exactly as Airbnb's
-    // mobile listing does. Step 1 is the calendar, step 2 the guests, price and
-    // the request-to-book action. It is the SAME state and the SAME handlers as
-    // the desktop card — nothing about the money path knows which one is on
-    // screen. Portalled to the body (below), so no transformed ancestor can
-    // re-anchor the fixed positioning or clip the overlay.
+    // carries the price and opens a bottom sheet, exactly as Airbnb's mobile
+    // listing does. Step 1 is the calendar, step 2 the guests, price and the
+    // request-to-book action. It is the SAME state and the SAME handlers as the
+    // desktop card — nothing about the money path knows which one is on screen.
+    // Portalled to the body (below), so no transformed ancestor can re-anchor
+    // the fixed positioning or clip the overlay.
     const [mounted, setMounted] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [mobileStep, setMobileStep] = useState<1 | 2>(1);
+    // The sheet slides up on open and down on close: `sheetIn` drives the
+    // transform, flipped one frame after mount so the transition runs.
+    const [sheetIn, setSheetIn] = useState(false);
+    // Airbnb's scrolling calendar needs a pixel height to virtualise its
+    // months; fill the sheet body between the heading and the footer.
+    const [sheetCalHeight, setSheetCalHeight] = useState(480);
     useEffect(() => setMounted(true), []);
 
-    // While the panel is up: lock the page behind it and let Escape close it.
+    const openPanel = (step: 1 | 2) => {
+        setMobileStep(step);
+        setSheetIn(false);
+        setMobileOpen(true);
+    };
+    const closePanel = () => {
+        setSheetIn(false);
+        window.setTimeout(() => setMobileOpen(false), 300);
+    };
+
+    // While the sheet is up: lock the page behind it, run the slide-in, track
+    // the height for the calendar, and let Escape close it.
     useEffect(() => {
         if (!mobileOpen) return;
         const prevOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false); };
+
+        const raf = requestAnimationFrame(() => setSheetIn(true));
+
+        const sizeCal = () => setSheetCalHeight(Math.max(280, window.innerHeight - 280));
+        sizeCal();
+
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closePanel(); };
         window.addEventListener('keydown', onKey);
+        window.addEventListener('resize', sizeCal);
         return () => {
             document.body.style.overflow = prevOverflow;
+            cancelAnimationFrame(raf);
             window.removeEventListener('keydown', onKey);
+            window.removeEventListener('resize', sizeCal);
         };
     }, [mobileOpen]);
 
@@ -792,113 +855,156 @@ export default function BookingWidget({
     const reserveLabel = instantBook ? 'Reserve' : 'Request to book';
     const checkInKey = dateToKey(dateRange.startDate);
     const checkOutKey = dateToKey(dateRange.endDate);
-    const closePanel = () => setMobileOpen(false);
 
-    // The phone bottom bar and the full-screen panel. Portalled to the body so
-    // no transformed or overflow-clipped ancestor can re-anchor the fixed
+    // The sheet's heading follows the pick, as Airbnb's does: the check-in
+    // prompt until a check-in exists, the checkout prompt after.
+    const dateHeading = dateRange.startDate ? 'Select checkout date' : 'Select check-in date';
+
+    // The scrolling calendar needs a finite end. Use the host's availability
+    // window if they set one; otherwise cap the phone picker 18 months out
+    // (the server still enforces the real window, if any).
+    const scrollMaxDate = maxBookableDate || addMonths(new Date(), 18);
+
+    const sheetCalendarEl = (
+        <CottageCalendar
+            scroll
+            scrollHeight={sheetCalHeight}
+            showClear={false}
+            hasSelection={!!dateRange.startDate}
+            calendarKey={calendarKey}
+            ranges={calendarRanges}
+            shownMonth={shownMonth}
+            onChange={handleSelect}
+            minDate={new Date()}
+            maxDate={scrollMaxDate}
+            disabledDates={disabledDates}
+            renderDay={renderDay}
+            onClear={clearDates}
+        />
+    );
+
+    // The phone bottom bar and the bottom sheet. Portalled to the body so no
+    // transformed or overflow-clipped ancestor can re-anchor the fixed
     // positioning. lg:hidden keeps both off the desktop entirely.
     const mobileUi = (
         <>
-            <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
-                <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                        {datesChosen ? (
-                            <>
-                                <p className="text-base font-bold text-slate-900 leading-tight">
-                                    {barTotal}<span className="text-sm font-normal text-slate-500"> total</span>
-                                </p>
-                                <p className="text-xs text-slate-500 underline underline-offset-2 truncate">
-                                    {ukDate(checkInKey)} – {ukDate(checkOutKey)}
-                                </p>
-                            </>
-                        ) : (
-                            <p className="leading-tight">
-                                <span className="text-lg font-bold text-slate-900">£{pricePerNight}</span>
-                                <span className="text-sm text-slate-500"> / night</span>
+            {/* The bottom bar, Airbnb's way: no per-night price (it moves with the
+                dates), "Add dates for prices" with the rating under it, and one
+                full-width action in our green. Once dates are chosen it carries
+                the exact total and becomes the request-to-book action. */}
+            <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
+                {datesChosen ? (
+                    <div className="mb-2.5 min-w-0">
+                        <p className="text-base font-bold text-slate-900 leading-tight">
+                            {barTotal}<span className="text-sm font-normal text-slate-500"> total</span>
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                            {ukDate(checkInKey)} – {ukDate(checkOutKey)}
+                        </p>
+                    </div>
+                ) : (
+                    <div className="mb-2.5">
+                        <p className="text-base font-bold text-slate-900 leading-tight">Add dates for prices</p>
+                        {showScore && (
+                            <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-600">
+                                <Star className="h-3 w-3 fill-slate-900 text-slate-900" />
+                                <span className="font-semibold text-slate-900">{ratingAvg.toFixed(2)}</span>
                             </p>
                         )}
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => { setMobileStep(datesChosen ? 2 : 1); setMobileOpen(true); }}
-                        className="shrink-0 rounded-full bg-emerald-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                    >
-                        {datesChosen ? reserveLabel : 'Check availability'}
-                    </button>
-                </div>
+                )}
+                <button
+                    type="button"
+                    onClick={() => openPanel(datesChosen ? 2 : 1)}
+                    className="w-full rounded-lg bg-emerald-700 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800"
+                >
+                    {datesChosen ? reserveLabel : 'Check availability'}
+                </button>
             </div>
 
             {mobileOpen && (
-                <div role="dialog" aria-modal="true" aria-label="Book your stay" className="lg:hidden fixed inset-0 z-50 bg-white flex flex-col">
-                    <div className="flex items-center justify-between gap-2 px-2 h-14 border-b border-slate-200 shrink-0">
-                        {mobileStep === 1 ? (
-                            <button type="button" onClick={closePanel} aria-label="Close" className="w-10 h-10 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100">
-                                <X className="w-5 h-5" />
-                            </button>
-                        ) : (
-                            <button type="button" onClick={() => setMobileStep(1)} aria-label="Back" className="w-10 h-10 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100">
-                                <ArrowLeft className="w-5 h-5" />
-                            </button>
-                        )}
-                        <span className="text-sm font-semibold text-slate-900">
-                            {mobileStep === 1 ? 'Select dates' : 'Review and book'}
-                        </span>
-                        {mobileStep === 1 ? (
-                            <span className="w-10 h-10" aria-hidden="true" />
-                        ) : (
-                            <button type="button" onClick={closePanel} aria-label="Close" className="w-10 h-10 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100">
-                                <X className="w-5 h-5" />
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto px-4 py-4">
+                <>
+                    {/* The dimmed page behind the sheet; tapping it closes. */}
+                    <div
+                        className={`lg:hidden fixed inset-0 z-40 bg-black/40 transition-opacity duration-300 ${sheetIn ? 'opacity-100' : 'opacity-0'}`}
+                        onClick={closePanel}
+                        aria-hidden="true"
+                    />
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Book your stay"
+                        className={`lg:hidden fixed inset-x-0 bottom-0 top-10 z-50 bg-white rounded-t-2xl shadow-[0_-8px_30px_rgba(0,0,0,0.18)] flex flex-col transition-transform duration-300 ease-out ${sheetIn ? 'translate-y-0' : 'translate-y-full'}`}
+                    >
                         {mobileStep === 1 ? (
                             <>
-                                {priceHeader}
-                                {calendarEl}
-                            </>
-                        ) : (
-                            <>
-                                {guestsBlock}
-                                {breakdownBlock}
-                                {payPlanBlock}
-                                {cancelBlock}
-                                {damageBlock}
-                            </>
-                        )}
-                    </div>
-
-                    <div className="border-t border-slate-200 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
-                        {mobileStep === 1 ? (
-                            <div className="flex items-center justify-between gap-4">
-                                <div className="min-w-0">
-                                    {datesChosen ? (
-                                        <p className="text-sm text-slate-600">
-                                            {nights} night{nights > 1 ? 's' : ''} · <span className="font-bold text-slate-900">{formatGBP(total)}</span>
-                                        </p>
-                                    ) : (
-                                        <p className="text-sm text-slate-500">Add dates for prices</p>
-                                    )}
+                                <div className="flex items-center justify-between gap-2 px-2 pt-2 shrink-0">
+                                    <button type="button" onClick={closePanel} aria-label="Close" className="w-10 h-10 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100">
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={clearDates}
+                                        disabled={!dateRange.startDate}
+                                        className="text-sm font-medium text-[#222222] underline underline-offset-2 rounded px-2 py-1 hover:bg-slate-100 disabled:text-slate-300 disabled:no-underline disabled:hover:bg-transparent disabled:cursor-default"
+                                    >
+                                        Clear dates
+                                    </button>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setMobileStep(2)}
-                                    disabled={nights <= 0}
-                                    className="shrink-0 rounded-full bg-emerald-700 px-8 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-40"
-                                >
-                                    Next
-                                </button>
-                            </div>
+                                <div className="px-4 pt-1 pb-3 shrink-0">
+                                    <h2 className="text-2xl font-bold text-slate-900 leading-tight">{dateHeading}</h2>
+                                    <p className="text-sm text-slate-500 mt-1">Add your travel dates for exact pricing</p>
+                                </div>
+                                <div className="flex-1 min-h-0 overflow-hidden px-2">
+                                    {sheetCalendarEl}
+                                </div>
+                                <div className="border-t border-slate-200 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 flex items-center justify-between gap-4">
+                                    <div className="min-w-0">
+                                        {datesChosen ? (
+                                            <p className="text-sm text-slate-600">
+                                                {nights} night{nights > 1 ? 's' : ''} · <span className="font-bold text-slate-900">{barTotal}</span>
+                                            </p>
+                                        ) : (
+                                            <p className="text-sm text-slate-500">Add dates for prices</p>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setMobileStep(2)}
+                                        disabled={nights <= 0}
+                                        className="shrink-0 rounded-lg bg-emerald-700 px-8 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-40"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </>
                         ) : (
                             <>
-                                {errorBlock}
-                                {submitArea('-m')}
-                                {footnotes}
+                                <div className="flex items-center justify-between gap-2 px-2 h-14 border-b border-slate-200 shrink-0">
+                                    <button type="button" onClick={() => setMobileStep(1)} aria-label="Back" className="w-10 h-10 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100">
+                                        <ArrowLeft className="w-5 h-5" />
+                                    </button>
+                                    <span className="text-sm font-semibold text-slate-900">Review and book</span>
+                                    <button type="button" onClick={closePanel} aria-label="Close" className="w-10 h-10 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100">
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto px-4 py-4">
+                                    {guestsBlock}
+                                    {breakdownBlock}
+                                    {payPlanBlock}
+                                    {cancelBlock}
+                                    {damageBlock}
+                                </div>
+                                <div className="border-t border-slate-200 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
+                                    {errorBlock}
+                                    {submitArea('-m')}
+                                    {footnotes}
+                                </div>
                             </>
                         )}
                     </div>
-                </div>
+                </>
             )}
         </>
     );
