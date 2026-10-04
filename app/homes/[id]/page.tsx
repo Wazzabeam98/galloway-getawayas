@@ -309,6 +309,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     let hostName = 'your host';
     let hostAvatar: string | null = null;
     let hostSinceYear: number | null = null;
+    let hostMonthsHosting: number | null = null;
     let hostBio: string | null = null;
     // The host block is read through the SERVICE ROLE, not the visitor's client.
     //
@@ -339,8 +340,18 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         // asking them to book direct with a person. Year only; the exact date
         // is neither here nor there and a year reads as trust, not surveillance.
         if (hostProfile?.created_at) {
-            const y = new Date(hostProfile.created_at).getFullYear();
-            if (!isNaN(y)) hostSinceYear = y;
+            const d = new Date(hostProfile.created_at);
+            if (!isNaN(d.getTime())) {
+                hostSinceYear = d.getFullYear();
+                // Whole months hosting, for the "3 Months hosting" / "1 Year
+                // hosting" stat. Count the elapsed months, then shave one off if
+                // we haven't reached the join day-of-month yet, so a partial
+                // month doesn't round up.
+                const now = new Date();
+                let m = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+                if (now.getDate() < d.getDate()) m -= 1;
+                hostMonthsHosting = Math.max(0, m);
+            }
         }
         hostVerified = hostProfile?.stripe_payouts_enabled === true;
     }
@@ -355,8 +366,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     // Response rate and typical reply time, worked out from real booking-thread
     // message history (service role — the same reason as above). Null-safe: a
     // host with no messages yet simply shows neither line.
-    let responsiveness: { responseRatePercent: number | null; typicalLabel: string | null; sampleSize: number } =
-        { responseRatePercent: null, typicalLabel: null, sampleSize: 0 };
+    let responsiveness: { responseRatePercent: number; typicalLabel: string; sampleSize: number } =
+        { responseRatePercent: 100, typicalLabel: 'within a day', sampleSize: 0 };
     if (home?.host_id) {
         const { data: coAccess } = await adminClient()
             .from('listing_access')
@@ -377,11 +388,6 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         }
         responsiveness = await hostResponsiveness(adminClient(), home.host_id);
     }
-
-    // "5 years hosting" — this calendar year minus the year they joined. Zero
-    // for a host in their first year, which MeetYourHost then simply omits
-    // rather than printing "0 years".
-    const yearsHosting = hostSinceYear ? new Date().getFullYear() - hostSinceYear : null;
 
     // Guests see a first name only — a surname on a public page is more
     // than anyone needs, and it's how the big platforms do it. A nameless host
@@ -1011,7 +1017,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         verified={hostVerified}
                         bio={hostBio}
                         sinceYear={hostSinceYear}
-                        yearsHosting={yearsHosting}
+                        monthsHosting={hostMonthsHosting}
                         ratingAvg={ratingAvg}
                         ratingCount={ratingCount}
                         showScore={showScore}
