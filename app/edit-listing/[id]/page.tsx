@@ -861,7 +861,11 @@ export default function EditListing() {
                                         and bed totals are derived from them, so
                                         there are no separate counters for those. */}
                                     <div className="mt-6 border-t pt-6">
-                                        <SleepingArrangementsEditor rooms={sleeping} onChange={setSleeping} />
+                                        <SleepingArrangementsEditor
+                                            rooms={sleeping}
+                                            onChange={setSleeping}
+                                            photos={photos.filter((p) => p.kind === 'existing').map((p) => (p as { path: string }).path)}
+                                        />
                                     </div>
                                 </section>
 

@@ -154,20 +154,34 @@ async function main() {
     // Kirkcudbright town centre, approx (the public pin is derived from these).
     const LAT = 54.8380, LON = -4.0486;
 
+    // Give each room a photo from the listing's images (Airbnb's "Where you'll
+    // sleep" cards), cycling if there are more rooms than photos.
+    const sleepingWithPhotos = SLEEPING.map((r, i) => ({
+        ...r,
+        photo: images.length ? images[i % images.length] : null,
+    }));
+
     const [listing] = await db.insert('listings', [{
         host_id: hostId,
         title: TITLE,
         description:
             'A spacious four-bedroom townhouse in the very centre of Kirkcudbright, a short walk from the harbour, ' +
             'the galleries and the river. Comfortable rooms, a real fire for the colder months, and everything you ' +
-            'need for a week away — with the car left outside the door.',
+            'need for a week away — with the car left outside the door.\n\n' +
+            'The house sleeps up to seven across four bedrooms, with a sitting room that catches the evening sun and ' +
+            'a kitchen stocked with everything you need to cook for a crowd. The high street, the Tolbooth and a row ' +
+            'of good cafes and galleries are all a couple of minutes on foot, and the Tesco across the road saves a ' +
+            'trip when you have forgotten the milk.\n\n' +
+            'Kirkcudbright has been an artists’ town for a century, and it is an easy base for the whole of the ' +
+            'Solway coast — the beaches at Sandgreen and Brighouse Bay, the gardens at Threave, and the forest ' +
+            'and dark skies of the Galloway hills are all within a short drive.',
         location: 'Kirkcudbright, Dumfries and Galloway',
         latitude: LAT, longitude: LON, // approx_latitude/longitude are generated from these
         price_per_night: 160, max_guests: 7, bedrooms: 4, beds: 6, bathrooms: 1,
         property_type: 'Townhouses', privacy_type: 'Entire place',
         amenities: AMENITIES, images,
         damage_deposit: 150,
-        sleeping_arrangements: SLEEPING,
+        sleeping_arrangements: sleepingWithPhotos,
         neighbourhood: NEIGHBOURHOOD,
         check_in_method: 'Lockbox', check_in_time: '15:00', check_out_time: '11:00',
         cancellation_policy: 'Moderate',

@@ -11,7 +11,10 @@
 
 export type Bed = { type: string; count: number };
 export type RoomKind = 'bedroom' | 'common';
-export type Room = { label: string; kind: RoomKind; beds: Bed[] };
+// `photo` is one of the listing's own image paths, chosen by the host for this
+// room (Airbnb's "Where you'll sleep" shows a photo of each room). Null/absent
+// falls back to the bed icon.
+export type Room = { label: string; kind: RoomKind; beds: Bed[]; photo?: string | null };
 
 // The bed types a host can pick, in the order they're offered. Kept to the ones
 // that actually turn up in a Galloway cottage rather than Airbnb's full global
@@ -79,7 +82,8 @@ export function normaliseArrangements(raw: any): Room[] {
                   .filter((b: any) => b && typeof b.type === 'string' && typeof b.count === 'number' && b.count > 0)
                   .map((b: any) => ({ type: b.type, count: Math.min(16, Math.max(1, Math.floor(b.count))) }))
             : [];
-        out.push({ label, kind, beds });
+        const photo = typeof r.photo === 'string' && r.photo.trim() ? r.photo : null;
+        out.push({ label, kind, beds, photo });
     }
     return out;
 }

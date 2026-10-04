@@ -15,7 +15,6 @@ import { Minus, Plus } from 'lucide-react';
 import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
 import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
-import { plural } from '@/lib/plural';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
@@ -237,7 +236,7 @@ export default function BookingWidget({
         // because the URL change above is replaceState, which useSearchParams
         // doesn't see.
         const hasDates = !!(start && end && end > start);
-        window.dispatchEvent(new CustomEvent('gg:booking-dates', { detail: { hasDates } }));
+        window.dispatchEvent(new CustomEvent('gg:booking-dates', { detail: { hasDates, checkIn: hasDates ? start : null } }));
     }, [draftReady, dateRange.startDate, dateRange.endDate, adults, children, pets]);
     // The Guest Terms are accepted at a guest's FIRST stay checkout, not forced
     // on them the moment they make an account. `needsGuestTerms` comes from the
@@ -553,7 +552,6 @@ export default function BookingWidget({
                     <Counter label="Pets" sub="This place allows pets" value={pets} onChange={setPets} min={0} />
                 )}
             </div>
-            <p className="text-xs text-slate-400 -mt-3 mb-4">Max {plural(maxGuests, 'guest')}{petsAllowed ? ' (pets don\'t count toward this)' : ''}</p>
 
             {nights > 0 && (
                 <div className="border-t pt-3 mb-4 text-sm space-y-1.5">

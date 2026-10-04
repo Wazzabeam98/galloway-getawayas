@@ -24,8 +24,6 @@ import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
 import { areaForTownKey, areaBySlug, hasCopy } from '@/config/areas';
 import ListingCard, { CardListing } from '@/components/ListingCard';
 import PropertyMap from '@/components/PropertyMap';
-import HouseRules from '@/components/HouseRules';
-import ShowMoreText from '@/components/ShowMoreText';
 import AmenityList from '@/components/AmenityList';
 import MobileBookingBar from '@/components/MobileBookingBar';
 import NotTakingBookings from '@/components/NotTakingBookings';
@@ -33,8 +31,9 @@ import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import AreaExperiences from '@/components/AreaExperiences';
 import ReportListing from '@/components/ReportListing';
 import WhereYoullSleep from '@/components/WhereYoullSleep';
+import AboutThisPlace from '@/components/AboutThisPlace';
+import ThingsToKnow from '@/components/ThingsToKnow';
 import MeetYourHost from '@/components/MeetYourHost';
-import SafetyAndProperty from '@/components/SafetyAndProperty';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
 import { hostResponsiveness } from '@/lib/hostResponsiveness';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck } from 'lucide-react';
@@ -628,11 +627,6 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     </nav>
                 )}
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
-                {Array.isArray(home.amenities) && home.amenities.indexOf('Pets allowed') !== -1 && (
-                    <span className='mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800'>
-                        <PawPrint className='w-3.5 h-3.5' /> Pet friendly
-                    </span>
-                )}
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (
                         <>
@@ -800,6 +794,13 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
+                        {/* About this place — a few lines near the top (h2, not h1:
+                            the property name is the page's only h1), with a Show
+                            more that opens the full text in a dialog, as Airbnb
+                            does. The whole text is in the DOM for search; the clamp
+                            is CSS only. */}
+                        <AboutThisPlace text={home.description || ''} />
+
                         {/* Where you'll sleep — the beds in each room, before the
                             amenities, the order Airbnb uses. Renders nothing until
                             the host has filled in a room's beds. */}
@@ -811,14 +812,6 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 <AmenityList amenities={home.amenities} />
                             </div>
                         )}
-
-                        {/* h2, not h1. There is already an h1 at the top of the page
-                            carrying the property's name; a second one tells Google the
-                            page is about two things and it picks whichever it likes. */}
-                        <h2 className='mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0 font-semibold text-2xl'>
-                            About this place
-                        </h2>
-                        <ShowMoreText text={home.description || ''} />
 
                         {Array.isArray(home.nearby) && home.nearby.length > 0 && (
                             <div className='mt-8 pt-8 border-t'>
@@ -911,17 +904,26 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     column above, so the house rules and reviews run full-width
                     beneath rather than the card riding the page to the bottom. */}
                 <div>
-                    {/* House rules — same shared component and wording the
-                        guest sees again on their trip card after booking. */}
-                    <HouseRules listing={home} variant="page" />
-
-                    {/* Safety & property — sat under the house rules, as Airbnb
-                        does. The two alarms come from the amenities the host
-                        already ticks; the deposit from listings.damage_deposit. */}
-                    <SafetyAndProperty
+                    {/* Things to know — Airbnb's three columns (House rules,
+                        Safety & property, Cancellation policy), each with a
+                        "Show more" dialog. Replaces the old separate House rules
+                        and Safety & property sections. */}
+                    <ThingsToKnow
+                        checkInTime={home.check_in_time}
+                        checkOutTime={home.check_out_time}
+                        checkInMethod={home.check_in_method}
+                        maxGuests={home.max_guests || 1}
+                        petsAllowed={(home.amenities || []).includes('Pets allowed')}
+                        eventsAllowed={home.events_allowed === true}
+                        smokingAllowed={home.smoking_allowed === true}
+                        quietHoursEnabled={home.quiet_hours_enabled === true}
+                        quietHoursStart={home.quiet_hours_start}
+                        quietHoursEnd={home.quiet_hours_end}
+                        additionalRules={home.additional_rules}
                         smokeAlarm={(home.amenities || []).indexOf('Smoke alarm') !== -1}
                         carbonMonoxideAlarm={(home.amenities || []).indexOf('Carbon monoxide alarm') !== -1}
                         damageDeposit={home.damage_deposit || 0}
+                        cancellationPolicy={home.cancellation_policy}
                     />
 
                     <div id='reviews' className='scroll-mt-24'>

@@ -1,7 +1,8 @@
 'use client';
 
-import { Plus, Minus, Trash2, BedDouble } from 'lucide-react';
+import { Plus, Minus, Trash2, BedDouble, Check } from 'lucide-react';
 import { BED_TYPES, deriveCounts, type Room, type Bed } from '@/lib/sleeping';
+import { getImageUrl } from '@/lib/utils';
 
 // The host enters beds room by room, the way Airbnb's editor does. The flat
 // "bedrooms" and "beds" numbers are DERIVED from this (deriveCounts) and shown
@@ -27,9 +28,13 @@ function renumberBedrooms(rooms: Room[]): Room[] {
 export default function SleepingArrangementsEditor({
     rooms,
     onChange,
+    photos = [],
 }: {
     rooms: Room[];
     onChange: (rooms: Room[]) => void;
+    // The listing's own photos (image paths) the host can choose from for each
+    // room, Airbnb-style. Empty while a brand-new listing has none saved yet.
+    photos?: string[];
 }) {
     const counts = deriveCounts(rooms);
 
@@ -47,6 +52,9 @@ export default function SleepingArrangementsEditor({
 
     const setCommonLabel = (i: number, label: string) =>
         update(rooms.map((r, idx) => (idx === i ? { ...r, label } : r)));
+
+    const setRoomPhoto = (i: number, photo: string | null) =>
+        update(rooms.map((r, idx) => (idx === i ? { ...r, photo } : r)));
 
     const addBed = (roomIdx: number) => {
         // Default to a type not already in the room, so a second line is a new
@@ -172,6 +180,44 @@ export default function SleepingArrangementsEditor({
                         >
                             <Plus className="h-3.5 w-3.5" /> Add a bed
                         </button>
+
+                        {photos.length > 0 && (
+                            <div className="mt-4 border-t border-slate-100 pt-3">
+                                <div className="mb-2 text-xs font-semibold text-slate-700">
+                                    Room photo <span className="font-normal text-slate-400">(optional)</span>
+                                </div>
+                                <div className="flex gap-2 overflow-x-auto pb-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRoomPhoto(roomIdx, null)}
+                                        aria-label="No photo"
+                                        className={`flex h-14 w-14 flex-none items-center justify-center rounded-lg border-2 ${!room.photo ? 'border-slate-900 bg-slate-50' : 'border-slate-200'}`}
+                                    >
+                                        <BedDouble className="h-5 w-5 text-slate-400" />
+                                    </button>
+                                    {photos.map((p) => {
+                                        const on = room.photo === p;
+                                        return (
+                                            <button
+                                                key={p}
+                                                type="button"
+                                                onClick={() => setRoomPhoto(roomIdx, p)}
+                                                aria-label="Use this photo"
+                                                className={`relative h-14 w-14 flex-none overflow-hidden rounded-lg border-2 ${on ? 'border-slate-900' : 'border-slate-200'}`}
+                                            >
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img src={getImageUrl(p)} alt="" className="h-full w-full object-cover" />
+                                                {on && (
+                                                    <span className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                                        <Check className="h-4 w-4 text-white" />
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
