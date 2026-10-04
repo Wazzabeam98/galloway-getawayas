@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { formatGBP } from '@/lib/formatMoney';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
@@ -11,7 +12,8 @@ import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
 import { dateToKey, keyToDate, readBookingDraft, writeBookingDraft } from '@/lib/bookingDraftParams';
 import { toast } from 'react-toastify';
-import { Minus, Plus } from 'lucide-react';
+import { Minus, Plus, X, ArrowLeft } from 'lucide-react';
+import { ukDate } from '@/lib/dayKey';
 import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
 import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
@@ -100,6 +102,110 @@ function Counter({
     );
 }
 
+// The cottage calendar, lifted out so it can be rendered in two places at once:
+// the desktop booking card and the phone's full-screen panel. It is the SAME
+// react-date-range picker with the SAME shared handlers — only one is ever on
+// screen at a time (the desktop card is hidden below lg; the panel only mounts
+// when a phone opens it) — so the dates it reads and writes stay the single
+// source of truth. It owns the aria-labelling observer itself (the day nodes
+// are replaced on every month change, so a one-off pass would label the first
+// month and nothing after it).
+function CottageCalendar({
+    hasSelection, calendarKey, ranges, shownMonth, onChange, minDate, maxDate,
+    disabledDates, renderDay, onClear,
+}: {
+    hasSelection: boolean;
+    calendarKey: number;
+    ranges: Range[];
+    shownMonth: { current: Date | undefined };
+    onChange: (ranges: RangeKeyDict) => void;
+    minDate: Date;
+    maxDate?: Date;
+    disabledDates: Date[];
+    renderDay: (date: Date) => JSX.Element;
+    onClear: () => void;
+}) {
+    const calendarRef = useRef<HTMLDivElement>(null);
+
+    // react-date-range marks a disabled day with a class only: the `disabled`
+    // property is false and there is no aria-disabled, so a screen reader reads
+    // it as an ordinary button. The month heading ("October 2026") is plain
+    // text, so it is made a polite live region to announce the new month when
+    // the guest uses the arrows.
+    useEffect(() => {
+        const root = calendarRef.current;
+        if (!root) return;
+
+        const label = () => {
+            const heading = root.querySelector('.rdrMonthAndYearPickers');
+            if (heading && !heading.hasAttribute('aria-live')) heading.setAttribute('aria-live', 'polite');
+
+            root.querySelectorAll('.rdrDay').forEach((day) => {
+                const off = day.classList.contains('rdrDayDisabled');
+                if (off) {
+                    day.setAttribute('aria-disabled', 'true');
+                } else {
+                    day.removeAttribute('aria-disabled');
+                }
+            });
+        };
+
+        label();
+
+        const observer = new MutationObserver(label);
+        observer.observe(root, { childList: true, subtree: true });
+        return () => observer.disconnect();
+    }, [disabledDates]);
+
+    return (
+        <div ref={calendarRef} className={`cottage-cal border rounded-xl overflow-hidden mb-4${hasSelection ? '' : ' rdr-unselected'}`}>
+            <DateRangePicker
+                ariaLabels={MONTH_ARROW_LABELS}
+                // Remounted by Clear dates: the picker keeps its own note of
+                // which end it is choosing next, so after a check-in pick it
+                // would treat the guest's next tap as a check-out against an
+                // empty start. A fresh mount starts back at check-in, on the
+                // month the guest had navigated to (shownDate).
+                key={calendarKey}
+                ranges={ranges}
+                shownDate={shownMonth.current}
+                onShownDateChange={(d: Date) => { shownMonth.current = d; }}
+                onChange={onChange}
+                minDate={minDate}
+                maxDate={maxDate}
+                disabledDates={disabledDates}
+                months={1}
+                // Monday-first, like every calendar on the site (and the UK).
+                weekStartsOn={1}
+                direction="vertical"
+                rangeColors={['#047857']}
+                // "October 2026" as one heading between the arrows, as Airbnb
+                // has it, not a month dropdown beside a year one.
+                showMonthAndYearPickers={false}
+                showDateDisplay={false}
+                // The preset sidebar this library ships with offers "Today",
+                // "Yesterday" and "Last Week", which mean nothing when picking a
+                // stay. globals.css already hides it; these stop it being built
+                // at all, so its two unlabelled inputs are not in the page either.
+                staticRanges={[]}
+                inputRanges={[]}
+                dayContentRenderer={renderDay}
+            />
+            {/* Bottom right, as on Airbnb's calendar. */}
+            <div className="flex justify-end px-3 pb-3">
+                <button
+                    type="button"
+                    onClick={onClear}
+                    disabled={!hasSelection}
+                    className="text-sm font-medium text-[#222222] underline underline-offset-2 rounded px-1 py-0.5 hover:bg-slate-100 disabled:text-slate-300 disabled:no-underline disabled:hover:bg-transparent disabled:cursor-default"
+                >
+                    Clear dates
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export default function BookingWidget({
     listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
     weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0,
@@ -118,7 +224,6 @@ export default function BookingWidget({
     // Fixed for the life of the page: every night taken here, blocked by the
     // host, or taken on another platform, as the server read it before paint.
     const [disabledDates] = useState<Date[]>(() => blockedNights.map(dateFromKey));
-    const calendarRef = useRef<HTMLDivElement>(null);
 
     // Which nights are already taken, as 'yyyy-mm-dd', so the day renderer can
     // answer without comparing Date objects on every cell.
@@ -153,40 +258,6 @@ export default function BookingWidget({
         );
     };
 
-    // react-date-range marks a disabled day with a class only: the `disabled`
-    // property is false and there is no aria-disabled, so a screen reader
-    // reads it as an ordinary button. The month heading ("October 2026") is
-    // plain text, so it is made a polite live region to announce the new
-    // month when the guest uses the arrows.
-    //
-    // The observer is not decoration. The day nodes are replaced whenever
-    // the guest changes month, and a one-off pass after mount would label the
-    // first month and nothing after it.
-    useEffect(() => {
-        const root = calendarRef.current;
-        if (!root) return;
-
-        const label = () => {
-            const heading = root.querySelector('.rdrMonthAndYearPickers');
-            if (heading && !heading.hasAttribute('aria-live')) heading.setAttribute('aria-live', 'polite');
-
-            root.querySelectorAll('.rdrDay').forEach((day) => {
-                const off = day.classList.contains('rdrDayDisabled');
-                if (off) {
-                    day.setAttribute('aria-disabled', 'true');
-                } else {
-                    day.removeAttribute('aria-disabled');
-                }
-            });
-        };
-
-        label();
-
-        const observer = new MutationObserver(label);
-        observer.observe(root, { childList: true, subtree: true });
-        return () => observer.disconnect();
-    }, [disabledDates]);
-
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
     const [pets, setPets] = useState(0);
@@ -198,6 +269,31 @@ export default function BookingWidget({
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [requested, setRequested] = useState(false);
+
+    // The phone flow. Below lg the inline card is hidden; a fixed bottom bar
+    // carries the price and opens this full-screen panel, exactly as Airbnb's
+    // mobile listing does. Step 1 is the calendar, step 2 the guests, price and
+    // the request-to-book action. It is the SAME state and the SAME handlers as
+    // the desktop card — nothing about the money path knows which one is on
+    // screen. Portalled to the body (below), so no transformed ancestor can
+    // re-anchor the fixed positioning or clip the overlay.
+    const [mounted, setMounted] = useState(false);
+    const [mobileOpen, setMobileOpen] = useState(false);
+    const [mobileStep, setMobileStep] = useState<1 | 2>(1);
+    useEffect(() => setMounted(true), []);
+
+    // While the panel is up: lock the page behind it and let Escape close it.
+    useEffect(() => {
+        if (!mobileOpen) return;
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false); };
+        window.addEventListener('keydown', onKey);
+        return () => {
+            document.body.style.overflow = prevOverflow;
+            window.removeEventListener('keydown', onKey);
+        };
+    }, [mobileOpen]);
 
     // Dates and guests live in the listing's URL as well as here, so signing in
     // part-way through — which reloads the page, or goes to Google, or to an
@@ -490,208 +586,191 @@ export default function BookingWidget({
         );
     }
 
-    return (
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 lg:p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-            <div className="mb-4">
-                <span className="text-2xl font-bold text-slate-900">£{pricePerNight}</span>
-                <span className="text-slate-500"> / night</span>
-                {weekendPrice && <span className="text-xs text-slate-400 block mt-0.5">£{weekendPrice} on Fri &amp; Sat nights</span>}
-            </div>
+    // The booking card's sections, built once and placed in whichever shell is
+    // on screen — the desktop card, or the phone's full-screen panel. The price
+    // header is desktop-only; on a phone the price lives in the bottom bar and
+    // the panel footer.
+    const priceHeader = (
+        <div className="mb-4">
+            <span className="text-2xl font-bold text-slate-900">£{pricePerNight}</span>
+            <span className="text-slate-500"> / night</span>
+            {weekendPrice && <span className="text-xs text-slate-400 block mt-0.5">£{weekendPrice} on Fri &amp; Sat nights</span>}
+        </div>
+    );
 
-            <div ref={calendarRef} className={`cottage-cal border rounded-xl overflow-hidden mb-4${dateRange.startDate ? '' : ' rdr-unselected'}`}>
-                <DateRangePicker
-                    ariaLabels={MONTH_ARROW_LABELS}
-                    // Remounted by Clear dates: the picker keeps its own note of
-                    // which end it is choosing next, so after a check-in pick it
-                    // would treat the guest's next tap as a check-out against an
-                    // empty start. A fresh mount starts back at check-in, on
-                    // the month the guest had navigated to (shownDate).
-                    key={calendarKey}
-                    ranges={calendarRanges}
-                    shownDate={shownMonth.current}
-                    onShownDateChange={(d: Date) => { shownMonth.current = d; }}
-                    onChange={handleSelect}
-                    minDate={new Date()}
-                    maxDate={maxBookableDate}
-                    disabledDates={disabledDates}
-                    months={1}
-                    // Monday-first, like every calendar on the site (and the UK).
-                    weekStartsOn={1}
-                    direction="vertical"
-                    rangeColors={['#047857']}
-                    // "October 2026" as one heading between the arrows, as
-                    // Airbnb has it, not a month dropdown beside a year one.
-                    showMonthAndYearPickers={false}
-                    showDateDisplay={false}
-                    // The preset sidebar this library ships with offers
-                    // "Today", "Yesterday" and "Last Week", which mean nothing
-                    // when picking a stay. globals.css already hides it; these
-                    // stop it being built at all, so its two unlabelled inputs
-                    // are not in the page either.
-                    staticRanges={[]}
-                    inputRanges={[]}
-                    dayContentRenderer={renderDay}
-                />
-                {/* Bottom right, as on Airbnb's calendar. */}
-                <div className="flex justify-end px-3 pb-3">
-                    <button
-                        type="button"
-                        onClick={clearDates}
-                        disabled={!dateRange.startDate}
-                        className="text-sm font-medium text-[#222222] underline underline-offset-2 rounded px-1 py-0.5 hover:bg-slate-100 disabled:text-slate-300 disabled:no-underline disabled:hover:bg-transparent disabled:cursor-default"
-                    >
-                        Clear dates
-                    </button>
-                </div>
-            </div>
+    const calendarEl = (
+        <CottageCalendar
+            hasSelection={!!dateRange.startDate}
+            calendarKey={calendarKey}
+            ranges={calendarRanges}
+            shownMonth={shownMonth}
+            onChange={handleSelect}
+            minDate={new Date()}
+            maxDate={maxBookableDate}
+            disabledDates={disabledDates}
+            renderDay={renderDay}
+            onClear={clearDates}
+        />
+    );
 
-            <div className="mb-4 border rounded-xl px-3 divide-y">
-                <Counter label="Adults" sub="Ages 13+" value={adults} onChange={setAdults} min={1} />
-                <Counter label="Children" sub="Ages 2–12" value={children} onChange={setChildren} min={0} />
-                {petsAllowed && (
-                    <Counter label="Pets" sub="This place allows pets" value={pets} onChange={setPets} min={0} />
-                )}
-            </div>
+    const guestsBlock = (
+        <div className="mb-4 border rounded-xl px-3 divide-y">
+            <Counter label="Adults" sub="Ages 13+" value={adults} onChange={setAdults} min={1} />
+            <Counter label="Children" sub="Ages 2–12" value={children} onChange={setChildren} min={0} />
+            {petsAllowed && (
+                <Counter label="Pets" sub="This place allows pets" value={pets} onChange={setPets} min={0} />
+            )}
+        </div>
+    );
 
-            {nights > 0 && (
-                <div className="border-t pt-3 mb-4 text-sm space-y-1.5">
-                    <div className="flex justify-between text-slate-600">
-                        <span>{nights} night{nights > 1 ? 's' : ''}</span>
-                        <span>{formatGBP(nightsSubtotal)}</span>
-                    </div>
-                    {cleaningFeeTotal > 0 && (
-                        <div className="flex justify-between text-slate-600">
-                            <span>Cleaning fee</span>
-                            <span>{formatGBP(cleaningFeeTotal)}</span>
-                        </div>
-                    )}
-                    {petFeeTotal > 0 && (
-                        <div className="flex justify-between text-slate-600">
-                            <span>Pet fee</span>
-                            <span>{formatGBP(petFeeTotal)}</span>
-                        </div>
-                    )}
-                    {extraGuestTotal > 0 && (
-                        <div className="flex justify-between text-slate-600">
-                            <span>
-                                {(() => {
-                                    // Spelled out, so a guest can see where the
-                                    // number came from rather than wondering.
-                                    const extra = Math.max(0, totalGuests - Math.max(1, extraGuestAfter));
-                                    return (
-                                        extra +
-                                        (extra === 1 ? ' extra guest' : ' extra guests') +
-                                        ' × ' +
-                                        formatGBP(extraGuestFee) +
-                                        (extraGuestPeriod === 'stay' ? '' : ' × ' + nights + (nights === 1 ? ' night' : ' nights'))
-                                    );
-                                })()}
-                            </span>
-                            <span>{formatGBP(extraGuestTotal)}</span>
-                        </div>
-                    )}
-                    <div className="flex justify-between font-bold text-slate-900 mt-2 pt-2 border-t">
-                        <span>Total</span>
-                        <span>{formatGBP(total)}</span>
-                    </div>
+    const breakdownBlock = nights > 0 ? (
+        <div className="border-t pt-3 mb-4 text-sm space-y-1.5">
+            <div className="flex justify-between text-slate-600">
+                <span>{nights} night{nights > 1 ? 's' : ''}</span>
+                <span>{formatGBP(nightsSubtotal)}</span>
+            </div>
+            {cleaningFeeTotal > 0 && (
+                <div className="flex justify-between text-slate-600">
+                    <span>Cleaning fee</span>
+                    <span>{formatGBP(cleaningFeeTotal)}</span>
                 </div>
             )}
-
-            {nights > 0 && depositAvailable && (
-                <div className="mb-4 space-y-2">
-                    <button
-                        type="button"
-                        onClick={() => setPayPlan('deposit')}
-                        className={`w-full text-left border rounded-xl p-3 transition ${payPlan === 'deposit' ? 'border-emerald-700 bg-emerald-50/60 ring-1 ring-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
-                    >
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold text-slate-900">Book now, pay the rest later</span>
-                            <span className="text-sm font-bold text-slate-900">{formatGBP(depositNow)}</span>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1">
-                            {formatGBP(depositNow)} now &middot; {formatGBP(depositLater)} on {formatUk(balanceDate)}
-                        </p>
-                        <p className="text-xs text-slate-400 mt-0.5">No fees, no interest.</p>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setPayPlan('full')}
-                        className={`w-full text-left border rounded-xl p-3 transition ${payPlan === 'full' ? 'border-emerald-700 bg-emerald-50/60 ring-1 ring-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
-                    >
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold text-slate-900">Pay in full today</span>
-                            <span className="text-sm font-bold text-slate-900">{formatGBP(total)}</span>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1">Settled in one go, nothing more to pay.</p>
-                    </button>
+            {petFeeTotal > 0 && (
+                <div className="flex justify-between text-slate-600">
+                    <span>Pet fee</span>
+                    <span>{formatGBP(petFeeTotal)}</span>
                 </div>
             )}
-
-            {cancelInfo && (
-                <div
-                    className={`text-xs rounded-lg px-3 py-2 mb-4 border ${
-                        cancelInfo.kind === 'free'
-                            ? 'text-emerald-800 bg-emerald-50 border-emerald-100'
-                            : cancelInfo.kind === 'partial'
-                                ? 'text-amber-800 bg-amber-50 border-amber-100'
-                                : 'text-slate-600 bg-slate-50 border-slate-200'
-                    }`}
-                >
-                    <span className="font-semibold">{cancelInfo.headline}</span>
-                    <span className="block mt-0.5 opacity-90">{cancelInfo.detail}</span>
-                </div>
-            )}
-
-            {Number(damageDeposit) > 0 && nights > 0 && (
-                <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
-                    <span className="font-semibold text-slate-800">
-                        {formatGBP(damageDeposit)} damage deposit
+            {extraGuestTotal > 0 && (
+                <div className="flex justify-between text-slate-600">
+                    <span>
+                        {(() => {
+                            // Spelled out, so a guest can see where the
+                            // number came from rather than wondering.
+                            const extra = Math.max(0, totalGuests - Math.max(1, extraGuestAfter));
+                            return (
+                                extra +
+                                (extra === 1 ? ' extra guest' : ' extra guests') +
+                                ' × ' +
+                                formatGBP(extraGuestFee) +
+                                (extraGuestPeriod === 'stay' ? '' : ' × ' + nights + (nights === 1 ? ' night' : ' nights'))
+                            );
+                        })()}
                     </span>
-                    <span className="block mt-0.5">
-                        Collected by your host at the property and returned after your stay. It
-                        isn&apos;t part of the total above and we don&apos;t take it.
-                    </span>
+                    <span>{formatGBP(extraGuestTotal)}</span>
                 </div>
             )}
+            <div className="flex justify-between font-bold text-slate-900 mt-2 pt-2 border-t">
+                <span>Total</span>
+                <span>{formatGBP(total)}</span>
+            </div>
+        </div>
+    ) : null;
 
-            {error && <p className="text-red-600 text-xs mb-3">{error}</p>}
-
-            {loadingSession ? (
-                <div className="text-center text-sm text-slate-400 py-2">Loading...</div>
-            ) : !session ? (
-                <div>
-                    <p className="text-sm text-slate-500 mb-2 text-center">Log in or sign up to request this booking</p>
-                    <LoginModel variant="button" label="Continue" />
+    const payPlanBlock = nights > 0 && depositAvailable ? (
+        <div className="mb-4 space-y-2">
+            <button
+                type="button"
+                onClick={() => setPayPlan('deposit')}
+                className={`w-full text-left border rounded-xl p-3 transition ${payPlan === 'deposit' ? 'border-emerald-700 bg-emerald-50/60 ring-1 ring-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
+            >
+                <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-900">Book now, pay the rest later</span>
+                    <span className="text-sm font-bold text-slate-900">{formatGBP(depositNow)}</span>
                 </div>
-            ) : (
-                <>
-                {needsGuestTerms && (
-                    <div className="mb-3">
-                        <AgreementTick
-                            doc="guest"
-                            id="booking-agree-guest"
-                            checked={guestTicked}
-                            onChange={(v) => { setGuestTicked(v); setGuestTermsError(''); }}
-                            error={guestTermsError}
-                            open="tab"
-                        />
-                    </div>
-                )}
-                <button
-                    type="button"
-                    onClick={handleRequest}
-                    disabled={submitting || nights <= 0 || (needsGuestTerms && !guestTicked)}
-                    className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
-                >
-                    {submitting
-                        ? 'Taking you to payment...'
-                        : nights > 0
-                            ? 'Secure your dates for ' + formatGBP(dueNow)
-                            : (instantBook ? 'Reserve' : 'Request to book')}
-                </button>
-                </>
+                <p className="text-xs text-slate-500 mt-1">
+                    {formatGBP(depositNow)} now &middot; {formatGBP(depositLater)} on {formatUk(balanceDate)}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">No fees, no interest.</p>
+            </button>
+
+            <button
+                type="button"
+                onClick={() => setPayPlan('full')}
+                className={`w-full text-left border rounded-xl p-3 transition ${payPlan === 'full' ? 'border-emerald-700 bg-emerald-50/60 ring-1 ring-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
+            >
+                <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-900">Pay in full today</span>
+                    <span className="text-sm font-bold text-slate-900">{formatGBP(total)}</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Settled in one go, nothing more to pay.</p>
+            </button>
+        </div>
+    ) : null;
+
+    const cancelBlock = cancelInfo ? (
+        <div
+            className={`text-xs rounded-lg px-3 py-2 mb-4 border ${
+                cancelInfo.kind === 'free'
+                    ? 'text-emerald-800 bg-emerald-50 border-emerald-100'
+                    : cancelInfo.kind === 'partial'
+                        ? 'text-amber-800 bg-amber-50 border-amber-100'
+                        : 'text-slate-600 bg-slate-50 border-slate-200'
+            }`}
+        >
+            <span className="font-semibold">{cancelInfo.headline}</span>
+            <span className="block mt-0.5 opacity-90">{cancelInfo.detail}</span>
+        </div>
+    ) : null;
+
+    const damageBlock = Number(damageDeposit) > 0 && nights > 0 ? (
+        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+            <span className="font-semibold text-slate-800">
+                {formatGBP(damageDeposit)} damage deposit
+            </span>
+            <span className="block mt-0.5">
+                Collected by your host at the property and returned after your stay. It
+                isn&apos;t part of the total above and we don&apos;t take it.
+            </span>
+        </div>
+    ) : null;
+
+    const errorBlock = error ? <p className="text-red-600 text-xs mb-3">{error}</p> : null;
+
+    // The terms tick and the request-to-book action. The tick's id is suffixed
+    // so the desktop card and the phone panel — both mounted on a phone, one of
+    // them hidden — never share a DOM id, which would send a tap on the visible
+    // label to the hidden checkbox.
+    const submitArea = (idSuffix: string) => (
+        loadingSession ? (
+            <div className="text-center text-sm text-slate-400 py-2">Loading...</div>
+        ) : !session ? (
+            <div>
+                <p className="text-sm text-slate-500 mb-2 text-center">Log in or sign up to request this booking</p>
+                <LoginModel variant="button" label="Continue" />
+            </div>
+        ) : (
+            <>
+            {needsGuestTerms && (
+                <div className="mb-3">
+                    <AgreementTick
+                        doc="guest"
+                        id={`booking-agree-guest${idSuffix}`}
+                        checked={guestTicked}
+                        onChange={(v) => { setGuestTicked(v); setGuestTermsError(''); }}
+                        error={guestTermsError}
+                        open="tab"
+                    />
+                </div>
             )}
+            <button
+                type="button"
+                onClick={handleRequest}
+                disabled={submitting || nights <= 0 || (needsGuestTerms && !guestTicked)}
+                className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
+            >
+                {submitting
+                    ? 'Taking you to payment...'
+                    : nights > 0
+                        ? 'Secure your dates for ' + formatGBP(dueNow)
+                        : (instantBook ? 'Reserve' : 'Request to book')}
+            </button>
+            </>
+        )
+    );
+
+    const footnotes = (
+        <>
             <p className="text-xs text-slate-400 text-center mt-3">
                 {instantBook
                     ? 'Payment is taken securely by Stripe. Your dates are confirmed straight away.'
@@ -701,6 +780,144 @@ export default function BookingWidget({
                 The stay is provided by the host. Galloway Getaways is acting as the host&apos;s agent and
                 takes payment on their behalf.
             </p>
-        </div>
+        </>
+    );
+
+    // On a phone the bottom bar shows dates and the total once they are chosen,
+    // and its button becomes the request-to-book action (reopening at step 2).
+    const datesChosen = nights > 0;
+    const reserveLabel = instantBook ? 'Reserve' : 'Request to book';
+    const checkInKey = dateToKey(dateRange.startDate);
+    const checkOutKey = dateToKey(dateRange.endDate);
+    const closePanel = () => setMobileOpen(false);
+
+    // The phone bottom bar and the full-screen panel. Portalled to the body so
+    // no transformed or overflow-clipped ancestor can re-anchor the fixed
+    // positioning. lg:hidden keeps both off the desktop entirely.
+    const mobileUi = (
+        <>
+            <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
+                <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                        {datesChosen ? (
+                            <>
+                                <p className="text-base font-bold text-slate-900 leading-tight">
+                                    {formatGBP(total)}<span className="text-sm font-normal text-slate-500"> total</span>
+                                </p>
+                                <p className="text-xs text-slate-500 underline underline-offset-2 truncate">
+                                    {ukDate(checkInKey)} – {ukDate(checkOutKey)}
+                                </p>
+                            </>
+                        ) : (
+                            <p className="leading-tight">
+                                <span className="text-lg font-bold text-slate-900">£{pricePerNight}</span>
+                                <span className="text-sm text-slate-500"> / night</span>
+                            </p>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => { setMobileStep(datesChosen ? 2 : 1); setMobileOpen(true); }}
+                        className="shrink-0 rounded-full bg-emerald-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                    >
+                        {datesChosen ? reserveLabel : 'Check availability'}
+                    </button>
+                </div>
+            </div>
+
+            {mobileOpen && (
+                <div role="dialog" aria-modal="true" aria-label="Book your stay" className="lg:hidden fixed inset-0 z-50 bg-white flex flex-col">
+                    <div className="flex items-center justify-between gap-2 px-2 h-14 border-b border-slate-200 shrink-0">
+                        {mobileStep === 1 ? (
+                            <button type="button" onClick={closePanel} aria-label="Close" className="w-10 h-10 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100">
+                                <X className="w-5 h-5" />
+                            </button>
+                        ) : (
+                            <button type="button" onClick={() => setMobileStep(1)} aria-label="Back" className="w-10 h-10 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100">
+                                <ArrowLeft className="w-5 h-5" />
+                            </button>
+                        )}
+                        <span className="text-sm font-semibold text-slate-900">
+                            {mobileStep === 1 ? 'Select dates' : 'Review and book'}
+                        </span>
+                        {mobileStep === 1 ? (
+                            <span className="w-10 h-10" aria-hidden="true" />
+                        ) : (
+                            <button type="button" onClick={closePanel} aria-label="Close" className="w-10 h-10 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100">
+                                <X className="w-5 h-5" />
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto px-4 py-4">
+                        {mobileStep === 1 ? (
+                            <>
+                                {priceHeader}
+                                {calendarEl}
+                            </>
+                        ) : (
+                            <>
+                                {guestsBlock}
+                                {breakdownBlock}
+                                {payPlanBlock}
+                                {cancelBlock}
+                                {damageBlock}
+                            </>
+                        )}
+                    </div>
+
+                    <div className="border-t border-slate-200 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
+                        {mobileStep === 1 ? (
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="min-w-0">
+                                    {datesChosen ? (
+                                        <p className="text-sm text-slate-600">
+                                            {nights} night{nights > 1 ? 's' : ''} · <span className="font-bold text-slate-900">{formatGBP(total)}</span>
+                                        </p>
+                                    ) : (
+                                        <p className="text-sm text-slate-500">Add dates for prices</p>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setMobileStep(2)}
+                                    disabled={nights <= 0}
+                                    className="shrink-0 rounded-full bg-emerald-700 px-8 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-40"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                {errorBlock}
+                                {submitArea('-m')}
+                                {footnotes}
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+        </>
+    );
+
+    return (
+        <>
+            {/* The inline card is desktop only. On a phone it is hidden and the
+                portalled bottom bar + panel below take its place, Airbnb-style. */}
+            <div className="hidden lg:block bg-white border border-slate-200 rounded-2xl p-4 lg:p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                {priceHeader}
+                {calendarEl}
+                {guestsBlock}
+                {breakdownBlock}
+                {payPlanBlock}
+                {cancelBlock}
+                {damageBlock}
+                {errorBlock}
+                {submitArea('')}
+                {footnotes}
+            </div>
+
+            {mounted && createPortal(mobileUi, document.body)}
+        </>
     );
 }

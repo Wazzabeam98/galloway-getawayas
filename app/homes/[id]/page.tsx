@@ -25,7 +25,6 @@ import { areaForTownKey, areaBySlug, hasCopy } from '@/config/areas';
 import ListingCard, { CardListing } from '@/components/ListingCard';
 import PropertyMap from '@/components/PropertyMap';
 import AmenityList from '@/components/AmenityList';
-import MobileBookingBar from '@/components/MobileBookingBar';
 import NotTakingBookings from '@/components/NotTakingBookings';
 import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import AreaExperiences from '@/components/AreaExperiences';
@@ -1062,13 +1061,6 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 intro={`Local chefs, bakers, saunas and guides who come to ${area?.name || 'this area'} — add one to your stay.`}
             />
 
-            {bookable && (
-                <MobileBookingBar
-                    pricePerNight={home.price_per_night}
-                    label={home.instant_book === true ? 'Reserve' : 'Request to book'}
-                    targetId='book'
-                />
-            )}
         </div>
         </div>
     )

@@ -15,7 +15,8 @@ import { Star } from 'lucide-react';
 // event (the card writes dates to the URL with replaceState, which
 // useSearchParams can't see).
 //
-// Desktop only (hidden lg:block): a phone keeps the bottom MobileBookingBar.
+// Desktop only (hidden lg:block): a phone keeps the bottom booking bar and the
+// full-screen panel that BookingWidget renders for small screens.
 const BAR_H = 56; // h-14
 
 export default function ListingStickyHeader({
