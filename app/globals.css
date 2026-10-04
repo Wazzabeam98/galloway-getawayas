@@ -866,3 +866,10 @@ body {
 @media (pointer: coarse) {
   .price-slider { --thumb: 44px; }
 }
+
+/* Listing page: the main nav scrolls away so the in-page section bar
+   (ListingStickyHeader) can take its place at the very top. ChromeGate marks the
+   nav's wrapper with data-chrome="listing" on /homes/*. */
+[data-chrome="listing"] > nav {
+    position: static;
+}

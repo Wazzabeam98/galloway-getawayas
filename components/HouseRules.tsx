@@ -69,14 +69,31 @@ export default function HouseRules({
         ? <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-900"><ShieldAlert className="h-5 w-5 text-slate-500" /> House rules</h2>
         : <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><ShieldAlert className="h-3.5 w-3.5" /> Rules and instructions</div>;
 
-    // ---- Listing page: the existing inline expand, unchanged ----
+    // ---- Listing page: the existing inline expand ----
     if (variant === 'page') {
+        // Check-in/checkout lead the list as their own rows, worded Airbnb's way
+        // ("Check-in after 3:00 pm", "Checkout before 11:00 am") — this is where
+        // the times live now that the separate block at the top of the page is
+        // gone. Neutral rows, so they carry a clock rather than a tick/cross.
+        const pageRules: typeof v.rules = [
+            { label: `Check-in after ${v.checkInAfter}`, allowed: true, neutral: true },
+            { label: `Checkout before ${v.checkoutBefore}`, allowed: true, neutral: true },
+            ...v.rules,
+        ];
+        const pagePreview = pageRules.slice(0, PREVIEW);
+        const pageExtra = v.additional ? (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Additional rules</div>
+                <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{v.additional}</p>
+            </div>
+        ) : null;
+
         const panel = (
             <div className="mt-4 border-t border-slate-100 pt-4">
                 <ul className="space-y-2.5">
-                    {v.rules.map((r) => <RuleRow key={r.label} {...r} />)}
+                    {pageRules.map((r) => <RuleRow key={r.label} {...r} />)}
                 </ul>
-                {timesAndExtra}
+                {pageExtra}
                 <button type="button" onClick={() => setOpen(false)} className="mt-4 text-sm font-medium text-slate-600 underline hover:text-slate-800">Show less</button>
             </div>
         );
@@ -86,7 +103,7 @@ export default function HouseRules({
                 {open ? panel : (
                     <>
                         <ul className="mt-4 space-y-2.5">
-                            {preview.map((r) => <RuleRow key={r.label} {...r} />)}
+                            {pagePreview.map((r) => <RuleRow key={r.label} {...r} />)}
                         </ul>
                         <button type="button" onClick={() => setOpen(true)} className="mt-3 text-sm font-medium text-slate-600 underline hover:text-slate-800">Show more</button>
                     </>

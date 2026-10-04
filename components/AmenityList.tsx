@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { amenityIcon } from '@/lib/amenityIcons';
+import { groupAmenities } from '@/lib/amenityGroups';
 
 // What a guest actually decides on, best first. A hot tub or a dog-friendly
 // cottage is the reason someone books; a smoke alarm is not, however much it
@@ -115,11 +116,18 @@ export default function AmenityList({ amenities }: { amenities: string[] }) {
                             </button>
                         </div>
                         <div className="px-6 pb-6 pt-1">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10">
-                                {sorted.map((a) => (
-                                    <Row key={a} name={a} />
-                                ))}
-                            </div>
+                            {/* Grouped by category — Bathroom, Bedroom and laundry,
+                                … — the way Airbnb's full list reads. */}
+                            {groupAmenities(amenities).map((group) => (
+                                <div key={group.label} className="mt-6 first:mt-2">
+                                    <h4 className="text-base font-semibold text-slate-900">{group.label}</h4>
+                                    <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-10">
+                                        {group.items.map((a) => (
+                                            <Row key={a} name={a} />
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>

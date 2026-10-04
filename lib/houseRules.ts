@@ -34,11 +34,29 @@ export interface HouseRulesView {
     checkInFrom: string;
     checkInUntil: string | null;
     checkoutBy: string;
+    // Airbnb's wording for the listing's House rules: "Check-in after 3:00 pm",
+    // "Checkout before 11:00 am" — always with the minutes and a space, which is
+    // how a time of day reads in a rule (formatTime drops ":00" for the compact
+    // "3pm" the summary lines use).
+    checkInAfter: string;
+    checkoutBefore: string;
     additional: string | null;
 }
 
 const DEFAULT_IN = '15:00:00';
 const DEFAULT_OUT = '11:00:00';
+
+// "3:00 pm", "11:00 am" — minutes always shown, a space before am/pm.
+function formatClock(value: string): string {
+    const parts = String(value).split(':');
+    const hour = Number(parts[0]);
+    const minute = Number(parts[1] || 0);
+    if (isNaN(hour) || isNaN(minute)) return '';
+    const suffix = hour < 12 ? 'am' : 'pm';
+    let display = hour % 12;
+    if (display === 0) display = 12;
+    return display + ':' + String(minute).padStart(2, '0') + ' ' + suffix;
+}
 
 export function houseRulesView(l: HouseRulesInput | null | undefined): HouseRulesView {
     const x = l || {};
@@ -69,6 +87,8 @@ export function houseRulesView(l: HouseRulesInput | null | undefined): HouseRule
         checkInFrom: formatTime(inFrom),
         checkInUntil: inUntil ? formatTime(inUntil) : null,
         checkoutBy: formatTime(outBy),
+        checkInAfter: formatClock(inFrom),
+        checkoutBefore: formatClock(outBy),
         additional,
     };
 }

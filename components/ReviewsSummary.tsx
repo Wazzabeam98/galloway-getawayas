@@ -68,6 +68,14 @@ export default function ReviewsSummary({ reviews, ratingAvg, ratingCount, catego
     const ratings = reviews.map((r) => Number(r.rating));
     const guestFavourite = isGuestFavourite(ratings);
 
+    // The 5-to-1 star breakdown on the left, Airbnb's shape: how many reviews
+    // gave each whole-star score, as a proportion of all of them.
+    const total = reviews.length;
+    const distribution = [5, 4, 3, 2, 1].map((star) => ({
+        star,
+        pct: total ? (ratings.filter((r) => Math.round(r) === star).length / total) * 100 : 0,
+    }));
+
     // The badge can sit above an average well below the threshold, because a
     // young listing's worst review is set aside when judging it. Said plainly,
     // that reads as generous; left unsaid, it reads as broken.
@@ -100,32 +108,37 @@ export default function ReviewsSummary({ reviews, ratingAvg, ratingCount, catego
                 <p className="text-xs text-slate-500 mt-3 leading-relaxed">{badgeExplanation}</p>
             )}
 
-            {categories.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-4 mt-6 pt-5 border-t">
+            {/* Airbnb's layout: the overall rating with its 5-to-1 bars, then the
+                six category scores in a row with thin dividers, scrolling
+                sideways on a phone rather than wrapping. */}
+            <div className="mt-6 pt-5 border-t overflow-x-auto">
+                <div className="flex min-w-max divide-x divide-slate-200">
+                    <div className="pr-6 min-w-[220px]">
+                        <div className="text-sm font-semibold text-slate-900">Overall rating</div>
+                        <div className="mt-2.5 space-y-1.5">
+                            {distribution.map(({ star, pct }) => (
+                                <div key={star} className="flex items-center gap-2">
+                                    <span className="w-2 text-xs text-slate-600 tabular-nums">{star}</span>
+                                    <div className="h-1 flex-1 bg-slate-200 rounded-full overflow-hidden">
+                                        <div className="h-full bg-slate-900 rounded-full" style={{ width: `${pct}%` }} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
                     {categories.map(({ key, avg }) => {
                         const Icon = CATEGORY_ICONS[key];
                         return (
-                            <div key={key}>
-                                <div className="flex items-center justify-between gap-2">
-                                    <span className="flex items-center gap-1.5 text-sm text-slate-600 truncate">
-                                        <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                        {CATEGORY_LABELS[key]}
-                                    </span>
-                                    <span className="text-sm font-semibold text-slate-900 tabular-nums">
-                                        {avg.toFixed(1)}
-                                    </span>
-                                </div>
-                                <div className="h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
-                                    <div
-                                        className="h-full bg-emerald-700 rounded-full"
-                                        style={{ width: `${(avg / 5) * 100}%` }}
-                                    />
-                                </div>
+                            <div key={key} className="flex min-w-[116px] flex-col justify-between gap-3 px-6">
+                                <div className="text-sm font-medium text-slate-900">{CATEGORY_LABELS[key]}</div>
+                                <div className="text-lg font-semibold text-slate-900 tabular-nums">{avg.toFixed(1)}</div>
+                                <Icon className="h-6 w-6 text-slate-700" strokeWidth={1.5} />
                             </div>
                         );
                     })}
                 </div>
-            )}
+            </div>
         </div>
     );
 }

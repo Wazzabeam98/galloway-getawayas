@@ -7,7 +7,7 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { capitializeFirst, getImageUrl, formatTime, firstName } from '@/lib/utils';
+import { capitializeFirst, getImageUrl, firstName } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import { guestCalendar } from '@/lib/availability';
 import { AGREEMENTS } from '@/lib/agreements';
@@ -37,7 +37,7 @@ import MeetYourHost from '@/components/MeetYourHost';
 import SafetyAndProperty from '@/components/SafetyAndProperty';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
 import { hostResponsiveness } from '@/lib/hostResponsiveness';
-import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Clock } from 'lucide-react';
+import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
 // a sentence: "Entire townhouse in ..." rather than "Entire Townhouses".
@@ -602,6 +602,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 links={stickyLinks}
                 pricePerNight={home.price_per_night}
                 reserveLabel={reserveLabel}
+                showScore={showScore}
+                ratingAvg={ratingAvg}
+                ratingCount={ratingCount}
             />
         )}
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 pb-24 lg:pb-0'>
@@ -779,32 +782,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         </div>
 
-                        {(home.check_in_time || home.check_out_time) && (
-                            <div className='mt-8 pt-8 lg:mt-5 lg:pt-5 border-t'>
-                                <div className='flex items-start gap-4'>
-                                    <Clock className='w-6 h-6 text-slate-700 flex-shrink-0 mt-0.5' />
-                                    <div>
-                                        <div className='font-semibold text-slate-900'>
-                                            Check-in and checkout
-                                        </div>
-                                        <p className='text-sm text-slate-600 mt-0.5'>
-                                            {formatTime(home.check_in_time) && (
-                                                <>
-                                                    Arrive from {formatTime(home.check_in_time)}
-                                                    {formatTime(home.check_in_end_time)
-                                                        ? ' until ' + formatTime(home.check_in_end_time)
-                                                        : ''}
-                                                    .{' '}
-                                                </>
-                                            )}
-                                            {formatTime(home.check_out_time) && (
-                                                <>Leave by {formatTime(home.check_out_time)} on your last morning.</>
-                                            )}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                        {/* The old "Check-in and checkout" block has moved into
+                            House rules ("Check-in after 3:00 pm" / "Checkout
+                            before 11:00 am"), the way Airbnb shows the times. */}
 
                         {highlights.length > 0 && (
                             <div className='mt-8 pt-8 lg:mt-5 lg:pt-5 border-t space-y-4'>
@@ -919,6 +899,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         />}
                     </div>
                 </div>
+
+                {/* Where the sticky booking card releases. Once this scrolls up
+                    past the section bar the card is out of view, and the bar
+                    reveals the price and the Reserve button on its right
+                    (ListingStickyHeader watches it). */}
+                <div id="bookcard-sentinel" aria-hidden="true" />
 
                 {/* Full-width, below the two-column region: the sticky booking
                     card has released level with the bottom of the map in the

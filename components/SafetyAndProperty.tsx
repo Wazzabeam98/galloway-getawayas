@@ -62,7 +62,7 @@ export default function SafetyAndProperty({
                         icon={Wallet}
                         label="Damage deposit"
                         present
-                        detail={`${formatGBP(deposit)} — held and collected by the host, not charged by Galloway Getaways.`}
+                        detail={`${formatGBP(deposit)} — held and collected by the host.`}
                     />
                 )}
             </ul>
