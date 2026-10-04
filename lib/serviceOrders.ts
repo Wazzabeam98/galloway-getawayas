@@ -228,6 +228,18 @@ export function isLiveToGuests(provider: any): boolean {
         && !provider.owner_paused && !provider.admin_hidden_at;
 }
 
+// Whether a guest may CHANGE a booking they already hold — move it to another
+// session, add places, change the count. Deliberately NOT isLiveToGuests: a
+// take-down (the provider's own pause, or ours) closes the shop window to NEW
+// orders only. Like a confirmed reservation on an unlisted Airbnb listing, the
+// booking stands and can still be managed. What still stops a change is the
+// provider no longer being approved (declined, or their account deactivated)
+// or Stripe being unable to pay them.
+export function servesExistingBookings(provider: any): boolean {
+    if (!provider) return false;
+    return provider.status === 'approved' && provider.stripe_payouts_enabled === true;
+}
+
 // A provider who has been approved but has not finished Stripe. Not a guest's
 // problem — they never see them — but the provider's own dashboard says so.
 export function isAwaitingConnect(provider: any): boolean {
