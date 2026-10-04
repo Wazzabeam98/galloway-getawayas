@@ -89,7 +89,7 @@ export default function TradeDirectory() {
             // A trade that has taken their listing down (owner_paused), or that
             // we have (admin_hidden_at), never comes back from this read: those
             // columns are private to the browser, so the database's public
-            // SELECT policy drops the rows itself (20261004160000) — the same
+            // SELECT policy drops the rows itself (20261004115711) — the same
             // rule visibleInDirectory applies on the server.
             const { data: provRows } = await supabase
                 .from('service_providers')

@@ -225,7 +225,7 @@ export function remindersDue(provider: any, now?: Date): Reminder[] {
 // The two take-downs close the window too: owner_paused (the trade's own
 // "Take it down") and admin_hidden_at (ours). Same rule as isLiveToGuests for
 // experiences, and the same rule the public SELECT policy keeps in the database
-// (20261004160000) — the browser-read directory can't see either column, so the
+// (20261004115711) — the browser-read directory can't see either column, so the
 // policy is what hides them there; this is what the service-role reads (the
 // enquiry route, the profile page) check, and they must select both columns.
 export function visibleInDirectory(provider: any): boolean {
