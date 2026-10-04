@@ -21,6 +21,9 @@ const SERVER_ONLY = [
     'admin_anonymise_account(uuid)',
     'account_deactivation_blockers(uuid)',
 ];
+// What 20261004130329 itself did. The live grants are now held by
+// tests/function-grants-guard.test.ts — 20261004133346 later revoked
+// my_account_deactivation_blockers from authenticated too (it has no caller).
 const SIGNED_IN_ONLY = [
     'deactivate_own_account()',
     'anonymise_own_account()',
