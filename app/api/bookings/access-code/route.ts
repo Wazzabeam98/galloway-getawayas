@@ -137,6 +137,7 @@ export async function POST(request: Request) {
                     recipient_id: g.booking.guest_id,
                     body: 'Quick update for ' + where + ': the door code has changed to ' + effective
                         + '. Please use this one when you arrive — it replaces the code in your earlier check-in message.',
+                    automated: true, // a system-composed code-changed notice
                 });
                 notified = true;
             }

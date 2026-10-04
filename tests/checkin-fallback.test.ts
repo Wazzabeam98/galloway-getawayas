@@ -108,6 +108,7 @@ test('a host with NO templates still sends the guest the address and time', asyn
     assert.match(messages[0].body, /3 Castle St, Kirkcudbright/);
     assert.match(messages[0].body, /after 3pm/);
     assert.equal(messages[0].recipient_id, 'g1');
+    assert.equal(messages[0].automated, true, 'the check-in floor is flagged automated');
 });
 
 test('the fallback stays quiet when the host already covers the listing', async () => {

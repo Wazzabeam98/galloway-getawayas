@@ -164,6 +164,7 @@ async function checkInFallbackPass(
                 sender_id: booking.host_id,
                 recipient_id: booking.guest_id,
                 body,
+                automated: true, // the check-in floor, sent by the system
             });
 
             if (messageError) {
@@ -501,6 +502,7 @@ export async function GET(request: Request) {
                     sender_id: booking.host_id,
                     recipient_id: booking.guest_id,
                     body: body,
+                    automated: true, // a scheduled template send, not typed by the host
                 });
 
                 if (messageError) {

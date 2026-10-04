@@ -28,20 +28,16 @@
 //     A thread that opens with a host-side message (an automated check-in send, a
 //     host reaching out first) or where the guest is only replying is not an
 //     inquiry that "needed a reply", so it isn't counted;
-//   - it is "answered" if ANYONE on the host side wrote after that first guest
-//     message;
-//   - reply time = first host-side message after the first guest message, minus
-//     that guest message.
+//   - it is "answered" only if a PERSON on the host side wrote after that first
+//     guest message. An automated send — a scheduled template, a check-in
+//     message, a canned notice — is flagged `automated` on the row and never
+//     counts as a reply, the way Airbnb doesn't count its own auto-messages;
+//   - reply time = first such human host-side message after the first guest
+//     message, minus that guest message.
 // Response rate = answered / received, and 100% when nothing real has been
 // received — so it only ever DROPS below 100% when a real guest's opening message
-// to the host side went unanswered. Typical time = median reply time, defaulting
-// to "within a day" until real replies build up.
-//
-// One honest limitation: automated check-in sends are written as the host (there
-// is no flag on `messages` to mark them), so an auto-send that lands after a
-// guest's inquiry is counted as a reply. It can only ever flatter a rate, never
-// cause the 0% this fixes; marking automated sends so they're excluded as replies
-// wants a `messages.automated` column and is left as a follow-up.
+// to the host side went unanswered by a person. Typical time = median reply time,
+// defaulting to "within a day" until real replies build up.
 
 type Admin = any;
 
@@ -122,18 +118,21 @@ export async function hostResponsiveness(admin: Admin, hostId: string): Promise<
     const bookingIds = guestBookings.map((b) => b.id);
     const { data: messages } = await admin
         .from('messages')
-        .select('booking_id, sender_id, created_at')
+        .select('booking_id, sender_id, created_at, automated')
         .in('booking_id', bookingIds)
         .order('created_at', { ascending: true });
 
-    // Group messages by thread, already in time order from the query.
-    const byThread = new Map<string, { sender: string; at: number }[]>();
+    // Group messages by thread, already in time order from the query. We keep
+    // automated sends here, because an automated message BEFORE the guest wrote
+    // still means the guest was only replying (not opening an inquiry); they just
+    // never count as a reply (below).
+    const byThread = new Map<string, { sender: string; at: number; automated: boolean }[]>();
     for (const m of messages || []) {
         if (!m?.booking_id) continue;
         const at = new Date(m.created_at).getTime();
         if (isNaN(at)) continue;
         if (!byThread.has(m.booking_id)) byThread.set(m.booking_id, []);
-        byThread.get(m.booking_id)!.push({ sender: m.sender_id, at });
+        byThread.get(m.booking_id)!.push({ sender: m.sender_id, at, automated: m.automated === true });
     }
 
     let counted = 0;
@@ -144,16 +143,22 @@ export async function hostResponsiveness(admin: Admin, hostId: string): Promise<
         const thread = byThread.get(b.id);
         if (!thread || thread.length === 0) continue;
 
-        // Guest-initiated only: the first message in the thread must be the
-        // guest's. A thread that opens with a host-side message, or where the
-        // guest is only replying, is not an inquiry that needed a reply.
+        // Guest-initiated only: the first message in the thread must be a real,
+        // non-automated message from the guest. A thread that opens with a host-
+        // side message (the guest is only replying), or with an automated system
+        // notice — including the system-composed "guest updated the booking" and
+        // cancel-request messages, which are sent AS the guest — is not an
+        // inquiry that needed a personal reply.
         const first = thread[0];
-        if (first.sender !== b.guest_id) continue;
+        if (first.automated || first.sender !== b.guest_id) continue;
         counted += 1;
 
+        // Only a PERSON's reply on the host side counts. An automated send — a
+        // scheduled template, a check-in message, a canned notice — is not a
+        // response, the way Airbnb doesn't count its own auto-messages.
         const hostSide = hostSideFor(b.listing_id);
         const reply = thread.find(
-            (m) => m.at > first.at && m.sender !== b.guest_id && hostSide.has(m.sender),
+            (m) => m.at > first.at && m.sender !== b.guest_id && hostSide.has(m.sender) && !m.automated,
         );
         if (reply) {
             responded += 1;
