@@ -402,7 +402,7 @@ export default function ProviderBusinessEditor({
                                     </button>
                                 </div>
                             )}
-                            <p className="text-[12px] text-slate-400">Regulated work (gas, oil, electrical) only shows to hosts once your matching registration is verified.</p>
+                            <p className="text-[12px] text-slate-400">Regulated work (gas, oil, electrical) only shows to hosts once we’ve approved your matching registration number. Hosts see it as provided by you.</p>
                         </SectionCard>
                     )}
 

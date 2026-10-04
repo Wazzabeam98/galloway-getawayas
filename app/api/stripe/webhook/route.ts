@@ -17,6 +17,7 @@ import { round2 } from '@/lib/resolutions';
 import { applyBookingChange } from '@/lib/applyBookingChange';
 import { topUpHostForIncrease } from '@/lib/changePayout';
 import { settleHostDebtSession } from '@/lib/hostDebtSettle';
+import { notifyPaymentFailed } from '@/lib/serviceSubscriptionAlert';
 
 export const dynamic = 'force-dynamic';
 
@@ -860,11 +861,12 @@ export async function POST(request: Request) {
             }
         }
 
-        // A payment that failed. Recorded, not acted on.
+        // A payment that failed. Recorded, and the trade told once — nothing
+        // else acted on.
         //
         // Stripe will retry on its own schedule and this event fires on every
         // attempt, so doing anything irreversible here would act three or four
-        // times on one failure. The status change that matters arrives as
+        // times on one failure (the email is claimed once per invoice). The status change that matters arrives as
         // customer.subscription.updated when Stripe moves him to past_due, and
         // as .deleted when it gives up.
         if (event.type === 'invoice.payment_failed') {
@@ -884,6 +886,10 @@ export async function POST(request: Request) {
                         + String((prov && prov.business_name) || subscriptionId)),
                     { path: 'stripe/webhook' }
                 );
+
+                // And tell the trade (Tradesperson Agreement 3.3) — once per
+                // invoice however many retries Stripe makes; never throws.
+                await notifyPaymentFailed(admin, subscriptionId, inv);
             }
         }
 

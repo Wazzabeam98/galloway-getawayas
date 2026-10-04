@@ -99,3 +99,26 @@ test('trade: free months, monthly fee, grace, answer windows, coming soon', () =
     assert.deepEqual([...COMING_SOON_TRADES], ['sponge']);
     assert.match(answer('trade', 'Which trades can join?'), /Cleaning shows as coming soon/);
 });
+
+test('trade: registrations are shown as provided, never as checked by us', () => {
+    const reg = answer('trade', 'Do I need a registration?');
+    assert.match(reg, /as provided by you/);
+    assert.match(reg, /we don’t verify it/);
+    for (const f of ['components/services/TradeCard.tsx', 'app/services/[trade]/[providerId]/page.tsx']) {
+        const shown = read(f).split('\n').filter((l: string) => !/^\s*(\/\/|\{?\/\*|\*)/.test(l.trim())).join('\n');
+        assert.doesNotMatch(shown, /checked by us/i, f + ' still labels a registration as checked by us');
+    }
+});
+
+test('trade: a failed payment is emailed (Tradesperson Agreement 3.3)', () => {
+    assert.match(read('components/legal/agreements/text/tradesperson.ts'), /If payment fails, we will tell you/);
+    assert.match(read('app/api/stripe/webhook/route.ts'), /notifyPaymentFailed\(admin, subscriptionId, inv\)/);
+    assert.match(answer('trade', 'What happens when the free period ends?'), /If a payment fails, we email you/);
+});
+
+test('trade: every trade the FAQ says can join can be enquired about', () => {
+    const { canBeEnquiredAbout } = require('../lib/serviceProviders');
+    for (const t of ['plumber', 'electrician', 'handyman', 'roofer', 'joiner', 'painter', 'trees', 'droplet', 'bin', 'other']) {
+        assert.equal(canBeEnquiredAbout(t), true, t);
+    }
+});
