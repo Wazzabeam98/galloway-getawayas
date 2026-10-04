@@ -30,13 +30,15 @@ const DECIDES_ON = [
 ];
 
 // Airbnb shows ten on the page and the rest behind "Show all". Two columns of
-// five reads as a block rather than a list that trails off.
+// five reads as a block on desktop; on a phone it's a single column, so ten runs
+// too long — there we show five, as Airbnb does on a phone.
 const SHOWN = 10;
+const PHONE_SHOWN = 5;
 
-function Row({ name }: { name: string }) {
+function Row({ name, display = 'flex' }: { name: string; display?: string }) {
     const Icon = amenityIcon(name);
     return (
-        <div className="flex items-center gap-4 py-3.5 border-b border-slate-100">
+        <div className={`${display} items-center gap-4 py-3.5 border-b border-slate-100`}>
             <Icon className="h-6 w-6 flex-none text-slate-700" strokeWidth={1.5} />
             <span className="text-[15px] text-slate-800">{name}</span>
         </div>
@@ -58,7 +60,11 @@ export default function AmenityList({ amenities }: { amenities: string[] }) {
         .map((x) => x.a);
 
     const shown = sorted.slice(0, SHOWN);
-    const hasMore = sorted.length > SHOWN;
+    // The button appears whenever something is hidden: beyond 5 on a phone,
+    // beyond 10 on desktop. When it's only the phone that's over its limit
+    // (6–10 amenities) the button is phone-only, since desktop shows them all.
+    const moreThanPhone = sorted.length > PHONE_SHOWN;
+    const moreThanDesktop = sorted.length > SHOWN;
 
     // Lock the background scroll while the full-list modal is open, and let Esc
     // close it — the small courtesies that make a dialog feel built-in.
@@ -77,16 +83,19 @@ export default function AmenityList({ amenities }: { amenities: string[] }) {
     return (
         <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10">
-                {shown.map((a) => (
-                    <Row key={a} name={a} />
+                {shown.map((a, i) => (
+                    <Row key={a} name={a} display={i >= PHONE_SHOWN ? 'hidden sm:flex' : 'flex'} />
                 ))}
             </div>
 
-            {hasMore && (
+            {moreThanPhone && (
                 <button
                     type="button"
                     onClick={() => setOpen(true)}
-                    className="mt-6 inline-flex items-center justify-center min-h-[48px] rounded-xl border border-slate-800 px-6 text-sm font-semibold text-slate-900 hover:bg-slate-50 transition"
+                    className={
+                        'mt-6 inline-flex items-center justify-center min-h-[48px] rounded-xl border border-slate-800 px-6 text-sm font-semibold text-slate-900 hover:bg-slate-50 transition'
+                        + (moreThanDesktop ? '' : ' sm:hidden')
+                    }
                 >
                     Show all {sorted.length} amenities
                 </button>
