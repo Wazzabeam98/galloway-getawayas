@@ -38,7 +38,7 @@ export default async function ProviderDashboardPage() {
     // half-finished draft for a second trade.
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, owner_paused, trial_ends_at, approved_at, callout_fee, shape, fulfilment, photos')
+        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, trial_ends_at, approved_at, callout_fee, shape, fulfilment, photos')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 

@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
 import {
-    isLiveToGuests, priceOrder, guestExperiencesOpen,
+    servesExistingBookings, priceOrder, guestExperiencesOpen,
     normaliseUnit, unitMultiplies, orderQuantity, orderTotal, MAX_ORDER_QUANTITY,
 } from '@/lib/serviceOrders';
 import {
@@ -83,7 +83,9 @@ async function loadForTopUp(admin: any, orderId: string, userId: string): Promis
         .from('service_providers')
         .select('id, business_name, trade, shape, status, plan, stripe_account_id, stripe_payouts_enabled, commission_rate, slot_capacity, slot_min_people, cancellation_window_hours, guest_details')
         .eq('id', order.provider_id).maybeSingle();
-    if (!provider || !isSlot(provider) || !isLiveToGuests(provider) || !provider.stripe_account_id) {
+    // Places added to a booking the guest already holds: allowed while the
+    // listing is taken down (theirs or ours) — only brand-new orders are refused.
+    if (!provider || !isSlot(provider) || !servesExistingBookings(provider) || !provider.stripe_account_id) {
         return { error: { status: 400, message: 'That experience isn’t taking bookings right now.' } };
     }
 

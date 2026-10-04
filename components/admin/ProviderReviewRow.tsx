@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { planForTrade, bandLabel, SUBSCRIPTION_MONTHLY, TRIAL_PERIOD_LABEL, reviewContentFrom } from '@/lib/serviceProviders';
 import ReviewContent from '@/components/admin/ReviewContent';
+import AdminProviderTakedown from '@/components/admin/AdminProviderTakedown';
 import { ASSIGNABLE_MCCS, assignableMccLabel } from '@/lib/serviceOrders';
 
 const STATUS_STYLE: Record<string, string> = {
@@ -289,9 +290,16 @@ export default function ProviderReviewRow({
                             Email state unknown
                         </span>
                     )}
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${STATUS_STYLE[provider.status] || STATUS_STYLE.draft}`}>
-                        {STATUS_LABEL[provider.status] || provider.status}
-                    </span>
+                    {/* A live row that is down says why: our take-down, or their own. */}
+                    {provider.status === 'approved' && (provider.admin_hidden_at || provider.owner_paused) ? (
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${STATUS_STYLE.hidden}`}>
+                            {provider.admin_hidden_at ? 'Taken down' : 'Paused by them'}
+                        </span>
+                    ) : (
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${STATUS_STYLE[provider.status] || STATUS_STYLE.draft}`}>
+                            {STATUS_LABEL[provider.status] || provider.status}
+                        </span>
+                    )}
                 </div>
             </div>
 
@@ -782,6 +790,19 @@ export default function ProviderReviewRow({
                         </div>
                     )}
                 </div>
+            )}
+
+            {/* Moderation of a live listing — the provider twin of the
+                accommodation Hide / Relist. */}
+            {provider.status === 'approved' && (
+                <AdminProviderTakedown
+                    id={provider.id}
+                    name={provider.business_name || 'this listing'}
+                    ownerName={provider.personName || ''}
+                    isTrade={provider.audience !== 'guest'}
+                    hasSubscription={!!provider.stripe_subscription_id}
+                    hidden={!!provider.admin_hidden_at}
+                />
             )}
         </div>
     );

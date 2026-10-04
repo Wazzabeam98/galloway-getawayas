@@ -85,6 +85,12 @@ export default function TradeDirectory() {
             // Every open host trade, approved and paid. No contact columns — see
             // the note at the top of the file. Guest experiences are excluded by
             // asking only for the visible host trades.
+            //
+            // A trade that has taken their listing down (owner_paused), or that
+            // we have (admin_hidden_at), never comes back from this read: those
+            // columns are private to the browser, so the database's public
+            // SELECT policy drops the rows itself (20261004115711) — the same
+            // rule visibleInDirectory applies on the server.
             const { data: provRows } = await supabase
                 .from('service_providers')
                 .select('id, business_name, description, logo, headshot, photos, trade, callout_fee, hourly_rate, flat_fee, provides_quote, callout_waived, registration_number, does_gas, does_oil, does_emergency, does_scheduled')

@@ -75,6 +75,24 @@ export async function POST() {
                     { status: 500 },
                 );
             }
+            // Stripe has it cancelled — stop the row claiming a subscription
+            // that no longer exists, exactly as the admin take-down does
+            // (lib/providerTakedown.adminTakeDown). Without this the dead id
+            // stays put, and a trade who is later reactivated is told by the
+            // billing page that they are "already set up" and can never pay.
+            // reactivation (lib/providerTakedown.reactivationBillingPatches)
+            // reads 'canceled' + no id as "we cancelled it".
+            const { error: clearError } = await admin
+                .from('service_providers')
+                .update({ stripe_subscription_id: null, subscription_status: 'canceled', updated_at: new Date().toISOString() })
+                .eq('owner_id', uid)
+                .eq('stripe_subscription_id', subId);
+            if (clearError) {
+                // Not a reason to stop: billing has stopped, which is what
+                // matters here, and reactivation also handles a row that still
+                // holds the id (it asks Stripe).
+                await logError('[account/deactivate] cancelled a trade subscription but could not clear it off the row', clearError, { path: 'api/account/deactivate', userId: uid });
+            }
         }
 
         // 4. Suspend the account. The RPC re-runs the block check as a hard

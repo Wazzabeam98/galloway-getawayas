@@ -1162,7 +1162,7 @@ export default function AccountSettings() {
                                             <li>Any listings or experiences you host are hidden and stop taking bookings.</li>
                                             <li>If you&apos;re a tradesperson, your subscription is stopped.</li>
                                             <li>You won&apos;t be able to sign in. To come back, email us at hello@gallowaygetaways.co.uk and we&apos;ll reactivate you.</li>
-                                            <li>Nothing is deleted — your details and history are kept so your account can be brought back as it was.</li>
+                                            <li>Nothing is deleted — your details and history are kept. If we reactivate you, your listings stay off the site until you put each one back up.</li>
                                         </ul>
 
                                         {deactivateBlockers.length > 0 && (
