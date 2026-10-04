@@ -63,10 +63,13 @@ import crypto from 'node:crypto';
 import pathModule from 'node:path';
 import { loadEnv, TEST_PROJECT_REF } from './seed-lib.mjs';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // .cjs for the same reason scripts/target.cjs is: the test suite is CommonJS
 // and on Node 20 CommonJS cannot require an ESM file.
 const { classify } = createRequire(import.meta.url)('./sqlRisk.cjs');
+const { prodApplyProblem } = createRequire(import.meta.url)('./prodApplyRule.cjs');
 const guarded = createRequire(import.meta.url)('./guardedColumns.cjs');
 
 // galloway-getaways-test. Production is hviwjxigqivjfhmhpjiy, named
@@ -288,6 +291,30 @@ const readOnlyQuery = !!inlineSql && !writes;
 // --status is read-only and must not be told to add --apply. It is a question,
 // and requiring the word that stands between a migration and the database in
 // order to ask a question is how that word becomes reflex.
+// PRODUCTION: only from the migration's own branch, committed and unchanged,
+// and never --destructive (scripts/prodApplyRule.cjs). Checked on the dry run
+// too, so the refusal shows up before anyone types --apply.
+function gitOut(gitArgs) {
+    try {
+        return execFileSync('git', gitArgs, { cwd: pathModule.dirname(fileURLToPath(import.meta.url)), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch { return null; }
+}
+if (targetName === 'prod' && file) {
+    const branch = gitOut(['rev-parse', '--abbrev-ref', 'HEAD']);
+    const tracked = gitOut(['ls-files', '--error-unmatch', '--', pathModule.resolve(file)]) !== null;
+    const unchanged = gitOut(['diff', '--quiet', 'HEAD', '--', pathModule.resolve(file)]) !== null;
+    const problem = prodApplyProblem({
+        targetName,
+        apply: true,
+        destructiveFlag: flag('destructive'),
+        branch,
+        fileCommittedUnchanged: tracked && unchanged,
+    });
+    if (problem && flag('apply')) die(problem);
+    if (problem) console.log('\n  note: --apply would be REFUSED here — ' + problem);
+    else console.log('  branch   ' + branch + ' (migration committed here, unchanged)');
+}
+
 if (!flag('apply') && !readOnlyQuery && !flag('status') && !flag('record')) {
     console.log('\n  dry run — nothing was executed. Add --apply to run it.\n');
     process.exit(0);
