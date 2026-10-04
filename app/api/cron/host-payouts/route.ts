@@ -501,7 +501,7 @@ export async function GET(request: Request) {
                 try {
                     const { data: debts } = await admin
                         .from('payouts')
-                        .select('id, amount, settled_amount, status')
+                        .select('id, amount, settled_amount, waived_amount, status')
                         .eq('host_id', booking.host_id)
                         .eq('status', 'owed')
                         .order('created_at', { ascending: true });

@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
+import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
 import { format, addMonths, isSameDay } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
@@ -183,6 +184,26 @@ export default function Hero() {
   // the selection colour is held back (via .rdr-unselected) until they pick.
   const [datesTouched, setDatesTouched] = useState(false);
 
+  // One array per selection, not one per render. react-date-range re-aims its
+  // months whenever `ranges` is a new array — and this hero redraws every 4.5s
+  // for the slideshow, so browsing to December snapped back to October on the
+  // next photo change.
+  const calendarRanges = useMemo(() => [dateRange], [dateRange]);
+
+  // The month the guest is looking at, kept so Clear dates leaves them on it
+  // (the remount below opens on `shownDate`, as the booking calendar does).
+  const shownMonth = useRef<Date | undefined>(undefined);
+  const [calendarKey, setCalendarKey] = useState(0);
+
+  // Back to the untouched state: the today/today seed, held uncoloured by
+  // .rdr-unselected. Remounted so the picker forgets it was mid-way through a
+  // pair and the next tap is a check-in again.
+  const clearDates = () => {
+    setDateRange({ startDate: today, endDate: today, key: 'selection' });
+    setDatesTouched(false);
+    setCalendarKey((k) => k + 1);
+  };
+
   const [stayDuration, setStayDuration] = useState('week');
   const [selectedMonths, setSelectedMonths] = useState<Date[]>([]);
 
@@ -193,6 +214,10 @@ export default function Hero() {
   const [pets, setPets] = useState(0);
 
   const heroRef = useRef<HTMLDivElement>(null);
+  // The desktop pill bar and its popovers. Anywhere outside this is "away",
+  // including the rest of the hero — as on Airbnb, where a tap on the page
+  // behind the calendar closes it.
+  const searchBarRef = useRef<HTMLDivElement>(null);
 
   // Rotating hero images
   const [heroIndex, setHeroIndex] = useState(0);
@@ -233,7 +258,7 @@ export default function Hero() {
       // The mobile sheet is portaled outside heroRef, so clicks inside it must
       // not be read as "outside" — that would close the field mid-interaction.
       if (sheetRef.current && sheetRef.current.contains(target)) return;
-      if (heroRef.current && !heroRef.current.contains(target)) {
+      if (searchBarRef.current && !searchBarRef.current.contains(target)) {
         setActivePopover(null);
       }
     };
@@ -246,6 +271,16 @@ export default function Hero() {
       document.removeEventListener('touchstart', handleClickOutside);
     };
   }, []);
+
+  // Escape closes a desktop popover. The phone sheet has its own handler.
+  useEffect(() => {
+    if (!activePopover || mobileSearchOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActivePopover(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [activePopover, mobileSearchOpen]);
 
   // The mobile search sheet is a full-screen layer, so it gets Escape-to-close
   // and holds the page still behind it while it is open.
@@ -263,16 +298,11 @@ export default function Hero() {
     };
   }, [mobileSearchOpen]);
 
+  // The calendar stays open once both dates are in, as Airbnb's does: the
+  // guest can see what they chose and change it, and closes it themselves.
   const handleSelectDates = (ranges: RangeKeyDict) => {
     setDatesTouched(true);
     setDateRange(ranges.selection);
-    if (
-      ranges.selection.startDate &&
-      ranges.selection.endDate &&
-      !isSameDay(ranges.selection.startDate, ranges.selection.endDate)
-    ) {
-      setActivePopover(null);
-    }
   };
 
   const toggleMonth = (month: Date) => {
@@ -320,12 +350,13 @@ export default function Hero() {
   // wording: that bar has no labels above its fields, so its prompts have to
   // name the field as well as invite a value.
   const whereChosen = whereSummary === 'Where to?' ? '' : whereSummary;
-  // The collapsed phone pill has almost no width, so it shows the short
-  // "Anywhere" when no town is picked — the way Airbnb's pill does — rather
-  // than the full "Anywhere in Dumfries & Galloway", and never truncates.
-  const wherePill = whereChosen || 'Anywhere';
   const whenChosen = whenSummary === 'Add dates' ? '' : whenSummary;
   const guestChosen = guestSummary === 'Add guests' ? '' : guestSummary;
+  // Flexible with no month picked is not a choice on the phone pill: tapping
+  // the tab alone would otherwise turn "Start your search" into "Any week".
+  const pillWhen = dateTab === 'flexible' && selectedMonths.length === 0 ? '' : whenChosen;
+  const pillSummary =
+    [whereChosen, pillWhen, guestChosen].filter(Boolean).join(' · ') || 'Start your search';
 
   // One search, run from both layouts. Anything the guest left alone is left
   // out of the URL entirely, so a bare `/` still means "show me everything".
@@ -395,11 +426,21 @@ export default function Hero() {
       {dateTab === 'dates' && (
         <div
           className={`airbnb-compact-calendar ${
+            // The phone calendar fills the sheet row's content box, the same
+            // 16px in from the card as WHERE and WHO; globals.css sizes it.
             variant === 'mobile' ? 'airbnb-mobile-calendar' : ''
           } ${datesTouched ? '' : 'rdr-unselected'} flex justify-center`}
         >
           <DateRangePicker
-            ranges={[dateRange]}
+            ariaLabels={MONTH_ARROW_LABELS}
+            key={calendarKey}
+            ranges={calendarRanges}
+            shownDate={shownMonth.current}
+            onShownDateChange={(d: Date) => { shownMonth.current = d; }}
+            // Picking a date never moves the months; only the arrows do.
+            // Without this, a check-in in the right-hand month slid it to the
+            // left and the month the guest was reading went off-screen.
+            preventSnapRefocus
             onChange={handleSelectDates}
             // One month on a phone. Two side by side is about 430px wide,
             // which does not fit; and react-date-range hides the extra month
@@ -409,17 +450,31 @@ export default function Hero() {
             direction={variant === 'mobile' ? 'vertical' : 'horizontal'}
             showDateDisplay={false}
             moveRangeOnFirstSelection={false}
-            // The desktop styling hides these and labels each month with
-            // .rdrMonthName instead. Stacked vertically there is no such
-            // label on the first month, so the phone gets the real
-            // month/year pickers back — which are a better control on a
-            // touchscreen anyway. See .airbnb-mobile-calendar in globals.css.
-            showMonthAndYearPickers={variant === 'mobile'}
+            // No month/year dropdowns anywhere: the heading is plain
+            // "October 2026" text between the arrows. The desktop styling
+            // hides that bar and labels each month with .rdrMonthName instead;
+            // stacked vertically the first month has no such label, so the
+            // phone shows the bar. See .airbnb-mobile-calendar in globals.css.
+            showMonthAndYearPickers={false}
             minDate={new Date()}
             rangeColors={['#047857']}
             weekStartsOn={1}
             className="text-xs"
           />
+        </div>
+      )}
+
+      {dateTab === 'dates' && (
+        // Bottom right, as on the booking calendar.
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={clearDates}
+            disabled={!datesTouched}
+            className="text-sm font-medium text-[#222222] underline underline-offset-2 rounded px-1 py-0.5 hover:bg-slate-100 disabled:text-slate-300 disabled:no-underline disabled:hover:bg-transparent disabled:cursor-default"
+          >
+            Clear dates
+          </button>
         </div>
       )}
 
@@ -548,65 +603,83 @@ export default function Hero() {
   // flex child is allowed to be narrower than its text, so the ellipsis is
   // reachable. Without `min-w-0` a flex child refuses to shrink below its
   // content and the cell would push the grid wider instead.
-  const gridCell = (
+  // One row of the phone sheet: its label and value, and — when it is the open
+  // row — its control directly underneath, inside the same row. Airbnb's sheet
+  // (looked at 03/10/2026): one row open at a time, the others folded to their
+  // label and value. The control used to sit in a fourth box below WHO, so
+  // tapping WHERE changed nothing near the finger.
+  const sheetRow = (
     key: 'where' | 'when' | 'who',
     label: string,
     chosen: string,
     hint: string,
+    content: React.ReactNode,
     edges: string,
   ) => {
     const open = activePopover === key;
     return (
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setActivePopover(open ? null : key)}
-        className={`min-w-0 px-4 py-4 flex flex-col gap-1 text-left transition ${edges} ${
-          open ? 'bg-white/[0.45]' : 'bg-transparent'
-        }`}
-      >
-        {/* Stacked, phone-readable: a small-caps label over a 16px value, with
-            room to breathe. The compact one-line 10/11px version read as tiny on
-            a real handset. */}
-        <span className="text-xs font-bold tracking-wider uppercase text-stone-700">
-          {label}
-        </span>
-        {/* leading-5 on both states so the row is the same height whether it
-            holds a hint or a choice — otherwise picking a date would nudge the
-            whole card taller. */}
-        <span
-          className={`min-w-0 truncate text-base leading-5 ${
-            chosen ? 'font-medium text-stone-900' : 'font-normal text-stone-400'
-          }`}
+      <div className={edges}>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setActivePopover(open ? null : key)}
+          className="flex w-full min-w-0 flex-col gap-1 px-4 py-4 text-left"
         >
-          {chosen || hint}
-        </span>
-      </button>
+          {/* Stacked, phone-readable: a small-caps label over a 16px value, with
+              room to breathe. The compact one-line 10/11px version read as tiny
+              on a real handset. */}
+          <span className="text-xs font-bold tracking-wider uppercase text-stone-700">
+            {label}
+          </span>
+          {/* Grey while it is only a hint, dark once the guest has set it.
+              leading-5 on both so choosing doesn't change the row's height. */}
+          <span
+            className={`min-w-0 truncate text-base leading-5 ${
+              chosen ? 'font-medium text-stone-900' : 'font-normal text-stone-400'
+            }`}
+          >
+            {chosen || hint}
+          </span>
+        </button>
+        {open && <div className="px-4 pb-4">{content}</div>}
+      </div>
     );
   };
 
-  // Whichever cell is open, its control opens underneath the grid across the
-  // full width of the card. Putting it inside a cell would stretch that cell
-  // and pull the grid out of shape.
-  const openContent =
-    activePopover === 'where' ? (
-      <select
-        value={location}
-        onChange={(e) => setLocation(e.target.value)}
-        aria-label="Where"
-        className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-      >
-        {LOCATIONS.map((l) => (
-          <option key={l.value} value={l.value}>
-            {l.label}
-          </option>
-        ))}
-      </select>
-    ) : activePopover === 'when' ? (
-      whenContent('mobile')
-    ) : activePopover === 'who' ? (
-      guestContent('mobile')
-    ) : null;
+  // The destinations as a list inside the WHERE row, not a native dropdown: a
+  // pick folds WHERE and opens WHEN, as Airbnb's does.
+  const whereList = (
+    <ul className="-mx-2" aria-label="Destinations">
+      {/* The empty-value "Anywhere in Dumfries & Galloway" leads the list, so a
+          picked town can be cleared back to the default — the same first option
+          the desktop dropdown offers. */}
+      {LOCATIONS.map((l) => {
+        const picked = location === l.value;
+        return (
+          <li key={l.value}>
+            <button
+              type="button"
+              aria-pressed={picked}
+              onClick={() => {
+                setLocation(l.value);
+                setActivePopover('when');
+              }}
+              className={`flex w-full items-center justify-between rounded-xl px-2 py-3 text-left text-base transition active:bg-stone-100 ${
+                picked ? 'font-semibold text-stone-900' : 'font-normal text-stone-700'
+              }`}
+            >
+              {l.label}
+              {picked && (
+                <svg className="h-5 w-5 flex-none text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   return (
     <div
@@ -703,23 +776,27 @@ export default function Hero() {
         <div className="md:hidden my-auto w-full max-w-md text-stone-800">
           <button
             type="button"
-            onClick={() => { setActivePopover('where'); setMobileSearchOpen(true); }}
+            // Opens with every row folded to its label and value; a row
+            // expands only when the guest taps it.
+            onClick={() => { setActivePopover(null); setMobileSearchOpen(true); }}
             aria-haspopup="dialog"
             aria-expanded={mobileSearchOpen}
-            className="flex w-full items-center gap-3 rounded-full border border-stone-100 bg-white px-5 py-3 min-h-[56px] text-left shadow-2xl"
+            // Airbnb's phone pill, measured 03/10/2026 at 375px: 56px tall,
+            // fully rounded, icon and text centred together as one block.
+            // Left-aligned, ours left the right two-thirds of the pill empty.
+            // The shadow stays heavier than theirs (they sit on white, this
+            // sits on a photo).
+            className="flex h-14 w-full items-center justify-center gap-2.5 rounded-full border border-stone-100 bg-white px-6 text-center shadow-2xl"
           >
-            <span className="flex-none text-emerald-700">{searchIcon('w-5 h-5')}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold text-stone-900">{wherePill}</span>
-              <span className="block truncate text-xs text-stone-500">
-                {(whenSummary === 'Add dates' ? 'Any week' : whenSummary)} · {guestSummary}
-              </span>
-            </span>
+            <span className="flex-none text-emerald-700">{searchIcon('w-4 h-4')}</span>
+            {/* One line, as Airbnb's: their prompt until the guest has chosen
+                something, then only what they chose. 14px / 500, their values. */}
+            <span className="min-w-0 truncate text-sm font-medium text-stone-900">{pillSummary}</span>
           </button>
         </div>
 
         {/* Search Bar — desktop. Unchanged apart from being hidden on phones. */}
-        <div className="hidden md:flex w-full max-w-3xl bg-white rounded-full p-1.5 shadow-2xl text-stone-800 items-center relative border border-stone-100">
+        <div ref={searchBarRef} className="hidden md:flex w-full max-w-3xl bg-white rounded-full p-1.5 shadow-2xl text-stone-800 items-center relative border border-stone-100">
           
           {/* WHERE */}
           <div
@@ -875,13 +952,10 @@ export default function Hero() {
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <div className="overflow-hidden rounded-3xl border border-stone-200">
               <div className="flex flex-col">
-                {gridCell('where', 'Where', whereChosen, 'Anywhere in Dumfries & Galloway', 'border-b border-stone-200')}
-                {gridCell('when', 'When', whenChosen, 'Any week', 'border-b border-stone-200')}
-                {gridCell('who', 'Who', guestChosen, 'Add guests', '')}
+                {sheetRow('where', 'Where', whereChosen, 'Anywhere in Dumfries & Galloway', whereList, 'border-b border-stone-200')}
+                {sheetRow('when', 'When', whenChosen, 'Any week', whenContent('mobile'), 'border-b border-stone-200')}
+                {sheetRow('who', 'Who', guestChosen, 'Add guests', guestContent('mobile'), '')}
               </div>
-              {openContent && (
-                <div className="border-t border-stone-200 px-4 py-4">{openContent}</div>
-              )}
             </div>
           </div>
 

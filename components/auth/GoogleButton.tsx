@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import { isProviderEnabled } from '@/lib/authProviders';
+import { recordStayChoice } from '@/lib/staySignedIn';
 
 interface Props {
     // Rendered above the button, and only when the button itself is shown —
@@ -43,7 +44,11 @@ export default function GoogleButton({ divider, compact = false, onStart }: Prop
     if (!enabled) return null;
 
     const signIn = async () => {
-        onStart?.();
+        // Every sign-in route records the stay choice (lib/staySignedIn). The
+        // panel passes its tick through onStart; anywhere else there is no tick,
+        // so it stays signed in.
+        if (onStart) onStart();
+        else recordStayChoice(true);
         // Back to the page they pressed it on, not the home page.
         //
         // This button is mounted inside the provider sign-up as well as the

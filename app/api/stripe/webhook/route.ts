@@ -16,6 +16,7 @@ import { issueRefunds } from '@/lib/refundSpread';
 import { round2 } from '@/lib/resolutions';
 import { applyBookingChange } from '@/lib/applyBookingChange';
 import { topUpHostForIncrease } from '@/lib/changePayout';
+import { settleHostDebtSession } from '@/lib/hostDebtSettle';
 
 export const dynamic = 'force-dynamic';
 
@@ -285,6 +286,22 @@ export async function POST(request: Request) {
                 // webhook is rebuilt identically (see lib/changeRequest).
                 if (orderId && pi) await authoriseChangeRequest(admin, orderId, pi);
                 return NextResponse.json({ ok: true });
+            }
+
+            // A HOST PAID OFF WHAT THEY OWE (a clawback shortfall or a cancellation
+            // fee), from "Pay now" on their earnings page (api/host-debts/pay).
+            // The money is in the platform balance. apply_host_debt_payment puts
+            // it against the debt in one locked statement — idempotent on the
+            // session id, and never more than is still outstanding, because the
+            // payout run may have recovered some of it while the host was on the
+            // payment page. Anything over is refunded to the host's card here.
+            //
+            // A failure cannot be retried by Stripe (the stripe_events row above
+            // answers a retry as a duplicate), so it alerts the directors with
+            // what is needed to replay it — the function makes a replay safe.
+            if (kind === 'host_debt_settle') {
+                const out = await settleHostDebtSession(admin, cs);
+                return NextResponse.json({ ok: true, ...out });
             }
 
             // A GUEST PAID A MONEY REQUEST on a stay (extra services / damage). The

@@ -64,7 +64,6 @@ export default function SlotCalendar({
                 {cells.map((date, i) => {
                     if (!date) return <div key={`b${i}`} />;
                     const past = date < todayIso;
-                    const isToday = date === todayIso;
                     const isSel = selected.has(date);
                     const shape = shapeByDate[date];
                     const dayNum = Number(date.slice(8, 10));
@@ -104,7 +103,7 @@ export default function SlotCalendar({
                             className={`relative flex min-h-[62px] flex-col rounded-xl p-1.5 text-left transition sm:min-h-[86px] ${frame} ${isSel ? 'ring-2 ring-slate-900 shadow-sm' : ''} ${past ? 'cursor-default' : ''}`}
                             style={dayOff && !past ? { backgroundImage: 'repeating-linear-gradient(45deg, #f1f5f9 0, #f1f5f9 5px, #fff 5px, #fff 10px)' } : undefined}>
                             <div className="flex items-center justify-between">
-                                <span className={isToday ? 'flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white' : past ? 'px-1 text-xs font-medium text-slate-300 line-through' : 'px-1 text-xs font-semibold text-slate-700'}>{dayNum}</span>
+                                <span className={past ? 'px-1 text-xs font-medium text-slate-300 line-through' : 'px-1 text-xs font-medium text-[#222222]'}>{dayNum}</span>
                                 {isSel && <span className="flex h-4 w-4 items-center justify-center rounded-full bg-slate-900"><span className="h-1.5 w-1.5 rounded-full bg-white" /></span>}
                             </div>
                             {!past && !dayOff && ticks.length > 0 && (

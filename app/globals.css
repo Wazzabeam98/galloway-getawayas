@@ -14,6 +14,38 @@
   }
 }
 
+/* THE ROOT GUARD: nothing on the site is ever wider than the screen.
+   The page's own width is pinned to the viewport at the root, so no element —
+   a long word, a wide table, a box mid-animation — can make the document wider
+   than the phone, and iOS Safari never has a reason to pan or rescale it.
+
+   `clip`, not `hidden`, on both: `hidden` turns body into a scroll container
+   (window scroll events stop, `position: sticky` on the nav stops sticking);
+   `clip` cuts the overflow without creating one. Safari 16+, Chrome 90+.
+   The @supports fallback for anything older puts `hidden` on html only, which
+   goes to the viewport and does not make a scroll container either.
+
+   `overflow-wrap: break-word` lets an unbroken string (an email address, a
+   URL, a booking reference) wrap at the edge instead of running past it.
+   Images and video are already capped at 100% by Tailwind's preflight.
+
+   This is a guard, not a fix: anything it would clip is still a layout bug and
+   gets fixed where it is. Checked at 320/375/393 in WebKit, signed in and out,
+   every frame of the sign-in, with this guard ignored: nothing reaches it. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+@supports not (overflow-x: clip) {
+  html {
+    overflow-x: hidden;
+  }
+}
+body {
+  overflow-wrap: break-word;
+}
+
 /* `.container` carries 2rem of side padding, which is 64px off a 375px screen
    before any content gets a look in — the listing page was rendering its
    booking card at 247px and clipping Friday and Saturday out of the calendar.
@@ -32,33 +64,54 @@
   }
 }
 
-/* iOS Safari zooms the page whenever a focused control's font is below 16px, so
-   every form control gets at least 16px at phone widths. Only the value; nothing
-   about the layout changes at or above 768px.
+/* iOS Safari zooms the whole page the moment a focused text field's font is
+   under 16px, and the zoom then sticks for the rest of the visit. Every text
+   field on a phone or tablet is therefore at least 17px — not 16: confirmed on
+   a real iPhone 15 (03/10/2026) that tapping the sign-in field still zoomed at
+   a measured 16px (no transform, scale, zoom or rem drift anywhere on the
+   field's ancestors), so 16 sits exactly on Safari's line and 17 is the
+   headroom other sites use. Fields designed bigger (the 6-digit code box,
+   text-lg and up) keep their own size; only the small ones are lifted.
 
-   The bare `input` element selector (specificity 0,0,1) is beaten by any Tailwind
-   text-size class, because a class like `text-sm` is 0,1,0 — so inputs carrying
-   `text-sm` (14px) or `text-xs` (12px) ignored the element rule and still zoomed.
-   The `input.text-sm`/`input.text-xs` selectors (0,1,1) out-specify the utility
-   and lift exactly those small controls to 16px, while deliberately larger ones
-   (text-base and up — the 6-digit code field, the big wizard fields) keep their
-   size, since these selectors never match them. Class-less controls stay covered
-   by the element rule. The react-date-range month/year pickers ship at 12px and
-   carry the library's own class, so they are lifted by name too. */
-@media (max-width: 767px) {
+   When: narrow screens OR any touch screen — `(pointer: coarse)` is what
+   catches a phone in landscape (an iPhone 15 is 852px wide on its side, past
+   the 767px breakpoint) and an iPad, both of which zoom the same way.
+
+   Which: the bare element selectors cover class-less fields. A Tailwind size
+   class (0,1,0) beats a bare element (0,0,1), so the small size classes are
+   matched by name — as substrings, so responsive forms like `sm:text-sm`
+   (which apply from 640px, i.e. on a phone in landscape) are caught too, and
+   so are the arbitrary sizes (`text-[13px]` and friends) the old rule missed.
+   :is() keeps the specificity at 0,1,1, enough to outrank the utility. The
+   :not() list leaves alone a field that ALSO carries a bigger size — the code
+   box is the shared field style (text-base) plus text-2xl, and must stay 24px. */
+@media (max-width: 767px), (pointer: coarse) {
   input,
   select,
   textarea,
-  input.text-xs,
-  input.text-sm,
-  select.text-xs,
-  select.text-sm,
-  textarea.text-xs,
-  textarea.text-sm {
-    font-size: 16px;
-  }
-  .rdrMonthAndYearPickers select {
-    font-size: 16px;
+  :is(input, select, textarea):is(
+    [class*="text-xs"],
+    [class*="text-sm"],
+    [class*="text-base"],
+    [class*="text-[9px]"],
+    [class*="text-[10px]"],
+    [class*="text-[10.5px]"],
+    [class*="text-[11px]"],
+    [class*="text-[11.5px]"],
+    [class*="text-[12px]"],
+    [class*="text-[12.5px]"],
+    [class*="text-[13px]"],
+    [class*="text-[14px]"],
+    [class*="text-[15px]"],
+    [class*="text-[16px]"]
+  ):not(
+    [class*="text-lg"],
+    [class*="text-xl"],
+    [class*="text-2xl"],
+    [class*="text-3xl"],
+    [class*="text-4xl"]
+  ) {
+    font-size: 17px;
   }
 }
 
@@ -172,14 +225,70 @@
 .cottage-cal .rdrMonthsVertical { display: flex; }
 .cottage-cal .rdrDay { width: 14.2857% !important; }
 
+/* 4c. The booking calendar when the card is full width (phones and tablets —
+   below lg, where the card is not the desktop sidebar): Airbnb's phone
+   calendar, measured on an iPhone 15 width (393px) on 03/10/2026 — day cells
+   47px wide x 45px, a 2px gap between rows (47px pitch both ways), a selected
+   day a full 45px circle, numbers 14px / 500 (the same as desktop: Airbnb
+   makes the cells bigger on a phone, not the digits). Ours were 36px rows
+   with the selection inset 5px top and bottom — a 26px-tall pill.
+
+   Rows go to 47px and every fill (selection, range band, hover preview) is
+   inset 1px instead of 5, so a picked day is 45px tall with a 2px seam
+   between weeks. The ends of a stay, and the week/month edges of the band,
+   are fully round. Width comes from the card: at 393px the seven columns are
+   ~47px once the card's phone padding is 16px (BookingWidget). Desktop
+   (lg and up) is untouched. */
+@media (max-width: 1023px) {
+  .cottage-cal .rdrMonth {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  .cottage-cal .rdrDay {
+    height: 47px !important;
+    line-height: 47px !important;
+  }
+  .cottage-cal .rdrDayNumber,
+  .cottage-cal .rdrSelected,
+  .cottage-cal .rdrInRange,
+  .cottage-cal .rdrStartEdge,
+  .cottage-cal .rdrEndEdge,
+  .cottage-cal .rdrDayStartPreview,
+  .cottage-cal .rdrDayInPreview,
+  .cottage-cal .rdrDayEndPreview {
+    top: 1px;
+    bottom: 1px;
+  }
+  .cottage-cal .rdrStartEdge,
+  .cottage-cal .rdrDayStartOfMonth .rdrInRange,
+  .cottage-cal .rdrDayStartOfMonth .rdrEndEdge,
+  .cottage-cal .rdrDayStartOfWeek .rdrInRange,
+  .cottage-cal .rdrDayStartOfWeek .rdrEndEdge,
+  .cottage-cal .rdrDayStartPreview {
+    border-top-left-radius: 999px;
+    border-bottom-left-radius: 999px;
+  }
+  .cottage-cal .rdrEndEdge,
+  .cottage-cal .rdrDayEndOfMonth .rdrInRange,
+  .cottage-cal .rdrDayEndOfMonth .rdrStartEdge,
+  .cottage-cal .rdrDayEndOfWeek .rdrInRange,
+  .cottage-cal .rdrDayEndOfWeek .rdrStartEdge,
+  .cottage-cal .rdrDayEndPreview {
+    border-top-right-radius: 999px;
+    border-bottom-right-radius: 999px;
+  }
+}
+
 /* 5. Selection colour — Airbnb's calendar treatment, in our emerald. Looked at
    Airbnb's booking calendar on 03/10/2026: availability is NEVER shown with
    colour — an available day is a plain dark number on white, an unavailable one
    is struck through in grey — and the only colour on the calendar is the guest's
    own selection. The two ends of the stay (check-in and check-out, and a
    SINGLE-date pick — the change-date sheet, the booking panel — which react-date-
-   range marks with .rdrSelected) are a solid emerald circle; the nights in
-   between are a pale emerald band. Their shape, our colour, never their pink.
+   range marks with .rdrSelected) are a solid emerald circle, and the nights in
+   between are the SAME emerald, so the stay reads as one shape (Liam, 03/10/2026:
+   one shade throughout, not solid ends and a paler band). Their shape, our
+   colour, never their pink.
 
    react-date-range fills these with `background: currentColor`, so each class
    is given its own fill. .rdrSelected MUST get the solid fill alongside the
@@ -188,28 +297,43 @@
    selection colour for every react-date-range calendar in the app. */
 .rdrStartEdge,
 .rdrEndEdge,
-.rdrSelected {
-  background: #047857 !important;   /* emerald-700 — the two solid ends */
-}
+.rdrSelected,
 .rdrInRange {
-  background: #d1fae5 !important;    /* emerald-100 — the pale band between */
+  background: #047857 !important;   /* emerald-700 — the ends and the band alike */
 }
 
-/* 6. Day numbers. The number is a SIBLING of the fill element, not a child, so
-   `~ .rdrDayNumber span` is what actually colours the digit. Available days are
-   near-black (darkened, not bolded — bold on every date reads heavy and leaves
-   the selection nothing to stand out against), so they read clearly outdoors.
-   White on the solid ends; near-black on the pale band. */
+/* 6. Day numbers — Airbnb's exact values, read off their booking calendar on
+   03/10/2026 (computed style of an available date, desktop and 375px phone
+   alike): #222222 at font-weight 500, 14px. react-date-range's own theme sets
+   .rdrDayNumber to weight 300, which is why slate-900 still read grey beside
+   theirs — the colour was dark enough, the strokes were too thin. The hand-built
+   calendars (MonthCalendar, SlotCalendar, TradeCalendar, the host calendar,
+   services/DatePicker) use the same pair, as text-[#222222] font-medium.
+   The number is a SIBLING of the fill element, not a child, so
+   `~ .rdrDayNumber span` is what actually colours the digit. White on the ends
+   and the band alike. */
+.rdrDayNumber {
+  font-weight: 500 !important;
+}
+/* 14px, Airbnb's size; the library's default is 12px (the wrapper's font-size).
+   Set on the digit only, so the cell sizes (in em off the wrapper) don't move.
+   The change sheets' own 15px (.rdr-move, below) still wins by specificity. */
+.rdrDayNumber span {
+  font-size: 14px;
+}
 .rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrDayNumber span {
-  color: #0f172a;   /* slate-900, near-black */
+  color: #222222;
 }
 .rdrDay:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span,
 .rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span,
 .rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span {
   color: #fff !important;
 }
-.rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span {
-  color: #0f172a !important;
+/* :not(.rdrDayDisabled) — before any pick react-date-range marks EVERY day in
+   range (see 6a), and this rule outranks the plain grey one below, so without it
+   past and booked days showed #222 like bookable ones until the guest tapped. */
+.rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrInRange ~ .rdrDayNumber span {
+  color: #fff !important;
 }
 
 .rdrDayDisabled {
@@ -223,15 +347,35 @@
   visibility: hidden !important;
 }
 
+/* 6-today. No "today" marker on any calendar (Liam, 03/10/2026; standing rule in
+   CLAUDE.md). The library underlines today, and it only ever showed by accident:
+   before a pick the seeded/empty range covers today and the library paints the
+   underline white, so it popped into view on the guest's first tap and read as
+   a stray focus mark. */
+.rdrDayToday .rdrDayNumber span:after {
+  display: none;
+}
+
+/* 6-focus. The library strips every day's focus outline (.rdrDay:focus
+   { outline: 0 }), so a keyboard user had no idea where they were. Shown on
+   :focus-visible only: a mouse click or tap focuses the day too, and must not
+   leave a ring on it. Two classes deep because the library's theme sheet loads
+   after this one and its .rdrDay:focus would otherwise win the tie. */
+.rdrCalendarWrapper .rdrDay:focus-visible {
+  outline: 2px solid #222222;
+  outline-offset: -2px;
+  border-radius: 9999px;
+}
+
 /* 6a. No colour until the guest chooses. react-date-range treats an empty range
    — startDate/endDate both undefined — as spanning every day, so it fills the
    whole month before anything is picked. That empty range is exactly how the
    booking widget represents "no dates yet" (and must stay undefined, because the
    quote and the submit guard read it), so the fix is visual only: while the
    wrapper carries .rdr-unselected, the selection fills are cleared and every day
-   is a plain near-black number. The colour appears only once the guest's own
+   is a plain #222 number. The colour appears only once the guest's own
    selection does — the moment they tap a day, startDate is set, the class comes
-   off, and the normal treatment above takes over. */
+   off, and the normal treatment above takes over. (Clear dates puts it back.) */
 .rdr-unselected .rdrInRange,
 .rdr-unselected .rdrStartEdge,
 .rdr-unselected .rdrEndEdge,
@@ -239,7 +383,21 @@
   background: transparent !important;
 }
 .rdr-unselected .rdrDay:not(.rdrDayPassive):not(.rdrDayDisabled) .rdrDayNumber span {
-  color: #0f172a !important;
+  color: #222222 !important;
+}
+
+/* 6c. Month heading — Airbnb's, read off their booking calendar on 03/10/2026:
+   "October 2026" as one piece of text, centred between the two arrows, #222 at
+   16px / weight 500. Every react-date-range calendar sets
+   showMonthAndYearPickers={false}, so the library prints that text in place of
+   its month and year dropdowns; this sizes it (the library's default is 12px).
+   Two classes deep because the library's theme sheet loads after this one and
+   sets weight 600 on the single class. */
+.rdrMonthAndYearWrapper .rdrMonthAndYearPickers {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 20px;
+  color: #222222;
 }
 
 /* 6b. The in-app change calendars (the "Change date or time" experience modal and
@@ -259,10 +417,6 @@
    cells (above). A rounder circle to suit those taller cells: */
 .rdr-move .rdrSelected { border-radius: 1.35em !important; }
 
-/* The change-reservation calendar shows the month only — no year dropdown (the
-   prev/next arrows still roll the year over). Scoped to .change-cal so no other
-   react-date-range calendar is affected. */
-.change-cal .rdrYearPicker { display: none !important; }
 
 /* Make the change-reservation calendar fill its card. react-date-range pins
    intrinsic (inline-flex / fixed) widths on every level, so .rdrMonth at 100%
@@ -424,9 +578,6 @@
   font-size: 13px;
 }
 
-.airbnb-compact-calendar .rdrDayToday .rdrDayNumber span:after {
-  background: #047857;
-}
 
 /* The single-date pick's emerald fill + white number now come from the global
    rule 5/6 above (the booking panel uses react-date-range's Calendar); this
@@ -532,12 +683,76 @@
   position: static;
   width: 34px;
   height: 34px;
+  /* Centred over the first and last date columns: each side margin is half
+     of what a column (a seventh of the bar) leaves around the 34px button. */
+  margin: 0 calc((100% / 7 - 34px) / 2);
 }
 
 /* Each stacked month keeps its own heading, and the sheet itself does the
    scrolling rather than a scroll area inside a scroll area. */
 .airbnb-mobile-calendar .rdrMonthsVertical {
   overflow: visible;
+}
+
+/* Edge to edge, thumb-sized. Airbnb's phone search calendar fills its sheet:
+   seven equal columns across the whole content width, not a narrower grid
+   centred inside it. Here the grid takes the full width of the sheet row's
+   content box (16px in from the card, the same as the WHERE and WHO text),
+   with no cap. Numbers are 16px (14px elsewhere) and rows 52px; every fill is
+   inset 3px top and bottom, so a picked day is a 46px circle — round at
+   iPhone widths, where a column is ~46px — and the stay's ends and the band's
+   week/month edges are fully round. */
+.airbnb-mobile-calendar .rdrDateRangePickerWrapper,
+.airbnb-mobile-calendar .rdrDateRangeWrapper,
+.airbnb-mobile-calendar .rdrCalendarWrapper,
+.airbnb-mobile-calendar .rdrMonths,
+.airbnb-mobile-calendar .rdrMonthsVertical,
+.airbnb-mobile-calendar .rdrMonth,
+.airbnb-mobile-calendar .rdrMonthAndYearWrapper,
+.airbnb-mobile-calendar .rdrWeekDays,
+.airbnb-mobile-calendar .rdrDays {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.airbnb-mobile-calendar .rdrMonth {
+  padding: 0 0 0.5em 0 !important;
+}
+.airbnb-mobile-calendar .rdrDay {
+  width: 14.2857% !important;
+  height: 52px !important;
+  line-height: 52px !important;
+}
+.airbnb-mobile-calendar .rdrDayNumber span {
+  font-size: 16px;
+}
+.airbnb-mobile-calendar .rdrDayNumber,
+.airbnb-mobile-calendar .rdrSelected,
+.airbnb-mobile-calendar .rdrInRange,
+.airbnb-mobile-calendar .rdrStartEdge,
+.airbnb-mobile-calendar .rdrEndEdge,
+.airbnb-mobile-calendar .rdrDayStartPreview,
+.airbnb-mobile-calendar .rdrDayInPreview,
+.airbnb-mobile-calendar .rdrDayEndPreview {
+  top: 3px;
+  bottom: 3px;
+}
+.airbnb-mobile-calendar .rdrStartEdge,
+.airbnb-mobile-calendar .rdrDayStartOfMonth .rdrInRange,
+.airbnb-mobile-calendar .rdrDayStartOfMonth .rdrEndEdge,
+.airbnb-mobile-calendar .rdrDayStartOfWeek .rdrInRange,
+.airbnb-mobile-calendar .rdrDayStartOfWeek .rdrEndEdge,
+.airbnb-mobile-calendar .rdrDayStartPreview {
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+.airbnb-mobile-calendar .rdrEndEdge,
+.airbnb-mobile-calendar .rdrDayEndOfMonth .rdrInRange,
+.airbnb-mobile-calendar .rdrDayEndOfMonth .rdrStartEdge,
+.airbnb-mobile-calendar .rdrDayEndOfWeek .rdrInRange,
+.airbnb-mobile-calendar .rdrDayEndOfWeek .rdrStartEdge,
+.airbnb-mobile-calendar .rdrDayEndPreview {
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
 }
 
 /* The guest sign-up's screen-one → screen-two move. The category card the
@@ -600,4 +815,54 @@
   font-size: 18px;
   color: #0f172a;
   padding: 2px 7px;
+}
+
+/* Price-range handles in the Filters panel (components/PropertyFilters.tsx).
+   Two native range inputs laid over one track, as Airbnb builds it: the
+   inputs ignore the pointer and only their round thumbs take it, so either
+   handle can be grabbed and a drag on the bare track scrolls the sheet. 32px
+   with a mouse (Airbnb's size); 44px on a touch screen, the minimum a finger
+   can hit reliably. */
+.price-range {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  outline: none;
+}
+.price-range::-webkit-slider-runnable-track { background: transparent; border: 0; }
+.price-range::-moz-range-track { background: transparent; border: 0; }
+.price-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: var(--thumb, 32px);
+  height: var(--thumb, 32px);
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid #d6d3d1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  cursor: grab;
+}
+.price-range::-moz-range-thumb {
+  pointer-events: auto;
+  width: var(--thumb, 32px);
+  height: var(--thumb, 32px);
+  border-radius: 9999px;
+  background: #fff;
+  border: 1px solid #d6d3d1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  cursor: grab;
+}
+.price-range:active::-webkit-slider-thumb { cursor: grabbing; transform: scale(1.06); }
+.price-range:focus-visible::-webkit-slider-thumb { outline: 2px solid #1c1917; outline-offset: 2px; }
+.price-range:focus-visible::-moz-range-thumb { outline: 2px solid #1c1917; outline-offset: 2px; }
+.price-slider { --thumb: 32px; }
+@media (pointer: coarse) {
+  .price-slider { --thumb: 44px; }
 }

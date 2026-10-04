@@ -27,13 +27,17 @@ export interface OwedRow {
     note: string | null;
     created_at: string;
     settled_amount?: number | null;
+    // Written off on review of a dispute (decide_host_debt_dispute). Never
+    // counted as recovered — it was not; it was let go.
+    waived_amount?: number | null;
 }
 
 // How much of this debt is still outstanding, as a positive number.
 export function outstandingOf(row: OwedRow): number {
     const charged = Math.abs(Number(row.amount || 0));
     const recovered = Number(row.settled_amount || 0);
-    const left = round2(charged - recovered);
+    const waived = Number(row.waived_amount || 0);
+    const left = round2(charged - recovered - waived);
     return left > 0 ? left : 0;
 }
 
@@ -99,7 +103,7 @@ export async function outstandingDebts(admin: any, hostId: string): Promise<Owed
 
     const { data } = await admin
         .from('payouts')
-        .select('id, booking_id, host_id, amount, kind, status, note, created_at, settled_amount')
+        .select('id, booking_id, host_id, amount, kind, status, note, created_at, settled_amount, waived_amount')
         .eq('host_id', hostId)
         .eq('status', 'owed')
         .order('created_at', { ascending: true });

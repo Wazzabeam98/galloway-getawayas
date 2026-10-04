@@ -18,7 +18,7 @@ import {
 } from '@/lib/emailCodeSignIn';
 import AgreementTick, { fetchAgreementStatus, holdAgreementGate, recordAgreement } from '@/components/legal/AgreementTick';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
-import { signOutThisDevice } from '@/lib/staySignedIn';
+import { recordStayChoice, signOutThisDevice } from '@/lib/staySignedIn';
 
 /**
  * The shared first step of every sign-up: "What's your email?".
@@ -193,6 +193,9 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
         e?.preventDefault();
         setBusy(true);
         setError('');
+        // No tick on this step: it stays signed in, and says so, so no earlier
+        // choice can carry over (lib/staySignedIn).
+        recordStayChoice(true);
         const r = await verifyCode(supabase, email, code);
         if (!r.ok) {
             setBusy(false);
@@ -206,6 +209,7 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
         e?.preventDefault();
         setBusy(true);
         setError('');
+        recordStayChoice(true);
         const r = await logInWithPassword(supabase, email, password);
         if (!r.ok) {
             setBusy(false);
@@ -381,7 +385,9 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
                                         value={code}
                                         onChange={(e) => setCode(tidyCode(e.target.value))}
                                         placeholder="123456"
-                                        className={INPUT + ' text-center text-2xl tracking-[0.3em]'}
+                                        // text-base swapped, not added to: with both on, the
+                                        // later .text-base won and this box was 16px.
+                                        className={INPUT.replace('text-base', 'text-2xl') + ' text-center tracking-[0.3em]'}
                                     />
                                 </div>
                                 {error && <p role="alert" className="text-sm text-red-600">{error}</p>}

@@ -25,10 +25,40 @@ test('only Supabase sign-in cookies are touched', () => {
     assert.equal(stay.isAuthCookie('sb-x-auth-token-code-verifier'), false);
 });
 
-test('staying is the default; only an explicit "0" opts out', () => {
-    assert.equal(stay.wantsToStay(undefined), true);
-    assert.equal(stay.wantsToStay('1'), true);
-    assert.equal(stay.wantsToStay('0'), false);
+// A token whose payload carries session_id, as Supabase's do.
+function tokenFor(sessionId: string): string {
+    const b64 = (o: any) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    return b64({ alg: 'HS256' }) + '.' + b64({ sub: 'u', session_id: sessionId, exp: 2_000_000_000 }) + '.sig';
+}
+const SID = '5d8a6b60-ad5c-4c10-9fff-fc0b8359769e';
+const OLD_SID = 'd1c8b8e7-292b-4078-aeab-934cdbd7e25a';
+
+test('staying is the default; "don\'t stay" counts only for the sign-in it was chosen for', () => {
+    assert.equal(stay.wantsToStay(undefined, SID), true);
+    assert.equal(stay.wantsToStay('pending', SID), false, 'just chosen, not yet bound');
+    assert.equal(stay.wantsToStay(SID, SID), false, 'bound to this session');
+    assert.equal(stay.wantsToStay(OLD_SID, SID), true, 'left by an earlier sign-in: ignored');
+});
+
+test('the middleware binds a fresh choice and deletes a stale one, whatever route the sign-in came by', () => {
+    assert.deepEqual(stay.resolveStayChoice(undefined, SID), { stay: true, rewrite: null });
+    assert.deepEqual(stay.resolveStayChoice('pending', SID), { stay: false, rewrite: { value: SID } });
+    assert.deepEqual(stay.resolveStayChoice(SID, SID), { stay: false, rewrite: null });
+    assert.deepEqual(stay.resolveStayChoice(OLD_SID, SID), { stay: true, rewrite: 'delete' });
+    // The old cookie's "0" is a different cookie altogether, and is deleted on sight.
+    assert.notEqual(stay.STAY_COOKIE, stay.LEGACY_STAY_COOKIE);
+    assert.deepEqual(stay.resolveStayChoice('0', SID), { stay: true, rewrite: 'delete' });
+});
+
+test('the session id is read from the sign-in cookie as the browser stores it', () => {
+    const raw = encodeURIComponent(JSON.stringify([tokenFor(SID), 'refresh', null, null, null]));
+    assert.equal(stay.sessionIdFromAuthCookie(raw), SID);
+    assert.equal(stay.sessionIdFromAccessToken(tokenFor(SID)), SID);
+    assert.equal(stay.sessionIdFromAuthCookie('garbage'), null);
+});
+
+test('a pending "don\'t stay" is short-lived, so an abandoned sign-in cannot leave it behind', () => {
+    assert.ok(stay.STAY_PENDING_MAX_AGE_SECONDS <= 15 * 60);
 });
 
 test('a year, matched to Airbnb, renewed on each visit', () => {
@@ -104,13 +134,15 @@ function fakeBrowser(initial: Record<string, string>, protocol = 'https:') {
 }
 
 test('log out ends THIS device only — scope local, never global', async () => {
-    const b = fakeBrowser({ [TOKEN]: 'x', gg_stay: '1' });
+    const b = fakeBrowser({ [TOKEN]: 'x', gg_stay: '0', gg_nostay: SID, gg_seen: SID + '.1790000000' });
     const calls: any[] = [];
     await stay.signOutThisDevice({ auth: { signOut: async (o: any) => { calls.push(o); return { error: null }; } } });
     b.done();
     assert.deepEqual(calls, [{ scope: 'local' }]);
     assert.equal(b.jar.has(TOKEN), false);
     assert.equal(b.jar.has('gg_stay'), false, 'the next sign-in chooses afresh');
+    assert.equal(b.jar.has('gg_nostay'), false, 'the next sign-in chooses afresh');
+    assert.equal(b.jar.has('gg_seen'), false, 'a chosen log out is never reported as lost');
 });
 
 test('the cookie goes even when the server refuses (403 session not found) or throws', async () => {
@@ -137,4 +169,57 @@ test('no per-device log out calls the global default any more', () => {
         assert.doesNotMatch(src, /auth\.signOut\(\s*\)/, rel + ' must not sign out every device');
         assert.match(src, /signOutThisDevice\(supabase\)/, rel);
     }
+});
+
+/* ------------------------------------------ every sign-in records the choice */
+
+test('recording "stay" deletes any choice, old or new; "don\'t stay" is pending until bound', () => {
+    const b = fakeBrowser({ gg_stay: '0', gg_nostay: OLD_SID });
+    stay.recordStayChoice(true);
+    assert.equal(b.jar.has('gg_stay'), false);
+    assert.equal(b.jar.has('gg_nostay'), false);
+    stay.recordStayChoice(false);
+    assert.equal(b.jar.get('gg_nostay'), 'pending');
+    assert.ok(b.writes.some((w) => /^gg_nostay=pending;.*Max-Age=900/.test(w)));
+    b.done();
+});
+
+// The guard against the bug coming back: any page or component that signs
+// someone in must record the stay choice first. A new sign-in route that
+// forgets fails here. (The emailed-link callback is server-side and needs
+// nothing: the middleware binds or discards whatever it finds.)
+test('every route that signs someone in records the stay choice', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const ROOT = path.resolve(__dirname, '..', '..');
+    const SIGNS_IN = /\b(verifySignInCode|verifyCode|logInWithPassword|signInWithPassword|signInWithOAuth|signInWithIdToken)\s*\(/;
+    const RECORDS = /\b(recordStayChoice|carryStayChoice)\s*\(/;
+    const files: string[] = [];
+    const walk = (dir: string) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            const p = path.join(dir, e.name);
+            if (e.isDirectory()) walk(p);
+            else if (/\.tsx?$/.test(e.name)) files.push(p);
+        }
+    };
+    walk(path.join(ROOT, 'app'));
+    walk(path.join(ROOT, 'components'));
+    const signers = files.filter((f) => !/\/api\//.test(f) && !/app\/auth\/callback\//.test(f) && SIGNS_IN.test(fs.readFileSync(f, 'utf8')));
+    assert.ok(signers.length >= 5, 'found the sign-in routes: ' + signers.length);
+    for (const f of signers) {
+        assert.match(fs.readFileSync(f, 'utf8'), RECORDS, path.relative(ROOT, f) + ' signs someone in without recording the stay choice');
+    }
+});
+
+/* ---------------------------------------------------- noticing a lost sign-in */
+
+test('a lost sign-in is reported once, on a page load, only where this device had one', () => {
+    const seen = stay.parseSeen(stay.seenValue(SID, 1_790_000_000));
+    assert.deepEqual(seen, { sessionId: SID, at: 1_790_000_000 });
+    assert.equal(stay.lostSignInToReport({ seen, hasAuthCookie: false, sessionOk: false, isDocument: true }), 'cookie_gone');
+    assert.equal(stay.lostSignInToReport({ seen, hasAuthCookie: true, sessionOk: false, isDocument: true }), 'session_refused');
+    assert.equal(stay.lostSignInToReport({ seen, hasAuthCookie: true, sessionOk: true, isDocument: true }), null);
+    assert.equal(stay.lostSignInToReport({ seen, hasAuthCookie: false, sessionOk: false, isDocument: false }), null, 'not a prefetch burst');
+    assert.equal(stay.lostSignInToReport({ seen: null, hasAuthCookie: false, sessionOk: false, isDocument: true }), null, 'never signed in here');
+    assert.equal(stay.parseSeen('nonsense'), null);
 });

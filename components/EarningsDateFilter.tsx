@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DateRange, Range, RangeKeyDict } from 'react-date-range';
+import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { CalendarDays } from 'lucide-react';
@@ -61,6 +62,7 @@ export default function EarningsDateFilter({ from, to, basePath = '/dashboard/ea
                     <div className="absolute right-0 z-50 mt-2 w-[min(92vw,360px)] rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
                         <div className="[&_.rdrCalendarWrapper]:w-full [&_.rdrMonth]:w-full [&_.rdrDateDisplayWrapper]:hidden">
                             <DateRange
+                                ariaLabels={MONTH_ARROW_LABELS}
                                 ranges={[range]}
                                 onChange={(rk: RangeKeyDict) => setRange(rk.selection)}
                                 moveRangeOnFirstSelection={false}
@@ -68,7 +70,7 @@ export default function EarningsDateFilter({ from, to, basePath = '/dashboard/ea
                                 weekStartsOn={1}
                                 direction="vertical"
                                 rangeColors={['#047857']}
-                                showMonthAndYearPickers={true}
+                                showMonthAndYearPickers={false}
                                 showDateDisplay={false}
                             />
                         </div>
