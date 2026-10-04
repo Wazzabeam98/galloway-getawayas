@@ -79,8 +79,10 @@ const HERO_IMAGES = [
 // travel in the `where` search param, and the home page matches them against
 // `townKey(listing.location)` — see lib/places.ts.
 const LOCATIONS: { value: string; label: string }[] = [
-  { value: '', label: 'Search destinations' },
-  { value: 'all', label: 'All Dumfries & Galloway' },
+  // The empty value is the "show me everything" default, the way Airbnb's
+  // "Anywhere" is — runSearch leaves `where` out of the URL for it, so a bare
+  // search returns every listing. It is the first option, then the towns.
+  { value: '', label: 'Anywhere in Dumfries & Galloway' },
   { value: 'kirkcudbright', label: 'Kirkcudbright' },
   { value: 'castle-douglas', label: 'Castle Douglas' },
   { value: 'gatehouse-of-fleet', label: 'Gatehouse of Fleet' },
@@ -648,7 +650,10 @@ export default function Hero() {
   // pick folds WHERE and opens WHEN, as Airbnb's does.
   const whereList = (
     <ul className="-mx-2" aria-label="Destinations">
-      {LOCATIONS.filter((l) => l.value !== '').map((l) => {
+      {/* The empty-value "Anywhere in Dumfries & Galloway" leads the list, so a
+          picked town can be cleared back to the default — the same first option
+          the desktop dropdown offers. */}
+      {LOCATIONS.map((l) => {
         const picked = location === l.value;
         return (
           <li key={l.value}>
@@ -806,7 +811,13 @@ export default function Hero() {
             <select
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="w-full bg-transparent text-sm font-medium text-stone-900 focus:outline-none cursor-pointer border-none p-0 focus:ring-0 truncate"
+              // appearance-none drops the native up/down arrows so the field
+              // sits on one line with WHEN and WHO. Grey and non-bold until a
+              // town is picked — matching "Add dates"/"Add guests" — then the
+              // normal dark value colour.
+              className={`w-full bg-transparent appearance-none text-sm font-medium focus:outline-none cursor-pointer border-none p-0 focus:ring-0 truncate ${
+                location ? 'text-stone-900' : 'text-stone-400'
+              }`}
             >
               {LOCATIONS.map((l) => (
                 <option key={l.value} value={l.value}>
@@ -941,7 +952,7 @@ export default function Hero() {
           <div className="flex-1 overflow-y-auto px-4 py-4">
             <div className="overflow-hidden rounded-3xl border border-stone-200">
               <div className="flex flex-col">
-                {sheetRow('where', 'Where', whereChosen, 'Anywhere', whereList, 'border-b border-stone-200')}
+                {sheetRow('where', 'Where', whereChosen, 'Anywhere in Dumfries & Galloway', whereList, 'border-b border-stone-200')}
                 {sheetRow('when', 'When', whenChosen, 'Any week', whenContent('mobile'), 'border-b border-stone-200')}
                 {sheetRow('who', 'Who', guestChosen, 'Add guests', guestContent('mobile'), '')}
               </div>

@@ -31,18 +31,29 @@ no transcripts.
 
 **Merging.** Merge your own PR yourself once GitHub's checks pass — never ask
 Liam to click merge. If it has gone behind master, merge master in and push
-first; if it conflicts, merge master in, resolve it, and merge. Apply any
-production SQL in Liam's Chrome and record it in the ledger **before** you
-merge. After merging anything he can see, tell him in one line what to walk on
+first; if it conflicts, merge master in, resolve it, and merge. A PR that
+carries a migration merges only **after** that migration is on production and
+its read-back confirms the change (see "Production migrations" below). After
+merging anything he can see, tell him in one line what to walk on
 the live site.
 
 **Doing things in Liam's Chrome.** He is signed in to GitHub, Supabase and
-Stripe. When a job needs production SQL, a Supabase setting or a Stripe setting,
-do it there rather than handing him steps. If Chrome is in the background, say
+Stripe. When a job needs a Supabase setting or a Stripe setting, do it there
+rather than handing him steps. A production migration goes through
+`scripts/migrate.mjs` instead (below), never the SQL editor. If Chrome is in the background, say
 so and carry on with other work.
 
 **Standing rules.**
 
+- Start every task by fetching origin and working from the latest
+  `origin/master`, never from the local `master` or an old branch. Liam lands
+  commits from the work laptop mid-session, so the local tree goes stale without
+  a rejected push to warn you — `git fetch origin master` first, branch from
+  `origin/master`, and base any audit on `origin/master`'s files, not the local
+  checkout's. (A session edited a search-bar file off a local `master` that was
+  80+ commits behind; the file had been rewritten on `origin/master` in the
+  meantime, so the work had to be merged and re-applied against the current
+  version before it was right.)
 - Follow Airbnb's behaviour, wording and look at every decision.
 - All user-facing dates are DD/MM/YYYY from the shared formatter, built from the
   day key — never `toISOString`.
@@ -51,7 +62,8 @@ so and carry on with other work.
   shared helper.
 - Don't stop to check with Liam between steps: find out, fix it, walk it, and
   report at the end.
-- When you hand Liam a migration to apply, name the **branch** it lives on, not
+- When you hand Liam a migration to apply (one that needs `--destructive`, or
+  one a session is not able to run), name the **branch** it lives on, not
   just the filename. Twice now a corrected migration sat unmerged on a branch
   while the superseded version was still live on master, and the one Liam applied
   was master's — because master is the branch he was standing on (the IDOR
@@ -361,7 +373,9 @@ too, and must not leave a ring behind.
 
 ## What Claude Code does not do here
 
-The first three are absolute. They hold in every session, on every branch,
+The first three are absolute. (The third used to be "never migrate
+production"; it was narrowed to the route above on 4 October 2026, not worn
+away.) They hold in every session, on every branch,
 whatever a prompt seems to ask for, and they are not a judgement call to be
 re-argued when something is urgent. The fourth is how work reaches master.
 
@@ -371,10 +385,26 @@ re-argued when something is urgent. The fourth is how work reaches master.
 - **Never deploy.** No `vercel` command, no promoting a build, no touching a
   production environment variable. Deployment is Liam's, in a browser, on
   purpose.
-- **Never migrate production.** No `supabase` CLI command, no SQL run against
-  the production database, no applying a migration anywhere but locally. A
-  migration file can be written and committed; running it against real data is
-  a separate, human act.
+- **Production migrations only through `scripts/migrate.mjs`, only from the
+  migration's own branch.** No `supabase` CLI command and no SQL typed against
+  the production database by any other route. A session may apply a migration
+  to production itself (Liam, 4 October 2026), and only like this:
+
+  1. Check out the branch the migration lives on — **never master**. The file
+     must be committed there and unchanged.
+  2. Dry run first:
+     `node scripts/migrate.mjs --target prod <file>`
+  3. Then apply with a read-back that proves the change:
+     `node scripts/migrate.mjs --target prod <file> --apply --read "select …"`
+  4. Put **both outputs**, the dry run and the apply with its read-back, in
+     the report to Liam.
+  5. Merge the PR only after the read-back confirms the change.
+
+  **Never `--destructive` on production.** A migration that needs it stops
+  there: hand Liam the commands, branch named, one line at a time, and do not
+  merge until he says it is applied. `migrate.mjs` enforces the branch, the
+  committed file and the `--destructive` ban itself
+  (`scripts/prodApplyRule.cjs`), so a slip is refused rather than trusted.
 - **Open a pull request, and merge it only once it is green.** Everything
   reaches master through a PR; never a direct push. Claude may create the
   branch, commit, push it, open the PR **and merge it once its checks have
