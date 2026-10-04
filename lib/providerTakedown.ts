@@ -15,6 +15,7 @@ import { pauseProviderBilling, resumeProviderBilling } from './providerBilling';
 import { cancelProviderSubscription } from './cancelSubscription';
 import { REMINDERS, dueDate } from './serviceSubscription';
 import { logMoneyFailure } from './moneyAlert';
+import { stripeRequest } from './stripe';
 
 export interface TakedownResult {
     ok: boolean;
@@ -115,22 +116,35 @@ export async function adminTakeDown(admin: any, provider: any, nowIso: string): 
 // An experience, or a trade we never billed: just lift the take-down.
 //
 // A trade whose subscription the take-down cancelled (subscription_status
-// 'canceled', no subscription id): they go back on the directory and back into
-// the ordinary card ladder. If their free period is already over, the clock is
-// set to now, so they get the same seven days' grace anybody else gets after
-// the free period — one email with the card link at day three, the listing down
-// at day seven if no card. Every reminder already due is marked sent, so the
-// cron doesn't fire the whole ladder at them in one morning.
+// 'canceled', no subscription id) also goes back on the card ladder —
+// deadSubscriptionPatch, below.
 export function relistPatch(provider: any, now: Date): Record<string, any> {
-    const nowIso = now.toISOString();
-    const patch: Record<string, any> = { admin_hidden_at: null, updated_at: nowIso };
-
+    const patch: Record<string, any> = { admin_hidden_at: null, updated_at: now.toISOString() };
     const cancelledByUs = String(provider.plan || '') === 'subscription'
         && !provider.stripe_subscription_id
         && String(provider.subscription_status || '') === 'canceled';
-    if (!cancelledByUs) return patch;
+    return cancelledByUs ? { ...patch, ...deadSubscriptionPatch(provider, now) } : patch;
+}
 
-    patch.subscription_status = 'none';
+// A trade coming back (Relist, or an account reactivated) whose £20
+// subscription WE cancelled when the listing came down. A cancelled subscription
+// can't be revived, so they re-subscribe through the ordinary card ladder — and
+// for that the row must stop holding the dead id (app/api/services/billing
+// refuses anyone holding one as "already set up", and the webhook only records a
+// new subscription onto a row with none).
+//
+// If their free period is already over, the clock is set to now, so they get
+// the same seven days' grace anybody else gets after the free period — one email
+// with the card link at day three, the listing down at day seven if no card.
+// Every reminder already due is marked sent, so the cron doesn't fire the whole
+// ladder at them in one morning. Pure.
+export function deadSubscriptionPatch(provider: any, now: Date): Record<string, any> {
+    const nowIso = now.toISOString();
+    const patch: Record<string, any> = {
+        stripe_subscription_id: null,
+        subscription_status: 'none',
+        updated_at: nowIso,
+    };
 
     let trialEnd: string | null = provider.trial_ends_at ? String(provider.trial_ends_at) : null;
     if (trialEnd && new Date(trialEnd).getTime() <= now.getTime()) {
@@ -149,4 +163,43 @@ export function relistPatch(provider: any, now: Date): Record<string, any> {
     }
 
     return patch;
+}
+
+// ---------------------------------------------------------------------------
+// AN ACCOUNT REACTIVATED
+// ---------------------------------------------------------------------------
+//
+// Deactivation cancels a trade's subscription (app/api/account/deactivate). Rows
+// deactivated since 4 Oct 2026 have the dead id cleared there and read
+// 'canceled'; rows deactivated before still hold the id, which Stripe's
+// customer.subscription.deleted marked 'unpaid'. So for a row still holding an
+// id, Stripe is asked — and only a subscription Stripe says is gone (canceled,
+// or no longer exists) is treated as dead. A trade delisted for never paying
+// ('unpaid' and no id) is NOT given a fresh grace: that isn't our cancel.
+//
+// Returns the patch for each provider that needs one. Never throws on a Stripe
+// read failure — that row is left as it was and reported.
+export async function reactivationBillingPatches(
+    rows: any[],
+    now: Date,
+): Promise<{ patches: Array<{ id: string; patch: Record<string, any> }>; unread: string[] }> {
+    const patches: Array<{ id: string; patch: Record<string, any> }> = [];
+    const unread: string[] = [];
+    for (const p of rows || []) {
+        if (String(p.plan || '') !== 'subscription') continue;
+        let dead = false;
+        if (!p.stripe_subscription_id) {
+            dead = String(p.subscription_status || '') === 'canceled';
+        } else {
+            try {
+                const sub = await stripeRequest('GET', '/subscriptions/' + encodeURIComponent(p.stripe_subscription_id));
+                dead = !!sub && (sub.status === 'canceled' || sub.status === 'incomplete_expired');
+            } catch (err: any) {
+                if ((err && err.stripeCode) === 'resource_missing' || (err && err.stripeStatus) === 404) dead = true;
+                else { unread.push(p.id); continue; }
+            }
+        }
+        if (dead) patches.push({ id: p.id, patch: deadSubscriptionPatch(p, now) });
+    }
+    return { patches, unread };
 }

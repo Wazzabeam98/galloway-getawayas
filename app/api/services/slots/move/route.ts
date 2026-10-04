@@ -2,7 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { guestExperiencesOpen, normaliseUnit, unitMultiplies, isLiveToGuests } from '@/lib/serviceOrders';
+import { guestExperiencesOpen, normaliseUnit, unitMultiplies, servesExistingBookings } from '@/lib/serviceOrders';
 import { isSlot, shapeOf, guestMayCancelFree } from '@/lib/serviceSlots';
 import { moveOrderFamily, moveTargetEligibility } from '@/lib/experienceMove';
 import { fetchSlotSessionRows } from '@/lib/providerSessions';
@@ -65,9 +65,11 @@ async function loadForMove(admin: any, orderId: string, userId: string): Promise
 
     const { data: provider } = await admin
         .from('service_providers')
-        .select('id, business_name, shape, status, plan, stripe_payouts_enabled, owner_paused, cancellation_window_hours')
+        .select('id, business_name, shape, status, plan, stripe_payouts_enabled, cancellation_window_hours')
         .eq('id', order.provider_id).maybeSingle();
-    if (!provider || !isSlot(provider) || !isLiveToGuests(provider)) {
+    // An existing booking, so a take-down (theirs or ours) doesn't stop the move
+    // — only new orders are refused while a listing is down.
+    if (!provider || !isSlot(provider) || !servesExistingBookings(provider)) {
         return { error: { status: 400, message: 'That experience isn’t taking bookings right now.' } };
     }
 

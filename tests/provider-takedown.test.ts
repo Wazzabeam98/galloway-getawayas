@@ -22,10 +22,19 @@ const ROOT = path.resolve(__dirname, '..', '..');
 // Stripe and the director alert are stubbed before anything loads them.
 const stripeCalls: any[] = [];
 let stripeFails = false;
+// What a GET /subscriptions/<id> answers, per id ('missing' → a 404).
+const stripeSubs: Record<string, string> = {};
 stubModule('@/lib/stripe', {
     stripeRequest: async (method: string, p: string, body?: any) => {
         stripeCalls.push({ method, path: p, body });
         if (stripeFails) { const e: any = new Error('card_declined'); e.stripeStatus = 402; throw e; }
+        if (method === 'GET') {
+            const id = decodeURIComponent(p.split('/').pop() || '');
+            const st = stripeSubs[id];
+            if (st === 'missing') { const e: any = new Error('No such subscription'); e.stripeCode = 'resource_missing'; e.stripeStatus = 404; throw e; }
+            if (st === 'error') { const e: any = new Error('Stripe is down'); e.stripeStatus = 500; throw e; }
+            return { id, status: st || 'active' };
+        }
         return { id: 'sub_1' };
     },
 });
@@ -33,8 +42,9 @@ const moneyAlerts: string[] = [];
 stubModule('@/lib/moneyAlert', { logMoneyFailure: async (m: string) => { moneyAlerts.push(m); } });
 
 const { visibleInDirectory } = require('../lib/serviceSubscription');
-const { isLiveToGuests } = require('../lib/serviceOrders');
-const { setOwnerPaused, adminTakeDown, relistPatch } = require('../lib/providerTakedown');
+const { isLiveToGuests, servesExistingBookings } = require('../lib/serviceOrders');
+const { providerTakesChanges } = require('../lib/orderChange');
+const { setOwnerPaused, adminTakeDown, relistPatch, reactivationBillingPatches } = require('../lib/providerTakedown');
 
 const live = { status: 'approved', stripe_payouts_enabled: true, subscription_status: 'active' };
 
@@ -177,4 +187,70 @@ test('relisting a trade whose subscription we cancelled gives seven days’ grac
 test('relisting a trade delisted for non-payment does not re-list them for free', () => {
     const p = relistPatch({ plan: 'subscription', stripe_subscription_id: null, subscription_status: 'unpaid' }, new Date());
     assert.equal(p.subscription_status, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Existing bookings carry on while a listing is down — like a confirmed
+// reservation on an unlisted Airbnb listing. Only NEW orders are refused.
+// ---------------------------------------------------------------------------
+
+test('a paused or taken-down experience still serves the bookings it already has', () => {
+    const acct = { stripe_account_id: 'acct_1' };
+    for (const down of [{ owner_paused: true }, { admin_hidden_at: '2026-10-04T10:00:00Z' }]) {
+        assert.equal(isLiveToGuests({ ...live, ...down }), false, 'no new orders');
+        assert.equal(servesExistingBookings({ ...live, ...down }), true, 'existing bookings still served');
+        assert.equal(providerTakesChanges({ ...live, ...acct, ...down }), true, 'the guest can still change theirs');
+    }
+});
+
+test('a declined or deactivated provider, or one Stripe cannot pay, takes no changes', () => {
+    assert.equal(servesExistingBookings({ ...live, status: 'hidden' }), false);
+    assert.equal(servesExistingBookings({ ...live, status: 'declined' }), false);
+    assert.equal(servesExistingBookings({ ...live, stripe_payouts_enabled: false }), false);
+});
+
+test('moving a booking and adding places use the existing-booking gate, not the new-order one', () => {
+    for (const f of ['app/api/services/slots/move/route.ts', 'app/api/services/slots/top-up/route.ts', 'lib/orderChange.ts']) {
+        const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+        assert.match(src, /servesExistingBookings\(provider\)/, f + ' gates on servesExistingBookings');
+        assert.doesNotMatch(src, /isLiveToGuests\(provider\)/, f + ' must not refuse an existing booking because the listing is down');
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Reactivation clears the subscription the deactivation cancelled.
+// ---------------------------------------------------------------------------
+
+test('reactivation clears only subscriptions we cancelled, and puts them back on the ladder', async () => {
+    stripeFails = false;
+    stripeSubs['sub_dead'] = 'canceled';
+    stripeSubs['sub_live'] = 'active';
+    stripeSubs['sub_gone'] = 'missing';
+    stripeSubs['sub_err'] = 'error';
+    const now = new Date('2026-10-04T10:00:00Z');
+    const past = '2026-03-01T00:00:00Z';
+    const { patches, unread } = await reactivationBillingPatches([
+        { id: 'old-shape', plan: 'subscription', stripe_subscription_id: 'sub_dead', subscription_status: 'unpaid', trial_ends_at: past },
+        { id: 'new-shape', plan: 'subscription', stripe_subscription_id: null, subscription_status: 'canceled', trial_ends_at: past },
+        { id: 'vanished', plan: 'subscription', stripe_subscription_id: 'sub_gone', subscription_status: 'unpaid', trial_ends_at: past },
+        { id: 'still-live', plan: 'subscription', stripe_subscription_id: 'sub_live', subscription_status: 'active', trial_ends_at: past },
+        { id: 'never-paid', plan: 'subscription', stripe_subscription_id: null, subscription_status: 'unpaid', trial_ends_at: past },
+        { id: 'commission', plan: 'commission', stripe_subscription_id: null, subscription_status: 'canceled' },
+        { id: 'stripe-down', plan: 'subscription', stripe_subscription_id: 'sub_err', subscription_status: 'unpaid', trial_ends_at: past },
+    ], now);
+    assert.deepEqual(patches.map((x: any) => x.id).sort(), ['new-shape', 'old-shape', 'vanished']);
+    assert.deepEqual(unread, ['stripe-down']);
+    const p = patches.find((x: any) => x.id === 'old-shape').patch;
+    assert.equal(p.stripe_subscription_id, null, 'the dead id is cleared so the billing link works again');
+    assert.equal(p.subscription_status, 'none');
+    assert.equal(p.trial_ends_at, now.toISOString(), 'a fresh seven days’ grace');
+    assert.ok(p.reminders_sent.indexOf('grace') === -1, 'only the card-link grace email is still to come');
+    assert.equal(p.admin_hidden_at, undefined, 'reactivation never lifts an admin take-down');
+});
+
+test('deactivation clears the cancelled subscription off the row, after Stripe accepts', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'app/api/account/deactivate/route.ts'), 'utf8');
+    const cancel = src.indexOf('cancelProviderSubscription(subId)');
+    const clear = src.indexOf("stripe_subscription_id: null, subscription_status: 'canceled'");
+    assert.ok(cancel !== -1 && clear > cancel, 'cleared only after the cancel call');
 });

@@ -21,7 +21,7 @@
 // "reductions refund nothing".
 
 import { shapeOf, freeCancelDeadline, guestMayCancelFree } from './serviceSlots';
-import { normaliseUnit, unitMultiplies, isLiveToGuests } from './serviceOrders';
+import { normaliseUnit, unitMultiplies, servesExistingBookings } from './serviceOrders';
 
 // Per-group pricing = a flat unit: one price whatever the head count, so a count
 // change only has to respect capacity. Every other unit multiplies by quantity,
@@ -54,9 +54,10 @@ export function dayKeyFromNow(offsetDays: number, now: Date): string {
     return dayKey(new Date(now.getTime() + offsetDays * 86400000));
 }
 
-// A provider that a guest may still change a booking against — the same live
-// gate the booking flow uses. A paused or de-listed provider is not a wall the
-// change can walk through.
+// A provider that a guest may still change a booking against. NOT the live gate
+// the booking flow uses: a paused or taken-down provider still serves the
+// bookings it already has (servesExistingBookings), so the guest can still
+// change theirs — only brand-new orders are refused.
 export function providerTakesChanges(provider: any): boolean {
-    return !!provider && isLiveToGuests(provider) && !!provider.stripe_account_id;
+    return !!provider && servesExistingBookings(provider) && !!provider.stripe_account_id;
 }
