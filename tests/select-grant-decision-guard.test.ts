@@ -51,6 +51,7 @@ const TABLES: TableDecision[] = [
             'status', 'submitted_at', 'subscription_status', 'trade', 'trial_ends_at', 'updated_at',
         ]),
         revoked: {
+            admin_hidden_at: 'admin take-down tombstone — set and cleared only by the admin provider-visibility route (service role); consulted server-side by isLiveToGuests/visibleInDirectory and by the public SELECT policy, never browser-read (mirrors owner_paused)',
             ical_token: 'calendar-export secret — subscribing to a provider\'s feed reads their bookings; read only via the service role in the experiences iCal export route, never browser-read (mirrors listings.ical_token)',
             owner_paused: 'owner\'s self-serve take-down flag; read and written only via the provider editor\'s service-role route (ownership-checked), never browser-read — isLiveToGuests consults it server-side',
             deactivated_at: 'reversible deactivation tombstone — set by the SECURITY DEFINER deactivate routine, read only via the service role (admin reactivation, directory loads); a deactivated provider is signed out, so no browser reads it (mirrors owner_paused)',
