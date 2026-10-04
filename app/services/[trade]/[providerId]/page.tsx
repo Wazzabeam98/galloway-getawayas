@@ -16,7 +16,7 @@ import { visibleInDirectory } from '@/lib/serviceSubscription';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostCredentials from '@/components/marketplace/HostCredentials';
 import { regionCoverageLine } from '@/components/marketplace/present';
-import { MapPin, ShieldCheck, BadgeCheck, Wrench, Clock, CalendarClock, ArrowRight } from 'lucide-react';
+import { MapPin, FileText, BadgeCheck, Wrench, Clock, CalendarClock, ArrowRight } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -186,11 +186,18 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                         {(provider.registration_number || verifiedRegs.length > 0) && (
                             <section className="mt-8 border-t border-slate-200 pt-8">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">Registration</h2>
+                                {/* Tradesperson Agreement 5.2: we display a registration
+                                    number "so an Owner can check it themselves on the
+                                    public register. We do not verify it." So it is
+                                    labelled as the trade's own, never as our check. */}
+                                <p className="mt-1 text-sm text-slate-500">
+                                    Provided by {provider.business_name}. Check it on the public register before booking work.
+                                </p>
                                 <div className="mt-4 space-y-2">
                                     {verifiedRegs.map((r: any) => (
-                                        <p key={r.scheme} className="flex items-center gap-1.5 text-sm text-emerald-800">
-                                            <ShieldCheck className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-                                            {schemeLabel(r.scheme)} {r.number} — checked by us
+                                        <p key={r.scheme} className="flex items-center gap-1.5 text-sm text-slate-700">
+                                            <FileText className="h-4 w-4 text-slate-500" strokeWidth={1.75} aria-hidden />
+                                            {schemeLabel(r.scheme)} {r.number}
                                         </p>
                                     ))}
                                     {provider.registration_number && (

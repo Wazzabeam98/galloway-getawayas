@@ -17,6 +17,8 @@ import { round2 } from '@/lib/resolutions';
 import { applyBookingChange } from '@/lib/applyBookingChange';
 import { topUpHostForIncrease } from '@/lib/changePayout';
 import { settleHostDebtSession } from '@/lib/hostDebtSettle';
+import { notifyPaymentFailed } from '@/lib/serviceSubscriptionAlert';
+import { endedByOwnCancellation } from '@/lib/subscriptionCancel';
 
 export const dynamic = 'force-dynamic';
 
@@ -844,10 +846,23 @@ export async function POST(request: Request) {
                 ? 'unpaid'
                 : String(sub.status || 'active');
 
+            // A trade's own cancellation coming due (Tradesperson Agreement 3.4 —
+            // they cancelled, the listing stayed up to the end of the month they
+            // had paid for, and this is that date). The listing comes down the
+            // same way ('unpaid'), and the dead id is cleared so the trade can
+            // subscribe again later: the billing page refuses anyone holding a
+            // subscription id, and the checkout handler only records a new one
+            // onto a row without one. A subscription Stripe ended for
+            // non-payment keeps its id, as before.
+            const patch: Record<string, any> = { subscription_status: status, updated_at: new Date().toISOString() };
+            if (event.type === 'customer.subscription.deleted' && endedByOwnCancellation(sub)) {
+                patch.stripe_subscription_id = null;
+            }
+
             if (subscriptionId) {
                 const { error: statusError } = await admin
                     .from('service_providers')
-                    .update({ subscription_status: status, updated_at: new Date().toISOString() })
+                    .update(patch)
                     .eq('stripe_subscription_id', subscriptionId);
 
                 if (statusError) {
@@ -860,11 +875,12 @@ export async function POST(request: Request) {
             }
         }
 
-        // A payment that failed. Recorded, not acted on.
+        // A payment that failed. Recorded, and the trade told once — nothing
+        // else acted on.
         //
         // Stripe will retry on its own schedule and this event fires on every
         // attempt, so doing anything irreversible here would act three or four
-        // times on one failure. The status change that matters arrives as
+        // times on one failure (the email is claimed once per invoice). The status change that matters arrives as
         // customer.subscription.updated when Stripe moves him to past_due, and
         // as .deleted when it gives up.
         if (event.type === 'invoice.payment_failed') {
@@ -884,6 +900,10 @@ export async function POST(request: Request) {
                         + String((prov && prov.business_name) || subscriptionId)),
                     { path: 'stripe/webhook' }
                 );
+
+                // And tell the trade (Tradesperson Agreement 3.3) — once per
+                // invoice however many retries Stripe makes; never throws.
+                await notifyPaymentFailed(admin, subscriptionId, inv);
             }
         }
 

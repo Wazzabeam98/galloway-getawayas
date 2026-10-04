@@ -1413,27 +1413,29 @@ export function canBeBooked(trade: string): boolean {
 // collapses them back into one has lost the distinction.
 // ---------------------------------------------------------------------------
 
-// The trades a host can enquire about today.
+// The trades a host can enquire about today: every open host trade.
 //
-// Seven, and each absence has a reason rather than an oversight:
+// Gardening (trees), waste (bin) and "Something else" (other) joined on 4
+// October 2026. They were already signing up, paying the subscription after the
+// free period and appearing in the directory with an enquiry button — while this
+// list refused every enquiry to them ("That trade cannot be enquired about
+// yet"), so they were paying for a listing nobody could contact. The reasons
+// they were held back no longer stood: the listing editor now writes
+// listings.plot_band, and no band-booking path exists for waste (canBeBooked has
+// no caller) — an enquiry is the only way a host can reach them. All three are on
+// the subscription (TRADE_PLANS), so an enquiry moves no money, the same as the
+// rest. tests/service-pricing.test.ts holds every directory trade to this list.
 //
-//   trees       gardening is banded on `listings.plot_band`, and nothing
-//               writes that column — there is no field on the listing form.
-//               A gardener in the shop would show every host a blank where
-//               the price goes. It joins the day the form asks, and that is
-//               a one-line change to this list.
-//   sponge      cleaning is booked from the bands, not enquired about — a host
-//   bin         can already see a real price, so the enquiry route would be a
-//               downgrade — and it is coming soon in any case. Waste sits out
-//               of the enquiry shop for the same booked-from-bands reason; it is
-//               on the subscription like the rest and takes no per-job cut.
-//   chef        the four guest trades are sold to somebody on holiday and
-//   cake        have their own shop. Nothing about this one applies.
-//   basket
-//   other
+// The one absence, and why:
+//
+//   sponge      cleaning is coming soon (COMING_SOON_TRADES), is the one host
+//               trade still on commission, and is meant to be booked from the
+//               bands rather than enquired about.
+//   guest       guest experiences are sold to somebody on holiday and have
+//               their own shop. Nothing about this one applies.
 export const SHOP_TRADES = [
     'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
-    'droplet',
+    'droplet', 'trees', 'bin', 'other',
 ] as const;
 
 // Whether a host can ask this trade to come and look at something.
@@ -1455,14 +1457,13 @@ export function enquirableTrades(): Array<{ key: string; label: string }> {
 
 // A host trade that is not in the shop yet, and what to say about it.
 //
-// This exists so the entry page can list all ten host trades and tell the
-// truth about the three that do nothing, rather than showing a short list and
+// This exists so the entry page can list every host trade and tell the truth
+// about the one that does nothing yet (cleaning), rather than showing a short list and
 // letting a host conclude the site has no cleaners. A host who came for a
 // cleaner and found silence assumes the page is broken.
 export function comingSoonNote(trade: string): string | null {
     if (canBeEnquiredAbout(trade)) return null;
     if (isTradeComingSoon(trade)) return 'Coming soon.';
-    if (trade === 'bin' || trade === 'trees') return 'Coming shortly.';
     return null;
 }
 
