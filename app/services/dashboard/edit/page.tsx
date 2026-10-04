@@ -13,6 +13,9 @@ import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { ukDate } from '@/lib/dayKey';
 import ProviderBusinessEditor from '@/components/services/ProviderBusinessEditor';
 import TradeListingStatus from '@/components/services/TradeListingStatus';
+import TradeSubscription from '@/components/services/TradeSubscription';
+import { readSubscription, isLive } from '@/lib/subscriptionCancel';
+import { londonDayKey } from '@/lib/dayKey';
 
 export const metadata = {
     title: 'Edit your business',
@@ -28,7 +31,7 @@ export default async function EditBusinessPage() {
 
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number, plan, trial_ends_at, owner_paused, admin_hidden_at, stripe_subscription_id')
+        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number, plan, trial_ends_at, owner_paused, admin_hidden_at, stripe_subscription_id, subscription_status')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -107,6 +110,28 @@ export default async function EditBusinessPage() {
         ? (provider.stripe_subscription_id ? 'subscription' as const : 'free' as const)
         : null;
 
+    // The £20 subscription, as Stripe holds it now (cancel-at-period-end lives
+    // there, not on our row). Read on each load; a Stripe hiccup shows a calm
+    // "can't load" rather than breaking the page.
+    const dmy = (ms: number | null) => (ms ? ukDate(londonDayKey(new Date(ms))) : null);
+    let subscription: any = null;
+    if (provider.plan === 'subscription') {
+        if (provider.stripe_subscription_id) {
+            try {
+                const s = await readSubscription(provider.stripe_subscription_id);
+                subscription = !isLive(s)
+                    ? { kind: 'ended' }
+                    : s.cancelAtPeriodEnd
+                        ? { kind: 'ending', endsOn: dmy(s.endsAt) }
+                        : { kind: 'live', trialing: s.status === 'trialing', periodEnd: dmy(s.periodEnd) };
+            } catch {
+                subscription = { kind: 'unknown' };
+            }
+        } else if (provider.subscription_status === 'unpaid') {
+            subscription = { kind: 'ended' };
+        }
+    }
+
     return (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-24">
             <Link href="/services/dashboard" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
@@ -130,18 +155,27 @@ export default async function EditBusinessPage() {
                         Taken down · hosts can’t find you
                     </span>
                 )}
-                {!down && provider.plan === 'subscription' && (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                        Listed · hosts can find you
+                {/* Off the directory for want of a subscription (never added a
+                    card after the free period, or their own cancellation came
+                    due) — 'unpaid' is what hides them (visibleInDirectory). */}
+                {!down && provider.subscription_status === 'unpaid' && (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                        <span className="h-2 w-2 rounded-full bg-slate-400" />
+                        Not listed · no subscription running
                     </span>
                 )}
-                {provider.plan === 'subscription' && (
+                {!down && provider.subscription_status !== 'unpaid' && provider.plan === 'subscription' && (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        {subscription && subscription.kind === 'ending' && subscription.endsOn ? 'Listed until ' + subscription.endsOn : 'Listed · hosts can find you'}
+                    </span>
+                )}
+                {provider.plan === 'subscription' && provider.subscription_status !== 'unpaid' && (
                     <span className="text-sm font-semibold text-emerald-700">
                         {provider.trial_ends_at ? 'Free until ' + ukDate(provider.trial_ends_at) : 'Free for six months from your first enquiry'}
                     </span>
                 )}
-                {!down && <a
+                {!down && provider.subscription_status !== 'unpaid' && <a
                     href={`/services/${encodeURIComponent(provider.trade)}/${provider.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -182,6 +216,12 @@ export default async function EditBusinessPage() {
             <div className="mt-10">
                 <TradeListingStatus place="section" providerId={provider.id} paused={paused} adminHidden={adminHidden} billing={billing} />
             </div>
+
+            {subscription && (
+                <div className="mt-6">
+                    <TradeSubscription providerId={provider.id} state={subscription} />
+                </div>
+            )}
         </div>
     );
 }
