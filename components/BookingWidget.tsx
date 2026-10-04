@@ -786,6 +786,9 @@ export default function BookingWidget({
     // On a phone the bottom bar shows dates and the total once they are chosen,
     // and its button becomes the request-to-book action (reopening at step 2).
     const datesChosen = nights > 0;
+    // Whole pounds when there are no pence ("£400 total"), the way the card
+    // writes a round price, but still grouping thousands for a bigger stay.
+    const barTotal = Number.isInteger(total) ? '£' + total.toLocaleString('en-GB') : formatGBP(total);
     const reserveLabel = instantBook ? 'Reserve' : 'Request to book';
     const checkInKey = dateToKey(dateRange.startDate);
     const checkOutKey = dateToKey(dateRange.endDate);
@@ -802,7 +805,7 @@ export default function BookingWidget({
                         {datesChosen ? (
                             <>
                                 <p className="text-base font-bold text-slate-900 leading-tight">
-                                    {formatGBP(total)}<span className="text-sm font-normal text-slate-500"> total</span>
+                                    {barTotal}<span className="text-sm font-normal text-slate-500"> total</span>
                                 </p>
                                 <p className="text-xs text-slate-500 underline underline-offset-2 truncate">
                                     {ukDate(checkInKey)} – {ukDate(checkOutKey)}
