@@ -1,18 +1,19 @@
 import Image from 'next/image';
-import { BadgeCheck, Star, Clock, MessageCircle } from 'lucide-react';
+import { BadgeCheck, Star, ShieldCheck } from 'lucide-react';
 import { getImageUrl } from '@/lib/utils';
 
 export type CoHost = { name: string; avatarUrl: string | null };
 
-// "Meet your host" — Airbnb's host card: the photo, the headline numbers
-// (reviews, rating, years hosting), the host's own words, the co-hosts, and how
-// responsive they are. A FLAT bordered card on the tinted page: with no "Message
-// host" button on it (that waits on pre-booking threads), nothing here is a
-// surface a guest acts on — it's trust they read — so it doesn't take the lift.
+// "Meet your host" in Airbnb's two-column shape. Left: a raised card with the
+// host's photo (initial fallback) and a verified check on it, their name, and
+// Reviews / Rating / Years hosting stacked down the right with thin dividers —
+// then the bio (and any profile facts they've filled in) beneath it. Right: a
+// short note on what "verified" means, the co-hosts, the host's response rate
+// and time, and a payment-safety line. No Message host button yet (pre-booking
+// threads are their own feature). On a phone the two columns stack.
 //
-// Everything is resolved on the server before it reaches here: only first names
-// and the public booleans cross to the browser (the name columns are anon-
-// revoked), exactly as the old inline block did.
+// The raised card uses the one lifted-card recipe (border + the single shadow)
+// from CLAUDE.md, on the slate-50 page — the host asked for it raised.
 export default function MeetYourHost({
     firstName,
     avatarUrl,
@@ -46,113 +47,123 @@ export default function MeetYourHost({
             style={{ width: size, height: size, fontSize: size * 0.4 }}
         >
             {url ? (
-                <Image
-                    src={getImageUrl(url)}
-                    alt={`${name}, host`}
-                    width={size}
-                    height={size}
-                    className="w-full h-full object-cover"
-                />
+                <Image src={getImageUrl(url)} alt={`${name}`} width={size} height={size} className="w-full h-full object-cover" />
             ) : (
                 name.charAt(0)
             )}
         </div>
     );
 
-    // The headline numbers. Rating only once a place has enough reviews to show a
-    // score (below that it reads "New"), so the stat is dropped rather than
-    // printing a 0.0 that one review could swing.
-    const stats: { value: string; label: string }[] = [];
-    if (ratingCount > 0) stats.push({ value: String(ratingCount), label: ratingCount === 1 ? 'Review' : 'Reviews' });
-    if (showScore) stats.push({ value: ratingAvg.toFixed(2), label: 'Rating' });
+    // The headline numbers down the right of the card. Rating only once a place
+    // has enough reviews to show a score, so a 0.0 never appears.
+    const stats: { value: React.ReactNode; label: string }[] = [];
+    if (ratingCount > 0) stats.push({ value: ratingCount, label: ratingCount === 1 ? 'Review' : 'Reviews' });
+    if (showScore) {
+        stats.push({
+            value: (
+                <span className="inline-flex items-center gap-1">
+                    {ratingAvg.toFixed(2)}
+                    <Star className="h-3.5 w-3.5 fill-slate-900" />
+                </span>
+            ),
+            label: 'Rating',
+        });
+    }
     if (yearsHosting && yearsHosting >= 1) {
-        stats.push({ value: String(yearsHosting), label: yearsHosting === 1 ? 'Year hosting' : 'Years hosting' });
+        stats.push({ value: yearsHosting, label: yearsHosting === 1 ? 'Year hosting' : 'Years hosting' });
     }
 
     const hasResponse = responseRatePercent != null || typicalLabel;
 
     return (
         <section id="host" className="mt-8 pt-8 border-t scroll-mt-24">
-            <h2 className="text-xl font-semibold text-slate-900">Meet your host</h2>
+            <h2 className="text-xl md:text-2xl font-bold text-slate-900">Meet your host</h2>
 
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6">
-                <div className="flex items-center gap-4">
-                    <Avatar url={avatarUrl} name={firstName} size={72} />
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-lg font-bold text-slate-900">{firstName}</span>
-                            {verified && (
-                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
-                                    <BadgeCheck className="w-3.5 h-3.5" /> Verified host
-                                </span>
+            <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-12">
+                {/* Left: the raised identity card, then the bio below it. */}
+                <div>
+                    <div className="max-w-sm rounded-2xl border border-slate-200 bg-white shadow-[0_6px_16px_rgba(0,0,0,0.12)] p-6">
+                        <div className="flex items-center gap-5">
+                            <div className="flex flex-col items-center text-center">
+                                <div className="relative">
+                                    <Avatar url={avatarUrl} name={firstName} size={104} />
+                                    {verified && (
+                                        <span className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-white">
+                                            <BadgeCheck className="h-7 w-7 fill-emerald-600 text-white" />
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="mt-3 text-2xl font-bold text-slate-900">{firstName}</div>
+                                <div className="text-xs font-medium text-slate-500">Host</div>
+                            </div>
+
+                            {stats.length > 0 && (
+                                <div className="flex-1 divide-y divide-slate-100 border-l border-slate-100 pl-5">
+                                    {stats.map((s) => (
+                                        <div key={s.label} className="py-2.5 first:pt-0 last:pb-0">
+                                            <div className="text-lg font-bold leading-tight text-slate-900">{s.value}</div>
+                                            <div className="text-[11px] text-slate-500">{s.label}</div>
+                                        </div>
+                                    ))}
+                                </div>
                             )}
                         </div>
-                        {sinceYear && (
-                            <div className="text-sm text-slate-500">Hosting since {sinceYear}</div>
-                        )}
-                        {verified && (
-                            <div className="text-sm text-slate-500">
-                                Stripe has confirmed {firstName}&apos;s identity.
-                            </div>
-                        )}
                     </div>
+
+                    {sinceYear && (
+                        <div className="mt-4 text-sm text-slate-500">Hosting since {sinceYear}</div>
+                    )}
+                    {bio && (
+                        <p className="mt-3 text-slate-600 whitespace-pre-line">{bio}</p>
+                    )}
                 </div>
 
-                {stats.length > 0 && (
-                    <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-slate-100 pt-5">
-                        {stats.map((s) => (
-                            <div key={s.label} className="flex items-baseline gap-1.5">
-                                <span className="text-lg font-bold text-slate-900 inline-flex items-center gap-1">
-                                    {s.label === 'Rating' && <Star className="h-4 w-4 fill-slate-900" />}
-                                    {s.value}
-                                </span>
-                                <span className="text-sm text-slate-500">{s.label}</span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {bio && (
-                    <p className="mt-5 text-slate-600 whitespace-pre-line">{bio}</p>
-                )}
-
-                {hasResponse && (
-                    <div className="mt-5 space-y-1.5 border-t border-slate-100 pt-5 text-sm text-slate-700">
-                        {responseRatePercent != null && (
-                            <div className="flex items-center gap-2">
-                                <MessageCircle className="h-4 w-4 text-slate-500" />
-                                <span>
-                                    <span className="font-semibold text-slate-900">Response rate:</span>{' '}
-                                    {responseRatePercent}%
-                                </span>
-                            </div>
-                        )}
-                        {typicalLabel && (
-                            <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-slate-500" />
-                                <span>
-                                    <span className="font-semibold text-slate-900">Responds</span> {typicalLabel}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {coHosts.length > 0 && (
-                    <div className="mt-5 border-t border-slate-100 pt-5">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            {coHosts.length === 1 ? 'Co-host' : 'Co-hosts'}
+                {/* Right: what verified means, co-hosts, host details, safety. */}
+                <div className="space-y-6">
+                    {verified && (
+                        <div>
+                            <h3 className="flex items-center gap-2 font-semibold text-slate-900">
+                                <BadgeCheck className="h-5 w-5 text-emerald-700" />
+                                {firstName} is a verified host
+                            </h3>
+                            <p className="mt-1 text-sm text-slate-600">
+                                Stripe has confirmed {firstName}&apos;s identity, so you know who you&apos;re
+                                booking with before you pay.
+                            </p>
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">
-                            {coHosts.map((c, i) => (
-                                <div key={i} className="flex items-center gap-2.5">
-                                    <Avatar url={c.avatarUrl} name={c.name} size={40} />
-                                    <span className="text-sm font-medium text-slate-800">{c.name}</span>
-                                </div>
-                            ))}
+                    )}
+
+                    {coHosts.length > 0 && (
+                        <div>
+                            <div className="mb-2 text-sm font-semibold text-slate-900">
+                                {coHosts.length === 1 ? 'Co-host' : 'Co-hosts'}
+                            </div>
+                            <div className="flex flex-wrap gap-x-6 gap-y-3">
+                                {coHosts.map((c, i) => (
+                                    <div key={i} className="flex items-center gap-2.5">
+                                        <Avatar url={c.avatarUrl} name={c.name} size={40} />
+                                        <span className="text-sm font-medium text-slate-800">{c.name}</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
+                    )}
+
+                    {hasResponse && (
+                        <div>
+                            <div className="mb-2 text-sm font-semibold text-slate-900">Host details</div>
+                            <div className="space-y-1 text-sm text-slate-700">
+                                {responseRatePercent != null && <div>Response rate: {responseRatePercent}%</div>}
+                                {typicalLabel && <div>Responds {typicalLabel}</div>}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex items-start gap-2 border-t border-slate-100 pt-4 text-sm text-slate-500">
+                        <ShieldCheck className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                        <span>To help protect your payment, always pay and message through Galloway Getaways.</span>
                     </div>
-                )}
+                </div>
             </div>
         </section>
     );

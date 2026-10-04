@@ -99,7 +99,7 @@ export default function ReviewsSummary({ reviews, ratingAvg, ratingCount, catego
                         title={badgeExplanation}
                         className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full"
                     >
-                        Guest favourite
+                        Top rated
                     </span>
                 )}
             </div>

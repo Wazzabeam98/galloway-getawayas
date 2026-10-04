@@ -76,7 +76,7 @@ export function guestFavouriteScore(ratings: number[]): number | null {
  * Whether the grace rule is the thing holding the badge up — the listing has
  * it, but its plain average alone would not have earned it.
  *
- * Used to explain the badge on screen. A listing showing "Guest favourite"
+ * Used to explain the badge on screen. A listing showing "Top rated"
  * above an average of 4.33 looks like a contradiction unless we say why.
  */
 export function isGraceHoldingBadge(ratings: number[]): boolean {

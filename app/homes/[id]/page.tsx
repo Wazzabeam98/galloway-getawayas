@@ -104,7 +104,7 @@ function propertyHighlights(home: any): { title: string; detail: string; icon: a
 
     if (home && home.instant_book) {
         out.push({
-            title: 'Instant Book',
+            title: 'Instant booking',
             detail: 'Your dates are confirmed straight away, with no wait for approval.',
             icon: Zap,
         });

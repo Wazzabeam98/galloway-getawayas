@@ -48,14 +48,14 @@ test("the guest confirmation says they're booked and carries the money", () => {
     assert.match(mail.html, /Harbour Cottage/);
 });
 
-test('the host alert differs for Instant Book and for a request', () => {
+test('the host alert differs for an instant booking and for a request', () => {
     const instant = emails.hostNewBookingEmail({
         hostFirst: 'Liam', guestFirst: 'Morag', listingTitle: 'Harbour Cottage',
         checkIn: '2026-12-30', checkOut: '2027-01-03', guests: 4, total: 620,
         instant: true, bookingId: 'b-1',
     });
     assert.match(instant.subject, /^New booking —/);
-    assert.match(instant.html, /Instant Book/);
+    assert.match(instant.html, /booked [^.]*instantly/);
     assert.match(instant.html, /View the booking/);
 
     const request = emails.hostNewBookingEmail({
