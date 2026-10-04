@@ -96,12 +96,13 @@ export default function MeetYourHost({
             <h2 className="text-xl md:text-2xl font-bold text-slate-900">Meet your host</h2>
 
             <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-12">
-                {/* Left: the raised identity card, then the bio below it. The
-                    card is sized to its content (w-fit), so a new host with only
-                    one stat gets a compact card rather than a wide, empty one —
-                    the way Airbnb's new-host card hugs its content. */}
+                {/* Left: the raised identity card, then the bio below it. On a
+                    phone the card is full width (it stacks above everything else,
+                    so hugging its content left an awkward gap at the right edge).
+                    On desktop, where it sits beside the right column, it stays
+                    sized to its content (w-fit) the way Airbnb's card does. */}
                 <div>
-                    <div className="w-fit max-w-sm rounded-2xl border border-slate-200 bg-white shadow-[0_6px_16px_rgba(0,0,0,0.12)] p-6">
+                    <div className="w-full lg:w-fit lg:max-w-sm rounded-2xl border border-slate-200 bg-white shadow-[0_6px_16px_rgba(0,0,0,0.12)] p-6">
                         <div className="flex items-center gap-5">
                             <div className="flex flex-col items-center text-center">
                                 <div className="relative">
@@ -136,6 +137,25 @@ export default function MeetYourHost({
                                 Hosting since {sinceYear}
                             </div>
                         )}
+
+                        {/* On a phone the co-host joins the host inside the card,
+                            as a row (photo and name) under "Hosting since" with a
+                            thin divider, so the two sit together. On desktop the
+                            co-host stays in the right column (below), so this is
+                            hidden there. */}
+                        {coHosts.length > 0 && (
+                            <div className="lg:hidden mt-4 border-t border-slate-100 divide-y divide-slate-100">
+                                {coHosts.map((c, i) => (
+                                    <div key={i} className="flex items-center gap-3 py-4 last:pb-0">
+                                        <Avatar url={c.avatarUrl} name={c.name} size={40} />
+                                        <div>
+                                            <div className="text-sm font-medium text-slate-800">{c.name}</div>
+                                            <div className="text-xs text-slate-500">Co-host</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {bio && (
@@ -159,8 +179,10 @@ export default function MeetYourHost({
                         </div>
                     )}
 
+                    {/* Desktop keeps the co-host(s) in the right column, as before.
+                        On a phone they move into the card above, so this is hidden. */}
                     {coHosts.length > 0 && (
-                        <div>
+                        <div className="hidden lg:block">
                             <div className="mb-2 text-sm font-semibold text-slate-900">
                                 {coHosts.length === 1 ? 'Co-host' : 'Co-hosts'}
                             </div>
