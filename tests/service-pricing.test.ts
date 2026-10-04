@@ -28,6 +28,7 @@ const {
     STOREY_BANDS,
     canBeBooked,
     canBeEnquiredAbout,
+    isTradeComingSoon,
     calloutLine,
     showsTimeGuide,
     unclaimedTrades,
@@ -290,25 +291,28 @@ test('a maintenance trade cannot be booked and can be enquired about', () => {
 });
 
 test('what is not in the shop, and why', () => {
-    // Cleaning and waste take 10% at acceptance. A commission needs a total,
-    // a total needs a completion step, and that is a booking. They are not
-    // late — they are somewhere else.
+    // Cleaning takes 10% at acceptance and is coming soon. A commission needs a
+    // total, a total needs a completion step, and that is a booking.
     assert.equal(canBeEnquiredAbout('sponge'), false, 'cleaning is booked, not enquired about');
-    assert.equal(canBeEnquiredAbout('bin'), false, 'waste is booked, not enquired about');
-
-    // Gardening is banded on listings.plot_band and NOTHING WRITES THAT
-    // COLUMN — there is no field on the listing form. A gardener in the shop
-    // would show every host a blank where the price goes.
-    //
-    // So this assertion is a note to whoever builds that field: add 'trees'
-    // to SHOP_TRADES and delete this line, in the same change. It is the only
-    // absence here that is waiting on work rather than on a decision.
-    assert.equal(canBeEnquiredAbout('trees'), false, 'gardening waits for listings.plot_band');
 
     // The guest trades are sold to somebody on holiday and have their own
     // shop. Nothing about the host flow applies to them.
-    for (const trade of ['chef', 'cake', 'basket', 'other']) {
+    for (const trade of ['guest', 'chef', 'cake', 'basket']) {
         assert.equal(canBeEnquiredAbout(trade), false, trade + ' is a guest trade');
+    }
+});
+
+// The bug this closes (4 Oct 2026): gardening, waste and "Something else"
+// signed up, paid the subscription and showed in the directory with an enquiry
+// button, while the enquiry route refused every enquiry to them. A trade a host
+// can see must be a trade a host can ask.
+test('every host trade the directory shows can be enquired about', () => {
+    const shown = (HOST_TRADES as readonly string[]).filter((t) => !isTradeComingSoon(t));
+    for (const trade of shown) {
+        assert.equal(canBeEnquiredAbout(trade), true, trade + ' is in the directory but enquiries to it are refused');
+    }
+    for (const trade of ['trees', 'bin', 'other']) {
+        assert.equal(canBeEnquiredAbout(trade), true, trade + ' can be enquired about');
     }
 });
 

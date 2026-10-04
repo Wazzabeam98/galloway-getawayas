@@ -240,7 +240,7 @@ const TRADE: FaqItem[] = [
         q: 'What happens when the free period ends?',
         a: [
             'Near the end of your free period we email you a secure link to add a card, and Stripe takes the £20 each month after that. If you haven’t added a card, you stay listed for seven days after the free period ends, then your listing is hidden until you do.',
-            'If a payment fails, Stripe tries again and you stay listed meanwhile; if it can’t collect, your listing comes down until it’s paid. Jobs you’ve already accepted are never affected.',
+            'If a payment fails, we email you straight away with a link to pay it or use another card. Stripe tries again and you stay listed meanwhile; if it can’t collect, your listing comes down until it’s paid. Jobs you’ve already accepted are never affected.',
         ],
     },
     {
@@ -252,7 +252,7 @@ const TRADE: FaqItem[] = [
     {
         q: 'Do I need a registration?',
         a: [
-            'Electricians, and plumbers who work on gas or oil, must give their registration number before we approve them, and it shows on your profile so hosts can check it on the public register. If it runs out, you come off the list until it’s renewed.',
+            'Electricians, and plumbers who work on gas or oil, must give their registration number before we approve them. It shows on your profile as provided by you — we don’t verify it — so hosts can check it themselves on the public register. If it runs out, you come off the list until it’s renewed.',
             'Being listed isn’t a guarantee of your work. Hosts should still ask for proof of insurance and qualifications, as they would anywhere else.',
         ],
     },

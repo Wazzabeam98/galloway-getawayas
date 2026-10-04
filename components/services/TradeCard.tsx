@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { MapPin, ShieldCheck, MessageSquare, ArrowRight } from 'lucide-react';
+import { MapPin, FileText, MessageSquare, ArrowRight } from 'lucide-react';
 import { getImageUrl } from '@/lib/utils';
 import {
     tradeLabel,
@@ -110,9 +110,13 @@ export default function TradeCard({
                 )}
 
                 {verified && (
-                    <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-emerald-800">
-                        <ShieldCheck className="h-3.5 w-3.5 flex-none" strokeWidth={1.75} />
-                        {schemeLabel(verified.scheme)} — checked by us
+                    // Provided by the trade, not our check (Tradesperson Agreement
+                    // 5.2: "we display it so an Owner can check it themselves on the
+                    // public register. We do not verify it."). Neutral, not the green
+                    // shield that read as our endorsement.
+                    <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-slate-600">
+                        <FileText className="h-3.5 w-3.5 flex-none" strokeWidth={1.75} aria-hidden />
+                        {schemeLabel(verified.scheme)} number provided by the trade
                     </p>
                 )}
 

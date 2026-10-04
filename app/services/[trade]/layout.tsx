@@ -50,7 +50,7 @@ export async function generateMetadata({
   const label = tradeLabel(params.trade);
 
   // A known trade that isn't in the shop yet renders a "Not this one yet"
-  // placeholder (sponge/bin/trees), and /services/guest only redirects away.
+  // placeholder (cleaning, the one host trade not open yet), and /services/guest only redirects away.
   // Neither has content a search result should land on, and an indexed thin
   // page drags the rest of the domain down — so they are kept out of the
   // index. follow stays on so a crawler still uses the links out of them.

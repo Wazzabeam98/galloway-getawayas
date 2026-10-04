@@ -203,3 +203,103 @@ export async function sendTrialStarted(provider: any): Promise<boolean> {
     // No card link in this one — there is nothing to pay for six months.
     return sendReminder(reminder, provider, null);
 }
+
+// ---------------------------------------------------------------------------
+// A SUBSCRIPTION PAYMENT THAT FAILED
+// ---------------------------------------------------------------------------
+//
+// Tradesperson Agreement 3.3: "If payment fails, we will tell you and may remove
+// your listing until it is paid." Until 4 Oct 2026 the webhook only logged it,
+// so a trade found out when their listing disappeared.
+//
+// ONCE PER INVOICE. Stripe sends invoice.payment_failed on every retry, and
+// redelivers events; one failed month is one email. The send is claimed first,
+// on the row, with the same guarded append the reminder cron uses
+// (`not reminders_sent cs {key}`), so two deliveries racing cannot both send. A
+// send that fails gives the claim back, so Stripe's redelivery tries again.
+//
+// The button is Stripe's own page for that invoice (hosted_invoice_url), where
+// they can pay it or use another card. Our billing link is no use here: it
+// refuses anyone who already holds a subscription.
+
+export function paymentFailedKey(invoiceId: string): string {
+    return 'payment_failed:' + String(invoiceId || '');
+}
+
+export function paymentFailedBody(provider: any, payUrl: string | null): string {
+    const name = escapeHtml(String(provider.business_name || 'your business'));
+    return emailLayout(
+        p('Your £' + SUBSCRIPTION_MONTHLY + ' monthly payment for <strong>' + name + '</strong> didn’t go through.')
+        + p('Stripe will try your card again over the next few days. If the payment can’t be collected, '
+            + 'your listing comes off the directory until it’s paid. Jobs you’ve already accepted aren’t affected.')
+        + (payUrl
+            ? p('To sort it now, pay it or use a different card here:') + button(payUrl, 'Pay now')
+            : p('If your card has changed, reply to this email and we’ll help.')),
+        FOOT,
+        undefined,
+        NEUTRAL_SUBTITLE
+    );
+}
+
+// Called from the Stripe webhook. Never throws — a failed email must not fail
+// the webhook (Stripe would redeliver the whole event). Returns what happened.
+export async function notifyPaymentFailed(
+    admin: any,
+    subscriptionId: string,
+    invoice: { id?: string | null; hosted_invoice_url?: string | null },
+): Promise<'sent' | 'already' | 'no_provider' | 'skipped' | 'failed'> {
+    try {
+        const invoiceId = String((invoice && invoice.id) || '');
+        if (!subscriptionId || !invoiceId) return 'skipped';
+
+        const { data: prov } = await admin
+            .from('service_providers')
+            .select('id, business_name, contact_email, reminders_sent')
+            .eq('stripe_subscription_id', subscriptionId)
+            .maybeSingle();
+        if (!prov) return 'no_provider';
+
+        const to = String(prov.contact_email || '');
+        if (!to || isAutomatedTestAddress(to)) return 'skipped';
+
+        const key = paymentFailedKey(invoiceId);
+        const already: string[] = Array.isArray(prov.reminders_sent) ? prov.reminders_sent : [];
+        if (already.indexOf(key) !== -1) return 'already';
+
+        // Claim, guarded in the statement: a second delivery's update matches no row.
+        const { data: claimed, error: claimError } = await admin
+            .from('service_providers')
+            .update({ reminders_sent: already.concat([key]), updated_at: new Date().toISOString() })
+            .eq('id', prov.id)
+            .not('reminders_sent', 'cs', '{' + key + '}')
+            .select('id');
+        if (claimError) throw claimError;
+        if (!claimed || !claimed.length) return 'already';
+
+        const payUrl = invoice.hosted_invoice_url ? String(invoice.hosted_invoice_url) : null;
+        const ok = await sendEmail(to, 'Your Galloway Getaways payment didn’t go through — '
+            + String(prov.business_name || ''), paymentFailedBody(prov, payUrl));
+
+        if (!ok) {
+            // Give the claim back so a redelivery tries again — only this key, read
+            // fresh, so a reminder the cron appended meanwhile is not lost.
+            const { data: fresh } = await admin
+                .from('service_providers').select('reminders_sent').eq('id', prov.id).maybeSingle();
+            const now: string[] = Array.isArray(fresh && fresh.reminders_sent) ? fresh.reminders_sent : [];
+            await admin
+                .from('service_providers')
+                .update({ reminders_sent: now.filter((k) => k !== key), updated_at: new Date().toISOString() })
+                .eq('id', prov.id);
+            await logError('service-subscription-payment-failed-email', {
+                provider: String(prov.id), invoice: invoiceId, error: 'the payment-failed email did not send',
+            });
+            return 'failed';
+        }
+        return 'sent';
+    } catch (err: any) {
+        await logError('service-subscription-payment-failed-email', {
+            subscription: subscriptionId, error: String((err && err.message) || err),
+        });
+        return 'failed';
+    }
+}
