@@ -28,6 +28,8 @@ import HouseRules from '@/components/HouseRules';
 import ShowMoreText from '@/components/ShowMoreText';
 import AmenityList from '@/components/AmenityList';
 import MobileBookingBar from '@/components/MobileBookingBar';
+import NotTakingBookings from '@/components/NotTakingBookings';
+import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import AreaExperiences from '@/components/AreaExperiences';
 import ReportListing from '@/components/ReportListing';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Clock } from 'lucide-react';
@@ -160,17 +162,51 @@ async function lookupCoordinates(location: string | null) {
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
+// A hidden listing still opens at its own URL for anyone holding an old link,
+// with the booking card replaced (NotTakingBookings) — the way Airbnb treats an
+// unlisted place. The visitor's own client can't read it (listings_readable
+// shows a stranger 'published' rows only), so this reads it with the service
+// role, the SAME named columns, and only when it is a host's or an admin's
+// hide. A listing that came down with its account — deactivated (stamped
+// deactivated_at) or deleted (the host profile anonymised) — stays a 404, as
+// the account-deletion migration promises nothing of theirs is left reachable.
+// What /homes/[id] reads. A constant, not inline, so the old-link fallback
+// reads exactly the same columns as the visitor's own query.
+const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value';
+
+async function hiddenListingForOldLink(id: string, columns: string): Promise<any | null> {
+    const admin = adminClient();
+    const { data: row } = await admin
+        .from('listings')
+        .select(columns + ', deactivated_at')
+        .eq('id', id)
+        .maybeSingle();
+    const listing = row as any;
+    if (!listing || listing.status !== 'hidden' || listing.deactivated_at) return null;
+    const { data: host } = await admin
+        .from('profiles')
+        .select('anonymised_at, deactivated_at')
+        .eq('id', listing.host_id)
+        .maybeSingle();
+    if (!host || host.anonymised_at || host.deactivated_at) return null;
+    delete listing.deactivated_at;
+    return listing;
+}
+
 // Per-listing page title and description. Without this every property
 // shares one title and Google can't tell them apart — which is the
 // single biggest thing holding back a site like this in search.
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
     const supabase = createServerComponentClient({ cookies });
 
-    const { data: home } = await supabase
+    const { data: readable } = await supabase
         .from('listings')
         .select('title, description, location, images, price_per_night, max_guests, bedrooms, property_type, privacy_type, amenities, status')
         .eq('id', params.id)
         .single();
+    // Hidden: still titled for the old link, and noindexed below (not published).
+    const home: typeof readable = readable
+        || await hiddenListingForOldLink(params.id, 'host_id, title, description, location, images, price_per_night, max_guests, bedrooms, property_type, privacy_type, amenities, status');
 
     if (!home) {
         return {
@@ -252,13 +288,17 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     //
     // approx_latitude/approx_longitude, never the exact pair. The exact
     // coordinates are not readable here at all.
-    const { data: home } = await supabase
+    const { data: readable } = await supabase
         .from('listings')
         .select(
-            'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value'
+            LISTING_PAGE_COLUMNS
         )
         .eq('id', params.id)
         .single();
+    // The stranger's old link to a hidden listing — see hiddenListingForOldLink.
+    // The column list is the select above, read back off the module constant so
+    // the two can't drift.
+    const home: typeof readable = readable || await hiddenListingForOldLink(params.id, LISTING_PAGE_COLUMNS);
 
     // One sensible fallback for a nameless host, shared with the trip page
     // ("your host") rather than the old inconsistent "Host".
@@ -357,6 +397,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
             );
         }
     }
+
+    const bookable = isListingBookable(home);
 
     const images: string[] = home.images || [];
 
@@ -778,7 +820,10 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     {/* Under the photos on a phone, second column from lg up
                         exactly as before. `order` is all that moves. */}
                     <div id='book' className='order-1 lg:order-2 scroll-mt-6'>
-                        <BookingWidget
+                        {/* A hidden listing keeps its page for old links, but takes
+                            no new bookings — the server refuses them too
+                            (lib/listingBookable). The host sees what a guest sees. */}
+                        {!bookable ? <NotTakingBookings message={NOT_TAKING_BOOKINGS} /> : <BookingWidget
                             listingId={home.id}
                             hostId={home.host_id}
                             pricePerNight={home.price_per_night}
@@ -800,7 +845,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             blockedNights={calendar.blockedNights}
                             priceOverrides={calendar.priceOverrides}
                             needsGuestTerms={viewerNeedsGuestTerms}
-                        />
+                        />}
                     </div>
                 </div>
 
@@ -922,11 +967,13 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 intro={`Local chefs, bakers, saunas and guides who come to ${area?.name || 'this area'} — add one to your stay.`}
             />
 
-            <MobileBookingBar
-                pricePerNight={home.price_per_night}
-                label={home.instant_book === true ? 'Reserve' : 'Request to book'}
-                targetId='book'
-            />
+            {bookable && (
+                <MobileBookingBar
+                    pricePerNight={home.price_per_night}
+                    label={home.instant_book === true ? 'Reserve' : 'Request to book'}
+                    targetId='book'
+                />
+            )}
         </div>
         </div>
     )

@@ -3,7 +3,9 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
-import { loadPublicMarketplace, pickProvider } from '@/lib/experiencesData';
+import { loadPublicMarketplace, loadPausedProvider, pickProvider } from '@/lib/experiencesData';
+import NotTakingBookings from '@/components/NotTakingBookings';
+import { EXPERIENCE_NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import { loadExperienceReviews } from '@/lib/experienceReviews';
 import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import StandaloneBookingPanel from '@/components/marketplace/StandaloneBookingPanel';
@@ -43,7 +45,25 @@ export default async function PublicListingPage({ params }: { params: { provider
     const admin = adminClient();
     const mp = await loadPublicMarketplace(admin, guestExperiencesOpen());
     const p = pickProvider(mp, params.providerId);
-    if (!p) redirect('/experiences/browse');
+    if (!p) {
+        // Paused by its provider: the old link still opens the page, with the
+        // panel replaced — the same as a hidden cottage. Static "What you get"
+        // list instead of the interactive menu (no basket, no option picker),
+        // so nothing on the page starts a booking. Anything else not live still
+        // goes back to browse.
+        const paused = await loadPausedProvider(admin, params.providerId, guestExperiencesOpen());
+        if (!paused) redirect('/experiences/browse');
+        const pausedReviews = await loadExperienceReviews(admin, paused.id, user?.id ?? null);
+        return (
+            <ExperienceListingBody
+                p={paused}
+                backHref="/experiences/browse"
+                backLabel="All experiences"
+                reviews={pausedReviews}
+                panel={<NotTakingBookings message={EXPERIENCE_NOT_TAKING_BOOKINGS} />}
+            />
+        );
+    }
 
     const who = p.byline || p.business_name;
     const here = `/experiences/browse/${params.providerId}`;

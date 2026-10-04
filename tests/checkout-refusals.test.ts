@@ -110,6 +110,8 @@ test('totalsMatch treats a missing total as a mismatch, not as agreement', () =>
 // A listing whose price is easy to reason about: £100 a night, nothing else.
 function listingRow(overrides: any = {}) {
     return {
+        // Live. The route refuses anything else (lib/listingBookable).
+        status: 'published',
         title: 'Harbour Cottage',
         cancellation_policy: 'flexible',
         price_per_night: 100,
@@ -281,6 +283,34 @@ test('the happy path reaches Stripe, for the recalculated amount', async () => {
     assert.equal(stripeCalls[0].body.line_items[0].price_data.unit_amount, 30000);
     assert.equal(stripeCalls[0].body.line_items[0].price_data.currency, 'gbp');
     assert.equal(updates[updates.length - 1].status, 'pending_payment');
+});
+
+// --- 0. the listing has come down -----------------------------------------
+//
+// Hiding a listing — the host's Hide, an admin hide, an account deactivated or
+// deleted — used to stop nothing: a guest with an old link could still reach
+// Stripe. The same gate as isLiveToGuests on the experience order route.
+
+test('a hidden listing takes no new booking — nothing reaches Stripe', async () => {
+    const { route, stripeCalls, updates } = load({ listing: listingRow({ status: 'hidden' }) });
+    const res: any = await route.POST(post({ bookingId: 'b-1', plan: 'full' }));
+
+    assert.equal(res.status, 409);
+    assert.equal(res.body.ok, false);
+    assert.match(res.body.error, /isn’t taking bookings right now/);
+    assert.equal(stripeCalls.length, 0, 'NOTHING was charged');
+    assert.equal(updates.length, 0, 'and the booking row is not moved on');
+});
+
+test('nor does any other status that is not published', async () => {
+    // An allow-list, not "anything but hidden": a draft or a listing waiting for
+    // review was never live, and a status added later starts unbookable.
+    for (const status of ['draft', 'pending_review', 'something_new', null]) {
+        const { route, stripeCalls } = load({ listing: listingRow({ status }) });
+        const res: any = await route.POST(post({ bookingId: 'b-1' }));
+        assert.equal(res.status, 409, String(status));
+        assert.equal(stripeCalls.length, 0, String(status));
+    }
 });
 
 // --- 1. the price moved while the guest was deciding ------------------------
