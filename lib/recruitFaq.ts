@@ -12,6 +12,8 @@
 //
 // Plain text only, one string per paragraph.
 
+import { COMPANY_SENTENCE } from '../config/company';
+
 export type FaqAudience = 'host' | 'experience' | 'trade';
 export interface FaqItem { q: string; a: string[] }
 
@@ -99,7 +101,7 @@ const HOST: FaqItem[] = [
     {
         q: 'Who are we, legally?',
         a: [
-            'Galloway Getaways Ltd, company number SC899385, registered at 17b King Street, Castle Douglas. For holiday lets we act as your agent: we take the guest’s payment on your behalf, keep our commission and pay you the rest. You provide the stay. Our terms are under Scots law, and you accept them on the site when you sign up.',
+            COMPANY_SENTENCE + '. For holiday lets we act as your agent: we take the guest’s payment on your behalf, keep our commission and pay you the rest. You provide the stay. Our terms are under Scots law, and you accept them on the site when you sign up.',
         ],
     },
     {

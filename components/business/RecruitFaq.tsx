@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import { RECRUIT_FAQ, type FaqAudience } from '@/lib/recruitFaq';
+import { COMPANY } from '@/config/company';
 
 // "Your questions, answered" — the questions a host, an experience provider or a
 // trade asks before signing up, under the first screen of their sign-up flow.
@@ -37,8 +38,8 @@ export default function RecruitFaq({ audience, className = '' }: { audience: Faq
             </div>
             <p className="mt-5 text-center text-sm text-slate-500">
                 Anything else? Email us at{' '}
-                <a href="mailto:hello@gallowaygetaways.co.uk" className="font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-900">
-                    hello@gallowaygetaways.co.uk
+                <a href={'mailto:' + COMPANY.email} className="font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                    {COMPANY.email}
                 </a>
                 .
             </p>
