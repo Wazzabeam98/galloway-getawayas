@@ -10,6 +10,7 @@ import Image from 'next/image';
 import { capitializeFirst, getImageUrl, firstName } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import { guestCalendar } from '@/lib/availability';
+import { NEW_LISTING_MAX_BOOKINGS } from '@/lib/pricing';
 import { AGREEMENTS } from '@/lib/agreements';
 import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
@@ -160,7 +161,7 @@ const SITE_URL = 'https://gallowaygetaways.co.uk';
 // the account-deletion migration promises nothing of theirs is left reachable.
 // What /homes/[id] reads. A constant, not inline, so the old-link fallback
 // reads exactly the same columns as the visitor's own query.
-const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood';
+const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood';
 
 async function hiddenListingForOldLink(id: string, columns: string): Promise<any | null> {
     const admin = adminClient();
@@ -448,6 +449,21 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     }
 
     const bookable = isListingBookable(home);
+
+    // The new-listing promo runs on the listing's first 3 bookings. Counted
+    // through the service role (bookings aren't anon-readable) so the card
+    // prices exactly as the checkout will; the checkout re-counts and is the
+    // authority, this only decides what the guest is shown. Skipped entirely
+    // when the host has the switch off.
+    let newListingEligible = false;
+    if (home.new_listing_promo) {
+        const { count } = await adminClient()
+            .from('bookings')
+            .select('id', { count: 'exact', head: true })
+            .eq('listing_id', home.id)
+            .in('status', ['confirmed', 'completed']);
+        newListingEligible = (count || 0) < NEW_LISTING_MAX_BOOKINGS;
+    }
 
     const images: string[] = home.images || [];
 
@@ -891,6 +907,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             extraGuestFee={home.extra_guest_fee || 0}
                             extraGuestAfter={home.extra_guest_after || 1}
                             extraGuestPeriod={home.extra_guest_period || 'night'}
+                            newListingPromo={home.new_listing_promo === true}
+                            lastMinuteDiscount={home.last_minute_discount === true}
+                            weeklyDiscount={home.weekly_discount === true}
+                            monthlyDiscount={home.monthly_discount === true}
+                            newListingEligible={newListingEligible}
                             damageDeposit={home.damage_deposit || 0}
                             availabilityWindow={home.availability_window}
                             cancellationPolicy={home.cancellation_policy}

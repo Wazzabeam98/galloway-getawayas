@@ -16,6 +16,61 @@ export interface PricingListing {
     extra_guest_after?: number | null;
     // 'night' charges per extra guest per night, 'stay' charges once.
     extra_guest_period?: string | null;
+    // The four discount switches a host toggles on the listing. On/off only —
+    // the percentages and the windows are fixed (see DISCOUNTS below), exactly
+    // the figures the listing editor advertises beside each switch.
+    new_listing_promo?: boolean | null;
+    last_minute_discount?: boolean | null;
+    weekly_discount?: boolean | null;
+    monthly_discount?: boolean | null;
+}
+
+// The discount figures and thresholds. The host sets only the on/off switch,
+// so the percentages and the windows live here as the one source the price,
+// the booking card and the editor copy all read, the way Airbnb fixes them
+// rather than letting the host type a number.
+//
+//   new listing  20%  — a listing's first 3 bookings
+//   last minute   5%  — booked 14 days or fewer before check-in
+//   weekly       10%  — stays of 7 nights or more
+//   monthly      20%  — stays of 28 nights or more
+//
+// Airbnb applies ONE discount per booking (help.airbnb "How discounts are
+// applied": new-listing, length-of-stay and last-minute may not be combined).
+// Of weekly and monthly only one — the larger — ever applies, and that single
+// length-of-stay discount then competes with the others; the one that saves
+// the guest the most wins. chooseDiscount() below is that rule.
+export type DiscountKind = 'new_listing' | 'last_minute' | 'weekly' | 'monthly';
+
+export const DISCOUNTS: Record<DiscountKind, { percent: number; label: string }> = {
+    new_listing: { percent: 20, label: 'New listing discount' },
+    last_minute: { percent: 5, label: 'Last-minute discount' },
+    weekly: { percent: 10, label: 'Weekly discount' },
+    monthly: { percent: 20, label: 'Monthly discount' },
+};
+
+export const LAST_MINUTE_DAYS = 14;
+export const WEEKLY_MIN_NIGHTS = 7;
+export const MONTHLY_MIN_NIGHTS = 28;
+export const NEW_LISTING_MAX_BOOKINGS = 3;
+
+// The discount applied to a stay: which one, its rate, and the money it takes
+// off the nightly subtotal (fees are never discounted, as on Airbnb).
+export interface AppliedDiscount {
+    kind: DiscountKind;
+    label: string;
+    percent: number;
+    amount: number;
+}
+
+// What the caller knows that a quote cannot work out for itself: whether the
+// new-listing promo still applies (it depends on the listing's booking history,
+// which the checkout route and the listing page read and pass in), and the
+// date the booking is being made (for the last-minute window). asOf defaults to
+// now, so the booking card and the checkout agree on "if you booked today".
+export interface DiscountContext {
+    newListingEligible?: boolean;
+    asOf?: Date;
 }
 
 // One night, priced, with the reason it cost what it did. `kind` is what a
@@ -33,6 +88,10 @@ export interface PriceQuote {
     extraGuestTotal: number;
     petFeeTotal: number;
     cleaningFeeTotal: number;
+    // The one discount that applies, or null. The money off is in `amount`, and
+    // it has already been taken out of `total` below — a reader adds the lines
+    // and subtracts this, exactly as the breakdown shows them.
+    discount: AppliedDiscount | null;
     total: number;
     // The per-night series behind nightsSubtotal. Computed here so the one place
     // that owns the arithmetic is also the one place that can be snapshotted:
@@ -106,9 +165,73 @@ export function nightlyRateDetail(
     return { rate: Number(listing.price_per_night || 0), kind: 'base' };
 }
 
+// Which single discount a stay earns, or null. The whole Airbnb rule in one
+// pure place: only one discount per booking, the largest; and of weekly and
+// monthly only the larger. Kept separate from quoteBooking so it can be read
+// and tested on its own, and so the one decision is made in one spot.
+//
+// daysUntilCheckIn is calendar days from the booking date to check-in; null
+// when it is not known (then last-minute simply can't apply). nightsSubtotal is
+// the gross nightly total the percentage comes off — fees are never discounted.
+export function chooseDiscount(
+    listing: PricingListing,
+    nights: number,
+    nightsSubtotal: number,
+    ctx: { newListingEligible: boolean; daysUntilCheckIn: number | null }
+): AppliedDiscount | null {
+    if (!(nights > 0) || !(nightsSubtotal > 0)) return null;
+
+    // priority breaks a tie on percent so the chosen label is deterministic:
+    // length-of-stay first, then new-listing, then last-minute.
+    const candidates: { kind: DiscountKind; percent: number; priority: number }[] = [];
+
+    // Length-of-stay: weekly at 7+ nights, monthly at 28+. Only one applies —
+    // the larger of the two the stay qualifies for.
+    const lengthOfStay: { kind: DiscountKind; percent: number; priority: number }[] = [];
+    if (listing.weekly_discount && nights >= WEEKLY_MIN_NIGHTS) {
+        lengthOfStay.push({ kind: 'weekly', percent: DISCOUNTS.weekly.percent, priority: 0 });
+    }
+    if (listing.monthly_discount && nights >= MONTHLY_MIN_NIGHTS) {
+        lengthOfStay.push({ kind: 'monthly', percent: DISCOUNTS.monthly.percent, priority: 0 });
+    }
+    if (lengthOfStay.length) {
+        lengthOfStay.sort((a, b) => b.percent - a.percent);
+        candidates.push(lengthOfStay[0]);
+    }
+
+    // New-listing promo: the listing's first 3 bookings, decided by the caller
+    // from the booking history. The quote never guesses at it.
+    if (listing.new_listing_promo && ctx.newListingEligible) {
+        candidates.push({ kind: 'new_listing', percent: DISCOUNTS.new_listing.percent, priority: 1 });
+    }
+
+    // Last-minute: booked within the window before check-in.
+    if (
+        listing.last_minute_discount &&
+        ctx.daysUntilCheckIn !== null &&
+        ctx.daysUntilCheckIn >= 0 &&
+        ctx.daysUntilCheckIn <= LAST_MINUTE_DAYS
+    ) {
+        candidates.push({ kind: 'last_minute', percent: DISCOUNTS.last_minute.percent, priority: 2 });
+    }
+
+    if (!candidates.length) return null;
+
+    candidates.sort((a, b) => (b.percent - a.percent) || (a.priority - b.priority));
+    const chosen = candidates[0];
+    return {
+        kind: chosen.kind,
+        label: DISCOUNTS[chosen.kind].label,
+        percent: chosen.percent,
+        amount: money(nightsSubtotal * (chosen.percent / 100)),
+    };
+}
+
 // The full breakdown for a stay. Guest counts follow the widget: the first
 // guest is included, every additional adult or child carries the extra guest
 // fee for each night, pets are charged once, and cleaning is charged once.
+// opts carries the two things a quote can't know on its own — new-listing
+// eligibility and the booking date (see DiscountContext).
 export function quoteBooking(
     listing: PricingListing,
     overrides: Record<string, number>,
@@ -116,7 +239,8 @@ export function quoteBooking(
     checkOut: Date,
     adults: number,
     children: number,
-    pets: number
+    pets: number,
+    opts?: DiscountContext
 ): PriceQuote {
     const nights = nightsBetween(checkIn, checkOut);
 
@@ -127,6 +251,7 @@ export function quoteBooking(
             extraGuestTotal: 0,
             petFeeTotal: 0,
             cleaningFeeTotal: 0,
+            discount: null,
             total: 0,
             nightly: [],
         };
@@ -159,13 +284,25 @@ export function quoteBooking(
     const petFeeTotal = (pets || 0) > 0 ? Number(listing.pet_fee || 0) : 0;
     const cleaningFeeTotal = Number(listing.cleaning_fee || 0);
 
+    // The discount comes off the nightly subtotal only (fees are never
+    // discounted, as on Airbnb). daysUntilCheckIn is from the booking date,
+    // which defaults to now so the card and the checkout agree.
+    const asOf = (opts && opts.asOf) || new Date();
+    const daysUntilCheckIn = nightsBetween(asOf, checkIn);
+    const discount = chooseDiscount(listing, nights, money(nightsSubtotal), {
+        newListingEligible: !!(opts && opts.newListingEligible),
+        daysUntilCheckIn,
+    });
+    const discountAmount = discount ? discount.amount : 0;
+
     return {
         nights: nights,
         nightsSubtotal: money(nightsSubtotal),
         extraGuestTotal: money(extraGuestTotal),
         petFeeTotal: money(petFeeTotal),
         cleaningFeeTotal: money(cleaningFeeTotal),
-        total: money(nightsSubtotal + extraGuestTotal + petFeeTotal + cleaningFeeTotal),
+        discount: discount,
+        total: money(nightsSubtotal - discountAmount + extraGuestTotal + petFeeTotal + cleaningFeeTotal),
         nightly: nightly,
     };
 }

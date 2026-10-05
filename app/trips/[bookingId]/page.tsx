@@ -209,7 +209,13 @@ export default async function StayReservationPage({ params }: { params: { bookin
     const payAccommodation = nightlySnapshot
         ? nightlySnapshot.reduce((s: number, n: any) => s + Number(n.rate || 0), 0)
         : Math.max(0, payTotal - payCleaning - payPet - payExtraGuest);
-    const payOtherFees = Math.max(0, payTotal - payAccommodation - payCleaning - payPet - payExtraGuest);
+    // The discount, read back off the frozen numbers rather than re-priced: the
+    // nightly rates and fees are snapshots, the total is the snapshot, and the
+    // shortfall between them is what the discount took off. Shown as its own
+    // line, as Airbnb does; only its amount survives on the booking, so the line
+    // reads "Discount" rather than naming which of the four it was.
+    const payDiscount = Math.max(0, payAccommodation + payCleaning + payPet + payExtraGuest - payTotal);
+    const payOtherFees = Math.max(0, payTotal - payAccommodation - payCleaning - payPet - payExtraGuest + payDiscount);
     const payPaid = Number(booking.amount_paid || 0);
     const payRefunded = Number(booking.amount_refunded || 0);
     const payRemaining = Number(booking.balance_amount || 0);
@@ -532,6 +538,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                                             <span className="tabular-nums">{formatGBP(payAccommodation)}</span>
                                                         </div>
                                                     )}
+                                                    {payDiscount > 0 && <div className="flex items-baseline justify-between text-emerald-700"><span>Discount</span><span className="tabular-nums">&minus;{formatGBP(payDiscount)}</span></div>}
                                                     {payExtraGuest > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Extra guest fee</span><span className="tabular-nums">{formatGBP(payExtraGuest)}</span></div>}
                                                     {payCleaning > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Cleaning fee</span><span className="tabular-nums">{formatGBP(payCleaning)}</span></div>}
                                                     {payPet > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Pet fee</span><span className="tabular-nums">{formatGBP(payPet)}</span></div>}
