@@ -9,6 +9,7 @@ import Logo from '@/components/base/Logo';
 import ArrivalEditor, { WifiCard, What3wordsCard } from '@/components/ArrivalEditor';
 import CheckInTimesCard from '@/components/listing-editor/CheckInTimesCard';
 import CapacityCard from '@/components/listing-editor/CapacityCard';
+import TitleCard from '@/components/listing-editor/TitleCard';
 import { AddressCard, LocationSharingCard, NearbyCard, NeighbourhoodCard } from '@/components/listing-editor/LocationCards';
 import PropertyMap from '@/components/PropertyMap';
 import LoginModel from '@/components/auth/LoginModel';
@@ -694,6 +695,8 @@ export default function EditListing() {
                         {activeSection === 'basics' && (
                             <div className="space-y-4">
                                 <section className="space-y-4">
+                                    <TitleCard title={title} onSave={setTitle} />
+
                                     <PropertyTypeCard
                                         propertyType={propertyType}
                                         privacyType={privacyType}
@@ -774,8 +777,6 @@ export default function EditListing() {
 
                         {activeSection === 'description' && (
                             <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-2">Title</h2>
-                                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} className="w-full p-3 border rounded-xl mb-6" />
                                 <h2 className="text-xl font-bold text-slate-900 mb-2">Description</h2>
                                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={8} className="w-full p-3 border rounded-xl" />
                             </section>
