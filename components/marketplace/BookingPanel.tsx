@@ -359,6 +359,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
 
                 {open && (
                     <BookingDialog
+                        slotLength={provider.slotLength}
                         who={provider.who}
                         items={provider.items}
                         sessions={provider.sessions}

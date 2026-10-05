@@ -56,6 +56,8 @@ const TABLES: TableDecision[] = [
             owner_paused: 'owner\'s self-serve take-down flag; read and written only via the provider editor\'s service-role route (ownership-checked), never browser-read — isLiveToGuests consults it server-side',
             deactivated_at: 'reversible deactivation tombstone — set by the SECURITY DEFINER deactivate routine, read only via the service role (admin reactivation, directory loads); a deactivated provider is signed out, so no browser reads it (mirrors owner_paused)',
             based_line: 'server-derived display line; the wizard dropped it from its select — unread by any browser',
+            venue_lat: 'venue map point, ~110m (3dp), server-written from the collection postcode (lib/venuePoint.ts); read only with the service role by lib/experiencesData and the order page — never browser-read',
+            venue_lng: 'venue map point, ~110m (3dp), server-written from the collection postcode (lib/venuePoint.ts); read only with the service role by lib/experiencesData and the order page — never browser-read',
             provider_name: 'retired with the "Your name" step; dropped from the wizard select — unread by any browser',
             category_assigned_at: 'admin audit — when the category was assigned; no provider reads it',
             category_assigned_by: 'admin audit — who assigned the category; no provider reads it',

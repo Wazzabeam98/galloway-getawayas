@@ -72,6 +72,9 @@ const PLATFORM_ONLY: Record<string, string> = {
     // Admin audit — who/when a category was assigned (the label itself is custom_label, writable).
     category_assigned_at: 'admin audit — when the category was assigned',
     category_assigned_by: 'admin audit — who assigned the category',
+    // The venue map point — geocoded by the server, never typed by a provider.
+    venue_lat: 'venue map point, server-written from the collection postcode (lib/venuePoint.ts)',
+    venue_lng: 'venue map point, server-written from the collection postcode (lib/venuePoint.ts)',
     // Service-role booking rule and server bookkeeping.
     cancellation_window_hours: 'booking rule read/written only via the service role',
     delivery_fee: 'made-to-order delivery fee — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write',

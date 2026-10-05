@@ -11,6 +11,7 @@ import {
 } from '@/lib/serviceProviders';
 import { ASSIGNABLE_MCCS } from '@/lib/serviceOrders';
 import { SHAPES, shapeOf } from '@/lib/serviceSlots';
+import { refreshVenuePoint } from '@/lib/venuePoint';
 
 export const dynamic = 'force-dynamic';
 
@@ -414,6 +415,14 @@ export async function POST(req: Request) {
 
             if (writeError) {
                 return { status: 500, body: { ok: false, error: writeError.message } };
+            }
+
+            // A guest venue provider approved without a map point (signed up
+            // before the wizard geocoded, or the lookup was down) gets one now, so
+            // the listing goes live with its "Where you'll be" map. Best effort:
+            // never undoes or delays the decision (lib/venuePoint.ts).
+            if ((decision === 'approve' || decision === 'approve_changes') && String(provider.audience || '') === 'guest') {
+                await refreshVenuePoint(admin, id, { onlyIfMissing: true });
             }
 
             // The decision is saved by this point. An email that fails must not
