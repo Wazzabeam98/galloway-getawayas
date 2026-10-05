@@ -1,12 +1,16 @@
 // Deleting a listing (/api/listings/delete, lib/listingRemoval).
 //
 // What these hold:
-//   * a listing with ANY booking or experience order is never deleted — the
-//     route refuses with mustHide, and the dashboard offers Hide, not Delete;
-//   * a listing that never had one is deleted, by its owner only, and its
+//   * a listing with a PAID booking or paid experience order is never deleted —
+//     the route refuses with mustHide, and the dashboard offers Hide, not
+//     Delete — because that payment record has to be kept;
+//   * a listing whose only rows are never-paid checkouts (abandoned, cancelled)
+//     IS deleted: those unpaid rows are cleared first so the foreign key lets
+//     the delete through;
+//   * a listing that never took money is deleted, by its owner only, and its
 //     photos go with it — except a path another listing still uses;
-//   * a booking landing between the check and the delete (the foreign key's
-//     23503) is the same refusal, and no photo is touched;
+//   * a paid booking landing between the check and the delete (the foreign
+//     key's 23503) is the same refusal, and no photo is touched;
 //   * the dashboard and the route read the one rule.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -112,25 +116,76 @@ const world = (over: Partial<World> = {}): World => ({
 
 /* ----------------------------------------------------------------- the rule */
 
-test('the rule: any booking or order means hide, none means delete', () => {
+test('the rule: a paid booking/order means hide, none means delete', () => {
     assert.equal(R.removalFor(true), 'hide');
     assert.equal(R.removalFor(false), 'delete');
 });
 
-test('listingsWithRecords counts a booking of ANY status, and an experience order', async () => {
-    const { admin } = fakeAdmin(world({
-        bookings: [{ listing_id: 'l-1', status: 'cancelled' }, { listing_id: 'l-2', status: 'pending_payment' }],
-        service_orders: [{ listing_id: 'l-3' }],
-    }));
-    const got = await R.listingsWithRecords(admin, ['l-1', 'l-2', 'l-3', 'l-4']);
-    assert.deepEqual(Array.from(got).sort(), ['l-1', 'l-2', 'l-3']);
+test('bookingTookMoney: unpaid/£0 is false; paid, deposit, refunded, amount_paid or paid_at is true', () => {
+    // Never took money — an abandoned or cancelled checkout.
+    assert.equal(R.bookingTookMoney({ payment_status: 'unpaid', amount_paid: '0.00', paid_at: null }), false);
+    assert.equal(R.bookingTookMoney({ payment_status: 'unpaid', amount_paid: 0, paid_at: null }), false);
+    assert.equal(R.bookingTookMoney(null), false);
+    // Took money — any of the three signals.
+    assert.equal(R.bookingTookMoney({ payment_status: 'paid' }), true);
+    assert.equal(R.bookingTookMoney({ payment_status: 'deposit_paid' }), true);
+    assert.equal(R.bookingTookMoney({ payment_status: 'refunded' }), true);
+    assert.equal(R.bookingTookMoney({ payment_status: 'partially_refunded' }), true);
+    assert.equal(R.bookingTookMoney({ payment_status: 'unpaid', amount_paid: '120.00' }), true);
+    assert.equal(R.bookingTookMoney({ payment_status: 'cancelled', paid_at: '2026-01-01T00:00:00Z' }), true);
 });
 
-test('listingsWithRecords throws on a failed read rather than answering "none"', async () => {
+test('orderTookMoney: a hold with no intent is false; confirmed/authorised/refunded or an intent is true', () => {
+    assert.equal(R.orderTookMoney({ status: 'holding', stripe_payment_intent_id: null }), false);
+    assert.equal(R.orderTookMoney({ status: 'expired', stripe_payment_intent_id: null }), false);
+    assert.equal(R.orderTookMoney({ status: 'declined', stripe_payment_intent_id: null }), false);
+    assert.equal(R.orderTookMoney(null), false);
+    assert.equal(R.orderTookMoney({ status: 'confirmed' }), true);
+    assert.equal(R.orderTookMoney({ status: 'authorised' }), true);
+    assert.equal(R.orderTookMoney({ status: 'refunded' }), true);
+    assert.equal(R.orderTookMoney({ status: 'holding', stripe_payment_intent_id: 'pi_1' }), true);
+});
+
+test('listingsWithPaidRecords counts only paid bookings and paid orders', async () => {
+    const { admin } = fakeAdmin(world({
+        bookings: [
+            { listing_id: 'l-1', status: 'confirmed', payment_status: 'paid', amount_paid: '100.00' },
+            // Unpaid cancelled checkout — must NOT lock the listing down.
+            { listing_id: 'l-2', status: 'cancelled', payment_status: 'unpaid', amount_paid: '0.00', paid_at: null },
+        ],
+        service_orders: [
+            { listing_id: 'l-3', status: 'confirmed', stripe_payment_intent_id: 'pi_1' },
+            // Abandoned hold — must NOT lock the listing down.
+            { listing_id: 'l-5', status: 'holding', stripe_payment_intent_id: null },
+        ],
+    }));
+    const got = await R.listingsWithPaidRecords(admin, ['l-1', 'l-2', 'l-3', 'l-4', 'l-5']);
+    assert.deepEqual(Array.from(got).sort(), ['l-1', 'l-3']);
+});
+
+test('listingsWithPaidRecords throws on a failed read rather than answering "none"', async () => {
     const admin: any = {
         from: () => ({ select: () => ({ in: async () => ({ data: null, error: { message: 'down' } }) }) }),
     };
-    await assert.rejects(() => R.listingsWithRecords(admin, ['l-1']));
+    await assert.rejects(() => R.listingsWithPaidRecords(admin, ['l-1']));
+});
+
+test('clearUnpaidRecords removes only the never-paid rows, leaving any paid one', async () => {
+    const w = world({
+        bookings: [
+            { id: 'b-unpaid', listing_id: 'l-test', status: 'cancelled', payment_status: 'unpaid', amount_paid: '0.00', paid_at: null },
+            { id: 'b-paid', listing_id: 'l-test', status: 'cancelled', payment_status: 'refunded', amount_paid: '0.00', paid_at: '2026-01-01T00:00:00Z' },
+            { id: 'b-other', listing_id: 'l-other', status: 'cancelled', payment_status: 'unpaid', amount_paid: '0.00', paid_at: null },
+        ],
+        service_orders: [
+            { id: 'o-hold', listing_id: 'l-test', status: 'holding', stripe_payment_intent_id: null },
+            { id: 'o-paid', listing_id: 'l-test', status: 'confirmed', stripe_payment_intent_id: 'pi_1' },
+        ],
+    });
+    const { admin } = fakeAdmin(w);
+    await R.clearUnpaidRecords(admin, 'l-test');
+    assert.deepEqual(w.bookings.map((b) => b.id).sort(), ['b-other', 'b-paid'], 'only l-test\'s unpaid booking is gone');
+    assert.deepEqual(w.service_orders.map((o) => o.id).sort(), ['o-paid'], 'only l-test\'s unpaid hold is gone');
 });
 
 test('photosToRemove skips shared paths, full URLs and blanks', () => {
@@ -155,29 +210,59 @@ test('a never-booked listing is deleted, with its own photos and its template me
     assert.deepEqual(w.message_templates[0].listing_ids, ['l-other']);
 });
 
-test('a listing with a booking is refused with mustHide, and nothing is deleted or removed', async () => {
-    for (const status of ['confirmed', 'cancelled', 'pending_payment']) {
-        const w = world({ bookings: [{ listing_id: 'l-test', status }] });
+test('a listing whose only rows are never-paid checkouts is deleted — the unpaid rows are cleared first', async () => {
+    const w = world({
+        bookings: [
+            { id: 'b-1', listing_id: 'l-test', status: 'cancelled', payment_status: 'unpaid', amount_paid: '0.00', paid_at: null },
+            { id: 'b-2', listing_id: 'l-test', status: 'expired', payment_status: 'unpaid', amount_paid: '0.00', paid_at: null },
+        ],
+        service_orders: [
+            { id: 'o-1', listing_id: 'l-test', status: 'holding', stripe_payment_intent_id: null },
+        ],
+    });
+    const { route, deletes } = load(w);
+    const res = await route.POST(post({ listingId: 'l-test' }));
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    // deletes spans every table the fake touched: the unpaid rows were cleared
+    // first, then the listing itself.
+    assert.ok(deletes.includes('l-test'), 'the listing is deleted');
+    assert.deepEqual(deletes.filter((d) => d === 'o-1' || d === 'b-1' || d === 'b-2').sort(), ['b-1', 'b-2', 'o-1']);
+    assert.deepEqual(w.bookings, [], 'the unpaid bookings were cleared');
+    assert.deepEqual(w.service_orders, [], 'the unpaid hold was cleared');
+});
+
+test('a listing with a PAID booking is refused with mustHide; the paid row is never cleared', async () => {
+    const paidRows = [
+        { payment_status: 'paid', status: 'confirmed', amount_paid: '100.00' },
+        { payment_status: 'refunded', status: 'cancelled', amount_paid: '0.00', paid_at: '2026-01-01T00:00:00Z' },
+        { payment_status: 'deposit_paid', status: 'confirmed', amount_paid: '50.00' },
+    ];
+    for (const row of paidRows) {
+        const w = world({ bookings: [{ id: 'b-paid', listing_id: 'l-test', ...row }] });
         const { route, removed, deletes } = load(w);
         const res = await route.POST(post({ listingId: 'l-test' }));
 
-        assert.equal(res.status, 409, status);
+        assert.equal(res.status, 409, row.payment_status);
         assert.equal(res.body.mustHide, true);
         assert.match(res.body.error, /can’t be deleted/);
-        assert.deepEqual(deletes, [], status);
-        assert.deepEqual(removed, [], status);
+        assert.deepEqual(deletes, [], row.payment_status);
+        assert.deepEqual(removed, [], row.payment_status);
+        assert.equal(w.bookings.length, 1, 'the paid booking is untouched');
     }
 });
 
-test('a listing with an experience order against it is refused the same way', async () => {
-    const w = world({ service_orders: [{ listing_id: 'l-test' }] });
+test('a listing with a PAID experience order against it is refused the same way', async () => {
+    const w = world({ service_orders: [{ id: 'o-paid', listing_id: 'l-test', status: 'confirmed', stripe_payment_intent_id: 'pi_1' }] });
     const { route, deletes } = load(w);
     const res = await route.POST(post({ listingId: 'l-test' }));
     assert.equal(res.status, 409);
     assert.deepEqual(deletes, []);
+    assert.equal(w.service_orders.length, 1, 'the paid order is untouched');
 });
 
-test('a booking landing after the check (FK 23503) is the same refusal, and no photo goes', async () => {
+test('a paid booking landing after the check (FK 23503) is the same refusal, and no photo goes', async () => {
     const w = world({ deleteError: { code: '23503', message: 'violates foreign key constraint' } });
     const { route, removed } = load(w);
     const res = await route.POST(post({ listingId: 'l-test' }));
@@ -207,7 +292,7 @@ test('signed out, or no listing named, is refused', async () => {
 
 test('the dashboard chooses the button from the same rule, and the card shows one or the other', () => {
     const src = fs.readFileSync(path.join(ROOT, 'app/dashboard/page.tsx'), 'utf8');
-    assert.match(src, /listingsWithRecords\(admin/);
+    assert.match(src, /listingsWithPaidRecords\(admin/);
     assert.match(src, /removalFor\(booked\) === 'delete' && \(\s*<DeleteListingBtn/);
     // A failed read must fall back to "booked" (Hide), never to Delete.
     assert.match(src, /catch \{\s*bookedIds = new Set\(owned\.map/);

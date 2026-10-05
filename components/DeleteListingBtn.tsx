@@ -6,8 +6,8 @@ import { Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 // Deleting a listing for good. The dashboard only shows this for a listing the
-// host owns that has never had a booking (lib/listingRemoval); a booked one
-// gets Hide instead, so this is never a button that then refuses.
+// host owns that has never taken a payment (lib/listingRemoval); one with a
+// paid booking gets Hide instead, so this is never a button that then refuses.
 export default function DeleteListingBtn({
     id,
     title,
@@ -43,8 +43,8 @@ export default function DeleteListingBtn({
 
         if (!data || !data.ok) {
             toast.error((data && data.error) || 'Could not delete that listing.', { theme: 'colored' });
-            // A booking that landed since the page loaded turns this into a
-            // Hide on the refreshed dashboard.
+            // A paid booking that landed since the page loaded turns this into
+            // a Hide on the refreshed dashboard.
             if (data && data.mustHide) router.refresh();
             return;
         }
@@ -86,7 +86,7 @@ export default function DeleteListingBtn({
                             settings are deleted and can&apos;t be brought back.
                         </p>
                         <p className="text-sm text-slate-600 mb-5">
-                            It has never had a booking, which is why it can be deleted.
+                            It has never taken a payment, which is why it can be deleted.
                             {canHide && ' If you only want it off the site for a while, hide it instead.'}
                         </p>
 

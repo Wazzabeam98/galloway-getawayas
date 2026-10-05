@@ -12,9 +12,9 @@ import { accessibleListings } from "@/lib/access";
 import LeaveListingBtn from "@/components/LeaveListingBtn";
 import HideListingBtn from "@/components/HideListingBtn";
 import DeleteListingBtn from "@/components/DeleteListingBtn";
-import { listingsWithRecords, removalFor } from "@/lib/listingRemoval";
+import { listingsWithPaidRecords, removalFor } from "@/lib/listingRemoval";
 import Link from "next/link";
-import { ChevronRight, Eye, Home, Plus, Wrench, Star } from "lucide-react";
+import { ChevronRight, Eye, Home, Plus, Star } from "lucide-react";
 
 // A guest can be reviewed for 14 days after they check out — the same window the
 // review page and the reminder cron use. After that the chance has passed.
@@ -154,12 +154,12 @@ export default async function Dashboard() {
 
     const owned = (homes || []).filter((h) => ownedIds.indexOf(h.id) !== -1);
 
-    // Which owned listings have ever had a booking — those get Hide, never
+    // Which owned listings have ever taken money — those get Hide, never
     // Delete. A failed read offers nothing rather than a Delete it can't stand
-    // behind; the route would refuse a booked one anyway.
+    // behind; the route would refuse a paid one anyway.
     let bookedIds: Set<string>;
     try {
-        bookedIds = await listingsWithRecords(admin, owned.map((h) => h.id));
+        bookedIds = await listingsWithPaidRecords(admin, owned.map((h) => h.id));
     } catch {
         bookedIds = new Set(owned.map((h) => h.id));
     }
@@ -321,27 +321,6 @@ export default async function Dashboard() {
             )}
 
             <div className="max-w-7xl mx-auto px-6 py-10">
-                {/* A host's second revenue line, made visible on the page
-                    itself rather than left seven items down a menu. Kept to one
-                    slim row above the listings so it is seen without scrolling
-                    and still does not out-shout the properties the host came
-                    for. */}
-                <Link
-                    href="/services"
-                    className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition px-5 py-4 mb-8"
-                >
-                    <span className="flex-shrink-0 w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                        <Wrench className="w-5 h-5" />
-                    </span>
-                    <span className="min-w-0">
-                        <span className="block font-semibold text-slate-900">Services for your property</span>
-                        <span className="block text-sm text-slate-500">
-                            Find a local trade — cleaning, plumbing, joinery and more — to keep your place guest-ready.
-                        </span>
-                    </span>
-                    <ChevronRight className="w-5 h-5 text-slate-400 ml-auto flex-shrink-0" />
-                </Link>
-
                 <div className="flex items-center justify-between mb-8">
                     <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your listings</h1>
                     <Link

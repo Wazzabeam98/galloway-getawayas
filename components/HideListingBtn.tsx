@@ -17,8 +17,8 @@ export default function HideListingBtn({
     id: string;
     hidden: boolean;
     title?: string;
-    // It has bookings, so hiding is the only way off the site — deleting would
-    // lose the booking and payment records (lib/listingRemoval).
+    // It has taken a payment, so hiding is the only way off the site —
+    // deleting would lose the booking and payment records (lib/listingRemoval).
     booked?: boolean;
 }) {
     const router = useRouter();
@@ -76,7 +76,7 @@ export default function HideListingBtn({
                 type="button"
                 onClick={() => setConfirming(true)}
                 disabled={working}
-                title={booked ? 'Hide from the site \u2014 it has bookings, so it can\u2019t be deleted' : 'Hide from the site'}
+                title={booked ? 'Hide from the site \u2014 it has a paid booking, so it can\u2019t be deleted' : 'Hide from the site'}
                 className="h-8 px-3 rounded-full bg-white/95 hover:bg-white shadow-sm flex items-center gap-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
             >
                 <EyeOff className="w-3.5 h-3.5" />
@@ -105,8 +105,8 @@ export default function HideListingBtn({
                         </p>
                         {booked && (
                             <p className="text-sm text-slate-600 mb-2">
-                                Because it has bookings, it can&apos;t be deleted &mdash; the booking
-                                and payment records have to be kept. Hiding is how it comes down.
+                                Because it has a paid booking, it can&apos;t be deleted &mdash; the
+                                booking and payment records have to be kept. Hiding is how it comes down.
                             </p>
                         )}
                         <p className="text-xs text-slate-400 mb-5">
