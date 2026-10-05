@@ -894,6 +894,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             blockedNights={calendar.blockedNights}
                             priceOverrides={calendar.priceOverrides}
                             needsGuestTerms={viewerNeedsGuestTerms}
+                            showScore={showScore}
+                            ratingAvg={ratingAvg}
                         />}
                     </div>
                 </div>

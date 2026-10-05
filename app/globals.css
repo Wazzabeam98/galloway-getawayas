@@ -279,6 +279,60 @@ body {
   }
 }
 
+/* 4d. The phone date sheet's calendar (BookingWidget, below lg): Airbnb's
+   vertical scrolling calendar. react-date-range's scroll mode renders ONE
+   weekday row (M T W T F S S) and then the labelled months in a scroll
+   container beneath it, so the weekday row stays fixed at the top while the
+   months scroll. Scoped to .cottage-cal-scroll so the desktop card's single
+   month with arrows is untouched. */
+.cottage-cal-scroll {
+  height: 100%;
+}
+/* No month/year nav row — the scroll calendar has no arrows. */
+.cottage-cal-scroll .rdrMonthAndYearWrapper {
+  display: none !important;
+}
+.cottage-cal-scroll .rdrCalendarWrapper {
+  width: 100% !important;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  font-size: inherit;
+}
+/* The fixed weekday header: single grey letters with a divider, as Airbnb. */
+.cottage-cal-scroll .rdrWeekDays {
+  flex: 0 0 auto;
+  width: 100% !important;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.cottage-cal-scroll .rdrWeekDay {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+/* The scrolling months fill the rest and scroll inside the sheet. */
+.cottage-cal-scroll .rdrInfiniteMonths {
+  width: 100% !important;
+  flex: 1 1 auto;
+}
+.cottage-cal-scroll .rdrMonthsVertical {
+  width: 100% !important;
+}
+/* "October 2026" above each month, left-aligned like Airbnb's. */
+.cottage-cal-scroll .rdrMonthName {
+  text-align: left;
+  font-size: 18px;
+  font-weight: 700;
+  color: #222222;
+  padding: 10px 2px 4px;
+}
+/* Past AND unavailable days are struck through (the grey comes from rule 6 —
+   .rdrDayDisabled — above; this adds the line that past days otherwise lack). */
+.cottage-cal-scroll .rdrDayDisabled .rdrDayNumber span {
+  text-decoration: line-through;
+}
+
 /* 5. Selection colour — Airbnb's calendar treatment, in our emerald. Looked at
    Airbnb's booking calendar on 03/10/2026: availability is NEVER shown with
    colour — an available day is a plain dark number on white, an unavailable one
