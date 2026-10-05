@@ -52,6 +52,8 @@ const PLATFORM_ONLY: Record<string, string> = {
     commercial_photography_allowed: 'editor via service route', nearby: 'editor via service route',
     sleeping_arrangements: 'editor via service route', neighbourhood: 'editor via service route',
     show_precise_location: 'editor via service route',
+    max_pets: 'editor via service route', checkout_tasks: 'editor via service route',
+    checkout_note: 'editor via service route', guest_safety: 'editor via service route',
     quiet_hours_enabled: 'editor via service route', quiet_hours_start: 'editor via service route',
     quiet_hours_end: 'editor via service route', plot_band: 'editor via service route',
     storey_band: 'editor via service route', weekend_price: 'editor via service route',
