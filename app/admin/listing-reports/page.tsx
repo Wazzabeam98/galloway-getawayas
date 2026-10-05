@@ -100,7 +100,7 @@ export default async function AdminListingReports() {
                             <div key={r.id} className="border border-slate-200 rounded-2xl p-6">
                                 <div className="flex items-baseline justify-between gap-4 flex-wrap">
                                     <div className="font-bold text-slate-900">
-                                        {reasonLabel(r.reason)}
+                                        {reasonLabel(r.reason, targetOf(r).type)}
                                     </div>
                                     <div className="text-sm text-slate-500">
                                         {formatUk(new Date(r.created_at))}
