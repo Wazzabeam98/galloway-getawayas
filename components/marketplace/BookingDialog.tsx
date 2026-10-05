@@ -14,9 +14,10 @@ import MonthCalendar from '@/components/marketplace/MonthCalendar';
 import TravelAddressModal from '@/components/marketplace/TravelAddressModal';
 import AgreementTick from '@/components/legal/AgreementTick';
 import { isFillingUp, spotsLeftLabel } from '@/lib/spotsLeft';
+import { timeRange24 } from '@/lib/timeRange';
 import type { AddressParts } from '@/components/address/AddressLookup';
 
-export interface DialogItem { id: string; name: string; price: number; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; }
+export interface DialogItem { id: string; name: string; price: number; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; duration_minutes?: number | null; }
 export interface DialogOpenSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 export interface DialogDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 
@@ -27,6 +28,9 @@ export interface BookArgs { itemId: string; date: string; time: string; quantity
 interface Offering {
     key: string; date: string; time: string; kind: 'open' | 'declared';
     title: string | null; row: { capacity: number; seats_taken: number; private: boolean } | null;
+    // The session's length in minutes when known (a declared session carries its
+    // own) — for the phone sheet's "10:00–12:00".
+    duration: number | null;
 }
 
 // THE "SHOW DATES" DIALOG — the Airbnb-shaped availability picker, shared by both
@@ -37,9 +41,12 @@ interface Offering {
 // Selecting a slot and pressing Book goes straight to Stripe Checkout — the panel's
 // onBook does the POST + redirect; no contact is collected here (Checkout does that).
 export default function BookingDialog({
-    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, minAge, initialDate, prefillAdults, prefillChildren, hasStay, needsGuestTerms, busy, error, onBook, onClose,
+    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, minAge, initialDate, prefillAdults, prefillChildren, hasStay, needsGuestTerms, slotLength, busy, error, onBook, onClose,
 }: {
     who: string;
+    // The provider's session length in minutes — an open-hours time's length when
+    // the item has no duration of its own (the phone sheet shows the range).
+    slotLength?: number | null;
     // True when this guest still owes the Guest Terms — a one-line tick above the
     // Book button, which is held until it is ticked. The panel records the
     // acceptance before the order (see the note by onBook).
@@ -142,10 +149,11 @@ export default function BookingDialog({
     // Every offering, chronological. The parent already windows and futures the lists.
     const openSessions = useMemo(() => (sessionsForItem ? sessionsForItem(itemId) : sessions), [sessionsForItem, itemId, sessions]);
     const offerings: Offering[] = useMemo(() => {
-        const open: Offering[] = openSessions.map((s) => ({ key: 'o:' + s.date + ' ' + s.time, date: s.date, time: s.time, kind: 'open', title: null, row: s.row }));
-        const dec: Offering[] = declaredSessions.map((d) => ({ key: 'd:' + d.id, date: d.date, time: d.time, kind: 'declared', title: d.title, row: { capacity: d.capacity, seats_taken: d.seats_taken, private: d.private } }));
+        const openLen = Number(items.find((i) => i.id === itemId)?.duration_minutes) || Number(slotLength) || null;
+        const open: Offering[] = openSessions.map((s) => ({ key: 'o:' + s.date + ' ' + s.time, date: s.date, time: s.time, kind: 'open', title: null, row: s.row, duration: openLen }));
+        const dec: Offering[] = declaredSessions.map((d) => ({ key: 'd:' + d.id, date: d.date, time: d.time, kind: 'declared', title: d.title, row: { capacity: d.capacity, seats_taken: d.seats_taken, private: d.private }, duration: Number(d.duration) || null }));
         return [...open, ...dec].sort((a, b) => (a.date + a.time < b.date + b.time ? -1 : 1));
-    }, [openSessions, declaredSessions]);
+    }, [openSessions, declaredSessions, items, itemId, slotLength]);
 
     // Availability for one offering, for the chosen item and party size — read off
     // the same optionAvailability the route enforces, with the offering's own pool.
@@ -163,6 +171,20 @@ export default function BookingDialog({
         for (const o of offerings) (by[o.date] = by[o.date] || []).push(o);
         return Object.keys(by).sort().map((d) => ({ date: d, list: by[d] }));
     }, [offerings]);
+
+    // ON A PHONE the sheet is Airbnb's "Select a time": days as headings from the
+    // next day with a bookable time, every time as its own card underneath, all
+    // open as you scroll — no collapsed day rows. Desktop keeps the day list.
+    // Decided after mount (the dialog only ever opens on a tap, so there is no
+    // server render to disagree with) and followed if the window is resized.
+    const [phone, setPhone] = useState(false);
+    useEffect(() => {
+        const mq = window.matchMedia('(max-width: 639px)');
+        const on = () => setPhone(mq.matches);
+        on();
+        mq.addEventListener('change', on);
+        return () => mq.removeEventListener('change', on);
+    }, []);
 
     // Which days a guest could actually book, for the month grid — a day with no
     // fitting time is greyed and not tappable.
@@ -213,14 +235,22 @@ export default function BookingDialog({
         // eslint-disable-next-line
     }, [cap, prefillAdults, prefillChildren]);
 
+    // The days the list actually renders: on a phone only days with a time the
+    // party fits (it starts at the next available day); on desktop every day.
+    const listedDays = useMemo(
+        () => (phone ? days.filter((d) => d.list.some(fits)) : days),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [phone, days, item, people],
+    );
+
     // The header month follows the list — the topmost day in view.
     const [headerMonth, setHeaderMonth] = useState<string>('');
-    useEffect(() => { if (days.length) setHeaderMonth(monthYearLabel(days[0].date)); }, [days]);
+    useEffect(() => { if (listedDays.length) setHeaderMonth(monthYearLabel(listedDays[0].date)); }, [listedDays]);
     const onListScroll = () => {
         const el = listRef.current; if (!el) return;
         const top = el.scrollTop + 4;
-        let current = days[0]?.date;
-        for (const d of days) { const node = dayEls.current.get(d.date); if (node && node.offsetTop <= top) current = d.date; else break; }
+        let current = listedDays[0]?.date;
+        for (const d of listedDays) { const node = dayEls.current.get(d.date); if (node && node.offsetTop <= top) current = d.date; else break; }
         if (current) setHeaderMonth(monthYearLabel(current));
     };
 
@@ -243,14 +273,14 @@ export default function BookingDialog({
     useLayoutEffect(() => {
         if (calOpen || !initialDate) return;
         // The day may not have a section (fully booked / past) — nearest on/after it.
-        const target = days.find((d) => d.date >= initialDate)?.date;
+        const target = listedDays.find((d) => d.date >= initialDate)?.date;
         if (target) focusDay(target);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [phone]);
 
     const applyCalPick = () => {
         if (!calSel) return;
-        const target = days.find((d) => d.date >= calSel)?.date || calSel;
+        const target = listedDays.find((d) => d.date >= calSel)?.date || calSel;
         setCalOpen(false);
         focusDay(target);
     };
@@ -281,7 +311,7 @@ export default function BookingDialog({
             <div className="flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:my-auto sm:max-h-[calc(100dvh-9rem)] sm:max-w-lg sm:rounded-2xl">
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-                    <h2 className="text-lg font-bold text-slate-900">{calOpen ? 'Choose a date' : 'Choose a time'}</h2>
+                    <h2 className="text-lg font-bold text-slate-900">{calOpen ? 'Choose a date' : phone ? 'Select a time' : 'Choose a time'}</h2>
                     <button type="button" onClick={() => (calOpen ? setCalOpen(false) : onClose())} aria-label="Close" className="rounded-full p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
                 </div>
 
@@ -317,59 +347,93 @@ export default function BookingDialog({
                                     </div>
                                 </div>
                             )}
-                            {/* Adults / children split — a headcount for the
-                                provider, not a pricing tier: every seat is the
-                                same price. The total drives everything below. */}
-                            <div>
-                                <div className="mb-1 flex items-center justify-between">
-                                    <div className="text-sm font-semibold text-slate-900">Guests</div>
-                                    <div className="text-sm text-slate-500">{people} {people === 1 ? 'person' : 'people'}{perPerson ? '' : ' — the whole session is yours'}</div>
+                            {phone ? (
+                                // Airbnb's phone sheet: one "1 adult" stepper, "Add
+                                // children" beneath in grey — no "Guests / 1 person"
+                                // header, no age line, no group-size line. A real
+                                // minimum still says so; spots left are on the cards.
+                                <div>
+                                    {[
+                                        { key: 'adults', label: adults + ' ' + (adults === 1 ? 'adult' : 'adults'), name: 'adults', value: adults, set: setAdults, floor: 1 },
+                                        ...(childrenShown && kidsOk ? [{ key: 'children', label: children + ' ' + (children === 1 ? 'child' : 'children'), name: 'children', value: children, set: setChildren, floor: 0 }] : []),
+                                    ].map((row) => (
+                                        <div key={row.key} className="flex items-center justify-between py-1.5">
+                                            <div className="text-[15px] font-semibold text-slate-900">{row.label}</div>
+                                            <div className="flex items-center gap-3">
+                                                <button type="button" aria-label={'Fewer ' + row.name}
+                                                    disabled={row.value <= row.floor || people <= minPeople}
+                                                    onClick={() => row.set((v) => Math.max(row.floor, v - 1))}
+                                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Minus className="h-4 w-4" /></button>
+                                                <button type="button" aria-label={'More ' + row.name}
+                                                    disabled={people >= cap}
+                                                    onClick={() => row.set((v) => v + 1)}
+                                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Plus className="h-4 w-4" /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {!childrenShown && kidsOk && (
+                                        <button type="button" onClick={() => setChildrenShown(true)}
+                                            className="mt-0.5 text-sm text-slate-500 underline underline-offset-2 hover:text-slate-700">
+                                            Add children
+                                        </button>
+                                    )}
+                                    {minPeople > 1 && <div className="mt-1 text-xs text-slate-400">Minimum {minPeople}.</div>}
                                 </div>
-                                {[
-                                    { key: 'adults', label: 'Adults', sub: 'Age 13+', value: adults, set: setAdults, floor: 1 },
-                                    // Children is here only once revealed — and once
-                                    // revealed it stays, even at zero, so an edit back
-                                    // to nought doesn't snatch the stepper away.
-                                    ...(childrenShown && kidsOk ? [{ key: 'children', label: 'Children', sub: 'Ages 4–12', value: children, set: setChildren, floor: 0 }] : []),
-                                ].map((row) => (
-                                    <div key={row.key} className="flex items-center justify-between py-1.5">
-                                        <div>
-                                            <div className="text-sm font-medium text-slate-800">{row.label}</div>
-                                            <div className="text-xs text-slate-400">{row.sub}</div>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <button type="button" aria-label={'Fewer ' + row.label.toLowerCase()}
-                                                disabled={row.value <= row.floor || people <= minPeople}
-                                                onClick={() => row.set((v) => Math.max(row.floor, v - 1))}
-                                                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Minus className="h-4 w-4" /></button>
-                                            <span className="w-6 text-center text-sm font-semibold">{row.value}</span>
-                                            <button type="button" aria-label={'More ' + row.label.toLowerCase()}
-                                                disabled={people >= cap}
-                                                onClick={() => row.set((v) => v + 1)}
-                                                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Plus className="h-4 w-4" /></button>
-                                        </div>
+                            ) : (
+                                // Adults / children split — a headcount for the
+                                // provider, not a pricing tier: every seat is the
+                                // same price. The total drives everything below.
+                                <div>
+                                    <div className="mb-1 flex items-center justify-between">
+                                        <div className="text-sm font-semibold text-slate-900">Guests</div>
+                                        <div className="text-sm text-slate-500">{people} {people === 1 ? 'person' : 'people'}{perPerson ? '' : ' — the whole session is yours'}</div>
                                     </div>
-                                ))}
-                                {/* Adults-only by default; reveal the Children stepper on
-                                    demand — but only where the provider's minimum age
-                                    admits children at all (16+/18+/21+ show nothing). */}
-                                {!childrenShown && kidsOk && (
-                                    <button type="button" onClick={() => setChildrenShown(true)}
-                                        className="mt-1.5 text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">
-                                        Add children
-                                    </button>
-                                )}
-                                {(minPeople > 1 || capLimited) && (
-                                    <div className="mt-1 text-xs text-slate-400">
-                                        {minPeople > 1 ? `Minimum ${minPeople}. ` : ''}
-                                        {capLimited
-                                            ? (allFillingUp
-                                                ? `Only ${spotsLeftLabel(bookableMax)} in the sessions here.`
-                                                : `Up to ${bookableMax} ${bookableMax === 1 ? 'guest' : 'guests'}.`)
-                                            : ''}
-                                    </div>
-                                )}
-                            </div>
+                                    {[
+                                        { key: 'adults', label: 'Adults', sub: 'Age 13+', value: adults, set: setAdults, floor: 1 },
+                                        // Children is here only once revealed — and once
+                                        // revealed it stays, even at zero, so an edit back
+                                        // to nought doesn't snatch the stepper away.
+                                        ...(childrenShown && kidsOk ? [{ key: 'children', label: 'Children', sub: 'Ages 4–12', value: children, set: setChildren, floor: 0 }] : []),
+                                    ].map((row) => (
+                                        <div key={row.key} className="flex items-center justify-between py-1.5">
+                                            <div>
+                                                <div className="text-sm font-medium text-slate-800">{row.label}</div>
+                                                <div className="text-xs text-slate-400">{row.sub}</div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <button type="button" aria-label={'Fewer ' + row.label.toLowerCase()}
+                                                    disabled={row.value <= row.floor || people <= minPeople}
+                                                    onClick={() => row.set((v) => Math.max(row.floor, v - 1))}
+                                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Minus className="h-4 w-4" /></button>
+                                                <span className="w-6 text-center text-sm font-semibold">{row.value}</span>
+                                                <button type="button" aria-label={'More ' + row.label.toLowerCase()}
+                                                    disabled={people >= cap}
+                                                    onClick={() => row.set((v) => v + 1)}
+                                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Plus className="h-4 w-4" /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {/* Adults-only by default; reveal the Children stepper on
+                                        demand — but only where the provider's minimum age
+                                        admits children at all (16+/18+/21+ show nothing). */}
+                                    {!childrenShown && kidsOk && (
+                                        <button type="button" onClick={() => setChildrenShown(true)}
+                                            className="mt-1.5 text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                                            Add children
+                                        </button>
+                                    )}
+                                    {(minPeople > 1 || capLimited) && (
+                                        <div className="mt-1 text-xs text-slate-400">
+                                            {minPeople > 1 ? `Minimum ${minPeople}. ` : ''}
+                                            {capLimited
+                                                ? (allFillingUp
+                                                    ? `Only ${spotsLeftLabel(bookableMax)} in the sessions here.`
+                                                    : `Up to ${bookableMax} ${bookableMax === 1 ? 'guest' : 'guests'}.`)
+                                                : ''}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Month header + calendar-jump icon */}
@@ -383,9 +447,42 @@ export default function BookingDialog({
 
                         {/* The day-grouped, scrollable list of large slot cards */}
                         <div ref={listRef} onScroll={onListScroll} className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                            {days.length === 0 ? (
+                            {listedDays.length === 0 ? (
                                 <p className="py-8 text-center text-sm text-slate-500">No times available just now — check back soon.</p>
-                            ) : days.map((d) => {
+                            ) : phone ? listedDays.map((d) => (
+                                // Phone: the day as a heading, every time under it as its
+                                // own card — "10:00–12:00", the price each, and "N spots
+                                // left" only when that time is genuinely filling up.
+                                <div key={d.date} ref={(el) => { if (el) dayEls.current.set(d.date, el); else dayEls.current.delete(d.date); }} className="pb-6 last:pb-2">
+                                    <h3 className="pb-3 text-base font-semibold text-slate-900">{dayHeadingLabel(d.date, today, tomorrow)}</h3>
+                                    <div className="space-y-2.5">
+                                        {d.list.map((o) => {
+                                            const a = availOf(o);
+                                            const ok = fits(o);
+                                            const on = o.key === selKey;
+                                            const declared = o.kind === 'declared';
+                                            const filling = perPerson && a.seatsLeft > 0 && !!o.row && isFillingUp(o.row.capacity, o.row.seats_taken);
+                                            return (
+                                                <button key={o.key} type="button" disabled={!ok} onClick={() => setSelKey(o.key)}
+                                                    className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition ${on ? 'border-slate-900 ring-1 ring-slate-900' : declared ? 'border-violet-200' : 'border-slate-300'} ${!ok ? 'cursor-not-allowed opacity-45' : ''}`}>
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="flex min-w-0 items-baseline gap-2">
+                                                            <span className="flex-none text-[15px] font-semibold text-slate-900">{timeRange24(o.time, o.duration)}</span>
+                                                            {declared && o.title && <span className="truncate text-sm text-slate-500">{o.title}</span>}
+                                                        </span>
+                                                        {item && <span className="mt-0.5 block text-sm text-slate-600">{priceEach}</span>}
+                                                    </span>
+                                                    {filling ? (
+                                                        <span className="flex-none text-sm font-semibold text-amber-700">{spotsLeftLabel(a.seatsLeft)}</span>
+                                                    ) : !ok ? (
+                                                        <span className="flex-none text-sm text-slate-400">{perPerson ? 'Full' : 'Booked'}</span>
+                                                    ) : null}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )) : listedDays.map((d) => {
                                 const isOpen = d.date === expandedDate;
                                 const fitCount = d.list.filter(fits).length;
                                 return (
