@@ -14,6 +14,7 @@ import {
 } from '@/lib/serviceProviders';
 import { visibleInDirectory } from '@/lib/serviceSubscription';
 import PhotoGallery from '@/components/PhotoGallery';
+import ReportListing from '@/components/ReportListing';
 import HostCredentials from '@/components/marketplace/HostCredentials';
 import { regionCoverageLine } from '@/components/marketplace/present';
 import { MapPin, FileText, BadgeCheck, Wrench, Clock, CalendarClock, ArrowRight } from 'lucide-react';
@@ -230,10 +231,16 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                                 Ask {provider.business_name} <ArrowRight className="h-4 w-4" strokeWidth={2.2} />
                             </Link>
                             <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
-                                <CalendarClock className="h-3.5 w-3.5" aria-hidden /> They reply by email — usually within a day.
+                                <CalendarClock className="h-3.5 w-3.5" aria-hidden /> They reply by email — usually within 24 hours.
                             </p>
                         </div>
                     </div>
+                </div>
+
+                {/* Report this listing — the cottage's component, same form and admin
+                    queue, at the foot of the page. */}
+                <div className="mt-12 pt-8 border-t border-slate-200 flex justify-center">
+                    <ReportListing targetType="trade" targetId={provider.id} title={provider.business_name} />
                 </div>
             </div>
         </div>

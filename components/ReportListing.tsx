@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Flag, X } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { REPORT_REASONS, REPORT_DETAILS_MAX, reasonLabel, type ReportReasonKey } from '@/lib/listingReports';
+import { reasonsFor, REPORT_DETAILS_MAX, reasonLabel, type ReportReasonKey } from '@/lib/listingReports';
 
 // "Report this listing" — the guest-facing half of the report flow, mirroring
 // Airbnb's: a muted flag link at the foot of the listing that opens a modal,
@@ -15,7 +15,23 @@ import { REPORT_REASONS, REPORT_DETAILS_MAX, reasonLabel, type ReportReasonKey }
 
 type Step = 'reason' | 'detail' | 'done';
 
-export default function ReportListing({ listingId, title }: { listingId: string; title?: string }) {
+// The same report flow serves a cottage listing, a guest experience and a trade
+// profile. A cottage keeps calling it with `listingId` (unchanged); an experience
+// or trade passes `targetType` + `targetId` (the service_providers id). The form,
+// the copy, the admin queue and the placement are the same for all three.
+export default function ReportListing({
+    listingId,
+    targetType,
+    targetId,
+    title,
+}: {
+    listingId?: string;
+    targetType?: 'listing' | 'experience' | 'trade';
+    targetId?: string;
+    title?: string;
+}) {
+    const type: 'listing' | 'experience' | 'trade' = targetType || 'listing';
+    const id = targetId || listingId || '';
     const [open, setOpen] = useState(false);
     const [step, setStep] = useState<Step>('reason');
     const [reason, setReason] = useState<ReportReasonKey | ''>('');
@@ -40,7 +56,7 @@ export default function ReportListing({ listingId, title }: { listingId: string;
             const res = await fetch('/api/listings/report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId, reason, details: details.trim() }),
+                body: JSON.stringify({ targetType: type, targetId: id, reason, details: details.trim() }),
             });
             const data = await res.json().catch(() => ({}));
             if (!data || !data.ok) {
@@ -96,7 +112,7 @@ export default function ReportListing({ listingId, title }: { listingId: string;
                                     This won&apos;t be shared with the host.
                                 </p>
                                 <div className="space-y-1">
-                                    {REPORT_REASONS.map((r) => (
+                                    {reasonsFor(type).map((r) => (
                                         <label
                                             key={r.key}
                                             className="flex items-center gap-3 py-2.5 px-1 cursor-pointer text-slate-800"
@@ -129,7 +145,7 @@ export default function ReportListing({ listingId, title }: { listingId: string;
                         {step === 'detail' && (
                             <>
                                 <h3 className="font-bold text-lg text-slate-900 pr-8">
-                                    {reason ? reasonLabel(reason) : 'Tell us more'}
+                                    {reason ? reasonLabel(reason, type) : 'Tell us more'}
                                 </h3>
                                 <p className="text-sm text-slate-500 mt-1 mb-4">
                                     Tell us what to look at. This won&apos;t be shared with the host.

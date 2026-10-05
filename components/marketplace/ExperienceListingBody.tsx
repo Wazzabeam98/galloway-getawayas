@@ -7,8 +7,8 @@ import {
 } from '@/components/marketplace/present';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
 import MeetYourHost from '@/components/MeetYourHost';
-import ReviewsSummary from '@/components/ReviewsSummary';
 import AboutThisPlace from '@/components/AboutThisPlace';
+import ReportListing from '@/components/ReportListing';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
 import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, ShieldCheck, Accessibility, Car, Check, ShoppingBag, Utensils, Package, Truck } from 'lucide-react';
@@ -46,12 +46,15 @@ function phaseIcon(icon: StepIcon) {
 // notice). A plain server component. Rules: first name only, no ratings/counts,
 // no address before payment.
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel, reviews, menu, itemsMenu, sticky, responsiveness,
+    p, backHref, backLabel, panel, reviews, menu, itemsMenu, sticky, responsiveness, reportable,
 }: {
     p: MpProvider;
     backHref: string;
     backLabel: string;
     panel: React.ReactNode;
+    // Show "Report this listing" at the foot — the cottage's ReportListing, reused.
+    // Passed by the public experience listing; the order page leaves it out.
+    reportable?: boolean;
     // The provider's response rate / typical reply time, worked out server-side
     // from their orders and message threads (lib/hostResponsiveness →
     // providerResponsiveness). Passed ONLY by the public listing page; when it's
@@ -491,18 +494,15 @@ export default function ExperienceListingBody({
                             </section>
                         ) : (
                             <section id="reviews" className="mt-8 border-t border-slate-200 pt-8 scroll-mt-24">
-                                {/* Once the score is public, the cottage's reviews
-                                    summary — the overall rating with its 5-to-1 bars.
-                                    No category scores (an experience has none): with no
-                                    categoryAverages and rating-only rows, ReviewsSummary
-                                    renders just the overall block. Below the threshold
-                                    the words still show, with no score. */}
+                                {/* Just the overall star rating out of 5 and the number
+                                    of reviews, then the cards — no 5-to-1 breakdown bars
+                                    (that stays on the cottage). Below the public
+                                    threshold the words show with no score. */}
                                 {reviews.avg !== null ? (
-                                    <ReviewsSummary
-                                        reviews={reviews.items.map((r) => ({ rating: r.rating }))}
-                                        ratingAvg={reviews.avg}
-                                        ratingCount={reviews.count}
-                                    />
+                                    <h2 className="flex items-center gap-2 text-xl md:text-2xl font-bold text-slate-900">
+                                        <ReviewStars value={Math.round(reviews.avg)} size={18} />
+                                        {reviews.avg.toFixed(1)} · {reviews.count} review{reviews.count > 1 ? 's' : ''}
+                                    </h2>
                                 ) : (
                                     <>
                                         <h2 className="text-xl md:text-2xl font-bold text-slate-900">
@@ -588,6 +588,14 @@ export default function ExperienceListingBody({
                             </p>
                         ) : null}
                     </section>
+
+                    {/* Report this listing — the cottage's component, same form and
+                        admin queue, at the foot of the page. */}
+                    {reportable && (
+                        <div className="mt-12 pt-8 border-t border-slate-200 flex justify-center">
+                            <ReportListing targetType="experience" targetId={p.id} title={p.business_name} />
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

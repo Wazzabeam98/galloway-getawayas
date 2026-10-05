@@ -63,3 +63,22 @@ test('every reason key has a label, and the five mirror Airbnb', () => {
     // An unknown key falls back to itself rather than throwing.
     assert.equal(reasonLabel('mystery'), 'mystery');
 });
+
+// "It's not a real place to stay" only fits a holiday let. An experience and a
+// trade profile reuse the same report form, so that one reason is worded for
+// what is being reported — the stored key stays the same.
+test('each kind of report offers a "not real" reason that fits it', () => {
+    const { reasonsFor, reasonLabel } = require('@/lib/listingReports');
+    const labels = (t: string) => reasonsFor(t).map((r: any) => r.label);
+    assert.ok(labels('listing').includes('It’s not a real place to stay'));
+    assert.ok(labels('experience').includes('It’s not a real experience'));
+    assert.ok(labels('trade').includes('It’s not a real business'));
+    for (const t of ['experience', 'trade']) {
+        assert.ok(!labels(t).includes('It’s not a real place to stay'), t + ' must not offer the holiday-let wording');
+    }
+    // Same five reasons, same keys and order, whatever the kind.
+    assert.deepEqual(reasonsFor('trade').map((r: any) => r.key), reasonsFor('listing').map((r: any) => r.key));
+    assert.equal(reasonLabel('not_real_place', 'experience'), 'It’s not a real experience');
+    // A holiday let, and any caller that doesn't say, keeps the original wording.
+    assert.equal(reasonLabel('not_real_place'), 'It’s not a real place to stay');
+});

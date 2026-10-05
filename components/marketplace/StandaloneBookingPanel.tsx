@@ -169,6 +169,7 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
 
             {open && (
                 <BookingDialog
+                    slotLength={provider.slotLength}
                     who={provider.who}
                     items={provider.items}
                     sessions={provider.sessions}
