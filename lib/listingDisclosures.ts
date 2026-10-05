@@ -1,7 +1,7 @@
 // Airbnb's guest-safety disclosures and checkout instructions — the two
 // "pick what applies, add a note" lists on a listing. Stored as jsonb arrays of
 // { key, note } on listings.safety_disclosures and
-// listings.checkout_instructions (20261005160000).
+// listings.checkout_instructions (20261005161347).
 //
 // Framework-free on purpose: the editor (client), /api/listings/save (server)
 // and the listing page all import it, so the one list of keys and the one set
