@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { hasExtraGuests } from '@/lib/extraGuests';
 import { generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
@@ -291,40 +292,66 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
 
     if (isSlot) {
         return (
-            <div id="booking-panel" className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        {priceParts_ && (
-                            <div className="text-slate-900">
-                                <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
-                                {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
-                            </div>
-                        )}
-                        <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
-                        {!standalone && checkIn && (
-                            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                                <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
-                                <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
-                            </p>
-                        )}
+            <>
+                {/* Standalone (the public page) hides the inline card on a phone and
+                    uses the bottom bar below; against a stay it keeps the inline
+                    card on every size. */}
+                <div id="booking-panel" className={(standalone ? 'hidden lg:block ' : '') + 'rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]'}>
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            {priceParts_ && (
+                                <div className="text-slate-900">
+                                    <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
+                                    {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
+                                </div>
+                            )}
+                            <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                            {!standalone && checkIn && (
+                                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                                    <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                                    <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
+                                </p>
+                            )}
+                        </div>
+                        <button type="button" onClick={() => setOpen(true)} disabled={!hasSlotAvailability}
+                            className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+                            {hasSlotAvailability ? 'Show dates' : 'No times'}
+                        </button>
                     </div>
-                    <button type="button" onClick={() => setOpen(true)} disabled={!hasSlotAvailability}
-                        className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
-                        {hasSlotAvailability ? 'Show dates' : 'No times'}
-                    </button>
+                    <DatePreview
+                        items={provider.items}
+                        sessions={previewSessions}
+                        declaredSessions={declaredSessions}
+                        providerCapacity={provider.slotCapacity}
+                        providerMinPeople={provider.minPeople}
+                        slotLength={provider.slotLength}
+                        busy={busy}
+                        onPickDay={(d) => openOn(d)}
+                        onShowAll={() => openOn(null)}
+                    />
+                    {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
                 </div>
-                <DatePreview
-                    items={provider.items}
-                    sessions={previewSessions}
-                    declaredSessions={declaredSessions}
-                    providerCapacity={provider.slotCapacity}
-                    providerMinPeople={provider.minPeople}
-                    slotLength={provider.slotLength}
-                    busy={busy}
-                    onPickDay={(d) => openOn(d)}
-                    onShowAll={() => openOn(null)}
-                />
-                {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+
+                {/* Phone bottom bar (public only) — price + "Check availability",
+                    opening the same dialog. The cottage's bottom-bar mechanism. */}
+                {standalone && typeof document !== 'undefined' && !open && createPortal(
+                    <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
+                        <div className="mb-2.5">
+                            {priceParts_ ? (
+                                <p className="text-base font-bold text-slate-900 leading-tight">
+                                    {(showFrom ? 'From ' : '') + priceParts_.money}
+                                    {priceParts_.per && <span className="text-sm font-normal text-slate-500"> {priceParts_.per}</span>}
+                                </p>
+                            ) : null}
+                            <p className={`text-xs font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                        </div>
+                        <button type="button" onClick={() => setOpen(true)} disabled={!hasSlotAvailability}
+                            className="w-full rounded-lg bg-emerald-700 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                            {hasSlotAvailability ? 'Check availability' : 'No times'}
+                        </button>
+                    </div>, document.body,
+                )}
+
                 {open && (
                     <BookingDialog
                         who={provider.who}
@@ -348,7 +375,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                         onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
                     />
                 )}
-            </div>
+            </>
         );
     }
 
@@ -356,32 +383,54 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
     // Price, the free-cancellation line, a "Show dates" button and a few suggested
     // days; the option, guest count, calendar and time all live in the dialog.
     return (
-        <div id="booking-panel" className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-            <div className="flex items-start justify-between gap-3">
-                <div>
-                    {priceParts_ && (
-                        <div className="text-slate-900">
-                            <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
-                            {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
-                        </div>
-                    )}
-                    <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
-                    {!standalone && checkIn && (
-                        <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                            <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
-                            <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
-                        </p>
-                    )}
+        <>
+            <div id="booking-panel" className={(standalone ? 'hidden lg:block ' : '') + 'rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]'}>
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        {priceParts_ && (
+                            <div className="text-slate-900">
+                                <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
+                                {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
+                            </div>
+                        )}
+                        <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                        {!standalone && checkIn && (
+                            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                                <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                                <span>For your stay · {dateLabel(String(checkIn).slice(0, 10))} – {dateLabel(maxDate)}</span>
+                            </p>
+                        )}
+                    </div>
+                    <button type="button" onClick={() => openRequest(null, null)} disabled={calDays.size === 0}
+                        className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+                        {calDays.size ? 'Show dates' : 'No dates'}
+                    </button>
                 </div>
-                <button type="button" onClick={() => openRequest(null, null)} disabled={calDays.size === 0}
-                    className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
-                    {calDays.size ? 'Show dates' : 'No dates'}
-                </button>
+
+                <RequestDatePreview calDays={calDays} timesByDate={reqDialogTimes} busy={busy} onPickDay={(d) => openRequest(null, d)} />
+
+                {error && !open && <p className="mt-3 text-sm text-rose-700">{error}</p>}
             </div>
 
-            <RequestDatePreview calDays={calDays} timesByDate={reqDialogTimes} busy={busy} onPickDay={(d) => openRequest(null, d)} />
-
-            {error && !open && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+            {/* Phone bottom bar (public only) — price + "Check availability",
+                opening the same request dialog. The cottage's bottom-bar mechanism. */}
+            {standalone && typeof document !== 'undefined' && !open && createPortal(
+                <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
+                    <div className="mb-2.5">
+                        {priceParts_ ? (
+                            <p className="text-base font-bold text-slate-900 leading-tight">
+                                {(showFrom ? 'From ' : '') + priceParts_.money}
+                                {priceParts_.per && <span className="text-sm font-normal text-slate-500"> {priceParts_.per}</span>}
+                            </p>
+                        ) : null}
+                        <p className={`text-xs font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                    </div>
+                    <button type="button" onClick={() => openRequest(null, null)} disabled={calDays.size === 0}
+                        className="w-full rounded-lg bg-emerald-700 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                        {calDays.size ? 'Check availability' : 'No dates'}
+                    </button>
+                </div>, document.body,
+            )}
 
             {open && (
                 <RequestBookingDialog
@@ -405,6 +454,6 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                     onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setLockedItemId(null); setError(null); } }}
                 />
             )}
-        </div>
+        </>
     );
 }

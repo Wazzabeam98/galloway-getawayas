@@ -22,14 +22,25 @@ const BAR_H = 56; // h-14
 export default function ListingStickyHeader({
     links,
     pricePerNight,
+    priceLabel,
     reserveLabel,
+    idleLabel = 'Check availability',
     showScore,
     ratingAvg,
     ratingCount,
 }: {
     links: { id: string; label: string }[];
-    pricePerNight: number;
+    // A cottage passes a nightly price and gets "£120 / night". An experience has
+    // no single nightly rate — a "From £18 / guest", a food "from £6" — so it
+    // passes the ready-made label instead, and that replaces the price block.
+    // One of the two is always given; priceLabel wins when both are.
+    pricePerNight?: number;
+    priceLabel?: string;
     reserveLabel: string;
+    // The button's label before any dates are chosen. A cottage keeps the default
+    // "Check availability"; an experience whose booking isn't a date search — a
+    // made-to-order menu — passes its own word ("See the menu").
+    idleLabel?: string;
     showScore: boolean;
     ratingAvg: number;
     ratingCount: number;
@@ -115,8 +126,14 @@ export default function ListingStickyHeader({
                 >
                     <div className="text-right leading-tight">
                         <div className="text-sm">
-                            <span className="font-bold text-slate-900">£{pricePerNight}</span>{' '}
-                            <span className="text-slate-500">/ night</span>
+                            {priceLabel ? (
+                                <span className="font-bold text-slate-900">{priceLabel}</span>
+                            ) : (
+                                <>
+                                    <span className="font-bold text-slate-900">£{pricePerNight}</span>{' '}
+                                    <span className="text-slate-500">/ night</span>
+                                </>
+                            )}
                         </div>
                         {showScore && (
                             <div className="flex items-center justify-end gap-1 text-xs text-slate-500">
@@ -131,7 +148,7 @@ export default function ListingStickyHeader({
                         onClick={() => go('book')}
                         className="rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800"
                     >
-                        {hasDates ? reserveLabel : 'Check availability'}
+                        {hasDates ? reserveLabel : idleLabel}
                     </button>
                 </div>
             </div>

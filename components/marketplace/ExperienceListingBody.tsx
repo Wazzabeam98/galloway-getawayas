@@ -3,11 +3,12 @@ import { shapeCue } from '@/lib/serviceSlots';
 import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
 import {
     itemPriceLabel, itemExtrasSubline, itemGuestRange, cancellationSentence, whereLine, locationTag, travelCoverageLine,
-    durationLabel, durationSummary, yearsLabel, capacityLabel,
+    durationLabel, durationSummary, yearsLabel, capacityLabel, fromPriceLabel,
 } from '@/components/marketplace/present';
+import ListingStickyHeader from '@/components/ListingStickyHeader';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
-import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check, ShoppingBag, Utensils, Package, Truck } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, ShieldCheck, Accessibility, Car, Check, ShoppingBag, Utensils, Package, Truck } from 'lucide-react';
 import { experienceSteps, type StepIcon } from '@/lib/experienceSteps';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
@@ -42,12 +43,18 @@ function phaseIcon(icon: StepIcon) {
 // notice). A plain server component. Rules: first name only, no ratings/counts,
 // no address before payment.
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel, reviews, menu, itemsMenu,
+    p, backHref, backLabel, panel, reviews, menu, itemsMenu, sticky,
 }: {
     p: MpProvider;
     backHref: string;
     backLabel: string;
     panel: React.ReactNode;
+    // The desktop section bar (Airbnb's, the cottage's ListingStickyHeader) +
+    // the phone's behaviour below the gallery. Passed only by the public bookable
+    // listing — not the paused page (no booking) nor the against-a-stay variant.
+    // When set, the body renders the fixed top bar and the anchors/sentinels it
+    // scrolls to; the main nav un-sticks on this route via ChromeGate.
+    sticky?: boolean;
     // An INTERACTIVE menu (made-to-order food ordering): when passed it leads the
     // left column and replaces the static "What you get" list, so the menu, its
     // photos and prices are the main thing and the sidebar panel is the basket.
@@ -119,20 +126,52 @@ export default function ExperienceListingBody({
     // single balanced row, and let four or more flow in the usual two columns.
     const factCols = facts.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
 
+    // The desktop section bar (reused from the cottage: ListingStickyHeader). The
+    // sections it can jump to depend on what this listing actually renders, so the
+    // links are built here, from the same conditions used below. A fixed venue has
+    // a map ("Location"); a traveller doesn't. The price is the one the panel
+    // shows, capitalised for the bar; the idle button word is "See the menu" for a
+    // made-to-order shop, "Check availability" otherwise.
+    const hasMap = !comesToYou && p.mapLat != null && p.mapLng != null;
+    const navLinks: { id: string; label: string }[] = [];
+    if (p.galleryKeys.length) navLinks.push({ id: 'photos', label: 'Photos' });
+    if (p.amenities.length > 0) navLinks.push({ id: 'included', label: 'What’s included' });
+    if (reviews) navLinks.push({ id: 'reviews', label: 'Reviews' });
+    if (hasMap) navLinks.push({ id: 'location', label: 'Location' });
+    const rawPrice = fromPriceLabel(p);
+    const stickyPrice = rawPrice ? rawPrice.charAt(0).toUpperCase() + rawPrice.slice(1) : '';
+    const stickyIdle = p.shape === 'made_to_order' ? 'See the menu' : 'Check availability';
+
     return (
         <div className="min-h-screen bg-slate-50">
+            {sticky && (
+                <ListingStickyHeader
+                    links={navLinks}
+                    priceLabel={stickyPrice}
+                    reserveLabel={stickyIdle}
+                    idleLabel={stickyIdle}
+                    showScore={!!reviews && reviews.avg !== null}
+                    ratingAvg={reviews?.avg ?? 0}
+                    ratingCount={reviews?.count ?? 0}
+                />
+            )}
             <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-5 sm:pt-6">
                 <Link href={backHref} className="text-sm font-medium text-slate-500 hover:text-slate-800">
                     ← {backLabel}
                 </Link>
 
-                {p.galleryKeys.length ? (
-                    <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} />
-                ) : (
-                    <div className="my-4 flex h-[300px] w-full items-center justify-center rounded-2xl bg-slate-100 text-5xl font-semibold text-slate-300 md:h-[460px]">
-                        {who.slice(0, 1)}
-                    </div>
-                )}
+                <div id="photos" className="scroll-mt-24">
+                    {p.galleryKeys.length ? (
+                        <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} />
+                    ) : (
+                        <div className="my-4 flex h-[300px] w-full items-center justify-center rounded-2xl bg-slate-100 text-5xl font-semibold text-slate-300 md:h-[460px]">
+                            {who.slice(0, 1)}
+                        </div>
+                    )}
+                </div>
+
+                {/* The bar appears once the photos have scrolled off the top. */}
+                {sticky && <div id="sticky-sentinel" aria-hidden />}
 
                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-10 mt-2">
                     <div className="lg:col-span-2 min-w-0">
@@ -194,6 +233,14 @@ export default function ExperienceListingBody({
                                     facts about the host, not headings. Shared with the
                                     order page's host card; an unfilled one is omitted. */}
                                 <HostCredentials qualifications={p.qualifications} recognition={p.recognition} className="mt-5" />
+
+                                {/* The payment-safety line the cottage host card
+                                    carries (and Airbnb shows on every listing) —
+                                    keep money and messages on the platform. */}
+                                <p className="mt-5 flex items-start gap-2 text-sm text-slate-500">
+                                    <ShieldCheck className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden />
+                                    <span>To help protect your payment, always pay and message through Galloway Getaways.</span>
+                                </p>
                             </section>
                         )}
 
@@ -263,7 +310,10 @@ export default function ExperienceListingBody({
                             return (
                                 <section className="mt-8 border-t border-slate-200 pt-8">
                                     <h2 className="text-xl md:text-2xl font-bold text-slate-900">Things to know</h2>
-                                    <div className="mt-4 space-y-4">
+                                    {/* Columns, the cottage's "Things to know" rhythm
+                                        (and Airbnb's experience page): one column on a
+                                        phone, up to three on desktop. */}
+                                    <div className="mt-4 grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
                                         {p.minAge != null ? (
                                             <div className="flex items-start gap-3">
                                                 <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
@@ -318,7 +368,7 @@ export default function ExperienceListingBody({
                             scannable list (no prose). Shown for every shape when they
                             ticked anything. */}
                         {p.amenities.length > 0 && (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
+                            <section id="included" className="mt-8 border-t border-slate-200 pt-8 scroll-mt-24">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">What’s included</h2>
                                 <ul className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
                                     {p.amenities.map((k) => {
@@ -368,13 +418,19 @@ export default function ExperienceListingBody({
                             level with the bottom of the map: that is where the
                             sticky card releases. A jittered pin, never the door;
                             a traveller has no one place, so no map. */}
-                        {(!comesToYou && p.mapLat != null && p.mapLng != null) ? (
-                            <PropertyMap latitude={p.mapLat} longitude={p.mapLng} area={tag || undefined} />
+                        {hasMap ? (
+                            <div id="location" className="scroll-mt-24">
+                                <PropertyMap latitude={p.mapLat!} longitude={p.mapLng!} area={tag || undefined} />
+                            </div>
                         ) : null}
                     </div>
 
-                    <div className="lg:sticky lg:top-24 lg:self-start">{panel}</div>
+                    <div id="book" className="lg:sticky lg:top-24 lg:self-start scroll-mt-24">{panel}</div>
                 </div>
+
+                {/* Once the booking card passes the bar line, the bar reveals its
+                    own price + button (ListingStickyHeader watches this). */}
+                {sticky && <div id="bookcard-sentinel" aria-hidden />}
 
                 {/* Full-width below the two-column region: reviews first (capped
                     at four with a Show-all control, the same as the cottage), then
@@ -388,7 +444,7 @@ export default function ExperienceListingBody({
                         there are enough to mean one (lib/reviews). */}
                     {reviews && (
                         reviews.count === 0 ? (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
+                            <section id="reviews" className="mt-8 border-t border-slate-200 pt-8 scroll-mt-24">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">Reviews</h2>
                                 <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-6">
                                     <div className="font-semibold text-slate-900">No reviews yet</div>
@@ -401,7 +457,7 @@ export default function ExperienceListingBody({
                                 </div>
                             </section>
                         ) : (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
+                            <section id="reviews" className="mt-8 border-t border-slate-200 pt-8 scroll-mt-24">
                                 <h2 className="flex items-center gap-2 text-xl md:text-2xl font-bold text-slate-900">
                                     {reviews.avg !== null ? (
                                         <>

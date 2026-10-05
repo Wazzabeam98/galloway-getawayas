@@ -269,8 +269,10 @@ export default function BookingDialog({
     const canBook = !!selected && !!item && (!travels || !!address.trim());
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 px-4 pb-8 pt-28" role="dialog" aria-modal="true" aria-label="Show dates" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-            <div className="my-auto flex max-h-[calc(100dvh-9rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 sm:items-start sm:px-4 sm:pb-8 sm:pt-28" role="dialog" aria-modal="true" aria-label="Show dates" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+            {/* A bottom sheet on a phone (the cottage's date sheet), a centred modal
+                from sm up. */}
+            <div className="flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:my-auto sm:max-h-[calc(100dvh-9rem)] sm:max-w-lg sm:rounded-2xl">
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                     <h2 className="text-lg font-bold text-slate-900">{calOpen ? 'Choose a date' : 'Choose a time'}</h2>
