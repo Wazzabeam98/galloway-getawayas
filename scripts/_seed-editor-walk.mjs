@@ -94,8 +94,10 @@ async function main() {
         title: TAG + ' — Harbour Townhouse',
         description: 'A listing for walking the editor.',
         location: 'Kirkcudbright, Dumfries and Galloway',
-        street_address: '18 Dovecroft',
-        postcode: 'DG6 4HY',
+        street_address: '57 St Cuthbert Street',
+        postcode: 'DG6 4DX',
+        // A real pin in Kirkcudbright, for the editor's Location map.
+        latitude: 54.83756, longitude: -4.04883,
         price_per_night: 140, status: 'published', max_guests: 6,
         property_type: 'Townhouses', privacy_type: 'Entire place',
         bedrooms: 3, beds: 4, bathrooms: 2,

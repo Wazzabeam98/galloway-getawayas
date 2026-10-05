@@ -22,6 +22,7 @@ export default function PropertyMap({
     variant = 'full',
     pinImage = null,
     frameClassName = 'aspect-[16/9]',
+    precise = false,
 }: {
     latitude: number;
     longitude: number;
@@ -42,12 +43,21 @@ export default function PropertyMap({
     // trip card: no controls, a house pin at the real property and a town-scale
     // zoom, so it reads as "roughly here" — a sense of place, not navigation
     // (Get directions does that).
-    variant?: 'full' | 'card';
+    // 'host' is the listing editor's Location map: the host's own exact pin,
+    // a plain frame with no heading, zoomable — for the host's eyes only.
+    variant?: 'full' | 'card' | 'host';
+    // The host turned on "Show the precise location": the full listing block
+    // sits on the real point, unjittered, instead of the approximate area.
+    precise?: boolean;
 }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<any>(null);
     const roRef = useRef<any>(null);
     const isCard = variant === 'card';
+    const isHost = variant === 'host';
+    // The exact point: the booked guest's card, the host's own editor map, or
+    // a listing whose host chose to show the precise location.
+    const exact = isCard || isHost || precise;
 
     // A fixed offset derived from the coordinates themselves, so the same
     // property always shows the same spot rather than shifting on every
@@ -58,8 +68,8 @@ export default function PropertyMap({
 
     // The full listing block sits on the FUZZED point pre-booking; the trip
     // card, shown only to a guest who has already booked, sits on the real one.
-    const centreLat = isCard ? latitude : pinLat;
-    const centreLon = isCard ? longitude : pinLon;
+    const centreLat = exact ? latitude : pinLat;
+    const centreLon = exact ? longitude : pinLon;
 
     useEffect(() => {
         if (!MAPBOX_TOKEN) return;   // graceful: the frame stays, no map draws
@@ -120,7 +130,9 @@ export default function PropertyMap({
                 // shown post-booking, sits at a settled town scale.
                 zoom: isCard ? 15 : 15,
                 minZoom: isCard ? 13 : 11,
-                maxZoom: isCard ? 17 : 16,
+                // The cap exists to stop anyone second-guessing a fuzzed pin;
+                // an exact pin has nothing to hide, so it zooms a little further.
+                maxZoom: isCard ? 17 : exact ? 18 : 16,
                 // A plain north-up map; rotating it adds nothing here.
                 dragRotate: false,
                 pitchWithRotate: false,
@@ -204,7 +216,7 @@ export default function PropertyMap({
                 mapRef.current = null;
             }
         };
-    }, [centreLat, centreLon, latitude, longitude, isCard, pinImage]);
+    }, [centreLat, centreLon, latitude, longitude, isCard, pinImage, exact]);
 
     if (isCard) {
         return (
@@ -214,6 +226,15 @@ export default function PropertyMap({
                     <div className="bg-white px-3.5 py-2 text-xs text-slate-500">{area}</div>
                 )}
             </div>
+        );
+    }
+
+    if (isHost) {
+        return (
+            <div
+                ref={containerRef}
+                className="w-full h-[240px] md:h-[320px] rounded-2xl overflow-hidden border bg-slate-100 z-0"
+            />
         );
     }
 
@@ -230,8 +251,7 @@ export default function PropertyMap({
             />
 
             <p className="text-xs text-slate-400 mt-2">
-                Map data &copy; Mapbox &copy; OpenStreetMap. The pin shows the
-                approximate area, not the exact property.
+                Map data &copy; Mapbox &copy; OpenStreetMap.{precise ? '' : ' The pin shows the approximate area, not the exact property.'}
             </p>
         </div>
     );

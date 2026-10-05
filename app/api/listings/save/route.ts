@@ -99,6 +99,10 @@ export async function POST(request: Request) {
             if (PROTECTED.indexOf(key) === -1) safe[key] = patch[key];
         });
 
+        // "Show the precise location" is a yes/no and nothing else — anything
+        // but a literal true is off, the safe direction for a privacy setting.
+        if ('show_precise_location' in safe) safe.show_precise_location = safe.show_precise_location === true;
+
         if (Object.keys(safe).length === 0) {
             return NextResponse.json({ ok: false, error: 'Nothing to save.' }, { status: 400 });
         }
