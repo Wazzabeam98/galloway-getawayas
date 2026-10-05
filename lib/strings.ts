@@ -23,6 +23,10 @@ export interface CategoryCopy {
 // opener and the two fields that moved off it, Sep 2026); the rest still reads
 // from the step model and inline until reworded.
 export const GUEST_SCREEN_COPY = {
+    // Step one, the group picker. Liam's wording (5 Oct 2026) — "guests" was
+    // redundant on a page that is only ever about guests.
+    offerQuestion: 'What experience are you offering?',
+
     // The years opener — one question, one number, Airbnb-style. The unit lives
     // in the question, so the stepper shows no label and no suffix.
     yearsQuestion: 'How many years have you been doing this?',
@@ -50,7 +54,9 @@ export const GUEST_SCREEN_COPY = {
     finishSummaryHeading: 'What you’re submitting',
     finishSummaryCategory: 'Experience',   // fallback if the category has no label
     finishSummaryPrice: 'Price',
-    finishSummaryCoverage: 'Coverage',
+    // "Where", not "Coverage": for a set-times listing this is the town guests
+    // meet in, not an area covered.
+    finishSummaryCoverage: 'Where',
     // The coverage value reflects the made-to-order fulfilment choice: delivery
     // shows the areas, collection-only says so (there are no areas), both shows
     // the areas and notes collection is available too.
@@ -72,7 +78,9 @@ export const GUEST_SCREEN_COPY = {
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
     // of subtext, then rows that each open their own single-field sub-flow modal.
     expertiseHeading: 'Tell guests about yourself',
-    expertiseSubtext: 'A few lines about who you are and what you do.',
+    // The screen is a photo and a title, not a few lines — the subtext said
+    // "a few lines" over two one-line answers.
+    expertiseSubtext: 'Guests are choosing a person as well as an experience. Add a photo of you and the title you go by.',
 
     // The "(optional)" suffix, in lighter grey beside a row label. On every
     // optional row; the only sometimes-required one is qualifications.
@@ -94,7 +102,7 @@ export const GUEST_SCREEN_COPY = {
     titleRowLabel: 'Your title',
     titleRowPrompt: 'Add your professional title',
     // The gate under a greyed Next when the (required) professional title is empty.
-    titleGate: 'Add your title — a guest reads it as your credential.',
+    titleGate: 'Add your title to carry on.',
     titleModalTitle: 'Your title',
     titlePlaceholder: 'What you do — e.g. “Cold-water swimming guide”',
 
@@ -124,8 +132,8 @@ export const GUEST_SCREEN_COPY = {
     // or session holds. For a shared slot this number becomes sellable seats.
     capacityHeadingTravel: 'What’s the largest group you’ll take?',
     capacitySubtextTravel: 'The room is the guest’s to sort — this is just the biggest group you’ll take on.',
-    capacityHeadingVenue: 'How many can it hold?',
-    capacitySubtextVenue: 'The most guests your space or session fits at once.',
+    capacityHeadingVenue: 'How many guests can join at once?',
+    capacitySubtextVenue: 'The most people you’ll take in one session.',
     capacitySuffix: 'guests',
 
     // The slot pricing-basis screen (g_slot_basis) — how a booking works: one
@@ -142,8 +150,10 @@ export const GUEST_SCREEN_COPY = {
     // class/table copy on a sauna — keep the mechanic, drop the noun. The card
     // labels live here now (they were inline in the component); the values 'private'
     // /'shared'/'both' are the logic and stay in code.
-    slotBasisQuestion: 'How do guests book it?',
-    slotBasisGate: 'Choose how guests book it to carry on.',
+    // Not "How do guests book it?" — that is the "Something else" format
+    // question now (shapeQuestion), and two screens asking it read as a bug.
+    slotBasisQuestion: 'Private or shared sessions?',
+    slotBasisGate: 'Choose private, shared or both to carry on.',
     slotBasisPrivateLabel: 'One group takes the whole thing',
     slotBasisPrivateHint: 'A private booking — that group has it to themselves and no one else can join. One price for the whole thing.',
     slotBasisSharedLabel: 'People book individual places',
@@ -168,8 +178,8 @@ export const GUEST_SCREEN_COPY = {
     // pricing model (units, commission) is unchanged.
     menuHeading: 'What you offer, and what it costs',
     menuSubtext: 'Add each thing a guest can book.',
-    menuHeadingSlot: 'Your session, and what it costs',
-    menuSubtextSlot: 'One session, priced the way you set it up.',
+    menuHeadingSlot: 'Set your price',
+    menuSubtextSlot: 'Name what guests book and say what it costs. You can add more options later.',
     // Required before a guest listing can be sent: a listing with no priced item
     // never appears on the marketplace and can't be booked.
     menuRequiredGate: 'Add at least one thing a guest can book, with a price — without one your listing can’t be booked.',
@@ -202,7 +212,9 @@ export const GUEST_SCREEN_COPY = {
         painting: 'Watercolour afternoon',
         workshops: 'Candle-making workshop',
     } as Record<string, string>,
-    menuNameExampleFallback: 'Name what a guest books',
+    // "Something else" has no category example, so it gets a real one rather
+    // than an instruction sitting where an example should be.
+    menuNameExampleFallback: 'e.g. Sunrise sea swim',
     menuPriceTitle: 'What does it cost?',
     menuPricePlaceholder: '45',        // the big numeral's placeholder — an example price
     menuPriceTypeLabel: 'How this is priced',   // the current-choice row on the price step
@@ -248,7 +260,7 @@ export const GUEST_SCREEN_COPY = {
     menuSlotBothGatePrivate: 'Set a price for the whole-thing booking to carry on.',
     menuSlotBothGateShared: 'Set a price for the individual places to carry on.',
     menuDescTitle: 'Add a short description',
-    menuDescPlaceholder: 'A line about what’s included.',
+    menuDescPlaceholder: 'e.g. About an hour, all kit included, hot drink after.',
     menuPhotoTitle: 'Add a photo',
     menuPhotoPrompt: 'A real photo of what you’re offering sells it best.',
     menuNext: 'Next',
@@ -266,6 +278,9 @@ export const GUEST_SCREEN_COPY = {
     expectRowLabel: 'What happens',
     expectRowPrompt: 'Walk a guest through it, start to finish',
     expectModalTitle: 'What happens?',
+    // Required now (it is the listing's description and what the review reads).
+    expectModalNote: 'A few sentences, start to finish: where you meet, what you do together, and what’s included. Guests read this before they book.',
+    expectGate: 'Say what happens — a sentence or two at least.',
     // "What happens" is a real example too, by category — same reasoning as
     // menuNameExamples. Fallback for "other"/unknown reads as guidance.
     expectExamples: {
@@ -282,7 +297,7 @@ export const GUEST_SCREEN_COPY = {
         painting: 'A relaxed afternoon sketching the coast in watercolour; all materials provided, no experience needed.',
         workshops: 'Over ninety minutes you make two candles to take home; I bring everything, you pick the scents.',
     } as Record<string, string>,
-    expectExampleFallback: 'Walk a guest through it start to finish — when it starts, what happens, and when it ends.',
+    expectExampleFallback: 'We meet at the slipway at 7, swim for about forty minutes with me beside you, then warm up on the beach with a hot drink.',
     dietaryRowLabel: 'Dietary',
     dietaryRowPrompt: 'What you can cater for',
     dietaryModalTitle: 'What can you cater for?',
@@ -316,19 +331,25 @@ export const GUEST_SCREEN_COPY = {
     // "how do guests get it?" — that phrasing belongs to the made-to-order
     // fulfilment fork (fulfilmentHeading), which lands on the same path, and two
     // screens asking the same question read as a bug.
-    shapeQuestion: 'How does it work?',
-    shapeSlotLabel: 'People book a time with you',
-    shapeSlotHint: 'A session, class or slot they turn up for',
-    shapeMadeLabel: 'You make something they collect or you deliver',
-    shapeMadeHint: 'A thing you prepare — they pick it up, or you drop it off',
-    shapeTravelLabel: 'You come to them and do it',
-    shapeTravelHint: 'At the guest’s place — you travel to them',
-    shapeGate: 'Choose how it works to carry on.',
+    // Asked straight after "Something else" now (5 Oct 2026), so "How does it
+    // work?" had no "it" yet. Short card titles in Liam's three words — set times,
+    // made to order, you go to them — with an example in each hint, because an
+    // abstract format is easier to recognise from a familiar case.
+    shapeQuestion: 'How do guests book it?',
+    shapeSubtext: 'This decides what we ask next.',
+    shapeSlotLabel: 'At set times',
+    shapeSlotHint: 'Guests book a time and join you — a tour, class, tasting or session.',
+    shapeMadeLabel: 'Made to order',
+    shapeMadeHint: 'You make something and they collect it, or you deliver — a hamper, cake or gift.',
+    shapeTravelLabel: 'You go to them',
+    shapeTravelHint: 'You come to where they’re staying — a chef, massage or photographer.',
+    shapeGate: 'Choose one to carry on.',
     // Made-to-order's two logistics screens, split so each asks one thing.
     // First the notice (a big stepper, like the other single-number screens); then
     // the delivery areas — a baker doesn't TRAVEL to a guest, they collect or drop
     // off, so the wording is delivery, not travel.
     noticeQuestion: 'How much notice do you need?',
+    noticeSubtext: 'How many days before they need it should a guest order?',
     // Just "days" — the heading already says it's notice, and the longer
     // "days’ notice" overflowed the big stepper on a phone.
     noticeSuffix: 'days',
@@ -441,7 +462,9 @@ export const GUEST_SCREEN_COPY = {
     // decent listing) but the gate stays at one photo — the ask and the gate are
     // deliberately different, so this line is NOT wired to the Next gate.
     photosHeading: 'Add photos of your experience',
-    photosAsk: 'Add at least 3 photos.',
+    // The gate is one photo, so "at least 3" overstated it. Airbnb's guidance
+    // (help article 3024): real photos of people doing it, no text or logos.
+    photosAsk: 'Three or more works best — real photos of the place, the activity and you. No logos or text.',
     // Shown above the editable grid once photos exist. Order and cover are the
     // same thing on the guest side — the first photo is the cover — so the line
     // says exactly that; dragging to the front is how you set it.

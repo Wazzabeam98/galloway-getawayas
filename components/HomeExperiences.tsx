@@ -75,7 +75,7 @@ export default function HomeExperiences({ providers }: { providers: MpProvider[]
 // panel looks like the product it is announcing rather than a placeholder.
 export function ExperiencesComingSoon() {
     const href = businessSignupsOpen()
-        ? '/business?trade=guest'
+        ? '/services/join?trade=guest'
         : '/register-interest?type=guest_experience';
 
     return (
