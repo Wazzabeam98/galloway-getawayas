@@ -95,6 +95,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
     // Stripe payer email after payment. Against a stay is always signed in.
     const anonymous = standalone && signedIn === false;
     const [open, setOpen] = useState(false);
+    // The phone bottom bar is portalled to <body>, which the server can't do —
+    // so it draws after mount, or the server and first client render disagree
+    // (a hydration error on every experience page).
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
     const [initialDate, setInitialDate] = useState<string | null>(null);
     // The option chosen on the listing (via ChooseMenu) — locks the dialog to it
     // and removes the option list. Null on a plain "Show dates" open, which then
@@ -334,7 +339,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
 
                 {/* Phone bottom bar (public only) — price + "Check availability",
                     opening the same dialog. The cottage's bottom-bar mechanism. */}
-                {standalone && typeof document !== 'undefined' && !open && createPortal(
+                {standalone && mounted && !open && createPortal(
                     <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
                         <div className="mb-2.5">
                             {priceParts_ ? (
@@ -414,7 +419,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
 
             {/* Phone bottom bar (public only) — price + "Check availability",
                 opening the same request dialog. The cottage's bottom-bar mechanism. */}
-            {standalone && typeof document !== 'undefined' && !open && createPortal(
+            {standalone && mounted && !open && createPortal(
                 <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
                     <div className="mb-2.5">
                         {priceParts_ ? (

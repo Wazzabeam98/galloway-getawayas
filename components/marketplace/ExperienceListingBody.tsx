@@ -117,6 +117,14 @@ export default function ExperienceListingBody({
         ? p.professional_title.trim()
         : null;
 
+    // The intro under the title. Since 5 Oct 2026 a new provider's description IS
+    // their "What happens" text (the sign-up's one description), so showing both
+    // printed the same paragraph twice. When they match, it shows once, under
+    // "What happens"; an older listing with a separate description keeps both.
+    const intro = p.description && p.description.trim() !== String(p.what_happens || '').trim()
+        ? p.description
+        : null;
+
     const years = yearsLabel(p.yearsExperience);
     const hasAbout = Boolean(years || p.qualifications || p.recognition);
     // The host's first name for the MeetYourHost card; "your host" when they show
@@ -178,7 +186,7 @@ export default function ExperienceListingBody({
 
                 <div id="photos" className="scroll-mt-24">
                     {p.galleryKeys.length ? (
-                        <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} />
+                        <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} kind={(p.category || 'experience').toLowerCase()} />
                     ) : (
                         <div className="my-4 flex h-[300px] w-full items-center justify-center rounded-2xl bg-slate-100 text-5xl font-semibold text-slate-300 md:h-[460px]">
                             {who.slice(0, 1)}
@@ -197,12 +205,13 @@ export default function ExperienceListingBody({
                             {shapeCue(p.shape)}
                         </span>
 
-                        {/* The lead description, with the cottage's clamp + Show-more
-                            dialog (AboutThisPlace): clamped until opened, the whole
-                            thing in a dialog. No heading — the listing title is right
-                            above it. */}
-                        {p.description ? (
-                            <AboutThisPlace text={p.description} title={null} className="mt-5" />
+                        {/* The lead description (deduped against "What happens" so the
+                            same paragraph never prints twice), with the cottage's
+                            clamp + Show-more dialog (AboutThisPlace): clamped until
+                            opened, the whole thing in a dialog. No heading — the
+                            listing title is right above it. */}
+                        {intro ? (
+                            <AboutThisPlace text={intro} title={null} className="mt-5" />
                         ) : null}
 
                         {facts.length > 0 && (

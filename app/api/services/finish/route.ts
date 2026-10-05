@@ -105,8 +105,9 @@ export async function POST(req: Request) {
         // fires, like the capacity guard above). The same two rules the sign-up
         // wizard enforces (submitProblems / pricingProblems): a host trade needs a
         // description and a way to price the job — a quote tick, an hourly rate or
-        // a flat fee. A guest experience prices per item and is exempt.
-        // tradeSubmitBlock is the shared rule; the signed-in path enforces the
+        // a flat fee. A guest experience prices per item, so it is held only to
+        // its description (a sentence or two). tradeSubmitBlock is the shared
+        // rule; the signed-in path enforces the
         // same in the database, via submit_service_provider(). Audience comes from
         // the trade, never the payload, so a crafted audience cannot skip it.
         // ------------------------------------------------------------------
