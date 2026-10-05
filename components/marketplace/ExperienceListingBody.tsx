@@ -107,6 +107,14 @@ export default function ExperienceListingBody({
         ? p.professional_title.trim()
         : null;
 
+    // The intro under the title. Since 5 Oct 2026 a new provider's description IS
+    // their "What happens" text (the sign-up's one description), so showing both
+    // printed the same paragraph twice. When they match, it shows once, under
+    // "What happens"; an older listing with a separate description keeps both.
+    const intro = p.description && p.description.trim() !== String(p.what_happens || '').trim()
+        ? p.description
+        : null;
+
     const years = yearsLabel(p.yearsExperience);
     const hasAbout = Boolean(years || p.qualifications || p.recognition);
 
@@ -181,8 +189,8 @@ export default function ExperienceListingBody({
                             {shapeCue(p.shape)}
                         </span>
 
-                        {p.description ? (
-                            <p className="mt-5 whitespace-pre-line text-base md:text-lg leading-relaxed text-slate-700">{p.description}</p>
+                        {intro ? (
+                            <p className="mt-5 whitespace-pre-line text-base md:text-lg leading-relaxed text-slate-700">{intro}</p>
                         ) : null}
 
                         {facts.length > 0 && (

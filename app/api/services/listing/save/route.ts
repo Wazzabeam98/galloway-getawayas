@@ -103,6 +103,12 @@ export async function POST(request: Request) {
                 break;
 
             case 'happens':
+                // "What happens" is the experience's description: the sign-up
+                // writes one into the other (and submit_service_provider checks
+                // it), so an edit here keeps the description in step — otherwise
+                // the listing showed the sign-up text above the edited one. A
+                // blank edit leaves the description alone rather than wiping it.
+                if (strOrNull(data.what_to_expect)) patch = { description: strOrNull(data.what_to_expect) };
                 gd = {
                     what_to_expect: strOrNull(data.what_to_expect),
                     // Itinerary: the ordered arrival/during/finish phases. A phase is
