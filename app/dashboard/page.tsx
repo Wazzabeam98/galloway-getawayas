@@ -5,7 +5,9 @@ import TemplateGapWarning from "@/components/TemplateGapWarning";
 import ArrivalNudge from "@/components/ArrivalNudge";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { getImageUrl, displayName } from "@/lib/utils";
+import { getImageUrl, displayName, firstName } from "@/lib/utils";
+import { londonDayKey, daysBetweenKeys } from "@/lib/dayKey";
+import HostToday, { type TodayGroups, type TodayStay } from "@/components/dashboard/HostToday";
 import { publicArea } from "@/lib/places";
 import { createClient } from "@supabase/supabase-js";
 import { accessibleListings } from "@/lib/access";
@@ -236,6 +238,88 @@ export default async function Dashboard() {
     const hostNeedsPayouts = !!uid && !!myProfile && approvedListing && myProfile.stripe_payouts_enabled !== true;
     const payoutsStarted = !!(myProfile && myProfile.stripe_account_id);
 
+    // --- Today view ---------------------------------------------------------
+    // The host's own first name — always their real one; the privacy setting
+    // governs what guests see, not what a host sees of themselves.
+    const hostFirst = ((myProfile?.preferred_name || myProfile?.full_name || '') as string).trim().split(' ')[0] || null;
+
+    // Bookings on every property this person may handle bookings for — their
+    // own and any they co-host with that permission — read with the service
+    // key, because a co-host is not the host_id on these rows. Confirmed only,
+    // and nothing that has already checked out.
+    const todayKey = londonDayKey();
+    const bookingListingIds = access.filter((a) => a.can_bookings).map((a) => a.listingId);
+    const { data: activeBookings } = bookingListingIds.length
+        ? await admin
+            .from('bookings')
+            .select('id, listing_id, guest_id, check_in, check_out, status')
+            .in('listing_id', bookingListingIds)
+            .eq('status', 'confirmed')
+            .gte('check_out', todayKey)
+            .order('check_in', { ascending: true })
+        : { data: [] };
+
+    // Whether this host has ANY booking at all (past or present, just not a
+    // cancelled one). Drives the first-steps state: a host with nothing on the
+    // books yet is shown the path to their first booking rather than empty
+    // lists. A single pending request is enough to count as not-new.
+    const { count: anyBookingCount } = bookingListingIds.length
+        ? await admin
+            .from('bookings')
+            .select('id', { count: 'exact', head: true })
+            .in('listing_id', bookingListingIds)
+            .neq('status', 'cancelled')
+        : { count: 0 };
+    const hasBookings = (anyBookingCount || 0) > 0;
+
+    // Resolve guest first names and avatars once for the cards.
+    const todayGuestIds = Array.from(new Set((activeBookings || []).map((b: any) => b.guest_id)));
+    const { data: todayGuests } = todayGuestIds.length
+        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url').in('id', todayGuestIds)
+        : { data: [] };
+    const todayGuestMap: Record<string, any> = {};
+    (todayGuests || []).forEach((g: any) => { todayGuestMap[g.id] = g; });
+    const listingTitleMap: Record<string, string> = {};
+    (homes || []).forEach((h: any) => { listingTitleMap[h.id] = h.title || 'Your listing'; });
+
+    const ARRIVING_WINDOW_DAYS = 30;
+    const ARRIVING_MAX = 6;
+    const todayGroups: TodayGroups = { checkingIn: [], hosting: [], checkingOut: [], arriving: [] };
+    (activeBookings || []).forEach((b: any) => {
+        const ci = String(b.check_in).slice(0, 10);
+        const co = String(b.check_out).slice(0, 10);
+        const g = todayGuestMap[b.guest_id];
+        const stay: TodayStay = {
+            id: b.id,
+            guestName: g ? firstName(g, 'Guest') : 'Guest',
+            listingTitle: listingTitleMap[b.listing_id] || 'Your listing',
+            checkIn: ci,
+            checkOut: co,
+            avatarUrl: g?.avatar_url ? getImageUrl(String(g.avatar_url)) : null,
+        };
+        if (co === todayKey) todayGroups.checkingOut.push(stay);
+        else if (ci === todayKey) todayGroups.checkingIn.push(stay);
+        else if (ci < todayKey && co > todayKey) todayGroups.hosting.push(stay);
+        else if (ci > todayKey && daysBetweenKeys(todayKey, ci) <= ARRIVING_WINDOW_DAYS) todayGroups.arriving.push(stay);
+    });
+    todayGroups.arriving = todayGroups.arriving.slice(0, ARRIVING_MAX);
+
+    // First-steps checklist for a host with no bookings yet. Only the steps
+    // that actually apply to where they are — a tick on the listing they have,
+    // actionable rows for what is still missing.
+    const firstSteps: { label: string; href: string; done: boolean }[] = [
+        { label: 'Create your first listing', href: '/addhome', done: owned.length > 0 },
+    ];
+    if (drafts.length > 0 && published.length === 0) {
+        firstSteps.push({ label: 'Finish and submit your listing', href: `/addhome?draft=${drafts[0].id}`, done: false });
+    }
+    if (hostNeedsPayouts) {
+        firstSteps.push({ label: payoutsStarted ? 'Finish adding your payout method' : 'Add a payout method', href: '/payouts/setup', done: false });
+    }
+    if (hostNeedsName) {
+        firstSteps.push({ label: 'Add your name', href: '/account', done: false });
+    }
+
     return (
         <div>
             <Toast />
@@ -247,7 +331,10 @@ export default async function Dashboard() {
                 <ArrivalNudge userId={(user && user.user && user.user.id) || ''} />
             </div>
 
-            {hostNeedsPayouts && (
+            {/* The urgent setup banners are for an established host — a brand-new
+                host with no bookings gets these same asks as checklist steps in
+                the Today panel below, so showing both would ask twice. */}
+            {hasBookings && hostNeedsPayouts && (
                 <div className="max-w-7xl mx-auto px-6 pt-4">
                     <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
@@ -263,7 +350,7 @@ export default async function Dashboard() {
                 </div>
             )}
 
-            {hostNeedsName && (
+            {hasBookings && hostNeedsName && (
                 <div className="max-w-7xl mx-auto px-6 pt-4">
                     <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
@@ -276,6 +363,19 @@ export default async function Dashboard() {
                     </div>
                 </div>
             )}
+
+            {/* Today — the host's home base: who is arriving, who is in, who is
+                leaving, and anything waiting on a reply. A new host with nothing
+                booked yet gets a first-steps checklist here instead. */}
+            <div className="max-w-7xl mx-auto px-6 pt-6">
+                <HostToday
+                    firstName={hostFirst}
+                    today={todayKey}
+                    groups={todayGroups}
+                    hasBookings={hasBookings}
+                    firstSteps={firstSteps}
+                />
+            </div>
 
             {/* Your follow-ups — a review to leave for each guest who has just
                 checked out, before the 14-day window closes. Airbnb's shape: the
@@ -342,8 +442,8 @@ export default async function Dashboard() {
                     <ChevronRight className="w-5 h-5 text-slate-400 ml-auto flex-shrink-0" />
                 </Link>
 
-                <div className="flex items-center justify-between mb-8">
-                    <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your listings</h1>
+                <div id="listings" className="flex items-center justify-between mb-8 scroll-mt-40">
+                    <h2 className="text-2xl md:text-3xl font-bold text-slate-900">Your listings</h2>
                     <Link
                         href="/addhome"
                         title="Create a new listing"

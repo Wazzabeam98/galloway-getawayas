@@ -14,7 +14,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { forgetAccount } from '@/lib/signInMemory';
 import { carryStayChoice, clearAuthCookies, clearStayChoice } from '@/lib/staySignedIn';
 import { toast } from 'react-toastify';
-import { getImageUrl, formatTime } from '@/lib/utils';
+import { getImageUrl } from '@/lib/utils';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
 import NotificationsSection from '@/components/account/NotificationsSection';
@@ -166,6 +166,14 @@ export default function AccountSettings() {
         title: string;
         instant_book: boolean;
         instant_book_requires_phone: boolean;
+        price_per_night: number | null;
+        weekend_price: number | null;
+        cleaning_fee: number | null;
+        pet_fee: number | null;
+        extra_guest_fee: number | null;
+        extra_guest_after: number | null;
+        extra_guest_period: string | null;
+        damage_deposit: number | null;
         min_nights: number | null;
         max_nights: number | null;
         advance_notice: string | null;
@@ -233,7 +241,7 @@ export default function AccountSettings() {
 
                 const { data: myListings } = await supabase
                     .from('listings')
-                    .select('id, title, instant_book, instant_book_requires_phone, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time, images, stl_licence_number, stl_licence_expiry, stl_licence_status')
+                    .select('id, title, instant_book, instant_book_requires_phone, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, damage_deposit, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time, images, stl_licence_number, stl_licence_expiry, stl_licence_status')
                     .eq('host_id', session.user.id)
                     .order('created_at', { ascending: true });
                 setHostListings(myListings || []);
@@ -1513,10 +1521,10 @@ export default function AccountSettings() {
                         <div>
                             <h2 className="text-2xl font-bold text-slate-900 mb-1">Booking permissions</h2>
                             <p className="text-sm text-slate-500 mb-4">
-                                Decide how guests can book each of your places. Instant booking, the fees, deposit,
-                                stay length and cancellation policy all live together under
+                                Instant booking, pricing, fees, deposit and stay length all live together under
                                 <span className="font-medium text-slate-700"> Booking settings</span> on each
-                                listing&rsquo;s editor now — the toggles here still work and stay in step.
+                                listing&rsquo;s editor. They&rsquo;re shown here so you can see each place at a
+                                glance; the short-term let licence is the one thing you set from here.
                             </p>
 
                             {hostListings.length === 0 ? (
@@ -1606,109 +1614,40 @@ export default function AccountSettings() {
                                                     )}
                                                 </div>
 
-                                                {/* How guests book */}
-                                                <div className="space-y-2 mb-4">
-                                                    <button
-                                                        type="button"
-                                                        disabled={busy}
-                                                        onClick={() => updateListingBooking(l.id, { instant_book: false })}
-                                                        className={`w-full text-left px-4 py-3.5 rounded-xl border transition disabled:opacity-50 ${!l.instant_book ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}
-                                                    >
-                                                        <div className={`text-sm ${!l.instant_book ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>
-                                                            Request to book
-                                                        </div>
-                                                        <div className="text-xs text-slate-500 mt-0.5">
-                                                            You review each request and choose whether to accept. Dates aren&apos;t
-                                                            held until you do.
-                                                        </div>
-                                                    </button>
-
-                                                    <button
-                                                        type="button"
-                                                        disabled={busy}
-                                                        onClick={() => updateListingBooking(l.id, { instant_book: true })}
-                                                        className={`w-full text-left px-4 py-3.5 rounded-xl border transition disabled:opacity-50 ${l.instant_book ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}
-                                                    >
-                                                        <div className={`text-sm ${l.instant_book ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>
-                                                            Instant booking
-                                                        </div>
-                                                        <div className="text-xs text-slate-500 mt-0.5">
-                                                            Guests book straight away without waiting for you. The dates block
-                                                            immediately, so make sure your calendar is accurate.
-                                                        </div>
-                                                    </button>
-                                                </div>
-
-                                                {/* Requirements — only relevant for instant book */}
-                                                {l.instant_book && (
-                                                    <div className="border-t pt-4 mb-4">
-                                                        <div className="text-xs font-semibold text-slate-700 mb-3">
-                                                            Guests must meet these before booking instantly
-                                                        </div>
-
-                                                        <div className="flex items-start justify-between">
-                                                            <div className="pr-6">
-                                                                <div className="font-semibold text-slate-900 text-sm mb-1">
-                                                                    Phone number on file
-                                                                </div>
-                                                                <p className="text-xs text-slate-500">
-                                                                    A lighter check — the guest just needs a phone number saved on
-                                                                    their profile. Works today.
-                                                                </p>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                role="switch"
-                                                                aria-checked={l.instant_book_requires_phone}
-                                                                aria-label="Require a phone number"
-                                                                disabled={busy}
-                                                                onClick={() => updateListingBooking(l.id, { instant_book_requires_phone: !l.instant_book_requires_phone })}
-                                                                className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50 ${l.instant_book_requires_phone ? 'bg-emerald-700' : 'bg-slate-300'}`}
-                                                            >
-                                                                <span
-                                                                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${l.instant_book_requires_phone ? 'translate-x-5' : 'translate-x-0.5'}`}
-                                                                />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* Check-in and check-out times used to be here as well as in the
-                                                    listing editor — two controls writing the same columns, with
-                                                    nothing to say which had been used last. They live on the
-                                                    listing now, which is also the only way to give two properties
-                                                    different times. */}
-
+                                                {/* The booking settings themselves have one home — the
+                                                    listing editor, reached by the link above. Shown here
+                                                    read-only so a host can see how each place is set at a
+                                                    glance, without a second control writing the same column. */}
                                                 <div className="border-t pt-4">
                                                     <div className="text-xs font-semibold text-slate-700 mb-2">
-                                                        Current stay rules
+                                                        Booking settings
                                                     </div>
                                                     <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                                        <dt className="text-slate-500">How guests book</dt>
+                                                        <dd className="text-slate-800">
+                                                            {l.instant_book ? 'Instant booking' : 'Request to book'}
+                                                            {l.instant_book && l.instant_book_requires_phone ? ' · phone required' : ''}
+                                                        </dd>
+                                                        <dt className="text-slate-500">Nightly price</dt>
+                                                        <dd className="text-slate-800">{l.price_per_night != null ? `£${l.price_per_night}` : '—'}</dd>
+                                                        <dt className="text-slate-500">Weekend price</dt>
+                                                        <dd className="text-slate-800">{l.weekend_price ? `£${l.weekend_price}` : 'Same as base'}</dd>
                                                         <dt className="text-slate-500">Minimum nights</dt>
                                                         <dd className="text-slate-800">{l.min_nights || 1}</dd>
                                                         <dt className="text-slate-500">Maximum nights</dt>
                                                         <dd className="text-slate-800">{l.max_nights || 'No limit'}</dd>
-                                                        <dt className="text-slate-500">Advance notice</dt>
-                                                        <dd className="text-slate-800">{l.advance_notice || 'Same day'}</dd>
-                                                        <dt className="text-slate-500">Preparation time</dt>
-                                                        <dd className="text-slate-800">{l.preparation_time || 'None'}</dd>
-                                                        <dt className="text-slate-500">Booking window</dt>
-                                                        <dd className="text-slate-800">{l.availability_window || '9 months'}</dd>
-                                                        <dt className="text-slate-500">Cancellation policy</dt>
-                                                        <dd className="text-slate-800">{l.cancellation_policy || 'Moderate'}</dd>
-                                                        <dt className="text-slate-500">Check-in from</dt>
-                                                        <dd className="text-slate-800">{formatTime(l.check_in_time) || '3pm'}</dd>
-                                                        <dt className="text-slate-500">Checkout by</dt>
-                                                        <dd className="text-slate-800">{formatTime(l.check_out_time) || '11am'}</dd>
+                                                        <dt className="text-slate-500">Cleaning fee</dt>
+                                                        <dd className="text-slate-800">{l.cleaning_fee ? `£${l.cleaning_fee}` : 'None'}</dd>
+                                                        <dt className="text-slate-500">Extra guest fee</dt>
+                                                        <dd className="text-slate-800">{l.extra_guest_fee ? `£${l.extra_guest_fee} / ${l.extra_guest_period === 'stay' ? 'stay' : 'night'}` : 'None'}</dd>
+                                                        <dt className="text-slate-500">Pet fee</dt>
+                                                        <dd className="text-slate-800">{l.pet_fee ? `£${l.pet_fee}` : 'None'}</dd>
+                                                        <dt className="text-slate-500">Damage deposit</dt>
+                                                        <dd className="text-slate-800">{l.damage_deposit ? `£${l.damage_deposit}` : 'None'}</dd>
                                                     </dl>
                                                     <p className="text-xs text-slate-400 mt-3">
-                                                        These are set per listing so they stay in one place — edit nights, notice
-                                                        and booking window on your{' '}
-                                                        <Link href="/dashboard/calendar" className="underline hover:text-slate-700">
-                                                            calendar
-                                                        </Link>
-                                                        , and the cancellation policy in the{' '}
-                                                        <Link href={`/edit-listing/${l.id}`} className="underline hover:text-slate-700">
+                                                        Change any of these in the{' '}
+                                                        <Link href={`/edit-listing/${l.id}?section=booking`} className="underline hover:text-slate-700">
                                                             listing editor
                                                         </Link>
                                                         .

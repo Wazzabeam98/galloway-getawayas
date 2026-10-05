@@ -11,6 +11,7 @@ import {
     isSameDay, isBefore, startOfDay, getDay,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
+import Link from 'next/link';
 import { firstName } from "@/lib/utils";
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
@@ -59,9 +60,40 @@ interface Work {
     window_to: string | null;
 }
 
-const ADVANCE_NOTICE_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '7 days'];
-const PREP_TIME_OPTIONS = ['None', '1 day', '2 days', '3 days'];
-const AVAILABILITY_WINDOW_OPTIONS = ['3 months', '6 months', '9 months', '12 months', 'All future dates'];
+// A read-only summary of listing-wide settings that now live in the listing
+// editor. The calendar shows them so a host can see the figures without leaving
+// the page, and links through to the one place they are changed — never a
+// second control writing the same column.
+function SettingSummary({
+    note,
+    editHref,
+    canEdit,
+    rows,
+}: {
+    note: string;
+    editHref: string;
+    canEdit: boolean;
+    rows: [string, string][];
+}) {
+    return (
+        <div className="border rounded-2xl p-5">
+            <p className="text-xs text-slate-500 mb-3">{note}</p>
+            <dl className="divide-y divide-slate-100">
+                {rows.map(([label, value]) => (
+                    <div key={label} className="flex items-center justify-between py-2 text-sm">
+                        <dt className="text-slate-500">{label}</dt>
+                        <dd className="font-medium text-slate-900">{value}</dd>
+                    </div>
+                ))}
+            </dl>
+            {canEdit && (
+                <Link href={editHref} className="mt-4 inline-flex text-sm font-semibold text-emerald-700 hover:underline">
+                    Edit in listing &rarr;
+                </Link>
+            )}
+        </div>
+    );
+}
 
 export default function CalendarPage() {
     const supabase = createClientComponentClient();
@@ -101,22 +133,6 @@ export default function CalendarPage() {
     const [panelMinNights, setPanelMinNights] = useState('');
     const [saving, setSaving] = useState(false);
 
-    // Listing-wide settings form state (Pricing / Fees / Availability tabs)
-    const [basePrice, setBasePrice] = useState('');
-    const [weekendPrice, setWeekendPrice] = useState('');
-    const [cleaningFee, setCleaningFee] = useState('0');
-    const [damageDeposit, setDamageDeposit] = useState('0');
-    const [petFee, setPetFee] = useState('0');
-    const [extraGuestFee, setExtraGuestFee] = useState('0');
-    const [extraGuestAfter, setExtraGuestAfter] = useState('1');
-    const [extraGuestPeriod, setExtraGuestPeriod] = useState('night');
-    const [minNightsGlobal, setMinNightsGlobal] = useState('1');
-    const [maxNightsGlobal, setMaxNightsGlobal] = useState('');
-    const [advanceNotice, setAdvanceNotice] = useState('Same day');
-    const [preparationTime, setPreparationTime] = useState('None');
-    const [availabilityWindow, setAvailabilityWindow] = useState('9 months');
-    const [savingSettings, setSavingSettings] = useState(false);
-
     const selectedListing = listings.find((l) => l.id === selectedListingId);
 
     useEffect(() => {
@@ -152,24 +168,6 @@ export default function CalendarPage() {
         };
         load();
     }, [supabase]);
-
-    // Whenever the selected listing changes, sync the settings form fields to it.
-    useEffect(() => {
-        if (!selectedListing) return;
-        setBasePrice(String(selectedListing.price_per_night ?? ''));
-        setWeekendPrice(selectedListing.weekend_price ? String(selectedListing.weekend_price) : '');
-        setCleaningFee(String(selectedListing.cleaning_fee ?? 0));
-        setDamageDeposit(String(selectedListing.damage_deposit ?? 0));
-        setPetFee(String(selectedListing.pet_fee ?? 0));
-        setExtraGuestFee(String(selectedListing.extra_guest_fee ?? 0));
-        setExtraGuestAfter(String(selectedListing.extra_guest_after ?? 1));
-        setExtraGuestPeriod(selectedListing.extra_guest_period || 'night');
-        setMinNightsGlobal(String(selectedListing.min_nights ?? 1));
-        setMaxNightsGlobal(selectedListing.max_nights ? String(selectedListing.max_nights) : '');
-        setAdvanceNotice(selectedListing.advance_notice || 'Same day');
-        setPreparationTime(selectedListing.preparation_time || 'None');
-        setAvailabilityWindow(selectedListing.availability_window || '9 months');
-    }, [selectedListingId, selectedListing]);
 
     // Switching to a property they only have calendar access to must not leave
     // them looking at a tab that is no longer in the bar.
@@ -462,49 +460,12 @@ export default function CalendarPage() {
         closePanel();
     };
 
-    // Every listing-wide setting on this page — Pricing, Fees and Availability
-    // — goes through /api/listings/save rather than updating the table here.
-    //
-    // Writing straight to `listings` from the browser meant nothing on this
-    // screen was ever checked: not the £5,000 ceiling, not the permission, not
-    // the audit trail an owner moderating somebody else's property leaves
-    // behind. It was the one way left to put £50,000 a night on a listing.
-    //
-    // It also silently did nothing for a co-host. Row-level security matches
-    // on host_id, so their update changed no rows and returned no error, and
-    // the page said "Saved." on top of it. The route uses the service key
-    // after checking the permission itself, so a co-host who may edit the
-    // listing now genuinely saves, and one who may not is told so.
-    const saveListingSettings = async (fields: Record<string, any>) => {
-        if (!selectedListingId) return;
-        setSavingSettings(true);
-
-        try {
-            const res = await fetch('/api/listings/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId: selectedListingId, patch: fields }),
-            });
-
-            const data = await res.json().catch(() => ({}));
-
-            if (!res.ok || !data.ok) {
-                // The route's own words — it is the one that knows whether
-                // this was a permission, a rule, or the database.
-                toast.error(data.error || 'Could not save.', { theme: 'colored' });
-                return;
-            }
-
-            setListings((prev) =>
-                prev.map((l) => (l.id === selectedListingId ? { ...l, ...fields } : l))
-            );
-            toast.success('Saved.', { theme: 'colored' });
-        } catch (err: any) {
-            toast.error('Could not save — check your connection.', { theme: 'colored' });
-        } finally {
-            setSavingSettings(false);
-        }
-    };
+    // Pricing, Fees and Availability are no longer edited here. Each of those
+    // settings has one home — the listing editor — and this page shows them
+    // read-only with a link through to it, so there is never a second control
+    // writing the same column with nothing to say which was used last. The
+    // calendar keeps what is genuinely its own: per-date price and minimum-stay
+    // overrides, under "Manage dates".
 
     if (loading) {
         return (
@@ -800,193 +761,50 @@ export default function CalendarPage() {
                         )
                     )}
 
-                    {rightTab === 'pricing' && mayEditSelected && (
-                        <div className="border rounded-2xl p-5 space-y-5">
-                            <p className="text-xs text-slate-500">These apply to all nights, unless overridden by a specific date.</p>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">Base price</label>
-                                <div className="flex items-center border rounded-xl px-3 py-2">
-                                    <span className="text-slate-500 mr-1">£</span>
-                                    <input type="number" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} className="w-full outline-none text-sm" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">Custom weekend price</label>
-                                <p className="text-xs text-slate-400 mb-1">Friday and Saturday nights</p>
-                                <div className="flex items-center border rounded-xl px-3 py-2">
-                                    <span className="text-slate-500 mr-1">£</span>
-                                    <input type="number" value={weekendPrice} onChange={(e) => setWeekendPrice(e.target.value)} placeholder="Same as base price" className="w-full outline-none text-sm" />
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                disabled={savingSettings}
-                                onClick={() => saveListingSettings({
-                                    price_per_night: Number(basePrice) || 0,
-                                    weekend_price: weekendPrice ? Number(weekendPrice) : null,
-                                })}
-                                className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
-                            >
-                                {savingSettings ? 'Saving...' : 'Save'}
-                            </button>
-                        </div>
+                    {rightTab === 'pricing' && mayEditSelected && selectedListing && (
+                        <SettingSummary
+                            note="Set in the listing. Per-date overrides for a specific day or range are under Manage dates."
+                            editHref={`/edit-listing/${selectedListingId}?section=rates`}
+                            canEdit={mayEditSelected}
+                            rows={[
+                                ['Base price', `£${selectedListing.price_per_night ?? 0} / night`],
+                                ['Weekend price', selectedListing.weekend_price ? `£${selectedListing.weekend_price} / night` : 'Same as base'],
+                            ]}
+                        />
                     )}
 
-                    {rightTab === 'fees' && mayEditSelected && (
-                        <div className="border rounded-2xl p-5 space-y-5">
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">Cleaning fee</label>
-                                <p className="text-xs text-slate-400 mb-1">Charged once per stay</p>
-                                <div className="flex items-center border rounded-xl px-3 py-2">
-                                    <span className="text-slate-500 mr-1">£</span>
-                                    <input type="number" value={cleaningFee} onChange={(e) => setCleaningFee(e.target.value)} className="w-full outline-none text-sm" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">Pet fee</label>
-                                <p className="text-xs text-slate-400 mb-1">Charged once per stay, if the guest brings a pet</p>
-                                <div className="flex items-center border rounded-xl px-3 py-2">
-                                    <span className="text-slate-500 mr-1">£</span>
-                                    <input type="number" value={petFee} onChange={(e) => setPetFee(e.target.value)} className="w-full outline-none text-sm" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">Extra guest fee</label>
-                                <p className="text-xs text-slate-400 mb-2">
-                                    Leave at 0 if your price covers everyone.
-                                </p>
-
-                                <div className="flex items-center border rounded-xl px-3 py-2 mb-2">
-                                    <span className="text-slate-500 mr-1">£</span>
-                                    <input type="number" value={extraGuestFee} onChange={(e) => setExtraGuestFee(e.target.value)} className="w-full outline-none text-sm" />
-                                </div>
-
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="text-sm text-slate-600 whitespace-nowrap">for each guest after the first</span>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={extraGuestAfter}
-                                        onChange={(e) => setExtraGuestAfter(e.target.value)}
-                                        className="w-16 border rounded-xl px-3 py-2 text-sm outline-none"
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setExtraGuestPeriod('night')}
-                                        className={
-                                            'border rounded-xl px-3 py-2 text-sm font-medium transition ' +
-                                            (extraGuestPeriod === 'night'
-                                                ? 'border-slate-900 bg-slate-50 text-slate-900'
-                                                : 'text-slate-500 hover:border-slate-400')
-                                        }
-                                    >
-                                        Per night
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setExtraGuestPeriod('stay')}
-                                        className={
-                                            'border rounded-xl px-3 py-2 text-sm font-medium transition ' +
-                                            (extraGuestPeriod === 'stay'
-                                                ? 'border-slate-900 bg-slate-50 text-slate-900'
-                                                : 'text-slate-500 hover:border-slate-400')
-                                        }
-                                    >
-                                        Once per stay
-                                    </button>
-                                </div>
-
-                                {Number(extraGuestFee) > 0 && (
-                                    <p className="text-xs text-slate-500 mt-2">
-                                        {Number(extraGuestAfter) === 1
-                                            ? 'One guest is included. '
-                                            : 'The first ' + (Number(extraGuestAfter) || 1) + ' guests are included. '}
-                                        After that it&apos;s £{Number(extraGuestFee).toFixed(2)} each
-                                        {extraGuestPeriod === 'night' ? ', per night.' : ', for the whole stay.'}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="border-t pt-5">
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">Damage deposit</label>
-                                <p className="text-xs text-slate-400 mb-1">
-                                    Shown to guests before they book. You collect and return this
-                                    yourself at the property — we don&apos;t take it or hold it.
-                                    Leave at 0 for none.
-                                </p>
-                                <div className="flex items-center border rounded-xl px-3 py-2">
-                                    <span className="text-slate-500 mr-1">£</span>
-                                    <input type="number" value={damageDeposit} onChange={(e) => setDamageDeposit(e.target.value)} className="w-full outline-none text-sm" />
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                disabled={savingSettings}
-                                onClick={() => saveListingSettings({
-                                    cleaning_fee: Number(cleaningFee) || 0,
-                                    pet_fee: Number(petFee) || 0,
-                                    extra_guest_fee: Number(extraGuestFee) || 0,
-                                    extra_guest_after: Math.max(1, Number(extraGuestAfter) || 1),
-                                    extra_guest_period: extraGuestPeriod === 'stay' ? 'stay' : 'night',
-                                    damage_deposit: Number(damageDeposit) || 0,
-                                })}
-                                className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
-                            >
-                                {savingSettings ? 'Saving...' : 'Save'}
-                            </button>
-                        </div>
+                    {rightTab === 'fees' && mayEditSelected && selectedListing && (
+                        <SettingSummary
+                            note="Set in the listing, under Booking settings."
+                            editHref={`/edit-listing/${selectedListingId}?section=booking`}
+                            canEdit={mayEditSelected}
+                            rows={[
+                                ['Cleaning fee', selectedListing.cleaning_fee ? `£${selectedListing.cleaning_fee} / stay` : 'None'],
+                                [
+                                    'Extra guest fee',
+                                    selectedListing.extra_guest_fee
+                                        ? `£${selectedListing.extra_guest_fee} / ${selectedListing.extra_guest_period === 'stay' ? 'stay' : 'night'}, after ${selectedListing.extra_guest_after || 1}`
+                                        : 'None',
+                                ],
+                                ['Pet fee', selectedListing.pet_fee ? `£${selectedListing.pet_fee} / stay` : 'None'],
+                                ['Damage deposit', selectedListing.damage_deposit ? `£${selectedListing.damage_deposit}` : 'None'],
+                            ]}
+                        />
                     )}
 
-                    {rightTab === 'availability' && mayEditSelected && (
-                        <div className="border rounded-2xl p-5 space-y-5">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Min nights</label>
-                                    <input type="number" min={1} value={minNightsGlobal} onChange={(e) => setMinNightsGlobal(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm" />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Max nights</label>
-                                    <input type="number" value={maxNightsGlobal} onChange={(e) => setMaxNightsGlobal(e.target.value)} placeholder="No limit" className="w-full p-2.5 border rounded-lg text-sm" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">Advance notice</label>
-                                <select value={advanceNotice} onChange={(e) => setAdvanceNotice(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm bg-white">
-                                    {ADVANCE_NOTICE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">Preparation time</label>
-                                <p className="text-xs text-slate-400 mb-1">Buffer between bookings</p>
-                                <select value={preparationTime} onChange={(e) => setPreparationTime(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm bg-white">
-                                    {PREP_TIME_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">Availability window</label>
-                                <p className="text-xs text-slate-400 mb-1">How far ahead guests can book</p>
-                                <select value={availabilityWindow} onChange={(e) => setAvailabilityWindow(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm bg-white">
-                                    {AVAILABILITY_WINDOW_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                                </select>
-                            </div>
-                            <button
-                                type="button"
-                                disabled={savingSettings}
-                                onClick={() => saveListingSettings({
-                                    min_nights: Math.max(1, Number(minNightsGlobal) || 1),
-                                    max_nights: maxNightsGlobal ? Number(maxNightsGlobal) : null,
-                                    advance_notice: advanceNotice,
-                                    preparation_time: preparationTime,
-                                    availability_window: availabilityWindow,
-                                })}
-                                className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
-                            >
-                                {savingSettings ? 'Saving...' : 'Save'}
-                            </button>
-                        </div>
+                    {rightTab === 'availability' && mayEditSelected && selectedListing && (
+                        <SettingSummary
+                            note="Set in the listing, under Booking settings."
+                            editHref={`/edit-listing/${selectedListingId}?section=booking`}
+                            canEdit={mayEditSelected}
+                            rows={[
+                                ['Minimum nights', String(selectedListing.min_nights || 1)],
+                                ['Maximum nights', selectedListing.max_nights ? String(selectedListing.max_nights) : 'No limit'],
+                                ['Advance notice', selectedListing.advance_notice || 'Same day'],
+                                ['Preparation time', selectedListing.preparation_time || 'None'],
+                                ['Booking window', selectedListing.availability_window || '9 months'],
+                            ]}
+                        />
                     )}
                 </div>
             </div>

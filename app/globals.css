@@ -927,3 +927,13 @@ body {
 [data-chrome="listing"] > nav {
     position: static;
 }
+
+/* The hosting bar scrolls sideways on a narrow phone rather than wrapping its
+   six tabs onto two lines. No visible scrollbar — Airbnb's host bar has none. */
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}

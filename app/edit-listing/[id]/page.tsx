@@ -168,6 +168,12 @@ const SECTIONS = [
     { key: 'discounts', label: 'Discounts', icon: Percent },
 ];
 
+// Availability option lists — the same values the calendar used, moved here so
+// this is now their one home.
+const ADVANCE_NOTICE_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '7 days'];
+const PREP_TIME_OPTIONS = ['None', '1 day', '2 days', '3 days'];
+const AVAILABILITY_WINDOW_OPTIONS = ['3 months', '6 months', '9 months', '12 months', 'All future dates'];
+
 const CANCELLATION_POLICIES = [
     { key: 'Flexible', bullets: ['Full refund up to 1 day before check-in', '50% refund inside 1 day of check-in'] },
     { key: 'Moderate', bullets: ['Full refund up to 5 days before check-in', '50% refund inside 5 days of check-in'] },
@@ -204,6 +210,9 @@ export default function EditListing() {
     const [listingStatus, setListingStatus] = useState('');
     const [locPostcode, setLocPostcode] = useState('');
     const [price, setPrice] = useState('');
+    // Weekend (Fri/Sat) price. Used to live only on the calendar's Pricing tab;
+    // it has one home here now, alongside the base price.
+    const [weekendPrice, setWeekendPrice] = useState('');
     const [propertyType, setPropertyType] = useState('');
     const [privacyType, setPrivacyType] = useState('Entire place');
     const [guests, setGuests] = useState(1);
@@ -248,6 +257,13 @@ export default function EditListing() {
     const [moderationReason, setModerationReason] = useState('');
     const [minNights, setMinNights] = useState('1');
     const [maxNights, setMaxNights] = useState('');
+    // Availability settings — advance notice, preparation buffer and how far
+    // ahead guests can book. They used to live only on the calendar; their one
+    // home is the Booking settings section here now, so the calendar shows them
+    // read-only. Defaults match what the calendar used.
+    const [advanceNotice, setAdvanceNotice] = useState('Same day');
+    const [preparationTime, setPreparationTime] = useState('None');
+    const [availabilityWindow, setAvailabilityWindow] = useState('9 months');
     const [eventsAllowed, setEventsAllowed] = useState(false);
     const [smokingAllowed, setSmokingAllowed] = useState(false);
     const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
@@ -342,6 +358,7 @@ export default function EditListing() {
             setLocPostcode(listing.postcode || '');
             setListingStatus(listing.status || '');
             setPrice(String(listing.price_per_night ?? ''));
+            setWeekendPrice(listing.weekend_price != null ? String(listing.weekend_price) : '');
             setCommissionRate(listing.commission_rate ?? null);
             setPropertyType(listing.property_type || '');
             setPrivacyType(listing.privacy_type || 'Entire place');
@@ -367,6 +384,9 @@ export default function EditListing() {
             setIcalToken(listing.ical_token || '');
             setMinNights(String(listing.min_nights ?? 1));
             setMaxNights(listing.max_nights ? String(listing.max_nights) : '');
+            setAdvanceNotice(listing.advance_notice || 'Same day');
+            setPreparationTime(listing.preparation_time || 'None');
+            setAvailabilityWindow(listing.availability_window || '9 months');
             setEventsAllowed(listing.events_allowed ?? false);
             setSmokingAllowed(listing.smoking_allowed ?? false);
             setQuietHoursEnabled(listing.quiet_hours_enabled ?? false);
@@ -566,6 +586,7 @@ export default function EditListing() {
                     street_address: buildStreetAddress(null, null, streetAddress) || null,
                     postcode: locPostcode.trim() ? tidyPostcode(locPostcode) : null,
                     price_per_night: Number(price),
+                    weekend_price: weekendPrice.trim() ? Number(weekendPrice) : null,
                     extra_guest_fee: extraGuestFee.trim() ? Number(extraGuestFee) : null,
                     extra_guest_after: extraGuestAfter.trim() ? Number(extraGuestAfter) : null,
                     max_guests: guests,
@@ -585,6 +606,9 @@ export default function EditListing() {
                     monthly_discount: monthlyDiscount,
                     min_nights: Math.max(1, Number(minNights) || 1),
                     max_nights: maxNights ? Number(maxNights) : null,
+                    advance_notice: advanceNotice,
+                    preparation_time: preparationTime,
+                    availability_window: availabilityWindow,
                     events_allowed: eventsAllowed,
                     smoking_allowed: smokingAllowed,
                     quiet_hours_enabled: quietHoursEnabled,
@@ -1105,6 +1129,20 @@ export default function EditListing() {
                                     <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="text-2xl font-black text-slate-900 outline-none w-full" />
                                     <span className="text-slate-500 ml-2">/ night</span>
                                 </div>
+
+                                {/* Weekend price — Friday and Saturday nights. Its
+                                    one home now (was also on the calendar's Pricing
+                                    tab). Blank means weekends match the base price. */}
+                                <div className="mb-4 max-w-xs">
+                                    <label className="block text-sm font-semibold text-slate-800 mb-1">Custom weekend price</label>
+                                    <p className="text-xs text-slate-400 mb-1">Friday and Saturday nights</p>
+                                    <div className="flex items-center border-2 rounded-2xl px-5 py-3">
+                                        <span className="text-slate-500 mr-1">£</span>
+                                        <input type="number" inputMode="decimal" value={weekendPrice} onChange={(e) => setWeekendPrice(e.target.value)} placeholder="Same as base price" className="outline-none w-full text-slate-900" />
+                                        <span className="text-slate-500 text-sm ml-1">/ night</span>
+                                    </div>
+                                </div>
+
                                 {Number(price) > 0 && (
                                     <div className="bg-slate-50 rounded-2xl border p-4 max-w-xs text-sm">
                                         <div className="flex justify-between text-slate-600 mb-1">
@@ -1250,6 +1288,37 @@ export default function EditListing() {
                                         </div>
                                     </div>
                                     <p className="text-xs text-slate-400 mt-2">Leave maximum nights blank for no limit.</p>
+                                </div>
+
+                                {/* Availability — advance notice, a preparation
+                                    buffer between stays, and how far ahead guests
+                                    can book. Moved here from the calendar so every
+                                    listing-wide setting has one home. */}
+                                <div>
+                                    <h3 className="font-semibold text-slate-900 mb-1">Availability</h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-800 mb-1">Advance notice</label>
+                                            <p className="text-xs text-slate-400 mb-1">How much notice you need before a stay starts</p>
+                                            <select value={advanceNotice} onChange={(e) => setAdvanceNotice(e.target.value)} className="w-full p-3 border rounded-xl text-sm bg-white">
+                                                {ADVANCE_NOTICE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-800 mb-1">Preparation time</label>
+                                            <p className="text-xs text-slate-400 mb-1">A buffer between one stay ending and the next beginning</p>
+                                            <select value={preparationTime} onChange={(e) => setPreparationTime(e.target.value)} className="w-full p-3 border rounded-xl text-sm bg-white">
+                                                {PREP_TIME_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-800 mb-1">Booking window</label>
+                                            <p className="text-xs text-slate-400 mb-1">How far ahead guests can book</p>
+                                            <select value={availabilityWindow} onChange={(e) => setAvailabilityWindow(e.target.value)} className="w-full p-3 border rounded-xl text-sm bg-white">
+                                                {AVAILABILITY_WINDOW_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Cancellation policy — the four tiers. */}

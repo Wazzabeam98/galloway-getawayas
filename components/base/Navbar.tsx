@@ -1,4 +1,5 @@
 import NavMenu from '@/components/base/NavMenu';
+import HostNav from '@/components/base/HostNav';
 import { londonDayKey } from '@/lib/dayKey';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
@@ -103,6 +104,7 @@ const Navbar = async () => {
     const experiencesOpen = guestExperiencesOpen();
 
     return (
+        <>
         <nav className='w-full border-b bg-white sticky top-0 z-50'>
             <div className='max-w-7xl mx-auto px-6 md:px-10 h-20 flex items-center justify-between'>
                 <div className='flex items-center gap-6'>
@@ -175,6 +177,11 @@ const Navbar = async () => {
                 </div>
             </div>
         </nav>
+        {/* The persistent hosting bar, under the main nav. It renders nothing
+            unless this person hosts and is in hosting mode, so a traveller's
+            page is untouched. */}
+        <HostNav mode={mode} isHost={isHost} />
+        </>
     );
 };
 
