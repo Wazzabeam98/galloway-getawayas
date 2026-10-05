@@ -11,6 +11,7 @@ import { guestCategory, knownDietaryOptions, knownExperienceAmenities } from '@/
 import { shapeOf, generateSessions, sessionClosedToAll, minutesOfDay, type PartialBlock } from '@/lib/serviceSlots';
 import { getImageUrl, firstName } from '@/lib/utils';
 import { offeredTimes } from '@/lib/offeredTimes';
+import { venueMapPoint } from '@/lib/venuePoint';
 import { shiftDayKey, londonDayKey } from '@/lib/dayKey';
 
 export interface MpItem {
@@ -367,7 +368,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     // payout-ready, an MCC — still applies exactly as for a live one.
     let query = admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at, venue_lat, venue_lng')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
     query = pausedId
         ? query.eq('id', pausedId).or('owner_paused.eq.true,admin_hidden_at.not.is.null')
@@ -633,8 +634,9 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             offeredTimes: offeredTimes(p.guest_details),
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,
             areas: (areasBy[p.id] || []).map((a: any) => a.label).filter(Boolean),
-            mapLat: (() => { const c = (areasBy[p.id] || []).find((a: any) => a.centre_lat != null); return c ? Number(c.centre_lat) : null; })(),
-            mapLng: (() => { const c = (areasBy[p.id] || []).find((a: any) => a.centre_lng != null); return c ? Number(c.centre_lng) : null; })(),
+            // The venue's own point (lib/venuePoint.ts), never a 0,0 region row.
+            mapLat: venueMapPoint(p, areasBy[p.id])?.lat ?? null,
+            mapLng: venueMapPoint(p, areasBy[p.id])?.lng ?? null,
             bookingsCount: bookingsCountBy[p.id] || 0,
         });
     }

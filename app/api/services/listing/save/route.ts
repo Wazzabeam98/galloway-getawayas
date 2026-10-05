@@ -6,6 +6,7 @@ import { collectionFieldsForWrite } from '@/lib/serviceProviders';
 import { audienceForTrade, knownExperienceAmenities } from '@/lib/serviceProviders';
 import { childrenAllowed } from '@/lib/guestAges';
 import { normaliseTime } from '@/lib/offeredTimes';
+import { refreshVenuePoint } from '@/lib/venuePoint';
 
 export const dynamic = 'force-dynamic';
 
@@ -380,6 +381,11 @@ export async function POST(request: Request) {
 
         const { error } = await admin.from('service_providers').update(patch).eq('id', providerId);
         if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+
+        // The address (or whether they have a place at all) may have changed, so
+        // the "Where you'll be" map point follows it. Best effort — never fails
+        // the save (lib/venuePoint.ts).
+        if (section === 'where') await refreshVenuePoint(admin, providerId);
 
         return NextResponse.json({ ok: true });
     } catch (err: any) {

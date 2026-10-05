@@ -13,6 +13,7 @@ import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
 import TravelAddressModal from '@/components/marketplace/TravelAddressModal';
 import AgreementTick from '@/components/legal/AgreementTick';
+import { isFillingUp, spotsLeftLabel } from '@/lib/spotsLeft';
 import type { AddressParts } from '@/components/address/AddressLookup';
 
 export interface DialogItem { id: string; name: string; price: number; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; }
@@ -186,6 +187,11 @@ export default function BookingDialog({
     const bookableMax = offerings.reduce((m, o) => { const a = availOf(o); return a.possible ? Math.max(m, a.seatsLeft) : m; }, 0);
     const cap = Math.min(MAX_ORDER_QUANTITY, bookableMax > 0 ? bookableMax : MAX_ORDER_QUANTITY);
     const capLimited = bookableMax > 0 && bookableMax < MAX_ORDER_QUANTITY;
+    // Scarcity only when it's real (lib/spotsLeft.ts): every time a guest could
+    // book here is filling up. Otherwise the line states the group size plainly.
+    const possibleOfferings = offerings.filter((o) => availOf(o).possible);
+    const allFillingUp = possibleOfferings.length > 0
+        && possibleOfferings.every((o) => !!o.row && isFillingUp(o.row.capacity, o.row.seats_taken));
 
     // Keep the total at or above the minimum by topping up ADULTS — never inventing
     // children.
@@ -356,7 +362,11 @@ export default function BookingDialog({
                                 {(minPeople > 1 || capLimited) && (
                                     <div className="mt-1 text-xs text-slate-400">
                                         {minPeople > 1 ? `Minimum ${minPeople}. ` : ''}
-                                        {capLimited ? `Only ${bookableMax} ${bookableMax === 1 ? 'seat' : 'seats'} left in the sessions here.` : ''}
+                                        {capLimited
+                                            ? (allFillingUp
+                                                ? `Only ${spotsLeftLabel(bookableMax)} in the sessions here.`
+                                                : `Up to ${bookableMax} ${bookableMax === 1 ? 'guest' : 'guests'}.`)
+                                            : ''}
                                     </div>
                                 )}
                             </div>
@@ -420,7 +430,13 @@ export default function BookingDialog({
                                                     </span>
                                                     <span className="flex-none text-right text-xs font-semibold">
                                                         {perPerson
-                                                            ? <span className={left === 0 ? 'text-slate-400' : left <= 2 ? 'text-amber-700' : declared ? 'text-violet-700' : 'text-emerald-700'}>{left} spot{left === 1 ? '' : 's'} available</span>
+                                                            // A count only when the session is filling up;
+                                                            // otherwise just "Available" (lib/spotsLeft.ts).
+                                                            ? (left === 0
+                                                                ? <span className="text-slate-400">Full</span>
+                                                                : o.row && isFillingUp(o.row.capacity, o.row.seats_taken)
+                                                                    ? <span className="text-amber-700">{spotsLeftLabel(left)}</span>
+                                                                    : <span className={declared ? 'text-violet-700' : 'text-emerald-700'}>Available</span>)
                                                             : ok
                                                                 ? <span className="text-emerald-700">Available</span>
                                                                 : <span className="text-slate-400">Booked</span>}

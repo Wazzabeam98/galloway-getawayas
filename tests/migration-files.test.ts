@@ -92,6 +92,11 @@ const ALREADY_RUN_ROUND_HOURS = new Set<string>([
     // exclusion constraint it already added — so it is grandfathered by name, not
     // renamed, exactly as the file above was.
     '20260914120000_slot_interval_overlap_exclusion.sql',
+    // The venue map point (PR #314). Named on a round hour by mistake and caught
+    // here only after it had been applied to BOTH test and production under the
+    // CLAUDE.md rule (dry run, apply, read-back), so both ledgers name it.
+    // Grandfathered by name for the same reason as the two above.
+    '20261005140000_provider_venue_point.sql',
 ]);
 
 test('a new migration uses a real clock time, not a round hour', () => {
