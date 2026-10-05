@@ -77,6 +77,18 @@ export function buildLocation(town: string | null, region: string | null): strin
         .join(', ');
 }
 
+// A listing's `location`: the host's town, always in Dumfries and Galloway.
+// There is no region box any more — every property is in D&G — so both forms
+// and the save route build it here, and the "Town, Dumfries and Galloway"
+// every page reads stays exactly that.
+//
+// No town, no location: a bare "Dumfries and Galloway" would read as a town to
+// the publish rule and let a listing through with none.
+export function listingLocation(town: string | null): string {
+    const t = (town || '').trim();
+    return t ? buildLocation(t, DEFAULT_REGION) : '';
+}
+
 // Reading a stored `location` back into the town and region boxes. Runs through
 // publicArea first so an older row that still has its street on the front does
 // not put the street into the town box.

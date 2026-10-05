@@ -58,7 +58,12 @@ async function seedTrades(now) {
 }
 
 async function wipe() {
-    const listings = await db.select('listings', '?select=id&title=like.' + encodeURIComponent(TAG + '%'));
+    // The walk listing, plus any draft a wizard walk left on this host.
+    const host = await findUser(HOST_EMAIL);
+    const listings = [
+        ...(await db.select('listings', '?select=id&title=like.' + encodeURIComponent(TAG + '%'))),
+        ...(host ? await db.select('listings', '?select=id&status=eq.draft&host_id=eq.' + host.id) : []),
+    ];
     for (const l of listings) {
         await db.remove('listing_arrival', '?listing_id=eq.' + l.id);
         await db.remove('listings', '?id=eq.' + l.id);

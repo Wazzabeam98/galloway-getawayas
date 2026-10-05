@@ -20,7 +20,7 @@ import { compressImage } from '@/lib/compressImage';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { DEFAULT_COMMISSION_PERCENT, feeAmount, netOfFee } from '@/lib/fees';
-import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
+import { listingLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import { plural } from '@/lib/plural';
 import {
@@ -45,7 +45,6 @@ export default function AddHome() {
     const [price, setPrice] = useState('');
     const [country, setCountry] = useState('United Kingdom');
     const [city, setCity] = useState('');
-    const [state, setState] = useState(DEFAULT_REGION);
     const [description, setDescription] = useState('');
     const [homeCategories, setHomeCategories] = useState<string[]>([]);
     // Each photo is uploaded the moment it is added (as on Airbnb) and held here
@@ -242,7 +241,6 @@ export default function AddHome() {
                     // address back into itself, one comma at a time.
                     const place = splitLocation(draft.location);
                     setCity(place.town);
-                    setState(place.region || DEFAULT_REGION);
                     setStreet(draft.street_address || '');
                     setPostcode(draft.postcode || '');
                     setNewListingPromo(draft.new_listing_promo ?? true);
@@ -292,7 +290,7 @@ export default function AddHome() {
     const draftFields = () => ({
         title: title.trim(),
         description,
-        location: buildLocation(city, state),
+        location: listingLocation(city),
         street_address: buildStreetAddress(flat, propertyName, street) || null,
         postcode: postcode.trim() ? tidyPostcode(postcode) : null,
         price_per_night: price ? Number(price) : 0,
@@ -482,7 +480,7 @@ export default function AddHome() {
         propertyName: propertyName,
         street: street,
         city: city,
-        region: state,
+        region: DEFAULT_REGION,
         postcode: postcode,
         photoCount: photos.length,
         title: title,
@@ -788,15 +786,9 @@ export default function AddHome() {
                                     <p className="mt-1 text-xs text-slate-500">{addressLineLabel(propertyType).hint}</p>
                                 )}
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs text-slate-500 font-semibold uppercase">Town / city</label>
-                                    <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full p-3 border rounded-xl mt-1" required />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-slate-500 font-semibold uppercase">Region</label>
-                                    <input type="text" value={state} onChange={(e) => setState(e.target.value)} className="w-full p-3 border rounded-xl mt-1" required />
-                                </div>
+                            <div>
+                                <label className="text-xs text-slate-500 font-semibold uppercase">Town / city</label>
+                                <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full p-3 border rounded-xl mt-1" required />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -1149,7 +1141,7 @@ export default function AddHome() {
                             <h3 className="font-bold text-slate-900 mb-3">Review your listing</h3>
                             <ul className="text-sm text-slate-600 space-y-1">
                                 <li><span className="font-medium text-slate-800">Type:</span> {propertyType || '—'} · {privacyType}</li>
-                                <li><span className="font-medium text-slate-800">Location:</span> {[city, state].filter(Boolean).join(', ') || '—'}</li>
+                                <li><span className="font-medium text-slate-800">Location:</span> {listingLocation(city) || '—'}</li>
                                 <li><span className="font-medium text-slate-800">Guests:</span> {plural(guests, 'guest')} · {plural(bedrooms, 'bedroom')} · {plural(beds, 'bed')} · {plural(bathrooms, 'bathroom')}</li>
                                 <li><span className="font-medium text-slate-800">Amenities:</span> {amenities.length ? amenities.join(', ') : 'None selected'}</li>
                                 <li><span className="font-medium text-slate-800">Title:</span> {title || '—'}</li>

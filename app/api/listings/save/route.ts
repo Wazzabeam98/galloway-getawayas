@@ -4,6 +4,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { coordinatePatchFor } from '@/lib/postcodeGeocode';
+import { listingLocation, splitLocation } from '@/lib/places';
 import { checkListing } from '@/lib/access';
 import { isAdmin, recordAdminAction, cleanReason, REMOVED_BUCKET } from '@/lib/adminAudit';
 import { fromRow, newProblems } from '@/lib/listingRules';
@@ -98,6 +99,11 @@ export async function POST(request: Request) {
         Object.keys(patch).forEach(function (key) {
             if (PROTECTED.indexOf(key) === -1) safe[key] = patch[key];
         });
+
+        // Every listing is in Dumfries and Galloway and there is no region box:
+        // whatever arrives, `location` is stored as "Town, Dumfries and Galloway"
+        // — the same helper the forms build it with.
+        if ('location' in safe) safe.location = listingLocation(splitLocation(safe.location).town);
 
         // "Show the precise location" is a yes/no and nothing else — anything
         // but a literal true is off, the safe direction for a privacy setting.
