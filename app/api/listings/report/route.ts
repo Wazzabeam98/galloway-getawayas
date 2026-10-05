@@ -31,7 +31,7 @@ export async function POST(request: Request) {
         // A cottage still sends { listingId }; an experience / trade sends
         // { targetType, targetId }. Normalise both to a type + id.
         const rawType = String((body && body.targetType) || ((body && body.listingId) ? 'listing' : ''));
-        const targetType = (['listing', 'experience', 'trade'].includes(rawType) ? rawType : '') as '' | 'listing' | 'experience' | 'trade';
+        let targetType = (['listing', 'experience', 'trade'].includes(rawType) ? rawType : '') as '' | 'listing' | 'experience' | 'trade';
         targetId = String((body && body.targetId) || (body && body.listingId) || '');
 
         // One shared check, the same one the modal runs (lib/listingReports).
@@ -57,8 +57,11 @@ export async function POST(request: Request) {
             resolvedId = listing.id;
             where = listing.title || listing.id;
         } else {
-            const { data: provider } = await admin.from('service_providers').select('id, business_name').eq('id', targetId).maybeSingle();
+            const { data: provider } = await admin.from('service_providers').select('id, business_name, audience').eq('id', targetId).maybeSingle();
             if (!provider) return NextResponse.json({ ok: false, error: 'No such ' + targetType + '.' }, { status: 404 });
+            // Experience or trade is the provider's own audience, not what the
+            // browser sent — a crafted request can't file an experience as a trade.
+            targetType = provider.audience === 'guest' ? 'experience' : 'trade';
             resolvedId = provider.id;
             where = provider.business_name || provider.id;
         }
@@ -116,7 +119,7 @@ export async function POST(request: Request) {
                     + ' reported ' + (targetType === 'listing' ? 'a listing' : targetType === 'trade' ? 'a trade' : 'an experience') + '.</p>'
                     + detailRows([
                         { label: typeLabel, value: escapeHtml(String(where)) },
-                        { label: 'Reason', value: escapeHtml(reasonLabel(valid.reason)) },
+                        { label: 'Reason', value: escapeHtml(reasonLabel(valid.reason, targetType || 'listing')) },
                         { label: 'Reported by', value: escapeHtml(reporterName) },
                     ])
                     + '<p style="margin:16px 0 8px;font-size:16px;"><strong>What they said:</strong></p>'
