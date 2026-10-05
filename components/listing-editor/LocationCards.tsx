@@ -104,3 +104,93 @@ export function LocationSharingCard({ precise, onSave }: { precise: boolean; onS
         </>
     );
 }
+
+// "What's nearby": the places on one line, opening to the place / time rows.
+export function nearbySummary(nearby: { name: string; time: string }[]): string {
+    const names = nearby.map((n) => n.name.trim()).filter(Boolean);
+    return names.length ? names.join(' · ') : 'Not added yet';
+}
+
+export function NearbyCard({ nearby, onSave }: {
+    nearby: { name: string; time: string }[];
+    onSave: (nearby: { name: string; time: string }[]) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [rows, setRows] = useState(nearby);
+
+    const set = (i: number, patch: Partial<{ name: string; time: string }>) => {
+        const next = rows.slice();
+        next[i] = { ...next[i], ...patch };
+        setRows(next);
+    };
+
+    return (
+        <>
+            <EditorCard title="What's nearby" summary={nearbySummary(nearby)} onClick={() => { setRows(nearby.length ? nearby : [{ name: '', time: '' }]); setOpen(true); }} />
+            {open && (
+                <EditorPanel title="What's nearby" onClose={() => setOpen(false)}
+                    footer={<PanelSave onClick={() => { onSave(rows.filter((r) => r.name.trim() || r.time.trim())); setOpen(false); }} />}>
+                    <p className="text-sm text-slate-500 mb-4">
+                        The places you&apos;d tell a friend about — the harbour, the good bakery, the
+                        beach. Guests care about this far more than a map can show them.
+                    </p>
+                    <div className="space-y-3">
+                        {rows.map((item, i) => (
+                            <div key={i} className="flex gap-2 items-start">
+                                <input type="text" value={item.name} placeholder="Kirkcudbright harbour" aria-label="Place"
+                                    onChange={(e) => set(i, { name: e.target.value })}
+                                    className="min-w-0 flex-1 p-3 border rounded-xl text-sm" />
+                                <input type="text" value={item.time} placeholder="3 min walk" aria-label="How far"
+                                    onChange={(e) => set(i, { time: e.target.value })}
+                                    className="w-28 sm:w-40 p-3 border rounded-xl text-sm" />
+                                <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} aria-label="Remove"
+                                    className="p-3 text-slate-400 hover:text-red-600">
+                                    &times;
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    {rows.length < 8 && (
+                        <button type="button" onClick={() => setRows(rows.concat([{ name: '', time: '' }]))}
+                            className="mt-3 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+                            + Add a place
+                        </button>
+                    )}
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+// "Where you'll be" — Airbnb's "Neighbourhood description": the start of the
+// text on the card, the field behind it.
+export function NeighbourhoodCard({ text, onSave }: { text: string; onSave: (text: string) => void }) {
+    const [open, setOpen] = useState(false);
+    const [draft, setDraft] = useState(text);
+
+    return (
+        <>
+            <EditorCard title="Where you'll be" summary={text.trim() || 'Not added yet'} onClick={() => { setDraft(text); setOpen(true); }} />
+            {open && (
+                <EditorPanel title="Where you'll be" onClose={() => setOpen(false)}
+                    footer={<PanelSave onClick={() => { onSave(draft); setOpen(false); }} />}>
+                    <p className="text-sm text-slate-500 mb-4">
+                        A few lines about the area — the street, the walk into town, what&apos;s on
+                        the doorstep. Shown under the map. Keep it about the surroundings, not the
+                        house itself (the description covers that).
+                    </p>
+                    <textarea
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        rows={6}
+                        maxLength={2000}
+                        aria-label="Where you'll be"
+                        placeholder="St Cuthbert Street runs through the heart of Kirkcudbright, a two-minute walk from the harbour and the galleries…"
+                        className="w-full p-3 border rounded-xl text-sm"
+                    />
+                    <p className="mt-1 text-xs text-slate-400">{draft.length}/2000</p>
+                </EditorPanel>
+            )}
+        </>
+    );
+}
