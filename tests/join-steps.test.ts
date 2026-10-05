@@ -504,13 +504,15 @@ test('a chef (food, comes to them) walks the flow, with a capacity step, and nev
 test('a cake maker (made to order) gets the years and expertise screens too', () => {
     // Made-to-order food was cut from these screens for a while, then brought
     // back: a cake maker has a track record and a story worth showing. So it
-    // walks the full flow now, with g_you and g_creds. Its notice period is now
-    // its OWN screen (g_notice), before the delivery areas (g_area) — split out
-    // of the old combined where-and-when step, which promised a schedule it did
-    // not have. So a cake maker walks the ten PLUS the notice screen.
+    // walks the full flow now, with g_you and g_creds. Its notice period is
+    // its OWN screen (g_notice) — split out of the old combined where-and-when
+    // step, which promised a schedule it did not have. Since 5 Oct 2026 it comes
+    // AFTER "How do guests get it?" (g_area), in the When section: a notice
+    // period is a when, and asking it before the where read backwards. So a cake
+    // maker walks the ten PLUS the notice screen, straight after g_area.
     const ctx = { group: 'food', category: 'food_order', shape: 'made_to_order' };
     const withNotice = TEN.slice();
-    withNotice.splice(withNotice.indexOf('g_area'), 0, 'g_notice');
+    withNotice.splice(withNotice.indexOf('g_area') + 1, 0, 'g_notice');
     assert.deepEqual(gkeys(ctx), withNotice);
     assert.equal(stepApplies('g_notice', 'guest', ctx), true, 'made-to-order asks its notice, on its own screen');
     assert.equal(stepApplies('g_you', 'guest', ctx), true, 'years asked');
@@ -727,17 +729,20 @@ test('the something-else group skips the sub-type screen but is asked its shape'
     // 'other' is alone under its group, so there is no sub-type screen to show —
     // and because it declares no shape, it never answered the booking shape a
     // sub-type pick settles for every other category. So it is asked g_shape
-    // instead, before the location step (which reads the shape it sets).
+    // instead — straight after step one, before About you (5 Oct 2026), so "How
+    // many years have you been doing this?" follows them saying what "this" is.
     const ctx = { group: 'other', category: 'other', shape: null };
     assert.equal(stepApplies('g_subtype', 'guest', ctx), false, 'other has no sub-type');
     assert.equal(stepApplies('g_shape', 'guest', ctx), true, 'other is asked its booking shape');
     // A real category, whose shape came from its sub-type, is never asked g_shape.
     assert.equal(stepApplies('g_shape', 'guest', { group: 'wellness', category: 'sauna', shape: 'slot' }), false, 'a real category already has a shape');
-    // g_shape sits between About-you and the location step.
+    // g_shape is the second picker, before About-you and the location step.
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'g_you', 'g_creds', 'g_shape', 'g_area', 'g_photos', 'g_menu', 'g_title', 'g_expect', 'finish'],
+        ['trade', 'g_shape', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_title', 'g_expect', 'finish'],
     );
+    // And like the other pickers it sits before the rail, in no section.
+    assert.equal(sectionForStep('g_shape'), null, 'the shape picker is pre-rail');
 });
 
 test('the guest-only split never touches a host trade', () => {
@@ -810,10 +815,13 @@ test('a section with no screens drops out of the rail entirely', () => {
     assert.equal(sauna.some((s: any) => s.key === 'about'), false, 'sauna has no About you section');
     assert.deepEqual(sauna.map((s: any) => s.key),
         ['location', 'when', 'photos', 'pricing', 'details', 'finish']);
-    // And a made-to-order guest, not being a slot, has NO When section — proof it
-    // drops out for the shapes without those screens.
+    // A made-to-order guest's When is its notice period (since 5 Oct 2026), and a
+    // traveller has neither screen — proof the section still drops out for a
+    // shape with nothing in it.
     const baker = sectionsFor('guest', { group: 'food', category: 'food_order', shape: 'made_to_order' });
-    assert.equal(baker.some((s: any) => s.key === 'when'), false, 'a non-slot has no When section');
+    assert.deepEqual(baker.filter((s: any) => s.key === 'when').map((s: any) => s.steps), [['g_notice']], 'made-to-order: When is the notice');
+    const chef = sectionsFor('guest', { group: 'food', category: 'chef', shape: 'comes_to_you' });
+    assert.equal(chef.some((s: any) => s.key === 'when'), false, 'a traveller has no When section');
 });
 
 test('the pickers and the name step sit before the rail, in no section', () => {

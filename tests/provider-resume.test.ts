@@ -68,9 +68,12 @@ test('the form opens from the resolved record, never on the picker when one exis
     assert.match(form, /useState<string \| null>\(initialResume\?\.id \?\? null\)/,
         'providerId must be seeded from initialResume');
 
-    // And the step opens past the picker whenever there is a record to resume,
-    // so the grid never flashes under the status panel. 'g_you' is the opener
-    // both flows share and where the hydrated openingStep lands a host.
-    assert.match(form, /useState<StepKey>\(initialResume \? 'g_you' : 'trade'\)/,
-        'a resumed application must open past the trade/category picker, not on it');
+    // And the step opens past the picker whenever there is a SENT record to
+    // resume, so the grid never flashes under the status panel. 'g_you' is the
+    // opener both flows share and where the hydrated openingStep lands a host.
+    // The one exception is a guest experience still in draft: it opens on step
+    // one with nothing picked, like a newcomer (Liam, 5 Oct 2026) — there is no
+    // status panel for it to flash under.
+    assert.match(form, /initialResume && !\(audienceForTrade\(initialResume\.trade\) === 'guest' && initialResume\.status === 'draft'\)\s*\? 'g_you'\s*: 'trade'/,
+        'a resumed (sent) application must open past the picker; a guest draft opens on step one');
 });

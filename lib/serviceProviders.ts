@@ -2858,7 +2858,7 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         if (description.length < MIN_DESCRIPTION) {
             problems.push({
                 field: 'description',
-                message: 'Say a bit more about what you do — at least a sentence or two.',
+                message: GUEST_SCREEN_COPY.expectGate,
             });
         }
     } else {
