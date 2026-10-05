@@ -23,6 +23,7 @@ import { NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import {
     stayProblem, prepBufferNights, prepDays, minNightsFor, maxNightsFor, earliestCheckInKey,
     latestCheckOutKey, stayLengthNote, londonTodayKey, nightsBetweenKeys,
+    checkInPickable, checkoutPickable, addDaysKey,
     type StayRulesListing, type StayRange,
 } from '@/lib/stayRules';
 
@@ -133,6 +134,11 @@ function Counter({
 // source of truth. It owns the aria-labelling observer itself (the day nodes
 // are replaced on every month change, so a one-off pass would label the first
 // month and nothing after it).
+// The picker gets no disabled dates of its own — taken nights can still be
+// checkouts, so each day is decided by disabledDay. One stable empty array, so
+// the calendar's labelling effect isn't re-run on every render.
+const NO_DATES: Date[] = [];
+
 function CottageCalendar({
     hasSelection, calendarKey, ranges, shownMonth, onChange, minDate, maxDate,
     disabledDates, renderDay, onClear, scroll = false, scrollHeight = 480, showClear = true,
@@ -189,7 +195,9 @@ function CottageCalendar({
         label();
 
         const observer = new MutationObserver(label);
-        observer.observe(root, { childList: true, subtree: true });
+        // Class changes too: a day flips between pickable and not as the
+        // guest picks a check-in (checkout days are decided per check-in).
+        observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
         return () => observer.disconnect();
     }, [disabledDates]);
 
@@ -290,26 +298,17 @@ export default function BookingWidget({
     const supabase = createClientComponentClient();
     const [session, setSession] = useState<any>(null);
     const [loadingSession, setLoadingSession] = useState(true);
-    // Fixed for the life of the page: every night taken here, blocked by the
-    // host, or taken on another platform, as the server read it before paint.
-    // Preparation time adds the nights it keeps free either side of every
-    // other stay (lib/stayRules) — greyed out like any taken night.
-    const [disabledDates] = useState<Date[]>(() => {
+    // Fixed for the life of the page: every NIGHT taken here, blocked by the
+    // host, or taken on another platform, as the server read it before paint,
+    // plus the nights preparation time keeps free around every other stay
+    // (lib/stayRules). These are nights, not days: the picker is not handed them
+    // as disabled dates, because a day whose night is taken can still be a
+    // checkout (as on Airbnb). dayDisabled below decides each day instead.
+    const [unavailableNights] = useState<Set<string>>(() => {
         const keys = new Set(blockedNights);
         prepBufferNights(stayRanges, prepDays(stayRules)).forEach((k) => keys.add(k));
-        return Array.from(keys).map(dateFromKey);
+        return keys;
     });
-
-    // Which nights are already taken, as 'yyyy-mm-dd', so the day renderer can
-    // answer without comparing Date objects on every cell.
-    const disabledKeys = new Set(
-        disabledDates.map(
-            (d) =>
-                d.getFullYear()
-                + '-' + String(d.getMonth() + 1).padStart(2, '0')
-                + '-' + String(d.getDate()).padStart(2, '0')
-        )
-    );
 
     // A date a guest cannot have was signalled by nothing but grey. Grey is
     // also what this calendar uses for the days either side of the month, and
@@ -323,7 +322,11 @@ export default function BookingWidget({
             + '-' + String(date.getMonth() + 1).padStart(2, '0')
             + '-' + String(date.getDate()).padStart(2, '0');
 
-        if (!disabledKeys.has(key)) return <span>{date.getDate()}</span>;
+        // A taken night is struck through — unless, while a checkout is being
+        // chosen, that day is a checkout the guest can have.
+        const struck = unavailableNights.has(key)
+            && !(choosingCheckout && startKey && checkoutPickable(startKey, key, unavailableNights, minForStay, maxForStay));
+        if (!struck) return <span>{date.getDate()}</span>;
 
         return (
             <span className="line-through decoration-2 decoration-slate-400">
@@ -511,25 +514,38 @@ export default function BookingWidget({
     const discount = quote.discount;
     const total = quote.total;
 
-    // While the guest is choosing a checkout (a check-in is picked and the
-    // range is still one day), the dates the minimum or maximum rule out are
-    // greyed, as on Airbnb. The minimum is the check-in date's own, if the
-    // host set one for that day on the calendar.
+    // Which days can be picked. Choosing a check-in: any day whose night is
+    // free. Choosing a checkout (a check-in is picked and the range is still
+    // one day): any later day that keeps every night of the stay free and fits
+    // the minimum and maximum — so the morning another stay checks in, or a day
+    // kept free by preparation time, is a checkout the guest can pick. A day
+    // before the check-in stays pickable as a fresh check-in. The minimum is the
+    // check-in date's own, if the host set one for that day on the calendar.
     const startKey = dateToKey(dateRange.startDate);
     const choosingCheckout = !!(startKey && dateToKey(dateRange.endDate) === startKey);
     const minForStay = minNightsFor(rules, minNightsOverrides, startKey || null);
     const maxForStay = maxNightsFor(rules);
     const stayDisabledDay = (date: Date) => {
-        if (!choosingCheckout || !startKey) return false;
-        const n = nightsBetweenKeys(startKey, dateToKey(date) as string);
-        if (n <= 0) return false;
-        return n < minForStay || (maxForStay !== null && n > maxForStay);
+        const key = dateToKey(date) as string;
+        if (choosingCheckout && startKey && nightsBetweenKeys(startKey, key) > 0) {
+            return !checkoutPickable(startKey, key, unavailableNights, minForStay, maxForStay);
+        }
+        return !checkInPickable(key, unavailableNights);
     };
     const stayNote = stayLengthNote(minForStay, maxForStay);
 
     const handleSelect = (ranges: RangeKeyDict) => {
         setError('');
-        setDateRange(ranges.selection);
+        const next = ranges.selection;
+        // Choosing a checkout, the guest tapped a day BEFORE the check-in: the
+        // picker would make that day..check-in a stay, across nights nobody
+        // checked. Treat it as a fresh check-in instead, as Airbnb does.
+        const nextStart = dateToKey(next.startDate);
+        if (choosingCheckout && startKey && nextStart && nextStart < startKey && dateToKey(next.endDate) === startKey) {
+            setDateRange({ startDate: next.startDate, endDate: next.startDate, key: 'selection' });
+            return;
+        }
+        setDateRange(next);
     };
 
     // Back to "no dates yet": both ends undefined, which is how the quote, the
@@ -587,9 +603,10 @@ export default function BookingWidget({
             return;
         }
 
-        const overlap = disabledDates.some(
-            (d) => dateRange.startDate! <= d && d < dateRange.endDate!
-        );
+        // Any NIGHT of the stay unavailable (the checkout morning is not a night).
+        const firstNight = dateToKey(dateRange.startDate) as string;
+        const overlap = Array.from({ length: Math.max(0, nightsBetweenKeys(firstNight, dateToKey(dateRange.endDate) as string)) })
+            .some((_, i) => unavailableNights.has(addDaysKey(firstNight, i)));
         if (overlap) {
             setError('Some of those dates were just booked by someone else. Please pick different dates.');
             return;
@@ -742,7 +759,7 @@ export default function BookingWidget({
             onChange={handleSelect}
             minDate={firstBookableDate}
             maxDate={maxBookableDate}
-            disabledDates={disabledDates}
+            disabledDates={NO_DATES}
             disabledDay={stayDisabledDay}
             note={stayNote}
             renderDay={renderDay}
@@ -957,7 +974,7 @@ export default function BookingWidget({
             onChange={handleSelect}
             minDate={firstBookableDate}
             maxDate={scrollMaxDate}
-            disabledDates={disabledDates}
+            disabledDates={NO_DATES}
             disabledDay={stayDisabledDay}
             renderDay={renderDay}
             onClear={clearDates}
