@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Loader2, Check } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
 
-// The host-facing editors for a listing's arrival details: the wifi card (Basics)
-// and what3words + the "last bit" directions (Location). Every field is
+// The host-facing editors for a listing's arrival details: the wifi card (Basics),
+// the "last bit" directions and the what3words card (Location). Every field is
 // independently optional and none of it goes into publish validation. Reads and
 // writes go through /api/listings/arrival, which gates on can_listing and is the
 // only door to the grant-less table. The door code is edited by LockboxCode
@@ -118,22 +118,51 @@ export function WifiCard({ listingId }: { listingId: string }) {
     );
 }
 
-// Under Location: what3words, and the directions behind "+ Add directions".
+// "what3words" on a raised card at the foot of Location, the field behind it.
+export function What3wordsCard({ listingId }: { listingId: string }) {
+    const arrival = useArrival(listingId);
+    const [open, setOpen] = useState(false);
+    const [w3w, setW3w] = useState('');
+
+    const save = async () => {
+        if (await arrival.save({ what3words: w3w })) setOpen(false);
+    };
+
+    const summary = !arrival.loaded ? 'Loading…' : (arrival.base.what3words || 'Not set');
+
+    return (
+        <>
+            <EditorCard title="what3words" summary={summary} onClick={() => { if (arrival.loaded) { setW3w(arrival.base.what3words || ''); setOpen(true); } }} />
+            {open && (
+                <EditorPanel title="what3words" onClose={() => setOpen(false)}
+                    footer={
+                        <div className="flex items-center justify-end gap-3">
+                            {arrival.error && <span className="text-sm text-red-600">{arrival.error}</span>}
+                            <PanelSave onClick={save} disabled={arrival.saving} />
+                        </div>
+                    }>
+                    <label htmlFor="arrival-w3w" className="block text-sm font-semibold text-slate-900 mb-1">what3words</label>
+                    <input id="arrival-w3w" value={w3w} onChange={(e) => setW3w(e.target.value)} placeholder="///harbour.candle.brave" className={inputClass} />
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+// Under Location: the directions behind "+ Add directions".
 export default function ArrivalEditor({ listingId }: { listingId: string }) {
     const arrival = useArrival(listingId);
     const [dirsOpen, setDirsOpen] = useState(false);
     const [dirs, setDirs] = useState<string | null>(null);
-    const [w3w, setW3w] = useState<string | null>(null);
     const [saved, setSaved] = useState(false);
 
     if (!arrival.loaded) return <div className="text-sm text-slate-400">Loading…</div>;
 
     const dirsValue = dirs ?? arrival.base.arrival_directions ?? '';
-    const w3wValue = w3w ?? arrival.base.what3words ?? '';
-    const dirty = dirsValue !== (arrival.base.arrival_directions || '') || w3wValue !== (arrival.base.what3words || '');
+    const dirty = dirsValue !== (arrival.base.arrival_directions || '');
 
     const save = async () => {
-        if (await arrival.save({ arrival_directions: dirsValue, what3words: w3wValue })) {
+        if (await arrival.save({ arrival_directions: dirsValue })) {
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
         }
@@ -141,11 +170,6 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
 
     return (
         <div className="space-y-4">
-            <div>
-                <label htmlFor="arrival-w3w" className="block text-sm font-semibold text-slate-900 mb-1">what3words</label>
-                <input id="arrival-w3w" value={w3wValue} onChange={(e) => setW3w(e.target.value)} placeholder="///harbour.candle.brave" className={inputClass + ' sm:max-w-xs'} />
-            </div>
-
             {!dirsOpen && !arrival.base.arrival_directions ? (
                 <button type="button" onClick={() => setDirsOpen(true)}
                     className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">

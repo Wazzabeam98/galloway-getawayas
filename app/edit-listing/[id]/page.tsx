@@ -6,10 +6,10 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import ArrivalEditor, { WifiCard } from '@/components/ArrivalEditor';
+import ArrivalEditor, { WifiCard, What3wordsCard } from '@/components/ArrivalEditor';
 import CheckInTimesCard from '@/components/listing-editor/CheckInTimesCard';
 import CapacityCard from '@/components/listing-editor/CapacityCard';
-import { AddressCard, LocationSharingCard } from '@/components/listing-editor/LocationCards';
+import { AddressCard, LocationSharingCard, NearbyCard, NeighbourhoodCard } from '@/components/listing-editor/LocationCards';
 import PropertyMap from '@/components/PropertyMap';
 import LoginModel from '@/components/auth/LoginModel';
 import PropertyTypeCard from '@/components/listing-editor/PropertyTypeCard';
@@ -742,7 +742,7 @@ export default function EditListing() {
                         )}
 
                         {activeSection === 'location' && (
-                            <div className="space-y-10">
+                            <div className="space-y-4">
                                 <section>
                                     <h2 className="text-xl font-bold text-slate-900 mb-4">Location</h2>
                                     <div className="space-y-4">
@@ -763,77 +763,11 @@ export default function EditListing() {
                                     </div>
                                 </section>
 
-                                <section>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-1">What&apos;s nearby</h2>
-                                    <p className="text-sm text-slate-500 mb-4">
-                                        The places you&apos;d tell a friend about — the harbour, the good bakery, the
-                                        beach. Guests care about this far more than a map can show them.
-                                    </p>
-
-                                    <div className="space-y-3">
-                                        {nearby.map((item, i) => (
-                                            <div key={i} className="flex gap-2 items-start">
-                                                <input
-                                                    type="text"
-                                                    value={item.name}
-                                                    placeholder="Kirkcudbright harbour"
-                                                    onChange={(e) => {
-                                                        const next = nearby.slice();
-                                                        next[i] = { name: e.target.value, time: next[i].time };
-                                                        setNearby(next);
-                                                    }}
-                                                    className="flex-1 p-3 border rounded-xl text-sm"
-                                                />
-                                                <input
-                                                    type="text"
-                                                    value={item.time}
-                                                    placeholder="3 min walk"
-                                                    onChange={(e) => {
-                                                        const next = nearby.slice();
-                                                        next[i] = { name: next[i].name, time: e.target.value };
-                                                        setNearby(next);
-                                                    }}
-                                                    className="w-40 p-3 border rounded-xl text-sm"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setNearby(nearby.filter((_, j) => j !== i))}
-                                                    aria-label="Remove"
-                                                    className="p-3 text-slate-400 hover:text-red-600"
-                                                >
-                                                    &times;
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {nearby.length < 8 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setNearby(nearby.concat([{ name: '', time: '' }]))}
-                                            className="mt-3 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
-                                        >
-                                            + Add a place
-                                        </button>
-                                    )}
-                                </section>
-
-                                <section>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-1">Where you&apos;ll be</h2>
-                                    <p className="text-sm text-slate-500 mb-4">
-                                        A few lines about the area — the street, the walk into town, what&apos;s on
-                                        the doorstep. Shown under the map. Keep it about the surroundings, not the
-                                        house itself (the description covers that).
-                                    </p>
-                                    <textarea
-                                        value={neighbourhood}
-                                        onChange={(e) => setNeighbourhood(e.target.value)}
-                                        rows={6}
-                                        maxLength={2000}
-                                        placeholder="St Cuthbert Street runs through the heart of Kirkcudbright, a two-minute walk from the harbour and the galleries…"
-                                        className="w-full p-3 border rounded-xl text-sm"
-                                    />
-                                    <p className="mt-1 text-xs text-slate-400">{neighbourhood.length}/2000</p>
+                                <section className="space-y-4">
+                                    <NearbyCard nearby={nearby} onSave={setNearby} />
+                                    <NeighbourhoodCard text={neighbourhood} onSave={setNeighbourhood} />
+                                    {/* Saved on the arrival route, not this form's Save. */}
+                                    {listingId && <What3wordsCard listingId={listingId} />}
                                 </section>
                             </div>
                         )}
