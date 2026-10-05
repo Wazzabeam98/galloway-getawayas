@@ -7,6 +7,7 @@ import { loadPublicMarketplace, loadPausedProvider, pickProvider } from '@/lib/e
 import NotTakingBookings from '@/components/NotTakingBookings';
 import { EXPERIENCE_NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import { loadExperienceReviews } from '@/lib/experienceReviews';
+import { providerResponsiveness } from '@/lib/hostResponsiveness';
 import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import StandaloneBookingPanel from '@/components/marketplace/StandaloneBookingPanel';
 import BookingPanel from '@/components/marketplace/BookingPanel';
@@ -68,6 +69,12 @@ export default async function PublicListingPage({ params }: { params: { provider
     const who = p.byline || p.business_name;
     const here = `/experiences/browse/${params.providerId}`;
     const reviews = await loadExperienceReviews(admin, p.id, user?.id ?? null);
+    // Response rate and typical reply time for the "Meet your host" card — the same
+    // trust lines a cottage host gets, on the same rules (service role; a provider
+    // is not a party on their own orders for the visitor's client). Counts their
+    // booking requests answered by accepting or declining as well as message
+    // replies. Passing it switches the body to the full MeetYourHost card.
+    const responsiveness = await providerResponsiveness(admin, p.id, p.ownerId);
     // The guest's own confirmed, paid stays, as dates only — the checkout draws
     // the package notice when the picked day falls inside one (lib/packageNotice).
     const packageStays = await loadStayWindows(admin, user?.id, londonDayKey());
@@ -84,6 +91,7 @@ export default async function PublicListingPage({ params }: { params: { provider
                     backLabel="All experiences"
                     reviews={reviews}
                     sticky
+                    responsiveness={responsiveness}
                     menu={<FoodMenu leadTimeDays={p.lead_time_days} />}
                     panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} standalone providerId={p.id} signedIn={!!user} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} />}
                 />
@@ -150,6 +158,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             backLabel="All experiences"
             panel={panel}
             sticky
+            responsiveness={responsiveness}
             itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
             reviews={reviews}
         />

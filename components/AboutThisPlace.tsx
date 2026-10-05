@@ -9,10 +9,23 @@ import { X, ChevronRight } from 'lucide-react';
 // the page. Short descriptions show in full with no control.
 const CLAMP_ABOVE = 280;
 
-export default function AboutThisPlace({ text }: { text: string }) {
+export default function AboutThisPlace({
+    text,
+    // A cottage keeps the "About this place" heading and the left-column spacing.
+    // An experience reuses the same clamp + Show-more dialog for its own lead
+    // description: it passes title={null} (no heading — the listing title is right
+    // above it) and its own className. The dialog keeps a label either way.
+    title = 'About this place',
+    className = 'mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0',
+}: {
+    text: string;
+    title?: string | null;
+    className?: string;
+}) {
     const clean = (text || '').trim();
     const [open, setOpen] = useState(false);
     const worthClamping = clean.length > CLAMP_ABOVE;
+    const dialogLabel = title || 'About';
 
     useEffect(() => {
         if (!open) return;
@@ -29,9 +42,9 @@ export default function AboutThisPlace({ text }: { text: string }) {
     if (!clean) return null;
 
     return (
-        <div className="mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0">
-            <h2 className="font-semibold text-2xl text-slate-900">About this place</h2>
-            <p className={`mt-3 whitespace-pre-line text-slate-700 ${worthClamping && !open ? 'line-clamp-4' : ''}`}>
+        <div className={className}>
+            {title ? <h2 className="font-semibold text-2xl text-slate-900">{title}</h2> : null}
+            <p className={`${title ? 'mt-3 ' : ''}whitespace-pre-line text-slate-700 ${worthClamping && !open ? 'line-clamp-4' : ''}`}>
                 {clean}
             </p>
 
@@ -51,14 +64,14 @@ export default function AboutThisPlace({ text }: { text: string }) {
                     onClick={() => setOpen(false)}
                     role="dialog"
                     aria-modal="true"
-                    aria-label="About this place"
+                    aria-label={dialogLabel}
                 >
                     <div
                         className="relative mt-6 w-full max-w-2xl rounded-2xl bg-white shadow-xl sm:mt-12"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="sticky top-0 flex items-center justify-between rounded-t-2xl border-b border-slate-100 bg-white px-6 py-4">
-                            <h3 className="text-lg font-semibold text-slate-900">About this place</h3>
+                            <h3 className="text-lg font-semibold text-slate-900">{dialogLabel}</h3>
                             <button
                                 type="button"
                                 onClick={() => setOpen(false)}

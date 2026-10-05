@@ -114,6 +114,21 @@ export interface MpProvider {
     qualifications: string | null;
     recognition: string | null;
     yearsExperience: string | null;
+    // The "Meet your host" block, the same treatment a cottage host gets (the
+    // shared MeetYourHost card). ownerId is the provider's one owner (no co-hosts
+    // on the provider side) — the page uses it to work out response rate/time.
+    // verified = Stripe has them payout-ready (identity confirmed), which gates the
+    // "verified host" line; every live provider is, so it reads true here. hostBio
+    // is the person's own words (owner profiles.host_bio), hostAvatar the raw photo
+    // key (their headshot, else their profile avatar) the card resolves itself.
+    // Tenure is "hosting since" + whole months, from when they became a provider
+    // (service_providers.created_at).
+    ownerId: string;
+    verified: boolean;
+    hostAvatar: string | null;
+    hostBio: string | null;
+    hostSinceYear: number | null;
+    hostMonthsHosting: number | null;
     // The largest group a non-slot provider will take (guest_details.max_guests),
     // for a "Good to know" line. A slot sizes seats from slot_capacity instead, so
     // this is null there. Null when they never answered.
@@ -257,6 +272,22 @@ function intOrNull(v: any): number | null {
     return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+// A provider's tenure for the "Meet your host" card, from when they became a
+// provider (service_providers.created_at) — the same shape the cottage derives
+// from the host profile's created_at: the join YEAR for "Hosting since", and the
+// whole elapsed months (a partial final month shaved off) for the "N months / N
+// years hosting" stat. The card floors the months at 1, so a brand-new provider
+// never reads "0 months".
+function providerTenure(createdAt: any): { sinceYear: number | null; monthsHosting: number | null } {
+    if (!createdAt) return { sinceYear: null, monthsHosting: null };
+    const d = new Date(createdAt);
+    if (isNaN(d.getTime())) return { sinceYear: null, monthsHosting: null };
+    const now = new Date();
+    let m = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+    if (now.getDate() < d.getDate()) m -= 1;
+    return { sinceYear: d.getFullYear(), monthsHosting: Math.max(0, m) };
+}
+
 // yyyy-mm-dd of the last night (check_out is the morning they leave).
 function lastNightKey(checkOut: string): string {
     return shiftDayKey(String(checkOut).slice(0, 10), -1);
@@ -336,7 +367,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     // payout-ready, an MCC — still applies exactly as for a live one.
     let query = admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
     query = pausedId
         ? query.eq('id', pausedId).or('owner_paused.eq.true,admin_hidden_at.not.is.null')
@@ -350,7 +381,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     // the name and the show_full_name switch rather than a stored snapshot.
     const ownerIds = Array.from(new Set((rows || []).map((r: any) => r.owner_id).filter(Boolean)));
     const { data: ownerProfiles } = ownerIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', ownerIds)
+        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url, host_bio').in('id', ownerIds)
         : { data: [] as any[] };
     const profileById: Record<string, any> = {};
     for (const pr of ownerProfiles || []) profileById[pr.id] = pr;
@@ -506,6 +537,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             if (!sessions.length && !declaredSessions.length) continue;
         }
 
+        const tenure = providerTenure(p.created_at);
         providers.push({
             id: p.id,
             business_name: p.business_name,
@@ -521,6 +553,15 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             qualifications: (p.guest_details && strOrNull(p.guest_details.qualifications)) || null,
             recognition: (p.guest_details && strOrNull(p.guest_details.recognition)) || null,
             yearsExperience: (p.guest_details && strOrNull(p.guest_details.years_experience)) || null,
+            ownerId: p.owner_id,
+            verified: p.stripe_payouts_enabled === true,
+            // Raw storage key (the headshot they chose, else their profile avatar);
+            // MeetYourHost resolves it. Never the already-resolved `headshot` URL —
+            // getImageUrl is not idempotent.
+            hostAvatar: p.headshot || (profileById[p.owner_id] && profileById[p.owner_id].avatar_url) || null,
+            hostBio: (profileById[p.owner_id] && strOrNull(profileById[p.owner_id].host_bio)) || null,
+            hostSinceYear: tenure.sinceYear,
+            hostMonthsHosting: tenure.monthsHosting,
             maxGuests: shape === 'slot' ? null : intOrNull(p.guest_details && p.guest_details.max_guests),
             photos: Array.isArray(p.photos) ? p.photos.filter(Boolean).map((k: string) => getImageUrl(k)) : [],
             galleryKeys: Array.from(new Set([

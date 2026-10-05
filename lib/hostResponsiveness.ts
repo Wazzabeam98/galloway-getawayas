@@ -174,3 +174,136 @@ export async function hostResponsiveness(admin: Admin, hostId: string): Promise<
         sampleSize: counted,
     };
 }
+
+// The SAME two trust lines for a guest-experience PROVIDER, on the same rules as
+// a host (above): every provider starts at 100% / "within a day", automated
+// sends never count as a reply, and the time is only ever one of the four coarse
+// phrases — never an exact count. Same shape out (HostResponsiveness), so the
+// MeetYourHost card reuses it unchanged.
+//
+// The difference from a host is the provider's world, not the rules. A provider
+// has no co-hosts — the "provider side" is exactly the one owner_id — and a guest
+// reaches them through two channels, so BOTH count:
+//   - a comes-to-you / made-to-order REQUEST: a service_orders row born
+//     'authorised' (card held, awaiting the provider's yes/no). This is the
+//     "booking request answered by accepting or declining" — answered when the
+//     provider confirmed (confirmed_at) or declined (status 'declined',
+//     cancelled_at), unanswered while still 'authorised' or once 'expired';
+//   - a guest-initiated message thread on that order (messages.order_id), answered
+//     the host way — the first non-automated owner reply after the guest's first
+//     message.
+// One UNIT per order so the two channels never double-count: an order that was a
+// held request AND carries a guest thread is one obligation, answered by whichever
+// came first (the decision or the reply). An instant-confirmed cart (born
+// 'confirmed', never 'authorised') needed no decision, and a guest-cancelled order
+// was withdrawn before any answer was owed — neither counts unless the guest had
+// opened a thread on it.
+export async function providerResponsiveness(admin: Admin, providerId: string, ownerId: string): Promise<HostResponsiveness> {
+    if (!providerId || !ownerId) return EMPTY;
+
+    const { data: orders } = await admin
+        .from('service_orders')
+        .select('id, guest_id, status, created_at, confirmed_at, cancelled_at')
+        .eq('provider_id', providerId)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+    if (!orders || orders.length === 0) return EMPTY;
+
+    const t = (v: any): number => {
+        const ms = new Date(v).getTime();
+        return isNaN(ms) ? NaN : ms;
+    };
+
+    // The guest message threads on these orders, in time order. Keyed by order_id
+    // (the provider's booking_id); automated flagged exactly as on the cottage.
+    const orderIds = (orders as any[]).map((o) => o.id);
+    const { data: messages } = await admin
+        .from('messages')
+        .select('order_id, sender_id, created_at, automated')
+        .in('order_id', orderIds)
+        .order('created_at', { ascending: true });
+
+    const byThread = new Map<string, { sender: string; at: number; automated: boolean }[]>();
+    for (const m of messages || []) {
+        if (!m?.order_id) continue;
+        const at = t(m.created_at);
+        if (isNaN(at)) continue;
+        if (!byThread.has(m.order_id)) byThread.set(m.order_id, []);
+        byThread.get(m.order_id)!.push({ sender: m.sender_id, at, automated: m.automated === true });
+    }
+
+    let counted = 0;
+    let responded = 0;
+    const replyMinutes: number[] = [];
+
+    for (const o of orders as any[]) {
+        const createdAt = t(o.created_at);
+        if (isNaN(createdAt)) continue;
+
+        // The provider's accept carries a real confirmed_at strictly after
+        // creation; an instant cart is born 'confirmed' with confirmed_at AT
+        // creation (and a legacy/seed row may carry none). So a decision is only
+        // real when confirmed_at is clearly later — otherwise it needed no answer.
+        const confirmedAt = o.confirmed_at ? t(o.confirmed_at) : NaN;
+        const providerConfirmed = !isNaN(confirmedAt) && confirmedAt - createdAt >= 60_000;
+
+        // A request that reached a terminal decision (or missed its window). A
+        // still-'authorised' order is in-flight — not yet owed — and an instant /
+        // untimed confirm, a guest-'cancelled' and a transient 'holding' are not
+        // decisions, so none of these count on their own.
+        let decisionUnit = false;
+        let decisionAnswered = false;
+        let decisionAnswerAt: number | null = null;
+        if (o.status === 'expired') {
+            decisionUnit = true; // they let the window pass — received, unanswered
+        } else if (o.status === 'declined') {
+            decisionUnit = true; decisionAnswered = true;
+            const d = o.cancelled_at ? t(o.cancelled_at) : NaN;
+            if (!isNaN(d)) decisionAnswerAt = d;
+        } else if ((o.status === 'confirmed' || o.status === 'refunded') && providerConfirmed) {
+            decisionUnit = true; decisionAnswered = true; decisionAnswerAt = confirmedAt;
+        }
+
+        const thread = byThread.get(o.id) || [];
+        const first = thread[0];
+        const guestInitiated = !!first && !first.automated && first.sender === o.guest_id;
+
+        // Nothing was owed: not a decided request and no guest thread to answer.
+        if (!decisionUnit && !guestInitiated) continue;
+        counted += 1;
+
+        // The clock starts at the earlier obligation — the request landing, or the
+        // guest's first message when there was no held request.
+        const reqAt = decisionUnit ? createdAt : first!.at;
+
+        // Answered by the accept/decline decision…
+        let answered = false;
+        let answerAt: number | null = null;
+        if (decisionUnit && decisionAnswered) {
+            answered = true;
+            if (decisionAnswerAt != null) answerAt = decisionAnswerAt;
+        }
+        // …or by the first non-automated owner reply after the guest's first
+        // message, whichever came first.
+        if (guestInitiated) {
+            const reply = thread.find((m) => m.at > first!.at && m.sender === ownerId && !m.automated);
+            if (reply) { answered = true; answerAt = answerAt == null ? reply.at : Math.min(answerAt, reply.at); }
+        }
+
+        if (answered) {
+            responded += 1;
+            // A time sample only when we have both ends (a declined row may lack a
+            // timestamp; it still counts as answered, just not timed).
+            if (answerAt != null && answerAt >= reqAt) replyMinutes.push((answerAt - reqAt) / 60000);
+        }
+    }
+
+    if (counted === 0) return EMPTY;
+
+    return {
+        responseRatePercent: Math.round((responded / counted) * 100),
+        typicalLabel: replyMinutes.length ? labelForMinutes(median(replyMinutes)) : DEFAULT_TYPICAL,
+        sampleSize: counted,
+    };
+}
