@@ -15,7 +15,23 @@ import { REPORT_REASONS, REPORT_DETAILS_MAX, reasonLabel, type ReportReasonKey }
 
 type Step = 'reason' | 'detail' | 'done';
 
-export default function ReportListing({ listingId, title }: { listingId: string; title?: string }) {
+// The same report flow serves a cottage listing, a guest experience and a trade
+// profile. A cottage keeps calling it with `listingId` (unchanged); an experience
+// or trade passes `targetType` + `targetId` (the service_providers id). The form,
+// the copy, the admin queue and the placement are the same for all three.
+export default function ReportListing({
+    listingId,
+    targetType,
+    targetId,
+    title,
+}: {
+    listingId?: string;
+    targetType?: 'listing' | 'experience' | 'trade';
+    targetId?: string;
+    title?: string;
+}) {
+    const type: 'listing' | 'experience' | 'trade' = targetType || 'listing';
+    const id = targetId || listingId || '';
     const [open, setOpen] = useState(false);
     const [step, setStep] = useState<Step>('reason');
     const [reason, setReason] = useState<ReportReasonKey | ''>('');
@@ -40,7 +56,7 @@ export default function ReportListing({ listingId, title }: { listingId: string;
             const res = await fetch('/api/listings/report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId, reason, details: details.trim() }),
+                body: JSON.stringify({ targetType: type, targetId: id, reason, details: details.trim() }),
             });
             const data = await res.json().catch(() => ({}));
             if (!data || !data.ok) {

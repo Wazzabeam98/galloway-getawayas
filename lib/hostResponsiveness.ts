@@ -2,9 +2,9 @@
 // message history — the two trust lines Airbnb shows in "Meet your host".
 //
 // Every host STARTS in the good place and earns their way out of it, the way
-// Airbnb does: response rate begins at 100% and typical time at "within a day".
+// Airbnb does: response rate begins at 100% and typical time at "within 24 hours".
 // Neither line is ever hidden or blank, and neither is ever null. A brand-new
-// host with no guests yet reads 100% / within a day, and the numbers only move
+// host with no guests yet reads 100% / within 24 hours, and the numbers only move
 // once there is real history to move them.
 //
 // There is no stored aggregate for this, and a co-host is not a party on the
@@ -37,19 +37,19 @@
 // Response rate = answered / received, and 100% when nothing real has been
 // received — so it only ever DROPS below 100% when a real guest's opening message
 // to the host side went unanswered by a person. Typical time = median reply time,
-// defaulting to "within a day" until real replies build up.
+// defaulting to "within 24 hours" until real replies build up.
 
 type Admin = any;
 
 export type HostResponsiveness = {
     responseRatePercent: number; // 0–100; starts at 100 and only drops on an unanswered guest message
-    typicalLabel: string; // "within an hour" etc.; starts at "within a day"
+    typicalLabel: string; // "within an hour" etc.; starts at "within 24 hours"
     sampleSize: number; // how many guest-started threads this is based on
 };
 
 // Where every host starts, and where a host with no message history stays:
-// a full response rate and Airbnb's middle "within a day" phrase.
-const DEFAULT_TYPICAL = 'within a day';
+// a full response rate and the middle "within 24 hours" phrase.
+const DEFAULT_TYPICAL = 'within 24 hours';
 const EMPTY: HostResponsiveness = { responseRatePercent: 100, typicalLabel: DEFAULT_TYPICAL, sampleSize: 0 };
 
 // Minutes → the words Airbnb uses, and ONLY those four phrases — never an exact
@@ -58,7 +58,7 @@ const EMPTY: HostResponsiveness = { responseRatePercent: 100, typicalLabel: DEFA
 function labelForMinutes(mins: number): string {
     if (mins <= 60) return 'within an hour';
     if (mins <= 3 * 60) return 'within a few hours';
-    if (mins <= 24 * 60) return 'within a day';
+    if (mins <= 24 * 60) return 'within 24 hours';
     return 'within a few days or more';
 }
 
@@ -176,7 +176,7 @@ export async function hostResponsiveness(admin: Admin, hostId: string): Promise<
 }
 
 // The SAME two trust lines for a guest-experience PROVIDER, on the same rules as
-// a host (above): every provider starts at 100% / "within a day", automated
+// a host (above): every provider starts at 100% / "within 24 hours", automated
 // sends never count as a reply, and the time is only ever one of the four coarse
 // phrases — never an exact count. Same shape out (HostResponsiveness), so the
 // MeetYourHost card reuses it unchanged.

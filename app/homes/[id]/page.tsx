@@ -351,7 +351,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     // message history (service role — the same reason as above). Null-safe: a
     // host with no messages yet simply shows neither line.
     let responsiveness: { responseRatePercent: number; typicalLabel: string; sampleSize: number } =
-        { responseRatePercent: 100, typicalLabel: 'within a day', sampleSize: 0 };
+        { responseRatePercent: 100, typicalLabel: 'within 24 hours', sampleSize: 0 };
     if (home?.host_id) {
         const { data: coAccess } = await adminClient()
             .from('listing_access')
