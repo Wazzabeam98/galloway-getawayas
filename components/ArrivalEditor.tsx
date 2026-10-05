@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Loader2, Check } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
+import AutoTextarea from '@/components/AutoTextarea';
 
 // The host-facing editors for a listing's arrival details: the wifi card (Basics),
 // the "last bit" directions and the what3words card (Location). Every field is
@@ -178,7 +179,7 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
             ) : (
                 <div>
                     <label htmlFor="arrival-directions" className="block text-sm font-semibold text-slate-900 mb-1">Directions</label>
-                    <textarea id="arrival-directions" value={dirsValue} onChange={(e) => setDirs(e.target.value)} rows={3}
+                    <AutoTextarea id="arrival-directions" value={dirsValue} onChange={(e) => setDirs(e.target.value)} rows={3}
                         placeholder="Turn at the red postbox, the track is bumpy — park on the gravel by the blue door."
                         className={inputClass} />
                 </div>

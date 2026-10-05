@@ -10,6 +10,11 @@ import ArrivalEditor, { WifiCard, What3wordsCard } from '@/components/ArrivalEdi
 import CheckInTimesCard from '@/components/listing-editor/CheckInTimesCard';
 import CapacityCard from '@/components/listing-editor/CapacityCard';
 import TitleCard from '@/components/listing-editor/TitleCard';
+import AutoTextarea from '@/components/AutoTextarea';
+import {
+    NightlyPriceCard, WeekendPriceCard, DiscountsCard, CleaningFeeCard,
+    ExtraGuestFeeCard, PetFeeCard, DamageDepositCard,
+} from '@/components/listing-editor/PricingCards';
 import { AddressCard, LocationSharingCard, NearbyCard, NeighbourhoodCard } from '@/components/listing-editor/LocationCards';
 import PropertyMap from '@/components/PropertyMap';
 import LoginModel from '@/components/auth/LoginModel';
@@ -18,7 +23,7 @@ import CheckInMethodCard from '@/components/listing-editor/CheckInMethodCard';
 import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
-import { rateFor, feeAmount, netOfFee } from '@/lib/fees';
+import { rateFor } from '@/lib/fees';
 import { listingLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import SleepingArrangementsEditor from '@/components/SleepingArrangementsEditor';
@@ -32,7 +37,7 @@ import {
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
     Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
     LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange,
-    RefreshCw, Percent, ShieldAlert, X,
+    RefreshCw, ShieldAlert, X,
 } from 'lucide-react';
 
 
@@ -109,15 +114,16 @@ const SECTIONS = [
     { key: 'description', label: 'Description', icon: FileText },
     { key: 'amenities', label: 'Amenities', icon: Sparkles },
     { key: 'photos', label: 'Photos', icon: ImageIcon },
-    { key: 'rates', label: 'Nightly price', icon: PoundSterling },
-    // Cancellation, instant book, the extra fees, deposit and stay length all
+    // Every amount the host charges, in one place (the fees, deposit and
+    // discounts used to sit under Booking settings and a Discounts tab).
+    { key: 'rates', label: 'Pricing & fees', icon: PoundSterling },
+    // Cancellation, instant book and stay length all
     // gathered here so they're findable and changeable in one place, rather than
     // scattered across Rates / Availability / Cancellation (and, for instant
     // book, only on the Account page).
     { key: 'booking', label: 'Booking settings', icon: CalendarRange },
     { key: 'rules', label: 'House rules', icon: ShieldAlert },
     { key: 'calendar', label: 'Calendar sync', icon: RefreshCw },
-    { key: 'discounts', label: 'Discounts', icon: Percent },
 ];
 
 const CANCELLATION_POLICIES = [
@@ -159,6 +165,7 @@ export default function EditListing() {
     const [pin, setPin] = useState<{ latitude: number; longitude: number } | null>(null);
     const [showPrecise, setShowPrecise] = useState(false);
     const [price, setPrice] = useState('');
+    const [weekendPrice, setWeekendPrice] = useState('');
     const [propertyType, setPropertyType] = useState('');
     const [privacyType, setPrivacyType] = useState('Entire place');
     const [guests, setGuests] = useState(1);
@@ -289,6 +296,7 @@ export default function EditListing() {
             setShowPrecise(listing.show_precise_location === true);
             setListingStatus(listing.status || '');
             setPrice(String(listing.price_per_night ?? ''));
+            setWeekendPrice(listing.weekend_price != null ? String(listing.weekend_price) : '');
             setCommissionRate(listing.commission_rate ?? null);
             setPropertyType(listing.property_type || '');
             setPrivacyType(listing.privacy_type || 'Entire place');
@@ -343,7 +351,9 @@ export default function EditListing() {
     // Booking settings, so a host lands on the controls they came for).
     useEffect(() => {
         const s = new URLSearchParams(window.location.search).get('section');
-        if (s && SECTIONS.some((x) => x.key === s)) setActiveSection(s);
+        // The Discounts tab folded into Pricing & fees.
+        const key = s === 'discounts' ? 'rates' : s;
+        if (key && SECTIONS.some((x) => x.key === key)) setActiveSection(key);
     }, []);
 
     const toggleAmenity = (name: string) => {
@@ -418,6 +428,7 @@ export default function EditListing() {
             title: title,
             description: description,
             price: price,
+            weekendPrice: weekendPrice,
             amenities: amenities,
             checkInMethod: checkInMethod,
         })
@@ -446,6 +457,7 @@ export default function EditListing() {
             title: title,
             description: description,
             price: price,
+            weekendPrice: weekendPrice,
             amenities: amenities,
             checkInMethod: checkInMethod,
         });
@@ -512,6 +524,7 @@ export default function EditListing() {
                     postcode: locPostcode.trim() ? tidyPostcode(locPostcode) : null,
                     show_precise_location: showPrecise,
                     price_per_night: Number(price),
+                    weekend_price: weekendPrice.trim() ? Number(weekendPrice) : null,
                     extra_guest_fee: extraGuestFee.trim() ? Number(extraGuestFee) : null,
                     extra_guest_after: extraGuestAfter.trim() ? Number(extraGuestAfter) : null,
                     max_guests: guests,
@@ -658,7 +671,7 @@ export default function EditListing() {
                     <label className="block text-xs font-semibold text-amber-900 mt-4">
                         Why are you making this change?
                     </label>
-                    <textarea
+                    <AutoTextarea
                         value={moderationReason}
                         onChange={(e) => setModerationReason(e.target.value)}
                         rows={2}
@@ -778,7 +791,7 @@ export default function EditListing() {
                         {activeSection === 'description' && (
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-2">Description</h2>
-                                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={8} className="w-full p-3 border rounded-xl" />
+                                <AutoTextarea value={description} onChange={(e) => setDescription(e.target.value)} rows={8} className="w-full p-3 border rounded-xl" />
                             </section>
                         )}
 
@@ -860,29 +873,18 @@ export default function EditListing() {
                         )}
 
                         {activeSection === 'rates' && (
-                            <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-1">Nightly price</h2>
-                                <p className="text-sm text-slate-500 mb-4">The extra fees, deposit and stay length live under <span className="font-medium text-slate-700">Booking settings</span>.</p>
-                                <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-3 max-w-xs">
-                                    <span className="text-2xl font-black text-slate-900 mr-2">£</span>
-                                    <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="text-2xl font-black text-slate-900 outline-none w-full" />
-                                    <span className="text-slate-500 ml-2">/ night</span>
-                                </div>
-                                {Number(price) > 0 && (
-                                    <div className="bg-slate-50 rounded-2xl border p-4 max-w-xs text-sm">
-                                        <div className="flex justify-between text-slate-600 mb-1">
-                                            <span>Guest pays</span><span className="font-medium text-slate-900">£{Number(price).toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between text-slate-600 mb-1">
-                                            <span>Host fee ({HOST_FEE_PERCENT}%)</span>
-                                            <span className="font-medium text-slate-900">− £{feeAmount(Number(price), HOST_FEE_PERCENT).toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between pt-1 border-t border-slate-200">
-                                            <span className="font-semibold text-slate-900">You receive</span>
-                                            <span className="font-bold text-emerald-700">£{netOfFee(Number(price), HOST_FEE_PERCENT).toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                )}
+                            <section className="space-y-4">
+                                <h2 className="text-xl font-bold text-slate-900">Pricing &amp; fees</h2>
+                                <NightlyPriceCard price={price} feePercent={HOST_FEE_PERCENT} onSave={setPrice} />
+                                <WeekendPriceCard weekendPrice={weekendPrice} onSave={setWeekendPrice} />
+                                <DiscountsCard
+                                    discounts={{ newListingPromo, lastMinute: lastMinuteDiscount, weekly: weeklyDiscount, monthly: monthlyDiscount }}
+                                    onSave={(d) => { setNewListingPromo(d.newListingPromo); setLastMinuteDiscount(d.lastMinute); setWeeklyDiscount(d.weekly); setMonthlyDiscount(d.monthly); }}
+                                />
+                                <CleaningFeeCard fee={cleaningFee} onSave={setCleaningFee} />
+                                <ExtraGuestFeeCard fee={extraGuestFee} after={extraGuestAfter} onSave={(f, a) => { setExtraGuestFee(f); setExtraGuestAfter(a); }} />
+                                <PetFeeCard fee={petFee} petsAllowed={amenities.includes('Pets allowed')} onSave={setPetFee} />
+                                <DamageDepositCard deposit={damageDeposit} onSave={setDamageDeposit} />
                             </section>
                         )}
 
@@ -890,7 +892,7 @@ export default function EditListing() {
                             <section className="max-w-lg space-y-8">
                                 <div>
                                     <h2 className="text-xl font-bold text-slate-900 mb-1">Booking settings</h2>
-                                    <p className="text-sm text-slate-500">How guests book, what you charge on top of the nightly price, your deposit, how long a stay can be, and how flexible you are on cancellation. Each starts at a sensible default — change any of them here.</p>
+                                    <p className="text-sm text-slate-500">How guests book, how long a stay can be, and how flexible you are on cancellation. Each starts at a sensible default — change any of them here.</p>
                                 </div>
 
                                 {/* How guests book — moved here from the Account page. */}
@@ -931,55 +933,6 @@ export default function EditListing() {
                                             </button>
                                         </label>
                                     )}
-                                </div>
-
-                                {/* Extra fees on top of the nightly price. Blank = none. */}
-                                <div>
-                                    <h3 className="font-semibold text-slate-900 mb-1">Fees &amp; deposit</h3>
-                                    <p className="text-xs text-slate-500 mb-3">All optional. Leave any blank for none.</p>
-                                    <div className="space-y-3">
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Cleaning fee</label>
-                                            <p className="text-[12px] text-slate-500 mb-1.5">A one-off charge per stay. Always refunded in full if the guest cancels.</p>
-                                            <div className="flex items-center border-2 rounded-xl px-3 py-2 max-w-[10rem]">
-                                                <span className="text-slate-500 mr-1">£</span>
-                                                <input type="number" inputMode="decimal" value={cleaningFee} onChange={(e) => setCleaningFee(e.target.value)} placeholder="0" className="outline-none w-full text-slate-900" />
-                                                <span className="text-slate-500 text-sm ml-1">/ stay</span>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Extra guest fee</label>
-                                            <p className="text-[12px] text-slate-500 mb-1.5">Charged per extra guest, per night, above the number included. Also applies when a booking is changed to add guests.</p>
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex items-center border-2 rounded-xl px-3 py-2 max-w-[10rem]">
-                                                    <span className="text-slate-500 mr-1">£</span>
-                                                    <input type="number" inputMode="decimal" value={extraGuestFee} onChange={(e) => setExtraGuestFee(e.target.value)} placeholder="0" className="outline-none w-full text-slate-900" />
-                                                    <span className="text-slate-500 text-sm ml-1">/ night</span>
-                                                </div>
-                                                <div>
-                                                    <span className="block text-[12px] text-slate-500 mb-1">Guests included first</span>
-                                                    <input type="number" inputMode="numeric" min={1} value={extraGuestAfter} onChange={(e) => setExtraGuestAfter(e.target.value)} placeholder="1" className="border-2 rounded-xl px-3 py-2 w-20 outline-none text-slate-900" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Pet fee</label>
-                                            <p className="text-[12px] text-slate-500 mb-1.5">{amenities.includes('Pets allowed') ? 'Charged per stay when a guest brings a pet.' : 'Only charged if you allow pets (turn that on under Amenities).'}</p>
-                                            <div className="flex items-center border-2 rounded-xl px-3 py-2 max-w-[10rem]">
-                                                <span className="text-slate-500 mr-1">£</span>
-                                                <input type="number" inputMode="decimal" value={petFee} onChange={(e) => setPetFee(e.target.value)} placeholder="0" className="outline-none w-full text-slate-900" />
-                                                <span className="text-slate-500 text-sm ml-1">/ stay</span>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Damage deposit</label>
-                                            <p className="text-[12px] text-slate-500 mb-1.5">Held against damage and released after the stay. Leave blank for none.</p>
-                                            <div className="flex items-center border-2 rounded-xl px-3 py-2 max-w-[10rem]">
-                                                <span className="text-slate-500 mr-1">£</span>
-                                                <input type="number" inputMode="decimal" value={damageDeposit} onChange={(e) => setDamageDeposit(e.target.value)} placeholder="0" className="outline-none w-full text-slate-900" />
-                                            </div>
-                                        </div>
-                                    </div>
                                 </div>
 
                                 {/* Stay length. */}
@@ -1130,7 +1083,7 @@ export default function EditListing() {
                                 </div>
 
                                 <h3 className="font-semibold text-slate-800 mt-8 mb-2">Additional rules</h3>
-                                <textarea
+                                <AutoTextarea
                                     value={additionalRules}
                                     onChange={(e) => setAdditionalRules(e.target.value)}
                                     rows={4}
@@ -1183,34 +1136,6 @@ export default function EditListing() {
                                 <p className="text-xs text-slate-400 mt-1">
                                     Paste this into Airbnb or Booking.com's "import calendar" setting so bookings made here block those dates there too. It works with your own website too. Keep it to yourself — anyone with this link can see when your place is occupied.
                                 </p>
-                            </section>
-                        )}
-
-                        {activeSection === 'discounts' && (
-                            <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-4">Discounts</h2>
-                                <div className="space-y-3">
-                                    {[
-                                        { percent: '20%', title: 'New listing promotion', note: 'Available until your listing has 3 reviews or gets booked 10 times', value: newListingPromo, set: setNewListingPromo },
-                                        { percent: '5%', title: 'Last-minute discount', note: 'For stays booked 14 days or less before arrival', value: lastMinuteDiscount, set: setLastMinuteDiscount },
-                                        { percent: '10%', title: 'Weekly discount', note: 'For stays of 7 nights or more', value: weeklyDiscount, set: setWeeklyDiscount },
-                                        { percent: '20%', title: 'Monthly discount', note: 'For stays of 28 nights or more', value: monthlyDiscount, set: setMonthlyDiscount },
-                                    ].map((d) => (
-                                        <button key={d.title} type="button" onClick={() => d.set(!d.value)}
-                                            className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition ${d.value ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                            <div className="flex items-center">
-                                                <span className="text-sm font-bold text-slate-900 w-12">{d.percent}</span>
-                                                <div>
-                                                    <div className="font-semibold text-sm text-slate-900">{d.title}</div>
-                                                    <div className="text-xs text-slate-500">{d.note}</div>
-                                                </div>
-                                            </div>
-                                            <div className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 ml-4 ${d.value ? 'bg-slate-900' : 'border-2 border-slate-300'}`}>
-                                                {d.value && <Check className="w-4 h-4 text-white" />}
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
                             </section>
                         )}
 
