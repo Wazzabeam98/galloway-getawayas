@@ -32,6 +32,7 @@ import { whenLabel as changeWhenLabel } from '@/components/marketplace/present';
 import WhenBadge from '@/components/WhenBadge';
 import { formatGBP } from '@/lib/formatMoney';
 import { foldOrderFamily } from '@/lib/orderFamily';
+import { venueMapPoint } from '@/lib/venuePoint';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
 export const dynamic = 'force-dynamic';
@@ -393,11 +394,23 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // coordinate — never the provider's address. If neither is a real
     // coordinate, there is NO map: we never drop a town-centre pin pretending to
     // be a place.
-    const { data: areaRow } = hasVenue
-        ? await admin.from('service_areas').select('label, centre_lat, centre_lng').eq('provider_id', order.provider_id).not('centre_lat', 'is', null).limit(1).maybeSingle()
-        : { data: null };
-    const venueLat = areaRow && areaRow.centre_lat != null ? Number(areaRow.centre_lat) : null;
-    const venueLng = areaRow && areaRow.centre_lng != null ? Number(areaRow.centre_lng) : null;
+    // The point is the provider's venue point (lib/venuePoint.ts, from their
+    // postcode), falling back to a real area coordinate — never a 0,0 region row.
+    const [{ data: venueRow }, { data: areaRows }] = hasVenue
+        ? await Promise.all([
+            admin.from('service_providers').select('venue_lat, venue_lng, based_line').eq('id', order.provider_id).maybeSingle(),
+            admin.from('service_areas').select('label, centre_lat, centre_lng').eq('provider_id', order.provider_id).order('created_at', { ascending: true }),
+        ])
+        : [{ data: null }, { data: null }];
+    const venuePoint = hasVenue ? venueMapPoint(venueRow as any, areaRows as any) : null;
+    // The area label for the map caption ("Gatehouse of Fleet — the area, not the exact door").
+    // A venue point with no area row (every real sign-up) takes the provider's town.
+    const firstArea: any = ((areaRows as any[]) || [])[0] || null;
+    const areaRow: { label?: string } | null = venuePoint && (venueRow as any)?.venue_lat != null && (venueRow as any)?.based_line
+        ? { label: String((venueRow as any).based_line) }
+        : firstArea;
+    const venueLat = venuePoint ? venuePoint.lat : null;
+    const venueLng = venuePoint ? venuePoint.lng : null;
     const cottageLat = comesToCottage && listing && (listing as any).latitude != null ? Number((listing as any).latitude) : null;
     const cottageLng = comesToCottage && listing && (listing as any).longitude != null ? Number((listing as any).longitude) : null;
     const atCottage = !hasVenue && cottageLat != null && cottageLng != null;

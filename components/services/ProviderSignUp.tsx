@@ -3179,6 +3179,19 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             }
         }
 
+        // The "Where you'll be" map point follows the address just saved. Only the
+        // server can geocode and write it (lib/venuePoint.ts); best effort — a
+        // failure leaves no map, never a failed save.
+        if (isGuest) {
+            try {
+                await fetch('/api/services/venue-point', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ providerId: id }),
+                });
+            } catch { /* the map is optional */ }
+        }
+
         // Weekly opening hours are NOT written here any more. They moved out of
         // the wizard to the listing editor's Availability section, which is the
         // single home for the weekly template — so the wizard neither asks for
