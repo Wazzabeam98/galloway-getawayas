@@ -107,6 +107,14 @@ export default function ExperienceListingBody({
         ? p.professional_title.trim()
         : null;
 
+    // The intro under the title. Since 5 Oct 2026 a new provider's description IS
+    // their "What happens" text (the sign-up's one description), so showing both
+    // printed the same paragraph twice. When they match, it shows once, under
+    // "What happens"; an older listing with a separate description keeps both.
+    const intro = p.description && p.description.trim() !== String(p.what_happens || '').trim()
+        ? p.description
+        : null;
+
     const years = yearsLabel(p.yearsExperience);
     const hasAbout = Boolean(years || p.qualifications || p.recognition);
 
@@ -162,7 +170,7 @@ export default function ExperienceListingBody({
 
                 <div id="photos" className="scroll-mt-24">
                     {p.galleryKeys.length ? (
-                        <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} />
+                        <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} kind={(p.category || 'experience').toLowerCase()} />
                     ) : (
                         <div className="my-4 flex h-[300px] w-full items-center justify-center rounded-2xl bg-slate-100 text-5xl font-semibold text-slate-300 md:h-[460px]">
                             {who.slice(0, 1)}
@@ -181,8 +189,8 @@ export default function ExperienceListingBody({
                             {shapeCue(p.shape)}
                         </span>
 
-                        {p.description ? (
-                            <p className="mt-5 whitespace-pre-line text-base md:text-lg leading-relaxed text-slate-700">{p.description}</p>
+                        {intro ? (
+                            <p className="mt-5 whitespace-pre-line text-base md:text-lg leading-relaxed text-slate-700">{intro}</p>
                         ) : null}
 
                         {facts.length > 0 && (

@@ -32,6 +32,11 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
     signInNext?: string;
 }) {
     const [open, setOpen] = useState(false);
+    // The phone bottom bar is portalled to <body>, which the server can't do —
+    // so it draws after mount, or the server and first client render disagree
+    // (a hydration error on every experience page).
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
     const [initialDate, setInitialDate] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -144,7 +149,7 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
                 button that opens the same dialog, the cottage's bottom-bar
                 mechanism. Hidden while the dialog is open (the dialog covers it).
                 Portalled to the body so it sits above the page. */}
-            {typeof document !== 'undefined' && !open && createPortal(
+            {mounted && !open && createPortal(
                 <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
                     <div className="mb-2.5">
                         {parts ? (
