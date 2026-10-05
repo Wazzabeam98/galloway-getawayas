@@ -24,8 +24,9 @@ export function petsAllowed(listing: { amenities?: string[] | null }): boolean {
 /** How many pets a booking may bring: 0 when the house rules say no pets. */
 export function petLimit(listing: { amenities?: string[] | null; max_pets?: number | null }): number {
     if (!petsAllowed(listing)) return 0;
-    const n = Math.floor(Number(listing.max_pets || 0));
-    return n >= 1 ? Math.min(n, MAX_PETS_CAP) : MAX_PETS_CAP;
+    // No maximum stored yet (pets ticked in the become-a-host wizard): the
+    // default the House rules card shows, so the card and checkout agree.
+    return clampMaxPets(listing.max_pets);
 }
 
 /** The amenities with "Pets allowed" switched to match the house rule. */

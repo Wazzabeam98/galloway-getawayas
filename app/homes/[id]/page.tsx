@@ -10,6 +10,7 @@ import Image from 'next/image';
 import { capitializeFirst, getImageUrl, firstName } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import { guestCalendar } from '@/lib/availability';
+import { petLimit, tickedSafety } from '@/lib/listingSafety';
 import { NEW_LISTING_MAX_BOOKINGS } from '@/lib/pricing';
 import { AGREEMENTS } from '@/lib/agreements';
 import ReviewStars from '@/components/ReviewStars';
@@ -161,7 +162,7 @@ const SITE_URL = 'https://gallowaygetaways.co.uk';
 // the account-deletion migration promises nothing of theirs is left reachable.
 // What /homes/[id] reads. A constant, not inline, so the old-link fallback
 // reads exactly the same columns as the visitor's own query.
-const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood, min_nights, max_nights, advance_notice, preparation_time';
+const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood, min_nights, max_nights, advance_notice, preparation_time, max_pets, checkout_tasks, checkout_note, guest_safety';
 
 async function hiddenListingForOldLink(id: string, columns: string): Promise<any | null> {
     const admin = adminClient();
@@ -897,6 +898,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             pricePerNight={home.price_per_night}
                             maxGuests={home.max_guests || 1}
                             petsAllowed={(home.amenities || []).includes('Pets allowed')}
+                            maxPets={petLimit(home)}
                             instantBook={home.instant_book === true}
                             instantBookRequiresPhone={home.instant_book_requires_phone === true}
                             instantBookRequiresVerifiedId={home.instant_book_requires_verified_id === true}
@@ -964,6 +966,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         carbonMonoxideAlarm={(home.amenities || []).indexOf('Carbon monoxide alarm') !== -1}
                         damageDeposit={home.damage_deposit || 0}
                         cancellationPolicy={home.cancellation_policy}
+                        checkoutTasks={home.checkout_tasks || []}
+                        checkoutNote={home.checkout_note}
+                        safetyItems={tickedSafety(home.guest_safety, home.amenities)}
                     />
 
                     <div id='reviews' className='scroll-mt-24'>

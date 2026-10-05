@@ -20,6 +20,7 @@ import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
+import { petsProblem } from '@/lib/listingSafety';
 import {
     stayProblem, prepBufferNights, prepDays, minNightsFor, maxNightsFor, earliestCheckInKey,
     latestCheckOutKey, stayLengthNote, londonTodayKey, nightsBetweenKeys,
@@ -33,6 +34,8 @@ interface Props {
     pricePerNight: number;
     maxGuests: number;
     petsAllowed?: boolean;
+    // The host's maximum (House rules, lib/listingSafety petLimit); 0 = no pets.
+    maxPets?: number;
     icalImportUrl?: string | null;
     weekendPrice?: number | null;
     cleaningFee?: number;
@@ -84,12 +87,14 @@ function Counter({
     value,
     onChange,
     min = 0,
+    max,
 }: {
     label: string;
     sub?: string;
     value: number;
     onChange: (v: number) => void;
     min?: number;
+    max?: number;
 }) {
     return (
         <div className="flex items-center justify-between py-2.5">
@@ -115,9 +120,10 @@ function Counter({
                 </span>
                 <button
                     type="button"
-                    onClick={() => onChange(value + 1)}
+                    onClick={() => onChange(max !== undefined ? Math.min(max, value + 1) : value + 1)}
+                    disabled={max !== undefined && value >= max}
                     aria-label={`More ${label.toLowerCase()}`}
-                    className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
+                    className="w-11 h-11 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
                 >
                     <Plus className="w-4 h-4" />
                 </button>
@@ -277,7 +283,7 @@ function CottageCalendar({
 }
 
 export default function BookingWidget({
-    listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
+    listingId, hostId, pricePerNight, maxGuests, petsAllowed, maxPets = 0, icalImportUrl,
     weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0,
     extraGuestAfter = 1, extraGuestPeriod = 'night', availabilityWindow,
     instantBook = false, instantBookRequiresPhone = false, instantBookRequiresVerifiedId = false,
@@ -411,7 +417,8 @@ export default function BookingWidget({
         }
         setAdults(d.adults);
         setChildren(d.children);
-        setPets(petsAllowed ? d.pets : 0);
+        // A link can't bring more pets than the host allows.
+        setPets(petsAllowed ? Math.min(d.pets, maxPets) : 0);
         setDraftReady(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -602,6 +609,12 @@ export default function BookingWidget({
             setError(`This place sleeps up to ${maxGuests} guests.`);
             return;
         }
+        // The same pets rule checkout applies (lib/listingSafety).
+        const petIssue = petsProblem(pets, petsAllowed ? maxPets : 0);
+        if (petIssue) {
+            setError(petIssue);
+            return;
+        }
 
         // Any NIGHT of the stay unavailable (the checkout morning is not a night).
         const firstNight = dateToKey(dateRange.startDate) as string;
@@ -772,7 +785,10 @@ export default function BookingWidget({
             <Counter label="Adults" sub="Ages 13+" value={adults} onChange={setAdults} min={1} />
             <Counter label="Children" sub="Ages 2–12" value={children} onChange={setChildren} min={0} />
             {petsAllowed && (
-                <Counter label="Pets" sub="This place allows pets" value={pets} onChange={setPets} min={0} />
+                <>
+                    <Counter label="Pets" sub={`Up to ${maxPets}`} value={pets} onChange={setPets} min={0} max={maxPets} />
+                    <p className="pb-2 text-xs text-slate-500">Bringing an assistance dog? They&apos;re always welcome and don&apos;t count as pets.</p>
+                </>
             )}
         </div>
     );

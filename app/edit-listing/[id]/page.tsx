@@ -10,6 +10,11 @@ import { WifiCard, What3wordsCard, DirectionsCard } from '@/components/ArrivalEd
 import CheckInTimesCard from '@/components/listing-editor/CheckInTimesCard';
 import CapacityCard from '@/components/listing-editor/CapacityCard';
 import TitleCard from '@/components/listing-editor/TitleCard';
+import { HouseRulesCard, CheckoutInstructionsCard, GuestSafetyCard } from '@/components/listing-editor/ArrivalCards';
+import {
+    petsAllowed as listingAllowsPets, withPetsAmenity, clampMaxPets, cleanGuestSafety,
+    withAlarmAmenities, safetyAnswer, SAFETY_GROUPS, type GuestSafety,
+} from '@/lib/listingSafety';
 import { HowGuestsBookCard, CancellationPolicyCard } from '@/components/listing-editor/BookingCards';
 import AutoTextarea from '@/components/AutoTextarea';
 import {
@@ -33,12 +38,7 @@ import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
 import { compressImage } from '@/lib/compressImage';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
-    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Check,
-    Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
-    RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
-    Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
-    LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange,
-    RefreshCw, ShieldAlert, X, DoorOpen,
+    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
 } from 'lucide-react';
 
 
@@ -82,7 +82,6 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
             { name: 'Indoor fireplace', icon: Flame },
             { name: 'Outdoor furniture', icon: Armchair },
             { name: 'Pool', icon: Waves },
-            { name: 'Pets allowed', icon: PawPrint },
         ],
     },
     {
@@ -98,13 +97,8 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
         category: 'Accessibility',
         items: ACCESSIBILITY_AMENITIES.map((name) => ({ name, icon: AccessibilityIcon })),
     },
-    {
-        category: 'Safety',
-        items: [
-            { name: 'Carbon monoxide alarm', icon: AlertTriangle },
-            { name: 'Smoke alarm', icon: BellRing },
-        ],
-    },
+    // Pets are set in House rules, and the smoke and carbon monoxide alarms in
+    // Guest safety (both under Arrival); they're still stored as amenities.
 ];
 
 
@@ -126,7 +120,6 @@ const SECTIONS = [
     // scattered across Rates / Availability / Cancellation (and, for instant
     // book, only on the Account page).
     { key: 'booking', label: 'Booking settings', icon: CalendarRange },
-    { key: 'rules', label: 'House rules', icon: ShieldAlert },
     { key: 'calendar', label: 'Calendar sync', icon: RefreshCw },
 ];
 
@@ -211,6 +204,10 @@ export default function EditListing() {
     const [checkinEnd, setCheckinEnd] = useState('');
     const [checkoutTime, setCheckoutTime] = useState('11:00');
     const [additionalRules, setAdditionalRules] = useState('');
+    const [maxPets, setMaxPets] = useState(1);
+    const [checkoutTasks, setCheckoutTasks] = useState<string[]>([]);
+    const [checkoutNote, setCheckoutNote] = useState('');
+    const [guestSafety, setGuestSafety] = useState<GuestSafety>({});
     const [cancellationPolicy, setCancellationPolicy] = useState('Moderate');
     const [nonRefundableOption, setNonRefundableOption] = useState(false);
     // Booking settings gathered in one place (were scattered or, for instant
@@ -334,6 +331,10 @@ export default function EditListing() {
             setCheckinEnd(timeInputValue(listing.check_in_end_time));
             setCheckoutTime(timeInputValue(listing.check_out_time) || '11:00');
             setAdditionalRules(listing.additional_rules || '');
+            setMaxPets(clampMaxPets(listing.max_pets));
+            setCheckoutTasks(Array.isArray(listing.checkout_tasks) ? listing.checkout_tasks : []);
+            setCheckoutNote(listing.checkout_note || '');
+            setGuestSafety(listing.guest_safety && typeof listing.guest_safety === 'object' ? listing.guest_safety : {});
             setCancellationPolicy(listing.cancellation_policy || 'Moderate');
             setNonRefundableOption(listing.non_refundable_option ?? false);
             setCleaningFee(listing.cleaning_fee != null ? String(listing.cleaning_fee) : '');
@@ -352,7 +353,8 @@ export default function EditListing() {
     useEffect(() => {
         const s = new URLSearchParams(window.location.search).get('section');
         // The Discounts tab folded into Pricing & fees.
-        const key = s === 'discounts' ? 'rates' : s;
+        // The Discounts tab folded into Pricing & fees; House rules into Arrival.
+        const key = s === 'discounts' ? 'rates' : s === 'rules' ? 'arrival' : s;
         if (key && SECTIONS.some((x) => x.key === key)) setActiveSection(key);
     }, []);
 
@@ -567,6 +569,10 @@ export default function EditListing() {
                     check_in_end_time: checkinEnd || null,
                     check_out_time: checkoutTime || '11:00',
                     additional_rules: additionalRules,
+                    max_pets: listingAllowsPets({ amenities }) ? maxPets : null,
+                    checkout_tasks: checkoutTasks,
+                    checkout_note: checkoutNote.trim() || null,
+                    guest_safety: cleanGuestSafety(guestSafety, privacyType),
                     cancellation_policy: cancellationPolicy,
                     non_refundable_option: nonRefundableOption,
                     cleaning_fee: cleaningFee.trim() ? Number(cleaningFee) : null,
@@ -770,6 +776,40 @@ export default function EditListing() {
                                         check-in messages and the arrival screen read them there. */}
                                     {listingId && <DirectionsCard listingId={listingId} />}
                                     {listingId && <What3wordsCard listingId={listingId} />}
+
+                                    {/* House rules — the one place pets are set; "Pets allowed"
+                                        stays the amenity everything public reads. */}
+                                    <HouseRulesCard
+                                        rules={{
+                                            petsAllowed: listingAllowsPets({ amenities }), maxPets,
+                                            eventsAllowed, smokingAllowed, commercialPhotographyAllowed,
+                                            quietHoursEnabled, quietHoursStart, quietHoursEnd, additionalRules,
+                                        }}
+                                        onSave={(r) => {
+                                            setAmenities((prev) => withPetsAmenity(prev, r.petsAllowed));
+                                            setMaxPets(r.maxPets);
+                                            setEventsAllowed(r.eventsAllowed);
+                                            setSmokingAllowed(r.smokingAllowed);
+                                            setCommercialPhotographyAllowed(r.commercialPhotographyAllowed);
+                                            setQuietHoursEnabled(r.quietHoursEnabled);
+                                            setQuietHoursStart(r.quietHoursStart);
+                                            setQuietHoursEnd(r.quietHoursEnd);
+                                            setAdditionalRules(r.additionalRules);
+                                        }}
+                                    />
+                                    <CheckoutInstructionsCard
+                                        tasks={checkoutTasks}
+                                        note={checkoutNote}
+                                        onSave={(t, n) => { setCheckoutTasks(t); setCheckoutNote(n); }}
+                                    />
+                                    {/* Guest safety. The two alarms are stored as amenities,
+                                        so they follow the answers here. */}
+                                    <GuestSafetyCard
+                                        safety={guestSafety}
+                                        privacyType={privacyType}
+                                        alarmAnswers={Object.fromEntries(SAFETY_GROUPS.flatMap((g) => g.items).filter((i) => i.amenity).map((i) => [i.key, safetyAnswer(i, guestSafety, amenities)]))}
+                                        onSave={(sf) => { setGuestSafety(sf); setAmenities((prev) => withAlarmAmenities(prev, sf)); }}
+                                    />
                             </section>
                         )}
 
@@ -914,89 +954,6 @@ export default function EditListing() {
                                 />
                             </section>
                         )}
-
-                        {activeSection === 'rules' && (
-                            <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-1">House rules</h2>
-                                <p className="text-sm text-slate-500 mb-6">
-                                    Guests are expected to follow your rules and may be removed if they don't.
-                                </p>
-
-                                <div className="border rounded-2xl divide-y">
-                                    {[
-                                        { label: 'Events allowed', value: eventsAllowed, set: setEventsAllowed },
-                                        { label: 'Smoking, vaping, e-cigarettes allowed', value: smokingAllowed, set: setSmokingAllowed },
-                                        { label: 'Commercial photography and filming allowed', value: commercialPhotographyAllowed, set: setCommercialPhotographyAllowed },
-                                    ].map((rule) => (
-                                        <div key={rule.label} className="p-4 flex items-center justify-between">
-                                            <span className="text-sm font-medium text-slate-800">{rule.label}</span>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => rule.set(false)}
-                                                    className={`w-8 h-8 rounded-full flex items-center justify-center ${!rule.value ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => rule.set(true)}
-                                                    className={`w-8 h-8 rounded-full flex items-center justify-center ${rule.value ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}
-                                                >
-                                                    <Check className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-
-                                    <div className="p-4">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <span className="text-sm font-medium text-slate-800">Quiet hours</span>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setQuietHoursEnabled(false)}
-                                                    className={`w-8 h-8 rounded-full flex items-center justify-center ${!quietHoursEnabled ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setQuietHoursEnabled(true)}
-                                                    className={`w-8 h-8 rounded-full flex items-center justify-center ${quietHoursEnabled ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}
-                                                >
-                                                    <Check className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                        {quietHoursEnabled && (
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div>
-                                                    <label className="text-xs text-slate-500">Start time</label>
-                                                    <input type="time" value={quietHoursStart} onChange={(e) => setQuietHoursStart(e.target.value)}
-                                                        className="w-full p-2.5 border rounded-lg text-sm mt-1" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs text-slate-500">End time</label>
-                                                    <input type="time" value={quietHoursEnd} onChange={(e) => setQuietHoursEnd(e.target.value)}
-                                                        className="w-full p-2.5 border rounded-lg text-sm mt-1" />
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <h3 className="font-semibold text-slate-800 mt-8 mb-2">Additional rules</h3>
-                                <AutoTextarea
-                                    value={additionalRules}
-                                    onChange={(e) => setAdditionalRules(e.target.value)}
-                                    rows={4}
-                                    placeholder="Share anything else you expect from guests..."
-                                    className="w-full p-3 border rounded-xl text-sm"
-                                />
-                            </section>
-                        )}
-
 
                         {activeSection === 'calendar' && (
                             <section>

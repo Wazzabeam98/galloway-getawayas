@@ -187,7 +187,7 @@ export function PetFeeCard({ fee, petsAllowed, onSave }: { fee: string; petsAllo
         <PanelCard title="Pet fee" summary={isSet(fee) ? `${money(fee)} per stay` : 'None'} value={fee} onSave={onSave}>
             {(draft, setDraft) => (
                 <div>
-                    <p className="text-sm text-slate-500 mb-3">{petsAllowed ? 'Charged per stay when a guest brings a pet.' : 'Only charged if you allow pets (turn that on under Amenities).'}</p>
+                    <p className="text-sm text-slate-500 mb-3">{petsAllowed ? 'Charged per stay when a guest brings a pet.' : 'Only charged if you allow pets (turn that on in House rules, under Arrival).'}</p>
                     <MoneyInput id="pet-fee" label="Pet fee" value={draft} onChange={setDraft} suffix="/ stay" />
                 </div>
             )}
