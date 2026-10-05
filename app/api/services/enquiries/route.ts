@@ -12,6 +12,7 @@ import {
     trialEndsAt,
 } from '@/lib/serviceProviders';
 import { visibleInDirectory } from '@/lib/serviceSubscription';
+import { propertyAnswer } from '@/lib/propertyQuestions';
 import { sendTrialStarted } from '@/lib/serviceSubscriptionAlert';
 import {
     enquiryProblems,
@@ -66,6 +67,8 @@ interface Body {
     preferred_date?: string | null;
     window_from?: string | null;
     window_to?: string | null;
+    // The gardener's / window cleaner's property question (lib/propertyQuestions).
+    property_answer?: string | null;
 }
 
 export async function POST(req: Request) {
@@ -187,11 +190,26 @@ export async function POST(req: Request) {
         if (body.listing_id) {
             const { data } = await admin
                 .from('listings')
-                .select('id, host_id, title, location, bedrooms')
+                .select('id, host_id, title, location, bedrooms, plot_band, storey_band')
                 .eq('id', String(body.listing_id))
                 .maybeSingle();
 
             if (data && data.host_id === auth.user.id) listing = data;
+        }
+
+        // ---- the garden / window answer, kept on the listing ---------------
+        //
+        // Only a valid answer for this trade, and only on the host's own
+        // listing (checked above). A blank answer leaves a saved one alone.
+        const answer = listing ? propertyAnswer(provider.trade, body.property_answer) : null;
+        if (answer && listing[answer.column] !== answer.key) {
+            const { error: bandErr } = await admin
+                .from('listings')
+                .update({ [answer.column]: answer.key })
+                .eq('id', listing.id)
+                .eq('host_id', auth.user.id);
+            if (bandErr) await logError('service-enquiry-property-answer', bandErr, { path: 'api/services/enquiries' });
+            else listing = { ...listing, [answer.column]: answer.key };
         }
 
         // ---- the emergency gate --------------------------------------------

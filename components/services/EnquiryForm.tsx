@@ -14,6 +14,7 @@ import {
     needsDate,
     enquiryProblems,
 } from '@/lib/serviceEnquiries';
+import { propertyQuestionFor } from '@/lib/propertyQuestions';
 
 // Asking one tradesman to look at something.
 //
@@ -69,6 +70,15 @@ export default function EnquiryForm({
 
     const [urgency, setUrgency] = useState('soon');
     const [listingId, setListingId] = useState(forProperty || listings[0]?.id || '');
+    // A gardener's or window cleaner's one question about the property. Starts
+    // from what the listing already holds, and is saved back to it on send.
+    const question = propertyQuestionFor(trade);
+    const savedAnswer = (id: string) => {
+        const l = listings.find((x: any) => x.id === id);
+        return (question && l && l[question.column]) || '';
+    };
+    const [propertyAnswer, setPropertyAnswer] = useState(() => savedAnswer(forProperty || listings[0]?.id || ''));
+    useEffect(() => { setPropertyAnswer(savedAnswer(listingId)); }, [listingId]); // eslint-disable-line react-hooks/exhaustive-deps
     const [faults, setFaults] = useState<string[]>([]);
     const [summary, setSummary] = useState('');
     const [whenNote, setWhenNote] = useState('');
@@ -261,6 +271,7 @@ export default function EnquiryForm({
             body: JSON.stringify({
                 provider_id: provider.id,
                 listing_id: listingId || null,
+                property_answer: question && listingId ? propertyAnswer || null : null,
                 urgency,
                 summary,
                 fault_keys: faults,
@@ -448,6 +459,33 @@ export default function EnquiryForm({
                             ))}
                         </select>
                     </label>
+                )}
+
+                {question && listingId && (
+                    <fieldset>
+                        <legend className="text-sm font-semibold text-slate-700">{question.label}</legend>
+                        <div className="mt-2 space-y-2">
+                            {question.options.map((o) => {
+                                const on = propertyAnswer === o.key;
+                                return (
+                                    <button
+                                        key={o.key}
+                                        type="button"
+                                        onClick={() => setPropertyAnswer(o.key)}
+                                        aria-pressed={on}
+                                        className={
+                                            'w-full text-left rounded-xl border px-4 py-3 text-sm transition '
+                                            + (on
+                                                ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900'
+                                                : 'border-slate-300 text-slate-700 hover:border-slate-400')
+                                        }
+                                    >
+                                        {o.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </fieldset>
                 )}
 
                 {options.length > 0 && (

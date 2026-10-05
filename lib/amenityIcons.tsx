@@ -15,6 +15,7 @@ import { ACCESSIBILITY_AMENITIES } from './listingFilters';
 const ICONS: Record<string, LucideIcon> = {
     'Wifi': Wifi,
     'Free parking on premises': Car,
+    'Free street parking': Car,
     'Parking': Car,
     'Pets allowed': PawPrint,
     'Pool': Waves,
