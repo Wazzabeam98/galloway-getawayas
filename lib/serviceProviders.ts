@@ -2988,7 +2988,15 @@ export function tradeSubmitBlock(row: {
     hourly_rate?: any;
     flat_fee?: any;
 }): string | null {
-    if (String(row.audience || '') === 'guest') return null;
+    // A guest experience prices per item, so only its description is checked:
+    // "What happens", at least MIN_DESCRIPTION characters — the wizard's rule,
+    // and the guest half of submit_service_provider()
+    // (20261005101500_submit_guard_guest_description.sql).
+    if (String(row.audience || '') === 'guest') {
+        return String(row.description || '').trim().length < MIN_DESCRIPTION
+            ? 'A guest experience needs a description (say what happens, in a sentence or two) before it can be submitted.'
+            : null;
+    }
 
     if (String(row.description || '').trim() === '') {
         return 'This trade listing needs a description before it can be submitted.';
