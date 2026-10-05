@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { returnUrl } from '@/lib/email';
-import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
+import { quoteBooking, totalsMatch, dateFromKey, dateKey, NEW_LISTING_MAX_BOOKINGS } from '@/lib/pricing';
 import { balanceDueKey } from '@/lib/balanceDue';
 import { londonDayKey } from '@/lib/dayKey';
 import { blockedNightsFromEvents, fetchLiveIcalEvents } from '@/lib/availability';
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('status, title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, min_nights, max_nights, advance_notice, preparation_time, availability_window')
+            .select('status, title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, min_nights, max_nights, advance_notice, preparation_time, availability_window')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
@@ -133,6 +133,22 @@ export async function POST(request: Request) {
             if (row.min_nights_override) minNightsOverrides[key] = Number(row.min_nights_override);
         });
 
+        // The new-listing promo rides on the first 3 bookings this listing has
+        // actually taken. Counted here, authoritatively, from the real stays
+        // (confirmed or completed), never the browser's claim — this booking is
+        // still pending_payment and the one being made, so it is excluded both
+        // by its status and by id. Eligible while fewer than 3 exist.
+        let newListingEligible = false;
+        if (listing.new_listing_promo) {
+            const { count } = await admin
+                .from('bookings')
+                .select('id', { count: 'exact', head: true })
+                .eq('listing_id', booking.listing_id)
+                .neq('id', booking.id)
+                .in('status', ['confirmed', 'completed']);
+            newListingEligible = (count || 0) < NEW_LISTING_MAX_BOOKINGS;
+        }
+
         const quote = quoteBooking(
             listing,
             overrides,
@@ -140,7 +156,8 @@ export async function POST(request: Request) {
             checkOut,
             Number(booking.adults || 0),
             Number(booking.children || 0),
-            Number(booking.pets || 0)
+            Number(booking.pets || 0),
+            { newListingEligible, asOf: new Date() }
         );
 
         if (quote.nights <= 0) {

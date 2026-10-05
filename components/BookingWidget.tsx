@@ -39,6 +39,14 @@ interface Props {
     extraGuestFee?: number;
     extraGuestAfter?: number;
     extraGuestPeriod?: string;
+    // The host's four discount switches, and whether the new-listing promo is
+    // still live (the listing has fewer than 3 bookings) — worked out on the
+    // server and passed in so the card prices exactly as the checkout will.
+    newListingPromo?: boolean;
+    lastMinuteDiscount?: boolean;
+    weeklyDiscount?: boolean;
+    monthlyDiscount?: boolean;
+    newListingEligible?: boolean;
     damageDeposit?: number;
     availabilityWindow?: string;
     instantBook?: boolean;
@@ -265,6 +273,8 @@ export default function BookingWidget({
     weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0,
     extraGuestAfter = 1, extraGuestPeriod = 'night', availabilityWindow,
     instantBook = false, instantBookRequiresPhone = false, instantBookRequiresVerifiedId = false,
+    newListingPromo = false, lastMinuteDiscount = false, weeklyDiscount = false, monthlyDiscount = false,
+    newListingEligible = false,
     damageDeposit = 0,
     cancellationPolicy,
     blockedNights,
@@ -478,13 +488,18 @@ export default function BookingWidget({
             extra_guest_fee: extraGuestFee,
             extra_guest_after: extraGuestAfter,
             extra_guest_period: extraGuestPeriod,
+            new_listing_promo: newListingPromo,
+            last_minute_discount: lastMinuteDiscount,
+            weekly_discount: weeklyDiscount,
+            monthly_discount: monthlyDiscount,
         },
         priceOverrides,
         dateRange.startDate || new Date(),
         dateRange.endDate || (dateRange.startDate || new Date()),
         adults,
         children,
-        pets
+        pets,
+        { newListingEligible, asOf: new Date() }
     );
 
     const totalGuests = adults + children;
@@ -493,6 +508,7 @@ export default function BookingWidget({
     const extraGuestTotal = quote.extraGuestTotal;
     const petFeeTotal = quote.petFeeTotal;
     const cleaningFeeTotal = quote.cleaningFeeTotal;
+    const discount = quote.discount;
     const total = quote.total;
 
     // While the guest is choosing a checkout (a check-in is picked and the
@@ -750,6 +766,12 @@ export default function BookingWidget({
                 <span>{nights} night{nights > 1 ? 's' : ''}</span>
                 <span>{formatGBP(nightsSubtotal)}</span>
             </div>
+            {discount && discount.amount > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                    <span>{discount.label} ({discount.percent}%)</span>
+                    <span>&minus;{formatGBP(discount.amount)}</span>
+                </div>
+            )}
             {cleaningFeeTotal > 0 && (
                 <div className="flex justify-between text-slate-600">
                     <span>Cleaning fee</span>

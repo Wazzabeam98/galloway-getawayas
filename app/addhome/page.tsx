@@ -1062,7 +1062,7 @@ export default function AddHome() {
                         <p className="text-slate-600 mb-8">Help your place stand out to get booked faster and earn your first reviews.</p>
                         <div className="space-y-4">
                             {[
-                                { key: 'newListingPromo', percent: '20%', title: 'New listing promotion', note: 'Available until your listing has 3 reviews or gets booked 10 times', value: newListingPromo, set: setNewListingPromo },
+                                { key: 'newListingPromo', percent: '20%', title: 'New listing promotion', note: 'Applies automatically to your first 3 bookings', value: newListingPromo, set: setNewListingPromo },
                                 { key: 'lastMinuteDiscount', percent: '5%', title: 'Last-minute discount', note: 'For stays booked 14 days or less before arrival', value: lastMinuteDiscount, set: setLastMinuteDiscount },
                                 { key: 'weeklyDiscount', percent: '10%', title: 'Weekly discount', note: 'For stays of 7 nights or more', value: weeklyDiscount, set: setWeeklyDiscount },
                                 { key: 'monthlyDiscount', percent: '20%', title: 'Monthly discount', note: 'For stays of 28 nights or more', value: monthlyDiscount, set: setMonthlyDiscount },

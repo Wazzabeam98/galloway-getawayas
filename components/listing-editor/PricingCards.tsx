@@ -102,7 +102,7 @@ export function WeekendPriceCard({ weekendPrice, onSave }: { weekendPrice: strin
 export type Discounts = { newListingPromo: boolean; lastMinute: boolean; weekly: boolean; monthly: boolean };
 
 const DISCOUNTS: { key: keyof Discounts; percent: string; title: string; short: string; note: string }[] = [
-    { key: 'newListingPromo', percent: '20%', title: 'New listing promotion', short: 'New listing', note: 'Available until your listing has 3 reviews or gets booked 10 times' },
+    { key: 'newListingPromo', percent: '20%', title: 'New listing promotion', short: 'New listing', note: 'Applies automatically to your first 3 bookings' },
     { key: 'lastMinute', percent: '5%', title: 'Last-minute discount', short: 'Last-minute', note: 'For stays booked 14 days or less before arrival' },
     { key: 'weekly', percent: '10%', title: 'Weekly discount', short: 'Weekly', note: 'For stays of 7 nights or more' },
     { key: 'monthly', percent: '20%', title: 'Monthly discount', short: 'Monthly', note: 'For stays of 28 nights or more' },
