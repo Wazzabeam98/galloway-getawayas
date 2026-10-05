@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Check } from 'lucide-react';
+import PropertyTypeIcon from '@/components/PropertyTypeIcon';
 import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
-import { pickerTypes, propertyTypeByName, UNIQUE_STAYS_HEADING } from '@/lib/propertyTypes';
+import { pickerTypes, propertyTypeByName, UNIQUE_STAYS_HEADING, type PropertyType } from '@/lib/propertyTypes';
 
 // Airbnb's "Property type" panel: one dropdown for the type, one for the
 // listing type. The tile grid stays in the become-a-host wizard only.
@@ -35,6 +36,17 @@ function Select({ id, label, value, onChange, children }: {
     );
 }
 
+function TypeRow({ t, selected, onPick }: { t: PropertyType; selected: boolean; onPick: (name: string) => void }) {
+    return (
+        <button type="button" role="radio" aria-checked={selected} onClick={() => onPick(t.name)}
+            className="flex w-full items-center gap-3 border-b border-slate-100 py-3 text-left">
+            <PropertyTypeIcon icon={t.icon} className="h-5 w-5 flex-none text-slate-700" />
+            <span className={`flex-1 text-sm ${selected ? 'font-semibold text-slate-900' : 'text-slate-800'}`}>{t.label}</span>
+            {selected && <Check className="h-5 w-5 flex-none text-slate-900" />}
+        </button>
+    );
+}
+
 export default function PropertyTypeCard({ propertyType, privacyType, onSave }: {
     propertyType: string;
     privacyType: string;
@@ -60,14 +72,17 @@ export default function PropertyTypeCard({ propertyType, privacyType, onSave }: 
                     footer={<PanelSave onClick={() => { onSave(type, listing); setOpen(false); }} disabled={!type} />}
                 >
                     <div className="space-y-5">
-                        <Select id="pt-type" label="Property type" value={type} onChange={setType}>
-                            {!type && <option value="">Select one</option>}
-                            {type && !propertyTypeByName(type) && <option value={type}>{type}</option>}
-                            {common.map((t) => <option key={t.name} value={t.name}>{t.label}</option>)}
-                            <optgroup label={UNIQUE_STAYS_HEADING}>
-                                {unique.map((t) => <option key={t.name} value={t.name}>{t.label}</option>)}
-                            </optgroup>
-                        </Select>
+                        {/* Our own list, not a dropdown: each type a tappable row with
+                            its become-a-host icon and a tick on the chosen one. */}
+                        <div role="radiogroup" aria-label="Property type">
+                            {type && !propertyTypeByName(type) && (
+                                <TypeRow t={{ name: type, label: type, icon: '', card: type, noun: 'place', group: 'legacy' }} selected onPick={setType} />
+                            )}
+                            <h3 className="pb-1 text-sm font-semibold text-slate-900">Homes</h3>
+                            {common.map((t) => <TypeRow key={t.name} t={t} selected={type === t.name} onPick={setType} />)}
+                            <h3 className="pt-5 pb-1 text-sm font-semibold text-slate-900">{UNIQUE_STAYS_HEADING}</h3>
+                            {unique.map((t) => <TypeRow key={t.name} t={t} selected={type === t.name} onPick={setType} />)}
+                        </div>
                         <div>
                             <Select id="pt-listing" label="Listing type" value={listing} onChange={setListing}>
                                 {LISTING_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}

@@ -89,9 +89,9 @@ export function WifiCard({ listingId }: { listingId: string }) {
 
     return (
         <>
-            <EditorCard title="Wifi" summary={summary} onClick={() => arrival.loaded && openPanel()} />
+            <EditorCard title="Wi-Fi details" summary={summary} onClick={() => arrival.loaded && openPanel()} />
             {open && (
-                <EditorPanel title="Wifi" onClose={() => setOpen(false)}
+                <EditorPanel title="Wi-Fi details" onClose={() => setOpen(false)}
                     footer={
                         <div className="flex items-center justify-end gap-3">
                             {arrival.error && <span className="text-sm text-red-600">{arrival.error}</span>}

@@ -13,6 +13,7 @@ import { publicArea } from '@/lib/places';
 import { partyLabel, confirmationNumber, cancellationWords } from '@/lib/bookingDisplay';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { liveForGuestCard, stayCountdown, upcomingUntilCheckout, arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
+import { checkoutTaskLabels } from '@/lib/listingSafety';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadBookingSeats } from '@/lib/groupSeats';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
@@ -132,7 +133,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
     const isBooker = role === 'booker';
 
     const { data: listing } = await admin.from('listings')
-        .select('id, title, images, street_address, postcode, location, latitude, longitude, check_in_time, check_in_end_time, check_out_time, check_in_method, cancellation_policy, rating_avg, rating_count, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, max_guests, amenities')
+        .select('id, title, images, street_address, postcode, location, latitude, longitude, check_in_time, check_in_end_time, check_out_time, check_in_method, cancellation_policy, rating_avg, rating_count, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, max_guests, amenities, checkout_tasks, checkout_note')
         .eq('id', booking.listing_id).maybeSingle();
 
     const { data: hostProfile } = booking.host_id
@@ -348,6 +349,26 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                 </div>
                             ))}
                         </div>
+
+                        {/* The host's checkout instructions, until checkout. Nothing when
+                            the host hasn't added any. */}
+                        {upcomingConfirmed && listing && (checkoutTaskLabels((listing as any).checkout_tasks).length > 0 || ((listing as any).checkout_note || '').trim()) && (
+                            <section className="mt-8 border-t border-slate-200 pt-6">
+                                <h2 className="text-lg font-semibold text-slate-900">Checkout instructions</h2>
+                                {checkoutTaskLabels((listing as any).checkout_tasks).length > 0 && (
+                                    <ul className="mt-3 space-y-1.5">
+                                        {checkoutTaskLabels((listing as any).checkout_tasks).map((t) => (
+                                            <li key={t} className="flex items-start gap-2 text-sm text-slate-800">
+                                                <span className="mt-2 h-1 w-1 flex-none rounded-full bg-slate-400" />{t}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                                {((listing as any).checkout_note || '').trim() && (
+                                    <p className="mt-3 whitespace-pre-line text-sm text-slate-700">{(listing as any).checkout_note.trim()}</p>
+                                )}
+                            </section>
+                        )}
 
                         {/* ---- Where you'll be ---- */}
                         <section className="mt-8 border-t border-slate-200 pt-6">

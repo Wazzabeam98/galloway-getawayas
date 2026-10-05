@@ -411,12 +411,30 @@ test('children count towards the limit, and pets do not', async () => {
     const a: any = await overCapacity.route.POST(post({ bookingId: 'b-1' }));
     assert.equal(a.status, 400, 'five children is over a limit of four');
 
+    // A listing that allows three pets (House rules), so the only question is
+    // whether the dogs count against the four guests — they don't.
     const withPets = load({
         booking: bookingRow({ adults: 2, children: 0, pets: 3 }),
-        listing: listingRow({ max_guests: 4, pet_fee: 0 }),
+        listing: listingRow({ max_guests: 4, pet_fee: 0, amenities: ['Pets allowed'], max_pets: 3 }),
     });
     const b: any = await withPets.route.POST(post({ bookingId: 'b-1' }));
     assert.equal(b.status, 200, 'a dog is not a guest');
+});
+
+test('pets: none on a listing that doesn\u2019t allow them, and no more than the host\u2019s maximum', async () => {
+    // The House rules are checked at checkout, whatever the link carried.
+    const noPets = load({ booking: bookingRow({ pets: 1 }), listing: listingRow({ amenities: [] }) });
+    const a: any = await noPets.route.POST(post({ bookingId: 'b-1' }));
+    assert.equal(a.status, 400);
+    assert.equal(noPets.stripeCalls.length, 0, 'no payment page for a refused booking');
+
+    const tooMany = load({ booking: bookingRow({ pets: 3 }), listing: listingRow({ amenities: ['Pets allowed'], max_pets: 2 }) });
+    const b: any = await tooMany.route.POST(post({ bookingId: 'b-1' }));
+    assert.equal(b.status, 400);
+
+    const atMax = load({ booking: bookingRow({ pets: 2 }), listing: listingRow({ amenities: ['Pets allowed'], max_pets: 2 }) });
+    const c: any = await atMax.route.POST(post({ bookingId: 'b-1' }));
+    assert.equal(c.status, 200);
 });
 
 test('a listing with no stated limit does not refuse anybody', async () => {

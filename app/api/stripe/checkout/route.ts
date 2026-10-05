@@ -15,6 +15,7 @@ import { requireGuestTerms } from '@/lib/agreementRecords';
 import { anonGuestTermsMetadata } from '@/lib/agreements';
 import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import { stayProblem, prepBufferNights, prepDays, londonTodayKey } from '@/lib/stayRules';
+import { petLimit, petsProblem } from '@/lib/listingSafety';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('status, title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, min_nights, max_nights, advance_notice, preparation_time, availability_window')
+            .select('status, title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, min_nights, max_nights, advance_notice, preparation_time, availability_window, amenities, max_pets')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
@@ -201,6 +202,13 @@ export async function POST(request: Request) {
                 if (e && e.start && e.end) ranges.push({ start: String(e.start).slice(0, 10), end: String(e.end).slice(0, 10) });
             }));
             prepBuffer = prepBufferNights(ranges, prepDays(listing));
+        }
+
+        // Pets: the host's House rules — none if pets aren't allowed, otherwise
+        // up to their maximum — whatever the link asked for.
+        const petIssue = petsProblem(Number(booking.pets || 0), petLimit(listing));
+        if (petIssue) {
+            return NextResponse.json({ ok: false, error: petIssue }, { status: 400 });
         }
 
         const ruleProblem = stayProblem({

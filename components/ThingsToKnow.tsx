@@ -11,6 +11,8 @@ import { formatGBP } from '@/lib/formatMoney';
 import { cancellationSummary } from '@/lib/cancellation';
 import { cancellationDisplay, CLEANING_FEE_NOTE } from '@/lib/cancellationDisplay';
 import { checkInMethodTitle, checkInBlurb, isSelfCheckIn } from '@/lib/checkInMethods';
+import { checkoutTaskLabels } from '@/lib/listingSafety';
+import { ListChecks, ShieldAlert } from 'lucide-react';
 
 // Airbnb's "Things to know": three columns side by side — House rules, Safety &
 // property, Cancellation policy — each an icon, a title, a few summary lines and
@@ -34,6 +36,11 @@ type Props = {
     carbonMonoxideAlarm: boolean;
     damageDeposit: number;
     cancellationPolicy: string | null;
+    // The host's checkout tick-list and note (shown under "Checking in and
+    // out" only when there is something), and the ticked Guest safety items.
+    checkoutTasks?: string[];
+    checkoutNote?: string | null;
+    safetyItems?: { key: string; label: string; details?: string }[];
 };
 
 // "15:00" — the 24-hour clock Airbnb UK uses. null/blank → ''.
@@ -49,7 +56,10 @@ export default function ThingsToKnow(props: Props) {
         checkInTime, checkOutTime, checkInMethod, maxGuests, petsAllowed, eventsAllowed,
         smokingAllowed, quietHoursEnabled, quietHoursStart, quietHoursEnd, additionalRules,
         smokeAlarm, carbonMonoxideAlarm, damageDeposit, cancellationPolicy,
+        checkoutTasks = [], checkoutNote = null, safetyItems = [],
     } = props;
+    const checkoutLabels = checkoutTaskLabels(checkoutTasks);
+    const checkoutText = (checkoutNote || '').trim();
 
     const [openCol, setOpenCol] = useState<null | 'rules' | 'safety' | 'cancel'>(null);
 
@@ -89,6 +99,7 @@ export default function ThingsToKnow(props: Props) {
     const safetyLines: string[] = [];
     safetyLines.push(smokeAlarm ? 'Smoke alarm' : 'No smoke alarm reported');
     safetyLines.push(carbonMonoxideAlarm ? 'Carbon monoxide alarm' : 'No carbon monoxide alarm reported');
+    safetyItems.slice(0, 1).forEach((i) => safetyLines.push(i.label));
     if (damageDeposit > 0) safetyLines.push(`${formatGBP(damageDeposit)} damage deposit`);
     const cancelLines = dated ? [dated.headline] : policy.bullets.slice(0, 2);
 
@@ -106,6 +117,13 @@ export default function ThingsToKnow(props: Props) {
             <ul className="mt-1">
                 <Row icon={LogIn}>Check-in after {checkInHM}</Row>
                 <Row icon={LogOut}>Checkout before {checkOutHM}</Row>
+                {(checkoutLabels.length > 0 || checkoutText) && (
+                    <Row icon={ListChecks}>
+                        <span className="font-medium text-slate-900">Checkout instructions</span>
+                        {checkoutLabels.length > 0 && <span className="block text-slate-600">{checkoutLabels.join(' · ')}</span>}
+                        {checkoutText && <span className="block whitespace-pre-line text-slate-600">{checkoutText}</span>}
+                    </Row>
+                )}
                 {isSelfCheckIn(checkInMethod) && (
                     <Row icon={KeyRound}>
                         {checkInMethodTitle(checkInMethod)} — {checkInBlurb(checkInMethod).replace(/\.$/, '')}
@@ -144,6 +162,12 @@ export default function ThingsToKnow(props: Props) {
                     ? <Check className="ml-1 inline h-4 w-4 text-emerald-600" />
                     : <span className="ml-1 inline-flex items-center gap-1 text-slate-400"><Minus className="h-3.5 w-3.5" /> not reported</span>}
             </Row>
+            {safetyItems.map((i) => (
+                <Row key={i.key} icon={ShieldAlert}>
+                    {i.label}
+                    {i.details && <span className="block whitespace-pre-line text-slate-500">{i.details}</span>}
+                </Row>
+            ))}
             {damageDeposit > 0 && (
                 <Row icon={Wallet}>
                     <span className="font-medium text-slate-900">{formatGBP(damageDeposit)} damage deposit</span>

@@ -5,6 +5,10 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { coordinatePatchFor } from '@/lib/postcodeGeocode';
 import { listingLocation, splitLocation } from '@/lib/places';
+import {
+    cleanGuestSafety, guestSafetyProblem, withAlarmAmenities, cleanCheckoutTasks, cleanCheckoutNote,
+    clampMaxPets, petsAllowed,
+} from '@/lib/listingSafety';
 import { checkListing } from '@/lib/access';
 import { isAdmin, recordAdminAction, cleanReason, REMOVED_BUCKET } from '@/lib/adminAudit';
 import { fromRow, newProblems } from '@/lib/listingRules';
@@ -104,6 +108,23 @@ export async function POST(request: Request) {
         // whatever arrives, `location` is stored as "Town, Dumfries and Galloway"
         // — the same helper the forms build it with.
         if ('location' in safe) safe.location = listingLocation(splitLocation(safe.location).town);
+
+        // Guest safety, checkout instructions and pets, cleaned by the same rules
+        // the editor uses (lib/listingSafety). The two alarms and "Pets allowed"
+        // stay amenities, so they follow the answers here.
+        if ('guest_safety' in safe) {
+            const privacy = 'privacy_type' in safe ? safe.privacy_type : before.privacy_type;
+            safe.guest_safety = cleanGuestSafety(safe.guest_safety, privacy);
+            const problem = guestSafetyProblem(safe.guest_safety);
+            if (problem) return NextResponse.json({ ok: false, error: problem }, { status: 400 });
+            safe.amenities = withAlarmAmenities(Array.isArray(safe.amenities) ? safe.amenities : (before.amenities || []), safe.guest_safety);
+        }
+        if ('checkout_tasks' in safe) safe.checkout_tasks = cleanCheckoutTasks(safe.checkout_tasks);
+        if ('checkout_note' in safe) safe.checkout_note = cleanCheckoutNote(safe.checkout_note);
+        if ('max_pets' in safe || 'amenities' in safe) {
+            const amenities = Array.isArray(safe.amenities) ? safe.amenities : (before.amenities || []);
+            safe.max_pets = petsAllowed({ amenities }) ? clampMaxPets('max_pets' in safe ? safe.max_pets : before.max_pets) : null;
+        }
 
         // "Show the precise location" is a yes/no and nothing else — anything
         // but a literal true is off, the safe direction for a privacy setting.
