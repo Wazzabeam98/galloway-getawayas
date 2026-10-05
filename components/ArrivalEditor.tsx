@@ -3,14 +3,17 @@
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Loader2, Check } from 'lucide-react';
 
-// The host-facing editor for a listing's arrival details — the "last bit"
-// directions, parking, wifi, what3words. Every field is independently optional
+// The host-facing editor for a listing's arrival details — parking, wifi,
+// what3words, and (part="directions", shown under Location) the "last bit"
+// directions. Every field is independently optional
 // (a host can fill in parking alone and save it), and none of it goes into
 // publish validation. The door code sits beside this, edited by LockboxCode
 // through its own secure route. Reads and writes go through /api/listings/arrival,
 // which gates on can_listing and is the only door to the grant-less table.
-export default function ArrivalEditor({ listingId }: { listingId: string }) {
+export default function ArrivalEditor({ listingId, part = 'details' }: { listingId: string; part?: 'details' | 'directions' }) {
     const [loaded, setLoaded] = useState(false);
+    // Directions stay behind "+ Add directions" until a host wants them.
+    const [dirsOpen, setDirsOpen] = useState(false);
     const [dirs, setDirs] = useState('');
     const [parking, setParking] = useState('');
     const [wifiName, setWifiName] = useState('');
@@ -82,15 +85,41 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
 
     if (!loaded) return <div className="text-sm text-slate-400">Loading…</div>;
 
+    const saveButton = (label: string) => (
+        <div className="flex items-center gap-3">
+            <button type="button" onClick={save} disabled={saving}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : null}
+                {saved ? 'Saved' : label}
+            </button>
+            {error && <span className="text-sm text-red-600">{error}</span>}
+        </div>
+    );
+
+    if (part === 'directions') {
+        if (!dirsOpen && !base.arrival_directions) {
+            return (
+                <button type="button" onClick={() => setDirsOpen(true)}
+                    className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+                    + Add directions
+                </button>
+            );
+        }
+        return (
+            <div className="space-y-3">
+                <div>
+                    <label htmlFor="arrival-directions" className="block text-sm font-semibold text-slate-900 mb-1">Directions</label>
+                    <textarea id="arrival-directions" value={dirs} onChange={(e) => setDirs(e.target.value)} rows={3}
+                        placeholder="Turn at the red postbox, the track is bumpy — park on the gravel by the blue door."
+                        className={inputClass} />
+                </div>
+                {saveButton('Save directions')}
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-4">
-            <div>
-                <label className="block text-sm font-semibold text-slate-900 mb-1">The last bit of the journey</label>
-                <p className="text-xs text-slate-500 mb-1.5">What sat-nav gets wrong — the turn it misses, the track, the door to look for. Your own words beat any form.</p>
-                <textarea value={dirs} onChange={(e) => setDirs(e.target.value)} rows={3}
-                    placeholder="Turn at the red postbox, the track is bumpy — park on the gravel by the blue door."
-                    className={inputClass} />
-            </div>
 
             <div>
                 <label className="block text-sm font-semibold text-slate-900 mb-1">Parking</label>
@@ -118,14 +147,7 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
                 <input value={w3w} onChange={(e) => setW3w(e.target.value)} placeholder="///harbour.candle.brave" className={inputClass + ' sm:max-w-xs'} />
             </div>
 
-            <div className="flex items-center gap-3">
-                <button type="button" onClick={save} disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : null}
-                    {saved ? 'Saved' : 'Save arrival details'}
-                </button>
-                {error && <span className="text-sm text-red-600">{error}</span>}
-            </div>
+            {saveButton('Save arrival details')}
 
             <p className="text-xs text-slate-400">
                 Every field is optional and none of it affects publishing. Guests see it on their Getting-there screen; the wifi password and the door code only show there, close to arrival.

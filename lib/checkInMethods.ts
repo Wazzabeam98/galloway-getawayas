@@ -26,6 +26,13 @@ export function codeHintFor(method: string | null | undefined): string {
     return 'The code that opens the lockbox holding the key.';
 }
 
+// The short label on the code box under the chosen option: "Keypad code".
+export function codeLabelFor(method: string | null | undefined): string {
+    if (method === 'Smart lock') return 'Smart lock code';
+    if (method === 'Keypad') return 'Keypad code';
+    return 'Lockbox code';
+}
+
 // The three self-service methods, the ones a guest handles alone — kept
 // alongside CODE_METHODS because they happen to be the same three, but named
 // for the guest's experience rather than for whether a credential exists.

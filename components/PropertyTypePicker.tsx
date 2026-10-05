@@ -1,5 +1,5 @@
-// The property-type tiles, shared by the new-listing wizard (/addhome step 1)
-// and the listing editor's Basics, so the two can't drift. The common types
+// The property-type tiles on the new-listing wizard (/addhome step 1). The
+// listing editor uses a dropdown instead (listing-editor/PropertyTypeCard). The common types
 // first, then the rarer ones under "Unique stays" — Airbnb's list in UK
 // wording, plus static caravan, lodge and glamping pod. The list and its words
 // live in lib/propertyTypes.ts.

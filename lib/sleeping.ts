@@ -16,18 +16,22 @@ export type RoomKind = 'bedroom' | 'common';
 // falls back to the bed icon.
 export type Room = { label: string; kind: RoomKind; beds: Bed[]; photo?: string | null };
 
-// The bed types a host can pick, in the order they're offered. Kept to the ones
-// that actually turn up in a Galloway cottage rather than Airbnb's full global
-// list — a shorter menu is quicker to fill in and reads cleaner on the page.
+// The bed types a host can pick, in the order they're offered — Airbnb's
+// bed-type counters, UK wording. The stored `type` is this exact string, so
+// never rename one that is live.
 export const BED_TYPES: string[] = [
-    'King bed',
+    'Single bed',
     'Double bed',
     'Small double bed',
-    'Single bed',
+    'King bed',
     'Bunk bed',
     'Sofa bed',
+    'Sofa',
     'Floor mattress',
+    'Air mattress',
     'Cot',
+    'Toddler bed',
+    'Hammock',
 ];
 
 // A sofa bed or a floor mattress is still a bed to sleep in, so it counts toward
@@ -37,11 +41,10 @@ export function isBedType(type: string): boolean {
     return BED_TYPES.indexOf(type) !== -1;
 }
 
-// "1 king bed", "2 single beds" — the label for one bed line. All our bed types
-// pluralise by adding an s ("bunk bed" → "bunk beds", "cot" → "cots"), so a
-// plain rule is correct here; revisit if a type that doesn't is ever added.
+// "1 king bed", "2 single beds", "2 floor mattresses" — the label for one bed line.
 export function bedLabel(bed: Bed): string {
-    const noun = bed.count === 1 ? bed.type.toLowerCase() : bed.type.toLowerCase() + 's';
+    const one = bed.type.toLowerCase();
+    const noun = bed.count === 1 ? one : one + (/(s|sh|ch|x)$/.test(one) ? 'es' : 's');
     return `${bed.count} ${noun}`;
 }
 
@@ -106,4 +109,11 @@ export function roomsFromBedroomCount(bedrooms: number): Room[] {
 export function roomLabel(room: Room, indexAmongBedrooms: number): string {
     if (room.label) return room.label;
     return room.kind === 'common' ? 'Common space' : `Bedroom ${indexAmongBedrooms}`;
+}
+
+// How many of the listing's beds are still to be placed in a room. The total
+// (listings.beds) is the cap: a 3-bed listing places exactly 3 across its rooms
+// and every + greys out once they're all down.
+export function bedsLeftToPlace(totalBeds: number, rooms: Room[]): number {
+    return Math.max(0, Math.floor(totalBeds || 0) - deriveCounts(rooms).beds);
 }
