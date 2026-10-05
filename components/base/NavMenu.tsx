@@ -107,13 +107,6 @@ const NavMenu = ({
                                     <li className={itemClass}>
                                         <BookingsLink />
                                     </li>
-                                    {/* Third, next to Bookings, not seventh
-                                        under Co-hosts: services are a host's
-                                        second revenue line and belong beside
-                                        the first, above the operational items. */}
-                                    <li className={itemClass}>
-                                        <Link href='/services'>Services</Link>
-                                    </li>
                                     <li className={itemClass}>
                                         <Link href='/dashboard/calendar'>Calendar</Link>
                                     </li>
@@ -129,11 +122,11 @@ const NavMenu = ({
                                     <li className={itemClass}>
                                         <MessagesLink />
                                     </li>
-                                    {/* A host travels too — their own stays and
-                                        experiences live here, same as any guest. */}
-                                    <li className={itemClass}>
-                                        <Link href='/trips'>Your trips</Link>
-                                    </li>
+                                    {/* No "Services" or "Your trips" here: like
+                                        Airbnb's hosting menu, this is the host's
+                                        work. Services live in the site footer,
+                                        and trips belong to travelling mode —
+                                        both reached by switching out of hosting. */}
                                 </>
                             ) : providerView ? (
                                 /* A provider's menu is their business, not a

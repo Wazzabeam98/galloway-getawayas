@@ -3,22 +3,25 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { HAS_BOOKINGS_MESSAGE, listingsWithRecords, photosToRemove } from '@/lib/listingRemoval';
+import { HAS_BOOKINGS_MESSAGE, clearUnpaidRecords, listingsWithPaidRecords, photosToRemove } from '@/lib/listingRemoval';
 
 export const dynamic = 'force-dynamic';
 
 const BUCKET = process.env.NEXT_PUBLIC_S3_BUCKET || 'listings';
 
-// Deleting a listing for good. Only one that has never had a booking — see
-// lib/listingRemoval for the rule and why. Anything booked is hidden instead,
-// through /api/listings/visibility.
+// Deleting a listing for good. Only one that has never taken money — see
+// lib/listingRemoval for the rule and why. A listing with a paid booking is
+// hidden instead, through /api/listings/visibility.
 //
 // Owner only. A co-host can hide a listing (that can be undone); deleting it
 // cannot be, so it is never delegated — the same line lib/access draws.
 //
-// Order: refuse if there is any booking, delete the row (the database refuses
-// too if one has landed since — bookings.listing_id is ON DELETE RESTRICT),
-// and only then remove the photos, so a refused delete never loses an image.
+// Order: refuse if there is a paid booking; clear the never-paid rows that
+// still reference the listing (abandoned/cancelled checkouts that took no
+// money), which the foreign key would otherwise refuse the delete over; delete
+// the row (the database refuses too if a paid row has landed since —
+// bookings.listing_id is ON DELETE RESTRICT); and only then remove the photos,
+// so a refused delete never loses an image.
 export async function POST(request: Request) {
     let reporterId: string | null = null;
     try {
@@ -61,10 +64,17 @@ export async function POST(request: Request) {
             );
         }
 
-        const booked = await listingsWithRecords(admin, [listingId]);
-        if (booked.has(listingId)) {
+        const paid = await listingsWithPaidRecords(admin, [listingId]);
+        if (paid.has(listingId)) {
             return NextResponse.json({ ok: false, mustHide: true, error: HAS_BOOKINGS_MESSAGE }, { status: 409 });
         }
+
+        // No paid booking, so there is no record to keep — but the foreign keys
+        // refuse the delete while any booking or order row still points at the
+        // listing, paid or not. Clear the never-paid rows (and only those)
+        // first. A paid row can't be here (just checked) and one landing in
+        // between is left for the foreign key below.
+        await clearUnpaidRecords(admin, listingId);
 
         const { data: gone, error: deleteError } = await admin
             .from('listings')
