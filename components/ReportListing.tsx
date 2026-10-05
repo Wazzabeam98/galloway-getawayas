@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Flag, X } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { REPORT_REASONS, REPORT_DETAILS_MAX, reasonLabel, type ReportReasonKey } from '@/lib/listingReports';
+import { reasonsFor, REPORT_DETAILS_MAX, reasonLabel, type ReportReasonKey } from '@/lib/listingReports';
 
 // "Report this listing" — the guest-facing half of the report flow, mirroring
 // Airbnb's: a muted flag link at the foot of the listing that opens a modal,
@@ -112,7 +112,7 @@ export default function ReportListing({
                                     This won&apos;t be shared with the host.
                                 </p>
                                 <div className="space-y-1">
-                                    {REPORT_REASONS.map((r) => (
+                                    {reasonsFor(type).map((r) => (
                                         <label
                                             key={r.key}
                                             className="flex items-center gap-3 py-2.5 px-1 cursor-pointer text-slate-800"
@@ -145,7 +145,7 @@ export default function ReportListing({
                         {step === 'detail' && (
                             <>
                                 <h3 className="font-bold text-lg text-slate-900 pr-8">
-                                    {reason ? reasonLabel(reason) : 'Tell us more'}
+                                    {reason ? reasonLabel(reason, type) : 'Tell us more'}
                                 </h3>
                                 <p className="text-sm text-slate-500 mt-1 mb-4">
                                     Tell us what to look at. This won&apos;t be shared with the host.

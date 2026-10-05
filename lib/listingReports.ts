@@ -30,8 +30,28 @@ export const REPORT_DETAILS_MAX = 2000;
 
 const REASON_KEYS = new Set(REPORT_REASONS.map((r) => r.key));
 
-export function reasonLabel(key: string): string {
-    const found = REPORT_REASONS.find((r) => r.key === key);
+// What a report is about: a holiday let ('listing'), a guest experience or a
+// trade profile (both service_providers rows).
+export type ReportTarget = 'listing' | 'experience' | 'trade';
+
+// One reason is worded by what is being reported. "It's not a real place to
+// stay" only fits a holiday let; an experience is "not a real experience" and a
+// trade "not a real business" (Airbnb words its experience report the same way).
+// The stored key is the same for all three, so the queue and old reports never
+// depend on the wording.
+const NOT_REAL: Record<ReportTarget, string> = {
+    listing: 'It’s not a real place to stay',
+    experience: 'It’s not a real experience',
+    trade: 'It’s not a real business',
+};
+
+/** The reasons to offer for this kind of report, in Airbnb's order. */
+export function reasonsFor(target: ReportTarget = 'listing'): Array<{ key: ReportReasonKey; label: string }> {
+    return REPORT_REASONS.map((r) => (r.key === 'not_real_place' ? { key: r.key, label: NOT_REAL[target] || NOT_REAL.listing } : r));
+}
+
+export function reasonLabel(key: string, target: ReportTarget = 'listing'): string {
+    const found = reasonsFor(target).find((r) => r.key === key);
     return found ? found.label : key;
 }
 
