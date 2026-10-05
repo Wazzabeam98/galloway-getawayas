@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import AutoTextarea from '@/components/AutoTextarea';
 import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
 import { addressLineLabel } from '@/lib/propertyTypes';
 import { listingLocation } from '@/lib/places';
@@ -179,7 +180,7 @@ export function NeighbourhoodCard({ text, onSave }: { text: string; onSave: (tex
                         the doorstep. Shown under the map. Keep it about the surroundings, not the
                         house itself (the description covers that).
                     </p>
-                    <textarea
+                    <AutoTextarea
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         rows={6}
