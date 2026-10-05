@@ -6,6 +6,9 @@ import {
     durationLabel, durationSummary, yearsLabel, capacityLabel, fromPriceLabel,
 } from '@/components/marketplace/present';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
+import MeetYourHost from '@/components/MeetYourHost';
+import ReviewsSummary from '@/components/ReviewsSummary';
+import AboutThisPlace from '@/components/AboutThisPlace';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
 import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, ShieldCheck, Accessibility, Car, Check, ShoppingBag, Utensils, Package, Truck } from 'lucide-react';
@@ -43,12 +46,19 @@ function phaseIcon(icon: StepIcon) {
 // notice). A plain server component. Rules: first name only, no ratings/counts,
 // no address before payment.
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel, reviews, menu, itemsMenu, sticky,
+    p, backHref, backLabel, panel, reviews, menu, itemsMenu, sticky, responsiveness,
 }: {
     p: MpProvider;
     backHref: string;
     backLabel: string;
     panel: React.ReactNode;
+    // The provider's response rate / typical reply time, worked out server-side
+    // from their orders and message threads (lib/hostResponsiveness →
+    // providerResponsiveness). Passed ONLY by the public listing page; when it's
+    // present the full "Meet your host" card (the cottage's MeetYourHost) is shown
+    // in place of the compact host block. Other pages (against a stay, the order
+    // page) leave it out and keep the compact block.
+    responsiveness?: { responseRatePercent: number; typicalLabel: string };
     // The desktop section bar (Airbnb's, the cottage's ListingStickyHeader) +
     // the phone's behaviour below the gallery. Passed only by the public bookable
     // listing — not the paused page (no booking) nor the against-a-stay variant.
@@ -117,6 +127,12 @@ export default function ExperienceListingBody({
 
     const years = yearsLabel(p.yearsExperience);
     const hasAbout = Boolean(years || p.qualifications || p.recognition);
+    // The host's first name for the MeetYourHost card; "your host" when they show
+    // no name (never a bare surname — byline is already first-name-only).
+    const hostFirstName = p.byline ? capitializeFirst(p.byline) : 'your host';
+    // The provider's trade credentials MeetYourHost has no slot for (their years in
+    // the trade, training, recognition) — kept beneath the card so they aren't lost.
+    const hasCredentials = Boolean(years || p.qualifications || p.recognition);
 
     const facts: { icon: React.ReactNode; value: string; label: string }[] = [];
     if (p.byline) facts.push({ icon: <User className="h-5 w-5 text-slate-700" aria-hidden />, value: p.byline, label: proTitle || 'Your host' });
@@ -189,8 +205,13 @@ export default function ExperienceListingBody({
                             {shapeCue(p.shape)}
                         </span>
 
+                        {/* The lead description (deduped against "What happens" so the
+                            same paragraph never prints twice), with the cottage's
+                            clamp + Show-more dialog (AboutThisPlace): clamped until
+                            opened, the whole thing in a dialog. No heading — the
+                            listing title is right above it. */}
                         {intro ? (
-                            <p className="mt-5 whitespace-pre-line text-base md:text-lg leading-relaxed text-slate-700">{intro}</p>
+                            <AboutThisPlace text={intro} title={null} className="mt-5" />
                         ) : null}
 
                         {facts.length > 0 && (
@@ -213,7 +234,11 @@ export default function ExperienceListingBody({
                             <section className="mt-8 border-t border-slate-200 pt-6">{menu}</section>
                         ) : null}
 
-                        {hasAbout && (
+                        {/* The compact host block — kept for the pages that don't
+                            pass responsiveness (against a stay, the order page). The
+                            public listing shows the full "Meet your host" card
+                            (MeetYourHost) full-width at the foot instead. */}
+                        {!responsiveness && hasAbout && (
                             <section className="mt-8 border-t border-slate-200 pt-6">
                                 <div className="flex items-center gap-3">
                                     {p.headshot ? (
@@ -466,20 +491,27 @@ export default function ExperienceListingBody({
                             </section>
                         ) : (
                             <section id="reviews" className="mt-8 border-t border-slate-200 pt-8 scroll-mt-24">
-                                <h2 className="flex items-center gap-2 text-xl md:text-2xl font-bold text-slate-900">
-                                    {reviews.avg !== null ? (
-                                        <>
-                                            <ReviewStars value={Math.round(reviews.avg)} size={18} />
-                                            {reviews.avg.toFixed(1)} · {reviews.count} review{reviews.count > 1 ? 's' : ''}
-                                        </>
-                                    ) : (
-                                        <>{reviews.count} review{reviews.count > 1 ? 's' : ''}</>
-                                    )}
-                                </h2>
-                                {reviews.avg === null && (
-                                    <p className="-mt-1 mb-5 text-sm text-slate-600">
-                                        An overall score appears once this experience has {MIN_PUBLIC_REVIEWS} reviews.
-                                    </p>
+                                {/* Once the score is public, the cottage's reviews
+                                    summary — the overall rating with its 5-to-1 bars.
+                                    No category scores (an experience has none): with no
+                                    categoryAverages and rating-only rows, ReviewsSummary
+                                    renders just the overall block. Below the threshold
+                                    the words still show, with no score. */}
+                                {reviews.avg !== null ? (
+                                    <ReviewsSummary
+                                        reviews={reviews.items.map((r) => ({ rating: r.rating }))}
+                                        ratingAvg={reviews.avg}
+                                        ratingCount={reviews.count}
+                                    />
+                                ) : (
+                                    <>
+                                        <h2 className="text-xl md:text-2xl font-bold text-slate-900">
+                                            {reviews.count} review{reviews.count > 1 ? 's' : ''}
+                                        </h2>
+                                        <p className="-mt-1 mb-5 text-sm text-slate-600">
+                                            An overall score appears once this experience has {MIN_PUBLIC_REVIEWS} reviews.
+                                        </p>
+                                    </>
                                 )}
                                 <ShowAllReviews initial={4} className="mt-5 space-y-5">
                                     {reviews.items.map((r) => (
@@ -503,6 +535,36 @@ export default function ExperienceListingBody({
                                 </ShowAllReviews>
                             </section>
                         )
+                    )}
+
+                    {/* "Meet your host", the cottage's card (MeetYourHost) — full
+                        width at the foot so it's landscape on desktop, stacked on a
+                        phone. Shown on the public listing (responsiveness passed);
+                        co-hosts left out (a provider has none). The trade credentials
+                        MeetYourHost has no slot for sit just beneath it. */}
+                    {responsiveness && (
+                        <>
+                            <MeetYourHost
+                                firstName={hostFirstName}
+                                avatarUrl={p.hostAvatar}
+                                verified={p.verified}
+                                bio={p.hostBio}
+                                sinceYear={p.hostSinceYear}
+                                monthsHosting={p.hostMonthsHosting}
+                                ratingAvg={reviews?.avg ?? 0}
+                                ratingCount={reviews?.count ?? 0}
+                                showScore={!!reviews && reviews.avg !== null}
+                                coHosts={[]}
+                                responseRatePercent={responsiveness.responseRatePercent}
+                                typicalLabel={responsiveness.typicalLabel}
+                            />
+                            {hasCredentials && (
+                                <div className="mt-6">
+                                    {years ? <p className="text-sm font-medium text-slate-700">{years}</p> : null}
+                                    <HostCredentials qualifications={p.qualifications} recognition={p.recognition} className="mt-3" />
+                                </div>
+                            )}
+                        </>
                     )}
 
                     <section className="mt-8 border-t border-slate-200 pt-8">
