@@ -8,6 +8,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import ArrivalEditor, { WifiCard } from '@/components/ArrivalEditor';
 import CheckInTimesCard from '@/components/listing-editor/CheckInTimesCard';
+import CapacityCard from '@/components/listing-editor/CapacityCard';
 import LoginModel from '@/components/auth/LoginModel';
 import PropertyTypeCard from '@/components/listing-editor/PropertyTypeCard';
 import CheckInMethodCard from '@/components/listing-editor/CheckInMethodCard';
@@ -24,7 +25,7 @@ import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
 import { compressImage } from '@/lib/compressImage';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
-    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
+    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Check,
     Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
     Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
@@ -574,23 +575,6 @@ export default function EditListing() {
         }
     };
 
-    const Counter = ({ label, value, onChange, min = 0 }: { label: string; value: number; onChange: (v: number) => void; min?: number }) => (
-        <div className="flex items-center justify-between py-4 border-b">
-            <span className="font-medium text-slate-800">{label}</span>
-            <div className="flex items-center space-x-4">
-                <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min}
-                    className="w-8 h-8 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30">
-                    <Minus className="w-4 h-4" />
-                </button>
-                <span className="w-6 text-center">{value}</span>
-                <button type="button" onClick={() => onChange(value + 1)}
-                    className="w-8 h-8 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900">
-                    <Plus className="w-4 h-4" />
-                </button>
-            </div>
-        </div>
-    );
-
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-4">
@@ -683,8 +667,8 @@ export default function EditListing() {
 
             <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-10">
-                    {/* Sidebar */}
-                    <div className="space-y-1">
+                    {/* Sidebar — held in place on desktop, just below the sticky site header. */}
+                    <div className="space-y-1 md:sticky md:top-24 md:self-start">
                         {SECTIONS.map(({ key, label, icon: Icon }) => (
                             <button
                                 key={key}
@@ -727,13 +711,16 @@ export default function EditListing() {
                                 </section>
 
                                 <section>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-2">Capacity</h2>
-                                    <Counter label="Guests" value={guests} onChange={setGuests} min={1} />
-                                    {/* The total the rooms below are placed against;
-                                        it can't drop below the beds already placed. */}
-                                    <Counter label="Beds" value={beds} onChange={setBeds} min={Math.max(1, deriveCounts(sleeping).beds)} />
-                                    <Counter label="Bathrooms" value={bathrooms} onChange={setBathrooms} min={0.5} />
-                                    <div className="mt-6">
+                                    {/* Beds is the total the rooms below are placed
+                                        against; it can't drop below the beds already placed. */}
+                                    <CapacityCard
+                                        guests={guests}
+                                        beds={beds}
+                                        bathrooms={bathrooms}
+                                        minBeds={deriveCounts(sleeping).beds}
+                                        onSave={(g, b, ba) => { setGuests(g); setBeds(b); setBathrooms(ba); }}
+                                    />
+                                    <div className="mt-4">
                                         <SleepingArrangementsEditor
                                             rooms={sleeping}
                                             onChange={setSleeping}
