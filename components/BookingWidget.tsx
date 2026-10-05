@@ -937,7 +937,6 @@ export default function BookingWidget({
             maxDate={scrollMaxDate}
             disabledDates={disabledDates}
             disabledDay={stayDisabledDay}
-            note={stayNote}
             renderDay={renderDay}
             onClear={clearDates}
         />
@@ -1013,7 +1012,10 @@ export default function BookingWidget({
                                 </div>
                                 <div className="px-4 pt-1 pb-3 shrink-0">
                                     <h2 className="text-2xl font-bold text-slate-900 leading-tight">{dateHeading}</h2>
-                                    <p className="text-sm text-slate-500 mt-1">Add your travel dates for exact pricing</p>
+                                    {/* The minimum / maximum, under the heading as Airbnb's
+                                        sheet has it — below the scrolling months it would
+                                        sit out of sight. */}
+                                    <p className="text-sm text-slate-500 mt-1">{stayNote || 'Add your travel dates for exact pricing'}</p>
                                 </div>
                                 <div className="flex-1 min-h-0 overflow-hidden px-2">
                                     {sheetCalendarEl}
