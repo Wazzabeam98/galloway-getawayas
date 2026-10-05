@@ -128,6 +128,8 @@ export default function SleepingArrangementsEditor({
                             </button>
                         ))}
                     </div>
+                    {/* Every bed placed: nothing left to put in a new room. */}
+                    {bedsLeftToPlace(totalBeds, rooms) > 0 && (
                     <div className="mt-4 flex flex-wrap gap-2">
                         <button type="button" onClick={() => startNew('bedroom')}
                             className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400">
@@ -138,6 +140,7 @@ export default function SleepingArrangementsEditor({
                             <Plus className="h-4 w-4" /> Add common space
                         </button>
                     </div>
+                    )}
                 </EditorPanel>
             )}
 

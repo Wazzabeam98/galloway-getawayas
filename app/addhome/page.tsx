@@ -122,6 +122,7 @@ export default function AddHome() {
                 { name: 'Dedicated workspace', icon: Briefcase },
                 { name: 'EV charger', icon: Zap },
                 { name: 'Free parking on premises', icon: Car },
+                { name: 'Free street parking', icon: Car },
                 { name: 'Gym', icon: Dumbbell },
                 { name: 'Hot tub', icon: Bath },
                 { name: 'Indoor fireplace', icon: Flame },

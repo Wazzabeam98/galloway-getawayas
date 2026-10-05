@@ -76,7 +76,7 @@ export default function TradeDirectory() {
                 // without asking them to type an address we already hold.
                 const { data: mine } = await supabase
                     .from('listing_private')
-                    .select('id, title, location')
+                    .select('id, title, location, plot_band, storey_band')
                     .eq('host_id', session.user.id)
                     .order('created_at', { ascending: true });
                 setListings(mine || []);

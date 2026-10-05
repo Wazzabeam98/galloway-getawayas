@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import ArrivalEditor from '@/components/ArrivalEditor';
+import ArrivalEditor, { WifiCard } from '@/components/ArrivalEditor';
+import CheckInTimesCard from '@/components/listing-editor/CheckInTimesCard';
 import LoginModel from '@/components/auth/LoginModel';
 import PropertyTypeCard from '@/components/listing-editor/PropertyTypeCard';
 import CheckInMethodCard from '@/components/listing-editor/CheckInMethodCard';
@@ -20,8 +21,6 @@ import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import SleepingArrangementsEditor from '@/components/SleepingArrangementsEditor';
 import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, type Room } from '@/lib/sleeping';
 import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
-import GuestBookableHere from '@/components/GuestBookableHere';
-import { PLOT_BANDS, STOREY_BANDS } from '@/lib/serviceProviders';
 import { compressImage } from '@/lib/compressImage';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
@@ -68,6 +67,7 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
             { name: 'Dedicated workspace', icon: Briefcase },
             { name: 'EV charger', icon: Zap },
             { name: 'Free parking on premises', icon: Car },
+            { name: 'Free street parking', icon: Car },
             { name: 'Gym', icon: Dumbbell },
             { name: 'Hot tub', icon: Bath },
             { name: 'Indoor fireplace', icon: Flame },
@@ -99,56 +99,6 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
 ];
 
 
-
-// One choice from three, for the facts the services side needs. Shared by both
-// so a third one later is a call rather than another copy of this markup.
-//
-// Radio-style buttons rather than a <select>: the options are sentences, and a
-// dropdown hides two of the three at the moment somebody is choosing between
-// them. "Not said" is a real state and stays reachable — a host who has not
-// decided should be able to leave it, and clear it again.
-function BandChoice({
-    label,
-    options,
-    value,
-    onChange,
-}: {
-    label: string;
-    options: readonly { key: string; label: string }[];
-    value: string;
-    onChange: (v: string) => void;
-}) {
-    return (
-        <div>
-            <div className="text-sm font-semibold text-slate-900 mb-2">{label}</div>
-            <div className="space-y-2">
-                {options.map((o) => {
-                    const on = value === o.key;
-                    return (
-                        <button
-                            key={o.key}
-                            type="button"
-                            onClick={() => onChange(on ? '' : o.key)}
-                            aria-pressed={on}
-                            className={`w-full text-left rounded-xl border px-4 py-3 text-sm transition ${
-                                on
-                                    ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900'
-                                    : 'border-slate-300 text-slate-700 hover:border-slate-400'
-                            }`}
-                        >
-                            {o.label}
-                        </button>
-                    );
-                })}
-            </div>
-            {!value && (
-                <p className="text-xs text-slate-500 mt-2">
-                    Not said yet. They cannot price a visit here until you pick one.
-                </p>
-            )}
-        </div>
-    );
-}
 
 const SECTIONS = [
     { key: 'basics', label: 'Basics & guests', icon: LayoutGrid },
@@ -214,8 +164,6 @@ export default function EditListing() {
     // arrangements, or from its bedroom count when it has none yet.
     const [sleeping, setSleeping] = useState<Room[]>([]);
     const [neighbourhood, setNeighbourhood] = useState('');
-    const [plotBand, setPlotBand] = useState<string>('');
-    const [storeyBand, setStoreyBand] = useState<string>('');
     const [amenities, setAmenities] = useState<string[]>([]);
     const [photos, setPhotos] = useState<Photo[]>([]);
     const [coverIndex, setCoverIndex] = useState(0);
@@ -344,8 +292,6 @@ export default function EditListing() {
                 setSleeping(existing.length ? existing : roomsFromBedroomCount(listing.bedrooms ?? 1));
             }
             setNeighbourhood(listing.neighbourhood || '');
-            setPlotBand(listing.plot_band || '');
-            setStoreyBand(listing.storey_band || '');
             setAmenities(listing.amenities || []);
             setPhotos((listing.images || []).map((path: string) => ({ kind: 'existing', path })));
             setNewListingPromo(listing.new_listing_promo ?? true);
@@ -567,8 +513,6 @@ export default function EditListing() {
                     beds,
                     sleeping_arrangements: hasSleeping ? cleanRooms : (original?.sleeping_arrangements ?? []),
                     bathrooms,
-                    plot_band: plotBand || null,
-                    storey_band: storeyBand || null,
                     amenities,
                     new_listing_promo: newListingPromo,
                     last_minute_discount: lastMinuteDiscount,
@@ -736,14 +680,6 @@ export default function EditListing() {
                 </div>
             )}
 
-            {/* Read-only: what a guest staying here can book. Owner only — a
-                moderator editing someone else's listing is not the host the
-                endpoint answers to. Same gate as the guest's trip page. */}
-            {!moderating && listingId && (
-                <div className="mb-8">
-                    <GuestBookableHere listingId={listingId} />
-                </div>
-            )}
 
             <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-10">
@@ -779,16 +715,15 @@ export default function EditListing() {
                                         <CheckInMethodCard listingId={listingId} method={checkInMethod} onChange={setCheckInMethod} />
                                     )}
 
-                                    {/* Parking, wifi, what3words. Saved on its own
-                                        secure route, never on this form's Save, and
-                                        none of it gates publishing. */}
-                                    {listingId && (
-                                        <div className="pt-4">
-                                            <h3 className="font-semibold text-slate-900 mb-1">Arrival details</h3>
-                                            <p className="text-sm text-slate-500 mb-4">The way to the door and the way in, shown to a guest on their Getting-there screen.</p>
-                                            <ArrivalEditor listingId={listingId} />
-                                        </div>
-                                    )}
+                                    <CheckInTimesCard
+                                        start={checkinStart}
+                                        end={checkinEnd}
+                                        checkout={checkoutTime}
+                                        onSave={(start, end, checkout) => { setCheckinStart(start); setCheckinEnd(end); setCheckoutTime(checkout); }}
+                                    />
+
+                                    {/* Saved on the arrival route, not this form's Save. */}
+                                    {listingId && <WifiCard listingId={listingId} />}
                                 </section>
 
                                 <section>
@@ -808,39 +743,6 @@ export default function EditListing() {
                                     </div>
                                 </section>
 
-                                {/* Asked once, and only because the services side
-                                    cannot work them out. Bedrooms above already
-                                    carry the cleaning and waste bands; nothing on
-                                    a listing says how big the garden is or how
-                                    high the windows go.
-
-                                    Both optional: a blank one means that trade
-                                    cannot quote for this property yet, which is a
-                                    prompt when they first look, not a blocked
-                                    save. */}
-                                <section>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-1">For local services</h2>
-                                    <p className="text-sm text-slate-500 mb-5">
-                                        Two things a gardener or window cleaner needs before they can price a
-                                        visit. Answer once and they both quote from it.
-                                    </p>
-
-                                    <BandChoice
-                                        label="The garden or grounds"
-                                        options={PLOT_BANDS}
-                                        value={plotBand}
-                                        onChange={setPlotBand}
-                                    />
-
-                                    <div className="mt-6">
-                                        <BandChoice
-                                            label="How high the windows go"
-                                            options={STOREY_BANDS}
-                                            value={storeyBand}
-                                            onChange={setStoreyBand}
-                                        />
-                                    </div>
-                                </section>
                             </div>
                         )}
 
@@ -884,7 +786,7 @@ export default function EditListing() {
                                             Guests will see <span className="font-medium text-slate-700">{buildLocation(locTown, locRegion) || 'your town and region'}</span>.
                                         </p>
                                         {/* Saved on the arrival route, not this form's Save. */}
-                                        {listingId && <ArrivalEditor listingId={listingId} part="directions" />}
+                                        {listingId && <ArrivalEditor listingId={listingId} />}
                                     </div>
                                 </section>
 
@@ -1316,26 +1218,6 @@ export default function EditListing() {
                                                 </div>
                                             </div>
                                         )}
-                                    </div>
-                                </div>
-
-                                <h3 className="font-semibold text-slate-800 mt-8 mb-3">Check-in and checkout times</h3>
-                                <div className="grid grid-cols-3 gap-3 max-w-lg">
-                                    <div>
-                                        <label className="text-xs text-slate-500">Check-in from</label>
-                                        <input type="time" value={checkinStart} onChange={(e) => setCheckinStart(e.target.value)}
-                                            className="w-full p-2.5 border rounded-lg text-sm mt-1" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-slate-500">Check-in until</label>
-                                        <input type="time" value={checkinEnd} onChange={(e) => setCheckinEnd(e.target.value)}
-                                            className="w-full p-2.5 border rounded-lg text-sm mt-1" />
-                                        <p className="text-xs text-slate-400 mt-1">Leave blank for no set end.</p>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-slate-500">Checkout by</label>
-                                        <input type="time" value={checkoutTime} onChange={(e) => setCheckoutTime(e.target.value)}
-                                            className="w-full p-2.5 border rounded-lg text-sm mt-1" />
                                     </div>
                                 </div>
 

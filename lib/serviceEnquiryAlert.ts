@@ -45,6 +45,7 @@ import {
 import { logError } from '@/lib/logError';
 import { sendSms, emergencySms, toE164 } from '@/lib/sms';
 import { tradeLabel } from '@/lib/serviceProviders';
+import { propertyAnswerLabel, propertyQuestionFor } from '@/lib/propertyQuestions';
 import {
     faultLabels,
     snapshotLine,
@@ -87,6 +88,9 @@ function jobRows(enquiry: any, listing: any): Array<{ label: string; value: stri
     if (faults.length) {
         rows.push({ label: "What's wrong", value: escapeHtml(faults.join(', ')) });
     }
+    // The garden size or window height, for the two trades that price on it.
+    const answer = propertyAnswerLabel(enquiry.trade, listing);
+    if (answer) rows.push({ label: propertyQuestionFor(enquiry.trade)!.rowLabel, value: escapeHtml(answer) });
     // "Asked for", never "Booked for". Nothing here knows whether he is free
     // that day and nothing holds the window — see requestedWhen.
     const asked = requestedWhen(enquiry);

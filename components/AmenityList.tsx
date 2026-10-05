@@ -13,6 +13,7 @@ const DECIDES_ON = [
     'Hot tub',
     'Wifi',
     'Free parking on premises',
+    'Free street parking',
     'Pets allowed',
     'Pool',
     'Waterfront',
