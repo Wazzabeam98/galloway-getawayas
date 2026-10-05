@@ -43,7 +43,6 @@ export default function AddHome() {
     // Listing form state
     const [title, setTitle] = useState('');
     const [price, setPrice] = useState('');
-    const [country, setCountry] = useState('United Kingdom');
     const [city, setCity] = useState('');
     const [description, setDescription] = useState('');
     const [homeCategories, setHomeCategories] = useState<string[]>([]);
@@ -790,15 +789,11 @@ export default function AddHome() {
                                 <label className="text-xs text-slate-500 font-semibold uppercase">Town / city</label>
                                 <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full p-3 border rounded-xl mt-1" required />
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs text-slate-500 font-semibold uppercase">Postcode</label>
-                                    <input type="text" value={postcode} onChange={(e) => setPostcode(e.target.value)} className="w-full p-3 border rounded-xl mt-1" required />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-slate-500 font-semibold uppercase">Country</label>
-                                    <input type="text" value={country} onChange={(e) => setCountry(e.target.value)} className="w-full p-3 border rounded-xl mt-1" />
-                                </div>
+                            {/* No Country box: every listing is in the UK. Nothing stored
+                                it, and the listing page states GB itself. */}
+                            <div>
+                                <label className="text-xs text-slate-500 font-semibold uppercase">Postcode</label>
+                                <input type="text" value={postcode} onChange={(e) => setPostcode(e.target.value)} className="w-full p-3 border rounded-xl mt-1" required />
                             </div>
                         </div>
                     </div>
