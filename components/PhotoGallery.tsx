@@ -22,15 +22,19 @@ export default function PhotoGallery({
     images,
     title,
     area,
+    kind = 'self-catering accommodation',
 }: {
     images: string[];
     title: string;
     area?: string;
+    // What the place is, for the first photo's alt. Cottages keep the default;
+    // an experience passes its own word ("foraging walk"), which is not a stay.
+    kind?: string;
 }) {
     const place = (area || '').trim() || 'Dumfries & Galloway';
     const describe = (n: number) =>
         n === 1
-            ? `${title}, self-catering accommodation in ${place}`
+            ? `${title}, ${kind} in ${place}`
             : `${title} in ${place} — photo ${n}`;
     const [open, setOpen] = useState(false);
     const [current, setCurrent] = useState(0);   // mobile carousel index, for the counter
