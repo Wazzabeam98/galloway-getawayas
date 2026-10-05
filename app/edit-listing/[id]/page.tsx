@@ -6,10 +6,11 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import ArrivalEditor, { WifiCard, What3wordsCard } from '@/components/ArrivalEditor';
+import { WifiCard, What3wordsCard, DirectionsCard } from '@/components/ArrivalEditor';
 import CheckInTimesCard from '@/components/listing-editor/CheckInTimesCard';
 import CapacityCard from '@/components/listing-editor/CapacityCard';
 import TitleCard from '@/components/listing-editor/TitleCard';
+import { HowGuestsBookCard, CancellationPolicyCard } from '@/components/listing-editor/BookingCards';
 import AutoTextarea from '@/components/AutoTextarea';
 import {
     NightlyPriceCard, WeekendPriceCard, DiscountsCard, CleaningFeeCard,
@@ -37,7 +38,7 @@ import {
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
     Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
     LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange,
-    RefreshCw, ShieldAlert, X,
+    RefreshCw, ShieldAlert, X, DoorOpen,
 } from 'lucide-react';
 
 
@@ -110,6 +111,9 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
 
 const SECTIONS = [
     { key: 'basics', label: 'Basics & guests', icon: LayoutGrid },
+    // Airbnb's Arrival guide: how guests get in, the times, wifi, directions
+    // and what3words.
+    { key: 'arrival', label: 'Arrival', icon: DoorOpen },
     { key: 'location', label: 'Location', icon: MapPin },
     { key: 'description', label: 'Description', icon: FileText },
     { key: 'amenities', label: 'Amenities', icon: Sparkles },
@@ -117,8 +121,8 @@ const SECTIONS = [
     // Every amount the host charges, in one place (the fees, deposit and
     // discounts used to sit under Booking settings and a Discounts tab).
     { key: 'rates', label: 'Pricing & fees', icon: PoundSterling },
-    // Cancellation, instant book and stay length all
-    // gathered here so they're findable and changeable in one place, rather than
+    // How guests book and the cancellation policy (stay length is on the
+    // calendar's Availability tab) so they're findable and changeable in one place, rather than
     // scattered across Rates / Availability / Cancellation (and, for instant
     // book, only on the Account page).
     { key: 'booking', label: 'Booking settings', icon: CalendarRange },
@@ -197,8 +201,6 @@ export default function EditListing() {
     // for editing your own.
     const [moderating, setModerating] = useState(false);
     const [moderationReason, setModerationReason] = useState('');
-    const [minNights, setMinNights] = useState('1');
-    const [maxNights, setMaxNights] = useState('');
     const [eventsAllowed, setEventsAllowed] = useState(false);
     const [smokingAllowed, setSmokingAllowed] = useState(false);
     const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
@@ -318,8 +320,6 @@ export default function EditListing() {
             setExtraGuestAfter(listing.extra_guest_after != null ? String(listing.extra_guest_after) : '');
             setMonthlyDiscount(listing.monthly_discount ?? false);
             setIcalToken(listing.ical_token || '');
-            setMinNights(String(listing.min_nights ?? 1));
-            setMaxNights(listing.max_nights ? String(listing.max_nights) : '');
             setEventsAllowed(listing.events_allowed ?? false);
             setSmokingAllowed(listing.smoking_allowed ?? false);
             setQuietHoursEnabled(listing.quiet_hours_enabled ?? false);
@@ -467,10 +467,6 @@ export default function EditListing() {
             return;
         }
 
-        if (maxNights && Number(maxNights) < Number(minNights || 1)) {
-            setFormError('Maximum nights can\'t be less than minimum nights.');
-            return;
-        }
 
         setSubmitting(true);
         try {
@@ -541,8 +537,6 @@ export default function EditListing() {
                     last_minute_discount: lastMinuteDiscount,
                     weekly_discount: weeklyDiscount,
                     monthly_discount: monthlyDiscount,
-                    min_nights: Math.max(1, Number(minNights) || 1),
-                    max_nights: maxNights ? Number(maxNights) : null,
                     events_allowed: eventsAllowed,
                     smoking_allowed: smokingAllowed,
                     quiet_hours_enabled: quietHoursEnabled,
@@ -715,23 +709,6 @@ export default function EditListing() {
                                         privacyType={privacyType}
                                         onSave={(type, listingType) => { setPropertyType(type); setPrivacyType(listingType); }}
                                     />
-
-                                    {/* The method saves with the listing; the door
-                                        code inside its panel saves on its own route —
-                                        it is not on the listing row. */}
-                                    {listingId && (
-                                        <CheckInMethodCard listingId={listingId} method={checkInMethod} onChange={setCheckInMethod} />
-                                    )}
-
-                                    <CheckInTimesCard
-                                        start={checkinStart}
-                                        end={checkinEnd}
-                                        checkout={checkoutTime}
-                                        onSave={(start, end, checkout) => { setCheckinStart(start); setCheckinEnd(end); setCheckoutTime(checkout); }}
-                                    />
-
-                                    {/* Saved on the arrival route, not this form's Save. */}
-                                    {listingId && <WifiCard listingId={listingId} />}
                                 </section>
 
                                 <section>
@@ -757,6 +734,31 @@ export default function EditListing() {
                             </div>
                         )}
 
+                        {activeSection === 'arrival' && (
+                            <section className="space-y-4">
+                                    {/* The method saves with the listing; the door
+                                        code inside its panel saves on its own route —
+                                        it is not on the listing row. */}
+                                    {listingId && (
+                                        <CheckInMethodCard listingId={listingId} method={checkInMethod} onChange={setCheckInMethod} />
+                                    )}
+
+                                    <CheckInTimesCard
+                                        start={checkinStart}
+                                        end={checkinEnd}
+                                        checkout={checkoutTime}
+                                        onSave={(start, end, checkout) => { setCheckinStart(start); setCheckinEnd(end); setCheckoutTime(checkout); }}
+                                    />
+
+                                    {/* Saved on the arrival route, not this form's Save. */}
+                                    {listingId && <WifiCard listingId={listingId} />}
+                                    {/* Directions and what3words save on the arrival route too;
+                                        check-in messages and the arrival screen read them there. */}
+                                    {listingId && <DirectionsCard listingId={listingId} />}
+                                    {listingId && <What3wordsCard listingId={listingId} />}
+                            </section>
+                        )}
+
                         {activeSection === 'location' && (
                             <div className="space-y-4">
                                 <section>
@@ -772,18 +774,12 @@ export default function EditListing() {
                                             onSave={(t, st, pc) => { setLocTown(t); setStreetAddress(st); setLocPostcode(pc); }}
                                         />
                                         <LocationSharingCard precise={showPrecise} onSave={setShowPrecise} />
-                                        <div className="pt-2">
-                                        {/* Saved on the arrival route, not this form's Save. */}
-                                        {listingId && <ArrivalEditor listingId={listingId} />}
-                                        </div>
                                     </div>
                                 </section>
 
                                 <section className="space-y-4">
                                     <NearbyCard nearby={nearby} onSave={setNearby} />
                                     <NeighbourhoodCard text={neighbourhood} onSave={setNeighbourhood} />
-                                    {/* Saved on the arrival route, not this form's Save. */}
-                                    {listingId && <What3wordsCard listingId={listingId} />}
                                 </section>
                             </div>
                         )}
@@ -889,125 +885,19 @@ export default function EditListing() {
                         )}
 
                         {activeSection === 'booking' && (
-                            <section className="max-w-lg space-y-8">
-                                <div>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-1">Booking settings</h2>
-                                    <p className="text-sm text-slate-500">How guests book, how long a stay can be, and how flexible you are on cancellation. Each starts at a sensible default — change any of them here.</p>
-                                </div>
-
-                                {/* How guests book — moved here from the Account page. */}
-                                <div>
-                                    <h3 className="font-semibold text-slate-900 mb-1">How guests book</h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => setInstantBook(false)}
-                                            className={`text-left px-4 py-3.5 rounded-xl border transition ${!instantBook ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}
-                                        >
-                                            <div className={`text-sm ${!instantBook ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>Request to book</div>
-                                            <div className="text-xs text-slate-500 mt-0.5">You approve each booking before the guest is charged.</div>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setInstantBook(true)}
-                                            className={`text-left px-4 py-3.5 rounded-xl border transition ${instantBook ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}
-                                        >
-                                            <div className={`text-sm ${instantBook ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>Instant book</div>
-                                            <div className="text-xs text-slate-500 mt-0.5">Guests book and pay straight away, no approval needed.</div>
-                                        </button>
-                                    </div>
-                                    {instantBook && (
-                                        <label className="mt-3 flex items-center justify-between gap-4 rounded-xl border p-4">
-                                            <span>
-                                                <span className="block text-sm font-medium text-slate-800">Require a phone number</span>
-                                                <span className="block text-xs text-slate-500">Guests add a verified phone before they can instant-book.</span>
-                                            </span>
-                                            <button
-                                                type="button"
-                                                aria-checked={instantBookRequiresPhone}
-                                                role="switch"
-                                                onClick={() => setInstantBookRequiresPhone(!instantBookRequiresPhone)}
-                                                className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors ${instantBookRequiresPhone ? 'bg-emerald-700' : 'bg-slate-300'}`}
-                                            >
-                                                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${instantBookRequiresPhone ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                                            </button>
-                                        </label>
-                                    )}
-                                </div>
-
-                                {/* Stay length. */}
-                                <div>
-                                    <h3 className="font-semibold text-slate-900 mb-1">Stay length</h3>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-800 mb-1">Minimum nights</label>
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                value={minNights}
-                                                onChange={(e) => setMinNights(e.target.value)}
-                                                onBlur={() => {
-                                                    const n = Number(minNights);
-                                                    if (!minNights || isNaN(n) || n < 1) setMinNights('1');
-                                                }}
-                                                className="w-full p-3 border rounded-xl text-sm"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-800 mb-1">Maximum nights</label>
-                                            <input
-                                                type="number"
-                                                min={Number(minNights) || 1}
-                                                value={maxNights}
-                                                onChange={(e) => setMaxNights(e.target.value)}
-                                                placeholder="No limit"
-                                                className="w-full p-3 border rounded-xl text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <p className="text-xs text-slate-400 mt-2">Leave maximum nights blank for no limit.</p>
-                                </div>
-
-                                {/* Cancellation policy — the four tiers. */}
-                                <div>
-                                    <h3 className="font-semibold text-slate-900 mb-1">Cancellation policy</h3>
-                                    <p className="text-xs text-slate-500 mb-3">
-                                        All refunds exclude the Galloway Getaways service fee. Cleaning fees are always returned in full, since the clean doesn&apos;t happen.
-                                    </p>
-                                    <div className="space-y-3">
-                                        {CANCELLATION_POLICIES.map((policy) => (
-                                            <button
-                                                key={policy.key}
-                                                type="button"
-                                                onClick={() => setCancellationPolicy(policy.key)}
-                                                className={`w-full text-left p-4 rounded-2xl border-2 transition ${cancellationPolicy === policy.key ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
-                                            >
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="font-semibold text-slate-900">{policy.key}</span>
-                                                    {cancellationPolicy === policy.key && <Check className="w-4 h-4 text-slate-900" />}
-                                                </div>
-                                                <ul className="text-xs text-slate-500 list-disc pl-4 space-y-0.5">
-                                                    {policy.bullets.map((b) => <li key={b}>{b}</li>)}
-                                                </ul>
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="mt-4 p-4 border rounded-2xl flex items-start justify-between gap-4">
-                                        <div>
-                                            <div className="font-semibold text-slate-900 text-sm mb-1">Non-refundable option</div>
-                                            <p className="text-xs text-slate-500">
-                                                For short-term stays, guests pay 10% less in exchange for you keeping your full payout if they cancel.
-                                            </p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setNonRefundableOption(!nonRefundableOption)}
-                                            className={`flex-shrink-0 w-11 h-6 rounded-full relative transition ${nonRefundableOption ? 'bg-slate-900' : 'bg-slate-300'}`}
-                                        >
-                                            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${nonRefundableOption ? 'left-5' : 'left-0.5'}`} />
-                                        </button>
-                                    </div>
-                                </div>
+                            <section className="space-y-4">
+                                <h2 className="text-xl font-bold text-slate-900">Booking settings</h2>
+                                <HowGuestsBookCard
+                                    instantBook={instantBook}
+                                    requiresPhone={instantBookRequiresPhone}
+                                    onSave={(ib, phone) => { setInstantBook(ib); setInstantBookRequiresPhone(phone); }}
+                                />
+                                <CancellationPolicyCard
+                                    policies={CANCELLATION_POLICIES}
+                                    policy={cancellationPolicy}
+                                    nonRefundable={nonRefundableOption}
+                                    onSave={(pol, nr) => { setCancellationPolicy(pol); setNonRefundableOption(nr); }}
+                                />
                             </section>
                         )}
 
