@@ -684,7 +684,7 @@ export default function EditListing() {
                     {/* Content */}
                     <div>
                         {activeSection === 'basics' && (
-                            <div className="space-y-10">
+                            <div className="space-y-4">
                                 <section className="space-y-4">
                                     <PropertyTypeCard
                                         propertyType={propertyType}
