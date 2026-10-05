@@ -1333,7 +1333,7 @@ export default function AccountSettings() {
                                                 <div className="text-sm font-semibold text-slate-900 mb-2">Here&apos;s what happens</div>
                                                 <ul className="text-xs text-slate-700 space-y-1.5 mb-4 list-disc pl-5">
                                                     <li>Your personal details — your name, contact details, address and photos — are permanently removed, and you won&apos;t be able to sign back in.</li>
-                                                    <li>Reviews you&apos;ve written and messages you&apos;ve sent stay visible, shown as from a deleted user, so other people&apos;s history isn&apos;t torn up.</li>
+                                                    <li>Reviews you&apos;ve written stay visible, shown as from a deleted user. The messages you&apos;ve sent are removed; the replies other people wrote stay in their own inbox, so their history isn&apos;t torn up.</li>
                                                     <li>Your booking and payment records are kept — the law requires us to hold them for six years — but they&apos;re no longer linked to an account you can use.</li>
                                                     <li>This can&apos;t be undone. If you have any upcoming or pending bookings, cancel them first, as a guest or a host.</li>
                                                 </ul>

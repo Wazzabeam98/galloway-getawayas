@@ -99,8 +99,10 @@ export default function PrivacyPage() {
                     back if you ask. Or you can <strong>delete</strong> it permanently. When you delete,
                     we remove your profile and personal details, but we must keep booking and payment
                     records for the six-year period above, along with anything we need to resolve a
-                    dispute or meet a legal obligation. Reviews you wrote and messages you sent stay
-                    visible, shown as from a deleted user, so other people&apos;s records stay intact.
+                    dispute or meet a legal obligation. Reviews you wrote stay visible, shown as from
+                    a deleted user. The messages you sent are removed from your conversations; the
+                    replies other people wrote to you stay in their own inbox, so their records are
+                    intact.
                 </p>
 
                 <h2 className="text-xl font-bold text-slate-900 pt-4">Your rights</h2>

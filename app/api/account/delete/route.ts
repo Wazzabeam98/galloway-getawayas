@@ -17,8 +17,17 @@ import { logError } from '@/lib/logError';
 // with the paths gathered before the columns were nulled. Because the scrub
 // unpublishes the listings before this route deletes their photos, no listing
 // is ever left public with its images gone.
+//
+// Avatars and provider images are written with a timestamp in the key
+// (avatars/<uid>-<ts>.jpg, providers/...-<uid>-<ts>...), so a column only ever
+// names the CURRENT one and older versions pile up. We therefore also sweep the
+// avatars/ and providers/ folders for anything carrying this user's id, not just
+// the keys still referenced. Listing photos live at the bucket root with no id
+// in the key, so those can only come from listings.images (gathered below), and
+// admin-removed copies may sit in the private `listings-removed` bucket too.
 
 const BUCKET = process.env.NEXT_PUBLIC_S3_BUCKET || 'listings';
+const REMOVED_BUCKET = 'listings-removed';
 
 export async function POST() {
     try {
@@ -51,6 +60,20 @@ export async function POST() {
             .from('listings').select('images').eq('host_id', uid);
         (listings || []).forEach((l: any) => { if (Array.isArray(l.images)) l.images.forEach(add); });
 
+        // Sweep the id-stamped folders for every version this user ever uploaded,
+        // not only the key a column still points at.
+        const sweep = async (folder: string, owned: (name: string) => boolean) => {
+            try {
+                const { data: objs } = await admin.storage.from(BUCKET)
+                    .list(folder, { limit: 1000 });
+                (objs || []).forEach((o: any) => { if (o?.name && owned(o.name)) paths.add(`${folder}/${o.name}`); });
+            } catch (e) {
+                await logError('anonymise: storage list failed', e, { path: '/api/account/delete' });
+            }
+        };
+        await sweep('avatars', (name) => name.startsWith(`${uid}-`));
+        await sweep('providers', (name) => name.includes(uid));
+
         // 2. Scrub the account. Runs the live-bookings guard first, so if the
         //    user still has upcoming/pending bookings this raises and NOTHING —
         //    including their images — is touched.
@@ -61,10 +84,18 @@ export async function POST() {
 
         // 3. Remove the images. The account is already anonymised, so a storage
         //    error is logged, not surfaced as a failure — the erasure stands.
+        //    Listing photos may also have been moved to the private
+        //    `listings-removed` bucket by an admin takedown, so clear them there
+        //    under the same keys.
         if (paths.size) {
-            const { error: rmError } = await admin.storage.from(BUCKET).remove(Array.from(paths));
+            const keys = Array.from(paths);
+            const { error: rmError } = await admin.storage.from(BUCKET).remove(keys);
             if (rmError) {
                 await logError('anonymise: storage removal failed', rmError, { path: '/api/account/delete' });
+            }
+            const { error: rmRemovedError } = await admin.storage.from(REMOVED_BUCKET).remove(keys);
+            if (rmRemovedError) {
+                await logError('anonymise: removed-bucket removal failed', rmRemovedError, { path: '/api/account/delete' });
             }
         }
 
