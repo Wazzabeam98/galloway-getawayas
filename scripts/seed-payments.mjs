@@ -284,6 +284,16 @@ async function createListing(host, title, patch = {}) {
         max_guests: 4,
         status: 'published',
         cancellation_policy: 'Moderate',
+        // Discounts off. Since #334 the switches change the price, and the new-
+        // listing one only while a listing has fewer than 3 confirmed stays —
+        // so whether these listings were discounted depended on what earlier
+        // runs had left behind, and the price-change, oversell and race
+        // scenarios passed or failed on that. They are not about discounts; a
+        // scenario that is can turn one on in its own patch.
+        new_listing_promo: false,
+        last_minute_discount: false,
+        weekly_discount: false,
+        monthly_discount: false,
         ...patch,
     });
     return listing;

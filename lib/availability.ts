@@ -102,6 +102,11 @@ export function rangeHitsBlockedNight(blocked: Set<string>, from: string, to: st
 export interface GuestCalendar {
     blockedNights: string[];
     priceOverrides: Record<string, number>;
+    // For lib/stayRules: the calendar's per-date "min nights" (for a stay
+    // checking in that day), and the other stays here and on other platforms,
+    // which preparation time keeps nights free around.
+    minNightsOverrides: Record<string, number>;
+    stayRanges: { start: string; end: string }[];
 }
 
 export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
@@ -112,7 +117,7 @@ export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
             .eq('listing_id', listingId)
             .in('status', ['pending', 'confirmed']),
         admin.from('calendar_overrides')
-            .select('date, is_blocked, price_override')
+            .select('date, is_blocked, price_override, min_nights_override')
             .eq('listing_id', listingId),
         admin.from('listing_ical_feeds')
             .select('events')
@@ -125,12 +130,21 @@ export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
     const nights = blockedNightsFromEvents(events);
 
     const priceOverrides: Record<string, number> = {};
+    const minNightsOverrides: Record<string, number> = {};
     ((overrides.data as any[]) || []).forEach((o) => {
         if (o.is_blocked) nights.add(o.date);
         if (o.price_override) priceOverrides[o.date] = Number(o.price_override);
+        if (o.min_nights_override) minNightsOverrides[String(o.date).slice(0, 10)] = Number(o.min_nights_override);
     });
 
-    return { blockedNights: Array.from(nights).sort(), priceOverrides };
+    return {
+        blockedNights: Array.from(nights).sort(),
+        priceOverrides,
+        minNightsOverrides,
+        stayRanges: events
+            .filter((e) => e && e.start && e.end)
+            .map((e) => ({ start: String(e.start).slice(0, 10), end: String(e.end).slice(0, 10) })),
+    };
 }
 
 // Which of these listings are taken on another platform for these dates.

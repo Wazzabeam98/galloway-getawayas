@@ -14,6 +14,7 @@ import { formatGBP } from '@/lib/formatMoney';
 import { requireGuestTerms } from '@/lib/agreementRecords';
 import { anonGuestTermsMetadata } from '@/lib/agreements';
 import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
+import { stayProblem, prepBufferNights, prepDays, londonTodayKey } from '@/lib/stayRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('status, title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount')
+            .select('status, title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, min_nights, max_nights, advance_notice, preparation_time, availability_window')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
@@ -119,15 +120,17 @@ export async function POST(request: Request) {
         // ------------------------------------------------------------------
         const { data: overrideRows } = await admin
             .from('calendar_overrides')
-            .select('date, is_blocked, price_override')
+            .select('date, is_blocked, price_override, min_nights_override')
             .eq('listing_id', booking.listing_id);
 
         const overrides: Record<string, number> = {};
         const blockedDates: Record<string, boolean> = {};
+        const minNightsOverrides: Record<string, number> = {};
         (overrideRows || []).forEach(function (row: any) {
             const key = String(row.date).split('T')[0];
             if (row.price_override) overrides[key] = Number(row.price_override);
             if (row.is_blocked) blockedDates[key] = true;
+            if (row.min_nights_override) minNightsOverrides[key] = Number(row.min_nights_override);
         });
 
         // The new-listing promo rides on the first 3 bookings this listing has
@@ -170,6 +173,46 @@ export async function POST(request: Request) {
                 { ok: false, error: 'That is more guests than this place allows.' },
                 { status: 400 }
             );
+        }
+
+        // ------------------------------------------------------------------
+        // The host's Availability settings — minimum and maximum nights,
+        // advance notice, preparation time and the booking window — checked
+        // here, not only greyed out in the calendar, so dates edited into the
+        // link cannot get past them. The same rules the booking card uses
+        // (lib/stayRules). Preparation time keeps nights free around the
+        // OTHER stays: bookings here (this one excluded) and on other platforms.
+        // ------------------------------------------------------------------
+        let prepBuffer: Set<string> | null = null;
+        if (prepDays(listing) > 0) {
+            const [{ data: otherStays }, { data: feedRows }] = await Promise.all([
+                admin.from('bookings')
+                    .select('check_in, check_out')
+                    .eq('listing_id', booking.listing_id)
+                    .in('status', ['pending', 'confirmed'])
+                    .neq('id', booking.id),
+                admin.from('listing_ical_feeds')
+                    .select('events')
+                    .eq('listing_id', booking.listing_id),
+            ]);
+            const ranges: { start: string; end: string }[] = [];
+            (otherStays || []).forEach((b: any) => ranges.push({ start: String(b.check_in).slice(0, 10), end: String(b.check_out).slice(0, 10) }));
+            (feedRows || []).forEach((f: any) => (f.events || []).forEach((e: any) => {
+                if (e && e.start && e.end) ranges.push({ start: String(e.start).slice(0, 10), end: String(e.end).slice(0, 10) });
+            }));
+            prepBuffer = prepBufferNights(ranges, prepDays(listing));
+        }
+
+        const ruleProblem = stayProblem({
+            listing,
+            checkIn: String(booking.check_in).slice(0, 10),
+            checkOut: String(booking.check_out).slice(0, 10),
+            todayKey: londonTodayKey(),
+            minOverrides: minNightsOverrides,
+            prepBuffer,
+        });
+        if (ruleProblem) {
+            return NextResponse.json({ ok: false, error: ruleProblem }, { status: 400 });
         }
 
         // The price shown in the browser is what the guest agreed to. If it no

@@ -20,6 +20,11 @@ import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
+import {
+    stayProblem, prepBufferNights, prepDays, minNightsFor, maxNightsFor, earliestCheckInKey,
+    latestCheckOutKey, stayLengthNote, londonTodayKey, nightsBetweenKeys,
+    type StayRulesListing, type StayRange,
+} from '@/lib/stayRules';
 
 interface Props {
     listingId: string;
@@ -53,6 +58,11 @@ interface Props {
     // to fetch them after mount, and a month showed wide open until they came.
     blockedNights: string[];
     priceOverrides: Record<string, number>;
+    // The calendar's Availability settings (lib/stayRules), the per-date
+    // minimum overrides, and the other stays preparation time keeps clear of.
+    stayRules?: StayRulesListing;
+    minNightsOverrides?: Record<string, number>;
+    stayRanges?: StayRange[];
     // From the server too: whether the signed-in viewer still owes the Guest
     // Terms. Null when the page did not know (signed out at render).
     needsGuestTerms: boolean | null;
@@ -126,6 +136,7 @@ function Counter({
 function CottageCalendar({
     hasSelection, calendarKey, ranges, shownMonth, onChange, minDate, maxDate,
     disabledDates, renderDay, onClear, scroll = false, scrollHeight = 480, showClear = true,
+    disabledDay, note,
 }: {
     hasSelection: boolean;
     calendarKey: number;
@@ -145,6 +156,10 @@ function CottageCalendar({
     scroll?: boolean;
     scrollHeight?: number;
     showClear?: boolean;
+    // Checkout dates the host's minimum / maximum rule out, while a guest is
+    // choosing one, and the short note that says why ("3-night minimum").
+    disabledDay?: (date: Date) => boolean;
+    note?: string;
 }) {
     const calendarRef = useRef<HTMLDivElement>(null);
 
@@ -201,6 +216,7 @@ function CottageCalendar({
                 minDate={minDate}
                 maxDate={maxDate}
                 disabledDates={disabledDates}
+                disabledDay={disabledDay}
                 // In scroll mode the scrollable range is the whole min→max span;
                 // `months` only scales the viewport height (calendarHeight ×
                 // months), so it stays 1 and the viewport is the sheet height.
@@ -232,6 +248,9 @@ function CottageCalendar({
                 inputRanges={[]}
                 dayContentRenderer={renderDay}
             />
+            {note && (
+                <p className={'px-3 text-xs text-slate-500 ' + (scroll ? 'pt-2' : 'pb-1')}>{note}</p>
+            )}
             {showClear && (
                 // Bottom right, as on Airbnb's calendar.
                 <div className="flex justify-end px-3 pb-3">
@@ -260,6 +279,9 @@ export default function BookingWidget({
     cancellationPolicy,
     blockedNights,
     priceOverrides,
+    stayRules = {},
+    minNightsOverrides = {},
+    stayRanges = [],
     needsGuestTerms: serverNeedsGuestTerms,
     showScore = false,
     ratingAvg = 0,
@@ -270,7 +292,13 @@ export default function BookingWidget({
     const [loadingSession, setLoadingSession] = useState(true);
     // Fixed for the life of the page: every night taken here, blocked by the
     // host, or taken on another platform, as the server read it before paint.
-    const [disabledDates] = useState<Date[]>(() => blockedNights.map(dateFromKey));
+    // Preparation time adds the nights it keeps free either side of every
+    // other stay (lib/stayRules) — greyed out like any taken night.
+    const [disabledDates] = useState<Date[]>(() => {
+        const keys = new Set(blockedNights);
+        prepBufferNights(stayRanges, prepDays(stayRules)).forEach((k) => keys.add(k));
+        return Array.from(keys).map(dateFromKey);
+    });
 
     // Which nights are already taken, as 'yyyy-mm-dd', so the day renderer can
     // answer without comparing Date objects on every cell.
@@ -417,11 +445,13 @@ export default function BookingWidget({
     const [guestTicked, setGuestTicked] = useState(false);
     const [guestTermsError, setGuestTermsError] = useState('');
 
-    const maxBookableDate = (() => {
-        const map: Record<string, number> = { '3 months': 3, '6 months': 6, '9 months': 9, '12 months': 12 };
-        const months = availabilityWindow ? map[availabilityWindow] : undefined;
-        return months ? addMonths(new Date(), months) : undefined;
-    })();
+    // The host's Availability settings, from the same rules checkout applies.
+    // Advance notice moves the first pickable day; the window ends the last.
+    const rules: StayRulesListing = { ...stayRules, availability_window: stayRules.availability_window ?? availabilityWindow };
+    const todayKey = londonTodayKey();
+    const firstBookableDate = keyToDate(earliestCheckInKey(rules, todayKey)) || new Date();
+    const latestKey = latestCheckOutKey(rules, todayKey);
+    const maxBookableDate = latestKey ? keyToDate(latestKey) || undefined : undefined;
 
     useEffect(() => {
         const load = async () => {
@@ -481,6 +511,22 @@ export default function BookingWidget({
     const discount = quote.discount;
     const total = quote.total;
 
+    // While the guest is choosing a checkout (a check-in is picked and the
+    // range is still one day), the dates the minimum or maximum rule out are
+    // greyed, as on Airbnb. The minimum is the check-in date's own, if the
+    // host set one for that day on the calendar.
+    const startKey = dateToKey(dateRange.startDate);
+    const choosingCheckout = !!(startKey && dateToKey(dateRange.endDate) === startKey);
+    const minForStay = minNightsFor(rules, minNightsOverrides, startKey || null);
+    const maxForStay = maxNightsFor(rules);
+    const stayDisabledDay = (date: Date) => {
+        if (!choosingCheckout || !startKey) return false;
+        const n = nightsBetweenKeys(startKey, dateToKey(date) as string);
+        if (n <= 0) return false;
+        return n < minForStay || (maxForStay !== null && n > maxForStay);
+    };
+    const stayNote = stayLengthNote(minForStay, maxForStay);
+
     const handleSelect = (ranges: RangeKeyDict) => {
         setError('');
         setDateRange(ranges.selection);
@@ -522,8 +568,18 @@ export default function BookingWidget({
             setError('Please select your check-in and check-out dates.');
             return;
         }
-        if (maxBookableDate && dateRange.endDate > maxBookableDate) {
-            setError('This host only accepts bookings within their availability window. Please pick earlier dates.');
+        // The host's minimum and maximum nights, advance notice, preparation
+        // time and booking window — the same check checkout makes.
+        const ruleProblem = stayProblem({
+            listing: rules,
+            checkIn: dateToKey(dateRange.startDate) as string,
+            checkOut: dateToKey(dateRange.endDate) as string,
+            todayKey,
+            minOverrides: minNightsOverrides,
+            prepBuffer: prepBufferNights(stayRanges, prepDays(rules)),
+        });
+        if (ruleProblem) {
+            setError(ruleProblem);
             return;
         }
         if (totalGuests > maxGuests) {
@@ -684,9 +740,11 @@ export default function BookingWidget({
             ranges={calendarRanges}
             shownMonth={shownMonth}
             onChange={handleSelect}
-            minDate={new Date()}
+            minDate={firstBookableDate}
             maxDate={maxBookableDate}
             disabledDates={disabledDates}
+            disabledDay={stayDisabledDay}
+            note={stayNote}
             renderDay={renderDay}
             onClear={clearDates}
         />
@@ -884,7 +942,7 @@ export default function BookingWidget({
 
     // The scrolling calendar needs a finite end. Use the host's availability
     // window if they set one; otherwise cap the phone picker 18 months out
-    // (the server still enforces the real window, if any).
+    // (checkout enforces the real window, if any — lib/stayRules).
     const scrollMaxDate = maxBookableDate || addMonths(new Date(), 18);
 
     const sheetCalendarEl = (
@@ -897,9 +955,10 @@ export default function BookingWidget({
             ranges={calendarRanges}
             shownMonth={shownMonth}
             onChange={handleSelect}
-            minDate={new Date()}
+            minDate={firstBookableDate}
             maxDate={scrollMaxDate}
             disabledDates={disabledDates}
+            disabledDay={stayDisabledDay}
             renderDay={renderDay}
             onClear={clearDates}
         />
@@ -975,7 +1034,10 @@ export default function BookingWidget({
                                 </div>
                                 <div className="px-4 pt-1 pb-3 shrink-0">
                                     <h2 className="text-2xl font-bold text-slate-900 leading-tight">{dateHeading}</h2>
-                                    <p className="text-sm text-slate-500 mt-1">Add your travel dates for exact pricing</p>
+                                    {/* The minimum / maximum, under the heading as Airbnb's
+                                        sheet has it — below the scrolling months it would
+                                        sit out of sight. */}
+                                    <p className="text-sm text-slate-500 mt-1">{stayNote || 'Add your travel dates for exact pricing'}</p>
                                 </div>
                                 <div className="flex-1 min-h-0 overflow-hidden px-2">
                                     {sheetCalendarEl}
