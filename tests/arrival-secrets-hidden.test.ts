@@ -1,10 +1,12 @@
 // The trip card must never carry an arrival SECRET.
 //
 // /api/trips feeds the trip card, which now holds the whole approach — the
-// address, times, a map point, what3words, the host's "last bit" directions and
-// parking. Those are card-safe: they are the host's own words for finding the
-// door, not a credential, so they belong on the card and this test expects them
-// there.
+// address, times, a map point, what3words and the host's "last bit" directions.
+// Those are card-safe: they are the host's own words for finding the door, not a
+// credential, so they belong on the card and this test expects them there.
+//
+// The old free-text parking note is NOT sent (Liam, 5 Oct 2026): hosts can no
+// longer edit it and parking is an amenity now. The stored column is left alone.
 //
 // The two secrets are the door CODE and the wifi PASSWORD. Those stay on the
 // Getting-there page, revealed only in its window. The route sends two booleans
@@ -78,7 +80,7 @@ test('the trip card API returns no door code and no wifi password, even when the
     assert.equal(typeof trip.arrival.hasWifi, 'boolean', 'hasWifi is a boolean, never a value');
 
     // And it DOES carry the card-safe approach — what3words, the address, and the
-    // host's own "last bit" directions and parking, which are not secrets.
+    // host's own "last bit" directions, which are not secrets.
     assert.equal(json.includes('///harbour.candle.brave'), true, 'what3words is card-safe and should be present');
     assert.equal(json.includes('Mill Road'), true, 'the address is card-safe and should be present');
     // Deliberately PRESENT (see the header): the last-bit directions were once
@@ -86,5 +88,6 @@ test('the trip card API returns no door code and no wifi password, even when the
     // was a decision, so flipping this line back to `false` should be a decision
     // too, not a reflex.
     assert.equal(json.includes(DIRECTIONS), true, 'the host’s last-bit directions are card-safe and belong on the card — a deliberate reclassification, not a leak');
-    assert.equal(trip.arrival.parking, 'gravel', 'parking is the host’s own words, card-safe');
+    assert.equal('parking' in trip.arrival, false, 'the old parking note is no longer sent — parking is an amenity now');
+    assert.equal(json.includes('gravel'), false, 'nor does its text reach the guest anywhere in the response');
 });

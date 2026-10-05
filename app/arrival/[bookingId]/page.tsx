@@ -13,7 +13,7 @@ import CopyField from '@/components/arrival/CopyField';
 export const dynamic = 'force-dynamic';
 
 // "Getting there" — now the SECRETS screen and nothing else. The whole approach
-// (where, the last bit, the times, parking, how you get in, the contact block,
+// (where, the last bit, the times, how you get in, the contact block,
 // the offline promise) lives on the trip card, which used to duplicate a near-
 // identical version of this page. What is left here is only the two things that
 // must not sit on a card a guest might leave open on a train: the door code and
