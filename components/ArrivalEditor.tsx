@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Eye, EyeOff, Loader2, Check } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
 import AutoTextarea from '@/components/AutoTextarea';
 
-// The host-facing editors for a listing's arrival details: the wifi card (Basics),
-// the "last bit" directions and the what3words card (Location). Every field is
+// The host-facing editors for a listing's arrival details — the wifi,
+// directions and what3words cards in the editor's Arrival section. Every field is
 // independently optional and none of it goes into publish validation. Reads and
 // writes go through /api/listings/arrival, which gates on can_listing and is the
 // only door to the grant-less table. The door code is edited by LockboxCode
@@ -119,7 +119,7 @@ export function WifiCard({ listingId }: { listingId: string }) {
     );
 }
 
-// "what3words" on a raised card at the foot of Location, the field behind it.
+// "what3words" on a raised card, the field behind it.
 export function What3wordsCard({ listingId }: { listingId: string }) {
     const arrival = useArrival(listingId);
     const [open, setOpen] = useState(false);
@@ -150,51 +150,35 @@ export function What3wordsCard({ listingId }: { listingId: string }) {
     );
 }
 
-// Under Location: the directions behind "+ Add directions".
-export default function ArrivalEditor({ listingId }: { listingId: string }) {
+// "Directions" — the "last bit" of the journey — on a raised card in the
+// editor's Arrival section, the field behind it.
+export function DirectionsCard({ listingId }: { listingId: string }) {
     const arrival = useArrival(listingId);
-    const [dirsOpen, setDirsOpen] = useState(false);
-    const [dirs, setDirs] = useState<string | null>(null);
-    const [saved, setSaved] = useState(false);
-
-    if (!arrival.loaded) return <div className="text-sm text-slate-400">Loading…</div>;
-
-    const dirsValue = dirs ?? arrival.base.arrival_directions ?? '';
-    const dirty = dirsValue !== (arrival.base.arrival_directions || '');
+    const [open, setOpen] = useState(false);
+    const [dirs, setDirs] = useState('');
 
     const save = async () => {
-        if (await arrival.save({ arrival_directions: dirsValue })) {
-            setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
-        }
+        if (await arrival.save({ arrival_directions: dirs })) setOpen(false);
     };
 
+    const summary = !arrival.loaded ? 'Loading…' : (arrival.base.arrival_directions || 'Not added yet');
+
     return (
-        <div className="space-y-4">
-            {!dirsOpen && !arrival.base.arrival_directions ? (
-                <button type="button" onClick={() => setDirsOpen(true)}
-                    className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">
-                    + Add directions
-                </button>
-            ) : (
-                <div>
-                    <label htmlFor="arrival-directions" className="block text-sm font-semibold text-slate-900 mb-1">Directions</label>
-                    <AutoTextarea id="arrival-directions" value={dirsValue} onChange={(e) => setDirs(e.target.value)} rows={3}
+        <>
+            <EditorCard title="Directions" summary={summary} onClick={() => { if (arrival.loaded) { setDirs(arrival.base.arrival_directions || ''); setOpen(true); } }} />
+            {open && (
+                <EditorPanel title="Directions" onClose={() => setOpen(false)}
+                    footer={
+                        <div className="flex items-center justify-end gap-3">
+                            {arrival.error && <span className="text-sm text-red-600">{arrival.error}</span>}
+                            <PanelSave onClick={save} disabled={arrival.saving} />
+                        </div>
+                    }>
+                    <AutoTextarea id="arrival-directions" aria-label="Directions" value={dirs} onChange={(e) => setDirs(e.target.value)} rows={3}
                         placeholder="Turn at the red postbox, the track is bumpy — park on the gravel by the blue door."
                         className={inputClass} />
-                </div>
+                </EditorPanel>
             )}
-
-            {(dirty || saved || arrival.error) && (
-                <div className="flex items-center gap-3">
-                    <button type="button" onClick={save} disabled={arrival.saving || !dirty}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                        {arrival.saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : null}
-                        {saved ? 'Saved' : 'Save'}
-                    </button>
-                    {arrival.error && <span className="text-sm text-red-600">{arrival.error}</span>}
-                </div>
-            )}
-        </div>
+        </>
     );
 }

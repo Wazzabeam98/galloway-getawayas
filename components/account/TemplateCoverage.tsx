@@ -205,7 +205,7 @@ export default function TemplateCoverage() {
                                 {data.missingCode.map((l: any) => (
                                     <li key={l.id}>
                                         <Link
-                                            href={'/edit-listing/' + l.id}
+                                            href={'/edit-listing/' + l.id + '?section=arrival'}
                                             className="text-sm font-semibold text-amber-900 underline hover:text-amber-950"
                                         >
                                             Set the code for {l.title}
