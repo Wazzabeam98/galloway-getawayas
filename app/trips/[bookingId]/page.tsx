@@ -174,7 +174,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
     let hostPhone: string | null = null;
     if (entitled && listing) {
         const [{ data: arr }, { data: codes }] = await Promise.all([
-            admin.from('listing_arrival').select('what3words, arrival_directions, parking_info, wifi_name').eq('listing_id', listing.id).maybeSingle(),
+            admin.from('listing_arrival').select('what3words, arrival_directions, wifi_name').eq('listing_id', listing.id).maybeSingle(),
             admin.from('listing_access_codes').select('listing_id').eq('listing_id', listing.id).maybeSingle(),
         ]);
         addressLines = [listing.street_address, [listing.postcode, listing.location].filter(Boolean).join(', ')].filter(Boolean) as string[];

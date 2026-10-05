@@ -103,7 +103,7 @@ export async function GET() {
 
     // Card-safe arrival detail, per trip — everything the Getting-there page used
     // to hold EXCEPT the two secrets: the address and a map point, the times,
-    // what3words, the host's "last bit" directions, parking, how you get in (the
+    // what3words, the host's "last bit" directions, how you get in (the
     // method, not the code), and the host's phone for the contact block. Read here
     // (service role) because the approach fields live in the grant-less
     // listing_arrival table.
@@ -133,9 +133,10 @@ export async function GET() {
                 .select('id, street_address, postcode, location, latitude, longitude, check_in_time, check_in_end_time, check_out_time, check_in_method')
                 .in('id', listingIds),
             // wifi_name (not the password) tells us whether there is wifi to show;
-            // arrival_directions and parking_info are the host's own words and are
-            // not secret — they belong on the card now.
-            admin.from('listing_arrival').select('listing_id, what3words, arrival_directions, parking_info, wifi_name').in('listing_id', listingIds),
+            // arrival_directions is the host's own words and is not secret — it
+            // belongs on the card. parking_info is no longer read: hosts can't
+            // edit it any more and parking is an amenity now (the column stays).
+            admin.from('listing_arrival').select('listing_id, what3words, arrival_directions, wifi_name').in('listing_id', listingIds),
             // Existence only — selecting the code would pull the secret into this
             // request, which is exactly what this route promises never to do.
             admin.from('listing_access_codes').select('listing_id').in('listing_id', listingIds),
@@ -179,7 +180,6 @@ export async function GET() {
                 checkOutTime: l.check_out_time,
                 what3words: av.what3words || null,
                 arrivalDirections: av.arrival_directions || null,
-                parking: av.parking_info || null,
                 checkInMethod: l.check_in_method || null,
                 // Built server-side by the shared rule: a pin, or a street
                 // address — never the town alone. null means no safe directions,
