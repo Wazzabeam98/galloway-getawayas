@@ -35,7 +35,10 @@ export function addressBlockerForPublish(
 ): string | null {
     const street = String(row.street_address || '').trim();
     const postcode = String(row.postcode || '').trim();
-    if (!street) return 'Add the street address before publishing — a booked guest needs somewhere to be sent.';
+    // A boat, campervan, tent, yurt or pod gives its pitch, berth or site name in
+    // this same line (lib/propertyTypes addressLineLabel), so the rule is unchanged
+    // and only the words say so.
+    if (!street) return 'Add the street address (or the pitch, berth or site name) before publishing — a booked guest needs somewhere to be sent.';
     if (!postcode) return 'Add a postcode before publishing.';
     if (!UK_POSTCODE.test(postcode)) return 'That postcode doesn’t look right — please check it before publishing.';
     return null;
@@ -162,7 +165,7 @@ export const PUBLISH_RULES: Rule[] = [
         // with no street is not something a guest can find or a court can serve.
         key: 'address',
         step: 3,
-        message: 'Please add the street address, so guests can find the place once they’ve booked.',
+        message: 'Please add the street address (or, for a boat, van, tent or pod, the pitch, berth or site name), so guests can find the place once they’ve booked.',
         failed: (l) => !text(l.street),
     },
     {

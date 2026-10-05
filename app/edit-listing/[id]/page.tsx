@@ -9,7 +9,8 @@ import Logo from '@/components/base/Logo';
 import LockboxCode from '@/components/LockboxCode';
 import ArrivalEditor from '@/components/ArrivalEditor';
 import LoginModel from '@/components/auth/LoginModel';
-import { categories } from '@/config/categories';
+import PropertyTypePicker from '@/components/PropertyTypePicker';
+import { addressLineLabel } from '@/lib/propertyTypes';
 import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
@@ -33,7 +34,6 @@ import {
     RefreshCw, Percent, ShieldAlert, X,
 } from 'lucide-react';
 
-const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
 
 const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; note?: string }[] }[] = [
     {
@@ -776,19 +776,7 @@ export default function EditListing() {
                             <div className="space-y-10">
                                 <section>
                                     <h2 className="text-xl font-bold text-slate-900 mb-4">Property type</h2>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                        {categories.map((item) => {
-                                            const Icon = ICON_MAP[item.icon] || HomeIcon;
-                                            const selected = propertyType === item.name;
-                                            return (
-                                                <button key={item.name} type="button" onClick={() => setPropertyType(item.name)}
-                                                    className={`p-4 rounded-2xl border-2 text-left transition ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                                    <Icon className="w-5 h-5 mb-2 text-slate-700" />
-                                                    <div className="font-semibold text-sm text-slate-900">{item.name}</div>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                    <PropertyTypePicker value={propertyType} onChange={setPropertyType} compact />
                                 </section>
 
                                 <section>
@@ -927,10 +915,13 @@ export default function EditListing() {
                                                 className="w-full p-3 border rounded-xl text-sm mt-1" />
                                         </div>
                                         <div>
-                                            <label htmlFor="edit-street" className="text-xs text-slate-500 font-semibold uppercase">Street address (private)</label>
+                                            <label htmlFor="edit-street" className="text-xs text-slate-500 font-semibold uppercase">{addressLineLabel(propertyType).label} (private)</label>
                                             <input id="edit-street" type="text" value={streetAddress} onChange={(e) => setStreetAddress(e.target.value)}
-                                                placeholder="e.g. 18 Dovecroft"
+                                                placeholder={addressLineLabel(propertyType).placeholder}
                                                 className="w-full p-3 border rounded-xl text-sm mt-1" />
+                                            {addressLineLabel(propertyType).hint && (
+                                                <p className="mt-1 text-xs text-slate-500">{addressLineLabel(propertyType).hint}</p>
+                                            )}
                                         </div>
                                         <div>
                                             <label htmlFor="edit-postcode" className="text-xs text-slate-500 font-semibold uppercase">Postcode (private)</label>
