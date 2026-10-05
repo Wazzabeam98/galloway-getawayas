@@ -9,7 +9,25 @@ import { Eye, EyeOff, Loader2, Check } from 'lucide-react';
 // publish validation. The door code sits beside this, edited by LockboxCode
 // through its own secure route. Reads and writes go through /api/listings/arrival,
 // which gates on can_listing and is the only door to the grant-less table.
-export default function ArrivalEditor({ listingId }: { listingId: string }) {
+//
+// `part` splits it the way Airbnb's Arrival guide does — "Directions and
+// parking" and "Wifi" are separate cards in the listing editor. Each instance
+// still sends only the fields it changed, so two of them on one page can never
+// overwrite each other. `onValues` hands the loaded and saved values up, for
+// the one-line summary on the editor's section card.
+export type ArrivalValues = Record<'arrival_directions' | 'parking_info' | 'wifi_name' | 'wifi_password' | 'what3words', string>;
+
+export default function ArrivalEditor({
+    listingId,
+    part = 'all',
+    onValues,
+}: {
+    listingId: string;
+    part?: 'all' | 'directions' | 'wifi';
+    onValues?: (v: ArrivalValues) => void;
+}) {
+    const showDirections = part === 'all' || part === 'directions';
+    const showWifi = part === 'all' || part === 'wifi';
     const [loaded, setLoaded] = useState(false);
     const [dirs, setDirs] = useState('');
     const [parking, setParking] = useState('');
@@ -46,8 +64,10 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
                 setW3w(vals.what3words);
                 setBase(vals);
                 setLoaded(true);
+                if (onValues) onValues(vals);
             })
             .catch(() => setLoaded(true));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [listingId]);
 
     async function save() {
@@ -72,7 +92,7 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
                 body: JSON.stringify(payload),
             });
             const d = await res.json();
-            if (d && d.ok) { setBase(current); setSaved(true); setTimeout(() => setSaved(false), 2000); }
+            if (d && d.ok) { setBase(current); if (onValues) onValues(current as ArrivalValues); setSaved(true); setTimeout(() => setSaved(false), 2000); }
             else setError((d && d.error) || 'Could not save.');
         } catch { setError('Could not save.'); }
         setSaving(false);
@@ -84,6 +104,7 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
 
     return (
         <div className="space-y-4">
+            {showDirections && (<>
             <div>
                 <label className="block text-sm font-semibold text-slate-900 mb-1">The last bit of the journey</label>
                 <p className="text-xs text-slate-500 mb-1.5">What sat-nav gets wrong — the turn it misses, the track, the door to look for. Your own words beat any form.</p>
@@ -96,7 +117,9 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
                 <label className="block text-sm font-semibold text-slate-900 mb-1">Parking</label>
                 <input value={parking} onChange={(e) => setParking(e.target.value)} placeholder="Space for two cars on the gravel" className={inputClass} />
             </div>
+            </>)}
 
+            {showWifi && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                     <label className="block text-sm font-semibold text-slate-900 mb-1">Wifi network</label>
@@ -112,23 +135,30 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
                     </div>
                 </div>
             </div>
+            )}
 
+            {showDirections && (
             <div>
                 <label className="block text-sm font-semibold text-slate-900 mb-1">what3words</label>
                 <input value={w3w} onChange={(e) => setW3w(e.target.value)} placeholder="///harbour.candle.brave" className={inputClass + ' sm:max-w-xs'} />
             </div>
+            )}
 
             <div className="flex items-center gap-3">
                 <button type="button" onClick={save} disabled={saving}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <Check className="h-4 w-4" /> : null}
-                    {saved ? 'Saved' : 'Save arrival details'}
+                    {saved ? 'Saved' : part === 'wifi' ? 'Save wifi' : part === 'directions' ? 'Save directions' : 'Save arrival details'}
                 </button>
                 {error && <span className="text-sm text-red-600">{error}</span>}
             </div>
 
             <p className="text-xs text-slate-400">
-                Every field is optional and none of it affects publishing. Guests see it on their Getting-there screen; the wifi password and the door code only show there, close to arrival.
+                {part === 'wifi'
+                    ? 'Optional. Guests see it on their Getting-there screen, close to arrival — never on the public listing.'
+                    : part === 'directions'
+                        ? 'Every field is optional and none of it affects publishing. Guests see it on their Getting-there screen once they have booked.'
+                        : 'Every field is optional and none of it affects publishing. Guests see it on their Getting-there screen; the wifi password and the door code only show there, close to arrival.'}
             </p>
         </div>
     );

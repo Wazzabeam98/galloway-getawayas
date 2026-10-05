@@ -5,8 +5,11 @@ import { createPortal } from 'react-dom';
 import {
     ClipboardList, ShieldCheck, CalendarClock, LogIn, LogOut, KeyRound, Users, PawPrint,
     PartyPopper, Cigarette, Moon, Info, BellRing, AlertTriangle, Wallet, Check, Minus,
-    X, ChevronRight,
+    X, ChevronRight, Video, Volume2, Waves, Mountain, Footprints, ShieldAlert,
 } from 'lucide-react';
+import {
+    SAFETY_DISCLOSURES, CHECKOUT_INSTRUCTIONS, cleanItems, labelFor, type ListingItem,
+} from '@/lib/listingDisclosures';
 import { formatGBP } from '@/lib/formatMoney';
 import { cancellationSummary } from '@/lib/cancellation';
 import { cancellationDisplay, CLEANING_FEE_NOTE } from '@/lib/cancellationDisplay';
@@ -34,6 +37,19 @@ type Props = {
     carbonMonoxideAlarm: boolean;
     damageDeposit: number;
     cancellationPolicy: string | null;
+    // listings.safety_disclosures / checkout_instructions — raw jsonb, cleaned here.
+    safetyDisclosures?: any;
+    checkoutInstructions?: any;
+};
+
+const DISCLOSURE_ICONS: Record<string, any> = {
+    security_cameras: Video,
+    noise_monitor: Volume2,
+    nearby_water: Waves,
+    heights: Mountain,
+    dangerous_animals: PawPrint,
+    pool_no_gate: Waves,
+    climbing_structure: Footprints,
 };
 
 // "15:00" — the 24-hour clock Airbnb UK uses. null/blank → ''.
@@ -50,6 +66,8 @@ export default function ThingsToKnow(props: Props) {
         smokingAllowed, quietHoursEnabled, quietHoursStart, quietHoursEnd, additionalRules,
         smokeAlarm, carbonMonoxideAlarm, damageDeposit, cancellationPolicy,
     } = props;
+    const disclosures: ListingItem[] = cleanItems(props.safetyDisclosures, SAFETY_DISCLOSURES);
+    const checkoutSteps: ListingItem[] = cleanItems(props.checkoutInstructions, CHECKOUT_INSTRUCTIONS);
 
     const [openCol, setOpenCol] = useState<null | 'rules' | 'safety' | 'cancel'>(null);
 
@@ -86,10 +104,14 @@ export default function ThingsToKnow(props: Props) {
         `Checkout before ${checkOutHM}`,
         `${maxGuests} guest${maxGuests === 1 ? '' : 's'} maximum`,
     ];
-    const safetyLines: string[] = [];
+    // Airbnb leads with what a guest most needs warning of — the cameras, the
+    // water, the drop — and then the alarms. Three lines at most; the rest is
+    // behind Show more.
+    const safetyLines: string[] = disclosures.map((d) => labelFor(SAFETY_DISCLOSURES, d.key));
     safetyLines.push(smokeAlarm ? 'Smoke alarm' : 'No smoke alarm reported');
     safetyLines.push(carbonMonoxideAlarm ? 'Carbon monoxide alarm' : 'No carbon monoxide alarm reported');
     if (damageDeposit > 0) safetyLines.push(`${formatGBP(damageDeposit)} damage deposit`);
+    safetyLines.splice(3);
     const cancelLines = dated ? [dated.headline] : policy.bullets.slice(0, 2);
 
     // ---- dialog bodies ----
@@ -127,10 +149,38 @@ export default function ThingsToKnow(props: Props) {
                     </Row>
                 )}
             </ul>
+            {checkoutSteps.length > 0 && (
+                <>
+                    <h4 className="mt-6 text-base font-semibold text-slate-900">Before you leave</h4>
+                    <ul className="mt-1">
+                        {checkoutSteps.map((c) => (
+                            <Row key={c.key} icon={LogOut}>
+                                {labelFor(CHECKOUT_INSTRUCTIONS, c.key)}
+                                {c.note && <span className="block text-slate-500 whitespace-pre-line">{c.note}</span>}
+                            </Row>
+                        ))}
+                    </ul>
+                </>
+            )}
         </>
     );
 
     const safetyDialog = (
+        <>
+        {disclosures.length > 0 && (
+            <>
+                <h4 className="text-base font-semibold text-slate-900">Safety considerations</h4>
+                <ul className="mt-1 mb-5">
+                    {disclosures.map((d) => (
+                        <Row key={d.key} icon={DISCLOSURE_ICONS[d.key] || ShieldAlert}>
+                            {labelFor(SAFETY_DISCLOSURES, d.key)}
+                            {d.note && <span className="block text-slate-500 whitespace-pre-line">{d.note}</span>}
+                        </Row>
+                    ))}
+                </ul>
+                <h4 className="text-base font-semibold text-slate-900">Safety devices</h4>
+            </>
+        )}
         <ul>
             <Row icon={BellRing}>
                 Smoke alarm{' '}
@@ -151,6 +201,7 @@ export default function ThingsToKnow(props: Props) {
                 </Row>
             )}
         </ul>
+        </>
     );
 
     const cancelDialog = (

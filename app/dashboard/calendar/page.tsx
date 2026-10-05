@@ -1,5 +1,6 @@
 'use client';
 
+import { ADVANCE_NOTICE_OPTIONS, PREP_TIME_OPTIONS, AVAILABILITY_WINDOW_OPTIONS } from '@/lib/availabilityOptions';
 import { PLATFORMS } from '@/lib/platforms';
 import { useEffect, useMemo, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -59,9 +60,6 @@ interface Work {
     window_to: string | null;
 }
 
-const ADVANCE_NOTICE_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '7 days'];
-const PREP_TIME_OPTIONS = ['None', '1 day', '2 days', '3 days'];
-const AVAILABILITY_WINDOW_OPTIONS = ['3 months', '6 months', '9 months', '12 months', 'All future dates'];
 
 export default function CalendarPage() {
     const supabase = createClientComponentClient();

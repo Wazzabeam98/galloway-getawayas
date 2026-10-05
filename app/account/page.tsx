@@ -17,6 +17,7 @@ import { toast } from 'react-toastify';
 import { getImageUrl, formatTime } from '@/lib/utils';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
+import { licenceStatusLabel } from '@/lib/stlLicence';
 import NotificationsSection from '@/components/account/NotificationsSection';
 import PaymentsSection from '@/components/account/PaymentsSection';
 import {
@@ -46,35 +47,6 @@ const SECTIONS = [
     { key: 'messaging', label: 'Messaging', icon: MessageCircle, ready: true },
     { key: 'bookings', label: 'Booking permissions', icon: CalendarCheck, ready: true },
 ];
-
-// Flags anything that would leave a listing advertised unlawfully.
-// Deliberately worded as a prompt, not legal advice.
-function licenceWarning(l: {
-    stl_licence_status: string | null;
-    stl_licence_number: string | null;
-    stl_licence_expiry: string | null;
-}): string | null {
-    const status = l.stl_licence_status || 'none';
-    const number = (l.stl_licence_number || '').trim();
-
-    if (status === 'none') {
-        return 'No licence details yet. Short-term lets in Scotland need a licence, and the number has to appear on the listing.';
-    }
-    if (status === 'licensed' && !number) {
-        return 'Add your licence number — it has to be shown on the listing.';
-    }
-    if (status === 'licensed' && !/^[A-Z]{3}[0-9]{5}$/.test(number)) {
-        return 'Scottish licence numbers are usually three letters followed by five digits, like ABC12345. Worth double-checking this one.';
-    }
-    if (l.stl_licence_expiry) {
-        const days = Math.round(
-            (new Date(l.stl_licence_expiry).getTime() - Date.now()) / 86400000
-        );
-        if (days < 0) return 'This licence has expired. Renew it before taking further bookings.';
-        if (days < 60) return `This licence expires in ${days} days. Renewals can take a while — worth starting now.`;
-    }
-    return null;
-}
 
 // "4 selected", or "All listings" when nothing specific is chosen.
 function describeListings(ids: string[] | null | undefined): string {
@@ -1541,69 +1513,22 @@ export default function AccountSettings() {
                                                     </a>
                                                 </div>
 
-                                                {/* Scottish short-term let licence */}
-                                                <div className="border rounded-xl p-4 mb-5 bg-slate-50">
-                                                    <div className="font-semibold text-slate-900 text-sm mb-1">
-                                                        Short-term let licence
+                                                {/* The Scottish short-term let licence moved to the listing
+                                                    editor (Pricing and booking), next to the rest of
+                                                    what a listing needs before it can take bookings.
+                                                    One line here so a host who looks for it here
+                                                    still finds it. */}
+                                                <div className="border rounded-xl p-4 mb-5 flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <div className="font-semibold text-slate-900 text-sm">Short-term let licence</div>
+                                                        <p className="text-xs text-slate-500 mt-0.5">
+                                                            {licenceStatusLabel(l.stl_licence_status)}
+                                                            {l.stl_licence_number ? ' · ' + l.stl_licence_number : ''}
+                                                        </p>
                                                     </div>
-                                                    <p className="text-xs text-slate-500 mb-3">
-                                                        Required by law in Scotland. Your licence number is shown on this
-                                                        listing, as the rules require it to appear on any advert.
-                                                    </p>
-
-                                                    <div className="flex flex-wrap gap-3">
-                                                        <label className="text-xs text-slate-600 flex-1 min-w-[150px]">
-                                                            Status
-                                                            <select
-                                                                value={l.stl_licence_status || 'none'}
-                                                                disabled={busy}
-                                                                onChange={(e) => updateListingBooking(l.id, { stl_licence_status: e.target.value })}
-                                                                className="w-full border rounded-lg p-2 text-sm mt-1 bg-white disabled:opacity-50"
-                                                            >
-                                                                <option value="none">Not provided</option>
-                                                                <option value="licensed">Licensed</option>
-                                                                <option value="applied">Application submitted</option>
-                                                                <option value="exempt">Exempt</option>
-                                                            </select>
-                                                        </label>
-
-                                                        <label className="text-xs text-slate-600 flex-1 min-w-[150px]">
-                                                            Licence number
-                                                            <input
-                                                                type="text"
-                                                                defaultValue={l.stl_licence_number || ''}
-                                                                disabled={busy}
-                                                                placeholder="ABC12345"
-                                                                maxLength={20}
-                                                                onBlur={(e) => {
-                                                                    const next = e.target.value.trim().toUpperCase();
-                                                                    if (next !== (l.stl_licence_number || '')) {
-                                                                        updateListingBooking(l.id, { stl_licence_number: next });
-                                                                    }
-                                                                }}
-                                                                className="w-full border rounded-lg p-2 text-sm mt-1 bg-white disabled:opacity-50"
-                                                            />
-                                                        </label>
-
-                                                        <label className="text-xs text-slate-600 flex-1 min-w-[150px]">
-                                                            Expires
-                                                            <input
-                                                                type="date"
-                                                                defaultValue={(l.stl_licence_expiry || '').slice(0, 10)}
-                                                                disabled={busy}
-                                                                onBlur={(e) => {
-                                                                    if (e.target.value !== (l.stl_licence_expiry || '')) {
-                                                                        updateListingBooking(l.id, { stl_licence_expiry: e.target.value || null });
-                                                                    }
-                                                                }}
-                                                                className="w-full border rounded-lg p-2 text-sm mt-1 bg-white disabled:opacity-50"
-                                                            />
-                                                        </label>
-                                                    </div>
-
-                                                    {licenceWarning(l) && (
-                                                        <p className="text-xs text-amber-600 mt-3">{licenceWarning(l)}</p>
-                                                    )}
+                                                    <a href={`/edit-listing/${l.id}?section=licence`} className="flex-none text-[13px] font-semibold text-emerald-700 hover:underline">
+                                                        Edit &rarr;
+                                                    </a>
                                                 </div>
 
                                                 {/* How guests book */}

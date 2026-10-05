@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Plus, Minus, Trash2, BedDouble, Check } from 'lucide-react';
 import { BED_TYPES, deriveCounts, type Room, type Bed } from '@/lib/sleeping';
 import { getImageUrl } from '@/lib/utils';
@@ -37,6 +38,8 @@ export default function SleepingArrangementsEditor({
     photos?: string[];
 }) {
     const counts = deriveCounts(rooms);
+    // Which common space's name is being edited, if any.
+    const [renaming, setRenaming] = useState<number | null>(null);
 
     const update = (next: Room[]) => onChange(renumberBedrooms(next));
 
@@ -99,21 +102,49 @@ export default function SleepingArrangementsEditor({
             <div className="mt-3 space-y-3">
                 {rooms.map((room, roomIdx) => (
                     <div key={roomIdx} className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <BedDouble className="h-4 w-4 flex-none text-slate-500" />
-                                {room.kind === 'common' ? (
-                                    <input
-                                        type="text"
-                                        value={room.label}
-                                        onChange={(e) => setCommonLabel(roomIdx, e.target.value)}
-                                        placeholder="Living room"
-                                        maxLength={40}
-                                        className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none"
-                                    />
-                                ) : (
-                                    <span className="font-semibold text-slate-900">{room.label || 'Bedroom'}</span>
-                                )}
+                        <div className="flex items-start justify-between gap-2">
+                            {/* Every room reads with a heading — a bedroom its
+                                number, a common space its name — and a line
+                                saying which it is. The common space's name used
+                                to sit inside a bare text box, so after the last
+                                bedroom it read as a bed group with no heading at
+                                all. It is a heading now, with Rename beside it. */}
+                            <div className="flex items-start gap-2 min-w-0">
+                                <BedDouble className="mt-0.5 h-4 w-4 flex-none text-slate-500" />
+                                <div className="min-w-0 flex-1">
+                                    {room.kind === 'common' && renaming === roomIdx ? (
+                                        <input
+                                            type="text"
+                                            autoFocus
+                                            value={room.label}
+                                            onChange={(e) => setCommonLabel(roomIdx, e.target.value)}
+                                            onBlur={() => setRenaming(null)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setRenaming(null); } }}
+                                            placeholder="Living room"
+                                            maxLength={40}
+                                            aria-label="Name of this space"
+                                            className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-500 focus:outline-none"
+                                        />
+                                    ) : (
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="font-semibold text-slate-900 truncate">
+                                                {room.label || (room.kind === 'common' ? 'Common space' : 'Bedroom')}
+                                            </span>
+                                            {room.kind === 'common' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRenaming(roomIdx)}
+                                                    className="flex-none text-xs font-medium text-slate-500 underline hover:text-slate-800"
+                                                >
+                                                    Rename
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="text-xs text-slate-500">
+                                        {room.kind === 'common' ? 'Common space' : 'Bedroom'}
+                                    </div>
+                                </div>
                             </div>
                             <button
                                 type="button"

@@ -32,6 +32,7 @@ import ReportListing from '@/components/ReportListing';
 import WhereYoullSleep from '@/components/WhereYoullSleep';
 import AboutThisPlace from '@/components/AboutThisPlace';
 import ThingsToKnow from '@/components/ThingsToKnow';
+import { publicLicenceLine } from '@/lib/stlLicence';
 import MeetYourHost from '@/components/MeetYourHost';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
 import { hostResponsiveness } from '@/lib/hostResponsiveness';
@@ -160,7 +161,7 @@ const SITE_URL = 'https://gallowaygetaways.co.uk';
 // the account-deletion migration promises nothing of theirs is left reachable.
 // What /homes/[id] reads. A constant, not inline, so the old-link fallback
 // reads exactly the same columns as the visitor's own query.
-const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood';
+const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood, safety_disclosures, checkout_instructions, stl_licence_status, stl_licence_number';
 
 async function hiddenListingForOldLink(id: string, columns: string): Promise<any | null> {
     const admin = adminClient();
@@ -791,6 +792,15 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             is CSS only. */}
                         <AboutThisPlace text={home.description || ''} />
 
+                        {/* The short-term let licence number. Scottish law wants it
+                            on any advert of the place; Airbnb prints it as a plain
+                            line under the description, and so do we. */}
+                        {publicLicenceLine(home.stl_licence_status, home.stl_licence_number) && (
+                            <p className='mt-4 text-sm text-slate-500'>
+                                {publicLicenceLine(home.stl_licence_status, home.stl_licence_number)}
+                            </p>
+                        )}
+
                         {/* Where you'll sleep — the beds in each room, before the
                             amenities, the order Airbnb uses. Renders nothing until
                             the host has filled in a room's beds. */}
@@ -916,6 +926,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         carbonMonoxideAlarm={(home.amenities || []).indexOf('Carbon monoxide alarm') !== -1}
                         damageDeposit={home.damage_deposit || 0}
                         cancellationPolicy={home.cancellation_policy}
+                        safetyDisclosures={home.safety_disclosures}
+                        checkoutInstructions={home.checkout_instructions}
                     />
 
                     <div id='reviews' className='scroll-mt-24'>

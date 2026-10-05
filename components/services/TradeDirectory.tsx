@@ -1,5 +1,6 @@
 'use client';
 
+import PropertyServiceDetails from '@/components/services/PropertyServiceDetails';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -76,7 +77,7 @@ export default function TradeDirectory() {
                 // without asking them to type an address we already hold.
                 const { data: mine } = await supabase
                     .from('listing_private')
-                    .select('id, title, location')
+                    .select('id, title, location, plot_band, storey_band')
                     .eq('host_id', session.user.id)
                     .order('created_at', { ascending: true });
                 setListings(mine || []);
@@ -228,6 +229,10 @@ export default function TradeDirectory() {
                     </select>
                 </label>
             </div>
+
+            {/* The garden and window bands — moved here from the holiday-let
+                editor, beside the trades that price from them. */}
+            <PropertyServiceDetails listings={listings} />
 
             {loading ? (
                 <p className="mt-10 text-slate-500">Loading…</p>

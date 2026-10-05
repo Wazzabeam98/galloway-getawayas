@@ -7,6 +7,7 @@ import { coordinatePatchFor } from '@/lib/postcodeGeocode';
 import { checkListing } from '@/lib/access';
 import { isAdmin, recordAdminAction, cleanReason, REMOVED_BUCKET } from '@/lib/adminAudit';
 import { fromRow, newProblems } from '@/lib/listingRules';
+import { cleanItems, itemProblems, SAFETY_DISCLOSURES, CHECKOUT_INSTRUCTIONS } from '@/lib/listingDisclosures';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,6 +102,22 @@ export async function POST(request: Request) {
 
         if (Object.keys(safe).length === 0) {
             return NextResponse.json({ ok: false, error: 'Nothing to save.' }, { status: 400 });
+        }
+
+        // The safety disclosures and checkout instructions: known keys only,
+        // and the notes a guest is owed (where the cameras are) not left blank.
+        // The same helper the editor checks with before it sends.
+        const lists: Array<[string, typeof SAFETY_DISCLOSURES]> = [
+            ['safety_disclosures', SAFETY_DISCLOSURES],
+            ['checkout_instructions', CHECKOUT_INSTRUCTIONS],
+        ];
+        for (const [column, defs] of lists) {
+            if (!(column in safe)) continue;
+            safe[column] = cleanItems(safe[column], defs);
+            const problems = itemProblems(safe[column], defs);
+            if (problems.length > 0) {
+                return NextResponse.json({ ok: false, error: problems[0] }, { status: 400 });
+            }
         }
 
         // The last word on whether a listing still meets the standard, said on

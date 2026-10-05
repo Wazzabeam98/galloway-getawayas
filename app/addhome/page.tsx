@@ -2,13 +2,14 @@
 
 export const dynamic = 'force-dynamic';
 
+import { HIGHLIGHTS, MAX_HIGHLIGHTS, highlightSentence } from '@/components/listingHighlights';
 import { Accessibility as AccessibilityIcon } from 'lucide-react';
 import { ACCESSIBILITY_AMENITIES } from '@/lib/listingFilters';
 import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
+import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Users, MapPin, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import RecruitFaq from '@/components/business/RecruitFaq';
 import AgreementTick from '@/components/legal/AgreementTick';
@@ -163,14 +164,6 @@ export default function AddHome() {
         { label: 'Building staff', icon: DoorOpen, note: 'A concierge or building staff let guests in.' },
     ];
 
-    const HIGHLIGHTS: { label: string; icon: any; phrase: string }[] = [
-        { label: 'Peaceful', icon: Feather, phrase: 'a peaceful retreat' },
-        { label: 'Unique', icon: Sparkles, phrase: 'a truly unique stay' },
-        { label: 'Family-friendly', icon: Users, phrase: 'perfect for families' },
-        { label: 'Stylish', icon: Gem, phrase: 'a stylish space' },
-        { label: 'Central', icon: MapPin, phrase: 'in a central location' },
-        { label: 'Spacious', icon: Maximize2, phrase: 'with plenty of space' },
-    ];
 
     // Hosts absorb this fee — guests always pay exactly the nightly rate the
     // host sets, with no extra charge added at checkout.
@@ -1032,7 +1025,7 @@ export default function AddHome() {
                                             onClick={() => {
                                                 if (selected) {
                                                     setSelectedHighlights(selectedHighlights.filter((h) => h !== label));
-                                                } else if (selectedHighlights.length < 2) {
+                                                } else if (selectedHighlights.length < MAX_HIGHLIGHTS) {
                                                     setSelectedHighlights([...selectedHighlights, label]);
                                                 }
                                             }}
@@ -1047,8 +1040,7 @@ export default function AddHome() {
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        const phrases = HIGHLIGHTS.filter((h) => selectedHighlights.includes(h.label)).map((h) => h.phrase);
-                                        const suggestion = `This is ${phrases.join(' and ')}.`;
+                                        const suggestion = highlightSentence(selectedHighlights);
                                         setDescription((prev) => (prev ? `${prev}\n\n${suggestion}` : suggestion));
                                     }}
                                     className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 mb-4"
