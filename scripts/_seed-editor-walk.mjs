@@ -65,6 +65,8 @@ async function wipe() {
         ...(host ? await db.select('listings', '?select=id&status=eq.draft&host_id=eq.' + host.id) : []),
     ];
     for (const l of listings) {
+        // Test bookings made on the walk listing (its own TEST data only).
+        await db.remove('bookings', '?listing_id=eq.' + l.id);
         await db.remove('listing_arrival', '?listing_id=eq.' + l.id);
         await db.remove('listings', '?id=eq.' + l.id);
     }
