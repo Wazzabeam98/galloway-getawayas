@@ -166,3 +166,30 @@ export function stayProblem(input: {
 
     return null;
 }
+
+// ---------------------------------------------------------------------------
+// WHICH DAYS THE BOOKING CALENDAR LETS A GUEST PICK
+//
+// A stay occupies its NIGHTS (check-in up to, not including, checkout), the
+// same '[)' the database's no-overlap rule and checkout use. So a day whose
+// night is unavailable — another stay checks in, a host block, or a night kept
+// free by preparation time — can still be a CHECKOUT, as on Airbnb, as long as
+// none of the nights being stayed is unavailable.
+// `unavailable` is every unavailable night (taken, blocked, preparation time).
+// ---------------------------------------------------------------------------
+
+/** A day can be a check-in if its own night is free. */
+export function checkInPickable(key: string, unavailable: Set<string>): boolean {
+    return !unavailable.has(key);
+}
+
+/** A day can be the checkout for a stay starting `startKey` if every night is free and the length fits. */
+export function checkoutPickable(startKey: string, key: string, unavailable: Set<string>, min: number, max: number | null): boolean {
+    const nights = nightsBetweenKeys(startKey, key);
+    if (nights <= 0) return false;
+    if (nights < min || (max !== null && nights > max)) return false;
+    for (let i = 0; i < nights; i++) {
+        if (unavailable.has(addDaysKey(startKey, i))) return false;
+    }
+    return true;
+}

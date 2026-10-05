@@ -87,3 +87,31 @@ test('today is the London calendar day', () => {
     // 23:30 UTC on 1 Oct 2026 is 00:30 BST on the 2nd.
     assert.equal(londonTodayKey(new Date('2026-10-01T23:30:00Z')), '2026-10-02');
 });
+
+import { checkInPickable, checkoutPickable } from '../lib/stayRules';
+
+test('a guest can check out on the morning another stay checks in', () => {
+    // Another stay holds the nights of 10, 11, 12 Nov.
+    const unavailable = new Set(['2026-11-10', '2026-11-11', '2026-11-12']);
+    assert.equal(checkoutPickable('2026-11-07', '2026-11-10', unavailable, 1, null), true, 'out on the 10th');
+    assert.equal(checkInPickable('2026-11-10', unavailable), false, 'but not in on the 10th');
+    assert.equal(checkoutPickable('2026-11-07', '2026-11-11', unavailable, 1, null), false, 'a night overlaps');
+    // And the server agrees: stayProblem has no objection to the same stay.
+    assert.equal(stayProblem({ listing: {}, checkIn: '2026-11-07', checkOut: '2026-11-10', todayKey: TODAY }), null);
+});
+
+test('a guest can check out on a day kept free by preparation time', () => {
+    const buffer = prepBufferNights([{ start: '2026-11-10', end: '2026-11-13' }], 1); // keeps the 9th free
+    const unavailable = new Set(['2026-11-10', '2026-11-11', '2026-11-12', ...buffer]);
+    assert.equal(checkoutPickable('2026-11-06', '2026-11-09', unavailable, 1, null), true, 'out on the 9th');
+    assert.equal(checkInPickable('2026-11-09', unavailable), false, 'the 9th is no check-in');
+    assert.equal(checkoutPickable('2026-11-06', '2026-11-10', unavailable, 1, null), false, 'staying the night of the 9th');
+    assert.equal(stayProblem({ listing: { preparation_time: '1 day' }, checkIn: '2026-11-06', checkOut: '2026-11-09', todayKey: TODAY, prepBuffer: buffer }), null);
+});
+
+test('the minimum and maximum still apply to a checkout', () => {
+    const none = new Set<string>();
+    assert.equal(checkoutPickable('2026-11-01', '2026-11-03', none, 3, null), false);
+    assert.equal(checkoutPickable('2026-11-01', '2026-11-04', none, 3, 14), true);
+    assert.equal(checkoutPickable('2026-11-01', '2026-11-16', none, 3, 14), false);
+});
