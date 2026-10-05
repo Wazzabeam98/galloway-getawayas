@@ -10,7 +10,15 @@ import { publicArea } from '@/lib/places';
 import AdminListingRow from '@/components/admin/AdminListingRow';
 import ListingReviewQueue from '@/components/admin/ListingReviewQueue';
 import { publishProblems, fromRow } from '@/lib/listingRules';
+import { propertyTypeLabel } from '@/lib/propertyTypes';
 import { waitedFor } from '@/lib/email';
+
+// "Flat in Kirkcudbright" — the guest card's line, so admin reads a listing's
+// type the way a guest will. Just the area when no type was picked.
+function typeLine(type: string | null | undefined, area: string): string {
+    const t = propertyTypeLabel(type);
+    return t ? (area ? `${t} in ${area}` : t) : area;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -136,7 +144,7 @@ export default async function AdminListings() {
                 items={waiting.map((l) => ({
                     id: l.id,
                     title: l.title || 'Untitled listing',
-                    area: publicArea(l.location),
+                    area: typeLine(l.property_type, publicArea(l.location)),
                     image: l.images && l.images.length ? getImageUrl(l.images[0]) : null,
                     hostName: hostName[l.host_id] || 'Host',
                     // The wizard's own rules, so the queue and the form cannot
@@ -152,7 +160,7 @@ export default async function AdminListings() {
                         key={l.id}
                         id={l.id}
                         title={l.title || 'Untitled listing'}
-                        area={publicArea(l.location)}
+                        area={typeLine(l.property_type, publicArea(l.location))}
                         image={l.images && l.images.length ? getImageUrl(l.images[0]) : null}
                         status={l.status}
                         hostName={hostName[l.host_id] || 'Host'}

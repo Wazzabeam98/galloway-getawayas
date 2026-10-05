@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { SlidersHorizontal, X, Minus, Plus, Check } from 'lucide-react';
 import { amenityIcon } from '@/lib/amenityIcons';
-import { categories } from '@/config/categories';
+import { PROPERTY_TYPES } from '@/lib/propertyTypes';
 import {
     ACCESSIBILITY_AMENITIES, AMENITY_LABELS, FILTER_AMENITIES, QUICK_CHIPS, RECOMMENDED, EMPTY_FILTERS,
     activeFilterCount, matchesFilters, readFilters, writeFilters,
@@ -58,7 +58,9 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
     const chips = QUICK_CHIPS.filter((c) => ALWAYS.indexOf(c.amenity) !== -1 || present.has(c.amenity));
     const recommended = RECOMMENDED.filter((r) => ALWAYS.indexOf(r.amenity) !== -1 || present.has(r.amenity)).slice(0, 4);
     const amenityOptions = FILTER_AMENITIES.filter((a) => a === 'Hot tub' || present.has(a));
-    const typesPresent = categories.filter((c) => pool.some((l) => l.property_type === c.name));
+    // Every type a listing in view actually has — legacy ones included, so an
+    // old 'Coastal Stays' listing can still be filtered to.
+    const typesPresent = PROPERTY_TYPES.filter((c) => pool.some((l) => l.property_type === c.name));
     const prices = pool.map((l) => Number(l.price_per_night) || 0).filter((n) => n > 0);
     const priceFloor = prices.length ? Math.min(...prices) : 0;
     const priceCeil = prices.length ? Math.max(...prices) : 0;
@@ -226,7 +228,7 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
                                 <Section title="Property type">
                                     <div className="flex flex-wrap gap-3">
                                         {typesPresent.map((c) => (
-                                            <Pill key={c.name} label={c.label} on={draft.types.indexOf(c.name) !== -1} onClick={() => toggleIn('types', c.name)} />
+                                            <Pill key={c.name} label={c.card} on={draft.types.indexOf(c.name) !== -1} onClick={() => toggleIn('types', c.name)} />
                                         ))}
                                     </div>
                                 </Section>
