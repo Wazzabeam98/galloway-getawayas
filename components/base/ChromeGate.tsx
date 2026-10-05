@@ -26,7 +26,10 @@ export default function ChromeGate({ children }: { children: React.ReactNode }) 
     // On a listing page the main nav scrolls away (data-chrome="listing" +
     // a rule in globals.css un-sticks it), so the in-page section bar can take
     // its place at the very top — Airbnb's behaviour. See ListingStickyHeader.
-    if (pathname.startsWith('/homes/')) {
+    // The public experience listing (/experiences/browse/<id>) carries the same
+    // bar, so it un-sticks too — but NOT the browse index (/experiences/browse),
+    // which keeps the ordinary sticky nav.
+    if (pathname.startsWith('/homes/') || pathname.startsWith('/experiences/browse/')) {
         return <div data-chrome="listing">{children}</div>;
     }
     return <>{children}</>;

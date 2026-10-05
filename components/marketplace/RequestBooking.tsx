@@ -285,9 +285,10 @@ export function RequestBookingDialog({
     };
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 px-4 pb-8 pt-20 sm:pt-28" role="dialog" aria-modal="true" aria-label="Choose a time"
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 sm:items-start sm:px-4 sm:pb-8 sm:pt-28" role="dialog" aria-modal="true" aria-label="Choose a time"
             onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-            <div className="my-auto flex max-h-[calc(100dvh-7rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+            {/* Bottom sheet on a phone, centred modal from sm up. */}
+            <div className="flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:my-auto sm:max-h-[calc(100dvh-7rem)] sm:max-w-lg sm:rounded-2xl">
                 <div className="flex flex-none items-center justify-between border-b border-slate-100 px-5 py-4">
                     <div className="flex items-center gap-1.5">
                         {step === 2 && !calOpen && (
@@ -574,9 +575,10 @@ export function DateOnlyDialog({ title, availableDays, selected, onSelect, onClo
     }, [onClose, calOpen]);
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 px-4 pb-8 pt-20 sm:pt-28" role="dialog" aria-modal="true" aria-label={title}
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 sm:items-start sm:px-4 sm:pb-8 sm:pt-28" role="dialog" aria-modal="true" aria-label={title}
             onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-            <div className="my-auto flex max-h-[calc(100dvh-7rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+            {/* Bottom sheet on a phone, centred modal from sm up. */}
+            <div className="flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:my-auto sm:max-h-[calc(100dvh-7rem)] sm:max-w-md sm:rounded-2xl">
                 <div className="flex flex-none items-center justify-between border-b border-slate-100 px-5 py-4">
                     <h2 className="text-lg font-bold text-slate-900">{calOpen ? 'Choose a date' : title}</h2>
                     <button type="button" onClick={() => (calOpen ? setCalOpen(false) : onClose())} aria-label="Close" className="rounded-full p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>

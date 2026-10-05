@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { priceParts, cancellationBadge } from '@/components/marketplace/present';
 import BookingDialog, { type BookArgs } from '@/components/marketplace/BookingDialog';
 import DatePreview from '@/components/marketplace/DatePreview';
@@ -103,37 +104,63 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
     const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
 
     return (
-        <div className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-            <div className="flex items-start justify-between gap-3">
-                <div>
-                    {parts && (
-                        <div className="text-slate-900">
-                            <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + parts.money}</span>
-                            {parts.per && <span className="ml-1 text-sm font-normal text-slate-500">{parts.per}</span>}
-                        </div>
-                    )}
-                    <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+        <>
+            {/* Desktop: the inline lifted card. On a phone it's replaced by the
+                bottom bar below (the cottage's pattern), so it's hidden there. */}
+            <div className="hidden lg:block rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        {parts && (
+                            <div className="text-slate-900">
+                                <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + parts.money}</span>
+                                {parts.per && <span className="ml-1 text-sm font-normal text-slate-500">{parts.per}</span>}
+                            </div>
+                        )}
+                        <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                    </div>
+                    <button type="button" onClick={() => setOpen(true)} disabled={!hasAnything}
+                        className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+                        {hasAnything ? 'Show dates' : 'No times'}
+                    </button>
                 </div>
-                <button type="button" onClick={() => setOpen(true)} disabled={!hasAnything}
-                    className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
-                    {hasAnything ? 'Show dates' : 'No times'}
-                </button>
+
+                {/* The next few available dates, right in the panel. */}
+                <DatePreview
+                    items={provider.items}
+                    sessions={provider.sessions}
+                    declaredSessions={declaredSessions}
+                    providerCapacity={provider.slotCapacity}
+                    providerMinPeople={provider.minPeople}
+                    slotLength={provider.slotLength}
+                    busy={busy}
+                    onPickDay={(d) => openOn(d)}
+                    onShowAll={() => openOn(null)}
+                />
+
+                {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
             </div>
 
-            {/* The next few available dates, right in the panel. */}
-            <DatePreview
-                items={provider.items}
-                sessions={provider.sessions}
-                declaredSessions={declaredSessions}
-                providerCapacity={provider.slotCapacity}
-                providerMinPeople={provider.minPeople}
-                slotLength={provider.slotLength}
-                busy={busy}
-                onPickDay={(d) => openOn(d)}
-                onShowAll={() => openOn(null)}
-            />
-
-            {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+            {/* Phone: the fixed bottom bar — price and one "Check availability"
+                button that opens the same dialog, the cottage's bottom-bar
+                mechanism. Hidden while the dialog is open (the dialog covers it).
+                Portalled to the body so it sits above the page. */}
+            {typeof document !== 'undefined' && !open && createPortal(
+                <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
+                    <div className="mb-2.5">
+                        {parts ? (
+                            <p className="text-base font-bold text-slate-900 leading-tight">
+                                {(showFrom ? 'From ' : '') + parts.money}
+                                {parts.per && <span className="text-sm font-normal text-slate-500"> {parts.per}</span>}
+                            </p>
+                        ) : null}
+                        <p className={`text-xs font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
+                    </div>
+                    <button type="button" onClick={() => setOpen(true)} disabled={!hasAnything}
+                        className="w-full rounded-lg bg-emerald-700 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                        {hasAnything ? 'Check availability' : 'No times'}
+                    </button>
+                </div>, document.body,
+            )}
 
             {open && (
                 <BookingDialog
@@ -154,6 +181,6 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
                     onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
                 />
             )}
-        </div>
+        </>
     );
 }
