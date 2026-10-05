@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRight, X } from 'lucide-react';
 
@@ -34,7 +34,9 @@ export function EditorCard({ title, summary, onClick, children }: {
     );
 }
 
-// Bottom sheet on a phone, centred dialog from sm up. Rendered in a portal,
+// On a phone a full-screen sheet that slides up from the bottom (Airbnb's):
+// close X top left, the footer (Save) fixed at the bottom. From sm up the
+// centred dialog, unchanged. Rendered in a portal,
 // but React events still bubble to the editor's <form>, so every button in a
 // panel must be type="button".
 export function EditorPanel({ title, onClose, footer, children, leading }: {
@@ -45,6 +47,14 @@ export function EditorPanel({ title, onClose, footer, children, leading }: {
     // Replaces the close button on the left (a back arrow in a nested view).
     leading?: ReactNode;
 }) {
+    // Mounted off-screen, then moved into place on the next frame so the slide
+    // runs. The transform only applies below sm.
+    const [shown, setShown] = useState(false);
+    useEffect(() => {
+        const raf = requestAnimationFrame(() => setShown(true));
+        return () => cancelAnimationFrame(raf);
+    }, []);
+
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
         document.addEventListener('keydown', onKey);
@@ -59,12 +69,12 @@ export function EditorPanel({ title, onClose, footer, children, leading }: {
     if (typeof document === 'undefined') return null;
 
     return createPortal(
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:px-4" onClick={onClose}>
+        <div className={`fixed inset-0 z-50 flex items-end justify-center bg-black/50 transition-opacity duration-200 sm:items-center sm:px-4 sm:opacity-100 ${shown ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}>
             <div
                 role="dialog"
                 aria-modal="true"
                 aria-label={title}
-                className="flex max-h-[92vh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl"
+                className={`flex h-[100dvh] w-full flex-col bg-white shadow-xl transition-transform duration-300 ease-out will-change-transform sm:h-auto sm:max-h-[92vh] sm:max-w-lg sm:rounded-2xl sm:translate-y-0 sm:transition-none ${shown ? 'translate-y-0' : 'translate-y-full'}`}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="relative flex items-center justify-center border-b border-slate-100 px-5 py-4">
@@ -78,7 +88,7 @@ export function EditorPanel({ title, onClose, footer, children, leading }: {
                     <h2 className="text-base font-bold text-slate-900">{title}</h2>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
-                {footer && <div className="border-t border-slate-100 px-5 py-4">{footer}</div>}
+                {footer && <div className="border-t border-slate-100 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-4">{footer}</div>}
             </div>
         </div>,
         document.body,

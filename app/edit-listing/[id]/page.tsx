@@ -2,7 +2,7 @@
 
 import { Accessibility as AccessibilityIcon } from 'lucide-react';
 import { ACCESSIBILITY_AMENITIES } from '@/lib/listingFilters';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
@@ -356,6 +356,20 @@ export default function EditListing() {
         if (key && SECTIONS.some((x) => x.key === key)) setActiveSection(key);
     }, []);
 
+    // A section is seen from its start. On desktop that is the top of the page;
+    // on a phone the section list sits above the content, so the content's own
+    // top, just under the sticky header.
+    const contentRef = useRef<HTMLDivElement>(null);
+    const openSection = (key: string) => {
+        setActiveSection(key);
+        requestAnimationFrame(() => {
+            const el = contentRef.current;
+            const phone = window.matchMedia('(max-width: 767px)').matches;
+            const top = phone && el ? el.getBoundingClientRect().top + window.scrollY - 96 : 0;
+            window.scrollTo({ top: Math.max(0, top) });
+        });
+    };
+
     const toggleAmenity = (name: string) => {
         setAmenities((prev) => (prev.includes(name) ? prev.filter((a) => a !== name) : [...prev, name]));
     };
@@ -689,7 +703,7 @@ export default function EditListing() {
                             <button
                                 key={key}
                                 type="button"
-                                onClick={() => setActiveSection(key)}
+                                onClick={() => openSection(key)}
                                 className={`w-full flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition ${activeSection === key ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}
                             >
                                 <Icon className="w-4 h-4 mr-3" /> {label}
@@ -698,7 +712,7 @@ export default function EditListing() {
                     </div>
 
                     {/* Content */}
-                    <div>
+                    <div ref={contentRef}>
                         {activeSection === 'basics' && (
                             <div className="space-y-4">
                                 <section className="space-y-4">
