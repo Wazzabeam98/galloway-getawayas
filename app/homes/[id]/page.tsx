@@ -388,6 +388,23 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         home?.approx_latitude && home?.approx_longitude
             ? { latitude: Number(home.approx_latitude), longitude: Number(home.approx_longitude) }
             : null;
+    // "Show the precise location" (the host's choice, off by default). The flag
+    // and the exact pair are read through the service role — neither is
+    // readable by anon — and the exact pair is used ONLY when the flag is on.
+    // The written street address is not part of this; it still waits for a
+    // confirmed booking.
+    let precise = false;
+    if (home?.id) {
+        const { data: loc } = await adminClient()
+            .from('listings')
+            .select('show_precise_location, latitude, longitude')
+            .eq('id', home.id)
+            .maybeSingle();
+        if (loc && loc.show_precise_location === true && loc.latitude != null && loc.longitude != null) {
+            coords = { latitude: Number(loc.latitude), longitude: Number(loc.longitude) };
+            precise = true;
+        }
+    }
     if (!coords && home?.location) {
         coords = await lookupCoordinates(home.location);
     }
@@ -835,6 +852,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                         latitude={coords.latitude}
                                         longitude={coords.longitude}
                                         area={placeSummary(home.location)}
+                                        precise={precise}
                                     />
                                 ) : (
                                     <h2 className='text-xl font-semibold mb-1'>Where you&apos;ll be</h2>

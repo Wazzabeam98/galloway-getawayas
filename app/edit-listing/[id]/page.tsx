@@ -9,10 +9,11 @@ import Logo from '@/components/base/Logo';
 import ArrivalEditor, { WifiCard } from '@/components/ArrivalEditor';
 import CheckInTimesCard from '@/components/listing-editor/CheckInTimesCard';
 import CapacityCard from '@/components/listing-editor/CapacityCard';
+import { AddressCard, LocationSharingCard } from '@/components/listing-editor/LocationCards';
+import PropertyMap from '@/components/PropertyMap';
 import LoginModel from '@/components/auth/LoginModel';
 import PropertyTypeCard from '@/components/listing-editor/PropertyTypeCard';
 import CheckInMethodCard from '@/components/listing-editor/CheckInMethodCard';
-import { addressLineLabel } from '@/lib/propertyTypes';
 import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
@@ -153,6 +154,10 @@ export default function EditListing() {
     const [streetAddress, setStreetAddress] = useState('');
     const [listingStatus, setListingStatus] = useState('');
     const [locPostcode, setLocPostcode] = useState('');
+    // The saved pin (listing_private), for the host's own map, and whether the
+    // public listing shows it exactly.
+    const [pin, setPin] = useState<{ latitude: number; longitude: number } | null>(null);
+    const [showPrecise, setShowPrecise] = useState(false);
     const [price, setPrice] = useState('');
     const [propertyType, setPropertyType] = useState('');
     const [privacyType, setPrivacyType] = useState('Entire place');
@@ -279,6 +284,10 @@ export default function EditListing() {
             setLocRegion(place.region || DEFAULT_REGION);
             setStreetAddress(listing.street_address || '');
             setLocPostcode(listing.postcode || '');
+            setPin(listing.latitude != null && listing.longitude != null
+                ? { latitude: Number(listing.latitude), longitude: Number(listing.longitude) }
+                : null);
+            setShowPrecise(listing.show_precise_location === true);
             setListingStatus(listing.status || '');
             setPrice(String(listing.price_per_night ?? ''));
             setCommissionRate(listing.commission_rate ?? null);
@@ -502,6 +511,7 @@ export default function EditListing() {
                     location: buildLocation(locTown, locRegion),
                     street_address: buildStreetAddress(null, null, streetAddress) || null,
                     postcode: locPostcode.trim() ? tidyPostcode(locPostcode) : null,
+                    show_precise_location: showPrecise,
                     price_per_night: Number(price),
                     extra_guest_fee: extraGuestFee.trim() ? Number(extraGuestFee) : null,
                     extra_guest_after: extraGuestAfter.trim() ? Number(extraGuestAfter) : null,
@@ -736,44 +746,23 @@ export default function EditListing() {
                         {activeSection === 'location' && (
                             <div className="space-y-10">
                                 <section>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-1">Location</h2>
-                                    <p className="text-sm text-slate-500 mb-4">
-                                        Guests only ever see the town and region. The street address and
-                                        postcode are kept private.
-                                    </p>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-4">Location</h2>
                                     <div className="space-y-4">
-                                        <div>
-                                            <label htmlFor="edit-town" className="text-xs text-slate-500 font-semibold uppercase">Town / city</label>
-                                            <input id="edit-town" type="text" value={locTown} onChange={(e) => setLocTown(e.target.value)}
-                                                placeholder="e.g. Kirkcudbright"
-                                                className="w-full p-3 border rounded-xl text-sm mt-1" />
-                                        </div>
-                                        <div>
-                                            <label htmlFor="edit-region" className="text-xs text-slate-500 font-semibold uppercase">Region</label>
-                                            <input id="edit-region" type="text" value={locRegion} onChange={(e) => setLocRegion(e.target.value)}
-                                                placeholder="e.g. Dumfries and Galloway"
-                                                className="w-full p-3 border rounded-xl text-sm mt-1" />
-                                        </div>
-                                        <div>
-                                            <label htmlFor="edit-street" className="text-xs text-slate-500 font-semibold uppercase">{addressLineLabel(propertyType).label} (private)</label>
-                                            <input id="edit-street" type="text" value={streetAddress} onChange={(e) => setStreetAddress(e.target.value)}
-                                                placeholder={addressLineLabel(propertyType).placeholder}
-                                                className="w-full p-3 border rounded-xl text-sm mt-1" />
-                                            {addressLineLabel(propertyType).hint && (
-                                                <p className="mt-1 text-xs text-slate-500">{addressLineLabel(propertyType).hint}</p>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <label htmlFor="edit-postcode" className="text-xs text-slate-500 font-semibold uppercase">Postcode (private)</label>
-                                            <input id="edit-postcode" type="text" value={locPostcode} onChange={(e) => setLocPostcode(e.target.value)}
-                                                placeholder="e.g. DG6 4JS"
-                                                className="w-full p-3 border rounded-xl text-sm mt-1" />
-                                        </div>
-                                        <p className="text-xs text-slate-500">
-                                            Guests will see <span className="font-medium text-slate-700">{buildLocation(locTown, locRegion) || 'your town and region'}</span>.
-                                        </p>
+                                        {/* The host's own exact pin — this map is never shown to guests. */}
+                                        {pin && <PropertyMap variant="host" latitude={pin.latitude} longitude={pin.longitude} />}
+                                        <AddressCard
+                                            town={locTown}
+                                            region={locRegion}
+                                            street={streetAddress}
+                                            postcode={locPostcode}
+                                            propertyType={propertyType}
+                                            onSave={(t, r, st, pc) => { setLocTown(t); setLocRegion(r); setStreetAddress(st); setLocPostcode(pc); }}
+                                        />
+                                        <LocationSharingCard precise={showPrecise} onSave={setShowPrecise} />
+                                        <div className="pt-2">
                                         {/* Saved on the arrival route, not this form's Save. */}
                                         {listingId && <ArrivalEditor listingId={listingId} />}
+                                        </div>
                                     </div>
                                 </section>
 
