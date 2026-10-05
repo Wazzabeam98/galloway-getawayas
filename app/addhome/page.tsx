@@ -13,7 +13,8 @@ import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import RecruitFaq from '@/components/business/RecruitFaq';
 import AgreementTick from '@/components/legal/AgreementTick';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
-import { categories } from '@/config/categories';
+import PropertyTypePicker from '@/components/PropertyTypePicker';
+import { addressLineLabel, isSiteType } from '@/lib/propertyTypes';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
@@ -175,7 +176,6 @@ export default function AddHome() {
     // host sets, with no extra charge added at checkout.
     const HOST_FEE_PERCENT = DEFAULT_COMMISSION_PERCENT;
 
-    const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
 
     // The address, collected on step 3 of the wizard. `flat` and `propertyName`
     // are no longer given their own boxes (they were only on the removed landing
@@ -724,26 +724,13 @@ export default function AddHome() {
                     <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Which of these best describes your place?</h2>
                         <p className="text-slate-600 mb-8">Pick the closest match — you can fine-tune details later.</p>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {categories.map((item) => {
-                                const Icon = ICON_MAP[item.icon] || HomeIcon;
-                                const selected = propertyType === item.name;
-                                return (
-                                    <button
-                                        key={item.name}
-                                        type="button"
-                                        onClick={() => {
-                                            setPropertyType(item.name);
-                                            setHomeCategories([item.name]);
-                                        }}
-                                        className={`p-5 rounded-2xl border-2 text-left transition ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
-                                    >
-                                        <Icon className="w-6 h-6 mb-3 text-slate-700" />
-                                        <div className="font-semibold text-slate-900">{item.name}</div>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <PropertyTypePicker
+                            value={propertyType}
+                            onChange={(name) => {
+                                setPropertyType(name);
+                                setHomeCategories([name]);
+                            }}
+                        />
                     </div>
                 )}
 
@@ -782,13 +769,23 @@ export default function AddHome() {
                             Where is your place? Guests only ever see the town and region.
                         </p>
                         <div className="space-y-4">
+                            {/* A boat, van, tent, yurt or pod has no flat or floor —
+                                its pitch, berth or site name is the line below. */}
+                            {!isSiteType(propertyType) && (
                             <div>
                                 <label className="text-xs text-slate-500 font-semibold uppercase">Flat, floor or building <span className="normal-case text-slate-400 font-normal">(if applicable)</span></label>
                                 <input type="text" value={flat} onChange={(e) => setFlat(e.target.value)} placeholder="e.g. Flat 2, or The Old Coach House" className="w-full p-3 border rounded-xl mt-1" />
                             </div>
+                            )}
                             <div>
-                                <label className="text-xs text-slate-500 font-semibold uppercase">Street address</label>
-                                <input type="text" value={street} onChange={(e) => setStreet(e.target.value)} className="w-full p-3 border rounded-xl mt-1" />
+                                {/* A boat, campervan, tent, yurt or pod has no street: the
+                                    pitch, berth or site name fills this line instead, and
+                                    with the postcode that is the whole address. */}
+                                <label className="text-xs text-slate-500 font-semibold uppercase">{addressLineLabel(propertyType).label}</label>
+                                <input type="text" value={street} onChange={(e) => setStreet(e.target.value)} placeholder={addressLineLabel(propertyType).placeholder} className="w-full p-3 border rounded-xl mt-1" />
+                                {addressLineLabel(propertyType).hint && (
+                                    <p className="mt-1 text-xs text-slate-500">{addressLineLabel(propertyType).hint}</p>
+                                )}
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>

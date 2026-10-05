@@ -176,18 +176,6 @@ export function writeFilters(base: URLSearchParams, f: FilterState): URLSearchPa
     return out;
 }
 
-// What a card says it is — "Cottage in Kirkcudbright", Airbnb's line. The
-// wizard stores the category's plural name; the card wants one of them.
-const SINGULAR: Record<string, string> = {
-    'Cottages': 'Cottage',
-    'Farmhouses': 'Farmhouse',
-    'Coastal Stays': 'Coastal stay',
-    'Cabins & Pods': 'Cabin',
-    'Townhouses': 'Townhouse',
-    'Luxury Stays': 'Luxury stay',
-};
-
-export function propertyTypeLabel(type: string | null | undefined): string | null {
-    if (!type) return null;
-    return SINGULAR[type] || type;
-}
+// The card's "[Type] in [place]" word — kept exported from here for the
+// callers that already import it; the words live in lib/propertyTypes.ts.
+export { propertyTypeLabel } from './propertyTypes';

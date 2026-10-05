@@ -35,26 +35,11 @@ import ThingsToKnow from '@/components/ThingsToKnow';
 import MeetYourHost from '@/components/MeetYourHost';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
 import { hostResponsiveness } from '@/lib/hostResponsiveness';
+import { describePlace } from '@/lib/propertyTypes';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck } from 'lucide-react';
 
-// Turns the wizard's plural category into a noun that reads naturally in
-// a sentence: "Entire townhouse in ..." rather than "Entire Townhouses".
-const PROPERTY_NOUNS: Record<string, string> = {
-    'Cottages': 'cottage',
-    'Farmhouses': 'farmhouse',
-    'Coastal Stays': 'coastal home',
-    'Cabins & Pods': 'cabin',
-    'Townhouses': 'townhouse',
-    'Luxury Stays': 'home',
-};
-
-function describePlace(privacyType: string | null, propertyType: string | null): string {
-    const noun = (propertyType && PROPERTY_NOUNS[propertyType]) || 'place';
-
-    if (privacyType === 'A private room') return `Private room in a ${noun}`;
-    if (privacyType === 'A shared room') return `Shared room in a ${noun}`;
-    return `Entire ${noun}`;
-}
+// "Entire flat" / "Private room in a static caravan" — the type words live in
+// lib/propertyTypes.ts, with every other place a type is shown.
 
 // The stored location is a full address including street and postcode.
 // Guests browsing shouldn't see the exact door number, so this keeps the
