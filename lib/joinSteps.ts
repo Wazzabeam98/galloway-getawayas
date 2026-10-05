@@ -117,6 +117,15 @@ const ALL_STEPS: Step[] = [
     // A guest's second screen: the narrower choices under the group they picked
     // (Airbnb's "How would you describe your experience?"). Off for 'other'.
     { key: 'g_subtype', label: 'Type', title: 'How would you describe it?' },
+    // "Something else" has no sub-type screen, so this is its second picker: how
+    // guests book it (set times / made to order / you go to them). It sits right
+    // after step one, before About you, so "How many years have you been doing
+    // this?" follows a provider having said what "this" is (Liam, 5 Oct 2026 —
+    // it used to come after About you, under a "Location" eyebrow).
+    // Everything after it (the location model, the When/Pricing screens, what's
+    // stored) then follows exactly as for a real category of that shape. Only
+    // shown for a null-shape category; every real one answered this at its pick.
+    { key: 'g_shape', label: 'Format', title: GUEST_SCREEN_COPY.shapeQuestion },
     // About you (years, then the expertise hub), one question a screen, in
     // Airbnb's order. These come BEFORE the host 'business' step so a trade opens
     // on the years counter and the "Tell hosts about yourself" hub, the same way
@@ -134,16 +143,6 @@ const ALL_STEPS: Step[] = [
     // the one "Your business" rail section (TRADE_SECTIONS). See stepApplies.
     { key: 'business', label: 'Business', title: 'What’s your business called?' },
     { key: 'b_area', label: 'Coverage', title: 'Where do you cover?' },
-    // Made-to-order only: the notice period, its own single-question screen before
-    // the delivery areas (a big stepper, like the years/guests screens). The other
-    // shapes carry their "when" inside g_area (a slot's schedule) or not at all.
-    // "Something else" has no sub-type, so it never declared a booking shape. This
-    // asks it — in what the provider sells, not engine words — and everything after
-    // (the location model, the When/Pricing screens, what's stored) then follows
-    // exactly as it does for a real category of that shape. Only shown for a
-    // null-shape category; every real one answered this at its sub-type pick.
-    { key: 'g_shape', label: 'Format', title: GUEST_SCREEN_COPY.shapeQuestion },
-    { key: 'g_notice', label: 'Notice', title: GUEST_SCREEN_COPY.noticeQuestion },
     // Slot only, and only the three either-way categories (yoga, massage,
     // painting): does the guest come to a place the host names, or does the host
     // travel to the guest's cottage? It sets `fulfilment` (collection vs delivery)
@@ -156,6 +155,10 @@ const ALL_STEPS: Step[] = [
     // heading no longer applies — the form picks an honest per-shape heading (see
     // the h1 logic). Made-to-order's fulfilment fork still lives on this screen.
     { key: 'g_area', label: 'Where', title: 'Where, and when, can guests get it?' },
+    // Made-to-order only: the notice period. After "How do guests get it?"
+    // (g_area) and in the When section — a notice period is a when, and it read
+    // oddly first, under a "Location" eyebrow, before the where was settled.
+    { key: 'g_notice', label: 'Notice', title: GUEST_SCREEN_COPY.noticeQuestion },
     // The When section (slots only), split out of the old overloaded schedule
     // screen so each label matches its one question: session length, then the
     // weekly hours (with the odd day off folded in as the hours' exception).
@@ -430,14 +433,17 @@ export function stepsFor(trade: string, ctx?: StepContext): Step[] {
 
 const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
-    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_shape', 'g_notice', 'g_slot_where', 'g_area'] },
+    // g_shape is a picker now (it precedes the rail, like g_subtype) — the flow
+    // branches on it, so it belongs to no section.
+    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_slot_where', 'g_area'] },
     // Slots only: session length. Weekly HOURS have left the wizard — they live
     // in the listing editor's Availability section now (one home for the weekly
     // template), so a slot provider sets a length at create and their hours after,
     // in the editor. A section with no live steps drops out of the rail
     // (sectionsFor filters by stepApplies), so a made-to-order or comes-to-you
     // guest never sees a "When" section at all.
-    { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_slot_length'] },
+    // A made-to-order's notice period is its When.
+    { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_notice', 'g_slot_length'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
     { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu'] },
     { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_title', 'g_expect'] },
@@ -637,6 +643,11 @@ const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     // The priced-item requirement belongs to the pricing step, so a greyed Next
     // and "go to first problem" both land here.
     g_menu: ['menu'],
+    // "What happens" IS a guest's description, and it is required (a sentence or
+    // two) — so its problem belongs on the Details screen. Until 5 Oct 2026 the
+    // description had no step and no field feeding it, and Send for review
+    // silently did nothing for every new provider.
+    g_expect: ['description'],
     // No contact step: contact_email is derived from the account at submit (so
     // submitProblems no longer raises it for a guest) and the phone lives on the
     // profile — neither belongs to a step's Next.

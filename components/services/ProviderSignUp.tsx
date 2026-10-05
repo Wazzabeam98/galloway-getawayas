@@ -15,7 +15,7 @@ import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
 import { buildStreetAddress } from '@/lib/address';
-import { ORDER_UNITS } from '@/lib/serviceOrders';
+import { ORDER_UNITS, unitLabel } from '@/lib/serviceOrders';
 import { slotOfferingFromUnits, offeringHasShared, type SlotOffering } from '@/lib/serviceSlots';
 import Env from '@/config/Env';
 import {
@@ -75,6 +75,7 @@ import {
     guestAsksQualifications,
     slotAsksWhereFork,
     slotIsMeetingPoint,
+    guestNeedsShapeChoice,
     slotDurationPerItem,
     slotMixedDuration,
     defaultSlotFulfilment,
@@ -467,6 +468,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // would overwrite the thing being restored.
     const [hydrated, setHydrated] = useState(false);
     const [restored, setRestored] = useState(false);
+    // A saved guest draft's category, held aside rather than ticked so the
+    // picker opens empty (see the load and selectGuestCategory).
+    const savedGuestCategory = useRef('');
 
     // Which step is on screen.
     //
@@ -482,7 +486,14 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // on to 'g_area' the instant it hydrates). Seeding it here only stops the
     // picker — the category grid for a guest, the blank first step for a host —
     // flashing under the status panel for the moment before hydration.
-    const [step, setStep] = useState<StepKey>(initialResume ? 'g_you' : 'trade');
+    // A guest whose saved application is still a draft opens on step one like a
+    // newcomer (see guestStartsFresh below), so only a sent/approved/declined
+    // record seeds past the picker.
+    const [step, setStep] = useState<StepKey>(
+        initialResume && !(audienceForTrade(initialResume.trade) === 'guest' && initialResume.status === 'draft')
+            ? 'g_you'
+            : 'trade'
+    );
 
     // Which steps they have pressed Next on. Errors on a step nobody has
     // reached yet stay hidden: a form that turns red before it has been
@@ -1033,7 +1044,16 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             ? String((ex.guest_details as any).category || '').trim()
                             : '';
                         const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
-                        setGuestCategory(storedKey || (byLabel ? byLabel.key : 'other'));
+                        const loadedCategory = storedKey || (byLabel ? byLabel.key : 'other');
+                        // A draft opens on step one with NOTHING picked (Liam, 5 Oct
+                        // 2026): coming back to "Tell me about yourself" with an old
+                        // "Something else" still ticked read as the form having made
+                        // the choice for them. The saved key is held aside so a
+                        // different pick still clears the old offering's answers
+                        // (selectGuestCategory). A sent/approved record keeps it —
+                        // its status panel is what they see.
+                        if ((existing.status || 'draft') === 'draft') savedGuestCategory.current = loadedCategory;
+                        else setGuestCategory(loadedCategory);
                         // Their declarations, which also carry a copy of the terms
                         // acceptance for the review screen. Whether the agree box
                         // shows is decided by agreement_acceptances (below), not
@@ -1190,7 +1210,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // grid is their picker), even though ?trade=guest is already set. By the
         // time this runs on hydrate, restoreDraft has already put back any saved
         // category, so this reads the real answer.
-        const guestNeedsCategory = audienceForTrade(tradeFromUrl) === 'guest' && !guestCategory && !providerId;
+        // A saved DRAFT counts as not answered either: its category is held aside
+        // rather than ticked (see the load), so it reopens on the picker too.
+        const guestNeedsCategory = audienceForTrade(tradeFromUrl) === 'guest' && !guestCategory;
         const openState = { hydrated, restored, trade: tradeFromUrl, guestNeedsCategory, category: guestCategory };
         const opening = openingStep(openState);
         if (opening === null) return;
@@ -1248,6 +1270,17 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // what you filled in last time" before they had filled in anything.
         if (!chosen) return;
 
+        // The guest experience sign-up keeps no browser draft. It always opens on
+        // step one, "What experience are you offering?", with nothing selected
+        // (Liam, 5 Oct 2026) — a restored draft put a signed-in provider back on
+        // "Tell me about yourself" with "Something else" still ticked, even after
+        // the browser was closed. Everyone is signed in before the wizard shows,
+        // so "Save and finish later" (the database) is where work is kept. Any
+        // draft an earlier version left behind is removed here.
+        if (audienceForTrade(tradeFromUrl) === 'guest') {
+            forgetDraft();
+            return;
+        }
 
         try {
             const raw = window.localStorage.getItem(draftKey(tradeFromUrl));
@@ -1405,6 +1438,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // also stops an empty draft being written under the empty key on every
         // first visit, which is what the restore was then finding.
         if (!chosen) return;
+        // Nor for a guest experience, which never restores one (restoreDraft).
+        if (audienceForTrade(tradeFromUrl) === 'guest') return;
 
         try {
             window.localStorage.setItem(
@@ -1494,7 +1529,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const problems = submitProblems({
         business_name: businessName,
         trade,
-        description,
+        // A guest's description IS "What happens" (g_expect). Nothing else in the
+        // guest flow writes `description`, so checking that field alone held every
+        // new provider on a Send for review that did nothing. A returning
+        // provider's stored description still counts until they write one.
+        description: audienceForTrade(trade) === 'guest' ? (whatToExpect.trim() || description) : description,
         // The host expertise hub's required field — its Next gate and the submit
         // gate both read the professional title now, in place of a description.
         professional_title: professionalTitle,
@@ -2042,7 +2081,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // g_menu is required now: a listing needs at least one priced item to be
     // bookable, so its Next gates on the 'menu' problem (GUEST_STEP_FIELDS).
     // g_expect stays optional.
-    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_expect'];
+    // g_expect was optional until 5 Oct 2026; "What happens" is the description
+    // a guest reads and the review needs, so it gates Next like the menu does.
+    const OPTIONAL_GUEST_STEPS: StepKey[] = [];
     const stepIsPicker = step === 'trade' || step === 'g_subtype';
     // g_creds is no longer skippable for anyone: the professional title is now
     // required for every category. Qualifications are optional everywhere.
@@ -2348,9 +2389,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const selectGuestCategory = (key: string) => {
         // A real change FROM one category TO another drops the previous offering's
         // answers; picking the same one again leaves the work in place, and the
-        // first pick (from none) has nothing to clear — nor does re-picking after a
-        // reload, which does not restore the group.
-        if (guestCategory && key !== guestCategory) clearOfferingAnswers();
+        // first pick (from none) has nothing to clear. A saved draft reopens with
+        // nothing ticked, so its stored category is what this is compared with.
+        const previous = guestCategory || savedGuestCategory.current;
+        savedGuestCategory.current = '';
+        if (previous && key !== previous) clearOfferingAnswers();
         setGuestCategory(key);
         const cat = guestCategoryByKey(key);
         // Set the shape unconditionally — including to '' for a null-shape category
@@ -2397,7 +2440,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         if (guestGroup === 'other' || subs.length <= 1) {
             const key = subs[0]?.key || '';
             if (key) selectGuestCategory(key);
-            setStep(firstGuestContentStep(key));
+            // "Something else" says how guests book it next (g_shape, its second
+            // picker) before About you; a group with a declared shape goes on.
+            setStep(guestNeedsShapeChoice(key) ? 'g_shape' : firstGuestContentStep(key));
         } else {
             setStep('g_subtype');
         }
@@ -2765,7 +2810,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // empty at submit; the fallbacks are belt-and-braces. A guest keeps its own
     // description (the "what to expect" field feeds it as before).
     const contentDescription = (): string => {
-        if (audienceForTrade(trade) === 'guest') return description.trim();
+        if (audienceForTrade(trade) === 'guest') return whatToExpect.trim() || description.trim();
         const parts = [professionalTitle.trim(), qualifications.trim()].filter(Boolean);
         return parts.join('. ') || businessName.trim() || 'Local trade';
     };
@@ -3574,14 +3619,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_where' || step === 'g_title') ? 'mb-10 text-center'
+                            + ((step === 'g_notice' || step === 'g_shape') ? 'mb-2 text-center'
+                                : (step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_slot_basis' || step === 'g_slot_where' || step === 'g_title') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
                                    Airbnb) with a tight gap so "Add at least 3 photos."
                                    reads as a subtitle, not a stranded paragraph. */
                                 : step === 'g_photos' ? 'mb-2 text-center'
                                     : 'mb-8')}>
                             {step === 'trade'
-                                ? 'What experience are you offering guests?'
+                                ? GUEST_SCREEN_COPY.offerQuestion
                                 /* g_area is the PLACE now. A traveller is asked where
                                    they cover; a made-to-order asks the fulfilment
                                    fork; a slot's heading follows its fulfilment — the
@@ -3598,13 +3644,20 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                             ? GUEST_SCREEN_COPY.slotPlaceHeadingBoth
                                             : fulfilment === 'delivery'
                                             ? GUEST_SCREEN_COPY.slotPlaceHeadingTravel
-                                            : slotIsMeetingPoint(guestCategory)
+                                            : (slotIsMeetingPoint(guestCategory) || guestCategory === 'other')
                                                 ? GUEST_SCREEN_COPY.slotPlaceHeadingMeeting
                                                 : GUEST_SCREEN_COPY.slotPlaceHeadingPremises)
                                     : step === 'g_photos'
                                         ? GUEST_SCREEN_COPY.photosHeading
                                         : stepMeta.title}
                         </h1>
+                    )}
+                    {/* The two pickers-with-a-why carry a line under the heading,
+                        the same pairing as the capacity and minimum screens. */}
+                    {isGuest && (step === 'g_shape' || step === 'g_notice') && (
+                        <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
+                            {step === 'g_shape' ? GUEST_SCREEN_COPY.shapeSubtext : GUEST_SCREEN_COPY.noticeSubtext}
+                        </p>
                     )}
                     {/* Max guests renders its heading here, at the top, exactly
                         where the years question sits (same classes, same spacing
@@ -4985,7 +5038,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             <HubRow
                                 filled={whatToExpect.trim() !== ''}
                                 label={GUEST_SCREEN_COPY.expectRowLabel}
-                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
                                 prompt={GUEST_SCREEN_COPY.expectRowPrompt}
                                 summary={whatToExpect.trim()}
                                 onOpen={() => setDetailModal('expect')}
@@ -5008,6 +5060,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             title={GUEST_SCREEN_COPY.expectModalTitle}
                             onClose={() => setDetailModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
+                            note={GUEST_SCREEN_COPY.expectModalNote}
                         >
                             <div className={fieldWrap}>
                                 <textarea
@@ -5715,7 +5768,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         const bothPlaces = showRegions && showCollection;
                         // Slot copy forks on premises vs meeting point (outdoors,
                         // water) — data identical, wording only.
-                        const slotMeeting = shape === 'slot' && slotIsMeetingPoint(guestCategory);
+                        const slotMeeting = shape === 'slot' && (slotIsMeetingPoint(guestCategory) || guestCategory === 'other');
                         // The manual boxes are hidden behind the lookup until they're
                         // wanted: the provider asks to type it by hand, a lookup fills
                         // or fails, or a returning provider already has an address.
@@ -5906,6 +5959,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                                 className="mt-3 text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800">
                                                 {GUEST_SCREEN_COPY.collectionManualLink}
                                             </button>
+                                            {/* Said before they type it, not only after: who
+                                                sees the address is the question on their mind. */}
+                                            <p className="mt-4 text-xs text-slate-500">{GUEST_SCREEN_COPY.collectionAddressHint}</p>
                                         </>
                                     )}
                                 </div>
@@ -6089,7 +6145,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 const catLabel = guestCategoryByKey(guestCategory)?.label || GUEST_SCREEN_COPY.finishSummaryCategory;
                 const priceVal = (items || [])
                     .filter((i) => String(i.price || '').trim())
-                    .map((i) => '£' + String(i.price).trim())
+                    .map((i) => '£' + String(i.price).trim() + (unitLabel(i.unit) ? ' ' + unitLabel(i.unit) : ''))
                     .join(', ') || '—';
                 // A guest's areas hold the region label in `town` (set from
                 // GUEST_REGIONS when a region is picked), so read that directly.
