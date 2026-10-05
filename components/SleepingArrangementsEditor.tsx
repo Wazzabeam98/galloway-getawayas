@@ -1,14 +1,16 @@
 'use client';
 
-import { Plus, Minus, Trash2, BedDouble, Check } from 'lucide-react';
-import { BED_TYPES, deriveCounts, type Room, type Bed } from '@/lib/sleeping';
+import { useState } from 'react';
+import { Plus, Minus, BedDouble, Check, ChevronRight } from 'lucide-react';
+import { BED_TYPES, bedSummary, bedsLeftToPlace, deriveCounts, type Room, type Bed } from '@/lib/sleeping';
 import { getImageUrl } from '@/lib/utils';
+import { EditorCard, EditorPanel } from '@/components/listing-editor/EditorPanel';
 
-// The host enters beds room by room, the way Airbnb's editor does. The flat
-// "bedrooms" and "beds" numbers are DERIVED from this (deriveCounts) and shown
-// live, so a host never types a total that can drift from the rooms — the rooms
-// are the single source, and the parent writes the derived counts back to
-// listings.beds / listings.bedrooms on save.
+// Sleeping arrangements, Airbnb's way: a raised card with the first three
+// rooms, which opens the rooms as cards; a room opens its bed-type counters.
+// The listing's total bed count caps the counters — once every bed is placed
+// in a room, every + greys out. The bedroom count is derived from the rooms
+// (deriveCounts) and the parent writes it back on save.
 //
 // Controlled: the parent owns the rooms array. Bedroom cards are auto-numbered
 // (Bedroom 1, 2, …) and renumbered on every change; a common space (a sofa bed
@@ -25,219 +27,237 @@ function renumberBedrooms(rooms: Room[]): Room[] {
     });
 }
 
+function plural(n: number, word: string) {
+    return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+function RoomThumb({ room, className }: { room: Room; className: string }) {
+    return room.photo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={getImageUrl(room.photo)} alt="" className={`${className} object-cover`} />
+    ) : (
+        <div className={`${className} flex items-center justify-center bg-slate-100`}>
+            <BedDouble className="h-6 w-6 text-slate-400" />
+        </div>
+    );
+}
+
 export default function SleepingArrangementsEditor({
     rooms,
     onChange,
     photos = [],
+    totalBeds,
 }: {
     rooms: Room[];
     onChange: (rooms: Room[]) => void;
     // The listing's own photos (image paths) the host can choose from for each
     // room, Airbnb-style. Empty while a brand-new listing has none saved yet.
     photos?: string[];
+    // listings.beds — the most beds that can be placed across the rooms.
+    totalBeds: number;
 }) {
-    const counts = deriveCounts(rooms);
+    const [open, setOpen] = useState(false);
+    // The room being edited, as a draft: Cancel throws it away, Done keeps it.
+    // index null is a room being added.
+    const [editing, setEditing] = useState<{ index: number | null; room: Room } | null>(null);
 
+    const counts = deriveCounts(rooms);
     const update = (next: Room[]) => onChange(renumberBedrooms(next));
 
-    const addRoom = (kind: 'bedroom' | 'common') => {
-        const room: Room =
-            kind === 'bedroom'
-                ? { label: '', kind, beds: [{ type: 'Double bed', count: 1 }] }
-                : { label: 'Living room', kind, beds: [{ type: 'Sofa bed', count: 1 }] };
-        update([...rooms, room]);
+    const startNew = (kind: 'bedroom' | 'common') =>
+        setEditing({ index: null, room: kind === 'bedroom' ? { label: 'New bedroom', kind, beds: [] } : { label: 'Living room', kind, beds: [] } });
+
+    const done = () => {
+        if (!editing) return;
+        const room = { ...editing.room, beds: editing.room.beds.filter((b) => b.count > 0) };
+        update(editing.index === null ? [...rooms, room] : rooms.map((r, i) => (i === editing.index ? room : r)));
+        setEditing(null);
     };
 
-    const removeRoom = (i: number) => update(rooms.filter((_, idx) => idx !== i));
-
-    const setCommonLabel = (i: number, label: string) =>
-        update(rooms.map((r, idx) => (idx === i ? { ...r, label } : r)));
-
-    const setRoomPhoto = (i: number, photo: string | null) =>
-        update(rooms.map((r, idx) => (idx === i ? { ...r, photo } : r)));
-
-    const addBed = (roomIdx: number) => {
-        // Default to a type not already in the room, so a second line is a new
-        // bed rather than a duplicate of the first.
-        const used = new Set((rooms[roomIdx].beds || []).map((b) => b.type));
-        const nextType = BED_TYPES.find((t) => !used.has(t)) || BED_TYPES[0];
-        const next = rooms.map((r, idx) =>
-            idx === roomIdx ? { ...r, beds: [...r.beds, { type: nextType, count: 1 }] } : r
-        );
-        update(next);
+    const removeRoom = () => {
+        if (!editing || editing.index === null) return;
+        update(rooms.filter((_, i) => i !== editing.index));
+        setEditing(null);
     };
 
-    const setBed = (roomIdx: number, bedIdx: number, patch: Partial<Bed>) => {
-        const next = rooms.map((r, idx) => {
-            if (idx !== roomIdx) return r;
-            return { ...r, beds: r.beds.map((b, bi) => (bi === bedIdx ? { ...b, ...patch } : b)) };
-        });
-        update(next);
-    };
-
-    const removeBed = (roomIdx: number, bedIdx: number) => {
-        const next = rooms.map((r, idx) =>
-            idx === roomIdx ? { ...r, beds: r.beds.filter((_, bi) => bi !== bedIdx) } : r
-        );
-        update(next);
-    };
+    const summary = `${plural(counts.bedrooms, 'bedroom')} · ${plural(counts.beds, 'bed')}`;
+    const shown = rooms.slice(0, 3);
+    const more = rooms.length - shown.length;
 
     return (
         <div>
-            <div className="flex items-center justify-between">
-                <label className="block text-sm font-semibold text-slate-800">Sleeping arrangements</label>
-                <span className="text-sm text-slate-500">
-                    {counts.bedrooms} bedroom{counts.bedrooms === 1 ? '' : 's'} ·{' '}
-                    {counts.beds} bed{counts.beds === 1 ? '' : 's'}
-                </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-                Add the beds in each room. The bedroom and bed totals above are worked out from
-                these, so you don&apos;t enter them twice.
-            </p>
-
-            <div className="mt-3 space-y-3">
-                {rooms.map((room, roomIdx) => (
-                    <div key={roomIdx} className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <BedDouble className="h-4 w-4 flex-none text-slate-500" />
-                                {room.kind === 'common' ? (
-                                    <input
-                                        type="text"
-                                        value={room.label}
-                                        onChange={(e) => setCommonLabel(roomIdx, e.target.value)}
-                                        placeholder="Living room"
-                                        maxLength={40}
-                                        className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none"
-                                    />
-                                ) : (
-                                    <span className="font-semibold text-slate-900">{room.label || 'Bedroom'}</span>
-                                )}
+            <EditorCard title="Sleeping arrangements" summary={summary} onClick={() => setOpen(true)}>
+                {shown.length > 0 && (
+                    <div className="mt-4 grid grid-cols-3 gap-3">
+                        {shown.map((room, i) => (
+                            <div key={i} className="min-w-0">
+                                <RoomThumb room={room} className="aspect-[4/3] w-full rounded-xl" />
+                                <div className="mt-1.5 truncate text-sm font-semibold text-slate-900">{room.label || 'Bedroom'}</div>
+                                <div className="truncate text-xs text-slate-500">{bedSummary(room.beds)}</div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => removeRoom(roomIdx)}
-                                className="flex-none text-slate-400 hover:text-rose-600"
-                                aria-label="Remove room"
-                            >
-                                <Trash2 className="h-4 w-4" />
+                        ))}
+                    </div>
+                )}
+                {more > 0 && <div className="mt-3 text-sm font-semibold text-slate-700">+{more} more</div>}
+            </EditorCard>
+
+            {open && !editing && (
+                <EditorPanel
+                    title="Sleeping arrangements"
+                    onClose={() => setOpen(false)}
+                    footer={
+                        <div className="flex justify-end">
+                            <button type="button" onClick={() => setOpen(false)}
+                                className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black">
+                                Done
                             </button>
                         </div>
-
-                        <div className="mt-3 space-y-2">
-                            {room.beds.map((bed, bedIdx) => (
-                                <div key={bedIdx} className="flex items-center gap-2">
-                                    <select
-                                        value={bed.type}
-                                        onChange={(e) => setBed(roomIdx, bedIdx, { type: e.target.value })}
-                                        className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-slate-400 focus:outline-none"
-                                    >
-                                        {BED_TYPES.map((t) => (
-                                            <option key={t} value={t}>
-                                                {t}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => setBed(roomIdx, bedIdx, { count: Math.max(1, bed.count - 1) })}
-                                            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:border-slate-400 disabled:opacity-40"
-                                            disabled={bed.count <= 1}
-                                            aria-label="Fewer"
-                                        >
-                                            <Minus className="h-4 w-4" />
-                                        </button>
-                                        <span className="w-6 text-center text-sm font-medium text-slate-800">
-                                            {bed.count}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => setBed(roomIdx, bedIdx, { count: Math.min(16, bed.count + 1) })}
-                                            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:border-slate-400"
-                                            aria-label="More"
-                                        >
-                                            <Plus className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeBed(roomIdx, bedIdx)}
-                                        className="flex-none text-slate-400 hover:text-rose-600"
-                                        aria-label="Remove bed"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-
-                        <button
-                            type="button"
-                            onClick={() => addBed(roomIdx)}
-                            className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-slate-600 underline hover:text-slate-800"
-                        >
-                            <Plus className="h-3.5 w-3.5" /> Add a bed
-                        </button>
-
-                        {photos.length > 0 && (
-                            <div className="mt-4 border-t border-slate-100 pt-3">
-                                <div className="mb-2 text-xs font-semibold text-slate-700">
-                                    Room photo <span className="font-normal text-slate-400">(optional)</span>
-                                </div>
-                                <div className="flex gap-2 overflow-x-auto pb-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => setRoomPhoto(roomIdx, null)}
-                                        aria-label="No photo"
-                                        className={`flex h-14 w-14 flex-none items-center justify-center rounded-lg border-2 ${!room.photo ? 'border-slate-900 bg-slate-50' : 'border-slate-200'}`}
-                                    >
-                                        <BedDouble className="h-5 w-5 text-slate-400" />
-                                    </button>
-                                    {photos.map((p) => {
-                                        const on = room.photo === p;
-                                        return (
-                                            <button
-                                                key={p}
-                                                type="button"
-                                                onClick={() => setRoomPhoto(roomIdx, p)}
-                                                aria-label="Use this photo"
-                                                className={`relative h-14 w-14 flex-none overflow-hidden rounded-lg border-2 ${on ? 'border-slate-900' : 'border-slate-200'}`}
-                                            >
-                                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img src={getImageUrl(p)} alt="" className="h-full w-full object-cover" />
-                                                {on && (
-                                                    <span className="absolute inset-0 flex items-center justify-center bg-black/30">
-                                                        <Check className="h-4 w-4 text-white" />
-                                                    </span>
-                                                )}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
+                    }
+                >
+                    <p className="mb-4 text-sm text-slate-500">{counts.beds} of {plural(totalBeds, 'bed')} placed</p>
+                    <div className="space-y-3">
+                        {rooms.map((room, i) => (
+                            <button key={i} type="button" onClick={() => setEditing({ index: i, room: { ...room, beds: room.beds.map((b) => ({ ...b })) } })}
+                                className="flex w-full items-center gap-4 rounded-2xl border border-slate-200 p-3 text-left hover:border-slate-400">
+                                <RoomThumb room={room} className="h-14 w-14 flex-none rounded-lg" />
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate font-semibold text-slate-900">{room.label || 'Bedroom'}</span>
+                                    <span className="block truncate text-sm text-slate-500">{bedSummary(room.beds)}</span>
+                                </span>
+                                <ChevronRight className="h-5 w-5 flex-none text-slate-400" />
+                            </button>
+                        ))}
                     </div>
-                ))}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                        <button type="button" onClick={() => startNew('bedroom')}
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400">
+                            <Plus className="h-4 w-4" /> Add bedroom
+                        </button>
+                        <button type="button" onClick={() => startNew('common')}
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400">
+                            <Plus className="h-4 w-4" /> Add common space
+                        </button>
+                    </div>
+                </EditorPanel>
+            )}
+
+            {editing && (
+                <RoomPanel
+                    draft={editing.room}
+                    setDraft={(room) => setEditing({ ...editing, room })}
+                    left={bedsLeftToPlace(totalBeds, [...rooms.filter((_, i) => i !== editing.index), editing.room])}
+                    photos={photos}
+                    isNew={editing.index === null}
+                    onCancel={() => setEditing(null)}
+                    onDone={done}
+                    onRemove={removeRoom}
+                />
+            )}
+        </div>
+    );
+}
+
+function RoomPanel({ draft, setDraft, left, photos, isNew, onCancel, onDone, onRemove }: {
+    draft: Room;
+    setDraft: (room: Room) => void;
+    left: number;
+    photos: string[];
+    isNew: boolean;
+    onCancel: () => void;
+    onDone: () => void;
+    onRemove: () => void;
+}) {
+    // Every bed type as a counter, plus any older type a room already holds.
+    const types = [...BED_TYPES, ...draft.beds.map((b) => b.type).filter((t) => !BED_TYPES.includes(t))];
+    const countOf = (type: string) => draft.beds.find((b) => b.type === type)?.count || 0;
+
+    const setCount = (type: string, count: number) => {
+        const has = draft.beds.some((b) => b.type === type);
+        const beds: Bed[] = has
+            ? draft.beds.map((b) => (b.type === type ? { ...b, count } : b))
+            : [...draft.beds, { type, count }];
+        setDraft({ ...draft, beds });
+    };
+
+    return (
+        <EditorPanel
+            title={draft.kind === 'common' ? (draft.label || 'Common space') : (isNew ? 'Bedroom' : draft.label)}
+            onClose={onCancel}
+            footer={
+                <div className="flex items-center justify-between">
+                    <button type="button" onClick={onCancel} className="text-sm font-semibold text-slate-900 underline">Cancel</button>
+                    <button type="button" onClick={onDone}
+                        className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black">
+                        Done
+                    </button>
+                </div>
+            }
+        >
+            {draft.kind === 'common' && (
+                <div className="mb-4">
+                    <label htmlFor="room-name" className="mb-1 block text-xs font-semibold text-slate-700">Room name</label>
+                    <input id="room-name" type="text" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                        placeholder="Living room" maxLength={40}
+                        className="w-full rounded-lg border border-slate-300 p-2.5 text-sm outline-none focus:border-slate-900" />
+                </div>
+            )}
+
+            <div className="divide-y divide-slate-100">
+                {types.map((type) => {
+                    const n = countOf(type);
+                    return (
+                        <div key={type} className="flex items-center justify-between py-3">
+                            <span className="text-sm text-slate-800">{type}</span>
+                            <div className="flex items-center gap-3">
+                                <button type="button" onClick={() => setCount(type, n - 1)} disabled={n <= 0} aria-label={'Fewer ' + type}
+                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:border-slate-900 disabled:cursor-not-allowed disabled:opacity-30">
+                                    <Minus className="h-4 w-4" />
+                                </button>
+                                <span className="w-5 text-center text-sm">{n}</span>
+                                <button type="button" onClick={() => setCount(type, n + 1)} disabled={left <= 0 || n >= 16} aria-label={'More ' + type}
+                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:border-slate-900 disabled:cursor-not-allowed disabled:opacity-30">
+                                    <Plus className="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                    type="button"
-                    onClick={() => addRoom('bedroom')}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"
-                >
-                    <Plus className="h-4 w-4" /> Add bedroom
+            {photos.length > 0 && (
+                <div className="mt-5 border-t border-slate-100 pt-4">
+                    <div className="mb-2 text-xs font-semibold text-slate-700">
+                        Room photo <span className="font-normal text-slate-400">(optional)</span>
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                        <button type="button" onClick={() => setDraft({ ...draft, photo: null })} aria-label="No photo"
+                            className={`flex h-14 w-14 flex-none items-center justify-center rounded-lg border-2 ${!draft.photo ? 'border-slate-900 bg-slate-50' : 'border-slate-200'}`}>
+                            <BedDouble className="h-5 w-5 text-slate-400" />
+                        </button>
+                        {photos.map((p) => {
+                            const on = draft.photo === p;
+                            return (
+                                <button key={p} type="button" onClick={() => setDraft({ ...draft, photo: p })} aria-label="Use this photo"
+                                    className={`relative h-14 w-14 flex-none overflow-hidden rounded-lg border-2 ${on ? 'border-slate-900' : 'border-slate-200'}`}>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={getImageUrl(p)} alt="" className="h-full w-full object-cover" />
+                                    {on && (
+                                        <span className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                            <Check className="h-4 w-4 text-white" />
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {!isNew && (
+                <button type="button" onClick={onRemove} className="mt-5 text-sm font-semibold text-rose-600 underline">
+                    Remove room
                 </button>
-                <button
-                    type="button"
-                    onClick={() => addRoom('common')}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"
-                >
-                    <Plus className="h-4 w-4" /> Add common space
-                </button>
-            </div>
-        </div>
+            )}
+        </EditorPanel>
     );
 }

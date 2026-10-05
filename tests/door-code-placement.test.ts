@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { methodNeedsCode, codeHintFor } from '../lib/checkInMethods';
+import { methodNeedsCode, codeHintFor, codeLabelFor } from '../lib/checkInMethods';
 
 test('a code is asked for only where there is one', () => {
     assert.equal(methodNeedsCode('Lockbox'), true);
@@ -44,4 +44,10 @@ test('the field calls itself what the method actually is', () => {
     // — a host may already have it in a message — but the field should not
     // call a keypad a lockbox.
     assert.doesNotMatch(codeHintFor('Keypad'), /lockbox/i);
+});
+
+test('the code box label names the method, briefly', () => {
+    assert.equal(codeLabelFor('Lockbox'), 'Lockbox code');
+    assert.equal(codeLabelFor('Smart lock'), 'Smart lock code');
+    assert.equal(codeLabelFor('Keypad'), 'Keypad code');
 });

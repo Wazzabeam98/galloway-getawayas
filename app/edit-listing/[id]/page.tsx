@@ -6,10 +6,10 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import LockboxCode from '@/components/LockboxCode';
 import ArrivalEditor from '@/components/ArrivalEditor';
 import LoginModel from '@/components/auth/LoginModel';
-import PropertyTypePicker from '@/components/PropertyTypePicker';
+import PropertyTypeCard from '@/components/listing-editor/PropertyTypeCard';
+import CheckInMethodCard from '@/components/listing-editor/CheckInMethodCard';
 import { addressLineLabel } from '@/lib/propertyTypes';
 import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
@@ -26,7 +26,6 @@ import { compressImage } from '@/lib/compressImage';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
-    KeyRound, Lock, DoorOpen, Hash, Users,
     Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
     Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
@@ -222,15 +221,6 @@ export default function EditListing() {
     const [coverIndex, setCoverIndex] = useState(0);
     const [checkInMethod, setCheckInMethod] = useState('');
     const [nearby, setNearby] = useState<{ name: string; time: string }[]>([]);
-
-    const CHECKIN_METHODS: { label: string; icon: any; note: string }[] = [
-        { label: 'Lockbox', icon: KeyRound, note: 'Guests collect a key from a lockbox at the property.' },
-        { label: 'Smart lock', icon: Lock, note: 'Guests let themselves in with a code on a smart lock.' },
-        { label: 'Keypad', icon: Hash, note: 'A keypad on the door with a code you provide.' },
-        { label: 'Host greets you', icon: Users, note: "You'll meet guests at the property to hand over keys." },
-        { label: 'Keys collected nearby', icon: MapPin, note: 'Guests pick keys up from a nearby address.' },
-        { label: 'Building staff', icon: DoorOpen, note: 'A concierge or building staff let guests in.' },
-    ];
     const [newListingPromo, setNewListingPromo] = useState(true);
     const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
@@ -347,7 +337,7 @@ export default function EditListing() {
             setPrivacyType(listing.privacy_type || 'Entire place');
             setGuests(listing.max_guests || 1);
             setBedrooms(listing.bedrooms ?? 1);
-            setBeds(listing.beds ?? 1);
+            setBeds(Math.max(listing.beds ?? 1, deriveCounts(normaliseArrangements(listing.sleeping_arrangements)).beds));
             setBathrooms(listing.bathrooms ?? 1);
             {
                 const existing = normaliseArrangements(listing.sleeping_arrangements);
@@ -545,9 +535,9 @@ export default function EditListing() {
                 }
             }
 
-            // Beds entered room by room are the source of truth; the two flat
-            // integers are derived from them so they can't drift. A bedroom with
-            // no beds still counts as a room; a common space with no beds is
+            // The bed total is the host's own number (the rooms are placed
+            // against it); the bedroom count is derived from the rooms. A
+            // bedroom with no beds still counts as a room; a common space with no beds is
             // dropped. When the host hasn't entered any beds yet (an older
             // listing just opened on the seeded cards), keep the counts and
             // arrangements it already had rather than zeroing them.
@@ -573,7 +563,8 @@ export default function EditListing() {
                     property_type: propertyType,
                     privacy_type: privacyType,
                     bedrooms: hasSleeping ? derived.bedrooms : bedrooms,
-                    beds: hasSleeping ? derived.beds : beds,
+                    // The host's total: the cap the rooms are placed against.
+                    beds,
                     sleeping_arrangements: hasSleeping ? cleanRooms : (original?.sleeping_arrangements ?? []),
                     bathrooms,
                     plot_band: plotBand || null,
@@ -774,66 +765,25 @@ export default function EditListing() {
                     <div>
                         {activeSection === 'basics' && (
                             <div className="space-y-10">
-                                <section>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-4">Property type</h2>
-                                    <PropertyTypePicker value={propertyType} onChange={setPropertyType} compact />
-                                </section>
+                                <section className="space-y-4">
+                                    <PropertyTypeCard
+                                        propertyType={propertyType}
+                                        privacyType={privacyType}
+                                        onSave={(type, listingType) => { setPropertyType(type); setPrivacyType(listingType); }}
+                                    />
 
-                                <section>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-4">What guests get</h2>
-                                    <div className="space-y-3">
-                                        {['Entire place', 'A private room', 'A shared room'].map((option) => (
-                                            <button key={option} type="button" onClick={() => setPrivacyType(option)}
-                                                className={`w-full p-4 rounded-2xl border-2 text-left transition flex items-center justify-between ${privacyType === option ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                                <span className="font-semibold text-slate-900 text-sm">{option}</span>
-                                                {privacyType === option && <Check className="w-5 h-5 text-slate-900" />}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </section>
-
-                                <section>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-1">How guests get in</h2>
-                                    <p className="text-sm text-slate-500 mb-4">
-                                        Shown on your listing. Send the actual codes privately once a booking is confirmed.
-                                    </p>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {CHECKIN_METHODS.map(({ label, icon: Icon, note }) => {
-                                            const selected = checkInMethod === label;
-                                            return (
-                                                <button key={label} type="button"
-                                                    onClick={() => setCheckInMethod(selected ? '' : label)}
-                                                    className={`text-left border-2 rounded-2xl p-4 transition ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                                    <Icon className="w-5 h-5 text-slate-700 mb-2" />
-                                                    <div className="font-semibold text-slate-900 text-sm">{label}</div>
-                                                    <div className="text-xs text-slate-500 mt-0.5">{note}</div>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {/* Asked here because this is where the
-                                        question arises: a host who has just
-                                        said "there's a lockbox" is thinking
-                                        about the code. It sat next to the house
-                                        rules before, surrounded by guest-facing
-                                        copy, which is the wrong company for a
-                                        credential.
-
-                                        Saved on its own, through its own route:
-                                        the code is not on the listing row, so
-                                        it is not part of this form's Save. */}
+                                    {/* The method saves with the listing; the door
+                                        code inside its panel saves on its own route —
+                                        it is not on the listing row. */}
                                     {listingId && (
-                                        <LockboxCode listingId={listingId} method={checkInMethod} />
+                                        <CheckInMethodCard listingId={listingId} method={checkInMethod} onChange={setCheckInMethod} />
                                     )}
 
-                                    {/* The rest of the way in — the last bit of the
-                                        journey, parking, wifi, what3words. Saved on
-                                        its own secure route (like the code above),
-                                        never on this form's Save, and none of it
-                                        gates publishing. */}
+                                    {/* Parking, wifi, what3words. Saved on its own
+                                        secure route, never on this form's Save, and
+                                        none of it gates publishing. */}
                                     {listingId && (
-                                        <div className="mt-8 border-t border-slate-200 pt-6">
+                                        <div className="pt-4">
                                             <h3 className="font-semibold text-slate-900 mb-1">Arrival details</h3>
                                             <p className="text-sm text-slate-500 mb-4">The way to the door and the way in, shown to a guest on their Getting-there screen.</p>
                                             <ArrivalEditor listingId={listingId} />
@@ -844,14 +794,15 @@ export default function EditListing() {
                                 <section>
                                     <h2 className="text-xl font-bold text-slate-900 mb-2">Capacity</h2>
                                     <Counter label="Guests" value={guests} onChange={setGuests} min={1} />
+                                    {/* The total the rooms below are placed against;
+                                        it can't drop below the beds already placed. */}
+                                    <Counter label="Beds" value={beds} onChange={setBeds} min={Math.max(1, deriveCounts(sleeping).beds)} />
                                     <Counter label="Bathrooms" value={bathrooms} onChange={setBathrooms} min={0.5} />
-                                    {/* Beds are entered room by room; the bedroom
-                                        and bed totals are derived from them, so
-                                        there are no separate counters for those. */}
-                                    <div className="mt-6 border-t pt-6">
+                                    <div className="mt-6">
                                         <SleepingArrangementsEditor
                                             rooms={sleeping}
                                             onChange={setSleeping}
+                                            totalBeds={beds}
                                             photos={photos.filter((p) => p.kind === 'existing').map((p) => (p as { path: string }).path)}
                                         />
                                     </div>
@@ -932,6 +883,8 @@ export default function EditListing() {
                                         <p className="text-xs text-slate-500">
                                             Guests will see <span className="font-medium text-slate-700">{buildLocation(locTown, locRegion) || 'your town and region'}</span>.
                                         </p>
+                                        {/* Saved on the arrival route, not this form's Save. */}
+                                        {listingId && <ArrivalEditor listingId={listingId} part="directions" />}
                                     </div>
                                 </section>
 
