@@ -22,40 +22,61 @@ export const dynamic = 'force-dynamic';
 // alert both go through the service role because listing_reports has no browser
 // grant (RLS wall) — the browser could not write it even signed in.
 
+const TARGET_LABEL: Record<string, string> = { listing: 'Listing', experience: 'Experience', trade: 'Trade' };
+
 export async function POST(request: Request) {
-    let listingId = '';
+    let targetId = '';
     try {
         const body = await request.json().catch(() => ({}));
-        listingId = String((body && body.listingId) || '');
+        // A cottage still sends { listingId }; an experience / trade sends
+        // { targetType, targetId }. Normalise both to a type + id.
+        const rawType = String((body && body.targetType) || ((body && body.listingId) ? 'listing' : ''));
+        const targetType = (['listing', 'experience', 'trade'].includes(rawType) ? rawType : '') as '' | 'listing' | 'experience' | 'trade';
+        targetId = String((body && body.targetId) || (body && body.listingId) || '');
 
         // One shared check, the same one the modal runs (lib/listingReports).
         const valid = validateReport({ reason: body && body.reason, details: body && body.details });
         if (!valid.ok) return NextResponse.json({ ok: false, error: valid.error }, { status: 400 });
-        if (!listingId) return NextResponse.json({ ok: false, error: 'Which listing?' }, { status: 400 });
+        if (!targetType) return NextResponse.json({ ok: false, error: 'What kind of thing?' }, { status: 400 });
+        if (!targetId) return NextResponse.json({ ok: false, error: 'Which one?' }, { status: 400 });
 
         // Null when not signed in — a signed-out visitor may report.
         const caller = await signedInCaller();
 
         const admin = adminClient();
 
-        // The listing must exist. Fetch its title server-side for the email and
-        // the record check — never trust a title the client sent.
-        const { data: listing } = await admin
-            .from('listings')
-            .select('id, title')
-            .eq('id', listingId)
-            .maybeSingle();
-        if (!listing) return NextResponse.json({ ok: false, error: 'No such listing.' }, { status: 404 });
+        // The target must exist. Fetch its name server-side for the email and the
+        // record check — never trust a title the client sent. A listing lives in
+        // `listings`; an experience and a trade are both rows in
+        // `service_providers` (the caller's page says which).
+        let resolvedId = '';
+        let where = '';
+        if (targetType === 'listing') {
+            const { data: listing } = await admin.from('listings').select('id, title').eq('id', targetId).maybeSingle();
+            if (!listing) return NextResponse.json({ ok: false, error: 'No such listing.' }, { status: 404 });
+            resolvedId = listing.id;
+            where = listing.title || listing.id;
+        } else {
+            const { data: provider } = await admin.from('service_providers').select('id, business_name').eq('id', targetId).maybeSingle();
+            if (!provider) return NextResponse.json({ ok: false, error: 'No such ' + targetType + '.' }, { status: 404 });
+            resolvedId = provider.id;
+            where = provider.business_name || provider.id;
+        }
 
         const { error: insertError } = await admin.from('listing_reports').insert({
-            listing_id: listing.id,
+            // listing_id stays populated for a listing (back-compat with the old
+            // rows and the listing-only index); null for a provider target, which
+            // the canonical target_type/target_id carry instead.
+            listing_id: targetType === 'listing' ? resolvedId : null,
+            target_type: targetType,
+            target_id: resolvedId,
             reporter_id: caller ? caller.id : null,
             reason: valid.reason,
             details: valid.details,
         });
         if (insertError) {
-            await logError('[listings/report] could not record a listing report', {
-                listingId: listing.id, reason: valid.reason, message: insertError.message,
+            await logError('[listings/report] could not record a report', {
+                targetType, targetId: resolvedId, reason: valid.reason, message: insertError.message,
             }, { path: 'listings/report' });
             return NextResponse.json({ ok: false, error: 'We couldn’t record your report just now. Please email hello@gallowaygetaways.co.uk.' }, { status: 500 });
         }
@@ -78,23 +99,23 @@ export async function POST(request: Request) {
         if (!to.length) {
             // The report is already saved; it is not lost, it just wasn't
             // emailed. Record that and still tell the reporter it went through.
-            await logError('[listings/report] no REPORTS_ALERT_EMAIL/DISPUTES_ALERT_EMAIL set — a listing report was saved but nobody was emailed', {
-                listingId: listing.id, reason: valid.reason,
+            await logError('[listings/report] no REPORTS_ALERT_EMAIL/DISPUTES_ALERT_EMAIL set — a report was saved but nobody was emailed', {
+                targetType, targetId: resolvedId, reason: valid.reason,
             }, { path: 'listings/report' });
             return NextResponse.json({ ok: true });
         }
 
-        const where = listing.title || listing.id;
-        const heading = 'Listing reported — ' + where;
+        const typeLabel = TARGET_LABEL[targetType] || 'Listing';
+        const heading = typeLabel + ' reported — ' + where;
         const { sent, failed } = await sendEmailToAll(
             to,
             heading,
             emailLayout(
                 '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">' + escapeHtml(heading) + '</h1>'
                     + '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(reporterName)
-                    + ' reported a listing.</p>'
+                    + ' reported ' + (targetType === 'listing' ? 'a listing' : targetType === 'trade' ? 'a trade' : 'an experience') + '.</p>'
                     + detailRows([
-                        { label: 'Property', value: escapeHtml(String(where)) },
+                        { label: typeLabel, value: escapeHtml(String(where)) },
                         { label: 'Reason', value: escapeHtml(reasonLabel(valid.reason)) },
                         { label: 'Reported by', value: escapeHtml(reporterName) },
                     ])
@@ -109,13 +130,13 @@ export async function POST(request: Request) {
 
         if (failed.length) {
             await logError('[listings/report] a report alert did not send', {
-                listingId: listing.id, failed: failed.join(', '), reached: sent.join(', '),
+                targetType, targetId: resolvedId, failed: failed.join(', '), reached: sent.join(', '),
             }, { path: 'listings/report' });
         }
 
         return NextResponse.json({ ok: true });
     } catch (err: any) {
-        await logError('[listings/report] ' + ((err && err.message) || 'failed'), { listingId, message: String(err && err.message) }, { path: 'listings/report' });
+        await logError('[listings/report] ' + ((err && err.message) || 'failed'), { targetId, message: String(err && err.message) }, { path: 'listings/report' });
         return NextResponse.json({ ok: false, error: 'Could not send your report.' }, { status: 500 });
     }
 }

@@ -167,14 +167,14 @@ test('an automated guest-side notice opening a thread is not a counted inquiry',
     assert.equal(r.responseRatePercent, 100);
 });
 
-test('no bookings at all starts at 100% / within a day', async () => {
+test('no bookings at all starts at 100% / within 24 hours', async () => {
     const admin = fakeAdmin({ bookings: [], listing_access: [], messages: [] });
     const r = await hostResponsiveness(admin, HOST);
-    assert.deepEqual(r, { responseRatePercent: 100, typicalLabel: 'within a day', sampleSize: 0 });
+    assert.deepEqual(r, { responseRatePercent: 100, typicalLabel: 'within 24 hours', sampleSize: 0 });
 });
 
 test('no hostId returns the safe default', async () => {
     const r = await hostResponsiveness(fakeAdmin({}), '');
     assert.equal(r.responseRatePercent, 100);
-    assert.equal(r.typicalLabel, 'within a day');
+    assert.equal(r.typicalLabel, 'within 24 hours');
 });

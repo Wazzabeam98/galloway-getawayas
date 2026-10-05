@@ -86,7 +86,7 @@ export default function MeetYourHost({
     // Response rate and time live in the stat column too, stacked under time
     // hosting with the same thin dividers — so even a brand-new host's card has
     // three real stats and never reads small and empty. Both always show: they
-    // start at 100% / "within a day" and only move with real history.
+    // start at 100% / "within 24 hours" and only move with real history.
     stats.push({ value: `${responseRatePercent}%`, label: 'Response rate' });
     const responseTime = typicalLabel.charAt(0).toUpperCase() + typicalLabel.slice(1);
     stats.push({ value: responseTime, label: 'Response time' });
@@ -165,8 +165,10 @@ export default function MeetYourHost({
                 </div>
 
                 {/* Right: what verified means, co-hosts, safety. (Response rate
-                    and time moved into the stat column on the left.) */}
-                <div className="space-y-6">
+                    and time moved into the stat column on the left.) Centred against
+                    the card on desktop rather than top-aligned, so the two columns
+                    read as one block; on a phone it just stacks under the card. */}
+                <div className="space-y-6 lg:self-center">
                     {verified && (
                         <div>
                             <h3 className="flex items-center gap-2 font-semibold text-slate-900">

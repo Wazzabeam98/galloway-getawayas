@@ -61,6 +61,7 @@ export default async function PublicListingPage({ params }: { params: { provider
                 backHref="/experiences/browse"
                 backLabel="All experiences"
                 reviews={pausedReviews}
+                reportable
                 panel={<NotTakingBookings message={EXPERIENCE_NOT_TAKING_BOOKINGS} />}
             />
         );
@@ -92,6 +93,7 @@ export default async function PublicListingPage({ params }: { params: { provider
                     reviews={reviews}
                     sticky
                     responsiveness={responsiveness}
+                    reportable
                     menu={<FoodMenu leadTimeDays={p.lead_time_days} />}
                     panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} standalone providerId={p.id} signedIn={!!user} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} />}
                 />
@@ -159,6 +161,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             panel={panel}
             sticky
             responsiveness={responsiveness}
+            reportable
             itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
             reviews={reviews}
         />
