@@ -18,7 +18,7 @@ import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { rateFor, feeAmount, netOfFee } from '@/lib/fees';
-import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
+import { listingLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import SleepingArrangementsEditor from '@/components/SleepingArrangementsEditor';
 import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, type Room } from '@/lib/sleeping';
@@ -150,7 +150,6 @@ export default function EditListing() {
     // way the malformed one got there in the first place. Four boxes now, and
     // `location` is assembled from two of them.
     const [locTown, setLocTown] = useState('');
-    const [locRegion, setLocRegion] = useState(DEFAULT_REGION);
     const [streetAddress, setStreetAddress] = useState('');
     const [listingStatus, setListingStatus] = useState('');
     const [locPostcode, setLocPostcode] = useState('');
@@ -281,7 +280,6 @@ export default function EditListing() {
             setDescription(listing.description || '');
             const place = splitLocation(listing.location);
             setLocTown(place.town);
-            setLocRegion(place.region || DEFAULT_REGION);
             setStreetAddress(listing.street_address || '');
             setLocPostcode(listing.postcode || '');
             setPin(listing.latitude != null && listing.longitude != null
@@ -413,7 +411,7 @@ export default function EditListing() {
             propertyType: propertyType,
             street: streetAddress,
             city: locTown,
-            region: locRegion,
+            region: DEFAULT_REGION,
             postcode: locPostcode,
             photoCount: photos.length,
             title: title,
@@ -441,7 +439,7 @@ export default function EditListing() {
             propertyType: propertyType,
             street: streetAddress,
             city: locTown,
-            region: locRegion,
+            region: DEFAULT_REGION,
             postcode: locPostcode,
             photoCount: photos.length,
             title: title,
@@ -508,7 +506,7 @@ export default function EditListing() {
             const patch = {
                     title: title.trim(),
                     description,
-                    location: buildLocation(locTown, locRegion),
+                    location: listingLocation(locTown),
                     street_address: buildStreetAddress(null, null, streetAddress) || null,
                     postcode: locPostcode.trim() ? tidyPostcode(locPostcode) : null,
                     show_precise_location: showPrecise,
@@ -752,11 +750,10 @@ export default function EditListing() {
                                         {pin && <PropertyMap variant="host" latitude={pin.latitude} longitude={pin.longitude} />}
                                         <AddressCard
                                             town={locTown}
-                                            region={locRegion}
                                             street={streetAddress}
                                             postcode={locPostcode}
                                             propertyType={propertyType}
-                                            onSave={(t, r, st, pc) => { setLocTown(t); setLocRegion(r); setStreetAddress(st); setLocPostcode(pc); }}
+                                            onSave={(t, st, pc) => { setLocTown(t); setStreetAddress(st); setLocPostcode(pc); }}
                                         />
                                         <LocationSharingCard precise={showPrecise} onSave={setShowPrecise} />
                                         <div className="pt-2">

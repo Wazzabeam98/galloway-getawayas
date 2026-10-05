@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
 import { addressLineLabel } from '@/lib/propertyTypes';
-import { buildLocation } from '@/lib/places';
+import { listingLocation } from '@/lib/places';
 
 // The editor's Location section, Airbnb's shape: the address on a raised card
 // opening to the address fields, and "Location sharing" opening to the precise-
@@ -18,29 +18,27 @@ export function addressSummary(street: string, town: string, postcode: string): 
 const inputClass = 'w-full p-3 border rounded-xl text-sm mt-1';
 const labelClass = 'text-xs text-slate-500 font-semibold uppercase';
 
-export function AddressCard({ town, region, street, postcode, propertyType, onSave }: {
+export function AddressCard({ town, street, postcode, propertyType, onSave }: {
     town: string;
-    region: string;
     street: string;
     postcode: string;
     propertyType: string;
-    onSave: (town: string, region: string, street: string, postcode: string) => void;
+    onSave: (town: string, street: string, postcode: string) => void;
 }) {
     const [open, setOpen] = useState(false);
     const [t, setT] = useState(town);
-    const [r, setR] = useState(region);
     const [s, setS] = useState(street);
     const [p, setP] = useState(postcode);
     const line = addressLineLabel(propertyType);
 
-    const openPanel = () => { setT(town); setR(region); setS(street); setP(postcode); setOpen(true); };
+    const openPanel = () => { setT(town); setS(street); setP(postcode); setOpen(true); };
 
     return (
         <>
             <EditorCard title="Address" summary={addressSummary(street, town, postcode) || 'Add the address'} onClick={openPanel} />
             {open && (
                 <EditorPanel title="Address" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(t, r, s, p); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={() => { onSave(t, s, p); setOpen(false); }} />}>
                     <div className="space-y-4">
                         <p className="text-sm text-slate-500">
                             Guests see the town and region. The street address and postcode are kept
@@ -49,10 +47,6 @@ export function AddressCard({ town, region, street, postcode, propertyType, onSa
                         <div>
                             <label htmlFor="edit-town" className={labelClass}>Town / city</label>
                             <input id="edit-town" type="text" value={t} onChange={(e) => setT(e.target.value)} placeholder="e.g. Kirkcudbright" className={inputClass} />
-                        </div>
-                        <div>
-                            <label htmlFor="edit-region" className={labelClass}>Region</label>
-                            <input id="edit-region" type="text" value={r} onChange={(e) => setR(e.target.value)} placeholder="e.g. Dumfries and Galloway" className={inputClass} />
                         </div>
                         <div>
                             <label htmlFor="edit-street" className={labelClass}>{line.label} (private)</label>
@@ -64,7 +58,7 @@ export function AddressCard({ town, region, street, postcode, propertyType, onSa
                             <input id="edit-postcode" type="text" value={p} onChange={(e) => setP(e.target.value)} placeholder="e.g. DG6 4JS" className={inputClass} />
                         </div>
                         <p className="text-xs text-slate-500">
-                            Guests will see <span className="font-medium text-slate-700">{buildLocation(t, r) || 'your town and region'}</span>.
+                            Guests will see <span className="font-medium text-slate-700">{listingLocation(t) || 'your town'}</span>.
                         </p>
                     </div>
                 </EditorPanel>

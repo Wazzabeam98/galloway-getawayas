@@ -171,7 +171,7 @@ export const PUBLISH_RULES: Rule[] = [
     {
         key: 'town',
         step: 3,
-        message: 'Please fill in your town/city and region.',
+        message: 'Please fill in your town/city.',
         failed: (l) => !text(l.city) || !text(l.region),
     },
     {
