@@ -215,7 +215,7 @@ export const PUBLISH_RULES: Rule[] = [
     },
     {
         key: 'price',
-        step: 9,
+        step: 10,
         message: 'Please set a price of more than £0 a night.',
         failed: (l) => {
             const value = Number(l.price);
@@ -224,7 +224,7 @@ export const PUBLISH_RULES: Rule[] = [
     },
     {
         key: 'price_ceiling',
-        step: 9,
+        step: 10,
         message: 'That price looks like a typo — the most you can set is £'
             + MAX_PRICE_PER_NIGHT + ' a night.',
         failed: (l) => Number(l.price) > MAX_PRICE_PER_NIGHT,
@@ -235,7 +235,7 @@ export const PUBLISH_RULES: Rule[] = [
         // Pricing tab sets one, so everywhere else this reads undefined and
         // the rule stands down.
         key: 'weekend_price_ceiling',
-        step: 9,
+        step: 10,
         message: 'That weekend price looks like a typo — the most you can set is £'
             + MAX_PRICE_PER_NIGHT + ' a night.',
         failed: (l) =>

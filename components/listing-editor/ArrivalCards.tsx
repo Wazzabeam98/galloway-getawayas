@@ -15,7 +15,7 @@ import {
 // Save stores it (/api/listings/save, which cleans it with lib/listingSafety).
 
 // ✗ / ✓ pair, as the house rules have always used.
-function YesNo({ value, onChange, label }: { value: boolean | null; onChange: (v: boolean) => void; label: string }) {
+export function YesNo({ value, onChange, label }: { value: boolean | null; onChange: (v: boolean) => void; label: string }) {
     const btn = (on: boolean) =>
         `w-8 h-8 rounded-full flex items-center justify-center ${on ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`;
     return (
