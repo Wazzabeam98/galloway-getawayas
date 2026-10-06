@@ -2,7 +2,7 @@
 
 import { Accessibility as AccessibilityIcon } from 'lucide-react';
 import { ACCESSIBILITY_AMENITIES } from '@/lib/listingFilters';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
@@ -26,6 +26,7 @@ import PropertyMap from '@/components/PropertyMap';
 import LoginModel from '@/components/auth/LoginModel';
 import PropertyTypeCard from '@/components/listing-editor/PropertyTypeCard';
 import CheckInMethodCard from '@/components/listing-editor/CheckInMethodCard';
+import PhoneSectionTabs, { goToEditorSection } from '@/components/listing-editor/PhoneSectionTabs';
 import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
@@ -104,23 +105,23 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
 
 
 const SECTIONS = [
-    { key: 'basics', label: 'Basics & guests', icon: LayoutGrid },
+    { key: 'basics', label: 'Basics & guests', short: 'Basics', icon: LayoutGrid },
     // Airbnb's Arrival guide: how guests get in, the times, wifi, directions
     // and what3words.
-    { key: 'arrival', label: 'Arrival', icon: DoorOpen },
-    { key: 'location', label: 'Location', icon: MapPin },
-    { key: 'description', label: 'Description', icon: FileText },
-    { key: 'amenities', label: 'Amenities', icon: Sparkles },
-    { key: 'photos', label: 'Photos', icon: ImageIcon },
+    { key: 'arrival', label: 'Arrival', short: 'Arrival', icon: DoorOpen },
+    { key: 'location', label: 'Location', short: 'Location', icon: MapPin },
+    { key: 'description', label: 'Description', short: 'Description', icon: FileText },
+    { key: 'amenities', label: 'Amenities', short: 'Amenities', icon: Sparkles },
+    { key: 'photos', label: 'Photos', short: 'Photos', icon: ImageIcon },
     // Every amount the host charges, in one place (the fees, deposit and
     // discounts used to sit under Booking settings and a Discounts tab).
-    { key: 'rates', label: 'Pricing & fees', icon: PoundSterling },
+    { key: 'rates', label: 'Pricing & fees', short: 'Pricing', icon: PoundSterling },
     // How guests book and the cancellation policy (stay length is on the
     // calendar's Availability tab) so they're findable and changeable in one place, rather than
     // scattered across Rates / Availability / Cancellation (and, for instant
     // book, only on the Account page).
-    { key: 'booking', label: 'Booking settings', icon: CalendarRange },
-    { key: 'calendar', label: 'Calendar sync', icon: RefreshCw },
+    { key: 'booking', label: 'Booking settings', short: 'Booking', icon: CalendarRange },
+    { key: 'calendar', label: 'Calendar sync', short: 'Calendar sync', icon: RefreshCw },
 ];
 
 const CANCELLATION_POLICIES = [
@@ -131,6 +132,22 @@ const CANCELLATION_POLICIES = [
 ];
 
 type Photo = { kind: 'existing'; path: string } | { kind: 'new'; file: File };
+
+// One section of the editor. On desktop just its contents (only the chosen
+// section is shown). On a phone, where every section sits on one page, a block
+// the tab bar can find and scroll to, with the section's heading — Basics and
+// Arrival don't carry one of their own.
+const OWN_HEADING = new Set(['location', 'description', 'amenities', 'photos', 'rates', 'booking', 'calendar']);
+function PhoneSection({ id, phone, children }: { id: string; phone: boolean; children: React.ReactNode }) {
+    if (!phone) return <>{children}</>;
+    const label = SECTIONS.find((s) => s.key === id)?.label;
+    return (
+        <div data-editor-section={id} className="mt-14 first:mt-0">
+            {!OWN_HEADING.has(id) && <h2 className="text-xl font-bold text-slate-900 mb-4">{label}</h2>}
+            {children}
+        </div>
+    );
+}
 
 export default function EditListing() {
     const [commissionRate, setCommissionRate] = useState<number | null>(null);
@@ -146,6 +163,19 @@ export default function EditListing() {
     const [original, setOriginal] = useState<any>(null);
     const [notOwner, setNotOwner] = useState(false);
     const [activeSection, setActiveSection] = useState('basics');
+    // On a phone the editor is one continuous page — every section in order,
+    // with a sticky tab bar (PhoneSectionTabs) in place of the left-hand list.
+    // Decided in JS, not CSS, so each card is mounted once.
+    const [isPhone, setIsPhone] = useState(false);
+    useEffect(() => {
+        const mq = window.matchMedia('(max-width: 767px)');
+        const sync = () => setIsPhone(mq.matches);
+        sync();
+        mq.addEventListener('change', sync);
+        return () => mq.removeEventListener('change', sync);
+    }, []);
+    // Desktop shows the chosen section; a phone shows them all.
+    const shows = (key: string) => isPhone || activeSection === key;
 
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
@@ -358,18 +388,11 @@ export default function EditListing() {
         if (key && SECTIONS.some((x) => x.key === key)) setActiveSection(key);
     }, []);
 
-    // A section is seen from its start. On desktop that is the top of the page;
-    // on a phone the section list sits above the content, so the content's own
-    // top, just under the sticky header.
-    const contentRef = useRef<HTMLDivElement>(null);
+    // A section is seen from its start: the top of the page. (Desktop only —
+    // a phone has every section on one page and the tab bar scrolls to them.)
     const openSection = (key: string) => {
         setActiveSection(key);
-        requestAnimationFrame(() => {
-            const el = contentRef.current;
-            const phone = window.matchMedia('(max-width: 767px)').matches;
-            const top = phone && el ? el.getBoundingClientRect().top + window.scrollY - 96 : 0;
-            window.scrollTo({ top: Math.max(0, top) });
-        });
+        requestAnimationFrame(() => window.scrollTo({ top: 0 }));
     };
 
     const toggleAmenity = (name: string) => {
@@ -660,7 +683,7 @@ export default function EditListing() {
                     <p className="mt-1 text-sm text-amber-900/80">
                         A booked guest needs somewhere to be sent. Add it under Location — it stays private and is only shared once a booking is confirmed.
                     </p>
-                    <button type="button" onClick={() => setActiveSection('location')}
+                    <button type="button" onClick={() => (isPhone ? goToEditorSection('location') : setActiveSection('location'))}
                         className="mt-3 rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white">
                         Add the address
                     </button>
@@ -701,10 +724,17 @@ export default function EditListing() {
             )}
 
 
+            {isPhone && (
+                <PhoneSectionTabs
+                    sections={SECTIONS.map(({ key, short }) => ({ key, label: short }))}
+                    initial={activeSection}
+                />
+            )}
+
             <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-10">
                     {/* Sidebar — held in place on desktop, just below the sticky site header. */}
-                    <div className="space-y-1 md:sticky md:top-24 md:self-start">
+                    {!isPhone && <div className="space-y-1 md:sticky md:top-24 md:self-start">
                         {SECTIONS.map(({ key, label, icon: Icon }) => (
                             <button
                                 key={key}
@@ -715,11 +745,11 @@ export default function EditListing() {
                                 <Icon className="w-4 h-4 mr-3" /> {label}
                             </button>
                         ))}
-                    </div>
+                    </div>}
 
                     {/* Content */}
-                    <div ref={contentRef}>
-                        {activeSection === 'basics' && (
+                    <div>
+                        {shows('basics') && (<PhoneSection id="basics" phone={isPhone}>
                             <div className="space-y-4">
                                 <section className="space-y-4">
                                     <TitleCard title={title} onSave={setTitle} />
@@ -752,9 +782,9 @@ export default function EditListing() {
                                 </section>
 
                             </div>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'arrival' && (
+                        {shows('arrival') && (<PhoneSection id="arrival" phone={isPhone}>
                             <section className="space-y-4">
                                     {/* The method saves with the listing; the door
                                         code inside its panel saves on its own route —
@@ -811,9 +841,9 @@ export default function EditListing() {
                                         onSave={(sf) => { setGuestSafety(sf); setAmenities((prev) => withAlarmAmenities(prev, sf)); }}
                                     />
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'location' && (
+                        {shows('location') && (<PhoneSection id="location" phone={isPhone}>
                             <div className="space-y-4">
                                 <section>
                                     <h2 className="text-xl font-bold text-slate-900 mb-4">Location</h2>
@@ -836,16 +866,16 @@ export default function EditListing() {
                                     <NeighbourhoodCard text={neighbourhood} onSave={setNeighbourhood} />
                                 </section>
                             </div>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'description' && (
+                        {shows('description') && (<PhoneSection id="description" phone={isPhone}>
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-2">Description</h2>
                                 <AutoTextarea value={description} onChange={(e) => setDescription(e.target.value)} rows={8} className="w-full p-3 border rounded-xl" />
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'amenities' && (
+                        {shows('amenities') && (<PhoneSection id="amenities" phone={isPhone}>
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-1">Amenities</h2>
                                 <p className="text-sm text-slate-400 mb-4">{amenities.length} selected</p>
@@ -871,9 +901,9 @@ export default function EditListing() {
                                     ))}
                                 </div>
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'photos' && (
+                        {shows('photos') && (<PhoneSection id="photos" phone={isPhone}>
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-1">Photos</h2>
                                 <p className="text-xs text-slate-400 mb-4">Drag to reorder. Click the star to set the cover photo.</p>
@@ -920,9 +950,9 @@ export default function EditListing() {
                                     <input type="file" accept="image/png, image/jpeg" multiple onChange={handlePhotosChange} className="hidden" disabled={processingPhotos} />
                                 </label>
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'rates' && (
+                        {shows('rates') && (<PhoneSection id="rates" phone={isPhone}>
                             <section className="space-y-4">
                                 <h2 className="text-xl font-bold text-slate-900">Pricing &amp; fees</h2>
                                 <NightlyPriceCard price={price} feePercent={HOST_FEE_PERCENT} onSave={setPrice} />
@@ -936,9 +966,9 @@ export default function EditListing() {
                                 <PetFeeCard fee={petFee} petsAllowed={amenities.includes('Pets allowed')} onSave={setPetFee} />
                                 <DamageDepositCard deposit={damageDeposit} onSave={setDamageDeposit} />
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'booking' && (
+                        {shows('booking') && (<PhoneSection id="booking" phone={isPhone}>
                             <section className="space-y-4">
                                 <h2 className="text-xl font-bold text-slate-900">Booking settings</h2>
                                 <HowGuestsBookCard
@@ -953,9 +983,9 @@ export default function EditListing() {
                                     onSave={(pol, nr) => { setCancellationPolicy(pol); setNonRefundableOption(nr); }}
                                 />
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'calendar' && (
+                        {shows('calendar') && (<PhoneSection id="calendar" phone={isPhone}>
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-1">Calendar sync</h2>
                                 <p className="text-sm text-slate-500 mb-4">
@@ -998,7 +1028,7 @@ export default function EditListing() {
                                     Paste this into Airbnb or Booking.com's "import calendar" setting so bookings made here block those dates there too. It works with your own website too. Keep it to yourself — anyone with this link can see when your place is occupied.
                                 </p>
                             </section>
-                        )}
+                        </PhoneSection>)}
 
                         {/* A listing that predates a rule keeps saving, so it
                             would otherwise never be told it is below the
