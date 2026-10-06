@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
+import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, Feather, Users, Gem, MapPin, Maximize2, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import RecruitFaq from '@/components/business/RecruitFaq';
 import AgreementTick from '@/components/legal/AgreementTick';
@@ -23,6 +23,11 @@ import { DEFAULT_COMMISSION_PERCENT, feeAmount, netOfFee } from '@/lib/fees';
 import { listingLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import { plural } from '@/lib/plural';
+import { YesNo } from '@/components/listing-editor/ArrivalCards';
+import {
+    PETS_AMENITY, MAX_PETS_CAP, DEFAULT_MAX_PETS, withPetsAmenity, withAlarmAmenities, clampMaxPets,
+    guestSafetyProblem, SAFETY_DETAILS_MAX, type GuestSafety,
+} from '@/lib/listingSafety';
 import {
     problemAtStep as ruleAtStep,
     firstPublishProblem as firstProblemIn,
@@ -64,7 +69,9 @@ export default function AddHome() {
 
     // Airbnb-style wizard state
     const [step, setStep] = useState(1);
-    const TOTAL_STEPS = 9;
+    const TOTAL_STEPS = 10;
+    // Safety details, just before the price and review (Airbnb's order).
+    const SAFETY_STEP = 9;
     const [propertyType, setPropertyType] = useState('');
     const [privacyType, setPrivacyType] = useState('Entire place');
     const [guests, setGuests] = useState(1);
@@ -72,6 +79,13 @@ export default function AddHome() {
     const [beds, setBeds] = useState(1);
     const [bathrooms, setBathrooms] = useState(1);
     const [amenities, setAmenities] = useState<string[]>([]);
+    // "Do you allow pets?" and the Safety details step. Pets and the two alarms
+    // are stored as amenities (folded in below); the maximum and the safety
+    // answers go where the editor's House rules and Guest safety cards put them.
+    const [petsAllowed, setPetsAllowed] = useState(false);
+    const [maxPets, setMaxPets] = useState(DEFAULT_MAX_PETS);
+    const [safety, setSafety] = useState<GuestSafety>({});
+    const allAmenities = withAlarmAmenities(withPetsAmenity(amenities, petsAllowed), safety);
     const [checkInMethod, setCheckInMethod] = useState('');
     // Seeded with the old silent defaults, but now visible and changeable
     // before the listing is created rather than assumed afterwards.
@@ -126,7 +140,6 @@ export default function AddHome() {
                 { name: 'Indoor fireplace', icon: Flame },
                 { name: 'Outdoor furniture', icon: Armchair },
                 { name: 'Pool', icon: Waves },
-                { name: 'Pets allowed', icon: PawPrint },
             ],
         },
         {
@@ -142,13 +155,9 @@ export default function AddHome() {
             category: 'Accessibility',
             items: ACCESSIBILITY_AMENITIES.map((name) => ({ name, icon: AccessibilityIcon })),
         },
-        {
-            category: 'Safety',
-            items: [
-                { name: 'Carbon monoxide alarm', icon: AlertTriangle },
-                { name: 'Smoke alarm', icon: BellRing },
-            ],
-        },
+        // Pets are asked below the tiles ("Do you allow pets?"), and the smoke
+        // and carbon monoxide alarms on the Safety details step — saved where
+        // the editor's House rules and Guest safety cards save them.
     ];
 
     // How guests get in. The method is public; the actual codes and key
@@ -233,7 +242,18 @@ export default function AddHome() {
                     setBedrooms(draft.bedrooms ?? 1);
                     setBeds(draft.beds ?? 1);
                     setBathrooms(draft.bathrooms ?? 1);
-                    setAmenities(draft.amenities || []);
+                    {
+                        const saved: string[] = draft.amenities || [];
+                        const ALARMS: Record<string, string> = { 'Smoke alarm': 'smoke_alarm', 'Carbon monoxide alarm': 'co_alarm' };
+                        setAmenities(saved.filter((a) => a !== PETS_AMENITY && !ALARMS[a]));
+                        setPetsAllowed(saved.indexOf(PETS_AMENITY) !== -1);
+                        setMaxPets(clampMaxPets(draft.max_pets));
+                        const gs: GuestSafety = {};
+                        const stored = (draft.guest_safety || {}) as GuestSafety;
+                        for (const k of ['smoke_alarm', 'co_alarm', 'security_camera']) if (stored[k]) gs[k] = stored[k];
+                        for (const [name, key] of Object.entries(ALARMS)) if (saved.indexOf(name) !== -1) gs[key] = { yes: true };
+                        setSafety(gs);
+                    }
                     // This used to be setCity(location.split(',')[0]) and
                     // setState(location) — the whole string into the region
                     // box. Saving the draft again then folded the entire
@@ -252,7 +272,7 @@ export default function AddHome() {
                     // And the step they were on, so they pick up where they left off.
                     try {
                         const saved = Number(window.localStorage.getItem('gg.addhome.step.' + draft.id));
-                        if (saved >= 1 && saved <= 9) setStep(saved);
+                        if (saved >= 1 && saved <= TOTAL_STEPS) setStep(saved);
                     } catch { /* storage unavailable — start at step 1 */ }
                     setShowListingForm(true);
                 }
@@ -302,7 +322,7 @@ export default function AddHome() {
         bedrooms,
         beds,
         bathrooms,
-        amenities,
+        amenities: allAmenities,
         check_in_method: checkInMethod || null,
         check_in_time: checkInTime || '15:00',
         check_in_end_time: checkInEndTime || null,
@@ -328,18 +348,34 @@ export default function AddHome() {
         writeLock.current = run;
         return run;
     };
+    // The pets maximum and the safety answers aren't columns the browser may
+    // write; they go through /api/listings/save, as the editor's cards do.
+    const saveExtras = async (id: string): Promise<string | null> => {
+        try {
+            const res = await fetch('/api/listings/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listingId: id, patch: { amenities: allAmenities, max_pets: petsAllowed ? maxPets : null, guest_safety: safety } }),
+            });
+            const body = await res.json().catch(() => ({}));
+            return body && body.ok ? null : (body && body.error) || 'Could not save the pets and safety details.';
+        } catch { return 'Could not save the pets and safety details.'; }
+    };
     const writeDraftNow = async (): Promise<string | null> => {
         const uid = session?.user?.id;
         if (!uid) return null;
         const fields = draftFields();
         if (draftIdRef.current) {
             const { error } = await supabase.from('listings').update(fields).eq('id', draftIdRef.current).eq('status', 'draft');
-            return error ? null : draftIdRef.current;
+            if (error) return null;
+            await saveExtras(draftIdRef.current);
+            return draftIdRef.current;
         }
         const { data, error } = await supabase.from('listings').insert({ host_id: uid, status: 'draft', ...fields }).select('id').single();
         if (error || !data?.id) return null;
         draftIdRef.current = data.id;
         setDraftId(data.id);
+        await saveExtras(data.id);
         // Put the draft in the address bar, so a refresh or a reopened tab
         // resumes this draft rather than starting a blank one.
         router.replace('/addhome?draft=' + encodeURIComponent(data.id), { scroll: false });
@@ -485,7 +521,7 @@ export default function AddHome() {
         title: title,
         description: description,
         price: price,
-        amenities: amenities,
+        amenities: allAmenities,
         checkInMethod: checkInMethod,
     });
 
@@ -560,6 +596,13 @@ export default function AddHome() {
             }
 
             const listingId = saved?.id || currentDraftId;
+
+            const extrasProblem = await saveExtras(listingId);
+            if (extrasProblem) {
+                toast.error(extrasProblem, { theme: 'colored' });
+                setFormError(extrasProblem);
+                return;
+            }
 
             const publishRes = await fetch('/api/listings/publish', {
                 method: 'POST',
@@ -642,7 +685,7 @@ export default function AddHome() {
 
         const goNext = () => {
             setFormError('');
-            const problem = problemAtStep(step);
+            const problem = step === SAFETY_STEP ? guestSafetyProblem(safety) : problemAtStep(step);
             if (problem) {
                 setFormError(problem);
                 return;
@@ -879,7 +922,7 @@ export default function AddHome() {
                     <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Tell guests what your place offers</h2>
                         <p className="text-slate-600 mb-2">Select all the amenities you provide.</p>
-                        <p className="text-sm text-slate-400 mb-8">{amenities.length} selected</p>
+                        <p className="text-sm text-slate-400 mb-8">{allAmenities.length} selected</p>
 
                         <div className="space-y-8">
                             {AMENITY_CATEGORIES.map(({ category, items }) => (
@@ -905,6 +948,26 @@ export default function AddHome() {
                                     </div>
                                 </div>
                             ))}
+                        </div>
+
+                        {/* Pets — saved where the editor's House rules card saves them. */}
+                        <div className="mt-10 border-t pt-8">
+                            <div className="flex items-center justify-between gap-4">
+                                <h3 className="font-bold text-slate-900">Do you allow pets?</h3>
+                                <YesNo label="Do you allow pets?" value={petsAllowed} onChange={(v) => { setPetsAllowed(v); if (v && !petsAllowed) setMaxPets(DEFAULT_MAX_PETS); }} />
+                            </div>
+                            {petsAllowed && (
+                                <div className="mt-4 flex items-center justify-between">
+                                    <span className="text-slate-700">Maximum number of pets</span>
+                                    <div className="flex items-center space-x-4">
+                                        <button type="button" aria-label="Fewer pets" disabled={maxPets <= 1} onClick={() => setMaxPets(maxPets - 1)}
+                                            className="w-8 h-8 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"><Minus className="w-4 h-4" /></button>
+                                        <span className="w-6 text-center" aria-live="polite">{maxPets}</span>
+                                        <button type="button" aria-label="More pets" disabled={maxPets >= MAX_PETS_CAP} onClick={() => setMaxPets(maxPets + 1)}
+                                            className="w-8 h-8 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"><Plus className="w-4 h-4" /></button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -1090,8 +1153,43 @@ export default function AddHome() {
                     </div>
                 )}
 
-                {/* Step 9: Price + review */}
-                {step === 9 && (
+                {/* Step 9: Safety details — saved where the editor's Guest safety card saves them. */}
+                {step === SAFETY_STEP && (
+                    <div>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Share safety details</h2>
+                        <p className="text-slate-600 mb-8">Does your place have any of these?</p>
+                        <div className="divide-y border-y">
+                            {([
+                                { key: 'smoke_alarm', label: 'Smoke alarm' },
+                                { key: 'co_alarm', label: 'Carbon monoxide alarm' },
+                                { key: 'security_camera', label: 'Exterior security camera' },
+                            ]).map((item) => {
+                                const a = safety[item.key];
+                                return (
+                                    <div key={item.key} className="py-4">
+                                        <div className="flex items-center justify-between gap-4">
+                                            <span className="text-slate-900">{item.label}</span>
+                                            <YesNo label={item.label} value={a ? a.yes : null}
+                                                onChange={(v) => { setFormError(''); setSafety({ ...safety, [item.key]: { ...(a || {}), yes: v } }); }} />
+                                        </div>
+                                        {item.key === 'security_camera' && a?.yes && (
+                                            <div className="mt-3">
+                                                <label htmlFor="camera-where" className="block text-sm font-semibold text-slate-700 mb-1">Where is it?</label>
+                                                <input id="camera-where" type="text" maxLength={SAFETY_DETAILS_MAX} value={a.details || ''}
+                                                    onChange={(e) => setSafety({ ...safety, security_camera: { yes: true, details: e.target.value } })}
+                                                    placeholder="e.g. Above the front door, facing the drive"
+                                                    className="w-full p-3 border rounded-xl" />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 10: Price + review */}
+                {step === TOTAL_STEPS && (
                     <form onSubmit={handleListingSubmit}>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Now, set your price</h2>
                         <p className="text-slate-600 mb-6">You can change this anytime.</p>
