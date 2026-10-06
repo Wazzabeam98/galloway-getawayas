@@ -2,13 +2,13 @@
 
 import { useState, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
-import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import { feeAmount, netOfFee } from '@/lib/fees';
 
 // "Pricing & fees": every amount the host charges, each on a raised card with
 // a one-line summary, opening to its fields. Each panel edits a draft; Save
-// hands it back to the editor, and the listing's main Save stores it exactly
-// as before (same columns, same blanks-mean-none rule).
+// hands it to the editor, which writes it to the listing (same columns, same
+// blanks-mean-none rule).
 
 // No up/down arrows on a money box.
 export const NO_SPIN = '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
@@ -36,7 +36,7 @@ function PanelCard<T>({ title, summary, value, onSave, children }: {
     title: string;
     summary: string;
     value: T;
-    onSave: (v: T) => void;
+    onSave: (v: T) => unknown;
     children: (draft: T, setDraft: (v: T) => void) => ReactNode;
 }) {
     const [open, setOpen] = useState(false);
@@ -46,7 +46,7 @@ function PanelCard<T>({ title, summary, value, onSave, children }: {
             <EditorCard title={title} summary={summary} onClick={() => { setDraft(value); setOpen(true); }} />
             {open && (
                 <EditorPanel title={title} onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(draft); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(draft))) setOpen(false); }} />}>
                     {children(draft, setDraft)}
                 </EditorPanel>
             )}
@@ -54,7 +54,7 @@ function PanelCard<T>({ title, summary, value, onSave, children }: {
     );
 }
 
-export function NightlyPriceCard({ price, feePercent, onSave }: { price: string; feePercent: number; onSave: (v: string) => void }) {
+export function NightlyPriceCard({ price, feePercent, onSave }: { price: string; feePercent: number; onSave: (v: string) => unknown }) {
     return (
         <PanelCard title="Nightly price" summary={isSet(price) ? `${money(price)} / night` : 'Not set'} value={price} onSave={onSave}>
             {(draft, setDraft) => (
@@ -86,7 +86,7 @@ export function NightlyPriceCard({ price, feePercent, onSave }: { price: string;
     );
 }
 
-export function WeekendPriceCard({ weekendPrice, onSave }: { weekendPrice: string; onSave: (v: string) => void }) {
+export function WeekendPriceCard({ weekendPrice, onSave }: { weekendPrice: string; onSave: (v: string) => unknown }) {
     return (
         <PanelCard title="Weekend price" summary={isSet(weekendPrice) ? `${money(weekendPrice)} on Fri & Sat nights` : 'Not set'} value={weekendPrice} onSave={onSave}>
             {(draft, setDraft) => (
@@ -113,7 +113,7 @@ export function discountsSummary(d: Discounts): string {
     return on.length ? on.join(' · ') : 'None';
 }
 
-export function DiscountsCard({ discounts, onSave }: { discounts: Discounts; onSave: (d: Discounts) => void }) {
+export function DiscountsCard({ discounts, onSave }: { discounts: Discounts; onSave: (d: Discounts) => unknown }) {
     return (
         <PanelCard title="Discounts" summary={discountsSummary(discounts)} value={discounts} onSave={onSave}>
             {(draft, setDraft) => (
@@ -142,7 +142,7 @@ export function DiscountsCard({ discounts, onSave }: { discounts: Discounts; onS
     );
 }
 
-export function CleaningFeeCard({ fee, onSave }: { fee: string; onSave: (v: string) => void }) {
+export function CleaningFeeCard({ fee, onSave }: { fee: string; onSave: (v: string) => unknown }) {
     return (
         <PanelCard title="Cleaning fee" summary={isSet(fee) ? `${money(fee)} per stay` : 'None'} value={fee} onSave={onSave}>
             {(draft, setDraft) => (
@@ -161,7 +161,7 @@ export function extraGuestSummary(fee: string, after: string): string {
     return `${money(fee)} per guest per night after ${n} guest${n === 1 ? '' : 's'}`;
 }
 
-export function ExtraGuestFeeCard({ fee, after, onSave }: { fee: string; after: string; onSave: (fee: string, after: string) => void }) {
+export function ExtraGuestFeeCard({ fee, after, onSave }: { fee: string; after: string; onSave: (fee: string, after: string) => unknown }) {
     return (
         <PanelCard title="Extra guest fee" summary={extraGuestSummary(fee, after)} value={{ fee, after }} onSave={(v) => onSave(v.fee, v.after)}>
             {(draft, setDraft) => (
@@ -182,7 +182,7 @@ export function ExtraGuestFeeCard({ fee, after, onSave }: { fee: string; after: 
     );
 }
 
-export function PetFeeCard({ fee, petsAllowed, onSave }: { fee: string; petsAllowed: boolean; onSave: (v: string) => void }) {
+export function PetFeeCard({ fee, petsAllowed, onSave }: { fee: string; petsAllowed: boolean; onSave: (v: string) => unknown }) {
     return (
         <PanelCard title="Pet fee" summary={isSet(fee) ? `${money(fee)} per stay` : 'None'} value={fee} onSave={onSave}>
             {(draft, setDraft) => (
@@ -195,7 +195,7 @@ export function PetFeeCard({ fee, petsAllowed, onSave }: { fee: string; petsAllo
     );
 }
 
-export function DamageDepositCard({ deposit, onSave }: { deposit: string; onSave: (v: string) => void }) {
+export function DamageDepositCard({ deposit, onSave }: { deposit: string; onSave: (v: string) => unknown }) {
     return (
         <PanelCard title="Damage deposit" summary={isSet(deposit) ? money(deposit) : 'None'} value={deposit} onSave={onSave}>
             {(draft, setDraft) => (

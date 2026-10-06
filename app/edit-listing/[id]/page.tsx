@@ -17,6 +17,8 @@ import {
 } from '@/lib/listingSafety';
 import { HowGuestsBookCard, CancellationPolicyCard } from '@/components/listing-editor/BookingCards';
 import AutoTextarea from '@/components/AutoTextarea';
+import DescriptionCard from '@/components/listing-editor/DescriptionCard';
+import PhotosEditor from '@/components/listing-editor/PhotosEditor';
 import {
     NightlyPriceCard, WeekendPriceCard, DiscountsCard, CleaningFeeCard,
     ExtraGuestFeeCard, PetFeeCard, DamageDepositCard,
@@ -26,16 +28,15 @@ import PropertyMap from '@/components/PropertyMap';
 import LoginModel from '@/components/auth/LoginModel';
 import PropertyTypeCard from '@/components/listing-editor/PropertyTypeCard';
 import CheckInMethodCard from '@/components/listing-editor/CheckInMethodCard';
-import Env from '@/config/Env';
-import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
+import PhoneSectionTabs, { goToEditorSection } from '@/components/listing-editor/PhoneSectionTabs';
+import { timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { rateFor } from '@/lib/fees';
 import { listingLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import SleepingArrangementsEditor from '@/components/SleepingArrangementsEditor';
 import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, type Room } from '@/lib/sleeping';
-import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
-import { compressImage } from '@/lib/compressImage';
+import { publishProblems } from '@/lib/listingRules';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
@@ -104,23 +105,23 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
 
 
 const SECTIONS = [
-    { key: 'basics', label: 'Basics & guests', icon: LayoutGrid },
+    { key: 'basics', label: 'Basics & guests', short: 'Basics', icon: LayoutGrid },
     // Airbnb's Arrival guide: how guests get in, the times, wifi, directions
     // and what3words.
-    { key: 'arrival', label: 'Arrival', icon: DoorOpen },
-    { key: 'location', label: 'Location', icon: MapPin },
-    { key: 'description', label: 'Description', icon: FileText },
-    { key: 'amenities', label: 'Amenities', icon: Sparkles },
-    { key: 'photos', label: 'Photos', icon: ImageIcon },
+    { key: 'arrival', label: 'Arrival', short: 'Arrival', icon: DoorOpen },
+    { key: 'location', label: 'Location', short: 'Location', icon: MapPin },
+    { key: 'description', label: 'Description', short: 'Description', icon: FileText },
+    { key: 'amenities', label: 'Amenities', short: 'Amenities', icon: Sparkles },
+    { key: 'photos', label: 'Photos', short: 'Photos', icon: ImageIcon },
     // Every amount the host charges, in one place (the fees, deposit and
     // discounts used to sit under Booking settings and a Discounts tab).
-    { key: 'rates', label: 'Pricing & fees', icon: PoundSterling },
+    { key: 'rates', label: 'Pricing & fees', short: 'Pricing', icon: PoundSterling },
     // How guests book and the cancellation policy (stay length is on the
     // calendar's Availability tab) so they're findable and changeable in one place, rather than
     // scattered across Rates / Availability / Cancellation (and, for instant
     // book, only on the Account page).
-    { key: 'booking', label: 'Booking settings', icon: CalendarRange },
-    { key: 'calendar', label: 'Calendar sync', icon: RefreshCw },
+    { key: 'booking', label: 'Booking settings', short: 'Booking', icon: CalendarRange },
+    { key: 'calendar', label: 'Calendar sync', short: 'Calendar sync', icon: RefreshCw },
 ];
 
 const CANCELLATION_POLICIES = [
@@ -130,7 +131,21 @@ const CANCELLATION_POLICIES = [
     { key: 'Firm', bullets: ['Full refund up to 30 days before check-in', '50% refund 7–30 days before', 'No refund inside 7 days'] },
 ];
 
-type Photo = { kind: 'existing'; path: string } | { kind: 'new'; file: File };
+// One section of the editor. On desktop just its contents (only the chosen
+// section is shown). On a phone, where every section sits on one page, a block
+// the tab bar can find and scroll to, with the section's heading — Basics and
+// Arrival don't carry one of their own.
+const OWN_HEADING = new Set(['location', 'description', 'amenities', 'photos', 'rates', 'booking', 'calendar']);
+function PhoneSection({ id, phone, children }: { id: string; phone: boolean; children: React.ReactNode }) {
+    if (!phone) return <>{children}</>;
+    const label = SECTIONS.find((s) => s.key === id)?.label;
+    return (
+        <div data-editor-section={id} className="mt-14 first:mt-0">
+            {!OWN_HEADING.has(id) && <h2 className="text-xl font-bold text-slate-900 mb-4">{label}</h2>}
+            {children}
+        </div>
+    );
+}
 
 export default function EditListing() {
     const [commissionRate, setCommissionRate] = useState<number | null>(null);
@@ -146,6 +161,19 @@ export default function EditListing() {
     const [original, setOriginal] = useState<any>(null);
     const [notOwner, setNotOwner] = useState(false);
     const [activeSection, setActiveSection] = useState('basics');
+    // On a phone the editor is one continuous page — every section in order,
+    // with a sticky tab bar (PhoneSectionTabs) in place of the left-hand list.
+    // Decided in JS, not CSS, so each card is mounted once.
+    const [isPhone, setIsPhone] = useState(false);
+    useEffect(() => {
+        const mq = window.matchMedia('(max-width: 767px)');
+        const sync = () => setIsPhone(mq.matches);
+        sync();
+        mq.addEventListener('change', sync);
+        return () => mq.removeEventListener('change', sync);
+    }, []);
+    // Desktop shows the chosen section; a phone shows them all.
+    const shows = (key: string) => isPhone || activeSection === key;
 
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
@@ -175,8 +203,8 @@ export default function EditListing() {
     const [sleeping, setSleeping] = useState<Room[]>([]);
     const [neighbourhood, setNeighbourhood] = useState('');
     const [amenities, setAmenities] = useState<string[]>([]);
-    const [photos, setPhotos] = useState<Photo[]>([]);
-    const [coverIndex, setCoverIndex] = useState(0);
+    // Saved paths, cover first.
+    const [photos, setPhotos] = useState<string[]>([]);
     const [checkInMethod, setCheckInMethod] = useState('');
     const [nearby, setNearby] = useState<{ name: string; time: string }[]>([]);
     const [newListingPromo, setNewListingPromo] = useState(true);
@@ -219,11 +247,6 @@ export default function EditListing() {
     const [instantBook, setInstantBook] = useState(false);
     const [instantBookRequiresPhone, setInstantBookRequiresPhone] = useState(false);
 
-    const [submitting, setSubmitting] = useState(false);
-    const [processingPhotos, setProcessingPhotos] = useState(false);
-    const [formError, setFormError] = useState('');
-    const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-    const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
     useEffect(() => {
         const load = async () => {
@@ -309,7 +332,8 @@ export default function EditListing() {
             }
             setNeighbourhood(listing.neighbourhood || '');
             setAmenities(listing.amenities || []);
-            setPhotos((listing.images || []).map((path: string) => ({ kind: 'existing', path })));
+            setPhotos(listing.images || []);
+            photosRef.current = listing.images || [];
             setNewListingPromo(listing.new_listing_promo ?? true);
             setLastMinuteDiscount(listing.last_minute_discount ?? false);
             setWeeklyDiscount(listing.weekly_discount ?? false);
@@ -358,81 +382,16 @@ export default function EditListing() {
         if (key && SECTIONS.some((x) => x.key === key)) setActiveSection(key);
     }, []);
 
-    // A section is seen from its start. On desktop that is the top of the page;
-    // on a phone the section list sits above the content, so the content's own
-    // top, just under the sticky header.
-    const contentRef = useRef<HTMLDivElement>(null);
+    // A section is seen from its start: the top of the page. (Desktop only —
+    // a phone has every section on one page and the tab bar scrolls to them.)
     const openSection = (key: string) => {
         setActiveSection(key);
-        requestAnimationFrame(() => {
-            const el = contentRef.current;
-            const phone = window.matchMedia('(max-width: 767px)').matches;
-            const top = phone && el ? el.getBoundingClientRect().top + window.scrollY - 96 : 0;
-            window.scrollTo({ top: Math.max(0, top) });
-        });
-    };
-
-    const toggleAmenity = (name: string) => {
-        setAmenities((prev) => (prev.includes(name) ? prev.filter((a) => a !== name) : [...prev, name]));
-    };
-
-    // Shrunk here rather than at upload, the way addhome does it, so the
-    // preview a host sees is the photo that actually gets stored.
-    //
-    // This screen used to upload the raw file. A photo straight off a phone is
-    // 4-12MB and 4000px wide, and this is the path a host uses every time they
-    // add a photo to a listing that already exists — so it is the normal path,
-    // not the rare one. Two 4032px files reached production storage that way.
-    const handlePhotosChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files || []);
-        if (!files.length) return;
-
-        setProcessingPhotos(true);
-        setFormError('');
-
-        const ready: File[] = [];
-        for (const file of files) {
-            try {
-                ready.push(await compressImage(file));
-            } catch (err) {
-                setFormError('One of those photos couldn\u2019t be read. Try a different one.');
-            }
-        }
-
-        setProcessingPhotos(false);
-
-        if (ready.length) setPhotos((prev) => [...prev, ...ready.map((file) => ({ kind: 'new' as const, file }))]);
-        e.target.value = '';
-    };
-
-    const removePhoto = (index: number) => {
-        setPhotos((prev) => prev.filter((_, i) => i !== index));
-        setCoverIndex((prev) => {
-            if (index === prev) return 0;
-            if (index < prev) return prev - 1;
-            return prev;
-        });
-    };
-
-    const reorderPhotos = (fromIndex: number, toIndex: number) => {
-        if (fromIndex === toIndex) return;
-        setPhotos((prev) => {
-            const next = [...prev];
-            const [moved] = next.splice(fromIndex, 1);
-            next.splice(toIndex, 0, moved);
-            return next;
-        });
-        setCoverIndex((prev) => {
-            if (prev === fromIndex) return toIndex;
-            if (fromIndex < prev && toIndex >= prev) return prev - 1;
-            if (fromIndex > prev && toIndex <= prev) return prev + 1;
-            return prev;
-        });
+        requestAnimationFrame(() => window.scrollTo({ top: 0 }));
     };
 
     // What this listing already fails, as it stands on screen. Only ever shown,
-    // never enforced — enforcement is newProblems, which asks what this edit
-    // would newly break.
+    // never enforced here — the save route enforces newProblems, which asks
+    // what each change would newly break.
     const belowStandard = original
         ? publishProblems({
             propertyType: propertyType,
@@ -450,165 +409,91 @@ export default function EditListing() {
         })
         : [];
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setFormError('');
-
-        // The same rules the wizard publishes by, from lib/listingRules.ts,
-        // rather than the shorter list this screen used to keep of its own.
-        // That list is why a listing could go live with no title: the wizard
-        // learned to ask and this screen never did.
-        //
-        // Only rules this edit would newly break, though. A listing already on
-        // the site from before a rule existed still saves — otherwise a host
-        // could not correct a price until they had also satisfied something
-        // that was not asked of them when they published.
-        const introduced = newProblems(fromRow(original), {
-            propertyType: propertyType,
-            street: streetAddress,
-            city: locTown,
-            region: DEFAULT_REGION,
-            postcode: locPostcode,
-            photoCount: photos.length,
-            title: title,
-            description: description,
-            price: price,
-            weekendPrice: weekendPrice,
-            amenities: amenities,
-            checkInMethod: checkInMethod,
-        });
-
-        if (introduced.length > 0) {
-            setFormError(introduced[0].message);
-            return;
-        }
-
-
-        setSubmitting(true);
+    // EVERY CARD SAVES ITSELF, as on Airbnb — there is no Save for the page.
+    // A sheet's Save sends just that card's columns through /api/listings/save
+    // (the server route, so a co-host the owner trusted can edit too, and where
+    // the listing rules are binding: a change that would newly break one is
+    // refused with the reason). Writes go one at a time, in the order made, so
+    // two quick changes to the same column land as the host made them.
+    const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+    const write = async (patch: Record<string, unknown>): Promise<boolean> => {
         try {
-            // Cover first, then the rest — but only when there IS a cover. On a
-            // listing with no photos, photos[coverIndex] is undefined, and the old
-            // [undefined, ...] array threw "reading 'kind'" below, so the save
-            // crashed before it ever ran. Filter guards it either way.
-            const cover = photos[coverIndex];
-            const orderedPhotos = (cover ? [cover, ...photos.filter((_, i) => i !== coverIndex)] : [...photos])
-                .filter(Boolean);
-            const finalPaths: string[] = [];
-
-            for (const photo of orderedPhotos) {
-                if (photo.kind === 'existing') {
-                    finalPaths.push(photo.path);
-                } else {
-                    const uniquePath = Date.now() + '_' + generateRandomNumber();
-                    const { data: imgData, error: imgErr } = await supabase.storage
-                        .from(Env.S3_BUCKET)
-                        .upload(uniquePath, photo.file);
-
-                    if (imgErr) {
-                        toast.error(imgErr.message, { theme: 'colored' });
-                        setFormError(`Photo upload failed: ${imgErr.message}`);
-                        setSubmitting(false);
-                        return;
-                    }
-                    if (imgData?.path) finalPaths.push(imgData.path);
-                }
-            }
-
-            // The bed total is the host's own number (the rooms are placed
-            // against it); the bedroom count is derived from the rooms. A
-            // bedroom with no beds still counts as a room; a common space with no beds is
-            // dropped. When the host hasn't entered any beds yet (an older
-            // listing just opened on the seeded cards), keep the counts and
-            // arrangements it already had rather than zeroing them.
-            const cleanRooms: Room[] = sleeping
-                .map((r) => ({ ...r, beds: r.beds.filter((b) => b.count > 0) }))
-                .filter((r) => r.kind === 'bedroom' || r.beds.length > 0);
-            const derived = deriveCounts(cleanRooms);
-            const hasSleeping = derived.beds > 0;
-
-            // Saved through the server so a co-host the owner trusted can
-            // edit too — row-level security would block them otherwise.
-            const patch = {
-                    title: title.trim(),
-                    description,
-                    location: listingLocation(locTown),
-                    street_address: buildStreetAddress(null, null, streetAddress) || null,
-                    postcode: locPostcode.trim() ? tidyPostcode(locPostcode) : null,
-                    show_precise_location: showPrecise,
-                    price_per_night: Number(price),
-                    weekend_price: weekendPrice.trim() ? Number(weekendPrice) : null,
-                    extra_guest_fee: extraGuestFee.trim() ? Number(extraGuestFee) : null,
-                    extra_guest_after: extraGuestAfter.trim() ? Number(extraGuestAfter) : null,
-                    max_guests: guests,
-                    images: finalPaths,
-                    property_type: propertyType,
-                    privacy_type: privacyType,
-                    bedrooms: hasSleeping ? derived.bedrooms : bedrooms,
-                    // The host's total: the cap the rooms are placed against.
-                    beds,
-                    sleeping_arrangements: hasSleeping ? cleanRooms : (original?.sleeping_arrangements ?? []),
-                    bathrooms,
-                    amenities,
-                    new_listing_promo: newListingPromo,
-                    last_minute_discount: lastMinuteDiscount,
-                    weekly_discount: weeklyDiscount,
-                    monthly_discount: monthlyDiscount,
-                    events_allowed: eventsAllowed,
-                    smoking_allowed: smokingAllowed,
-                    quiet_hours_enabled: quietHoursEnabled,
-                    check_in_method: checkInMethod || null,
-                    nearby: nearby.filter((n) => n.name.trim()),
-                    neighbourhood: neighbourhood.trim() || null,
-                    quiet_hours_start: quietHoursStart,
-                    quiet_hours_end: quietHoursEnd,
-                    commercial_photography_allowed: commercialPhotographyAllowed,
-                    // These also decide when scheduled messages go out —
-                    // send_due_scheduled_messages() counts "before check-out"
-                    // back from check_out_time — so they are not display-only.
-                    check_in_time: checkinStart || '15:00',
-                    check_in_end_time: checkinEnd || null,
-                    check_out_time: checkoutTime || '11:00',
-                    additional_rules: additionalRules,
-                    max_pets: listingAllowsPets({ amenities }) ? maxPets : null,
-                    checkout_tasks: checkoutTasks,
-                    checkout_note: checkoutNote.trim() || null,
-                    guest_safety: cleanGuestSafety(guestSafety, privacyType),
-                    cancellation_policy: cancellationPolicy,
-                    non_refundable_option: nonRefundableOption,
-                    cleaning_fee: cleaningFee.trim() ? Number(cleaningFee) : null,
-                    pet_fee: petFee.trim() ? Number(petFee) : null,
-                    damage_deposit: damageDeposit.trim() ? Number(damageDeposit) : null,
-                    instant_book: instantBook,
-                    instant_book_requires_phone: instantBook ? instantBookRequiresPhone : false,
-            };
-
-            const saveRes = await fetch('/api/listings/save', {
+            const res = await fetch('/api/listings/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    listingId: listingId,
-                    patch: patch,
-                    reason: moderating ? moderationReason : undefined,
-                }),
+                body: JSON.stringify({ listingId, patch, reason: moderating ? moderationReason : undefined }),
             });
-            const saveData = await saveRes.json();
-            const updateErr = saveData && saveData.ok ? null : { message: (saveData && saveData.error) || 'Could not save' };
-
-            if (updateErr) {
-                toast.error(updateErr.message, { theme: 'colored' });
-                setFormError(`Could not save changes: ${updateErr.message}`);
-                return;
+            const data = await res.json().catch(() => null);
+            if (!data || !data.ok) {
+                toast.error((data && data.error) || 'Could not save that change.', { theme: 'colored' });
+                return false;
             }
-
-            toast.success('Listing updated.', { theme: 'colored' });
-            router.push('/dashboard');
+            setOriginal((prev: any) => ({ ...prev, ...patch }));
+            toast.success('Saved', { theme: 'colored', autoClose: 1500 });
+            return true;
         } catch (err: any) {
-            const msg = err?.message || 'Something went wrong saving your changes.';
-            toast.error(msg, { theme: 'colored' });
-            setFormError(msg);
-        } finally {
-            setSubmitting(false);
+            toast.error(err?.message || 'Could not save that change.', { theme: 'colored' });
+            return false;
         }
+    };
+    const persist = (patch: Record<string, unknown>): Promise<boolean> => {
+        // An owner editing somebody else's listing writes down why first; the
+        // server refuses without it.
+        if (moderating && moderationReason.trim().length < 3) {
+            toast.error('Write why you are making this change first.', { theme: 'colored' });
+            return Promise.resolve(false);
+        }
+        const run = saveQueue.current.then(() => write(patch), () => write(patch));
+        saveQueue.current = run;
+        return run;
+    };
+    // A sheet's Save: write first, and only then show the new answer. False
+    // keeps the sheet open with what the host typed.
+    const saveThen = (patch: Record<string, unknown>, apply: () => void) =>
+        persist(patch).then((ok) => { if (ok) apply(); return ok; });
+
+    // Amenities and photos change on a tap, so they show at once and are put
+    // back if the write fails.
+    const toggleAmenity = (name: string) => {
+        const before = amenities;
+        const next = before.includes(name) ? before.filter((a) => a !== name) : [...before, name];
+        setAmenities(next);
+        persist({ amenities: next }).then((ok) => { if (!ok) setAmenities(before); });
+    };
+    const photosRef = useRef<string[]>([]);
+    const savePhotos = (change: (current: string[]) => string[]) => {
+        const before = photosRef.current;
+        const next = change(before);
+        photosRef.current = next;
+        setPhotos(next);
+        return persist({ images: next }).then((ok) => {
+            if (!ok && photosRef.current === next) { photosRef.current = before; setPhotos(before); }
+            return ok;
+        });
+    };
+    const moderationReady = () => {
+        if (moderating && moderationReason.trim().length < 3) {
+            toast.error('Write why you are making this change first.', { theme: 'colored' });
+            return false;
+        }
+        return true;
+    };
+
+    // The bed total is the host's own number (the rooms are placed against it);
+    // the bedroom count is derived from the rooms. A bedroom with no beds still
+    // counts as a room; a common space with no beds is dropped. When no beds
+    // are placed at all, the counts and arrangements the listing had are kept
+    // rather than zeroed.
+    const saveSleeping = (rooms: Room[]) => {
+        const cleanRooms: Room[] = rooms
+            .map((r) => ({ ...r, beds: r.beds.filter((b) => b.count > 0) }))
+            .filter((r) => r.kind === 'bedroom' || r.beds.length > 0);
+        const derived = deriveCounts(cleanRooms);
+        const hasSleeping = derived.beds > 0;
+        return saveThen({
+            sleeping_arrangements: hasSleeping ? cleanRooms : (original?.sleeping_arrangements ?? []),
+            bedrooms: hasSleeping ? derived.bedrooms : bedrooms,
+        }, () => { setSleeping(rooms); if (hasSleeping) setBedrooms(derived.bedrooms); });
     };
 
     if (loading) {
@@ -660,7 +545,7 @@ export default function EditListing() {
                     <p className="mt-1 text-sm text-amber-900/80">
                         A booked guest needs somewhere to be sent. Add it under Location — it stays private and is only shared once a booking is confirmed.
                     </p>
-                    <button type="button" onClick={() => setActiveSection('location')}
+                    <button type="button" onClick={() => (isPhone ? goToEditorSection('location') : setActiveSection('location'))}
                         className="mt-3 rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white">
                         Add the address
                     </button>
@@ -694,17 +579,24 @@ export default function EditListing() {
                     />
                     {moderationReason.trim().length < 3 && (
                         <p className="text-xs text-amber-800 mt-1">
-                            Saving is blocked until you write one.
+                            Nothing saves until you write one.
                         </p>
                     )}
                 </div>
             )}
 
 
-            <form onSubmit={handleSubmit}>
+            {isPhone && (
+                <PhoneSectionTabs
+                    sections={SECTIONS.map(({ key, short }) => ({ key, label: short }))}
+                    initial={activeSection}
+                />
+            )}
+
+            <div>
                 <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-10">
                     {/* Sidebar — held in place on desktop, just below the sticky site header. */}
-                    <div className="space-y-1 md:sticky md:top-24 md:self-start">
+                    {!isPhone && <div className="space-y-1 md:sticky md:top-24 md:self-start">
                         {SECTIONS.map(({ key, label, icon: Icon }) => (
                             <button
                                 key={key}
@@ -715,19 +607,24 @@ export default function EditListing() {
                                 <Icon className="w-4 h-4 mr-3" /> {label}
                             </button>
                         ))}
-                    </div>
+                    </div>}
 
                     {/* Content */}
-                    <div ref={contentRef}>
-                        {activeSection === 'basics' && (
+                    <div>
+                        {shows('basics') && (<PhoneSection id="basics" phone={isPhone}>
                             <div className="space-y-4">
                                 <section className="space-y-4">
-                                    <TitleCard title={title} onSave={setTitle} />
+                                    <TitleCard title={title} onSave={(t) => saveThen({ title: t.trim() }, () => setTitle(t))} />
 
                                     <PropertyTypeCard
                                         propertyType={propertyType}
                                         privacyType={privacyType}
-                                        onSave={(type, listingType) => { setPropertyType(type); setPrivacyType(listingType); }}
+                                        onSave={(type, listingType) => saveThen({
+                                            property_type: type,
+                                            privacy_type: listingType,
+                                            // Some safety questions depend on the kind of place.
+                                            ...(listingType !== privacyType ? { guest_safety: cleanGuestSafety(guestSafety, listingType) } : {}),
+                                        }, () => { setPropertyType(type); setPrivacyType(listingType); })}
                                     />
                                 </section>
 
@@ -739,35 +636,42 @@ export default function EditListing() {
                                         beds={beds}
                                         bathrooms={bathrooms}
                                         minBeds={deriveCounts(sleeping).beds}
-                                        onSave={(g, b, ba) => { setGuests(g); setBeds(b); setBathrooms(ba); }}
+                                        onSave={(g, b, ba) => saveThen({ max_guests: g, beds: b, bathrooms: ba }, () => { setGuests(g); setBeds(b); setBathrooms(ba); })}
                                     />
                                     <div className="mt-4">
                                         <SleepingArrangementsEditor
                                             rooms={sleeping}
-                                            onChange={setSleeping}
+                                            onChange={saveSleeping}
                                             totalBeds={beds}
-                                            photos={photos.filter((p) => p.kind === 'existing').map((p) => (p as { path: string }).path)}
+                                            photos={photos}
                                         />
                                     </div>
                                 </section>
 
                             </div>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'arrival' && (
+                        {shows('arrival') && (<PhoneSection id="arrival" phone={isPhone}>
                             <section className="space-y-4">
                                     {/* The method saves with the listing; the door
                                         code inside its panel saves on its own route —
                                         it is not on the listing row. */}
                                     {listingId && (
-                                        <CheckInMethodCard listingId={listingId} method={checkInMethod} onChange={setCheckInMethod} />
+                                        <CheckInMethodCard listingId={listingId} method={checkInMethod} onChange={(m) => saveThen({ check_in_method: m || null }, () => setCheckInMethod(m))} />
                                     )}
 
                                     <CheckInTimesCard
                                         start={checkinStart}
                                         end={checkinEnd}
                                         checkout={checkoutTime}
-                                        onSave={(start, end, checkout) => { setCheckinStart(start); setCheckinEnd(end); setCheckoutTime(checkout); }}
+                                        onSave={(start, end, checkout) => saveThen({
+                                            // These also decide when scheduled messages go out —
+                                            // send_due_scheduled_messages() counts "before check-out"
+                                            // back from check_out_time — so they are not display-only.
+                                            check_in_time: start || '15:00',
+                                            check_in_end_time: end || null,
+                                            check_out_time: checkout || '11:00',
+                                        }, () => { setCheckinStart(start); setCheckinEnd(end); setCheckoutTime(checkout); })}
                                     />
 
                                     {/* Saved on the arrival route, not this form's Save. */}
@@ -786,21 +690,34 @@ export default function EditListing() {
                                             quietHoursEnabled, quietHoursStart, quietHoursEnd, additionalRules,
                                         }}
                                         onSave={(r) => {
-                                            setAmenities((prev) => withPetsAmenity(prev, r.petsAllowed));
-                                            setMaxPets(r.maxPets);
-                                            setEventsAllowed(r.eventsAllowed);
-                                            setSmokingAllowed(r.smokingAllowed);
-                                            setCommercialPhotographyAllowed(r.commercialPhotographyAllowed);
-                                            setQuietHoursEnabled(r.quietHoursEnabled);
-                                            setQuietHoursStart(r.quietHoursStart);
-                                            setQuietHoursEnd(r.quietHoursEnd);
-                                            setAdditionalRules(r.additionalRules);
+                                            const nextAmenities = withPetsAmenity(amenities, r.petsAllowed);
+                                            return saveThen({
+                                                amenities: nextAmenities,
+                                                max_pets: r.petsAllowed ? r.maxPets : null,
+                                                events_allowed: r.eventsAllowed,
+                                                smoking_allowed: r.smokingAllowed,
+                                                commercial_photography_allowed: r.commercialPhotographyAllowed,
+                                                quiet_hours_enabled: r.quietHoursEnabled,
+                                                quiet_hours_start: r.quietHoursStart,
+                                                quiet_hours_end: r.quietHoursEnd,
+                                                additional_rules: r.additionalRules,
+                                            }, () => {
+                                                setAmenities(nextAmenities);
+                                                setMaxPets(r.maxPets);
+                                                setEventsAllowed(r.eventsAllowed);
+                                                setSmokingAllowed(r.smokingAllowed);
+                                                setCommercialPhotographyAllowed(r.commercialPhotographyAllowed);
+                                                setQuietHoursEnabled(r.quietHoursEnabled);
+                                                setQuietHoursStart(r.quietHoursStart);
+                                                setQuietHoursEnd(r.quietHoursEnd);
+                                                setAdditionalRules(r.additionalRules);
+                                            });
                                         }}
                                     />
                                     <CheckoutInstructionsCard
                                         tasks={checkoutTasks}
                                         note={checkoutNote}
-                                        onSave={(t, n) => { setCheckoutTasks(t); setCheckoutNote(n); }}
+                                        onSave={(t, n) => saveThen({ checkout_tasks: t, checkout_note: n.trim() || null }, () => { setCheckoutTasks(t); setCheckoutNote(n); })}
                                     />
                                     {/* Guest safety. The two alarms are stored as amenities,
                                         so they follow the answers here. */}
@@ -808,12 +725,16 @@ export default function EditListing() {
                                         safety={guestSafety}
                                         privacyType={privacyType}
                                         alarmAnswers={Object.fromEntries(SAFETY_GROUPS.flatMap((g) => g.items).filter((i) => i.amenity).map((i) => [i.key, safetyAnswer(i, guestSafety, amenities)]))}
-                                        onSave={(sf) => { setGuestSafety(sf); setAmenities((prev) => withAlarmAmenities(prev, sf)); }}
+                                        onSave={(sf) => {
+                                            const nextAmenities = withAlarmAmenities(amenities, sf);
+                                            return saveThen({ guest_safety: cleanGuestSafety(sf, privacyType), amenities: nextAmenities },
+                                                () => { setGuestSafety(sf); setAmenities(nextAmenities); });
+                                        }}
                                     />
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'location' && (
+                        {shows('location') && (<PhoneSection id="location" phone={isPhone}>
                             <div className="space-y-4">
                                 <section>
                                     <h2 className="text-xl font-bold text-slate-900 mb-4">Location</h2>
@@ -825,27 +746,31 @@ export default function EditListing() {
                                             street={streetAddress}
                                             postcode={locPostcode}
                                             propertyType={propertyType}
-                                            onSave={(t, st, pc) => { setLocTown(t); setStreetAddress(st); setLocPostcode(pc); }}
+                                            onSave={(t, st, pc) => saveThen({
+                                                location: listingLocation(t),
+                                                street_address: buildStreetAddress(null, null, st) || null,
+                                                postcode: pc.trim() ? tidyPostcode(pc) : null,
+                                            }, () => { setLocTown(t); setStreetAddress(st); setLocPostcode(pc); })}
                                         />
-                                        <LocationSharingCard precise={showPrecise} onSave={setShowPrecise} />
+                                        <LocationSharingCard precise={showPrecise} onSave={(v) => saveThen({ show_precise_location: v }, () => setShowPrecise(v))} />
                                     </div>
                                 </section>
 
                                 <section className="space-y-4">
-                                    <NearbyCard nearby={nearby} onSave={setNearby} />
-                                    <NeighbourhoodCard text={neighbourhood} onSave={setNeighbourhood} />
+                                    <NearbyCard nearby={nearby} onSave={(n) => saveThen({ nearby: n.filter((x) => x.name.trim()) }, () => setNearby(n))} />
+                                    <NeighbourhoodCard text={neighbourhood} onSave={(t) => saveThen({ neighbourhood: t.trim() || null }, () => setNeighbourhood(t))} />
                                 </section>
                             </div>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'description' && (
+                        {shows('description') && (<PhoneSection id="description" phone={isPhone}>
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-2">Description</h2>
-                                <AutoTextarea value={description} onChange={(e) => setDescription(e.target.value)} rows={8} className="w-full p-3 border rounded-xl" />
+                                <DescriptionCard description={description} onSave={(d) => saveThen({ description: d }, () => setDescription(d))} />
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'amenities' && (
+                        {shows('amenities') && (<PhoneSection id="amenities" phone={isPhone}>
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-1">Amenities</h2>
                                 <p className="text-sm text-slate-400 mb-4">{amenities.length} selected</p>
@@ -871,91 +796,46 @@ export default function EditListing() {
                                     ))}
                                 </div>
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'photos' && (
-                            <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-1">Photos</h2>
-                                <p className="text-xs text-slate-400 mb-4">Drag to reorder. Click the star to set the cover photo.</p>
-                                {photos.length > 0 && (
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                                        {photos.map((photo, i) => (
-                                            <div key={i}
-                                                draggable
-                                                onDragStart={() => setDraggedIndex(i)}
-                                                onDragEnter={() => { if (draggedIndex !== null && draggedIndex !== i) setDragOverIndex(i); }}
-                                                onDragOver={(e) => e.preventDefault()}
-                                                onDrop={() => { if (draggedIndex !== null) reorderPhotos(draggedIndex, i); setDraggedIndex(null); setDragOverIndex(null); }}
-                                                onDragEnd={() => { setDraggedIndex(null); setDragOverIndex(null); }}
-                                                className={`relative h-40 rounded-2xl overflow-hidden border-2 group cursor-grab active:cursor-grabbing transition ${
-                                                    i === coverIndex ? 'border-emerald-700' : 'border-slate-200'
-                                                } ${dragOverIndex === i ? 'ring-2 ring-slate-900 scale-95' : ''} ${draggedIndex === i ? 'opacity-40' : ''}`}
-                                            >
-                                                <img
-                                                    src={photo.kind === 'existing' ? getImageUrl(photo.path) : URL.createObjectURL(photo.file)}
-                                                    alt={`Photo ${i + 1}`}
-                                                    className="w-full h-full object-cover pointer-events-none"
-                                                />
-                                                <button type="button" onClick={() => setCoverIndex(i)}
-                                                    title={i === coverIndex ? 'Cover photo' : 'Make cover photo'}
-                                                    className={`absolute top-2 right-11 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-emerald-700 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}>
-                                                    ★
-                                                </button>
-                                                <button type="button" onClick={() => removePhoto(i)} title="Remove photo"
-                                                    className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition">
-                                                    ×
-                                                </button>
-                                                {i === coverIndex && (
-                                                    <span className="absolute top-2 left-2 text-xs font-semibold bg-emerald-700 text-white px-2 py-0.5 rounded-full">Cover</span>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                <label className="h-24 rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-400 flex flex-col items-center justify-center cursor-pointer text-slate-500 text-sm">
-                                    <span className="font-semibold">
-                                        {processingPhotos ? 'Preparing your photos...' : '+ Add photos'}
-                                    </span>
-                                    <span className="text-xs mt-0.5">Straight from your phone is fine</span>
-                                    <input type="file" accept="image/png, image/jpeg" multiple onChange={handlePhotosChange} className="hidden" disabled={processingPhotos} />
-                                </label>
-                            </section>
-                        )}
+                        {shows('photos') && (<PhoneSection id="photos" phone={isPhone}>
+                            <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone={isPhone} beforeChange={moderationReady} />
+                        </PhoneSection>)}
 
-                        {activeSection === 'rates' && (
+                        {shows('rates') && (<PhoneSection id="rates" phone={isPhone}>
                             <section className="space-y-4">
                                 <h2 className="text-xl font-bold text-slate-900">Pricing &amp; fees</h2>
-                                <NightlyPriceCard price={price} feePercent={HOST_FEE_PERCENT} onSave={setPrice} />
-                                <WeekendPriceCard weekendPrice={weekendPrice} onSave={setWeekendPrice} />
+                                <NightlyPriceCard price={price} feePercent={HOST_FEE_PERCENT} onSave={(v) => saveThen({ price_per_night: Number(v) }, () => setPrice(v))} />
+                                <WeekendPriceCard weekendPrice={weekendPrice} onSave={(v) => saveThen({ weekend_price: v.trim() ? Number(v) : null }, () => setWeekendPrice(v))} />
                                 <DiscountsCard
                                     discounts={{ newListingPromo, lastMinute: lastMinuteDiscount, weekly: weeklyDiscount, monthly: monthlyDiscount }}
-                                    onSave={(d) => { setNewListingPromo(d.newListingPromo); setLastMinuteDiscount(d.lastMinute); setWeeklyDiscount(d.weekly); setMonthlyDiscount(d.monthly); }}
+                                    onSave={(d) => saveThen({ new_listing_promo: d.newListingPromo, last_minute_discount: d.lastMinute, weekly_discount: d.weekly, monthly_discount: d.monthly }, () => { setNewListingPromo(d.newListingPromo); setLastMinuteDiscount(d.lastMinute); setWeeklyDiscount(d.weekly); setMonthlyDiscount(d.monthly); })}
                                 />
-                                <CleaningFeeCard fee={cleaningFee} onSave={setCleaningFee} />
-                                <ExtraGuestFeeCard fee={extraGuestFee} after={extraGuestAfter} onSave={(f, a) => { setExtraGuestFee(f); setExtraGuestAfter(a); }} />
-                                <PetFeeCard fee={petFee} petsAllowed={amenities.includes('Pets allowed')} onSave={setPetFee} />
-                                <DamageDepositCard deposit={damageDeposit} onSave={setDamageDeposit} />
+                                <CleaningFeeCard fee={cleaningFee} onSave={(v) => saveThen({ cleaning_fee: v.trim() ? Number(v) : null }, () => setCleaningFee(v))} />
+                                <ExtraGuestFeeCard fee={extraGuestFee} after={extraGuestAfter} onSave={(f, a) => saveThen({ extra_guest_fee: f.trim() ? Number(f) : null, extra_guest_after: a.trim() ? Number(a) : null }, () => { setExtraGuestFee(f); setExtraGuestAfter(a); })} />
+                                <PetFeeCard fee={petFee} petsAllowed={amenities.includes('Pets allowed')} onSave={(v) => saveThen({ pet_fee: v.trim() ? Number(v) : null }, () => setPetFee(v))} />
+                                <DamageDepositCard deposit={damageDeposit} onSave={(v) => saveThen({ damage_deposit: v.trim() ? Number(v) : null }, () => setDamageDeposit(v))} />
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'booking' && (
+                        {shows('booking') && (<PhoneSection id="booking" phone={isPhone}>
                             <section className="space-y-4">
                                 <h2 className="text-xl font-bold text-slate-900">Booking settings</h2>
                                 <HowGuestsBookCard
                                     instantBook={instantBook}
                                     requiresPhone={instantBookRequiresPhone}
-                                    onSave={(ib, phone) => { setInstantBook(ib); setInstantBookRequiresPhone(phone); }}
+                                    onSave={(ib, phone) => saveThen({ instant_book: ib, instant_book_requires_phone: ib ? phone : false }, () => { setInstantBook(ib); setInstantBookRequiresPhone(phone); })}
                                 />
                                 <CancellationPolicyCard
                                     policies={CANCELLATION_POLICIES}
                                     policy={cancellationPolicy}
                                     nonRefundable={nonRefundableOption}
-                                    onSave={(pol, nr) => { setCancellationPolicy(pol); setNonRefundableOption(nr); }}
+                                    onSave={(pol, nr) => saveThen({ cancellation_policy: pol, non_refundable_option: nr }, () => { setCancellationPolicy(pol); setNonRefundableOption(nr); })}
                                 />
                             </section>
-                        )}
+                        </PhoneSection>)}
 
-                        {activeSection === 'calendar' && (
+                        {shows('calendar') && (<PhoneSection id="calendar" phone={isPhone}>
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-1">Calendar sync</h2>
                                 <p className="text-sm text-slate-500 mb-4">
@@ -976,14 +856,14 @@ export default function EditListing() {
                                     <input
                                         type="text"
                                         readOnly
-                                        value={typeof window !== 'undefined' && icalToken ? `${window.location.origin}/api/ical/${listingId}?token=${icalToken}` : 'Save this listing to generate your link'}
+                                        value={typeof window !== 'undefined' && icalToken ? `${window.location.origin}/api/ical/${listingId}?token=${icalToken}` : 'Your link is being made — reload in a moment'}
                                         className="w-full p-3 border rounded-xl text-sm bg-slate-50 text-slate-500"
                                     />
                                     <button
                                         type="button"
                                         onClick={() => {
                                             if (!icalToken) {
-                                                toast.error('Save this listing first.', { theme: 'colored' });
+                                                toast.error('Your link isn\u2019t ready yet — reload the page.', { theme: 'colored' });
                                                 return;
                                             }
                                             navigator.clipboard.writeText(`${window.location.origin}/api/ical/${listingId}?token=${icalToken}`);
@@ -998,7 +878,7 @@ export default function EditListing() {
                                     Paste this into Airbnb or Booking.com's "import calendar" setting so bookings made here block those dates there too. It works with your own website too. Keep it to yourself — anyone with this link can see when your place is occupied.
                                 </p>
                             </section>
-                        )}
+                        </PhoneSection>)}
 
                         {/* A listing that predates a rule keeps saving, so it
                             would otherwise never be told it is below the
@@ -1022,19 +902,9 @@ export default function EditListing() {
                             </div>
                         )}
 
-                        {formError && (
-                            <div role="alert" className="mt-8 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-                                {formError}
-                            </div>
-                        )}
-
-                        <button type="submit" disabled={submitting || (moderating && moderationReason.trim().length < 3)}
-                            className="w-full mt-8 py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60">
-                            {submitting ? 'Saving...' : 'Save changes'}
-                        </button>
                     </div>
                 </div>
-            </form>
+            </div>
         </div>
     );
 }

@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { Check, X, Minus, Plus, ArrowLeft } from 'lucide-react';
-import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import AutoTextarea from '@/components/AutoTextarea';
 import {
     CHECKOUT_TASKS, CHECKOUT_NOTE_MAX, MAX_PETS_CAP, DEFAULT_MAX_PETS, checkoutTaskLabels,
@@ -57,7 +57,7 @@ export function houseRulesSummary(r: HouseRules): string {
     ].filter(Boolean).join(' · ');
 }
 
-export function HouseRulesCard({ rules, onSave }: { rules: HouseRules; onSave: (r: HouseRules) => void }) {
+export function HouseRulesCard({ rules, onSave }: { rules: HouseRules; onSave: (r: HouseRules) => unknown }) {
     const [open, setOpen] = useState(false);
     const [d, setD] = useState(rules);
     const set = (patch: Partial<HouseRules>) => setD({ ...d, ...patch });
@@ -72,7 +72,7 @@ export function HouseRulesCard({ rules, onSave }: { rules: HouseRules; onSave: (
         <>
             <EditorCard title="House rules" summary={houseRulesSummary(rules)} onClick={() => { setD(rules); setOpen(true); }} />
             {open && (
-                <EditorPanel title="House rules" onClose={() => setOpen(false)} footer={<PanelSave onClick={() => { onSave(d); setOpen(false); }} />}>
+                <EditorPanel title="House rules" onClose={() => setOpen(false)} footer={<PanelSave onClick={async () => { if (await saved(onSave(d))) setOpen(false); }} />}>
                     <p className="text-sm text-slate-500 mb-4">Guests are expected to follow your rules and may be removed if they don&apos;t.</p>
                     <div className="border rounded-2xl divide-y">
                         <div className="p-4">
@@ -131,7 +131,7 @@ export function HouseRulesCard({ rules, onSave }: { rules: HouseRules; onSave: (
 // Checkout instructions
 // ---------------------------------------------------------------------------
 
-export function CheckoutInstructionsCard({ tasks, note, onSave }: { tasks: string[]; note: string; onSave: (tasks: string[], note: string) => void }) {
+export function CheckoutInstructionsCard({ tasks, note, onSave }: { tasks: string[]; note: string; onSave: (tasks: string[], note: string) => unknown }) {
     const [open, setOpen] = useState(false);
     const [t, setT] = useState<string[]>(tasks);
     const [n, setN] = useState(note);
@@ -142,7 +142,7 @@ export function CheckoutInstructionsCard({ tasks, note, onSave }: { tasks: strin
         <>
             <EditorCard title="Checkout instructions" summary={summary} onClick={() => { setT(tasks); setN(note); setOpen(true); }} />
             {open && (
-                <EditorPanel title="Checkout instructions" onClose={() => setOpen(false)} footer={<PanelSave onClick={() => { onSave(t, n); setOpen(false); }} />}>
+                <EditorPanel title="Checkout instructions" onClose={() => setOpen(false)} footer={<PanelSave onClick={async () => { if (await saved(onSave(t, n))) setOpen(false); }} />}>
                     <div className="divide-y border-y">
                         {CHECKOUT_TASKS.map((task) => {
                             const on = t.indexOf(task.key) !== -1;
@@ -176,7 +176,7 @@ export function GuestSafetyCard({ safety, privacyType, alarmAnswers, onSave }: {
     privacyType: string;
     // The alarms' current answers, from the amenities (where they're stored).
     alarmAnswers: Record<string, SafetyAnswer | null>;
-    onSave: (s: GuestSafety) => void;
+    onSave: (s: GuestSafety) => unknown;
 }) {
     const [open, setOpen] = useState(false);
     const [group, setGroup] = useState<SafetyGroup | null>(null);
@@ -205,10 +205,10 @@ export function GuestSafetyCard({ safety, privacyType, alarmAnswers, onSave }: {
         setError('');
     };
 
-    const save = () => {
+    const save = async () => {
         const problem = guestSafetyProblem(d);
         if (problem) { setError(problem); return; }
-        onSave(d);
+        if (!(await saved(onSave(d)))) return;
         setOpen(false);
         setGroup(null);
     };

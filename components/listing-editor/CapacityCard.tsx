@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
-import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 
 // Airbnb's "Number of guests" card: "7 guests · 4 beds · 1 bathroom", opening
 // to the counters. Beds can't drop below the beds already placed in sleeping
@@ -40,7 +40,7 @@ export default function CapacityCard({ guests, beds, bathrooms, minBeds, onSave 
     beds: number;
     bathrooms: number;
     minBeds: number;
-    onSave: (guests: number, beds: number, bathrooms: number) => void;
+    onSave: (guests: number, beds: number, bathrooms: number) => unknown;
 }) {
     const [open, setOpen] = useState(false);
     const [g, setG] = useState(guests);
@@ -54,7 +54,7 @@ export default function CapacityCard({ guests, beds, bathrooms, minBeds, onSave 
             <EditorCard title="Capacity" summary={capacitySummary(guests, beds, bathrooms)} onClick={openPanel} />
             {open && (
                 <EditorPanel title="Capacity" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(g, b, ba); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(g, b, ba))) setOpen(false); }} />}>
                     <Counter label="Guests" value={g} onChange={setG} min={1} />
                     <Counter label="Beds" value={b} onChange={setB} min={Math.max(1, minBeds)} />
                     <Counter label="Bathrooms" value={ba} onChange={setBa} min={0.5} />

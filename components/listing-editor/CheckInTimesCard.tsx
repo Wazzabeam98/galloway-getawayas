@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 
 // Airbnb's "Check-in and checkout times": the times on a raised card, the
 // inputs behind it. They save with the listing (check_in_time, check_in_end_time,
@@ -18,7 +18,7 @@ export default function CheckInTimesCard({ start, end, checkout, onSave }: {
     start: string;
     end: string;
     checkout: string;
-    onSave: (start: string, end: string, checkout: string) => void;
+    onSave: (start: string, end: string, checkout: string) => unknown;
 }) {
     const [open, setOpen] = useState(false);
     const [s, setS] = useState(start);
@@ -32,7 +32,7 @@ export default function CheckInTimesCard({ start, end, checkout, onSave }: {
             <EditorCard title="Check-in and checkout" summary={checkInTimesSummary(start, end, checkout)} onClick={openPanel} />
             {open && (
                 <EditorPanel title="Check-in and checkout" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(s || '15:00', e, c || '11:00'); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(s || '15:00', e, c || '11:00'))) setOpen(false); }} />}>
                     <div className="space-y-4">
                         <div className="grid grid-cols-2 gap-3">
                             <div>
