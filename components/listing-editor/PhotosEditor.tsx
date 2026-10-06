@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { EditorCard, EditorPanel } from '@/components/listing-editor/EditorPanel';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import Env from '@/config/Env';
@@ -43,10 +44,12 @@ const previewIndex = (i: number, from: number, to: number) => {
 
 type Drag = { from: number; to: number; dx: number; dy: number };
 
-export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange }: {
+export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange, inSheet = false }: {
     photos: string[];
     savePhotos: SavePhotos;
     isPhone: boolean;
+    // Inside the phone's Photos sheet: the sheet carries the title.
+    inSheet?: boolean;
     // False stops the change before it starts (an owner moderating with no
     // reason written yet).
     beforeChange?: () => boolean;
@@ -128,6 +131,16 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
         const grid = gridRef.current;
         if (!isPhone || !grid) return;
 
+        // In the phone's sheet the sheet's body scrolls, not the page.
+        const box = grid.closest<HTMLElement>('[data-sheet-scroll]');
+        const scrollTop = () => (box ? box.scrollTop : window.scrollY);
+        const scrollBy = (dy: number) => (box ? box.scrollBy(0, dy) : window.scrollBy(0, dy));
+        const edges = () => {
+            if (!box) return { top: TOP_BARS + EDGE, bottom: window.innerHeight - EDGE };
+            const r = box.getBoundingClientRect();
+            return { top: r.top + EDGE, bottom: r.bottom - EDGE };
+        };
+
         const tileIndex = (t: EventTarget | null) => {
             const el = (t as HTMLElement | null)?.closest?.('[data-photo-index]') as HTMLElement | null;
             return el ? Number(el.dataset.photoIndex) : -1;
@@ -137,7 +150,7 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
             const p = press.current;
             if (!p || !p.dragging) return;
             const dx = p.lastX - p.x;
-            const dy = p.lastY + window.scrollY - p.startY;
+            const dy = p.lastY + scrollTop() - p.startY;
             const me = p.slots[p.i];
             const cx = me.x + dx, cy = me.y + dy;
             let to = p.i, best = Infinity;
@@ -153,9 +166,9 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
         const tick = () => {
             const p = press.current;
             if (!p || !p.dragging) return;
-            const top = TOP_BARS + EDGE, bottom = window.innerHeight - EDGE;
+            const { top, bottom } = edges();
             const step = p.lastY < top ? -Math.ceil((top - p.lastY) / 6) : p.lastY > bottom ? Math.ceil((p.lastY - bottom) / 6) : 0;
-            if (step) { window.scrollBy(0, step); place(); }
+            if (step) { scrollBy(step); place(); }
             p.raf = requestAnimationFrame(tick);
         };
 
@@ -165,9 +178,9 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
             p.dragging = true;
             p.slots = Array.from(grid.querySelectorAll<HTMLElement>('[data-photo-index]')).map((el) => {
                 const r = el.getBoundingClientRect();
-                return { x: r.left + r.width / 2, y: r.top + window.scrollY + r.height / 2 };
+                return { x: r.left + r.width / 2, y: r.top + scrollTop() + r.height / 2 };
             });
-            p.startY = p.y + window.scrollY;
+            p.startY = p.y + scrollTop();
             try { navigator.vibrate?.(10); } catch { /* not on iOS */ }
             place();
             p.raf = requestAnimationFrame(tick);
@@ -247,7 +260,7 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
 
     return (
         <section>
-            <h2 className="text-xl font-bold text-slate-900 mb-1">Photos</h2>
+            {!inSheet && <h2 className="text-xl font-bold text-slate-900 mb-1">Photos</h2>}
             <p className="text-xs text-slate-400 mb-4">
                 {isPhone
                     ? 'Press and hold a photo to drag it. Tap a photo to move it, make it the cover or delete it.'
@@ -384,5 +397,40 @@ function ConfirmDelete({ onCancel, onConfirm }: { onCancel: () => void; onConfir
             </div>
         </div>,
         document.body,
+    );
+}
+
+// On a phone, Photos is a raised card like Sleeping arrangements: the count,
+// the first two photos (the cover first) and "+N more", so scrolling past can
+// never move or delete one. Tapping it opens the full editor in the sheet —
+// each change there saves as it's made, exactly as on the page before.
+export function PhotosCard({ photos, savePhotos, beforeChange }: {
+    photos: string[];
+    savePhotos: SavePhotos;
+    beforeChange?: () => boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const shown = photos.slice(0, 2);
+    const more = photos.length - shown.length;
+    const count = photos.length ? `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}` : 'No photos yet';
+    return (
+        <>
+            <EditorCard title="Photos" summary={count} onClick={() => setOpen(true)}>
+                {shown.length > 0 && (
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                        {shown.map((path) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img key={path} src={getImageUrl(path)} alt="" className="aspect-[4/3] w-full rounded-xl object-cover" />
+                        ))}
+                    </div>
+                )}
+                {more > 0 && <div className="mt-3 text-sm font-semibold text-slate-700">+{more} more</div>}
+            </EditorCard>
+            {open && (
+                <EditorPanel title="Photos" onClose={() => setOpen(false)}>
+                    <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone beforeChange={beforeChange} inSheet />
+                </EditorPanel>
+            )}
+        </>
     );
 }

@@ -83,16 +83,18 @@ export default function SleepingArrangementsEditor({
     };
 
     const summary = `${plural(counts.bedrooms, 'bedroom')} · ${plural(counts.beds, 'bed')}`;
+    // Two across on a phone, three from md up; "+N more" counts what's hidden.
     const shown = rooms.slice(0, 3);
-    const more = rooms.length - shown.length;
+    const morePhone = rooms.length - Math.min(rooms.length, 2);
+    const moreWide = rooms.length - shown.length;
 
     return (
         <div>
             <EditorCard title="Sleeping arrangements" summary={summary} onClick={() => setOpen(true)}>
                 {shown.length > 0 && (
-                    <div className="mt-4 grid grid-cols-3 gap-3">
+                    <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
                         {shown.map((room, i) => (
-                            <div key={i} className="min-w-0">
+                            <div key={i} className={`min-w-0 ${i === 2 ? 'hidden md:block' : ''}`}>
                                 <RoomThumb room={room} className="aspect-[4/3] w-full rounded-xl" />
                                 <div className="mt-1.5 truncate text-sm font-semibold text-slate-900">{room.label || 'Bedroom'}</div>
                                 <div className="truncate text-xs text-slate-500">{bedSummary(room.beds)}</div>
@@ -100,7 +102,8 @@ export default function SleepingArrangementsEditor({
                         ))}
                     </div>
                 )}
-                {more > 0 && <div className="mt-3 text-sm font-semibold text-slate-700">+{more} more</div>}
+                {morePhone > 0 && <div className="mt-3 text-sm font-semibold text-slate-700 md:hidden">+{morePhone} more</div>}
+                {moreWide > 0 && <div className="mt-3 hidden text-sm font-semibold text-slate-700 md:block">+{moreWide} more</div>}
             </EditorCard>
 
             {open && !editing && (
