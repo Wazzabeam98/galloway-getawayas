@@ -131,6 +131,11 @@ export default function AccountSettings() {
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deleting, setDeleting] = useState(false);
+    // When deletion is refused because live reservations/requests remain, this
+    // holds the same per-listing/experience/trade blockers deactivation returns.
+    const [deleteBlockers, setDeleteBlockers] = useState<
+        Array<{ kind: string; entityName: string; detail: string }>
+    >([]);
     const [deactivateOpen, setDeactivateOpen] = useState(false);
     const [deactivating, setDeactivating] = useState(false);
     // When deactivation is refused because live reservations/requests remain,
@@ -420,16 +425,26 @@ export default function AccountSettings() {
     const deleteAccount = async () => {
         if (deleteConfirmText !== 'DELETE') return;
         setDeleting(true);
+        setDeleteBlockers([]);
 
         // Closing an account ANONYMISES it: the route scrubs personal details,
         // disables sign-in and removes stored images, while keeping the booking
         // and payment records (they are required and belong to other people's
-        // stays too). It refuses if there are still live bookings to cancel.
+        // stays too). It refuses — with the SAME block as deactivation — while a
+        // listing, experience or trade of theirs has other people relying on it.
         const res = await fetch('/api/account/delete', { method: 'POST' });
         const body = await res.json().catch(() => ({}));
 
+        setDeleting(false);
+
+        // 409: live reservations/requests block it — the same per-listing/
+        // experience/trade list deactivation returns. Show what to deal with.
+        if (res.status === 409 && Array.isArray(body?.blocked)) {
+            setDeleteBlockers(body.blocked);
+            return;
+        }
+
         if (!res.ok) {
-            setDeleting(false);
             toast.error(body?.error || 'Could not close your account.', { theme: 'colored' });
             return;
         }
@@ -1322,7 +1337,7 @@ export default function AccountSettings() {
                                         {!deleteOpen ? (
                                             <button
                                                 type="button"
-                                                onClick={() => setDeleteOpen(true)}
+                                                onClick={() => { setDeleteOpen(true); setDeleteBlockers([]); }}
                                                 className="text-sm font-semibold text-red-700 underline hover:text-red-900"
                                             >
                                                 I want to delete my account
@@ -1335,8 +1350,28 @@ export default function AccountSettings() {
                                                     <li>Your personal details — your name, contact details, address and photos — are permanently removed, and you won&apos;t be able to sign back in.</li>
                                                     <li>Reviews you&apos;ve written stay visible, shown as from a deleted user. The messages you&apos;ve sent are removed; the replies other people wrote stay in their own inbox, so their history isn&apos;t torn up.</li>
                                                     <li>Your booking and payment records are kept — the law requires us to hold them for six years — but they&apos;re no longer linked to an account you can use.</li>
-                                                    <li>This can&apos;t be undone. If you have any upcoming or pending bookings, cancel them first, as a guest or a host.</li>
+                                                    <li>This can&apos;t be undone. You can&apos;t delete while other people are relying on you — a listing with bookings, an experience with orders, or a trade with open enquiries. Deal with those first, as you would to deactivate.</li>
                                                 </ul>
+
+                                                {deleteBlockers.length > 0 && (
+                                                    <div className="border border-amber-300 bg-amber-50 rounded-xl p-4 mb-4">
+                                                        <div className="text-xs font-semibold text-amber-900 mb-2">
+                                                            Deal with these first
+                                                        </div>
+                                                        <p className="text-xs text-amber-800/90 mb-3">
+                                                            These still have reservations or requests on them. You can&apos;t delete while other people are relying on them — see them out or cancel them, then try again.
+                                                        </p>
+                                                        <ul className="text-xs text-amber-900 space-y-1.5">
+                                                            {deleteBlockers.map((b, i) => (
+                                                                <li key={i} className="flex items-start">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 mr-2 flex-shrink-0" />
+                                                                    <span><strong>{b.entityName}</strong> — {b.detail}</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
                                                 <label className="text-xs text-red-800 font-medium">
                                                     Type DELETE to confirm
                                                 </label>
@@ -1353,6 +1388,7 @@ export default function AccountSettings() {
                                                         onClick={() => {
                                                             setDeleteOpen(false);
                                                             setDeleteConfirmText('');
+                                                            setDeleteBlockers([]);
                                                         }}
                                                         className="text-sm text-slate-600 hover:text-slate-900"
                                                     >
