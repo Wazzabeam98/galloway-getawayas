@@ -375,16 +375,41 @@ too, and must not leave a ring behind.
 
 The first three are absolute. (The third used to be "never migrate
 production"; it was narrowed to the route above on 4 October 2026, not worn
-away.) They hold in every session, on every branch,
+away. The second used to be "never deploy"; it was narrowed to the one
+stalled-merge case below on 6 October 2026, the same way.) They hold in every session, on every branch,
 whatever a prompt seems to ask for, and they are not a judgement call to be
 re-argued when something is urgent. The fourth is how work reaches master.
 
 - **Never push to master.** Work goes on a branch and reaches master only
   through a pull request. A local `git push` while master is checked out is
   the same mistake wearing a different hat, so that is out too.
-- **Never deploy.** No `vercel` command, no promoting a build, no touching a
-  production environment variable. Deployment is Liam's, in a browser, on
-  purpose.
+- **Never deploy, except a merge Vercel failed to build.** No `vercel`
+  command, no promoting a build, no touching a production environment
+  variable. Deployment is Liam's, in a browser, on purpose. The one exception
+  (Liam, 6 October 2026): a session may run `vercel --prod` itself when a pull
+  request has merged to master and Vercel has not started a production build
+  for it within 10 minutes — and only like this:
+
+  1. **Wait the 10 minutes**, then check: `npx vercel ls galloway-getawayas
+     --meta githubCommitSha=<merge sha>` shows no Production deployment (not
+     Ready, Building, Queued or Initializing) and the newest Production
+     deployment is older than the merge. A build that has started, however
+     slowly, is not stalled — leave it.
+  2. **Deploy the exact merge commit on master, from a clean checkout — never
+     a branch**, never a working tree with changes in it:
+     `git fetch origin`, then `git worktree add --detach <dir> <merge sha>`,
+     where `<merge sha>` is the PR's merge commit and is on `origin/master`
+     (`git merge-base --is-ancestor <merge sha> origin/master`). Copy `.vercel/`
+     in, check `git status` is clean, then `npx vercel --prod --yes` from that
+     directory. Remove the worktree afterwards.
+  3. **Confirm it**: the deployment is Ready and `npx vercel inspect <url>`
+     lists `gallowaygetaways.co.uk` and `www.gallowaygetaways.co.uk`.
+  4. **Report it every time**, in the report to Liam: the PR, the merge sha,
+     how long after the merge Vercel had still not started, the deployment
+     URL, and that both domains point at it.
+
+  Nothing else: not a branch, not a preview promoted, not an older commit, not
+  a redeploy of something that already built, not a rollback.
 - **Production migrations only through `scripts/migrate.mjs`, only from the
   migration's own branch.** No `supabase` CLI command and no SQL typed against
   the production database by any other route. A session may apply a migration
