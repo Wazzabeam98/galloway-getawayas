@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
+import { deactivationBlockers } from '@/lib/deactivateAccount';
 
 // Closing an account ANONYMISES it — it never deletes the profile or auth row,
 // because bookings/payments/payouts/orders are RESTRICT-linked to them and must
@@ -11,12 +12,20 @@ import { logError } from '@/lib/logError';
 // database function can't: it removes the person's images from the public
 // storage bucket, and it authenticates the caller before scrubbing.
 //
-// Order: gather the storage paths, scrub the account (which guards against live
-// bookings and raises if any exist — so a blocked erasure touches nothing, and
-// which also unpublishes any listings this user hosts), then remove the images
-// with the paths gathered before the columns were nulled. Because the scrub
-// unpublishes the listings before this route deletes their photos, no listing
-// is ever left public with its images gone.
+// THE BLOCK IS THE SAME AS DEACTIVATION. A permanent erasure must refuse for
+// exactly the reasons a reversible deactivation refuses — a listing with other
+// people's live reservations, an experience with live orders, a trade with open
+// enquiries, a stay in progress — so neither path can erase an account someone
+// else is relying on. We run the same account_deactivation_blockers pre-check
+// here (deactivationBlockers), to answer a 409 with the per-entity list the
+// account page renders, and the RPC re-runs the identical set as its hard guard.
+//
+// Order: gather the storage paths, scrub the account (which guards against the
+// blocker set and raises if anything is live — so a blocked erasure touches
+// nothing, and which also unpublishes any listings this user hosts), then remove
+// the images with the paths gathered before the columns were nulled. Because the
+// scrub unpublishes the listings before this route deletes their photos, no
+// listing is ever left public with its images gone.
 //
 // Avatars and provider images are written with a timestamp in the key
 // (avatars/<uid>-<ts>.jpg, providers/...-<uid>-<ts>...), so a column only ever
@@ -38,6 +47,16 @@ export async function POST() {
         }
         const uid = user.id;
         const admin = adminClient();
+
+        // 0. The block — identical to deactivation. Nothing is touched if any
+        //    listing/experience/trade of theirs has other people relying on it,
+        //    or if they are mid-stay. The friendly per-entity list goes back as
+        //    409 so the account page can name what to deal with; the scrub RPC
+        //    re-runs the same set as its hard guard below.
+        const blockers = await deactivationBlockers(admin, uid);
+        if (blockers.length > 0) {
+            return NextResponse.json({ error: 'You still have things other people are relying on.', blocked: blockers }, { status: 409 });
+        }
 
         // 1. Gather every storage object owned by this user, before the scrub
         //    nulls the columns that name them.
@@ -74,9 +93,9 @@ export async function POST() {
         await sweep('avatars', (name) => name.startsWith(`${uid}-`));
         await sweep('providers', (name) => name.includes(uid));
 
-        // 2. Scrub the account. Runs the live-bookings guard first, so if the
-        //    user still has upcoming/pending bookings this raises and NOTHING —
-        //    including their images — is touched.
+        // 2. Scrub the account. Re-runs the same blocker set as its hard guard
+        //    first, so if anything went live between the pre-check and now this
+        //    raises and NOTHING — including their images — is touched.
         const { error: rpcError } = await supabase.rpc('anonymise_own_account');
         if (rpcError) {
             return NextResponse.json({ error: rpcError.message }, { status: 400 });
