@@ -7,10 +7,11 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
-    Plus, Minus, X, ChevronLeft, ChevronRight, ChevronDown, Check, Zap, Hammer, Paintbrush, Home,
+    Plus, X, ChevronLeft, ChevronRight, ChevronDown, Check, Zap, Hammer, Paintbrush, Home,
     ImagePlus, User, Pencil,
     MapPin, Tag, ListChecks, Flag, Image as ImageIcon,
 } from 'lucide-react';
+import { NumberStepper, ChoiceCard } from './wizardKit';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
@@ -150,94 +151,6 @@ const YEARS_DEFAULT = 5;
 const CAPACITY_DEFAULT_SLOT = 2;
 const CAPACITY_DEFAULT_TRAVEL = 6;
 
-// A −/+ stepper with a big display number, in the register Airbnb use for every
-// count in their host flow (a guest picks a number by nudging it, not by typing
-// into a small box). Used for the counts on the where-and-when step — session
-// length, group size, days of notice.
-//
-// NOTHING PERSISTS UNTIL THE HOST TOUCHES IT. `value` empty is "not set yet":
-// the stepper shows `suggestion` greyed as a hint, but the stored value stays
-// empty — so the draft and the record carry nothing the host didn't choose. The
-// first nudge adopts the suggestion (a real value now), and typing sets any
-// number directly; either way the value becomes the host's. The step that holds
-// one of these can't be passed until it is non-empty (gated in the footer). The
-// value stays a string to match the fields it replaced.
-function NumberStepper({
-    value, onChange, min = 0, max = 999, step = 1, suffix, suggestion, size = 'md', solid = false,
-}: {
-    value: string;
-    onChange: (v: string) => void;
-    min?: number;
-    max?: number;
-    step?: number;
-    suffix?: string;
-    suggestion?: number;
-    // 'lg' is the whole-screen years opener: a huge display numeral and larger
-    // buttons. 'md' is the inline count on the where-and-when step.
-    size?: 'md' | 'lg';
-    // solid: show the number in solid black from load — the suggestion is a
-    // starting position, not a greyed placeholder, and there is no visual
-    // difference between touched and untouched. It STILL stores nothing until
-    // touched: the parent value stays empty until a nudge or a type commits, so
-    // an untouched starting number never reaches the draft or the record.
-    //
-    // Use solid ONLY where the step is NOT gated — the screens whose Next is
-    // enabled from load and whose onNext stores the shown default (years,
-    // capacity, notice, session length). There a plus/minus genuinely MOVES the
-    // number, because the shown value is already the accepted answer.
-    //
-    // A GATED stepper (Next/Save disabled until touched) must NOT be solid: the
-    // greyed path below adopts the suggestion on the first press of either
-    // button — so accepting the suggestion is one press, not a press up and back
-    // down — and turns solid once touched, which is the signal that the required
-    // input has been given. The per-treatment duration is the gated one.
-    solid?: boolean;
-}) {
-    const has = String(value).trim() !== '' && Number.isFinite(Number(value));
-    const shown = has ? Number(value) : (suggestion ?? min);
-    const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, Math.round(n)))));
-    // solid: a nudge always MOVES from the shown starting position and commits
-    // (tap + goes up, tap − goes down), because the number is already visible.
-    // greyed: the first nudge ADOPTS the suggestion, then moves.
-    const nudge = (dir: number) => ((solid || has) ? commit(shown + dir * step) : commit(suggestion ?? min));
-
-    const lg = size === 'lg';
-    // lg is the whole-screen stepper (years, guests, notice). It is sized DOWN on
-    // a phone — at full desktop size the number field plus the two circles and the
-    // suffix are wider than a 375px screen and clip at both edges. Desktop keeps
-    // the big size via the sm: breakpoints.
-    const circle =
-        (lg ? 'h-14 w-14 sm:h-16 sm:w-16 ' : 'h-11 w-11 ')
-        + 'flex flex-none items-center justify-center rounded-full border border-slate-300 '
-        + 'text-slate-600 transition hover:border-slate-500 focus:outline-none focus-visible:ring-2 '
-        + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300';
-    const glyph = lg ? 'h-5 w-5 sm:h-6 sm:w-6' : 'h-4 w-4';
-    const numberField = lg
-        ? 'w-28 sm:w-44 bg-transparent text-center text-7xl sm:text-9xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
-        : 'w-16 bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
-
-    return (
-        <div className={'flex items-center ' + (lg ? 'gap-4 sm:gap-10' : 'gap-4')}>
-            <button type="button" onClick={() => nudge(-1)} disabled={has && shown <= min}
-                aria-label="Decrease" className={circle}>
-                <Minus className={glyph} strokeWidth={2} />
-            </button>
-            <input
-                type="number" inputMode="numeric" aria-label="Amount"
-                value={solid ? String(shown) : (has ? String(shown) : '')}
-                placeholder={solid ? undefined : (suggestion !== undefined ? String(suggestion) : '')}
-                onChange={(e) => onChange(e.target.value)}
-                className={numberField}
-            />
-            <button type="button" onClick={() => nudge(1)} disabled={has && shown >= max}
-                aria-label="Increase" className={circle}>
-                <Plus className={glyph} strokeWidth={2} />
-            </button>
-            {suffix && <span className="text-sm text-slate-500">{suffix}</span>}
-        </div>
-    );
-}
-
 // A collapsed hub row, Airbnb-style: a square button on the left (a plus when
 // empty, a check once filled), a bold label with a grey one-line description
 // beside it, and a chevron on the right. Tapping it opens that thing's sub-flow.
@@ -275,39 +188,6 @@ function HubRow({ filled, label, suffix, prompt, summary, onOpen, thumb }: {
                 <span className="block truncate text-sm text-slate-500">{filled && summary ? summary : prompt}</span>
             </span>
             <ChevronRight className="h-5 w-5 flex-none text-slate-400" />
-        </button>
-    );
-}
-
-// The one large, centred choice card every either/or fork in the guest wizard
-// uses — the fulfilment fork (delivery / collection / both), the slot
-// private/shared answer, and the slot come-to-me / travel fork. Tall so a
-// screenful of two or three options fills the space, with the label above and
-// the hint below, both centred. There is deliberately no second, smaller set
-// of card styles: a fork that wants cards uses this. `radio` gives the button
-// radiogroup semantics (role="radio" + aria-checked); without it the card is an
-// aria-pressed toggle, which is what the slot forks use.
-function ChoiceCard({ selected, onSelect, title, hint, radio }: {
-    selected: boolean;
-    onSelect: () => void;
-    title: string;
-    hint: string;
-    radio?: boolean;
-}) {
-    return (
-        // Content is top-aligned, not centred: these cards sit in a stretched
-        // grid row (all as tall as the wordiest one), and a centred body would
-        // float each title to a different height — a staircase, when they are
-        // one row of choices. Anchored to the top, every title lines up and the
-        // hint hangs beneath it, however many lines each runs to. The title
-        // reserves two lines so a one-line title (Both) starts its hint at the
-        // same place as a two-line one.
-        <button type="button" onClick={onSelect}
-            {...(radio ? { role: 'radio', 'aria-checked': selected } : { 'aria-pressed': selected })}
-            className={'flex min-h-[9rem] flex-col items-center justify-start gap-1.5 rounded-2xl border-2 bg-white px-5 py-7 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[13rem] sm:py-9 '
-                + (selected ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
-            <span className="flex items-center text-lg font-semibold text-slate-900 sm:min-h-[3.5rem]">{title}</span>
-            <span className="text-sm text-slate-500">{hint}</span>
         </button>
     );
 }

@@ -4,12 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'react-toastify';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import type { SupabaseClient } from '@supabase/supabase-js';
-import Env from '@/config/Env';
-import { getImageUrl, generateRandomNumber } from '@/lib/utils';
-import { compressImage } from '@/lib/compressImage';
+import { getImageUrl } from '@/lib/utils';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
-import { childrenAllowed } from '@/lib/guestAges';
 import { stepHeadings } from '@/lib/experienceSteps';
 import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
 import AutoTextarea from '@/components/AutoTextarea';
@@ -20,6 +16,10 @@ import PropertyMap from '@/components/PropertyMap';
 import PhotosEditor, { PhotosCard, type SavePhotos } from '@/components/listing-editor/PhotosEditor';
 import PhoneSectionTabs, { goToEditorSection } from '@/components/listing-editor/PhoneSectionTabs';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
+import { NumberStepper } from './wizardKit';
+import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
+import { AddItemFlow, ItemDetailCard, rowFromItem, uploadImage, type MenuRow, type ItemCtx } from './ExperienceItemEditor';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { savePaused, TakenDownBanner, ListingStatusSection } from '@/components/services/ListingPauseControl';
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
@@ -29,17 +29,15 @@ import {
 
 // The guest-experience listing editor, on the same shape as the holiday-let
 // editor (app/edit-listing): the sections grouped the way Airbnb's experience
-// host editor groups them, each a raised card showing its answer in one line and
-// opening a full-screen sheet (Save + Cancel). EVERY CARD SAVES ITSELF through
-// /api/services/listing/save — there is no page Save and no "Saved" pop-up (the
-// sheet closing is the confirmation); only a failure speaks. Phone: one page
-// with a sticky underline tab bar. Desktop: the sticky left-hand list.
+// host editor groups them, each a raised card opening a full-screen sheet with
+// Save and Cancel. EVERY CARD SAVES ITSELF through /api/services/listing/save —
+// no page Save, no "Saved" pop-up, only a failure speaks. Phone: one page with
+// a sticky tab bar. Desktop: the sticky left-hand list.
 //
 // The save route and every section payload are unchanged, so saving and booking
-// behave exactly as before. Where several cards write the same section
-// (Location's `where`, the booking rules, the guest facts), each card sends that
-// section's WHOLE payload — its own field from the sheet, the rest from state —
-// so saving one never wipes a sibling.
+// behave exactly as before. Where several cards write one section, each sends it
+// whole (its field from the sheet, the rest from state) so one never wipes a
+// sibling.
 
 export interface EditorProvider {
     id: string; shape: string; isSlot: boolean; isFood: boolean;
@@ -87,70 +85,7 @@ const leadLabel = (days: number) => LEAD_TIME_OPTIONS.find((o) => o.days === day
 const TURNAROUND_OPTIONS = [0, 15, 30, 45, 60];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const inputCls = 'w-full rounded-xl border border-slate-300 p-3 text-sm';
-
-// A field label, sentence case (not the uppercase the reused holiday cards use).
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-    return (
-        <label className="block">
-            <span className="block text-sm font-semibold text-slate-800">{label}</span>
-            {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
-            <div className="mt-1.5">{children}</div>
-        </label>
-    );
-}
-
-function SheetFooter({ busy, onCancel, onSave, disabled, disabledLabel }: {
-    busy: boolean; onCancel: () => void; onSave: () => void; disabled?: boolean; disabledLabel?: string;
-}) {
-    return (
-        <div className="flex items-center justify-between gap-3">
-            <button type="button" onClick={onCancel} className="text-sm font-semibold text-slate-900 underline">Cancel</button>
-            <button type="button" onClick={onSave} disabled={busy || disabled}
-                className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-40">
-                {busy ? 'Saving…' : (disabled && disabledLabel) ? disabledLabel : 'Save'}
-            </button>
-        </div>
-    );
-}
-
-// Open / draft / save plumbing for a card: a fresh draft when the sheet opens,
-// write on Save, close only if the write went through.
-function useCardSheet<T>(current: T, onSave: (draft: T) => unknown) {
-    const [open, setOpen] = useState(false);
-    const [draft, setDraft] = useState<T>(current);
-    const [busy, setBusy] = useState(false);
-    const start = () => { setDraft(current); setOpen(true); };
-    const close = () => setOpen(false);
-    const save = async () => {
-        if (busy) return;
-        setBusy(true);
-        try { if (await saved(onSave(draft))) setOpen(false); } finally { setBusy(false); }
-    };
-    return { open, draft, setDraft, busy, start, close, save };
-}
-
-async function uploadImage(supabase: SupabaseClient, file: File, prefix: string): Promise<string | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { toast.error('Please sign in again.', { theme: 'colored' }); return null; }
-    try {
-        const ready = await compressImage(file);
-        const path = 'providers/' + prefix + '-' + user.id + '-' + Date.now() + '-' + generateRandomNumber() + '.jpg';
-        const { error } = await supabase.storage.from(Env.S3_BUCKET).upload(path, ready, { contentType: 'image/jpeg' });
-        if (error) { toast.error(error.message, { theme: 'colored' }); return null; }
-        return path;
-    } catch {
-        toast.error('That image couldn’t be read. Try a different one.', { theme: 'colored' });
-        return null;
-    }
-}
-
-const unitLabel = (unit: string): string => (
-    { flat: 'per session', person: 'per person', hour: 'per hour', night: 'per night', ticket: 'per ticket', item: 'per item' }[unit] || 'per session'
-);
-
-// ── Simple text/choice cards ─────────────────────────────────────────────────
-
+// ── Basics & guests ──────────────────────────────────────────────────────────
 function TitleCard({ value, onSave }: { value: string; onSave: (v: string) => unknown }) {
     const c = useCardSheet(value, onSave);
     return (
@@ -167,41 +102,50 @@ function TitleCard({ value, onSave }: { value: string; onSave: (v: string) => un
     );
 }
 
-function WhatHappensCard({ whatToExpect, phases, headings, onSave }: {
-    whatToExpect: string; phases: [string, string, string]; headings: { title: string }[];
-    onSave: (draft: { whatToExpect: string; phases: [string, string, string] }) => unknown;
-}) {
-    const c = useCardSheet({ whatToExpect, phases }, onSave);
-    const ph = ['Where to meet, how to find you, what to expect first.', 'The heart of it — what you’ll actually do together.', 'How it wraps up — and anything to do after.'];
+// What happens, split: a one-sentence Description, and The flow (the three steps).
+function DescriptionExpCard({ value, onSave }: { value: string; onSave: (v: string) => unknown }) {
+    const c = useCardSheet(value, onSave);
     return (
         <>
-            <EditorCard title="What happens" summary={whatToExpect.trim() || 'Add what happens'} onClick={c.start} />
+            <EditorCard title="Description" summary={value.trim() || 'Add a description'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="What happens" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="space-y-4">
-                        <Field label="In a sentence, what is it?">
-                            <AutoTextarea className={inputCls} rows={3} value={c.draft.whatToExpect}
-                                onChange={(e) => c.setDraft({ ...c.draft, whatToExpect: e.target.value })}
-                                placeholder="A wood-fired lakeside sauna with cold-water dips between rounds." />
-                        </Field>
-                        <div>
-                            <span className="block text-sm font-semibold text-slate-800">The flow</span>
-                            <p className="mt-0.5 text-xs text-slate-400">Take a guest through it, start to finish. Leave a step blank to skip it.</p>
-                            <div className="mt-3 space-y-3">
-                                {headings.map((h, i) => (
-                                    <div key={h.title} className="flex gap-3">
-                                        <div className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-emerald-700 text-xs font-bold text-white">{i + 1}</div>
-                                        <div className="flex-1">
-                                            <div className="text-sm font-semibold text-slate-900">{h.title}</div>
-                                            <AutoTextarea className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm" rows={2}
-                                                value={c.draft.phases[i]}
-                                                onChange={(e) => { const next = [...c.draft.phases] as [string, string, string]; next[i] = e.target.value; c.setDraft({ ...c.draft, phases: next }); }}
-                                                placeholder={ph[i]} />
-                                        </div>
-                                    </div>
-                                ))}
+                <EditorPanel title="Description" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <Field label="In a sentence, what is it?">
+                        <AutoTextarea className={inputCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)}
+                            placeholder="A wood-fired lakeside sauna with cold-water dips between rounds." />
+                    </Field>
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+function FlowCard({ phases, headings, onSave }: {
+    phases: [string, string, string]; headings: { title: string }[];
+    onSave: (phases: [string, string, string]) => unknown;
+}) {
+    const c = useCardSheet(phases, onSave);
+    const ph = ['Where to meet, how to find you, what to expect first.', 'The heart of it — what you’ll actually do together.', 'How it wraps up — and anything to do after.'];
+    const steps = phases.filter((d) => d.trim()).length;
+    const summary = steps ? `${steps} ${steps === 1 ? 'step' : 'steps'}` : 'Add the flow';
+    return (
+        <>
+            <EditorCard title="The flow" summary={summary} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="The flow" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <p className="mb-3 text-xs text-slate-400">Take a guest through it, start to finish. Leave a step blank to skip it.</p>
+                    <div className="space-y-3">
+                        {headings.map((h, i) => (
+                            <div key={h.title} className="flex gap-3">
+                                <div className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-emerald-700 text-xs font-bold text-white">{i + 1}</div>
+                                <div className="flex-1">
+                                    <div className="text-sm font-semibold text-slate-900">{h.title}</div>
+                                    <AutoTextarea className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm" rows={2}
+                                        value={c.draft[i]} onChange={(e) => { const next = [...c.draft] as [string, string, string]; next[i] = e.target.value; c.setDraft(next); }}
+                                        placeholder={ph[i]} />
+                                </div>
                             </div>
-                        </div>
+                        ))}
                     </div>
                 </EditorPanel>
             )}
@@ -209,8 +153,6 @@ function WhatHappensCard({ whatToExpect, phases, headings, onSave }: {
     );
 }
 
-// Maximum capacity — the default for the whole listing; a per-person item can set
-// its own, which still wins for that item. Saves the booking section.
 function MaxCapacityCard({ isSlot, value, onSave }: { isSlot: boolean; value: number; onSave: (v: number) => unknown }) {
     const c = useCardSheet(value, onSave);
     return (
@@ -227,8 +169,7 @@ function MaxCapacityCard({ isSlot, value, onSave }: { isSlot: boolean; value: nu
     );
 }
 
-// Minimum age / Activity level / What to bring — three cards, each saving the
-// whole `things` section (its own field from the sheet, the others from state).
+// ── Good to know ─────────────────────────────────────────────────────────────
 function MinimumAgeCard({ minAge, onSave }: { minAge: string; onSave: (v: string) => unknown }) {
     const c = useCardSheet(minAge, onSave);
     return (
@@ -311,56 +252,6 @@ function CancellationCard({ hours, noRefund, onSave }: { hours: number; noRefund
     );
 }
 
-function HostProfileCard({ supabase, profTitle, years, quals, recognition, headshot, onSave }: {
-    supabase: SupabaseClient;
-    profTitle: string; years: string; quals: string; recognition: string; headshot: string | null;
-    onSave: (draft: { profTitle: string; years: string; quals: string; recognition: string; headshot: string | null }) => unknown;
-}) {
-    const c = useCardSheet({ profTitle, years, quals, recognition, headshot }, onSave);
-    const [uploading, setUploading] = useState(false);
-    const change = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = (e.target.files || [])[0];
-        e.target.value = '';
-        if (!file) return;
-        setUploading(true);
-        const k = await uploadImage(supabase, file, 'headshot');
-        if (k) c.setDraft({ ...c.draft, headshot: k });
-        setUploading(false);
-    };
-    return (
-        <>
-            <EditorCard title="Host profile" summary={profTitle.trim() || (headshot ? 'Photo added' : 'Add your profile')} onClick={c.start} />
-            {c.open && (
-                <EditorPanel title="Host profile" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="space-y-4">
-                        <div>
-                            <span className="block text-sm font-semibold text-slate-800">Your photo</span>
-                            <p className="mt-0.5 text-xs text-slate-400">The person a guest is meeting — shown beside your name.</p>
-                            <div className="mt-2 flex items-center gap-3">
-                                {c.draft.headshot ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={getImageUrl(c.draft.headshot)} alt="" className="h-16 w-16 rounded-full object-cover ring-1 ring-slate-200" />
-                                ) : (
-                                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-400"><User className="h-6 w-6" /></span>
-                                )}
-                                <label className="cursor-pointer rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                                    {c.draft.headshot ? 'Change photo' : 'Add photo'}
-                                    <input type="file" accept="image/png, image/jpeg" onChange={change} className="hidden" disabled={uploading} />
-                                </label>
-                                {c.draft.headshot && <button type="button" onClick={() => c.setDraft({ ...c.draft, headshot: null })} className="text-sm text-slate-500 hover:text-red-600">Remove</button>}
-                            </div>
-                        </div>
-                        <Field label="Professional title"><input className={inputCls} value={c.draft.profTitle} onChange={(e) => c.setDraft({ ...c.draft, profTitle: e.target.value })} /></Field>
-                        <Field label="Years of experience"><input className={inputCls} inputMode="numeric" value={c.draft.years} onChange={(e) => c.setDraft({ ...c.draft, years: cleanAmountInput(e.target.value, false) })} placeholder="5" /></Field>
-                        <Field label="Qualifications"><AutoTextarea className={inputCls} rows={2} value={c.draft.quals} onChange={(e) => c.setDraft({ ...c.draft, quals: e.target.value })} /></Field>
-                        <Field label="Recognition (optional)"><AutoTextarea className={inputCls} rows={2} value={c.draft.recognition} onChange={(e) => c.setDraft({ ...c.draft, recognition: e.target.value })} /></Field>
-                    </div>
-                </EditorPanel>
-            )}
-        </>
-    );
-}
-
 function DietaryCard({ dietaryNote, onSave }: { dietaryNote: string; onSave: (v: string) => unknown }) {
     const c = useCardSheet(dietaryNote, onSave);
     return (
@@ -377,7 +268,6 @@ function DietaryCard({ dietaryNote, onSave }: { dietaryNote: string; onSave: (v:
     );
 }
 
-// How far ahead a guest can book — its own card (Airbnb's booking window).
 function HorizonCard({ horizonDays, onSave }: { horizonDays: number; onSave: (v: number) => unknown }) {
     const c = useCardSheet(horizonDays, onSave);
     return (
@@ -393,8 +283,6 @@ function HorizonCard({ horizonDays, onSave }: { horizonDays: number; onSave: (v:
     );
 }
 
-// Notice needed — only shown as its own card for shapes with no Availability
-// section (made to order); a slot / comes-to-you sets it beside its hours.
 function NoticeCard({ leadDays, onSave }: { leadDays: number; onSave: (v: number) => unknown }) {
     const c = useCardSheet(leadDays, onSave);
     return (
@@ -410,10 +298,7 @@ function NoticeCard({ leadDays, onSave }: { leadDays: number; onSave: (v: number
     );
 }
 
-// Amenities — the holiday editor's split: tiles in the page on desktop (a tap
-// saves), a raised card with a Save sheet on a phone. Accessibility and parking
-// ride in the same save, so they sit with the tiles. Every save sends the whole
-// amenities section.
+// ── Amenities ────────────────────────────────────────────────────────────────
 type AmenityDraft = { amenities: string[]; accessibility: string; parking: string };
 function AmenityTiles({ draft, set }: { draft: AmenityDraft; set: (d: AmenityDraft) => void }) {
     const toggle = (key: string) => set({ ...draft, amenities: draft.amenities.includes(key) ? draft.amenities.filter((k) => k !== key) : [...draft.amenities, key] });
@@ -469,268 +354,7 @@ function AmenitiesPhoneCard({ current, onSave }: { current: AmenityDraft; onSave
     );
 }
 
-// ── The item sheet (one item) and its card ───────────────────────────────────
-type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string };
-
-function rowFromItem(it: EditorProvider['items'][number]): MenuRow {
-    return {
-        id: it.id, name: it.name, description: it.description, price: amountForBox(it.price),
-        unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
-        fulfilment: it.fulfilment, active: it.active,
-        capacity: it.capacity != null ? String(it.capacity) : '',
-        minPeople: it.min_people != null ? String(it.min_people) : '',
-        includedGuests: it.included_guests != null ? String(it.included_guests) : '',
-        extraAdultFee: amountForBox(it.extra_adult_fee ?? null),
-        extraChildFee: amountForBox(it.extra_child_fee ?? null),
-        maxParty: it.max_party != null ? String(it.max_party) : '',
-        isCustom: !!it.is_custom,
-        ingredients: it.ingredients || '', allergens: it.allergens || '', category: it.category || '',
-    };
-}
-
-function newRow(isSlot: boolean, fulfilment: string): MenuRow {
-    return { name: '', description: '', price: '', unit: isSlot ? 'person' : 'flat', image: null,
-        duration: isSlot ? '60' : '', fulfilment: (isSlot && fulfilment === 'both') ? 'collection' : null, active: true,
-        capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '',
-        isCustom: false, ingredients: '', allergens: '', category: '' };
-}
-
-function itemSummary(r: MenuRow, isSlot: boolean): string {
-    const bits: string[] = [];
-    bits.push(r.price ? `£${r.price} ${unitLabel(r.unit)}` : 'No price yet');
-    if (isSlot && r.duration) bits.push(minutesLabel(Number(r.duration)));
-    if (!r.active) bits.push('hidden');
-    return bits.join(' · ');
-}
-
-// The item editor in our sheet style: photo on top, stacked sentence-case
-// fields, extra-guest pricing behind a link, an on/off switch and a red Delete.
-function ItemSheet({ title, supabase, isSlot, shape, fulfilment, minAge, maxGuests, initial, onClose, onSave, onDelete }: {
-    title: string; supabase: SupabaseClient;
-    isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number;
-    initial: MenuRow; onClose: () => void;
-    onSave: (row: MenuRow) => unknown;
-    onDelete?: () => unknown;
-}) {
-    const [r, setR] = useState<MenuRow>(initial);
-    const [busy, setBusy] = useState(false);
-    const [uploading, setUploading] = useState(false);
-    const [showExtra, setShowExtra] = useState(!!initial.includedGuests);
-    const [confirmDelete, setConfirmDelete] = useState(false);
-    const set = (patch: Partial<MenuRow>) => setR((cur) => ({ ...cur, ...patch }));
-
-    const perItemLocation = isSlot && fulfilment === 'both';
-    const travelledItem = perItemLocation && r.fulfilment === 'delivery';
-    const durMins = Number(r.duration) || 0;
-    const setDuration = (h: number, m: number) => set({ duration: String(Math.max(0, h) * 60 + Math.max(0, Math.min(59, m))) });
-
-    const changeImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = (e.target.files || [])[0];
-        e.target.value = '';
-        if (!file) return;
-        setUploading(true);
-        const k = await uploadImage(supabase, file, 'item');
-        if (k) set({ image: k });
-        setUploading(false);
-    };
-    const save = async () => {
-        if (busy) return;
-        setBusy(true);
-        try { if (await saved(onSave(r))) onClose(); } finally { setBusy(false); }
-    };
-
-    const chargeOptions: { v: string; l: string }[] = [
-        { v: 'person', l: 'Per person' }, { v: 'flat', l: 'Whole session' },
-        ...(['hour', 'night', 'ticket', 'item'].includes(r.unit) ? [{ v: r.unit, l: unitLabel(r.unit) }] : []),
-    ];
-
-    return (
-        <EditorPanel title={title} onClose={onClose} footer={<SheetFooter busy={busy} onCancel={onClose} onSave={save} />}>
-            <div className="space-y-5">
-                <label className="group relative block cursor-pointer">
-                    {r.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={getImageUrl(r.image)} alt="" className="h-44 w-full rounded-2xl object-cover ring-1 ring-slate-200" />
-                    ) : (
-                        <span className="flex h-44 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-300 text-slate-400">
-                            <ImageIcon className="h-7 w-7" />
-                            <span className="text-sm font-medium">Add photo</span>
-                        </span>
-                    )}
-                    {r.image && <span className="absolute inset-x-0 bottom-0 rounded-b-2xl bg-black/45 py-1.5 text-center text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100">Change photo</span>}
-                    <input type="file" accept="image/png, image/jpeg" onChange={changeImage} className="hidden" disabled={uploading} />
-                </label>
-
-                <Field label="Name"><input className={inputCls} placeholder="e.g. 90-minute private sauna" value={r.name} onChange={(e) => set({ name: e.target.value })} /></Field>
-
-                <Field label="Price">
-                    <div className="flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-3 focus-within:border-slate-500">
-                        <span className="text-slate-500">£</span>
-                        <input className="w-full border-0 bg-transparent p-0 text-sm outline-none" type="text" inputMode="decimal" placeholder="0"
-                            value={r.price} onChange={(e) => set({ price: cleanAmountInput(e.target.value) })} />
-                    </div>
-                </Field>
-
-                {perItemLocation && (
-                    <Field label="This one happens">
-                        <div className="flex gap-2">
-                            <button type="button" onClick={() => set({ fulfilment: 'collection' })}
-                                className={`rounded-xl border px-3 py-2 text-sm transition ${(r.fulfilment || 'collection') === 'collection' ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>At my place</button>
-                            <button type="button" onClick={() => set({ fulfilment: 'delivery', unit: 'flat' })}
-                                className={`rounded-xl border px-3 py-2 text-sm transition ${r.fulfilment === 'delivery' ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>I travel to them</button>
-                        </div>
-                    </Field>
-                )}
-
-                {travelledItem ? (
-                    <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">Charged as a whole session — private, you travel.</p>
-                ) : (
-                    <Field label="Charged">
-                        <OptionPills options={chargeOptions.map((o) => ({ value: o.v, label: o.l }))} value={r.unit} onChange={(v) => set({ unit: v })} />
-                    </Field>
-                )}
-
-                {isSlot && (
-                    <Field label="Duration">
-                        <div className="flex items-center gap-2">
-                            <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="0"
-                                value={durMins ? String(Math.floor(durMins / 60)) : ''} onChange={(e) => setDuration(Number(cleanAmountInput(e.target.value, false)) || 0, durMins % 60)} />
-                            <span className="text-sm text-slate-500">hr</span>
-                            <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="0"
-                                value={durMins % 60 ? String(durMins % 60) : ''} onChange={(e) => setDuration(Math.floor(durMins / 60), Number(cleanAmountInput(e.target.value, false)) || 0)} />
-                            <span className="text-sm text-slate-500">min</span>
-                        </div>
-                    </Field>
-                )}
-
-                {isSlot && r.unit === 'person' && (
-                    <Field label="Capacity" hint={`How many this item holds. Blank uses your default of ${maxGuests}.`}>
-                        <div className="flex items-center gap-2">
-                            <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder={String(maxGuests)} value={r.capacity} onChange={(e) => set({ capacity: cleanAmountInput(e.target.value, false) })} />
-                            <span className="text-sm text-slate-500">people</span>
-                        </div>
-                    </Field>
-                )}
-                {!isSlot && r.unit === 'person' && (
-                    <Field label="Smallest party" hint="The fewest you’ll take for this. Blank means one is fine.">
-                        <div className="flex items-center gap-2">
-                            <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="1" value={r.minPeople} onChange={(e) => set({ minPeople: cleanAmountInput(e.target.value, false) })} />
-                            <span className="text-sm text-slate-500">guests</span>
-                        </div>
-                    </Field>
-                )}
-
-                <Field label="Description">
-                    <AutoTextarea className={inputCls} rows={2} placeholder="Optional" value={r.description} onChange={(e) => set({ description: e.target.value })} />
-                </Field>
-
-                {shape === 'made_to_order' && (
-                    <Field label="This item is">
-                        <div className="flex flex-wrap gap-2">
-                            <button type="button" onClick={() => set({ isCustom: false })}
-                                className={`rounded-full border px-3 py-1.5 text-sm transition ${!r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Standard — books instantly</button>
-                            <button type="button" onClick={() => set({ isCustom: true })}
-                                className={`rounded-full border px-3 py-1.5 text-sm transition ${r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Custom — you approve first</button>
-                        </div>
-                    </Field>
-                )}
-                {shape === 'made_to_order' && (
-                    <Field label="Menu section" hint="Optional, e.g. Cakes, Traybakes — groups a long menu.">
-                        <input className={inputCls} maxLength={60} placeholder="e.g. Cakes" value={r.category} onChange={(e) => set({ category: e.target.value })} />
-                    </Field>
-                )}
-                {shape === 'made_to_order' && (
-                    <div className="space-y-2 rounded-xl bg-slate-50 p-3">
-                        <span className="block text-sm font-semibold text-slate-800">Ingredients &amp; allergens <span className="font-normal text-slate-400">(optional — shown on the menu’s info icon)</span></span>
-                        <AutoTextarea className={inputCls} rows={2} placeholder="Ingredients, e.g. Wheat flour, butter, eggs, sugar, Galloway raspberries" value={r.ingredients} onChange={(e) => set({ ingredients: e.target.value })} />
-                        <AutoTextarea className={inputCls} rows={2} placeholder="Allergens, e.g. Contains wheat, egg, milk. Made in a kitchen that handles nuts." value={r.allergens} onChange={(e) => set({ allergens: e.target.value })} />
-                    </div>
-                )}
-
-                {r.unit === 'flat' && !showExtra && (
-                    <button type="button" onClick={() => setShowExtra(true)} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add extra guest pricing</button>
-                )}
-                {r.unit === 'flat' && showExtra && (
-                    <div className="space-y-3 rounded-xl bg-slate-50 p-3">
-                        <span className="block text-sm font-semibold text-slate-800">Extra guest pricing</span>
-                        <Field label="Guests included"><input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="—" value={r.includedGuests} onChange={(e) => set({ includedGuests: cleanAmountInput(e.target.value, false) })} /></Field>
-                        <Field label="Price per extra adult">
-                            <div className="flex items-center gap-1"><span className="text-slate-500">£</span>
-                                <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraAdultFee} onChange={(e) => set({ extraAdultFee: cleanAmountInput(e.target.value) })} /></div>
-                        </Field>
-                        {childrenAllowed(Number(minAge) || null) && (
-                            <Field label="Price per extra child">
-                                <div className="flex items-center gap-1"><span className="text-slate-500">£</span>
-                                    <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraChildFee} onChange={(e) => set({ extraChildFee: cleanAmountInput(e.target.value) })} /></div>
-                            </Field>
-                        )}
-                        <Field label="Maximum group size"><input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="—" value={r.maxParty} onChange={(e) => set({ maxParty: cleanAmountInput(e.target.value, false) })} /></Field>
-                        <p className="text-xs text-slate-400">Leave blank for one flat price. The price never drops below the base.</p>
-                    </div>
-                )}
-
-                <label className="flex items-center justify-between gap-4">
-                    <span className="text-sm font-semibold text-slate-800">Available to book</span>
-                    <button type="button" role="switch" aria-checked={r.active} aria-label="Available to book" onClick={() => set({ active: !r.active })}
-                        className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors ${r.active ? 'bg-emerald-700' : 'bg-slate-300'}`}>
-                        <span className={`mt-0.5 inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${r.active ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                    </button>
-                </label>
-
-                {onDelete && (
-                    <div className="border-t border-slate-100 pt-4">
-                        {confirmDelete ? (
-                            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
-                                <p className="text-sm font-semibold text-rose-900">Delete this item?</p>
-                                <p className="mt-0.5 text-xs text-rose-800">It comes off your listing straight away.</p>
-                                <div className="mt-3 flex justify-end gap-3">
-                                    <button type="button" onClick={() => setConfirmDelete(false)} className="text-sm font-semibold text-slate-900 underline">Cancel</button>
-                                    <button type="button" onClick={async () => { await onDelete(); onClose(); }} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Delete</button>
-                                </div>
-                            </div>
-                        ) : (
-                            <button type="button" onClick={() => setConfirmDelete(true)} className="text-sm font-semibold text-rose-600 hover:text-rose-700">Delete this item</button>
-                        )}
-                    </div>
-                )}
-            </div>
-        </EditorPanel>
-    );
-}
-
-function ItemCard({ row, isSlot, shape, fulfilment, minAge, maxGuests, supabase, onSave, onDelete }: {
-    row: MenuRow; isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number; supabase: SupabaseClient;
-    onSave: (row: MenuRow) => unknown; onDelete: () => unknown;
-}) {
-    const [open, setOpen] = useState(false);
-    return (
-        <>
-            <EditorCard title={row.name.trim() || 'Untitled item'} summary={itemSummary(row, isSlot)} onClick={() => setOpen(true)} />
-            {open && (
-                <ItemSheet title="Edit item" supabase={supabase} isSlot={isSlot} shape={shape} fulfilment={fulfilment} minAge={minAge} maxGuests={maxGuests}
-                    initial={row} onClose={() => setOpen(false)} onSave={onSave} onDelete={onDelete} />
-            )}
-        </>
-    );
-}
-
-function AddItemButton({ isSlot, shape, fulfilment, minAge, maxGuests, supabase, onSave }: {
-    isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number; supabase: SupabaseClient;
-    onSave: (row: MenuRow) => unknown;
-}) {
-    const [open, setOpen] = useState(false);
-    return (
-        <>
-            <button type="button" onClick={() => setOpen(true)} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
-            {open && (
-                <ItemSheet title="Add an item" supabase={supabase} isSlot={isSlot} shape={shape} fulfilment={fulfilment} minAge={minAge} maxGuests={maxGuests}
-                    initial={newRow(isSlot, fulfilment)} onClose={() => setOpen(false)} onSave={onSave} />
-            )}
-        </>
-    );
-}
-
-// ── Availability (slot / comes-to-you weekly template) ───────────────────────
+// ── Availability ─────────────────────────────────────────────────────────────
 function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onSave }: {
     isSlot: boolean;
     hours: { on: boolean; open: string; close: string }[];
@@ -800,24 +424,40 @@ function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onS
     );
 }
 
-// ── Location: travel / regions / delivery (for a travelling experience) ───────
+// ── Location: how guests reach you (travelling) ──────────────────────────────
 type WhereExtra = { fulfilment: string; deliveryFee: string; deliveryRadius: string; areas: string[] };
 function HowGuestsReachCard({ current, onSave }: { current: WhereExtra; onSave: (d: WhereExtra) => unknown }) {
-    const c = useCardSheet(current, onSave);
-    const d = c.draft;
+    const [open, setOpen] = useState(false);
+    const [draft, setDraft] = useState<WhereExtra>(current);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const d = draft;
     const travels = d.fulfilment === 'delivery' || d.fulfilment === 'both';
+    const noArea = travels && d.areas.length === 0;
     const ALL = GUEST_REGIONS.find((r) => r.key === GUEST_COVERAGE_ALL_KEY)!.label;
+    const start = () => { setDraft(current); setError(''); setOpen(true); };
     const toggleRegion = (label: string, isAll: boolean) => {
-        if (isAll) { c.setDraft({ ...d, areas: d.areas.includes(ALL) ? [] : [ALL] }); return; }
+        setError('');
+        if (isAll) { setDraft({ ...d, areas: d.areas.includes(ALL) ? [] : [ALL] }); return; }
         const withoutAll = d.areas.filter((a) => a !== ALL);
-        c.setDraft({ ...d, areas: withoutAll.includes(label) ? withoutAll.filter((a) => a !== label) : [...withoutAll, label] });
+        setDraft({ ...d, areas: withoutAll.includes(label) ? withoutAll.filter((a) => a !== label) : [...withoutAll, label] });
+    };
+    const save = async () => {
+        // A traveller must say where they go — refused here, and again on the
+        // server so it can't be bypassed.
+        if (noArea) { setError('Pick at least one area you travel to'); return; }
+        if (busy) return;
+        setBusy(true);
+        try { if (await saved(onSave(draft))) setOpen(false); } finally { setBusy(false); }
     };
     const summary = { collection: 'Guests come to you', delivery: 'You travel to guests', both: 'Guests come to you, or you travel' }[current.fulfilment] || 'Set how guests reach you';
+    const needsAreaPrompt = (current.fulfilment === 'delivery' || current.fulfilment === 'both') && current.areas.length === 0;
     return (
         <>
-            <EditorCard title="How guests reach you" summary={summary} onClick={c.start} />
-            {c.open && (
-                <EditorPanel title="How guests reach you" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+            <EditorCard title="How guests reach you" summary={needsAreaPrompt ? 'Pick at least one area you travel to' : summary} onClick={start} />
+            {open && (
+                <EditorPanel title="How guests reach you" onClose={() => setOpen(false)}
+                    footer={<SheetFooter busy={busy} onCancel={() => setOpen(false)} onSave={save} />}>
                     <div className="space-y-4">
                         <Field label="How guests get it">
                             <div className="space-y-2">
@@ -826,7 +466,7 @@ function HowGuestsReachCard({ current, onSave }: { current: WhereExtra; onSave: 
                                     { key: 'delivery', label: 'I travel to the guest', note: 'You go to where they’re staying.' },
                                     { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
                                 ].map((o) => (
-                                    <button key={o.key} type="button" onClick={() => c.setDraft({ ...d, fulfilment: o.key })}
+                                    <button key={o.key} type="button" onClick={() => { setError(''); setDraft({ ...d, fulfilment: o.key }); }}
                                         className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${d.fulfilment === o.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'}`}>
                                         <div className="font-semibold text-slate-900">{o.label}</div>
                                         <div className="text-xs text-slate-500">{o.note}</div>
@@ -838,6 +478,7 @@ function HowGuestsReachCard({ current, onSave }: { current: WhereExtra; onSave: 
                             <div>
                                 <span className="block text-sm font-semibold text-slate-800">Regions you travel to</span>
                                 <p className="mt-0.5 text-xs text-slate-400">Pick the parts of Dumfries &amp; Galloway you’ll come to.</p>
+                                {error && <p className="mt-1 text-sm font-semibold text-rose-600">{error}</p>}
                                 <div className="mt-2 space-y-2">
                                     {GUEST_REGIONS.map((rg) => {
                                         const isAll = rg.key === GUEST_COVERAGE_ALL_KEY;
@@ -859,13 +500,13 @@ function HowGuestsReachCard({ current, onSave }: { current: WhereExtra; onSave: 
                         {travels && (
                             <Field label="Delivery fee" hint="A flat fee added once to a delivery order. Blank is free. Collection is always free.">
                                 <div className="flex items-center gap-2"><span className="text-slate-500">£</span>
-                                    <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="0.00" value={d.deliveryFee} onChange={(e) => c.setDraft({ ...d, deliveryFee: cleanAmountInput(e.target.value) })} /></div>
+                                    <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="0.00" value={d.deliveryFee} onChange={(e) => setDraft({ ...d, deliveryFee: cleanAmountInput(e.target.value) })} /></div>
                             </Field>
                         )}
                         {travels && (
                             <Field label="Delivery distance" hint="How far you’ll travel from your base. Further than this is turned away before payment. Blank is no limit.">
                                 <div className="flex items-center gap-2">
-                                    <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="e.g. 10" value={d.deliveryRadius} onChange={(e) => c.setDraft({ ...d, deliveryRadius: cleanAmountInput(e.target.value) })} />
+                                    <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="e.g. 10" value={d.deliveryRadius} onChange={(e) => setDraft({ ...d, deliveryRadius: cleanAmountInput(e.target.value) })} />
                                     <span className="text-slate-500">miles</span></div>
                             </Field>
                         )}
@@ -876,8 +517,87 @@ function HowGuestsReachCard({ current, onSave }: { current: WhereExtra; onSave: 
     );
 }
 
-// ── The editor ───────────────────────────────────────────────────────────────
+// ── Host profile, as cards (one per detail) ──────────────────────────────────
+function HostPhotoCard({ supabase, headshot, onSave }: { supabase: SupabaseClient; headshot: string | null; onSave: (v: string | null) => unknown }) {
+    const c = useCardSheet(headshot, onSave);
+    const [uploading, setUploading] = useState(false);
+    const change = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = (e.target.files || [])[0];
+        e.target.value = '';
+        if (!file) return;
+        setUploading(true);
+        const k = await uploadImage(supabase, file, 'headshot');
+        if (k) c.setDraft(k);
+        setUploading(false);
+    };
+    return (
+        <>
+            <EditorCard title="Your photo" summary={headshot ? 'Photo added' : 'None yet'} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="Your photo" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <div className="flex items-center gap-3">
+                        {c.draft ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={getImageUrl(c.draft)} alt="" className="h-20 w-20 rounded-full object-cover ring-1 ring-slate-200" />
+                        ) : (
+                            <span className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-100 text-slate-400"><User className="h-7 w-7" /></span>
+                        )}
+                        <label className="cursor-pointer rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                            {c.draft ? 'Change photo' : 'Add photo'}
+                            <input type="file" accept="image/png, image/jpeg" onChange={change} className="hidden" disabled={uploading} />
+                        </label>
+                        {c.draft && <button type="button" onClick={() => c.setDraft(null)} className="text-sm text-slate-500 hover:text-red-600">Remove</button>}
+                    </div>
+                </EditorPanel>
+            )}
+        </>
+    );
+}
 
+function HostTextCard({ title, value, empty, placeholder, multiline, onSave }: { title: string; value: string; empty: string; placeholder?: string; multiline?: boolean; onSave: (v: string) => unknown }) {
+    const c = useCardSheet(value, onSave);
+    return (
+        <>
+            <EditorCard title={title} summary={value.trim() || empty} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title={title} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    {multiline
+                        ? <AutoTextarea className={inputCls} rows={3} value={c.draft} placeholder={placeholder} onChange={(e) => c.setDraft(e.target.value)} />
+                        : <input className={inputCls} value={c.draft} placeholder={placeholder} onChange={(e) => c.setDraft(e.target.value)} />}
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+function HostYearsCard({ years, onSave }: { years: string; onSave: (v: string) => unknown }) {
+    const c = useCardSheet(years, onSave);
+    return (
+        <>
+            <EditorCard title="Years of experience" summary={years.trim() ? `${years} years` : 'Not added'} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="Years of experience" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <div className="flex justify-center py-4">
+                        <NumberStepper value={c.draft} onChange={c.setDraft} min={0} max={70} suggestion={5} size="lg" />
+                    </div>
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+// A "+ Add an item" launcher that opens the stepped add flow.
+function AddItemLauncher({ ctx, onAdd }: { ctx: ItemCtx; onAdd: (row: MenuRow) => unknown }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <button type="button" onClick={() => setOpen(true)} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
+            {open && <AddItemFlow ctx={ctx} onClose={() => setOpen(false)} onAdd={onAdd} />}
+        </>
+    );
+}
+
+// ── The editor ───────────────────────────────────────────────────────────────
 export default function ProviderListingEditor({ provider }: { provider: EditorProvider }) {
     const [p] = useState(provider);
     const supabase = createClientComponentClient();
@@ -942,8 +662,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const photosRef = useRef<string[]>(p.photos);
     const [logo] = useState<string | null>(p.logo);
 
-    // One write of one section. No "Saved" pop-up — the sheet closing is the
-    // confirmation; only a failure speaks. Serialised so two quick saves land in order.
     const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
     const write = async (section: string, data: any): Promise<boolean> => {
         try {
@@ -967,8 +685,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const runThen = (section: string, data: any, apply: () => void) =>
         run(section, data).then((ok) => { if (ok) apply(); return ok; });
 
-    // Section payloads built from committed state, so a card that edits one
-    // field still sends its section whole.
+    const happensPayload = (o: Partial<{ whatToExpect: string; phases: [string, string, string] }> = {}) => {
+        const ph = o.phases ?? phases;
+        return { what_to_expect: o.whatToExpect ?? whatToExpect, itinerary: headings.map((h, i) => ({ title: h.title, detail: ph[i] })) };
+    };
     const thingsPayload = (o: Partial<{ minAge: string; activity: string; whatToBring: string }> = {}) => ({
         min_age: o.minAge ?? minAge, activity_level: o.activity ?? activity, what_to_bring: o.whatToBring ?? whatToBring,
     });
@@ -977,6 +697,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     });
     const bookingPayload = (o: Partial<{ maxGuests: number; leadDays: number; horizonDays: number }> = {}) => ({
         max_guests: o.maxGuests ?? maxGuests, lead_time_days: o.leadDays ?? leadDays, booking_horizon_days: o.horizonDays ?? horizonDays,
+    });
+    const aboutPayload = (o: Partial<{ profTitle: string; years: string; quals: string; recognition: string; headshot: string | null }> = {}) => ({
+        professional_title: o.profTitle ?? profTitle, years_experience: o.years ?? years,
+        qualifications: o.quals ?? quals, recognition: o.recognition ?? recognition,
+        headshot: o.headshot !== undefined ? o.headshot : headshot,
     });
     const wherePayload = (o: Partial<{ fulfilment: string; street: string; town: string; postcode: string; deliveryFee: string; deliveryRadius: string; areas: string[]; showPrecise: boolean }> = {}) => {
         const f = o.fulfilment ?? fulfilment;
@@ -991,8 +716,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         };
     };
 
-    // The menu saves the whole items array (upsert-by-id, delete-missing), so a
-    // single item's Save / Delete sends every item.
     const menuPayload = (rows: MenuRow[]) => ({
         items: rows.map((r) => ({
             id: r.id, name: r.name, description: r.description, price: r.price, unit: r.unit, image: r.image,
@@ -1007,7 +730,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const addItem = (row: MenuRow) => saveMenu([...menu, row]);
     const deleteItemAt = (i: number) => saveMenu(menu.filter((_, j) => j !== i));
 
-    // Photos: each change saves at once, put back if the write fails.
     const savePhotos: SavePhotos = (change) => {
         const before = photosRef.current;
         const next = change(before);
@@ -1019,7 +741,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         });
     };
 
-    // Amenities on desktop save on a tap (optimistic, put back on failure).
     const toggleAmenityNow = (next: string[]) => {
         const before = amenities;
         setAmenities(next);
@@ -1045,11 +766,12 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     }
 
     const headings = stepHeadings(p.shape, fulfilment);
+    const itemCtx: ItemCtx = { isSlot: p.isSlot, shape: p.shape, fulfilment, minAge, maxGuests, supabase };
 
     const missing: string[] = [];
     if (!headshot) missing.push('a photo of yourself');
     if (!photos.length) missing.push('photos of the experience');
-    if (!whatToExpect.trim()) missing.push('what happens');
+    if (!whatToExpect.trim()) missing.push('a description');
     if (!phases.some((d) => d.trim())) missing.push('the flow');
     if (!whatToBring.trim()) missing.push('what to bring');
     if (!minAge) missing.push('a minimum age');
@@ -1062,7 +784,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         { key: 'photos', label: 'Photos', short: 'Photos', icon: ImageIcon },
         { key: 'amenities', label: 'Amenities', short: 'Amenities', icon: Sparkles },
         { key: 'know', label: 'Good to know', short: 'Good to know', icon: Info },
-        { key: 'location', label: 'Location', short: 'Location', icon: MapPin },
+        { key: 'location', label: fixedInPlace ? 'Location' : 'Location', short: 'Location', icon: MapPin },
         ...(hasHours ? [{ key: 'availability' as NavKey, label: p.isSlot ? 'Availability' : 'Opening hours', short: p.isSlot ? 'Availability' : 'Hours', icon: CalendarRange }] : []),
         { key: 'pricing', label: 'Pricing & booking', short: 'Pricing', icon: ShoppingBag },
         { key: 'cancellation', label: 'Cancellation', short: 'Cancellation', icon: RotateCcw },
@@ -1131,9 +853,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 <div className="min-w-0 space-y-6">
                     {sec('basics', (<>
                         <TitleCard value={businessName} onSave={(v) => runThen('title', { business_name: v }, () => setBusinessName(v))} />
-                        <WhatHappensCard whatToExpect={whatToExpect} phases={phases} headings={headings}
-                            onSave={(d) => runThen('happens', { what_to_expect: d.whatToExpect, itinerary: headings.map((h, i) => ({ title: h.title, detail: d.phases[i] })) },
-                                () => { setWhatToExpect(d.whatToExpect); setPhases(d.phases); })} />
+                        <DescriptionExpCard value={whatToExpect}
+                            onSave={(v) => runThen('happens', happensPayload({ whatToExpect: v }), () => setWhatToExpect(v))} />
+                        <FlowCard phases={phases} headings={headings}
+                            onSave={(ph) => runThen('happens', happensPayload({ phases: ph }), () => setPhases(ph))} />
                         <MaxCapacityCard isSlot={p.isSlot} value={maxGuests}
                             onSave={(v) => runThen('booking', bookingPayload({ maxGuests: v }), () => setMaxGuests(v))} />
                     </>))}
@@ -1193,10 +916,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             </div>
                         )}
                         {menu.map((row, i) => (
-                            <ItemCard key={row.id || `new-${i}`} row={row} isSlot={p.isSlot} shape={p.shape} fulfilment={fulfilment} minAge={minAge} maxGuests={maxGuests} supabase={supabase}
+                            <ItemDetailCard key={row.id || `new-${i}`} ctx={itemCtx} row={row}
                                 onSave={(r) => saveItemAt(i, r)} onDelete={() => deleteItemAt(i)} />
                         ))}
-                        <AddItemButton isSlot={p.isSlot} shape={p.shape} fulfilment={fulfilment} minAge={minAge} maxGuests={maxGuests} supabase={supabase} onSave={addItem} />
+                        <AddItemLauncher ctx={itemCtx} onAdd={addItem} />
                         {!hasHours && (
                             <div className="space-y-4 pt-2">
                                 <NoticeCard leadDays={leadDays} onSave={(v) => runThen('booking', bookingPayload({ leadDays: v }), () => setLeadDays(v))} />
@@ -1210,11 +933,13 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             onSave={(d) => runThen('cancellation', { cancellation_window_hours: d.hours, no_refund: !!d.noRefund }, () => { setCancelHours(d.hours); setNoRefund(d.noRefund); })} />
                     ))}
 
-                    {sec('host', (
-                        <HostProfileCard supabase={supabase} profTitle={profTitle} years={years} quals={quals} recognition={recognition} headshot={headshot}
-                            onSave={(d) => runThen('about', { professional_title: d.profTitle, years_experience: d.years, qualifications: d.quals, recognition: d.recognition, headshot: d.headshot },
-                                () => { setProfTitle(d.profTitle); setYears(d.years); setQuals(d.quals); setRecognition(d.recognition); setHeadshot(d.headshot); })} />
-                    ))}
+                    {sec('host', (<>
+                        <HostPhotoCard supabase={supabase} headshot={headshot} onSave={(v) => runThen('about', aboutPayload({ headshot: v }), () => setHeadshot(v))} />
+                        <HostTextCard title="Professional title" value={profTitle} empty="Not added" onSave={(v) => runThen('about', aboutPayload({ profTitle: v }), () => setProfTitle(v))} />
+                        <HostYearsCard years={years} onSave={(v) => runThen('about', aboutPayload({ years: v }), () => setYears(v))} />
+                        <HostTextCard title="Qualifications" value={quals} empty="Not added" multiline onSave={(v) => runThen('about', aboutPayload({ quals: v }), () => setQuals(v))} />
+                        <HostTextCard title="Recognition" value={recognition} empty="Not added yet" multiline onSave={(v) => runThen('about', aboutPayload({ recognition: v }), () => setRecognition(v))} />
+                    </>))}
 
                     {p.isFood && sec('dietary', (
                         <DietaryCard dietaryNote={dietaryNote} onSave={(v) => runThen('dietary', { dietary_note: v, dietary_options: p.dietary_options }, () => setDietaryNote(v))} />

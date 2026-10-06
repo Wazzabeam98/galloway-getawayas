@@ -243,6 +243,16 @@ export async function POST(request: Request) {
                     return NextResponse.json({ ok: false, error: 'Add your base postcode — a delivery distance is measured from it.' }, { status: 400 });
                 }
                 if (travels && basePostcode) patch.collection_postcode = basePostcode;
+                // A traveller must say where they go, so the marketplace can match
+                // them to a guest's stay. Refused here too, not only in the editor,
+                // so it can't be bypassed — and so an existing travel row with no
+                // area can't be saved past the prompt.
+                const areaLabels = Array.isArray(data.areas)
+                    ? data.areas.map((label: any) => strOrNull(label)).filter(Boolean)
+                    : [];
+                if (travels && areaLabels.length === 0) {
+                    return NextResponse.json({ ok: false, error: 'Pick at least one area you travel to.' }, { status: 400 });
+                }
                 // Coverage regions: replace the set.
                 if (Array.isArray(data.areas)) {
                     await admin.from('service_areas').delete().eq('provider_id', providerId);
