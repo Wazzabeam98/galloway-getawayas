@@ -87,7 +87,8 @@ export function EditorPanel({ title, onClose, footer, children, leading }: {
                     </div>
                     <h2 className="text-base font-bold text-slate-900">{title}</h2>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
+                {/* data-sheet-scroll: what scrolls inside a sheet (the photo drag follows it). */}
+                <div data-sheet-scroll className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
                 {footer && <div className="border-t border-slate-100 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-4">{footer}</div>}
             </div>
         </div>,

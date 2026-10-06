@@ -19,7 +19,7 @@ import { HowGuestsBookCard, CancellationPolicyCard } from '@/components/listing-
 import AutoTextarea from '@/components/AutoTextarea';
 import DescriptionCard from '@/components/listing-editor/DescriptionCard';
 import AmenitiesCard, { AmenityGrid } from '@/components/listing-editor/AmenitiesCard';
-import PhotosEditor from '@/components/listing-editor/PhotosEditor';
+import PhotosEditor, { PhotosCard } from '@/components/listing-editor/PhotosEditor';
 import {
     NightlyPriceCard, WeekendPriceCard, DiscountsCard, CleaningFeeCard,
     ExtraGuestFeeCard, PetFeeCard, DamageDepositCard,
@@ -791,7 +791,16 @@ export default function EditListing() {
                         </PhoneSection>)}
 
                         {shows('photos') && (<PhoneSection id="photos" phone={isPhone}>
-                            <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone={isPhone} beforeChange={moderationReady} />
+                            {isPhone ? (
+                                // A raised card on a phone, so scrolling past can never
+                                // move a photo; the full editor is in its sheet.
+                                <section>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-4">Photos</h2>
+                                    <PhotosCard photos={photos} savePhotos={savePhotos} beforeChange={moderationReady} />
+                                </section>
+                            ) : (
+                                <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone={false} beforeChange={moderationReady} />
+                            )}
                         </PhoneSection>)}
 
                         {shows('rates') && (<PhoneSection id="rates" phone={isPhone}>
