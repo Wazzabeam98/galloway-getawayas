@@ -430,8 +430,9 @@ export default function EditListing() {
                 toast.error((data && data.error) || 'Could not save that change.', { theme: 'colored' });
                 return false;
             }
+            // No "Saved" pop-up: the sheet closing is the confirmation, as on
+            // Airbnb. Only a failure says anything.
             setOriginal((prev: any) => ({ ...prev, ...patch }));
-            toast.success('Saved', { theme: 'colored', autoClose: 1500 });
             return true;
         } catch (err: any) {
             toast.error(err?.message || 'Could not save that change.', { theme: 'colored' });

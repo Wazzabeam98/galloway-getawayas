@@ -54,7 +54,6 @@ export function useDoorCode(listingId: string) {
             if (data && data.ok) {
                 setSaved(data.code || '');
                 setCode(data.code || '');
-                toast.success(data.code ? 'Door code saved.' : 'Door code cleared.', { theme: 'colored' });
             } else {
                 toast.error((data && data.error) || 'Could not save the code.', { theme: 'colored' });
             }
