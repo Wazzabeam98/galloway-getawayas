@@ -38,6 +38,7 @@ import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import SleepingArrangementsEditor from '@/components/SleepingArrangementsEditor';
 import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, type Room } from '@/lib/sleeping';
 import { publishProblems } from '@/lib/listingRules';
+import { amountForBox, amountOrNull, amountOrZero } from '@/lib/amountInput';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
@@ -318,8 +319,8 @@ export default function EditListing() {
                 : null);
             setShowPrecise(listing.show_precise_location === true);
             setListingStatus(listing.status || '');
-            setPrice(String(listing.price_per_night ?? ''));
-            setWeekendPrice(listing.weekend_price != null ? String(listing.weekend_price) : '');
+            setPrice(amountForBox(listing.price_per_night));
+            setWeekendPrice(amountForBox(listing.weekend_price));
             setCommissionRate(listing.commission_rate ?? null);
             setPropertyType(listing.property_type || '');
             setPrivacyType(listing.privacy_type || 'Entire place');
@@ -338,8 +339,8 @@ export default function EditListing() {
             setNewListingPromo(listing.new_listing_promo ?? true);
             setLastMinuteDiscount(listing.last_minute_discount ?? false);
             setWeeklyDiscount(listing.weekly_discount ?? false);
-            setExtraGuestFee(listing.extra_guest_fee != null ? String(listing.extra_guest_fee) : '');
-            setExtraGuestAfter(listing.extra_guest_after != null ? String(listing.extra_guest_after) : '');
+            setExtraGuestFee(amountForBox(listing.extra_guest_fee));
+            setExtraGuestAfter(amountForBox(listing.extra_guest_after));
             setMonthlyDiscount(listing.monthly_discount ?? false);
             setIcalToken(listing.ical_token || '');
             setEventsAllowed(listing.events_allowed ?? false);
@@ -362,9 +363,9 @@ export default function EditListing() {
             setGuestSafety(listing.guest_safety && typeof listing.guest_safety === 'object' ? listing.guest_safety : {});
             setCancellationPolicy(listing.cancellation_policy || 'Moderate');
             setNonRefundableOption(listing.non_refundable_option ?? false);
-            setCleaningFee(listing.cleaning_fee != null ? String(listing.cleaning_fee) : '');
-            setPetFee(listing.pet_fee != null ? String(listing.pet_fee) : '');
-            setDamageDeposit(listing.damage_deposit != null ? String(listing.damage_deposit) : '');
+            setCleaningFee(amountForBox(listing.cleaning_fee));
+            setPetFee(amountForBox(listing.pet_fee));
+            setDamageDeposit(amountForBox(listing.damage_deposit));
             setInstantBook(listing.instant_book ?? false);
             setInstantBookRequiresPhone(listing.instant_book_requires_phone ?? false);
 
@@ -806,16 +807,16 @@ export default function EditListing() {
                         {shows('rates') && (<PhoneSection id="rates" phone={isPhone}>
                             <section className="space-y-4">
                                 <h2 className="text-xl font-bold text-slate-900">Pricing &amp; fees</h2>
-                                <NightlyPriceCard price={price} feePercent={HOST_FEE_PERCENT} onSave={(v) => saveThen({ price_per_night: Number(v) }, () => setPrice(v))} />
-                                <WeekendPriceCard weekendPrice={weekendPrice} onSave={(v) => saveThen({ weekend_price: v.trim() ? Number(v) : null }, () => setWeekendPrice(v))} />
+                                <NightlyPriceCard price={price} feePercent={HOST_FEE_PERCENT} onSave={(v) => saveThen({ price_per_night: amountOrNull(v) ?? 0 }, () => setPrice(v))} />
+                                <WeekendPriceCard weekendPrice={weekendPrice} onSave={(v) => saveThen({ weekend_price: amountOrNull(v) }, () => setWeekendPrice(v))} />
                                 <DiscountsCard
                                     discounts={{ newListingPromo, lastMinute: lastMinuteDiscount, weekly: weeklyDiscount, monthly: monthlyDiscount }}
                                     onSave={(d) => saveThen({ new_listing_promo: d.newListingPromo, last_minute_discount: d.lastMinute, weekly_discount: d.weekly, monthly_discount: d.monthly }, () => { setNewListingPromo(d.newListingPromo); setLastMinuteDiscount(d.lastMinute); setWeeklyDiscount(d.weekly); setMonthlyDiscount(d.monthly); })}
                                 />
-                                <CleaningFeeCard fee={cleaningFee} onSave={(v) => saveThen({ cleaning_fee: v.trim() ? Number(v) : null }, () => setCleaningFee(v))} />
-                                <ExtraGuestFeeCard fee={extraGuestFee} after={extraGuestAfter} onSave={(f, a) => saveThen({ extra_guest_fee: f.trim() ? Number(f) : null, extra_guest_after: a.trim() ? Number(a) : null }, () => { setExtraGuestFee(f); setExtraGuestAfter(a); })} />
-                                <PetFeeCard fee={petFee} petsAllowed={amenities.includes('Pets allowed')} onSave={(v) => saveThen({ pet_fee: v.trim() ? Number(v) : null }, () => setPetFee(v))} />
-                                <DamageDepositCard deposit={damageDeposit} onSave={(v) => saveThen({ damage_deposit: v.trim() ? Number(v) : null }, () => setDamageDeposit(v))} />
+                                <CleaningFeeCard fee={cleaningFee} onSave={(v) => saveThen({ cleaning_fee: amountOrZero(v) }, () => setCleaningFee(v))} />
+                                <ExtraGuestFeeCard fee={extraGuestFee} after={extraGuestAfter} onSave={(f, a) => saveThen({ extra_guest_fee: amountOrZero(f), extra_guest_after: amountOrNull(a) ?? 1 }, () => { setExtraGuestFee(f); setExtraGuestAfter(a); })} />
+                                <PetFeeCard fee={petFee} petsAllowed={amenities.includes('Pets allowed')} onSave={(v) => saveThen({ pet_fee: amountOrZero(v) }, () => setPetFee(v))} />
+                                <DamageDepositCard deposit={damageDeposit} onSave={(v) => saveThen({ damage_deposit: amountOrZero(v) }, () => setDamageDeposit(v))} />
                             </section>
                         </PhoneSection>)}
 
@@ -838,46 +839,11 @@ export default function EditListing() {
 
                         {shows('calendar') && (<PhoneSection id="calendar" phone={isPhone}>
                             <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-1">Calendar sync</h2>
-                                <p className="text-sm text-slate-500 mb-4">
-                                    Keep this listing's availability in step with your calendar on other sites.
-                                </p>
-
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">
-                                    Calendars you import (Airbnb, Booking.com, Vrbo…)
-                                </label>
-                                <div className="mb-6">
-                                    <IcalFeeds listingId={listingId} />
-                                </div>
-
-                                <label className="block text-sm font-semibold text-slate-800 mb-1">
-                                    Your export link for other platforms
-                                </label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        readOnly
-                                        value={typeof window !== 'undefined' && icalToken ? `${window.location.origin}/api/ical/${listingId}?token=${icalToken}` : 'Your link is being made — reload in a moment'}
-                                        className="w-full p-3 border rounded-xl text-sm bg-slate-50 text-slate-500"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (!icalToken) {
-                                                toast.error('Your link isn\u2019t ready yet — reload the page.', { theme: 'colored' });
-                                                return;
-                                            }
-                                            navigator.clipboard.writeText(`${window.location.origin}/api/ical/${listingId}?token=${icalToken}`);
-                                            toast.success('Copied.', { theme: 'colored' });
-                                        }}
-                                        className="px-4 py-2 border rounded-xl text-sm font-semibold text-slate-700 hover:border-slate-500 flex-shrink-0"
-                                    >
-                                        Copy
-                                    </button>
-                                </div>
-                                <p className="text-xs text-slate-400 mt-1">
-                                    Paste this into Airbnb or Booking.com's "import calendar" setting so bookings made here block those dates there too. It works with your own website too. Keep it to yourself — anyone with this link can see when your place is occupied.
-                                </p>
+                                <h2 className="text-xl font-bold text-slate-900 mb-4">Calendar sync</h2>
+                                <IcalFeeds
+                                    listingId={listingId}
+                                    exportUrl={typeof window !== 'undefined' && icalToken ? `${window.location.origin}/api/ical/${listingId}?token=${icalToken}` : null}
+                                />
                             </section>
                         </PhoneSection>)}
 

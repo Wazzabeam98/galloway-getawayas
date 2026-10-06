@@ -1,17 +1,16 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import { feeAmount, netOfFee } from '@/lib/fees';
+import { amountForBox, cleanAmountInput } from '@/lib/amountInput';
 
 // "Pricing & fees": every amount the host charges, each on a raised card with
 // a one-line summary, opening to its fields. Each panel edits a draft; Save
 // hands it to the editor, which writes it to the listing (same columns, same
 // blanks-mean-none rule).
 
-// No up/down arrows on a money box.
-export const NO_SPIN = '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 
 export function money(value: string | number): string {
     const n = Number(value);
@@ -20,12 +19,48 @@ export function money(value: string | number): string {
 
 const isSet = (v: string) => v.trim() !== '' && Number(v) > 0;
 
+// Every money and number box in the editor. Empty with a light placeholder
+// when nothing is set (a stored 0 included), never a leading zero, and tapping
+// in selects the whole number so typing replaces it. A text box with a number
+// keypad rather than type="number", which can't be selected on every phone.
+export function NumberBox({ value, onChange, decimals = true, className, ...rest }: {
+    value: string;
+    onChange: (v: string) => void;
+    decimals?: boolean;
+    className?: string;
+    id?: string;
+    placeholder?: string;
+    'aria-label'?: string;
+}) {
+    // The click that focused the box would otherwise put the caret back.
+    const justFocused = useRef(false);
+    return (
+        <input
+            {...rest}
+            type="text"
+            inputMode={decimals ? 'decimal' : 'numeric'}
+            autoComplete="off"
+            // A bare 0 shows as the empty box; "0." on the way to "0.50" stays.
+            value={value.includes('.') ? cleanAmountInput(value, decimals) : amountForBox(value)}
+            onChange={(e) => onChange(cleanAmountInput(e.target.value, decimals))}
+            onFocus={(e) => {
+                const box = e.currentTarget;
+                justFocused.current = true;
+                box.select();
+                setTimeout(() => box.select(), 0);
+            }}
+            onMouseUp={(e) => { if (justFocused.current) { e.preventDefault(); justFocused.current = false; } }}
+            className={`placeholder:text-slate-300 ${className || ''}`}
+        />
+    );
+}
+
 function MoneyInput({ id, value, onChange, suffix, label }: { id: string; value: string; onChange: (v: string) => void; suffix?: string; label: string }) {
     return (
         <div className="flex items-center border-2 rounded-xl px-3 py-2 max-w-[12rem]">
             <span className="text-slate-500 mr-1">£</span>
-            <input id={id} type="number" inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} placeholder="0"
-                aria-label={label} className={`outline-none w-full text-slate-900 ${NO_SPIN}`} />
+            <NumberBox id={id} value={value} onChange={onChange} placeholder="0"
+                aria-label={label} className="outline-none w-full text-slate-900" />
             {suffix && <span className="text-slate-500 text-sm ml-1 whitespace-nowrap">{suffix}</span>}
         </div>
     );
@@ -61,8 +96,8 @@ export function NightlyPriceCard({ price, feePercent, onSave }: { price: string;
                 <div>
                     <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-3">
                         <span className="text-2xl font-black text-slate-900 mr-2">£</span>
-                        <input type="number" aria-label="Nightly price" value={draft} onChange={(e) => setDraft(e.target.value)}
-                            className={`text-2xl font-black text-slate-900 outline-none w-full ${NO_SPIN}`} />
+                        <NumberBox aria-label="Nightly price" value={draft} onChange={setDraft} placeholder="0"
+                            className="text-2xl font-black text-slate-900 outline-none w-full" />
                         <span className="text-slate-500 ml-2 whitespace-nowrap">/ night</span>
                     </div>
                     {Number(draft) > 0 && (
@@ -171,9 +206,9 @@ export function ExtraGuestFeeCard({ fee, after, onSave }: { fee: string; after: 
                         <MoneyInput id="extra-guest-fee" label="Extra guest fee" value={draft.fee} onChange={(v) => setDraft({ ...draft, fee: v })} suffix="/ night" />
                         <div>
                             <label htmlFor="extra-guest-after" className="block text-[12px] text-slate-500 mb-1">Guests included first</label>
-                            <input id="extra-guest-after" type="number" inputMode="numeric" min={1} value={draft.after}
-                                onChange={(e) => setDraft({ ...draft, after: e.target.value })} placeholder="1"
-                                className={`border-2 rounded-xl px-3 py-2 w-20 outline-none text-slate-900 ${NO_SPIN}`} />
+                            <NumberBox id="extra-guest-after" decimals={false} value={draft.after}
+                                onChange={(v) => setDraft({ ...draft, after: v })} placeholder="1"
+                                className="border-2 rounded-xl px-3 py-2 w-20 outline-none text-slate-900" />
                         </div>
                     </div>
                 </div>
