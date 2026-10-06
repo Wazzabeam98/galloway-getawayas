@@ -117,8 +117,8 @@ export default function IcalFeeds({ listingId, exportUrl }: { listingId: string;
             return;
         }
 
+        // The calendar appearing under Connected is the confirmation.
         setUrl('');
-        toast.success('Saved', { theme: 'colored', autoClose: 1500 });
         load();
     };
 
@@ -130,7 +130,6 @@ export default function IcalFeeds({ listingId, exportUrl }: { listingId: string;
             return;
         }
 
-        toast.success('Calendar removed.', { theme: 'colored' });
         load();
     };
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { ImageIcon, ImageOff, Plus, Trash2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { EditorCard, EditorPanel } from '@/components/listing-editor/EditorPanel';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -44,18 +45,113 @@ const previewIndex = (i: number, from: number, to: number) => {
 
 type Drag = { from: number; to: number; dx: number; dy: number };
 
-export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange, inSheet = false }: {
+// Straight to the storage API rather than supabase.storage.upload(), which
+// can't report progress. Same bucket, same session, same storage rules.
+async function uploadWithProgress(supabase: { auth: { getSession: () => Promise<{ data: { session: { access_token: string } | null } }> } }, file: File, path: string, onProgress: (p: number) => void): Promise<string> {
+    const { data: { session } } = await supabase.auth.getSession();
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${Env.SUPABASE_URL}/storage/v1/object/${Env.S3_BUCKET}/${path}`);
+        xhr.setRequestHeader('Authorization', `Bearer ${session?.access_token || Env.SUPABASE_KEY}`);
+        xhr.setRequestHeader('apikey', Env.SUPABASE_KEY);
+        xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
+        xhr.setRequestHeader('cache-control', 'max-age=3600');
+        xhr.setRequestHeader('x-upsert', 'false');
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) { onProgress(1); resolve(path); return; }
+            let msg = 'try again';
+            try { msg = JSON.parse(xhr.responseText).message || msg; } catch { /* not JSON */ }
+            reject(new Error(msg));
+        };
+        xhr.onerror = () => reject(new Error('the connection dropped'));
+        xhr.send(file);
+    });
+}
+
+export type Upload = { id: string; url: string; progress: number };
+
+// The upload queue, shared by the desktop box (which starts it the moment
+// photos are chosen) and the phone's Upload photos page (which starts it on
+// Upload). One photo at a time: shrink, upload with progress, then write it to
+// the listing. Its local preview is kept for that photo until the stored copy
+// has loaded, so a just-added photo never shows as an empty tile.
+export function usePhotoUploads(savePhotos: SavePhotos) {
+    const supabase = createClientComponentClient();
+    const [uploads, setUploads] = useState<Upload[]>([]);
+    const [local, setLocal] = useState<Record<string, string>>({});
+
+    const start = async (items: { file: File; url: string }[]) => {
+        const queued = items.map((it) => ({ ...it, id: `${Date.now()}_${generateRandomNumber()}` }));
+        setUploads((u) => [...u, ...queued.map(({ id, url }) => ({ id, url, progress: 0 }))]);
+        for (const q of queued) {
+            const setProgress = (progress: number) => setUploads((u) => u.map((x) => (x.id === q.id ? { ...x, progress } : x)));
+            let keepPreview = false;
+            try {
+                const small = await compressImage(q.file);
+                const path = await uploadWithProgress(supabase, small, q.id, setProgress);
+                if (await savePhotos((cur) => [...cur, path])) {
+                    setLocal((l) => ({ ...l, [path]: q.url }));
+                    keepPreview = true;
+                }
+            } catch (err: any) {
+                toast.error(`A photo didn\u2019t upload: ${err?.message || 'try again'}`, { theme: 'colored' });
+            }
+            setUploads((u) => u.filter((x) => x.id !== q.id));
+            if (!keepPreview) URL.revokeObjectURL(q.url);
+        }
+    };
+    // The stored copy is showing: the local preview can go.
+    const loaded = (path: string) => setLocal((l) => {
+        if (!l[path]) return l;
+        URL.revokeObjectURL(l[path]);
+        const { [path]: _gone, ...rest } = l;
+        return rest;
+    });
+    return { uploads, local, start, loaded };
+}
+
+// One photo in the grid. Never a blank white box: grey while it loads (or the
+// photo's own preview, just after it was added), and if the file can't be
+// shown, says so — the tile still opens its menu, so it can be deleted.
+function PhotoImage({ path, index, preview, onLoaded }: { path: string; index: number; preview?: string; onLoaded: (path: string) => void }) {
+    const [state, setState] = useState<'loading' | 'ok' | 'failed'>('loading');
+    useEffect(() => { setState('loading'); }, [path]);
+    return (
+        <div className="absolute inset-0 bg-slate-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {preview && state !== 'ok' && <img src={preview} alt="" draggable={false} className="absolute inset-0 w-full h-full object-cover pointer-events-none" />}
+            {state === 'failed' ? (
+                <div data-photo-failed className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-slate-500">
+                    <ImageOff className="h-6 w-6" />
+                    <span className="text-xs font-medium">Couldn&apos;t load this photo</span>
+                </div>
+            ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={getImageUrl(path)} alt={`Photo ${index + 1}`} draggable={false}
+                    onLoad={() => { setState('ok'); onLoaded(path); }}
+                    onError={() => setState('failed')}
+                    className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-200 ${state === 'ok' ? 'opacity-100' : 'opacity-0'}`} />
+            )}
+        </div>
+    );
+}
+
+export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange, inSheet = false, uploader }: {
     photos: string[];
     savePhotos: SavePhotos;
     isPhone: boolean;
-    // Inside the phone's Photos sheet: the sheet carries the title.
+    // Inside the phone's Photos sheet: the sheet carries the title and its "+"
+    // adds photos, so there is no Add box.
     inSheet?: boolean;
+    // The phone sheet's upload queue (its Upload photos page feeds it).
+    uploader?: ReturnType<typeof usePhotoUploads>;
     // False stops the change before it starts (an owner moderating with no
     // reason written yet).
     beforeChange?: () => boolean;
 }) {
-    const supabase = createClientComponentClient();
-    const [uploads, setUploads] = useState<{ id: string; url: string }[]>([]);
+    const own = usePhotoUploads(savePhotos);
+    const { uploads, local, start, loaded } = uploader || own;
     const [preparing, setPreparing] = useState(false);
     const [menuFor, setMenuFor] = useState<number | null>(null);
     const [confirmFor, setConfirmFor] = useState<string | null>(null);
@@ -76,37 +172,15 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
         await savePhotos((cur) => cur.filter((p) => p !== path));
     };
 
-    // Shrunk before upload, the way addhome does it, so a 4000px phone photo
-    // never reaches storage. Each one is written to the listing as it lands.
+    // Desktop: photos start uploading the moment they're chosen, each written
+    // to the listing as it lands (shrunk first, the way addhome does it, so a
+    // 4000px phone photo never reaches storage).
     const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
         e.target.value = '';
         if (!files.length || !ok()) return;
-
         setPreparing(true);
-        const ready: { id: string; file: File; url: string }[] = [];
-        for (const file of files) {
-            try {
-                const small = await compressImage(file);
-                ready.push({ id: `${Date.now()}_${generateRandomNumber()}`, file: small, url: URL.createObjectURL(small) });
-            } catch {
-                toast.error('One of those photos couldn’t be read. Try a different one.', { theme: 'colored' });
-            }
-        }
-        setPreparing(false);
-        setUploads((u) => [...u, ...ready.map(({ id, url }) => ({ id, url }))]);
-
-        for (const r of ready) {
-            const { data, error } = await supabase.storage.from(Env.S3_BUCKET).upload(r.id, r.file);
-            if (error || !data?.path) {
-                toast.error(`Photo upload failed: ${error?.message || 'try again'}`, { theme: 'colored' });
-            } else {
-                const path = data.path;
-                await savePhotos((cur) => [...cur, path]);
-            }
-            setUploads((u) => u.filter((x) => x.id !== r.id));
-            URL.revokeObjectURL(r.url);
-        }
+        try { await start(files.map((file) => ({ file, url: URL.createObjectURL(file) }))); } finally { setPreparing(false); }
     };
 
     // ── Phone: press and hold to drag ──────────────────────────────────────
@@ -288,9 +362,7 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
                                     cover ? 'border-emerald-700' : 'border-slate-200'
                                 } ${lifted ? 'shadow-[0_12px_28px_rgba(0,0,0,0.28)]' : ''} ${dragOverIndex === i ? 'ring-2 ring-slate-900 scale-95' : ''} ${draggedIndex === i ? 'opacity-40' : ''}`}
                             >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={getImageUrl(path)} alt={`Photo ${i + 1}`} draggable={false}
-                                    className="w-full h-full object-cover pointer-events-none" />
+                                <PhotoImage path={path} index={i} preview={local[path]} onLoaded={loaded} />
                                 {!isPhone && (
                                     <>
                                         <button type="button" onClick={() => { if (!cover) makeCover(i); }}
@@ -311,14 +383,26 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
                         );
                     })}
                     {uploads.map((u) => (
-                        <div key={u.id} className="relative h-40 rounded-2xl overflow-hidden border-2 border-slate-200">
+                        <div key={u.id} data-uploading className="relative h-40 rounded-2xl overflow-hidden border-2 border-slate-200 bg-slate-100">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={u.url} alt="" className="w-full h-full object-cover opacity-50" />
-                            <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-slate-700">Uploading…</span>
+                            {isPhone ? (
+                                <div className="absolute inset-x-3 bottom-3" aria-label={`Uploading, ${Math.round(u.progress * 100)}%`}>
+                                    <div className="mb-1 text-xs font-semibold text-slate-800">{u.progress >= 1 ? 'Finishing…' : `Uploading ${Math.round(u.progress * 100)}%`}</div>
+                                    <div className="h-1.5 overflow-hidden rounded-full bg-white/70">
+                                        <div className="h-full rounded-full bg-brand transition-[width] duration-200" style={{ width: `${Math.round(u.progress * 100)}%` }} />
+                                    </div>
+                                </div>
+                            ) : (
+                                <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-slate-700">Uploading…</span>
+                            )}
                         </div>
                     ))}
                 </div>
             )}
+            {inSheet ? (photos.length === 0 && uploads.length === 0 && (
+                <p className="py-10 text-center text-sm text-slate-500">No photos yet. Tap + to add some.</p>
+            )) : (
             <label className="h-24 rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-400 flex flex-col items-center justify-center cursor-pointer text-slate-500 text-sm">
                 <span className="font-semibold">
                     {preparing ? 'Preparing your photos...' : '+ Add photos'}
@@ -326,6 +410,7 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
                 <span className="text-xs mt-0.5">Straight from your phone is fine</span>
                 <input type="file" accept="image/png, image/jpeg" multiple onChange={onFiles} className="hidden" disabled={preparing} />
             </label>
+            )}
 
             {menuFor !== null && photos[menuFor] && (
                 <PhotoMenu
@@ -410,9 +495,38 @@ export function PhotosCard({ photos, savePhotos, beforeChange }: {
     beforeChange?: () => boolean;
 }) {
     const [open, setOpen] = useState(false);
+    // Adding photos, Airbnb's way: "+" → a small panel with Add photos → the
+    // photo library → an Upload photos page. Nothing uploads until Upload.
+    const [adding, setAdding] = useState(false);
+    const [chosen, setChosen] = useState<{ id: string; file: File; url: string }[] | null>(null);
+    const picker = useRef<HTMLInputElement>(null);
+    // Lives here, not in the sheet, so photos keep uploading if it's closed.
+    const uploader = usePhotoUploads(savePhotos);
+
     const shown = photos.slice(0, 2);
     const more = photos.length - shown.length;
     const count = photos.length ? `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}` : 'No photos yet';
+
+    const pick = () => { if (!beforeChange || beforeChange()) picker.current?.click(); };
+    const onPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (!files.length) return;
+        const items = files.map((file) => ({ id: `${Date.now()}_${generateRandomNumber()}`, file, url: URL.createObjectURL(file) }));
+        setChosen((c) => [...(c || []), ...items]);
+    };
+    const drop = (id: string) => setChosen((c) => {
+        const gone = c?.find((x) => x.id === id);
+        if (gone) URL.revokeObjectURL(gone.url);
+        return (c || []).filter((x) => x.id !== id);
+    });
+    const cancel = () => { chosen?.forEach((x) => URL.revokeObjectURL(x.url)); setChosen(null); };
+    const upload = () => {
+        const items = chosen || [];
+        setChosen(null);
+        if (items.length) uploader.start(items.map(({ file, url }) => ({ file, url })));
+    };
+
     return (
         <>
             <EditorCard title="Photos" summary={count} onClick={() => setOpen(true)}>
@@ -420,17 +534,110 @@ export function PhotosCard({ photos, savePhotos, beforeChange }: {
                     <div className="mt-4 grid grid-cols-2 gap-3">
                         {shown.map((path) => (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img key={path} src={getImageUrl(path)} alt="" className="aspect-[4/3] w-full rounded-xl object-cover" />
+                            <img key={path} src={uploader.local[path] || getImageUrl(path)} alt="" className="aspect-[4/3] w-full rounded-xl bg-slate-100 object-cover" />
                         ))}
                     </div>
                 )}
                 {more > 0 && <div className="mt-3 text-sm font-semibold text-slate-700">+{more} more</div>}
             </EditorCard>
+
+            {/* The phone's photo library, several at a time. Off-screen rather
+                than display:none, which some phones won't open from a tap. */}
+            <input ref={picker} type="file" accept="image/png, image/jpeg" multiple onChange={onPicked}
+                className="sr-only" tabIndex={-1} aria-hidden="true" data-photo-picker />
+
             {open && (
-                <EditorPanel title="Photos" onClose={() => setOpen(false)}>
-                    <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone beforeChange={beforeChange} inSheet />
+                <EditorPanel title="Photos" onClose={() => setOpen(false)}
+                    trailing={
+                        <button type="button" onClick={() => setAdding(true)} aria-label="Add photos"
+                            className="rounded-full p-1.5 text-slate-900 hover:bg-slate-100">
+                            <Plus className="h-6 w-6" />
+                        </button>
+                    }>
+                    <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone beforeChange={beforeChange} inSheet uploader={uploader} />
                 </EditorPanel>
             )}
+
+            {adding && (
+                <AddPhotosPanel onClose={() => setAdding(false)} onAdd={() => { pick(); setAdding(false); }} />
+            )}
+
+            {chosen && (
+                <UploadPhotosPage items={chosen} onRemove={drop} onMore={pick} onCancel={cancel} onUpload={upload} />
+            )}
         </>
+    );
+}
+
+// The small panel the sheet's "+" slides up.
+function AddPhotosPanel({ onClose, onAdd }: { onClose: () => void; onAdd: () => void }) {
+    const [shown, setShown] = useState(false);
+    useEffect(() => { const r = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(r); }, []);
+    return createPortal(
+        <div className={`fixed inset-0 z-[60] flex items-end bg-black/50 transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}>
+            <div role="dialog" aria-modal="true" aria-label="Add photos"
+                className={`w-full rounded-t-2xl bg-white px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-300 ease-out ${shown ? 'translate-y-0' : 'translate-y-full'}`}
+                onClick={(e) => e.stopPropagation()}>
+                <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-slate-200" />
+                <button type="button" onClick={onAdd}
+                    className="flex w-full items-center gap-4 rounded-xl px-4 py-4 text-left text-base font-semibold text-slate-900 hover:bg-slate-50">
+                    <ImageIcon className="h-6 w-6 text-slate-700" />
+                    Add photos
+                </button>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+// What the host chose, before anything is sent: remove any, add more, then
+// Upload (or Cancel, which throws the choice away).
+function UploadPhotosPage({ items, onRemove, onMore, onCancel, onUpload }: {
+    items: { id: string; url: string }[];
+    onRemove: (id: string) => void;
+    onMore: () => void;
+    onCancel: () => void;
+    onUpload: () => void;
+}) {
+    useEffect(() => {
+        const overflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = overflow; };
+    }, []);
+    const n = items.length;
+    return createPortal(
+        <div role="dialog" aria-modal="true" aria-label="Upload photos" className="fixed inset-0 z-[60] flex h-[100dvh] flex-col bg-white">
+            <div className="flex items-start justify-between px-5 pt-5 pb-3">
+                <div>
+                    <h2 className="text-2xl font-bold text-slate-900">Upload photos</h2>
+                    <p className="mt-0.5 text-sm text-slate-500">{n === 0 ? 'No items selected' : `${n} ${n === 1 ? 'item' : 'items'} selected`}</p>
+                </div>
+                <button type="button" onClick={onMore} aria-label="Add more photos" className="rounded-full p-1.5 text-slate-900 hover:bg-slate-100">
+                    <Plus className="h-6 w-6" />
+                </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+                <div className="grid grid-cols-2 gap-3">
+                    {items.map((it) => (
+                        <div key={it.id} data-chosen className="relative aspect-square overflow-hidden rounded-xl bg-slate-100">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={it.url} alt="" className="h-full w-full object-cover" />
+                            <button type="button" onClick={() => onRemove(it.id)} aria-label="Remove this photo"
+                                className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-800 shadow">
+                                <Trash2 className="h-4 w-4" />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                <button type="button" onClick={onCancel} className="text-sm font-semibold text-slate-900 underline">Cancel</button>
+                <button type="button" onClick={onUpload} disabled={n === 0}
+                    className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black disabled:opacity-40">
+                    Upload
+                </button>
+            </div>
+        </div>,
+        document.body,
     );
 }

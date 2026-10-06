@@ -39,13 +39,15 @@ export function EditorCard({ title, summary, onClick, children }: {
 // centred dialog, unchanged. Rendered in a portal,
 // but React events still bubble to the editor's <form>, so every button in a
 // panel must be type="button".
-export function EditorPanel({ title, onClose, footer, children, leading }: {
+export function EditorPanel({ title, onClose, footer, children, leading, trailing }: {
     title: string;
     onClose: () => void;
     footer?: ReactNode;
     children: ReactNode;
     // Replaces the close button on the left (a back arrow in a nested view).
     leading?: ReactNode;
+    // A button on the right of the title (the Photos sheet's "+").
+    trailing?: ReactNode;
 }) {
     // Mounted off-screen, then moved into place on the next frame so the slide
     // runs. The transform only applies below sm.
@@ -86,6 +88,7 @@ export function EditorPanel({ title, onClose, footer, children, leading }: {
                         )}
                     </div>
                     <h2 className="text-base font-bold text-slate-900">{title}</h2>
+                    {trailing && <div className="absolute right-4 top-1/2 -translate-y-1/2">{trailing}</div>}
                 </div>
                 {/* data-sheet-scroll: what scrolls inside a sheet (the photo drag follows it). */}
                 <div data-sheet-scroll className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
