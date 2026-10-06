@@ -22,7 +22,7 @@ and **never** at the raw `{{ .ConfirmationURL }}` (which is
 | Confirm sign up | `email` | — |
 | Magic link or OTP | `email` | — |
 | Reset password | `recovery` | `&next=/auth/reset` (so it lands on the set-a-new-password page) |
-| Change email address | `email_change` | — |
+| Change email address | `email_change` | `&next=/account` (so it lands on the account page) |
 
 Replace **every** occurrence in each template — the button `href`, the "copy and
 paste this link" `href`, and that link's visible text.
