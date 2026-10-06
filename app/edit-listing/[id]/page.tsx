@@ -18,6 +18,7 @@ import {
 import { HowGuestsBookCard, CancellationPolicyCard } from '@/components/listing-editor/BookingCards';
 import AutoTextarea from '@/components/AutoTextarea';
 import DescriptionCard from '@/components/listing-editor/DescriptionCard';
+import AmenitiesCard, { AmenityGrid } from '@/components/listing-editor/AmenitiesCard';
 import PhotosEditor from '@/components/listing-editor/PhotosEditor';
 import {
     NightlyPriceCard, WeekendPriceCard, DiscountsCard, CleaningFeeCard,
@@ -39,7 +40,7 @@ import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, type Room }
 import { publishProblems } from '@/lib/listingRules';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
-    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
+    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
 } from 'lucide-react';
 
 
@@ -452,7 +453,7 @@ export default function EditListing() {
     const saveThen = (patch: Record<string, unknown>, apply: () => void) =>
         persist(patch).then((ok) => { if (ok) apply(); return ok; });
 
-    // Amenities and photos change on a tap, so they show at once and are put
+    // Amenities on desktop and photos change on a tap, so they show at once and are put
     // back if the write fails.
     const toggleAmenity = (name: string) => {
         const before = amenities;
@@ -773,28 +774,19 @@ export default function EditListing() {
                         {shows('amenities') && (<PhoneSection id="amenities" phone={isPhone}>
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-1">Amenities</h2>
-                                <p className="text-sm text-slate-400 mb-4">{amenities.length} selected</p>
-                                <div className="space-y-6">
-                                    {AMENITY_CATEGORIES.map(({ category, items }) => (
-                                        <div key={category}>
-                                            <h3 className="font-semibold text-slate-800 text-sm mb-2">{category}</h3>
-                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                                {items.map(({ name, icon: Icon, note }) => {
-                                                    const selected = amenities.includes(name);
-                                                    return (
-                                                        <button key={name} type="button" onClick={() => toggleAmenity(name)}
-                                                            className={`p-3 rounded-2xl border-2 text-left transition relative ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                                            <Icon className="w-4 h-4 mb-2 text-slate-700" />
-                                                            <div className="text-xs font-semibold text-slate-900">{name}</div>
-                                                            {note && <div className="text-[10px] text-slate-400 mt-0.5">{note}</div>}
-                                                            {selected && <Check className="w-4 h-4 text-slate-900 absolute top-3 right-3" />}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                {isPhone ? (
+                                    // A raised card on a phone, so scrolling past can never
+                                    // toggle a tile; its sheet saves on Save.
+                                    <div className="mt-3">
+                                        <AmenitiesCard categories={AMENITY_CATEGORIES} amenities={amenities}
+                                            onSave={(next) => saveThen({ amenities: next }, () => setAmenities(next))} />
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-sm text-slate-400 mb-4">{amenities.length} selected</p>
+                                        <AmenityGrid categories={AMENITY_CATEGORIES} selected={amenities} onToggle={toggleAmenity} />
+                                    </>
+                                )}
                             </section>
                         </PhoneSection>)}
 
