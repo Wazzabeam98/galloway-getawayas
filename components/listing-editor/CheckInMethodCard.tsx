@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { KeyRound, Lock, Hash, Users, MapPin, DoorOpen } from 'lucide-react';
-import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import StaleDoorCode, { useDoorCode } from '@/components/LockboxCode';
 import { methodNeedsCode, codeLabelFor, checkInMethodTitle, isSelfCheckIn } from '@/lib/checkInMethods';
 
@@ -21,7 +21,7 @@ const CHECKIN_METHODS: { label: string; icon: any; note: string }[] = [
 export default function CheckInMethodCard({ listingId, method, onChange }: {
     listingId: string;
     method: string;
-    onChange: (method: string) => void;
+    onChange: (method: string) => unknown;
 }) {
     const door = useDoorCode(listingId);
     const [open, setOpen] = useState(false);
@@ -32,8 +32,8 @@ export default function CheckInMethodCard({ listingId, method, onChange }: {
 
     const openPanel = () => { setDraft(method); setCode(null); setOpen(true); };
 
-    const save = () => {
-        onChange(draft);
+    const save = async () => {
+        if (!(await saved(onChange(draft)))) return;
         if (methodNeedsCode(draft) && code !== null && code !== door.saved) door.save(code);
         setOpen(false);
     };

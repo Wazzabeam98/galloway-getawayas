@@ -2,16 +2,16 @@
 
 import { useState } from 'react';
 import { Check } from 'lucide-react';
-import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 
 // Booking settings, Airbnb's shape: "How guests book" and "Cancellation
-// policy" on raised cards, each opening to its existing choices. Both save
-// with the listing's main Save, exactly as before.
+// policy" on raised cards, each opening to its existing choices. Each sheet's
+// Save writes the listing.
 
 export function HowGuestsBookCard({ instantBook, requiresPhone, onSave }: {
     instantBook: boolean;
     requiresPhone: boolean;
-    onSave: (instantBook: boolean, requiresPhone: boolean) => void;
+    onSave: (instantBook: boolean, requiresPhone: boolean) => unknown;
 }) {
     const [open, setOpen] = useState(false);
     const [instant, setInstant] = useState(instantBook);
@@ -23,7 +23,7 @@ export function HowGuestsBookCard({ instantBook, requiresPhone, onSave }: {
                 onClick={() => { setInstant(instantBook); setPhone(requiresPhone); setOpen(true); }} />
             {open && (
                 <EditorPanel title="How guests book" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(instant, phone); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(instant, phone))) setOpen(false); }} />}>
                     <div className="grid grid-cols-1 gap-3">
                         <button type="button" aria-pressed={!instant} onClick={() => setInstant(false)}
                             className={`text-left px-4 py-3.5 rounded-xl border transition ${!instant ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}>
@@ -58,7 +58,7 @@ export function CancellationPolicyCard({ policies, policy, nonRefundable, onSave
     policies: { key: string; bullets: string[] }[];
     policy: string;
     nonRefundable: boolean;
-    onSave: (policy: string, nonRefundable: boolean) => void;
+    onSave: (policy: string, nonRefundable: boolean) => unknown;
 }) {
     const [open, setOpen] = useState(false);
     const [p, setP] = useState(policy);
@@ -70,7 +70,7 @@ export function CancellationPolicyCard({ policies, policy, nonRefundable, onSave
                 onClick={() => { setP(policy); setNr(nonRefundable); setOpen(true); }} />
             {open && (
                 <EditorPanel title="Cancellation policy" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(p, nr); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(p, nr))) setOpen(false); }} />}>
                     <p className="text-xs text-slate-500 mb-3">
                         All refunds exclude the Galloway Getaways service fee. Cleaning fees are always returned in full, since the clean doesn&apos;t happen.
                     </p>

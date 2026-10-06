@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import AutoTextarea from '@/components/AutoTextarea';
-import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import { addressLineLabel } from '@/lib/propertyTypes';
 import { listingLocation } from '@/lib/places';
 
 // The editor's Location section, Airbnb's shape: the address on a raised card
 // opening to the address fields, and "Location sharing" opening to the precise-
-// location toggle. Both save with the listing's main Save.
+// location toggle. Each sheet's Save writes the listing.
 
 // "57 St Cuthbert St, Kirkcudbright DG6 4DX"
 export function addressSummary(street: string, town: string, postcode: string): string {
@@ -24,7 +24,7 @@ export function AddressCard({ town, street, postcode, propertyType, onSave }: {
     street: string;
     postcode: string;
     propertyType: string;
-    onSave: (town: string, street: string, postcode: string) => void;
+    onSave: (town: string, street: string, postcode: string) => unknown;
 }) {
     const [open, setOpen] = useState(false);
     const [t, setT] = useState(town);
@@ -39,7 +39,7 @@ export function AddressCard({ town, street, postcode, propertyType, onSave }: {
             <EditorCard title="Address" summary={addressSummary(street, town, postcode) || 'Add the address'} onClick={openPanel} />
             {open && (
                 <EditorPanel title="Address" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(t, s, p); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(t, s, p))) setOpen(false); }} />}>
                     <div className="space-y-4">
                         <p className="text-sm text-slate-500">
                             Guests see the town and region. The street address and postcode are kept
@@ -68,7 +68,7 @@ export function AddressCard({ town, street, postcode, propertyType, onSave }: {
     );
 }
 
-export function LocationSharingCard({ precise, onSave }: { precise: boolean; onSave: (precise: boolean) => void }) {
+export function LocationSharingCard({ precise, onSave }: { precise: boolean; onSave: (precise: boolean) => unknown }) {
     const [open, setOpen] = useState(false);
     const [on, setOn] = useState(precise);
 
@@ -81,7 +81,7 @@ export function LocationSharingCard({ precise, onSave }: { precise: boolean; onS
             />
             {open && (
                 <EditorPanel title="Location sharing" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(on); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(on))) setOpen(false); }} />}>
                     <label className="flex items-start justify-between gap-4 cursor-pointer">
                         <span>
                             <span className="block text-sm font-semibold text-slate-900">Show the precise location</span>
@@ -114,7 +114,7 @@ export function nearbySummary(nearby: { name: string; time: string }[]): string 
 
 export function NearbyCard({ nearby, onSave }: {
     nearby: { name: string; time: string }[];
-    onSave: (nearby: { name: string; time: string }[]) => void;
+    onSave: (nearby: { name: string; time: string }[]) => unknown;
 }) {
     const [open, setOpen] = useState(false);
     const [rows, setRows] = useState(nearby);
@@ -130,7 +130,7 @@ export function NearbyCard({ nearby, onSave }: {
             <EditorCard title="What's nearby" summary={nearbySummary(nearby)} onClick={() => { setRows(nearby.length ? nearby : [{ name: '', time: '' }]); setOpen(true); }} />
             {open && (
                 <EditorPanel title="What's nearby" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(rows.filter((r) => r.name.trim() || r.time.trim())); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(rows.filter((r) => r.name.trim() || r.time.trim())))) setOpen(false); }} />}>
                     <p className="text-sm text-slate-500 mb-4">
                         The places you&apos;d tell a friend about — the harbour, the good bakery, the
                         beach. Guests care about this far more than a map can show them.
@@ -165,7 +165,7 @@ export function NearbyCard({ nearby, onSave }: {
 
 // "Where you'll be" — Airbnb's "Neighbourhood description": the start of the
 // text on the card, the field behind it.
-export function NeighbourhoodCard({ text, onSave }: { text: string; onSave: (text: string) => void }) {
+export function NeighbourhoodCard({ text, onSave }: { text: string; onSave: (text: string) => unknown }) {
     const [open, setOpen] = useState(false);
     const [draft, setDraft] = useState(text);
 
@@ -174,7 +174,7 @@ export function NeighbourhoodCard({ text, onSave }: { text: string; onSave: (tex
             <EditorCard title="Where you'll be" summary={text.trim() || 'Not added yet'} onClick={() => { setDraft(text); setOpen(true); }} />
             {open && (
                 <EditorPanel title="Where you'll be" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(draft); setOpen(false); }} />}>
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(draft))) setOpen(false); }} />}>
                     <p className="text-sm text-slate-500 mb-4">
                         A few lines about the area — the street, the walk into town, what&apos;s on
                         the doorstep. Shown under the map. Keep it about the surroundings, not the

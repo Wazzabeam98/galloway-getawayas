@@ -95,13 +95,29 @@ export function EditorPanel({ title, onClose, footer, children, leading }: {
     );
 }
 
-export function PanelSave({ onClick, label = 'Save', disabled }: { onClick: () => void; label?: string; disabled?: boolean }) {
+// A sheet's Save. The editor writes the listing as each sheet is saved
+// (there is no Save for the whole page), so the handler may be async: it
+// resolves false when the write failed, and the sheet stays open with what the
+// host typed. "Saving…" while it runs, and a second tap does nothing.
+export function PanelSave({ onClick, label = 'Save', disabled }: { onClick: () => unknown; label?: string; disabled?: boolean }) {
+    const [busy, setBusy] = useState(false);
+    const run = async () => {
+        if (busy) return;
+        setBusy(true);
+        try { await onClick(); } finally { setBusy(false); }
+    };
     return (
         <div className="flex justify-end">
-            <button type="button" onClick={onClick} disabled={disabled}
+            <button type="button" onClick={run} disabled={disabled || busy}
                 className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black disabled:opacity-40">
-                {label}
+                {busy ? 'Saving…' : label}
             </button>
         </div>
     );
+}
+
+// Whether a card's onSave went through: anything but an explicit false
+// (a handler that returns nothing is a plain state update, as before).
+export async function saved(result: unknown): Promise<boolean> {
+    return (await result) !== false;
 }

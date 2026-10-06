@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Plus, Minus, BedDouble, Check, ChevronRight } from 'lucide-react';
 import { BED_TYPES, bedSummary, bedsLeftToPlace, deriveCounts, type Room, type Bed } from '@/lib/sleeping';
 import { getImageUrl } from '@/lib/utils';
-import { EditorCard, EditorPanel } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
 
 // Sleeping arrangements, Airbnb's way: a raised card with the first three
 // rooms, which opens the rooms as cards; a room opens its bed-type counters.
@@ -49,7 +49,9 @@ export default function SleepingArrangementsEditor({
     totalBeds,
 }: {
     rooms: Room[];
-    onChange: (rooms: Room[]) => void;
+    // The editor writes the listing here; false means it didn't go through,
+    // and the room's sheet stays open.
+    onChange: (rooms: Room[]) => unknown;
     // The listing's own photos (image paths) the host can choose from for each
     // room, Airbnb-style. Empty while a brand-new listing has none saved yet.
     photos?: string[];
@@ -67,16 +69,16 @@ export default function SleepingArrangementsEditor({
     const startNew = (kind: 'bedroom' | 'common') =>
         setEditing({ index: null, room: kind === 'bedroom' ? { label: 'New bedroom', kind, beds: [] } : { label: 'Living room', kind, beds: [] } });
 
-    const done = () => {
+    const done = async () => {
         if (!editing) return;
         const room = { ...editing.room, beds: editing.room.beds.filter((b) => b.count > 0) };
-        update(editing.index === null ? [...rooms, room] : rooms.map((r, i) => (i === editing.index ? room : r)));
+        if (!(await saved(update(editing.index === null ? [...rooms, room] : rooms.map((r, i) => (i === editing.index ? room : r)))))) return;
         setEditing(null);
     };
 
-    const removeRoom = () => {
+    const removeRoom = async () => {
         if (!editing || editing.index === null) return;
-        update(rooms.filter((_, i) => i !== editing.index));
+        if (!(await saved(update(rooms.filter((_, i) => i !== editing.index))))) return;
         setEditing(null);
     };
 
@@ -167,12 +169,19 @@ function RoomPanel({ draft, setDraft, left, photos, isNew, onCancel, onDone, onR
     photos: string[];
     isNew: boolean;
     onCancel: () => void;
-    onDone: () => void;
-    onRemove: () => void;
+    onDone: () => Promise<void>;
+    onRemove: () => Promise<void>;
 }) {
     // Every bed type as a counter, plus any older type a room already holds.
     const types = [...BED_TYPES, ...draft.beds.map((b) => b.type).filter((t) => !BED_TYPES.includes(t))];
     const countOf = (type: string) => draft.beds.find((b) => b.type === type)?.count || 0;
+    // Save and Remove write the listing; one at a time, "Saving…" meanwhile.
+    const [busy, setBusy] = useState(false);
+    const run = async (action: () => Promise<void>) => {
+        if (busy) return;
+        setBusy(true);
+        try { await action(); } finally { setBusy(false); }
+    };
 
     const setCount = (type: string, count: number) => {
         const has = draft.beds.some((b) => b.type === type);
@@ -189,9 +198,9 @@ function RoomPanel({ draft, setDraft, left, photos, isNew, onCancel, onDone, onR
             footer={
                 <div className="flex items-center justify-between">
                     <button type="button" onClick={onCancel} className="text-sm font-semibold text-slate-900 underline">Cancel</button>
-                    <button type="button" onClick={onDone}
-                        className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black">
-                        Done
+                    <button type="button" onClick={() => run(onDone)} disabled={busy}
+                        className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black disabled:opacity-40">
+                        {busy ? 'Saving…' : 'Save'}
                     </button>
                 </div>
             }
@@ -257,7 +266,7 @@ function RoomPanel({ draft, setDraft, left, photos, isNew, onCancel, onDone, onR
             )}
 
             {!isNew && (
-                <button type="button" onClick={onRemove} className="mt-5 text-sm font-semibold text-rose-600 underline">
+                <button type="button" onClick={() => run(onRemove)} disabled={busy} className="mt-5 text-sm font-semibold text-rose-600 underline">
                     Remove room
                 </button>
             )}

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import PropertyTypeIcon from '@/components/PropertyTypeIcon';
-import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import { pickerTypes, propertyTypeByName, UNIQUE_STAYS_HEADING, type PropertyType } from '@/lib/propertyTypes';
 
 // Airbnb's "Property type" panel: one dropdown for the type, one for the
@@ -50,7 +50,7 @@ function TypeRow({ t, selected, onPick }: { t: PropertyType; selected: boolean; 
 export default function PropertyTypeCard({ propertyType, privacyType, onSave }: {
     propertyType: string;
     privacyType: string;
-    onSave: (propertyType: string, privacyType: string) => void;
+    onSave: (propertyType: string, privacyType: string) => unknown;
 }) {
     const [open, setOpen] = useState(false);
     const [type, setType] = useState(propertyType);
@@ -69,7 +69,7 @@ export default function PropertyTypeCard({ propertyType, privacyType, onSave }: 
                 <EditorPanel
                     title="Property type"
                     onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={() => { onSave(type, listing); setOpen(false); }} disabled={!type} />}
+                    footer={<PanelSave onClick={async () => { if (await saved(onSave(type, listing))) setOpen(false); }} disabled={!type} />}
                 >
                     <div className="space-y-5">
                         {/* Our own list, not a dropdown: each type a tappable row with
