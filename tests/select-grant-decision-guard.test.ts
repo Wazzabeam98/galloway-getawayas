@@ -58,6 +58,7 @@ const TABLES: TableDecision[] = [
             based_line: 'server-derived display line; the wizard dropped it from its select — unread by any browser',
             venue_lat: 'venue map point, ~110m (3dp), server-written from the collection postcode (lib/venuePoint.ts); read only with the service role by lib/experiencesData and the order page — never browser-read',
             venue_lng: 'venue map point, ~110m (3dp), server-written from the collection postcode (lib/venuePoint.ts); read only with the service role by lib/experiencesData and the order page — never browser-read',
+            show_precise_location: 'Location-sharing flag; read only with the service role by lib/experiencesData (the public map\'s precise/approximate choice) and the provider editor page — never browser-read (mirrors listings.show_precise_location)',
             provider_name: 'retired with the "Your name" step; dropped from the wizard select — unread by any browser',
             category_assigned_at: 'admin audit — when the category was assigned; no provider reads it',
             category_assigned_by: 'admin audit — who assigned the category; no provider reads it',

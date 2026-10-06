@@ -456,7 +456,7 @@ export default function ExperienceListingBody({
                             a traveller has no one place, so no map. */}
                         {hasMap ? (
                             <div id="location" className="scroll-mt-24">
-                                <PropertyMap latitude={p.mapLat!} longitude={p.mapLng!} area={tag || undefined} />
+                                <PropertyMap latitude={p.mapLat!} longitude={p.mapLng!} area={tag || undefined} precise={p.mapPrecise} />
                             </div>
                         ) : null}
                     </div>

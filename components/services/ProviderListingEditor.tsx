@@ -15,6 +15,8 @@ import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_C
 import AutoTextarea from '@/components/AutoTextarea';
 import { cleanAmountInput, amountForBox } from '@/lib/amountInput';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
+import { AddressCard, LocationSharingCard } from '@/components/listing-editor/LocationCards';
+import PropertyMap from '@/components/PropertyMap';
 import PhotosEditor, { PhotosCard, type SavePhotos } from '@/components/listing-editor/PhotosEditor';
 import PhoneSectionTabs, { goToEditorSection } from '@/components/listing-editor/PhoneSectionTabs';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
@@ -25,20 +27,19 @@ import {
     Eye, EyeOff, ExternalLink, Check,
 } from 'lucide-react';
 
-// The guest-experience listing editor, brought to the same shape as the
-// holiday-let editor (app/edit-listing): the sections grouped the way Airbnb's
-// experience host editor groups them, each a raised card showing its answer in
-// one line, opening a full-screen sheet with Save and Cancel. EVERY CARD SAVES
-// ITSELF — its own POST to /api/services/listing/save — so changing a price
-// never means re-running the whole thing. There is no Save for the page and no
-// "Saved" pop-up (the sheet closing is the confirmation, as on Airbnb); only a
-// failure says anything. Approval is one-time: an approved provider edits freely
-// and changes go live immediately.
+// The guest-experience listing editor, on the same shape as the holiday-let
+// editor (app/edit-listing): the sections grouped the way Airbnb's experience
+// host editor groups them, each a raised card showing its answer in one line and
+// opening a full-screen sheet (Save + Cancel). EVERY CARD SAVES ITSELF through
+// /api/services/listing/save — there is no page Save and no "Saved" pop-up (the
+// sheet closing is the confirmation); only a failure speaks. Phone: one page
+// with a sticky underline tab bar. Desktop: the sticky left-hand list.
 //
-// On a phone the editor is one continuous page with a sticky underline tab bar
-// (PhoneSectionTabs); on desktop the sticky left-hand list, click-to-section.
-// The save route is untouched — the section keys and payloads below are exactly
-// what it already reads, so saving and booking behave exactly as before.
+// The save route and every section payload are unchanged, so saving and booking
+// behave exactly as before. Where several cards write the same section
+// (Location's `where`, the booking rules, the guest facts), each card sends that
+// section's WHOLE payload — its own field from the sheet, the rest from state —
+// so saving one never wipes a sibling.
 
 export interface EditorProvider {
     id: string; shape: string; isSlot: boolean; isFood: boolean;
@@ -47,6 +48,7 @@ export interface EditorProvider {
     photos: string[]; headshot: string | null; logo: string | null;
     dietary_note: string; fulfilment: string; delivery_fee: number; delivery_radius_miles: number;
     collection_street: string; collection_town: string; collection_postcode: string;
+    venue_lat: number | null; venue_lng: number | null; show_precise_location: boolean;
     slot_length_minutes: number | null; slot_turnaround_minutes: number;
     slot_capacity: number | null; slot_min_people: number; max_guests: number | null;
     lead_time_days: number; cancellation_window_hours: number; booking_horizon_days: number;
@@ -62,10 +64,8 @@ export interface EditorProvider {
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
-type NavKey = 'experience' | 'photos' | 'included' | 'know' | 'where' | 'availability' | 'pricing' | 'cancellation' | 'host' | 'dietary' | 'status';
+type NavKey = 'basics' | 'photos' | 'amenities' | 'know' | 'location' | 'availability' | 'pricing' | 'cancellation' | 'host' | 'dietary' | 'status';
 
-// How far ahead a guest can book — a pick from sensible windows (Airbnb's
-// booking-window control). Stored as days.
 const BOOKING_HORIZON_OPTIONS: { days: number; label: string }[] = [
     { days: 30, label: '30 days' },
     { days: 60, label: '60 days' },
@@ -73,8 +73,8 @@ const BOOKING_HORIZON_OPTIONS: { days: number; label: string }[] = [
     { days: 180, label: '6 months' },
     { days: 365, label: 'A year' },
 ];
+const horizonLabel = (days: number) => BOOKING_HORIZON_OPTIONS.find((o) => o.days === days)?.label || `${days} days`;
 
-// How much notice a guest must give — a pick, not a typed number.
 const LEAD_TIME_OPTIONS: { days: number; label: string }[] = [
     { days: 0, label: 'Same day' },
     { days: 1, label: '1 day' },
@@ -82,28 +82,24 @@ const LEAD_TIME_OPTIONS: { days: number; label: string }[] = [
     { days: 3, label: '3 days' },
     { days: 7, label: '1 week' },
 ];
+const leadLabel = (days: number) => LEAD_TIME_OPTIONS.find((o) => o.days === days)?.label || `${days} days`;
 
-// The gap between sessions — common picks, in minutes.
 const TURNAROUND_OPTIONS = [0, 15, 30, 45, 60];
-
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const inputCls = 'w-full rounded-xl border border-slate-300 p-3 text-sm';
 
-// A label above a field, with an optional one-line hint beneath.
+// A field label, sentence case (not the uppercase the reused holiday cards use).
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
     return (
         <label className="block">
-            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-            <div className="mt-1">{children}</div>
-            {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+            <span className="block text-sm font-semibold text-slate-800">{label}</span>
+            {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
+            <div className="mt-1.5">{children}</div>
         </label>
     );
 }
 
-// Every sheet's footer: Cancel on the left, Save on the right. The write is the
-// sheet's own (the editor has no page Save); "Saving…" while it runs, and the
-// sheet stays open if it fails.
 function SheetFooter({ busy, onCancel, onSave, disabled, disabledLabel }: {
     busy: boolean; onCancel: () => void; onSave: () => void; disabled?: boolean; disabledLabel?: string;
 }) {
@@ -118,8 +114,8 @@ function SheetFooter({ busy, onCancel, onSave, disabled, disabledLabel }: {
     );
 }
 
-// Shared open/draft/save plumbing for a card: seeds a fresh draft when the sheet
-// opens, writes on Save and closes only if the write went through.
+// Open / draft / save plumbing for a card: a fresh draft when the sheet opens,
+// write on Save, close only if the write went through.
 function useCardSheet<T>(current: T, onSave: (draft: T) => unknown) {
     const [open, setOpen] = useState(false);
     const [draft, setDraft] = useState<T>(current);
@@ -149,7 +145,11 @@ async function uploadImage(supabase: SupabaseClient, file: File, prefix: string)
     }
 }
 
-// ── Cards ──────────────────────────────────────────────────────────────────
+const unitLabel = (unit: string): string => (
+    { flat: 'per session', person: 'per person', hour: 'per hour', night: 'per night', ticket: 'per ticket', item: 'per item' }[unit] || 'per session'
+);
+
+// ── Simple text/choice cards ─────────────────────────────────────────────────
 
 function TitleCard({ value, onSave }: { value: string; onSave: (v: string) => unknown }) {
     const c = useCardSheet(value, onSave);
@@ -157,8 +157,7 @@ function TitleCard({ value, onSave }: { value: string; onSave: (v: string) => un
         <>
             <EditorCard title="Title" summary={value.trim() || 'Add a title'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Title" onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="Title" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <Field label="Listing title" hint="The name at the top of your listing.">
                         <input className={inputCls} value={c.draft} maxLength={80} onChange={(e) => c.setDraft(e.target.value)} aria-label="Listing title" />
                     </Field>
@@ -169,19 +168,16 @@ function TitleCard({ value, onSave }: { value: string; onSave: (v: string) => un
 }
 
 function WhatHappensCard({ whatToExpect, phases, headings, onSave }: {
-    whatToExpect: string;
-    phases: [string, string, string];
-    headings: { title: string }[];
+    whatToExpect: string; phases: [string, string, string]; headings: { title: string }[];
     onSave: (draft: { whatToExpect: string; phases: [string, string, string] }) => unknown;
 }) {
     const c = useCardSheet({ whatToExpect, phases }, onSave);
-    const ph = (['Where to meet, how to find you, what to expect first.', 'The heart of it — what you’ll actually do together.', 'How it wraps up — and anything to do after.']);
+    const ph = ['Where to meet, how to find you, what to expect first.', 'The heart of it — what you’ll actually do together.', 'How it wraps up — and anything to do after.'];
     return (
         <>
             <EditorCard title="What happens" summary={whatToExpect.trim() || 'Add what happens'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="What happens" onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="What happens" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <div className="space-y-4">
                         <Field label="In a sentence, what is it?">
                             <AutoTextarea className={inputCls} rows={3} value={c.draft.whatToExpect}
@@ -189,7 +185,7 @@ function WhatHappensCard({ whatToExpect, phases, headings, onSave }: {
                                 placeholder="A wood-fired lakeside sauna with cold-water dips between rounds." />
                         </Field>
                         <div>
-                            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">The flow</span>
+                            <span className="block text-sm font-semibold text-slate-800">The flow</span>
                             <p className="mt-0.5 text-xs text-slate-400">Take a guest through it, start to finish. Leave a step blank to skip it.</p>
                             <div className="mt-3 space-y-3">
                                 {headings.map((h, i) => (
@@ -213,103 +209,78 @@ function WhatHappensCard({ whatToExpect, phases, headings, onSave }: {
     );
 }
 
-// What's included — the ticked "what's provided / on site" set that drives the
-// guest listing's "What's included" list, with the venue's access and parking
-// (what's there when a guest arrives). One save: the amenities section.
-function WhatsIncludedCard({ amenities, accessibility, parking, onSave }: {
-    amenities: string[]; accessibility: string; parking: string;
-    onSave: (draft: { amenities: string[]; accessibility: string; parking: string }) => unknown;
-}) {
-    const c = useCardSheet({ amenities, accessibility, parking }, onSave);
-    const toggle = (key: string) => c.setDraft({ ...c.draft, amenities: c.draft.amenities.includes(key) ? c.draft.amenities.filter((k) => k !== key) : [...c.draft.amenities, key] });
-    const labels = EXPERIENCE_AMENITY_GROUPS.flatMap((g) => g.items).filter((i) => amenities.includes(i.key)).map((i) => i.label);
-    const summary = labels.length ? `${labels.length} included · ${labels.slice(0, 3).join(', ')}` : 'Add what’s included';
+// Maximum capacity — the default for the whole listing; a per-person item can set
+// its own, which still wins for that item. Saves the booking section.
+function MaxCapacityCard({ isSlot, value, onSave }: { isSlot: boolean; value: number; onSave: (v: number) => unknown }) {
+    const c = useCardSheet(value, onSave);
     return (
         <>
-            <EditorCard title="What’s included" summary={summary} onClick={c.start} />
+            <EditorCard title="Maximum capacity" summary={`Up to ${value} ${value === 1 ? 'guest' : 'guests'}`} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="What’s included" onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="space-y-4">
-                        {EXPERIENCE_AMENITY_GROUPS.map((grp) => (
-                            <div key={grp.group}>
-                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{grp.group}</span>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {grp.items.map((a) => {
-                                        const on = c.draft.amenities.includes(a.key);
-                                        return (
-                                            <button key={a.key} type="button" onClick={() => toggle(a.key)} aria-pressed={on}
-                                                className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm transition ${on ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
-                                                {on && <Check className="h-4 w-4 flex-none text-emerald-700" />}
-                                                {a.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        ))}
-                        <div className="border-t border-slate-200 pt-4">
-                            <Field label="Accessibility" hint="The nearest option — a guest who needs it wants a clear answer.">
-                                <OptionPills options={ACCESSIBILITY_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
-                                    value={c.draft.accessibility} onChange={(v) => c.setDraft({ ...c.draft, accessibility: c.draft.accessibility === v ? '' : v })} />
-                            </Field>
-                        </div>
-                        <Field label="Parking">
-                            <OptionPills options={PARKING_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
-                                value={c.draft.parking} onChange={(v) => c.setDraft({ ...c.draft, parking: c.draft.parking === v ? '' : v })} />
-                        </Field>
-                    </div>
+                <EditorPanel title="Maximum capacity" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <Field label="Maximum capacity" hint={isSlot ? 'The most people a session can take, as a default — a per-person item can set its own under Pricing & booking.' : 'The most people you’ll take for one booking.'}>
+                        <Stepper value={c.draft} onChange={c.setDraft} min={1} max={60} />
+                    </Field>
                 </EditorPanel>
             )}
         </>
     );
 }
 
-// Good to know — the practical facts a guest wants before booking: who it's
-// for (minimum age), how hard it is, and what to bring. One save: the things
-// section.
-function GoodToKnowCard({ minAge, activity, whatToBring, onSave }: {
-    minAge: string; activity: string; whatToBring: string;
-    onSave: (draft: { minAge: string; activity: string; whatToBring: string }) => unknown;
-}) {
-    const c = useCardSheet({ minAge, activity, whatToBring }, onSave);
-    const parts = [
-        minAge ? `${minAge}+` : null,
-        activity ? activity.charAt(0).toUpperCase() + activity.slice(1) : null,
-    ].filter(Boolean);
-    const summary = parts.length ? parts.join(' · ') : (whatToBring.trim() ? whatToBring.trim() : 'Add the details');
+// Minimum age / Activity level / What to bring — three cards, each saving the
+// whole `things` section (its own field from the sheet, the others from state).
+function MinimumAgeCard({ minAge, onSave }: { minAge: string; onSave: (v: string) => unknown }) {
+    const c = useCardSheet(minAge, onSave);
     return (
         <>
-            <EditorCard title="Good to know" summary={summary} onClick={c.start} />
+            <EditorCard title="Minimum age" summary={minAge ? `${minAge}+` : 'No minimum'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Good to know" onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="space-y-4">
-                        <Field label="Minimum age" hint="The youngest a guest can be to take part.">
-                            <OptionPills
-                                options={[{ value: '', label: 'No minimum' }, { value: '12', label: '12+' }, { value: '16', label: '16+' }, { value: '18', label: '18+' }, { value: '21', label: '21+' }]}
-                                value={c.draft.minAge} onChange={(v) => c.setDraft({ ...c.draft, minAge: v })} />
-                        </Field>
-                        <Field label="Activity level">
-                            <OptionPills
-                                options={[{ value: 'gentle', label: 'Gentle' }, { value: 'moderate', label: 'Moderate' }, { value: 'challenging', label: 'Challenging' }]}
-                                value={c.draft.activity} onChange={(v) => c.setDraft({ ...c.draft, activity: c.draft.activity === v ? '' : v })} />
-                        </Field>
-                        <Field label="What to bring">
-                            <AutoTextarea className={inputCls} rows={3} value={c.draft.whatToBring}
-                                onChange={(e) => c.setDraft({ ...c.draft, whatToBring: e.target.value })} placeholder="Warm layers, sturdy shoes…" />
-                        </Field>
-                    </div>
+                <EditorPanel title="Minimum age" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <Field label="The youngest a guest can be to take part">
+                        <OptionPills options={[{ value: '', label: 'No minimum' }, { value: '12', label: '12+' }, { value: '16', label: '16+' }, { value: '18', label: '18+' }, { value: '21', label: '21+' }]}
+                            value={c.draft} onChange={c.setDraft} />
+                    </Field>
                 </EditorPanel>
             )}
         </>
     );
 }
 
-function CancellationCard({ hours, noRefund, onSave }: {
-    hours: number; noRefund: boolean;
-    onSave: (draft: { hours: number; noRefund: boolean }) => unknown;
-}) {
+function ActivityLevelCard({ activity, onSave }: { activity: string; onSave: (v: string) => unknown }) {
+    const c = useCardSheet(activity, onSave);
+    const label = activity ? activity.charAt(0).toUpperCase() + activity.slice(1) : 'Not set';
+    return (
+        <>
+            <EditorCard title="Activity level" summary={label} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="Activity level" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <Field label="How much effort it takes">
+                        <OptionPills options={[{ value: 'gentle', label: 'Gentle' }, { value: 'moderate', label: 'Moderate' }, { value: 'challenging', label: 'Challenging' }]}
+                            value={c.draft} onChange={(v) => c.setDraft(c.draft === v ? '' : v)} />
+                    </Field>
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+function WhatToBringCard({ whatToBring, onSave }: { whatToBring: string; onSave: (v: string) => unknown }) {
+    const c = useCardSheet(whatToBring, onSave);
+    return (
+        <>
+            <EditorCard title="What to bring" summary={whatToBring.trim() || 'Nothing listed'} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="What to bring" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <Field label="What a guest should bring">
+                        <AutoTextarea className={inputCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)} placeholder="Warm layers, sturdy shoes, a towel…" />
+                    </Field>
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+function CancellationCard({ hours, noRefund, onSave }: { hours: number; noRefund: boolean; onSave: (draft: { hours: number; noRefund: boolean }) => unknown }) {
     const c = useCardSheet({ hours, noRefund }, onSave);
     const current = experienceCancellationOption(hours, noRefund);
     const draftKey = experienceCancellationOption(c.draft.hours, c.draft.noRefund).key;
@@ -317,8 +288,7 @@ function CancellationCard({ hours, noRefund, onSave }: {
         <>
             <EditorCard title="Cancellation policy" summary={current.label} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Cancellation policy" onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="Cancellation policy" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <p className="mb-3 text-xs text-slate-500">After the window it’s your call. Refunds always exclude the Galloway Getaways service fee.</p>
                     <div className="space-y-3">
                         {EXPERIENCE_CANCELLATION_OPTIONS.map((o) => {
@@ -357,16 +327,14 @@ function HostProfileCard({ supabase, profTitle, years, quals, recognition, heads
         if (k) c.setDraft({ ...c.draft, headshot: k });
         setUploading(false);
     };
-    const summary = profTitle.trim() || (headshot ? 'Photo added' : 'Add your profile');
     return (
         <>
-            <EditorCard title="Host profile" summary={summary} onClick={c.start} />
+            <EditorCard title="Host profile" summary={profTitle.trim() || (headshot ? 'Photo added' : 'Add your profile')} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Host profile" onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="Host profile" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <div className="space-y-4">
                         <div>
-                            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Your photo</span>
+                            <span className="block text-sm font-semibold text-slate-800">Your photo</span>
                             <p className="mt-0.5 text-xs text-slate-400">The person a guest is meeting — shown beside your name.</p>
                             <div className="mt-2 flex items-center gap-3">
                                 {c.draft.headshot ? (
@@ -376,14 +344,14 @@ function HostProfileCard({ supabase, profTitle, years, quals, recognition, heads
                                     <span className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-400"><User className="h-6 w-6" /></span>
                                 )}
                                 <label className="cursor-pointer rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                                    {c.draft.headshot ? 'Replace' : 'Add a photo'}
+                                    {c.draft.headshot ? 'Change photo' : 'Add photo'}
                                     <input type="file" accept="image/png, image/jpeg" onChange={change} className="hidden" disabled={uploading} />
                                 </label>
                                 {c.draft.headshot && <button type="button" onClick={() => c.setDraft({ ...c.draft, headshot: null })} className="text-sm text-slate-500 hover:text-red-600">Remove</button>}
                             </div>
                         </div>
                         <Field label="Professional title"><input className={inputCls} value={c.draft.profTitle} onChange={(e) => c.setDraft({ ...c.draft, profTitle: e.target.value })} /></Field>
-                        <Field label="Years of experience"><input className={inputCls} value={c.draft.years} onChange={(e) => c.setDraft({ ...c.draft, years: cleanAmountInput(e.target.value, false) })} placeholder="5" inputMode="numeric" /></Field>
+                        <Field label="Years of experience"><input className={inputCls} inputMode="numeric" value={c.draft.years} onChange={(e) => c.setDraft({ ...c.draft, years: cleanAmountInput(e.target.value, false) })} placeholder="5" /></Field>
                         <Field label="Qualifications"><AutoTextarea className={inputCls} rows={2} value={c.draft.quals} onChange={(e) => c.setDraft({ ...c.draft, quals: e.target.value })} /></Field>
                         <Field label="Recognition (optional)"><AutoTextarea className={inputCls} rows={2} value={c.draft.recognition} onChange={(e) => c.setDraft({ ...c.draft, recognition: e.target.value })} /></Field>
                     </div>
@@ -399,11 +367,9 @@ function DietaryCard({ dietaryNote, onSave }: { dietaryNote: string; onSave: (v:
         <>
             <EditorCard title="Food & dietary" summary={dietaryNote.trim() || 'Add what you cater for'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Food & dietary" onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="Food & dietary" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <Field label="Dietary note" hint="What you can cater for.">
-                        <AutoTextarea className={inputCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)}
-                            placeholder="Vegetarian and gluten-free on request; not a nut-free kitchen." />
+                        <AutoTextarea className={inputCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)} placeholder="Vegetarian and gluten-free on request; not a nut-free kitchen." />
                     </Field>
                 </EditorPanel>
             )}
@@ -411,44 +377,360 @@ function DietaryCard({ dietaryNote, onSave }: { dietaryNote: string; onSave: (v:
     );
 }
 
-function BookingCard({ isSlot, shape, maxGuests, leadDays, horizonDays, onSave }: {
-    isSlot: boolean; shape: string;
-    maxGuests: number; leadDays: number; horizonDays: number;
-    onSave: (draft: { maxGuests: number; leadDays: number; horizonDays: number }) => unknown;
-}) {
-    const c = useCardSheet({ maxGuests, leadDays, horizonDays }, onSave);
-    const hoursElsewhere = isSlot || shape === 'comes_to_you';
-    const horizonLabel = BOOKING_HORIZON_OPTIONS.find((o) => o.days === horizonDays)?.label || `${horizonDays} days`;
+// How far ahead a guest can book — its own card (Airbnb's booking window).
+function HorizonCard({ horizonDays, onSave }: { horizonDays: number; onSave: (v: number) => unknown }) {
+    const c = useCardSheet(horizonDays, onSave);
     return (
         <>
-            <EditorCard title="Booking" summary={`Up to ${maxGuests} · books ${horizonLabel.toLowerCase()} ahead`} onClick={c.start} />
+            <EditorCard title="How far ahead guests can book" summary={`${horizonLabel(horizonDays).toLowerCase()} ahead`} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Booking" onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="space-y-4">
-                        <Field label="Maximum capacity" hint={isSlot ? 'The most people a session can take, as a default — a per-person item can set its own in “What you offer”.' : 'The most people you’ll take for one booking.'}>
-                            <Stepper value={c.draft.maxGuests} onChange={(v) => c.setDraft({ ...c.draft, maxGuests: v })} min={1} max={60} />
-                        </Field>
-                        {!hoursElsewhere && (
-                            <Field label="Notice needed" hint="How far ahead a guest has to book. The calendar won’t offer a date sooner than this.">
-                                <OptionPills options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
-                                    value={String(c.draft.leadDays)} onChange={(v) => c.setDraft({ ...c.draft, leadDays: Number(v) })} />
-                            </Field>
-                        )}
-                        <Field label="How far ahead guests can book" hint="Beyond this, dates aren’t open yet — they come into range as time passes.">
-                            <OptionPills options={BOOKING_HORIZON_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
-                                value={String(c.draft.horizonDays)} onChange={(v) => c.setDraft({ ...c.draft, horizonDays: Number(v) })} />
-                        </Field>
-                        {hoursElsewhere && (
-                            <p className="text-xs text-slate-500">Your booking times come from your weekly hours — set them under “{isSlot ? 'Availability' : 'Opening hours'}”.</p>
-                        )}
-                    </div>
+                <EditorPanel title="How far ahead guests can book" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <OptionPills options={BOOKING_HORIZON_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
+                        value={String(c.draft)} onChange={(v) => c.setDraft(Number(v))} />
                 </EditorPanel>
             )}
         </>
     );
 }
 
+// Notice needed — only shown as its own card for shapes with no Availability
+// section (made to order); a slot / comes-to-you sets it beside its hours.
+function NoticeCard({ leadDays, onSave }: { leadDays: number; onSave: (v: number) => unknown }) {
+    const c = useCardSheet(leadDays, onSave);
+    return (
+        <>
+            <EditorCard title="Notice needed" summary={leadLabel(leadDays)} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="Notice needed" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <OptionPills options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
+                        value={String(c.draft)} onChange={(v) => c.setDraft(Number(v))} />
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+// Amenities — the holiday editor's split: tiles in the page on desktop (a tap
+// saves), a raised card with a Save sheet on a phone. Accessibility and parking
+// ride in the same save, so they sit with the tiles. Every save sends the whole
+// amenities section.
+type AmenityDraft = { amenities: string[]; accessibility: string; parking: string };
+function AmenityTiles({ draft, set }: { draft: AmenityDraft; set: (d: AmenityDraft) => void }) {
+    const toggle = (key: string) => set({ ...draft, amenities: draft.amenities.includes(key) ? draft.amenities.filter((k) => k !== key) : [...draft.amenities, key] });
+    return (
+        <div className="space-y-5">
+            {EXPERIENCE_AMENITY_GROUPS.map((grp) => (
+                <div key={grp.group}>
+                    <h3 className="mb-2 text-sm font-semibold text-slate-800">{grp.group}</h3>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                        {grp.items.map((a) => {
+                            const on = draft.amenities.includes(a.key);
+                            return (
+                                <button key={a.key} type="button" onClick={() => toggle(a.key)} aria-pressed={on}
+                                    className={`relative rounded-2xl border-2 p-3 text-left text-sm transition ${on ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                    <span className="font-semibold text-slate-900">{a.label}</span>
+                                    {on && <Check className="absolute right-3 top-3 h-4 w-4 text-slate-900" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            ))}
+            <div className="border-t border-slate-200 pt-4">
+                <Field label="Accessibility" hint="The nearest option — a guest who needs it wants a clear answer.">
+                    <OptionPills options={ACCESSIBILITY_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+                        value={draft.accessibility} onChange={(v) => set({ ...draft, accessibility: draft.accessibility === v ? '' : v })} />
+                </Field>
+            </div>
+            <Field label="Parking">
+                <OptionPills options={PARKING_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+                    value={draft.parking} onChange={(v) => set({ ...draft, parking: draft.parking === v ? '' : v })} />
+            </Field>
+        </div>
+    );
+}
+
+function amenitiesSummary(amenities: string[]): string {
+    const labels = EXPERIENCE_AMENITY_GROUPS.flatMap((g) => g.items).filter((i) => amenities.includes(i.key)).map((i) => i.label);
+    return labels.length ? `${labels.length} added · ${labels.slice(0, 3).join(', ')}` : 'None added yet';
+}
+
+function AmenitiesPhoneCard({ current, onSave }: { current: AmenityDraft; onSave: (d: AmenityDraft) => unknown }) {
+    const c = useCardSheet(current, onSave);
+    return (
+        <>
+            <EditorCard title="Amenities" summary={amenitiesSummary(current.amenities)} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="Amenities" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <AmenityTiles draft={c.draft} set={c.setDraft} />
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+// ── The item sheet (one item) and its card ───────────────────────────────────
+type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string };
+
+function rowFromItem(it: EditorProvider['items'][number]): MenuRow {
+    return {
+        id: it.id, name: it.name, description: it.description, price: amountForBox(it.price),
+        unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
+        fulfilment: it.fulfilment, active: it.active,
+        capacity: it.capacity != null ? String(it.capacity) : '',
+        minPeople: it.min_people != null ? String(it.min_people) : '',
+        includedGuests: it.included_guests != null ? String(it.included_guests) : '',
+        extraAdultFee: amountForBox(it.extra_adult_fee ?? null),
+        extraChildFee: amountForBox(it.extra_child_fee ?? null),
+        maxParty: it.max_party != null ? String(it.max_party) : '',
+        isCustom: !!it.is_custom,
+        ingredients: it.ingredients || '', allergens: it.allergens || '', category: it.category || '',
+    };
+}
+
+function newRow(isSlot: boolean, fulfilment: string): MenuRow {
+    return { name: '', description: '', price: '', unit: isSlot ? 'person' : 'flat', image: null,
+        duration: isSlot ? '60' : '', fulfilment: (isSlot && fulfilment === 'both') ? 'collection' : null, active: true,
+        capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '',
+        isCustom: false, ingredients: '', allergens: '', category: '' };
+}
+
+function itemSummary(r: MenuRow, isSlot: boolean): string {
+    const bits: string[] = [];
+    bits.push(r.price ? `£${r.price} ${unitLabel(r.unit)}` : 'No price yet');
+    if (isSlot && r.duration) bits.push(minutesLabel(Number(r.duration)));
+    if (!r.active) bits.push('hidden');
+    return bits.join(' · ');
+}
+
+// The item editor in our sheet style: photo on top, stacked sentence-case
+// fields, extra-guest pricing behind a link, an on/off switch and a red Delete.
+function ItemSheet({ title, supabase, isSlot, shape, fulfilment, minAge, maxGuests, initial, onClose, onSave, onDelete }: {
+    title: string; supabase: SupabaseClient;
+    isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number;
+    initial: MenuRow; onClose: () => void;
+    onSave: (row: MenuRow) => unknown;
+    onDelete?: () => unknown;
+}) {
+    const [r, setR] = useState<MenuRow>(initial);
+    const [busy, setBusy] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [showExtra, setShowExtra] = useState(!!initial.includedGuests);
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const set = (patch: Partial<MenuRow>) => setR((cur) => ({ ...cur, ...patch }));
+
+    const perItemLocation = isSlot && fulfilment === 'both';
+    const travelledItem = perItemLocation && r.fulfilment === 'delivery';
+    const durMins = Number(r.duration) || 0;
+    const setDuration = (h: number, m: number) => set({ duration: String(Math.max(0, h) * 60 + Math.max(0, Math.min(59, m))) });
+
+    const changeImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = (e.target.files || [])[0];
+        e.target.value = '';
+        if (!file) return;
+        setUploading(true);
+        const k = await uploadImage(supabase, file, 'item');
+        if (k) set({ image: k });
+        setUploading(false);
+    };
+    const save = async () => {
+        if (busy) return;
+        setBusy(true);
+        try { if (await saved(onSave(r))) onClose(); } finally { setBusy(false); }
+    };
+
+    const chargeOptions: { v: string; l: string }[] = [
+        { v: 'person', l: 'Per person' }, { v: 'flat', l: 'Whole session' },
+        ...(['hour', 'night', 'ticket', 'item'].includes(r.unit) ? [{ v: r.unit, l: unitLabel(r.unit) }] : []),
+    ];
+
+    return (
+        <EditorPanel title={title} onClose={onClose} footer={<SheetFooter busy={busy} onCancel={onClose} onSave={save} />}>
+            <div className="space-y-5">
+                <label className="group relative block cursor-pointer">
+                    {r.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={getImageUrl(r.image)} alt="" className="h-44 w-full rounded-2xl object-cover ring-1 ring-slate-200" />
+                    ) : (
+                        <span className="flex h-44 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-300 text-slate-400">
+                            <ImageIcon className="h-7 w-7" />
+                            <span className="text-sm font-medium">Add photo</span>
+                        </span>
+                    )}
+                    {r.image && <span className="absolute inset-x-0 bottom-0 rounded-b-2xl bg-black/45 py-1.5 text-center text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100">Change photo</span>}
+                    <input type="file" accept="image/png, image/jpeg" onChange={changeImage} className="hidden" disabled={uploading} />
+                </label>
+
+                <Field label="Name"><input className={inputCls} placeholder="e.g. 90-minute private sauna" value={r.name} onChange={(e) => set({ name: e.target.value })} /></Field>
+
+                <Field label="Price">
+                    <div className="flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-3 focus-within:border-slate-500">
+                        <span className="text-slate-500">£</span>
+                        <input className="w-full border-0 bg-transparent p-0 text-sm outline-none" type="text" inputMode="decimal" placeholder="0"
+                            value={r.price} onChange={(e) => set({ price: cleanAmountInput(e.target.value) })} />
+                    </div>
+                </Field>
+
+                {perItemLocation && (
+                    <Field label="This one happens">
+                        <div className="flex gap-2">
+                            <button type="button" onClick={() => set({ fulfilment: 'collection' })}
+                                className={`rounded-xl border px-3 py-2 text-sm transition ${(r.fulfilment || 'collection') === 'collection' ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>At my place</button>
+                            <button type="button" onClick={() => set({ fulfilment: 'delivery', unit: 'flat' })}
+                                className={`rounded-xl border px-3 py-2 text-sm transition ${r.fulfilment === 'delivery' ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>I travel to them</button>
+                        </div>
+                    </Field>
+                )}
+
+                {travelledItem ? (
+                    <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">Charged as a whole session — private, you travel.</p>
+                ) : (
+                    <Field label="Charged">
+                        <OptionPills options={chargeOptions.map((o) => ({ value: o.v, label: o.l }))} value={r.unit} onChange={(v) => set({ unit: v })} />
+                    </Field>
+                )}
+
+                {isSlot && (
+                    <Field label="Duration">
+                        <div className="flex items-center gap-2">
+                            <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="0"
+                                value={durMins ? String(Math.floor(durMins / 60)) : ''} onChange={(e) => setDuration(Number(cleanAmountInput(e.target.value, false)) || 0, durMins % 60)} />
+                            <span className="text-sm text-slate-500">hr</span>
+                            <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="0"
+                                value={durMins % 60 ? String(durMins % 60) : ''} onChange={(e) => setDuration(Math.floor(durMins / 60), Number(cleanAmountInput(e.target.value, false)) || 0)} />
+                            <span className="text-sm text-slate-500">min</span>
+                        </div>
+                    </Field>
+                )}
+
+                {isSlot && r.unit === 'person' && (
+                    <Field label="Capacity" hint={`How many this item holds. Blank uses your default of ${maxGuests}.`}>
+                        <div className="flex items-center gap-2">
+                            <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder={String(maxGuests)} value={r.capacity} onChange={(e) => set({ capacity: cleanAmountInput(e.target.value, false) })} />
+                            <span className="text-sm text-slate-500">people</span>
+                        </div>
+                    </Field>
+                )}
+                {!isSlot && r.unit === 'person' && (
+                    <Field label="Smallest party" hint="The fewest you’ll take for this. Blank means one is fine.">
+                        <div className="flex items-center gap-2">
+                            <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="1" value={r.minPeople} onChange={(e) => set({ minPeople: cleanAmountInput(e.target.value, false) })} />
+                            <span className="text-sm text-slate-500">guests</span>
+                        </div>
+                    </Field>
+                )}
+
+                <Field label="Description">
+                    <AutoTextarea className={inputCls} rows={2} placeholder="Optional" value={r.description} onChange={(e) => set({ description: e.target.value })} />
+                </Field>
+
+                {shape === 'made_to_order' && (
+                    <Field label="This item is">
+                        <div className="flex flex-wrap gap-2">
+                            <button type="button" onClick={() => set({ isCustom: false })}
+                                className={`rounded-full border px-3 py-1.5 text-sm transition ${!r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Standard — books instantly</button>
+                            <button type="button" onClick={() => set({ isCustom: true })}
+                                className={`rounded-full border px-3 py-1.5 text-sm transition ${r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Custom — you approve first</button>
+                        </div>
+                    </Field>
+                )}
+                {shape === 'made_to_order' && (
+                    <Field label="Menu section" hint="Optional, e.g. Cakes, Traybakes — groups a long menu.">
+                        <input className={inputCls} maxLength={60} placeholder="e.g. Cakes" value={r.category} onChange={(e) => set({ category: e.target.value })} />
+                    </Field>
+                )}
+                {shape === 'made_to_order' && (
+                    <div className="space-y-2 rounded-xl bg-slate-50 p-3">
+                        <span className="block text-sm font-semibold text-slate-800">Ingredients &amp; allergens <span className="font-normal text-slate-400">(optional — shown on the menu’s info icon)</span></span>
+                        <AutoTextarea className={inputCls} rows={2} placeholder="Ingredients, e.g. Wheat flour, butter, eggs, sugar, Galloway raspberries" value={r.ingredients} onChange={(e) => set({ ingredients: e.target.value })} />
+                        <AutoTextarea className={inputCls} rows={2} placeholder="Allergens, e.g. Contains wheat, egg, milk. Made in a kitchen that handles nuts." value={r.allergens} onChange={(e) => set({ allergens: e.target.value })} />
+                    </div>
+                )}
+
+                {r.unit === 'flat' && !showExtra && (
+                    <button type="button" onClick={() => setShowExtra(true)} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add extra guest pricing</button>
+                )}
+                {r.unit === 'flat' && showExtra && (
+                    <div className="space-y-3 rounded-xl bg-slate-50 p-3">
+                        <span className="block text-sm font-semibold text-slate-800">Extra guest pricing</span>
+                        <Field label="Guests included"><input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="—" value={r.includedGuests} onChange={(e) => set({ includedGuests: cleanAmountInput(e.target.value, false) })} /></Field>
+                        <Field label="Price per extra adult">
+                            <div className="flex items-center gap-1"><span className="text-slate-500">£</span>
+                                <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraAdultFee} onChange={(e) => set({ extraAdultFee: cleanAmountInput(e.target.value) })} /></div>
+                        </Field>
+                        {childrenAllowed(Number(minAge) || null) && (
+                            <Field label="Price per extra child">
+                                <div className="flex items-center gap-1"><span className="text-slate-500">£</span>
+                                    <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraChildFee} onChange={(e) => set({ extraChildFee: cleanAmountInput(e.target.value) })} /></div>
+                            </Field>
+                        )}
+                        <Field label="Maximum group size"><input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="—" value={r.maxParty} onChange={(e) => set({ maxParty: cleanAmountInput(e.target.value, false) })} /></Field>
+                        <p className="text-xs text-slate-400">Leave blank for one flat price. The price never drops below the base.</p>
+                    </div>
+                )}
+
+                <label className="flex items-center justify-between gap-4">
+                    <span className="text-sm font-semibold text-slate-800">Available to book</span>
+                    <button type="button" role="switch" aria-checked={r.active} aria-label="Available to book" onClick={() => set({ active: !r.active })}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors ${r.active ? 'bg-emerald-700' : 'bg-slate-300'}`}>
+                        <span className={`mt-0.5 inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${r.active ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                </label>
+
+                {onDelete && (
+                    <div className="border-t border-slate-100 pt-4">
+                        {confirmDelete ? (
+                            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                                <p className="text-sm font-semibold text-rose-900">Delete this item?</p>
+                                <p className="mt-0.5 text-xs text-rose-800">It comes off your listing straight away.</p>
+                                <div className="mt-3 flex justify-end gap-3">
+                                    <button type="button" onClick={() => setConfirmDelete(false)} className="text-sm font-semibold text-slate-900 underline">Cancel</button>
+                                    <button type="button" onClick={async () => { await onDelete(); onClose(); }} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Delete</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button type="button" onClick={() => setConfirmDelete(true)} className="text-sm font-semibold text-rose-600 hover:text-rose-700">Delete this item</button>
+                        )}
+                    </div>
+                )}
+            </div>
+        </EditorPanel>
+    );
+}
+
+function ItemCard({ row, isSlot, shape, fulfilment, minAge, maxGuests, supabase, onSave, onDelete }: {
+    row: MenuRow; isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number; supabase: SupabaseClient;
+    onSave: (row: MenuRow) => unknown; onDelete: () => unknown;
+}) {
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <EditorCard title={row.name.trim() || 'Untitled item'} summary={itemSummary(row, isSlot)} onClick={() => setOpen(true)} />
+            {open && (
+                <ItemSheet title="Edit item" supabase={supabase} isSlot={isSlot} shape={shape} fulfilment={fulfilment} minAge={minAge} maxGuests={maxGuests}
+                    initial={row} onClose={() => setOpen(false)} onSave={onSave} onDelete={onDelete} />
+            )}
+        </>
+    );
+}
+
+function AddItemButton({ isSlot, shape, fulfilment, minAge, maxGuests, supabase, onSave }: {
+    isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number; supabase: SupabaseClient;
+    onSave: (row: MenuRow) => unknown;
+}) {
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <button type="button" onClick={() => setOpen(true)} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
+            {open && (
+                <ItemSheet title="Add an item" supabase={supabase} isSlot={isSlot} shape={shape} fulfilment={fulfilment} minAge={minAge} maxGuests={maxGuests}
+                    initial={newRow(isSlot, fulfilment)} onClose={() => setOpen(false)} onSave={onSave} />
+            )}
+        </>
+    );
+}
+
+// ── Availability (slot / comes-to-you weekly template) ───────────────────────
 function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onSave }: {
     isSlot: boolean;
     hours: { on: boolean; open: string; close: string }[];
@@ -458,26 +740,22 @@ function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onS
     const c = useCardSheet({ hours, slotLength, turnaround, leadDays }, onSave);
     const title = isSlot ? 'Availability' : 'Opening hours';
     const openDays = hours.map((h, d) => (h.on ? DAY_NAMES[d] : null)).filter(Boolean);
-    const summary = openDays.length ? openDays.join(', ') : 'No hours set';
     const setHour = (d: number, patch: Partial<{ on: boolean; open: string; close: string }>) =>
         c.setDraft({ ...c.draft, hours: c.draft.hours.map((h, j) => (j === d ? { ...h, ...patch } : h)) });
     return (
         <>
-            <EditorCard title={title} summary={summary} onClick={c.start} />
+            <EditorCard title={title} summary={openDays.length ? openDays.join(', ') : 'No hours set'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title={title} onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="space-y-4">
+                <EditorPanel title={title} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <div className="space-y-5">
                         <div>
-                            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Weekly hours</span>
+                            <span className="block text-sm font-semibold text-slate-800">Weekly hours</span>
                             <p className="mt-0.5 text-xs text-slate-400">A specific day off is set in your diary.</p>
                             <div className="mt-2 space-y-1.5">
                                 {DAY_NAMES.map((name, d) => (
                                     <div key={d} className="flex items-center gap-3">
                                         <button type="button" onClick={() => setHour(d, { on: !c.draft.hours[d].on })}
-                                            className={`w-16 rounded-lg border px-2 py-1.5 text-sm font-medium ${c.draft.hours[d].on ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-400'}`}>
-                                            {name}
-                                        </button>
+                                            className={`w-16 rounded-lg border px-2 py-1.5 text-sm font-medium ${c.draft.hours[d].on ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-400'}`}>{name}</button>
                                         {c.draft.hours[d].on ? (
                                             <>
                                                 <input type="time" value={c.draft.hours[d].open} onChange={(e) => setHour(d, { open: e.target.value })} className="rounded-lg border border-slate-300 p-1.5 text-sm" />
@@ -489,24 +767,23 @@ function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onS
                                 ))}
                             </div>
                         </div>
-                        <Field label="Notice needed" hint="How far ahead a guest has to book. The calendar won’t offer a date sooner than this.">
+                        <Field label="Notice needed">
                             <OptionPills options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
                                 value={String(c.draft.leadDays)} onChange={(v) => c.setDraft({ ...c.draft, leadDays: Number(v) })} />
                         </Field>
                         {isSlot && (
                             <>
-                                <Field label="Session length" hint="How long one session runs.">
+                                <Field label="Session length">
                                     <OptionPills options={SESSION_LENGTH_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) }))}
                                         value={String(c.draft.slotLength)} onChange={(v) => c.setDraft({ ...c.draft, slotLength: Number(v) })} />
                                 </Field>
-                                <Field label="Gap between sessions" hint="Time to reset before the next one can start.">
+                                <Field label="Gap between sessions">
                                     <OptionPills options={TURNAROUND_OPTIONS.map((m) => ({ value: String(m), label: m === 0 ? 'None' : `${m} min` }))}
                                         value={String(c.draft.turnaround)} onChange={(v) => c.setDraft({ ...c.draft, turnaround: Number(v) })} />
                                 </Field>
                             </>
                         )}
-                        <Link href="/services/dashboard"
-                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-300 bg-slate-50 p-4 transition hover:border-slate-400">
+                        <Link href="/services/dashboard" className="flex items-center justify-between gap-3 rounded-xl border border-slate-300 bg-slate-50 p-4 transition hover:border-slate-400">
                             <div className="flex items-start gap-3">
                                 <CalendarRange className="mt-0.5 h-5 w-5 flex-none text-slate-500" />
                                 <div>
@@ -523,17 +800,11 @@ function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onS
     );
 }
 
-// Where it happens — how a guest reaches the experience, the private venue
-// address (a guest only ever sees the town) and the regions a travelling
-// provider covers. One save: the where section.
-type WhereDraft = { fulfilment: string; street: string; town: string; postcode: string; deliveryFee: string; deliveryRadius: string; areas: string[] };
-function WhereCard({ fixedInPlace, canTravel, current, onSave }: {
-    fixedInPlace: boolean; canTravel: boolean; current: WhereDraft;
-    onSave: (draft: WhereDraft) => unknown;
-}) {
+// ── Location: travel / regions / delivery (for a travelling experience) ───────
+type WhereExtra = { fulfilment: string; deliveryFee: string; deliveryRadius: string; areas: string[] };
+function HowGuestsReachCard({ current, onSave }: { current: WhereExtra; onSave: (d: WhereExtra) => unknown }) {
     const c = useCardSheet(current, onSave);
     const d = c.draft;
-    const collects = d.fulfilment === 'collection' || d.fulfilment === 'both';
     const travels = d.fulfilment === 'delivery' || d.fulfilment === 'both';
     const ALL = GUEST_REGIONS.find((r) => r.key === GUEST_COVERAGE_ALL_KEY)!.label;
     const toggleRegion = (label: string, isAll: boolean) => {
@@ -541,60 +812,31 @@ function WhereCard({ fixedInPlace, canTravel, current, onSave }: {
         const withoutAll = d.areas.filter((a) => a !== ALL);
         c.setDraft({ ...d, areas: withoutAll.includes(label) ? withoutAll.filter((a) => a !== label) : [...withoutAll, label] });
     };
-    const title = fixedInPlace ? 'Address' : 'Where it happens';
-    const summary = current.town.trim()
-        ? current.town.trim()
-        : (current.fulfilment === 'delivery' ? 'You travel to guests' : 'Add where it happens');
-    const disabled = travels && Number(d.deliveryRadius) > 0 && !d.postcode.trim();
+    const summary = { collection: 'Guests come to you', delivery: 'You travel to guests', both: 'Guests come to you, or you travel' }[current.fulfilment] || 'Set how guests reach you';
     return (
         <>
-            <EditorCard title={title} summary={summary} onClick={c.start} />
+            <EditorCard title="How guests reach you" summary={summary} onClick={c.start} />
             {c.open && (
-                <EditorPanel title={title} onClose={c.close}
-                    footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} disabled={disabled}
-                        disabledLabel="Add your base postcode" />}>
+                <EditorPanel title="How guests reach you" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <div className="space-y-4">
-                        <p className="text-sm text-slate-500">Guests only ever see the town — the street and postcode stay private until a booking is confirmed.</p>
-                        {canTravel ? (
-                            <Field label="How guests get it">
-                                <div className="space-y-2">
-                                    {[
-                                        { key: 'collection', label: 'Guests come to me', note: 'At your studio, sauna, kitchen — one place.' },
-                                        { key: 'delivery', label: 'I travel to the guest', note: 'You go to where they’re staying.' },
-                                        { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
-                                    ].map((o) => (
-                                        <button key={o.key} type="button" onClick={() => c.setDraft({ ...d, fulfilment: o.key })}
-                                            className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${d.fulfilment === o.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'}`}>
-                                            <div className="font-semibold text-slate-900">{o.label}</div>
-                                            <div className="text-xs text-slate-500">{o.note}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </Field>
-                        ) : (
-                            <p className="text-sm text-slate-600">Guests come to you — this kind of experience happens in one place.</p>
-                        )}
-
-                        {collects && (
-                            <div className="space-y-3">
-                                <Field label="Street address (private)"><input className={inputCls} value={d.street} onChange={(e) => c.setDraft({ ...d, street: e.target.value })} placeholder="e.g. 18 Dovecroft" /></Field>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <Field label="Town (shown to guests)"><input className={inputCls} value={d.town} onChange={(e) => c.setDraft({ ...d, town: e.target.value })} placeholder="Kirkcudbright" /></Field>
-                                    <Field label="Postcode (private)"><input className={inputCls} value={d.postcode} onChange={(e) => c.setDraft({ ...d, postcode: e.target.value })} placeholder="DG6 4JS" /></Field>
-                                </div>
-                                <p className="text-xs text-slate-500">Guests see <span className="font-medium text-slate-700">{d.town.trim() || 'your town'}</span>. The street and postcode are released only when a booking is confirmed.</p>
+                        <Field label="How guests get it">
+                            <div className="space-y-2">
+                                {[
+                                    { key: 'collection', label: 'Guests come to me', note: 'At your studio, sauna, kitchen — one place.' },
+                                    { key: 'delivery', label: 'I travel to the guest', note: 'You go to where they’re staying.' },
+                                    { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
+                                ].map((o) => (
+                                    <button key={o.key} type="button" onClick={() => c.setDraft({ ...d, fulfilment: o.key })}
+                                        className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${d.fulfilment === o.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'}`}>
+                                        <div className="font-semibold text-slate-900">{o.label}</div>
+                                        <div className="text-xs text-slate-500">{o.note}</div>
+                                    </button>
+                                ))}
                             </div>
-                        )}
-
-                        {travels && !collects && (
-                            <Field label="Base postcode (private)" hint="A delivery distance is measured from here. Never shown to guests.">
-                                <input className={inputCls} value={d.postcode} onChange={(e) => c.setDraft({ ...d, postcode: e.target.value })} placeholder="DG6 4JS" />
-                            </Field>
-                        )}
-
+                        </Field>
                         {travels && (
                             <div>
-                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Regions you travel to</span>
+                                <span className="block text-sm font-semibold text-slate-800">Regions you travel to</span>
                                 <p className="mt-0.5 text-xs text-slate-400">Pick the parts of Dumfries &amp; Galloway you’ll come to.</p>
                                 <div className="mt-2 space-y-2">
                                     {GUEST_REGIONS.map((rg) => {
@@ -614,226 +856,19 @@ function WhereCard({ fixedInPlace, canTravel, current, onSave }: {
                                 </div>
                             </div>
                         )}
-
                         {travels && (
                             <Field label="Delivery fee" hint="A flat fee added once to a delivery order. Blank is free. Collection is always free.">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">£</span>
-                                    <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="0.00"
-                                        value={d.deliveryFee} onChange={(e) => c.setDraft({ ...d, deliveryFee: cleanAmountInput(e.target.value) })} />
-                                </div>
+                                <div className="flex items-center gap-2"><span className="text-slate-500">£</span>
+                                    <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="0.00" value={d.deliveryFee} onChange={(e) => c.setDraft({ ...d, deliveryFee: cleanAmountInput(e.target.value) })} /></div>
                             </Field>
                         )}
                         {travels && (
-                            <Field label="Delivery distance" hint="How far you’ll travel from your base. An order further than this is turned away before payment. Blank is no limit.">
+                            <Field label="Delivery distance" hint="How far you’ll travel from your base. Further than this is turned away before payment. Blank is no limit.">
                                 <div className="flex items-center gap-2">
-                                    <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="e.g. 10"
-                                        value={d.deliveryRadius} onChange={(e) => c.setDraft({ ...d, deliveryRadius: cleanAmountInput(e.target.value) })} />
-                                    <span className="text-slate-500">miles</span>
-                                </div>
+                                    <input className="w-28 rounded-lg border border-slate-300 p-2 text-sm" inputMode="decimal" placeholder="e.g. 10" value={d.deliveryRadius} onChange={(e) => c.setDraft({ ...d, deliveryRadius: cleanAmountInput(e.target.value) })} />
+                                    <span className="text-slate-500">miles</span></div>
                             </Field>
                         )}
-                    </div>
-                </EditorPanel>
-            )}
-        </>
-    );
-}
-
-// ── What you offer (the menu) ────────────────────────────────────────────────
-type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string };
-
-function rowFromItem(it: EditorProvider['items'][number]): MenuRow {
-    return {
-        id: it.id, name: it.name, description: it.description, price: amountForBox(it.price),
-        unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
-        fulfilment: it.fulfilment, active: it.active,
-        capacity: it.capacity != null ? String(it.capacity) : '',
-        minPeople: it.min_people != null ? String(it.min_people) : '',
-        includedGuests: it.included_guests != null ? String(it.included_guests) : '',
-        extraAdultFee: amountForBox(it.extra_adult_fee ?? null),
-        extraChildFee: amountForBox(it.extra_child_fee ?? null),
-        maxParty: it.max_party != null ? String(it.max_party) : '',
-        isCustom: !!it.is_custom,
-        ingredients: it.ingredients || '',
-        allergens: it.allergens || '',
-        category: it.category || '',
-    };
-}
-
-function MenuCard({ supabase, isSlot, shape, fulfilment, minAge, maxGuests, items, onSave }: {
-    supabase: SupabaseClient;
-    isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number;
-    items: EditorProvider['items'];
-    onSave: (rows: MenuRow[]) => unknown;
-}) {
-    const [open, setOpen] = useState(false);
-    const [busy, setBusy] = useState(false);
-    const [uploading, setUploading] = useState(false);
-    const [menu, setMenu] = useState<MenuRow[]>(items.map(rowFromItem));
-    const start = () => { setMenu(items.map(rowFromItem)); setOpen(true); };
-    const close = () => setOpen(false);
-    const save = async () => {
-        if (busy) return;
-        setBusy(true);
-        try { if (await saved(onSave(menu))) setOpen(false); } finally { setBusy(false); }
-    };
-    const setRow = (i: number, patch: Partial<MenuRow>) => setMenu((m) => m.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-    const changeImage = async (i: number, e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = (e.target.files || [])[0];
-        e.target.value = '';
-        if (!file) return;
-        setUploading(true);
-        const k = await uploadImage(supabase, file, 'item');
-        if (k) setRow(i, { image: k });
-        setUploading(false);
-    };
-    const priced = items.filter((it) => it.active && it.name.trim() && Number(it.price) > 0);
-    const summary = items.length
-        ? `${priced.length || items.length} ${(priced.length || items.length) === 1 ? 'item' : 'items'}${priced[0] ? ' · ' + priced[0].name : ''}`
-        : 'Add what guests book';
-    const perItemLocation = isSlot && fulfilment === 'both';
-
-    return (
-        <>
-            <EditorCard title="What you offer" summary={summary} onClick={start} />
-            {open && (
-                <EditorPanel title="What you offer" onClose={close}
-                    footer={<SheetFooter busy={busy} onCancel={close} onSave={save} />}>
-                    <div className="space-y-4">
-                        <p className="text-sm text-slate-500">What a guest books, with a price.{isSlot ? ' A slot prices per person or as a whole session.' : ''}</p>
-                        {!menu.some((r) => r.active && r.name.trim() && Number(r.price) > 0) && (
-                            <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                                <Check className="mt-0.5 h-4 w-4 flex-none" />
-                                You have no priced item. Until you add one, your listing can’t be booked and won’t appear.
-                            </div>
-                        )}
-                        {menu.map((r, i) => (
-                            <div key={r.id || `new-${i}`} className="rounded-xl border border-slate-200 p-4">
-                                <div className="flex items-start gap-4">
-                                    <label className="group relative flex-none cursor-pointer">
-                                        {r.image ? (
-                                            // eslint-disable-next-line @next/next/no-img-element
-                                            <img src={getImageUrl(r.image)} alt="" className="h-24 w-24 rounded-2xl object-cover ring-1 ring-slate-200" />
-                                        ) : (
-                                            <span className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-300 text-slate-400">
-                                                <ImageIcon className="h-6 w-6" />
-                                                <span className="text-xs font-medium">Add photo</span>
-                                            </span>
-                                        )}
-                                        {r.image && <span className="absolute inset-x-0 bottom-0 rounded-b-2xl bg-black/45 py-1 text-center text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100">Change</span>}
-                                        <input type="file" accept="image/png, image/jpeg" onChange={(e) => changeImage(i, e)} className="hidden" disabled={uploading} />
-                                    </label>
-                                    <div className="flex-1 space-y-3">
-                                        <input className={inputCls} placeholder="Name (e.g. 90-minute private sauna)" value={r.name} onChange={(e) => setRow(i, { name: e.target.value })} />
-                                        {perItemLocation && (
-                                            <div>
-                                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">This one happens</span>
-                                                <div className="mt-1 flex gap-2">
-                                                    <button type="button" onClick={() => setRow(i, { fulfilment: 'collection' })}
-                                                        className={`rounded-xl border px-3 py-2 text-sm transition ${(r.fulfilment || 'collection') === 'collection' ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>At my place</button>
-                                                    <button type="button" onClick={() => setRow(i, { fulfilment: 'delivery', unit: 'flat' })}
-                                                        className={`rounded-xl border px-3 py-2 text-sm transition ${r.fulfilment === 'delivery' ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>I travel to them</button>
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div className="flex flex-wrap gap-3">
-                                            <label className="flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus-within:border-slate-500">
-                                                <span className="text-slate-500">£</span>
-                                                <input className="w-20 border-0 bg-transparent p-0 text-sm outline-none" type="text" inputMode="decimal" placeholder="0"
-                                                    value={r.price} onChange={(e) => setRow(i, { price: cleanAmountInput(e.target.value) })} />
-                                            </label>
-                                            {perItemLocation && r.fulfilment === 'delivery' ? (
-                                                <span className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">Whole session — private, you travel</span>
-                                            ) : (
-                                                <select className="rounded-xl border border-slate-300 p-2.5 text-sm" value={r.unit} onChange={(e) => setRow(i, { unit: e.target.value })}>
-                                                    <option value="flat">whole session</option>
-                                                    <option value="person">per person</option>
-                                                    {!isSlot && <option value="hour">per hour</option>}
-                                                    {!isSlot && <option value="night">per night</option>}
-                                                    {!isSlot && <option value="ticket">per ticket</option>}
-                                                    {!isSlot && <option value="item">per item</option>}
-                                                </select>
-                                            )}
-                                            {isSlot && (
-                                                <label className="flex items-center gap-1 text-sm text-slate-500">
-                                                    <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="text" inputMode="numeric" placeholder="mins" value={r.duration} onChange={(e) => setRow(i, { duration: cleanAmountInput(e.target.value, false) })} />
-                                                    <span>min</span>
-                                                </label>
-                                            )}
-                                        </div>
-                                        {isSlot && r.unit === 'person' && (
-                                            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3">
-                                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Capacity</span>
-                                                <span className="flex items-center gap-1">
-                                                    <input className="w-20 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="numeric" placeholder={String(maxGuests)} value={r.capacity} onChange={(e) => setRow(i, { capacity: cleanAmountInput(e.target.value, false) })} />
-                                                    <span className="text-slate-500 text-sm">people</span>
-                                                </span>
-                                                <span className="w-full text-xs text-slate-400">Blank uses your default of {maxGuests}.</span>
-                                            </div>
-                                        )}
-                                        {!isSlot && r.unit === 'person' && (
-                                            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3">
-                                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Smallest party</span>
-                                                <span className="flex items-center gap-1">
-                                                    <input className="w-20 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="numeric" placeholder="1" value={r.minPeople} onChange={(e) => setRow(i, { minPeople: cleanAmountInput(e.target.value, false) })} />
-                                                    <span className="text-slate-500 text-sm">guests</span>
-                                                </span>
-                                                <span className="w-full text-xs text-slate-400">The fewest you’ll take for this. Blank means one is fine.</span>
-                                            </div>
-                                        )}
-                                        {r.unit === 'flat' && (
-                                            <div className="space-y-2 rounded-xl bg-slate-50 p-3">
-                                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Extra guests (optional)</span>
-                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-600">
-                                                    <label className="flex items-center gap-1">Includes
-                                                        <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="numeric" placeholder="—" value={r.includedGuests} onChange={(e) => setRow(i, { includedGuests: cleanAmountInput(e.target.value, false) })} /> guests</label>
-                                                    <label className="flex items-center gap-1">+£
-                                                        <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraAdultFee} onChange={(e) => setRow(i, { extraAdultFee: cleanAmountInput(e.target.value) })} /> per extra adult</label>
-                                                    {childrenAllowed(Number(minAge) || null) && (
-                                                        <label className="flex items-center gap-1">+£
-                                                            <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraChildFee} onChange={(e) => setRow(i, { extraChildFee: cleanAmountInput(e.target.value) })} /> per extra child</label>
-                                                    )}
-                                                    <label className="flex items-center gap-1">Max party
-                                                        <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="numeric" placeholder="—" value={r.maxParty} onChange={(e) => setRow(i, { maxParty: cleanAmountInput(e.target.value, false) })} /></label>
-                                                </div>
-                                                <span className="block text-xs text-slate-400">Leave blank for one flat price. The price never drops below the base.</span>
-                                            </div>
-                                        )}
-                                        {shape === 'made_to_order' && (
-                                            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3">
-                                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">This item is</span>
-                                                <button type="button" onClick={() => setRow(i, { isCustom: false })}
-                                                    className={`rounded-full border px-3 py-1.5 text-sm transition ${!r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Standard — books instantly</button>
-                                                <button type="button" onClick={() => setRow(i, { isCustom: true })}
-                                                    className={`rounded-full border px-3 py-1.5 text-sm transition ${r.isCustom ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Custom — you approve first</button>
-                                            </div>
-                                        )}
-                                        {shape === 'made_to_order' && (
-                                            <label className="block">
-                                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Menu section <span className="font-normal normal-case tracking-normal text-slate-400">(optional, e.g. Cakes)</span></span>
-                                                <input className={inputCls} maxLength={60} placeholder="e.g. Cakes" value={r.category} onChange={(e) => setRow(i, { category: e.target.value })} />
-                                            </label>
-                                        )}
-                                        <AutoTextarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
-                                        {shape === 'made_to_order' && (
-                                            <div className="space-y-2 rounded-xl bg-slate-50 p-3">
-                                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Ingredients &amp; allergens <span className="font-normal normal-case tracking-normal text-slate-400">(optional — shown on the menu’s info icon)</span></span>
-                                                <AutoTextarea className={inputCls} rows={2} placeholder="Ingredients, e.g. Wheat flour, butter, eggs, sugar, Galloway raspberries" value={r.ingredients} onChange={(e) => setRow(i, { ingredients: e.target.value })} />
-                                                <AutoTextarea className={inputCls} rows={2} placeholder="Allergens, e.g. Contains wheat, egg, milk. Made in a kitchen that handles nuts." value={r.allergens} onChange={(e) => setRow(i, { allergens: e.target.value })} />
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="mt-3 flex items-center justify-between">
-                                    <button type="button" onClick={() => setRow(i, { active: !r.active })}
-                                        className={`text-xs font-semibold ${r.active ? 'text-emerald-700' : 'text-slate-400'}`}>{r.active ? 'Active' : 'Hidden'}</button>
-                                    <button type="button" onClick={() => setMenu((m) => m.filter((_, j) => j !== i))} className="text-xs text-slate-500 hover:text-red-600">Remove</button>
-                                </div>
-                            </div>
-                        ))}
-                        <button type="button" onClick={() => setMenu((m) => [...m, { name: '', description: '', price: '', unit: 'flat', image: null, duration: isSlot ? '60' : '', fulfilment: (isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '', isCustom: false, ingredients: '', allergens: '', category: '' }])}
-                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                     </div>
                 </EditorPanel>
             )}
@@ -846,13 +881,10 @@ function MenuCard({ supabase, isSlot, shape, fulfilment, minAge, maxGuests, item
 export default function ProviderListingEditor({ provider }: { provider: EditorProvider }) {
     const [p] = useState(provider);
     const supabase = createClientComponentClient();
-    const [active, setActive] = useState<NavKey>('experience');
+    const [active, setActive] = useState<NavKey>('basics');
     const [paused, setPaused] = useState(provider.owner_paused);
     const [pausing, setPausing] = useState(false);
 
-    // On a phone the editor is one continuous page with a sticky tab bar; on
-    // desktop the chosen section only, beside a sticky list. Decided in JS so a
-    // card is mounted once.
     const [isPhone, setIsPhone] = useState(false);
     useEffect(() => {
         const mq = window.matchMedia('(max-width: 767px)');
@@ -863,8 +895,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     }, []);
     const shows = (key: NavKey) => isPhone || active === key;
 
-    // Committed values. Each card holds its own draft and, on Save, writes the
-    // section then applies the draft here.
     const [businessName, setBusinessName] = useState(p.business_name);
     const [profTitle, setProfTitle] = useState(p.professional_title);
     const [years, setYears] = useState(p.years_experience);
@@ -893,8 +923,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [leadDays, setLeadDays] = useState(Math.max(0, Number(p.lead_time_days || 0)));
     const [horizonDays, setHorizonDays] = useState(Math.max(1, Number(p.booking_horizon_days || 90)));
 
-    // Where it happens. Fixed-in-place categories (a sauna, a tasting) never
-    // offer travel; only the yoga/massage/painting kind genuinely goes either way.
     const fixedInPlace = p.isSlot && !!p.category && p.category !== 'other' && !slotAsksWhereFork(p.category);
     const canTravel = !fixedInPlace;
     const [fulfilment, setFulfilment] = useState(fixedInPlace ? 'collection' : (p.fulfilment || 'collection'));
@@ -904,17 +932,18 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [deliveryFee, setDeliveryFee] = useState(amountForBox(p.delivery_fee));
     const [deliveryRadius, setDeliveryRadius] = useState(amountForBox(p.delivery_radius_miles));
     const [areas, setAreas] = useState<string[]>(p.areas);
+    const [showPrecise, setShowPrecise] = useState(p.show_precise_location);
 
     const initialMaxGroup = p.isSlot ? p.slot_capacity : p.max_guests;
     const [maxGuests, setMaxGuests] = useState<number>(initialMaxGroup && initialMaxGroup > 0 ? initialMaxGroup : (p.isSlot ? 8 : 6));
 
-    const [items, setItems] = useState<EditorProvider['items']>(p.items);
+    const [menu, setMenu] = useState<MenuRow[]>(p.items.map(rowFromItem));
     const [photos, setPhotos] = useState<string[]>(p.photos);
     const photosRef = useRef<string[]>(p.photos);
     const [logo] = useState<string | null>(p.logo);
 
     // One write of one section. No "Saved" pop-up — the sheet closing is the
-    // confirmation (Airbnb's way); only a failure says anything.
+    // confirmation; only a failure speaks. Serialised so two quick saves land in order.
     const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
     const write = async (section: string, data: any): Promise<boolean> => {
         try {
@@ -935,12 +964,50 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         saveQueue.current = next;
         return next;
     };
-    // Write a section, and apply the draft to committed state only if it went through.
     const runThen = (section: string, data: any, apply: () => void) =>
         run(section, data).then((ok) => { if (ok) apply(); return ok; });
 
-    // Photos save as Airbnb's do — each add / reorder / delete is written at
-    // once and put back if the write fails (reusing the holiday editor's flow).
+    // Section payloads built from committed state, so a card that edits one
+    // field still sends its section whole.
+    const thingsPayload = (o: Partial<{ minAge: string; activity: string; whatToBring: string }> = {}) => ({
+        min_age: o.minAge ?? minAge, activity_level: o.activity ?? activity, what_to_bring: o.whatToBring ?? whatToBring,
+    });
+    const amenitiesPayload = (o: Partial<AmenityDraft> = {}) => ({
+        amenities: o.amenities ?? amenities, accessibility: o.accessibility ?? accessibility, parking: o.parking ?? parking,
+    });
+    const bookingPayload = (o: Partial<{ maxGuests: number; leadDays: number; horizonDays: number }> = {}) => ({
+        max_guests: o.maxGuests ?? maxGuests, lead_time_days: o.leadDays ?? leadDays, booking_horizon_days: o.horizonDays ?? horizonDays,
+    });
+    const wherePayload = (o: Partial<{ fulfilment: string; street: string; town: string; postcode: string; deliveryFee: string; deliveryRadius: string; areas: string[]; showPrecise: boolean }> = {}) => {
+        const f = o.fulfilment ?? fulfilment;
+        const travels = f === 'delivery' || f === 'both';
+        return {
+            fulfilment: f,
+            collection_street: o.street ?? street, collection_town: o.town ?? town, collection_postcode: o.postcode ?? postcode,
+            delivery_fee: travels ? (o.deliveryFee ?? deliveryFee) : 0,
+            delivery_radius_miles: travels ? (o.deliveryRadius ?? deliveryRadius) : 0,
+            areas: travels ? (o.areas ?? areas) : [],
+            show_precise_location: o.showPrecise ?? showPrecise,
+        };
+    };
+
+    // The menu saves the whole items array (upsert-by-id, delete-missing), so a
+    // single item's Save / Delete sends every item.
+    const menuPayload = (rows: MenuRow[]) => ({
+        items: rows.map((r) => ({
+            id: r.id, name: r.name, description: r.description, price: r.price, unit: r.unit, image: r.image,
+            duration_minutes: r.duration, fulfilment: r.fulfilment, active: r.active,
+            capacity: r.capacity, min_people: r.minPeople, included_guests: r.includedGuests,
+            extra_adult_fee: r.extraAdultFee, extra_child_fee: r.extraChildFee, max_party: r.maxParty,
+            is_custom: r.isCustom, ingredients: r.ingredients, allergens: r.allergens, category: r.category,
+        })),
+    });
+    const saveMenu = (rows: MenuRow[]) => runThen('menu', menuPayload(rows), () => setMenu(rows));
+    const saveItemAt = (i: number, row: MenuRow) => saveMenu(menu.map((r, j) => (j === i ? row : r)));
+    const addItem = (row: MenuRow) => saveMenu([...menu, row]);
+    const deleteItemAt = (i: number) => saveMenu(menu.filter((_, j) => j !== i));
+
+    // Photos: each change saves at once, put back if the write fails.
     const savePhotos: SavePhotos = (change) => {
         const before = photosRef.current;
         const next = change(before);
@@ -950,6 +1017,23 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
             if (!ok && photosRef.current === next) { photosRef.current = before; setPhotos(before); }
             return ok;
         });
+    };
+
+    // Amenities on desktop save on a tap (optimistic, put back on failure).
+    const toggleAmenityNow = (next: string[]) => {
+        const before = amenities;
+        setAmenities(next);
+        run('amenities', amenitiesPayload({ amenities: next })).then((ok) => { if (!ok) setAmenities(before); });
+    };
+    const setAccessibilityNow = (next: string) => {
+        const before = accessibility;
+        setAccessibility(next);
+        run('amenities', amenitiesPayload({ accessibility: next })).then((ok) => { if (!ok) setAccessibility(before); });
+    };
+    const setParkingNow = (next: string) => {
+        const before = parking;
+        setParking(next);
+        run('amenities', amenitiesPayload({ parking: next })).then((ok) => { if (!ok) setParking(before); });
     };
 
     async function togglePaused() {
@@ -962,8 +1046,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
     const headings = stepHeadings(p.shape, fulfilment);
 
-    // What's still empty — surfaced, never blocking. Read from live state so it
-    // clears as sections are filled in.
     const missing: string[] = [];
     if (!headshot) missing.push('a photo of yourself');
     if (!photos.length) missing.push('photos of the experience');
@@ -974,12 +1056,13 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     if (!activity.trim()) missing.push('the activity level');
 
     const hasHours = p.isSlot || p.shape === 'comes_to_you';
+    const hasVenue = p.venue_lat != null && p.venue_lng != null;
     const SECTIONS: { key: NavKey; label: string; short: string; icon: any }[] = [
-        { key: 'experience', label: 'The experience', short: 'Experience', icon: FileText },
+        { key: 'basics', label: 'Basics & guests', short: 'Basics', icon: FileText },
         { key: 'photos', label: 'Photos', short: 'Photos', icon: ImageIcon },
-        { key: 'included', label: 'What’s included', short: 'Included', icon: Sparkles },
+        { key: 'amenities', label: 'Amenities', short: 'Amenities', icon: Sparkles },
         { key: 'know', label: 'Good to know', short: 'Good to know', icon: Info },
-        { key: 'where', label: fixedInPlace ? 'Address' : 'Location', short: fixedInPlace ? 'Address' : 'Location', icon: MapPin },
+        { key: 'location', label: 'Location', short: 'Location', icon: MapPin },
         ...(hasHours ? [{ key: 'availability' as NavKey, label: p.isSlot ? 'Availability' : 'Opening hours', short: p.isSlot ? 'Availability' : 'Hours', icon: CalendarRange }] : []),
         { key: 'pricing', label: 'Pricing & booking', short: 'Pricing', icon: ShoppingBag },
         { key: 'cancellation', label: 'Cancellation', short: 'Cancellation', icon: RotateCcw },
@@ -988,19 +1071,17 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         { key: 'status', label: 'Listing status', short: 'Status', icon: (paused || p.admin_hidden) ? EyeOff : Eye },
     ];
 
-    // On a phone each section is a block the tab bar can scroll to, under its
-    // heading. Photos and Status carry their own heading, so they don't get one.
-    // A plain function (not a component) so a parent re-render never remounts an
-    // open card's sheet.
     const OWN_HEADING = new Set<NavKey>(['photos', 'status']);
-    const sec = (id: NavKey, children: React.ReactNode) => {
-        if (!shows(id)) return null;
-        const label = SECTIONS.find((s) => s.key === id)?.label;
-        const heading = !OWN_HEADING.has(id) && <h2 className="text-xl font-bold text-slate-900">{label}</h2>;
+    const sec = (key: NavKey, children: React.ReactNode) => {
+        if (!shows(key)) return null;
+        const label = SECTIONS.find((s) => s.key === key)?.label;
+        const heading = !OWN_HEADING.has(key) && <h2 className="text-xl font-bold text-slate-900">{label}</h2>;
         return isPhone
-            ? <div data-editor-section={id} className="mt-14 space-y-4 first:mt-0">{heading}{children}</div>
+            ? <div data-editor-section={key} className="mt-14 space-y-4 first:mt-0">{heading}{children}</div>
             : <div className="space-y-4">{heading}{children}</div>;
     };
+
+    const hasPricedItem = menu.some((r) => r.active && r.name.trim() && Number(r.price) > 0);
 
     return (
         <div className="mx-auto w-full max-w-5xl px-5 py-8">
@@ -1020,9 +1101,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
             {hasHours && p.availability.length === 0 && !paused && (
                 <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4">
                     <div className="font-semibold text-amber-900">You’re not bookable yet — add your weekly hours</div>
-                    <p className="mt-1 text-sm text-amber-900/80">
-                        Guests book a time from your weekly hours. Until you set them, your listing generates no times and won’t appear in the marketplace.
-                    </p>
+                    <p className="mt-1 text-sm text-amber-900/80">Guests book a time from your weekly hours. Until you set them, your listing generates no times and won’t appear in the marketplace.</p>
                     <button type="button" onClick={() => (isPhone ? goToEditorSection('availability') : setActive('availability'))}
                         className="mt-3 rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white">Set your hours</button>
                 </div>
@@ -1050,50 +1129,52 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 )}
 
                 <div className="min-w-0 space-y-6">
-                    {sec('experience', (<>
-                        <TitleCard value={businessName}
-                            onSave={(v) => runThen('title', { business_name: v }, () => setBusinessName(v))} />
+                    {sec('basics', (<>
+                        <TitleCard value={businessName} onSave={(v) => runThen('title', { business_name: v }, () => setBusinessName(v))} />
                         <WhatHappensCard whatToExpect={whatToExpect} phases={phases} headings={headings}
-                            onSave={(d) => runThen('happens', {
-                                what_to_expect: d.whatToExpect,
-                                itinerary: headings.map((h, i) => ({ title: h.title, detail: d.phases[i] })),
-                            }, () => { setWhatToExpect(d.whatToExpect); setPhases(d.phases); })} />
+                            onSave={(d) => runThen('happens', { what_to_expect: d.whatToExpect, itinerary: headings.map((h, i) => ({ title: h.title, detail: d.phases[i] })) },
+                                () => { setWhatToExpect(d.whatToExpect); setPhases(d.phases); })} />
+                        <MaxCapacityCard isSlot={p.isSlot} value={maxGuests}
+                            onSave={(v) => runThen('booking', bookingPayload({ maxGuests: v }), () => setMaxGuests(v))} />
                     </>))}
 
                     {sec('photos', (
+                        isPhone ? <PhotosCard photos={photos} savePhotos={savePhotos} /> : <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone={false} />
+                    ))}
+
+                    {sec('amenities', (
                         isPhone
-                            ? <PhotosCard photos={photos} savePhotos={savePhotos} />
-                            : <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone={false} />
+                            ? <AmenitiesPhoneCard current={{ amenities, accessibility, parking }}
+                                onSave={(d) => runThen('amenities', amenitiesPayload(d), () => { setAmenities(d.amenities); setAccessibility(d.accessibility); setParking(d.parking); })} />
+                            : <AmenityTiles draft={{ amenities, accessibility, parking }}
+                                set={(d) => {
+                                    if (d.amenities !== amenities) toggleAmenityNow(d.amenities);
+                                    else if (d.accessibility !== accessibility) setAccessibilityNow(d.accessibility);
+                                    else if (d.parking !== parking) setParkingNow(d.parking);
+                                }} />
                     ))}
 
-                    {sec('included', (
-                        <WhatsIncludedCard amenities={amenities} accessibility={accessibility} parking={parking}
-                            onSave={(d) => runThen('amenities', { amenities: d.amenities, accessibility: d.accessibility, parking: d.parking },
-                                () => { setAmenities(d.amenities); setAccessibility(d.accessibility); setParking(d.parking); })} />
-                    ))}
+                    {sec('know', (<>
+                        <MinimumAgeCard minAge={minAge} onSave={(v) => runThen('things', thingsPayload({ minAge: v }), () => setMinAge(v))} />
+                        <ActivityLevelCard activity={activity} onSave={(v) => runThen('things', thingsPayload({ activity: v }), () => setActivity(v))} />
+                        <WhatToBringCard whatToBring={whatToBring} onSave={(v) => runThen('things', thingsPayload({ whatToBring: v }), () => setWhatToBring(v))} />
+                    </>))}
 
-                    {sec('know', (
-                        <GoodToKnowCard minAge={minAge} activity={activity} whatToBring={whatToBring}
-                            onSave={(d) => runThen('things', { min_age: d.minAge, activity_level: d.activity, what_to_bring: d.whatToBring },
-                                () => { setMinAge(d.minAge); setActivity(d.activity); setWhatToBring(d.whatToBring); })} />
-                    ))}
+                    {sec('location', (<>
+                        {hasVenue && <PropertyMap variant="host" latitude={p.venue_lat!} longitude={p.venue_lng!} />}
+                        <AddressCard town={town} street={street} postcode={postcode} propertyType=""
+                            onSave={(t, st, pc) => runThen('where', wherePayload({ town: t, street: st, postcode: pc }),
+                                () => { setTown(t); setStreet(st); setPostcode(pc); })} />
+                        {canTravel && (
+                            <HowGuestsReachCard current={{ fulfilment, deliveryFee, deliveryRadius, areas }}
+                                onSave={(d) => runThen('where', wherePayload({ fulfilment: d.fulfilment, deliveryFee: d.deliveryFee, deliveryRadius: d.deliveryRadius, areas: d.areas }),
+                                    () => { setFulfilment(d.fulfilment); setDeliveryFee(d.deliveryFee); setDeliveryRadius(d.deliveryRadius); setAreas(d.areas); })} />
+                        )}
+                        <LocationSharingCard precise={showPrecise}
+                            onSave={(v) => runThen('where', wherePayload({ showPrecise: v }), () => setShowPrecise(v))} />
+                    </>))}
 
-                    {sec('where', (
-                        <WhereCard fixedInPlace={fixedInPlace} canTravel={canTravel}
-                            current={{ fulfilment, street, town, postcode, deliveryFee, deliveryRadius, areas }}
-                            onSave={(d) => {
-                                const travels = d.fulfilment === 'delivery' || d.fulfilment === 'both';
-                                return runThen('where', {
-                                    fulfilment: d.fulfilment,
-                                    collection_street: d.street, collection_town: d.town, collection_postcode: d.postcode,
-                                    delivery_fee: travels ? d.deliveryFee : 0,
-                                    delivery_radius_miles: travels ? d.deliveryRadius : 0,
-                                    areas: travels ? d.areas : [],
-                                }, () => { setFulfilment(d.fulfilment); setStreet(d.street); setTown(d.town); setPostcode(d.postcode); setDeliveryFee(d.deliveryFee); setDeliveryRadius(d.deliveryRadius); setAreas(d.areas); });
-                            }} />
-                    ))}
-
-                    {hasHours && sec('availability', (
+                    {hasHours && sec('availability', (<>
                         <AvailabilityCard isSlot={p.isSlot} hours={hours} slotLength={slotLength} turnaround={turnaround} leadDays={leadDays}
                             onSave={(d) => runThen('availability', {
                                 slot_length_minutes: d.slotLength, slot_turnaround_minutes: d.turnaround, lead_time_days: d.leadDays,
@@ -1101,52 +1182,42 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     .filter((h) => h.on && h.open && h.close && h.open < h.close)
                                     .map((h) => ({ day_of_week: h.day_of_week, open_time: h.open, close_time: h.close })),
                             }, () => { setHours(d.hours); setSlotLength(d.slotLength); setTurnaround(d.turnaround); setLeadDays(d.leadDays); })} />
-                    ))}
+                        <HorizonCard horizonDays={horizonDays} onSave={(v) => runThen('booking', bookingPayload({ horizonDays: v }), () => setHorizonDays(v))} />
+                    </>))}
 
                     {sec('pricing', (<>
-                        <MenuCard supabase={supabase} isSlot={p.isSlot} shape={p.shape} fulfilment={fulfilment} minAge={minAge} maxGuests={maxGuests} items={items}
-                            onSave={(rows) => runThen('menu', {
-                                items: rows.map((r) => ({
-                                    id: r.id, name: r.name, description: r.description, price: r.price,
-                                    unit: r.unit, image: r.image, duration_minutes: r.duration,
-                                    fulfilment: r.fulfilment, active: r.active,
-                                    capacity: r.capacity, min_people: r.minPeople,
-                                    included_guests: r.includedGuests, extra_adult_fee: r.extraAdultFee,
-                                    extra_child_fee: r.extraChildFee, max_party: r.maxParty,
-                                    is_custom: r.isCustom, ingredients: r.ingredients, allergens: r.allergens, category: r.category,
-                                })),
-                            }, () => setItems(rows.filter((r) => r.name.trim() && Number(r.price) > 0).map((r) => ({
-                                id: r.id || `tmp-${generateRandomNumber()}`, name: r.name, description: r.description,
-                                price: Number(r.price) || 0, unit: r.unit, image: r.image,
-                                duration_minutes: r.duration ? Number(r.duration) : null, fulfilment: r.fulfilment, active: r.active,
-                                capacity: r.capacity ? Number(r.capacity) : null, min_people: r.minPeople ? Number(r.minPeople) : null,
-                                included_guests: r.includedGuests ? Number(r.includedGuests) : null,
-                                extra_adult_fee: r.extraAdultFee ? Number(r.extraAdultFee) : null,
-                                extra_child_fee: r.extraChildFee ? Number(r.extraChildFee) : null,
-                                max_party: r.maxParty ? Number(r.maxParty) : null,
-                                is_custom: r.isCustom, ingredients: r.ingredients || null, allergens: r.allergens || null, category: r.category || null,
-                            })))) } />
-                        <BookingCard isSlot={p.isSlot} shape={p.shape} maxGuests={maxGuests} leadDays={leadDays} horizonDays={horizonDays}
-                            onSave={(d) => runThen('booking', { max_guests: d.maxGuests, lead_time_days: d.leadDays, booking_horizon_days: d.horizonDays },
-                                () => { setMaxGuests(d.maxGuests); setLeadDays(d.leadDays); setHorizonDays(d.horizonDays); })} />
+                        {!hasPricedItem && (
+                            <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                                <Info className="mt-0.5 h-4 w-4 flex-none" />
+                                You have no priced item. Until you add one, your listing can’t be booked and won’t appear.
+                            </div>
+                        )}
+                        {menu.map((row, i) => (
+                            <ItemCard key={row.id || `new-${i}`} row={row} isSlot={p.isSlot} shape={p.shape} fulfilment={fulfilment} minAge={minAge} maxGuests={maxGuests} supabase={supabase}
+                                onSave={(r) => saveItemAt(i, r)} onDelete={() => deleteItemAt(i)} />
+                        ))}
+                        <AddItemButton isSlot={p.isSlot} shape={p.shape} fulfilment={fulfilment} minAge={minAge} maxGuests={maxGuests} supabase={supabase} onSave={addItem} />
+                        {!hasHours && (
+                            <div className="space-y-4 pt-2">
+                                <NoticeCard leadDays={leadDays} onSave={(v) => runThen('booking', bookingPayload({ leadDays: v }), () => setLeadDays(v))} />
+                                <HorizonCard horizonDays={horizonDays} onSave={(v) => runThen('booking', bookingPayload({ horizonDays: v }), () => setHorizonDays(v))} />
+                            </div>
+                        )}
                     </>))}
 
                     {sec('cancellation', (
                         <CancellationCard hours={cancelHours} noRefund={noRefund}
-                            onSave={(d) => runThen('cancellation', { cancellation_window_hours: d.hours, no_refund: !!d.noRefund },
-                                () => { setCancelHours(d.hours); setNoRefund(d.noRefund); })} />
+                            onSave={(d) => runThen('cancellation', { cancellation_window_hours: d.hours, no_refund: !!d.noRefund }, () => { setCancelHours(d.hours); setNoRefund(d.noRefund); })} />
                     ))}
 
                     {sec('host', (
                         <HostProfileCard supabase={supabase} profTitle={profTitle} years={years} quals={quals} recognition={recognition} headshot={headshot}
-                            onSave={(d) => runThen('about', {
-                                professional_title: d.profTitle, years_experience: d.years, qualifications: d.quals, recognition: d.recognition, headshot: d.headshot,
-                            }, () => { setProfTitle(d.profTitle); setYears(d.years); setQuals(d.quals); setRecognition(d.recognition); setHeadshot(d.headshot); })} />
+                            onSave={(d) => runThen('about', { professional_title: d.profTitle, years_experience: d.years, qualifications: d.quals, recognition: d.recognition, headshot: d.headshot },
+                                () => { setProfTitle(d.profTitle); setYears(d.years); setQuals(d.quals); setRecognition(d.recognition); setHeadshot(d.headshot); })} />
                     ))}
 
                     {p.isFood && sec('dietary', (
-                        <DietaryCard dietaryNote={dietaryNote}
-                            onSave={(v) => runThen('dietary', { dietary_note: v, dietary_options: p.dietary_options }, () => setDietaryNote(v))} />
+                        <DietaryCard dietaryNote={dietaryNote} onSave={(v) => runThen('dietary', { dietary_note: v, dietary_options: p.dietary_options }, () => setDietaryNote(v))} />
                     ))}
 
                     {sec('status', (

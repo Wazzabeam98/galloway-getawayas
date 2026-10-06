@@ -215,6 +215,12 @@ export async function POST(request: Request) {
             case 'where': {
                 const fulfilment = strOrNull(data.fulfilment);
                 patch = { fulfilment };
+                // Location sharing: off (the default) keeps the public map's
+                // approximate pin; on shows the venue point unjittered. Only
+                // written here; the public page reads it via the service role.
+                if (data.show_precise_location !== undefined) {
+                    patch.show_precise_location = data.show_precise_location === true;
+                }
                 const collects = fulfilment === 'collection' || fulfilment === 'both';
                 // A flat delivery fee, only meaningful when the provider travels;
                 // clamped to a sane range, and forced to 0 for a collection-only one.

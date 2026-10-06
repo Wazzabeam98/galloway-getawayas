@@ -232,6 +232,9 @@ export interface MpProvider {
     // "roughly here" pin on a fixed venue's listing. Never the exact address.
     mapLat: number | null;
     mapLng: number | null;
+    // The provider turned on "Show the precise location": the map shows the
+    // venue point unjittered instead of the approximate area.
+    mapPrecise: boolean;
     // The only honest trust signal we can show today: how many confirmed
     // bookings this provider has taken through the site. Zero reads as "New
     // here" on the card rather than as nothing — a stranger booking a chef into
@@ -368,7 +371,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     // payout-ready, an MCC — still applies exactly as for a live one.
     let query = admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at, venue_lat, venue_lng')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at, venue_lat, venue_lng, show_precise_location')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
     query = pausedId
         ? query.eq('id', pausedId).or('owner_paused.eq.true,admin_hidden_at.not.is.null')
@@ -637,6 +640,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             // The venue's own point (lib/venuePoint.ts), never a 0,0 region row.
             mapLat: venueMapPoint(p, areasBy[p.id])?.lat ?? null,
             mapLng: venueMapPoint(p, areasBy[p.id])?.lng ?? null,
+            mapPrecise: (p as any).show_precise_location === true,
             bookingsCount: bookingsCountBy[p.id] || 0,
         });
     }
