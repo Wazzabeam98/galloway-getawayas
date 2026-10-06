@@ -35,10 +35,21 @@ function round2(value: number): number {
 }
 
 export interface Blocker {
-    kind: 'listing' | 'experience' | 'trade' | 'stay_in_progress';
+    // 'own_trip' only ever comes from the DELETION set (deletionBlockers) — a
+    // deactivation cancels the person's own upcoming trips rather than blocking.
+    kind: 'listing' | 'experience' | 'trade' | 'stay_in_progress' | 'own_trip';
     entityId: string;
     entityName: string;
     detail: string;
+}
+
+function mapBlockers(data: any): Blocker[] {
+    return (data || []).map((r: any) => ({
+        kind: r.kind,
+        entityId: r.entity_id,
+        entityName: r.entity_name,
+        detail: r.detail,
+    }));
 }
 
 // The single source of what stops a deactivation — the SQL function, so the
@@ -46,12 +57,19 @@ export interface Blocker {
 export async function deactivationBlockers(admin: any, uid: string): Promise<Blocker[]> {
     const { data, error } = await admin.rpc('account_deactivation_blockers', { target: uid });
     if (error) throw new Error(error.message);
-    return (data || []).map((r: any) => ({
-        kind: r.kind,
-        entityId: r.entity_id,
-        entityName: r.entity_name,
-        detail: r.detail,
-    }));
+    return mapBlockers(data);
+}
+
+// What stops a DELETION: everything that stops a deactivation PLUS the person's
+// own upcoming trips. Deletion is permanent and does not cancel-and-refund those
+// trips the way deactivation does, so a paid future stay must be cancelled first
+// rather than left behind an erased guest. Same single-function discipline: the
+// account page's pre-check and admin_anonymise_account's hard guard both go
+// through account_deletion_blockers, so they can never drift apart.
+export async function deletionBlockers(admin: any, uid: string): Promise<Blocker[]> {
+    const { data, error } = await admin.rpc('account_deletion_blockers', { target: uid });
+    if (error) throw new Error(error.message);
+    return mapBlockers(data);
 }
 
 export interface TripCancelSummary {

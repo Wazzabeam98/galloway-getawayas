@@ -131,10 +131,12 @@ export default function AccountSettings() {
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deleting, setDeleting] = useState(false);
-    // When deletion is refused because live reservations/requests remain, this
-    // holds the same per-listing/experience/trade blockers deactivation returns.
+    // When deletion is refused, this holds the per-entity blockers the server
+    // returned: the same listing/experience/trade/stay-in-progress set that
+    // deactivation returns, PLUS the person's own upcoming trips (kind
+    // 'own_trip'), whose entityId is the booking so we can link to its cancel page.
     const [deleteBlockers, setDeleteBlockers] = useState<
-        Array<{ kind: string; entityName: string; detail: string }>
+        Array<{ kind: string; entityId: string; entityName: string; detail: string }>
     >([]);
     const [deactivateOpen, setDeactivateOpen] = useState(false);
     const [deactivating, setDeactivating] = useState(false);
@@ -1350,7 +1352,7 @@ export default function AccountSettings() {
                                                     <li>Your personal details — your name, contact details, address and photos — are permanently removed, and you won&apos;t be able to sign back in.</li>
                                                     <li>Reviews you&apos;ve written stay visible, shown as from a deleted user. The messages you&apos;ve sent are removed; the replies other people wrote stay in their own inbox, so their history isn&apos;t torn up.</li>
                                                     <li>Your booking and payment records are kept — the law requires us to hold them for six years — but they&apos;re no longer linked to an account you can use.</li>
-                                                    <li>This can&apos;t be undone. You can&apos;t delete while other people are relying on you — a listing with bookings, an experience with orders, or a trade with open enquiries. Deal with those first, as you would to deactivate.</li>
+                                                    <li>This can&apos;t be undone. You can&apos;t delete while other people are relying on you — a listing with bookings, an experience with orders, or a trade with open enquiries — or while you have an upcoming trip of your own. Cancel your trips, and see out or cancel anything others are relying on, first.</li>
                                                 </ul>
 
                                                 {deleteBlockers.length > 0 && (
@@ -1359,13 +1361,22 @@ export default function AccountSettings() {
                                                             Deal with these first
                                                         </div>
                                                         <p className="text-xs text-amber-800/90 mb-3">
-                                                            These still have reservations or requests on them. You can&apos;t delete while other people are relying on them — see them out or cancel them, then try again.
+                                                            You can&apos;t delete while other people are relying on you, or while you have a trip of your own still to come. Sort these out — cancel each upcoming trip, and see out or cancel anything with reservations or requests on it — then try again.
                                                         </p>
                                                         <ul className="text-xs text-amber-900 space-y-1.5">
                                                             {deleteBlockers.map((b, i) => (
                                                                 <li key={i} className="flex items-start">
                                                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 mr-2 flex-shrink-0" />
-                                                                    <span><strong>{b.entityName}</strong> — {b.detail}</span>
+                                                                    {b.kind === 'own_trip' ? (
+                                                                        <span>
+                                                                            <strong>{b.entityName}</strong> — {b.detail}.{' '}
+                                                                            <Link href={`/trips/${b.entityId}`} className="font-semibold underline hover:text-amber-950">
+                                                                                Cancel this trip
+                                                                            </Link>
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span><strong>{b.entityName}</strong> — {b.detail}</span>
+                                                                    )}
                                                                 </li>
                                                             ))}
                                                         </ul>

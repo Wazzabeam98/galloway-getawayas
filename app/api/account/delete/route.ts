@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
-import { deactivationBlockers } from '@/lib/deactivateAccount';
+import { deletionBlockers } from '@/lib/deactivateAccount';
 
 // Closing an account ANONYMISES it — it never deletes the profile or auth row,
 // because bookings/payments/payouts/orders are RESTRICT-linked to them and must
@@ -12,13 +12,15 @@ import { deactivationBlockers } from '@/lib/deactivateAccount';
 // database function can't: it removes the person's images from the public
 // storage bucket, and it authenticates the caller before scrubbing.
 //
-// THE BLOCK IS THE SAME AS DEACTIVATION. A permanent erasure must refuse for
-// exactly the reasons a reversible deactivation refuses — a listing with other
-// people's live reservations, an experience with live orders, a trade with open
-// enquiries, a stay in progress — so neither path can erase an account someone
-// else is relying on. We run the same account_deactivation_blockers pre-check
-// here (deactivationBlockers), to answer a 409 with the per-entity list the
-// account page renders, and the RPC re-runs the identical set as its hard guard.
+// THE BLOCK. A permanent erasure must refuse for everything a reversible
+// deactivation refuses — a listing with other people's live reservations, an
+// experience with live orders, a trade with open enquiries, a stay in progress —
+// PLUS the person's own upcoming trips. Deactivation cancels-and-refunds those
+// trips; deletion is permanent and does not, so a paid future stay must be
+// cancelled first rather than left standing behind an erased guest. That whole
+// set is account_deletion_blockers (deletionBlockers). We run it here to answer a
+// 409 with the per-entity list the account page renders, and the RPC re-runs the
+// identical set as its hard guard.
 //
 // Order: gather the storage paths, scrub the account (which guards against the
 // blocker set and raises if anything is live — so a blocked erasure touches
@@ -48,14 +50,15 @@ export async function POST() {
         const uid = user.id;
         const admin = adminClient();
 
-        // 0. The block — identical to deactivation. Nothing is touched if any
-        //    listing/experience/trade of theirs has other people relying on it,
-        //    or if they are mid-stay. The friendly per-entity list goes back as
-        //    409 so the account page can name what to deal with; the scrub RPC
-        //    re-runs the same set as its hard guard below.
-        const blockers = await deactivationBlockers(admin, uid);
+        // 0. The block. Nothing is touched if any listing/experience/trade of
+        //    theirs has other people relying on it, if they are mid-stay, or if
+        //    they have an upcoming trip of their own. The friendly per-entity list
+        //    goes back as 409 so the account page can name what to deal with (and
+        //    link each own-trip straight to its cancel page); the scrub RPC re-runs
+        //    the same set as its hard guard below.
+        const blockers = await deletionBlockers(admin, uid);
         if (blockers.length > 0) {
-            return NextResponse.json({ error: 'You still have things other people are relying on.', blocked: blockers }, { status: 409 });
+            return NextResponse.json({ error: 'You still have things to deal with before closing your account.', blocked: blockers }, { status: 409 });
         }
 
         // 1. Gather every storage object owned by this user, before the scrub

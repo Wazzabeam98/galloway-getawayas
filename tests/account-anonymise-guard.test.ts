@@ -60,27 +60,49 @@ test('account closure anonymises: new functions exist, old delete is gone, booki
 
 // Deletion must block on EXACTLY what deactivation blocks on, so a permanent
 // erasure can never leave a guest, host or provider relying on an account that
-// has vanished. The one source of truth is account_deactivation_blockers; both
-// the DB guard and the route's friendly pre-check must go through it. Pinned
-// statically so the web-editor paste path can't quietly reintroduce the old
-// booking-only count that missed experience orders and trade enquiries.
-test('the latest deletion migration guards on the deactivation blocker set, not a bespoke booking count', () => {
-    const sql = read('supabase/migrations/20261006081500_delete_uses_the_deactivation_blocker_set.sql');
+// has vanished. The one source of truth for DELETION is account_deletion_blockers
+// (the deactivation set PLUS the person's own upcoming trips); both the DB guard
+// and the route's friendly pre-check must go through it. Pinned statically so the
+// web-editor paste path can't quietly reintroduce the old booking-only count that
+// missed experience orders and trade enquiries, or drop the own-trip refusal.
+const DELETION_MIGRATION = 'supabase/migrations/20261006085500_deletion_also_blocks_on_own_upcoming_trips.sql';
+
+test('the latest deletion migration guards on the deletion blocker set, not a bespoke booking count', () => {
+    const sql = read(DELETION_MIGRATION);
     const fn = sql.slice(sql.indexOf('function public.admin_anonymise_account'));
     const guard = fn.slice(0, fn.indexOf('THE PERSON THEMSELVES'));
-    assert.match(guard, /account_deactivation_blockers\(uid\)/,
-        'the erasure guard must count account_deactivation_blockers(uid)');
+    assert.match(guard, /account_deletion_blockers\(uid\)/,
+        'the erasure guard must count account_deletion_blockers(uid)');
     // The old shape — a direct count over bookings in the guard — must be gone.
     assert.doesNotMatch(guard, /from public\.bookings/,
         'the guard must not run its own bookings query; it defers to the shared blocker set');
 });
 
-test('the delete route pre-checks the deactivation blockers and answers 409 with the list', () => {
+test('the deletion blocker set is the deactivation set PLUS the person\'s own upcoming trips', () => {
+    const sql = read(DELETION_MIGRATION);
+    const fn = sql.slice(sql.indexOf('function public.account_deletion_blockers'), sql.indexOf('$$;'));
+    // It builds on the deactivation set rather than re-listing it — so the two
+    // can never drift apart.
+    assert.match(fn, /from public\.account_deactivation_blockers\(target\)/,
+        'account_deletion_blockers must include the deactivation set');
+    // And adds the person's own strictly-future trips.
+    assert.match(fn, /'own_trip'::text/, 'it must add an own_trip row');
+    assert.match(fn, /b\.guest_id = target/, 'the own-trip rows are the caller\'s own bookings');
+    assert.match(fn, /b\.check_in > current_date/, 'only strictly-future trips (in-progress is the deactivation set\'s stay_in_progress)');
+    assert.match(fn, /b\.status in \('pending', 'confirmed'\)/, 'only live bookings');
+
+    // Deactivation must NOT have gained own_trip — it cancels those, not blocks.
+    const deact = read('supabase/migrations/20261002091040_deactivate_and_reactivate_account_reversibly.sql');
+    assert.doesNotMatch(deact, /'own_trip'::text/,
+        'deactivation must never block on the person\'s own future trips — it refunds them');
+});
+
+test('the delete route pre-checks the deletion blockers and answers 409 with the list', () => {
     const src = read('app/api/account/delete/route.ts');
-    assert.match(src, /deactivationBlockers\(admin, uid\)/,
-        'the route must use the shared deactivationBlockers helper');
+    assert.match(src, /deletionBlockers\(admin, uid\)/,
+        'the route must use the shared deletionBlockers helper (deactivation set + own trips)');
     assert.match(src, /status:\s*409/, 'a blocked deletion must answer 409 so the account page can list the blockers');
-    const block = src.indexOf('deactivationBlockers(admin, uid)');
+    const block = src.indexOf('deletionBlockers(admin, uid)');
     const rpc = src.indexOf("rpc('anonymise_own_account')");
     assert.ok(block > -1 && rpc > -1 && block < rpc, 'the block is checked before the scrub RPC');
 });
