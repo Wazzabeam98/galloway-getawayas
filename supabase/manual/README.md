@@ -19,3 +19,8 @@ warning appears in `supabase/migrations/` again.
 Nothing here is applied by `scripts/migrate.mjs`, which takes one named file at
 a time and never a directory. Production SQL is pasted by hand regardless — see
 `MAINTENANCE.md`.
+
+`auth-email-templates.md` is not SQL. It is here because the Supabase auth email
+templates are also applied by hand in the dashboard, and getting one wrong
+silently breaks sign-up for anyone on a business inbox. Read it before editing
+those templates.
