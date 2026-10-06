@@ -123,3 +123,19 @@ test('the fallback stays quiet when the host already covers the listing', async 
     const fallbacks = messages.filter((m) => /practical details for getting in/.test(m.body));
     assert.equal(fallbacks.length, 0, 'no fallback on top of the host message');
 });
+
+test('a self-check-in fallback opens a sealed code for the guest', async () => {
+    const before = process.env.LISTING_SECRETS_KEY;
+    process.env.LISTING_SECRETS_KEY = require('crypto').randomBytes(32).toString('base64');
+    try {
+        const { sealSecret } = require('../lib/secretBox');
+        const sealed = sealSecret('5150', { table: 'listing_access_codes', id: 'l1' });
+        const { route, messages } = load({ templates: [], booking: BOOKING(), listing: { ...LISTING, check_in_method: 'Lockbox' }, code: sealed });
+        await route.GET(authed());
+        assert.equal(messages.length, 1);
+        assert.match(messages[0].body, /5150/, 'the plain code');
+        assert.doesNotMatch(messages[0].body, /v1:/, 'never the ciphertext');
+    } finally {
+        if (before === undefined) delete process.env.LISTING_SECRETS_KEY; else process.env.LISTING_SECRETS_KEY = before;
+    }
+});

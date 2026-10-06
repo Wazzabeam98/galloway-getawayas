@@ -384,7 +384,7 @@ test('one template left open to all listings still gives each property its own c
 // Nothing caught it because the earlier route test handed templates in
 // directly rather than letting the query shape them.
 
-function loadScopedRun(opts: { templates: any[]; scopes: any[]; bookings: any[]; listings: any[] }) {
+function loadScopedRun(opts: { templates: any[]; scopes: any[]; bookings: any[]; listings: any[]; codes?: any[]; overrides?: any[] }) {
     const messages: any[] = [];
     const selects: Record<string, string> = {};
 
@@ -410,6 +410,8 @@ function loadScopedRun(opts: { templates: any[]; scopes: any[]; bookings: any[];
                     if (table === 'bookings') return (r: any) => r({ data: opts.bookings, error: null });
                     if (table === 'listings') return (r: any) => r({ data: opts.listings, error: null });
                     if (table === 'profiles') return (r: any) => r({ data: [{ id: 'g1', full_name: 'Alex Guest' }], error: null });
+                    if (table === 'listing_access_codes') return (r: any) => r({ data: opts.codes || [], error: null });
+                    if (table === 'booking_access_codes') return (r: any) => r({ data: opts.overrides || [], error: null });
                     if (table === 'messages') {
                         const ins = state.ops.find((o: any) => o.op === 'insert');
                         if (ins) messages.push(ins.args[0]);
@@ -522,3 +524,62 @@ test('the host’s name for a message is never read on the send path', async () 
     assert.doesNotMatch(messages[0].body, /SECRET INTERNAL LABEL/, 'a guest must never see it');
     assert.doesNotMatch(selects['message_templates'], /\bname\b/, 'and the send path does not even ask for it');
 });
+
+// Door codes are stored sealed (lib/secretBox). The sender opens them at the
+// moment of sending: the guest gets the plain code, never the ciphertext.
+const crypto = require('crypto');
+const { sealSecret } = require('../lib/secretBox');
+const withSecretsKey = <T>(fn: () => Promise<T>) => async () => {
+    const before = process.env.LISTING_SECRETS_KEY;
+    process.env.LISTING_SECRETS_KEY = crypto.randomBytes(32).toString('base64');
+    try { return await fn(); } finally {
+        if (before === undefined) delete process.env.LISTING_SECRETS_KEY; else process.env.LISTING_SECRETS_KEY = before;
+    }
+};
+const codeTemplate = scopedTemplate('t-code', 'Check-in', 'The lockbox code is {lockbox_code}.');
+const harbour = { id: 'harbour', title: 'Harbour Cottage', check_in_time: '15:00:00', check_out_time: '11:00:00' };
+
+test('a sealed door code reaches the guest as the plain code', withSecretsKey(async () => {
+    const { route, messages } = loadScopedRun({
+        templates: [codeTemplate], scopes: [],
+        bookings: [arrivingSoon('b1', 'harbour'), arrivingSoon('b2', 'harbour')],
+        listings: [harbour],
+        codes: [{ listing_id: 'harbour', code: sealSecret('4821', { table: 'listing_access_codes', id: 'harbour' }) }],
+        overrides: [{ booking_id: 'b2', code: sealSecret('9073', { table: 'booking_access_codes', id: 'b2' }) }],
+    });
+    await route.GET(new Request('http://example.invalid/x', { headers: { authorization: 'Bearer test-secret' } }));
+    const b1 = messages.filter((m) => m.booking_id === 'b1')[0];
+    const b2 = messages.filter((m) => m.booking_id === 'b2')[0];
+    assert.equal(b1.body, 'The lockbox code is 4821.', 'the listing code, opened');
+    assert.equal(b2.body, 'The lockbox code is 9073.', 'this booking\u2019s own code wins, opened');
+    for (const m of messages) assert.doesNotMatch(m.body, /v1:/, 'never the ciphertext');
+}));
+
+test('a sealed code this key cannot open is treated as no code: held, never sent blank or as ciphertext', withSecretsKey(async () => {
+    const otherKey = crypto.randomBytes(32).toString('base64');
+    const mine = process.env.LISTING_SECRETS_KEY;
+    process.env.LISTING_SECRETS_KEY = otherKey;
+    const sealedElsewhere = sealSecret('4821', { table: 'listing_access_codes', id: 'harbour' });
+    process.env.LISTING_SECRETS_KEY = mine;
+    const { route, messages } = loadScopedRun({
+        templates: [codeTemplate], scopes: [], bookings: [arrivingSoon('b1', 'harbour')], listings: [harbour],
+        codes: [{ listing_id: 'harbour', code: sealedElsewhere }],
+    });
+    await route.GET(new Request('http://example.invalid/x', { headers: { authorization: 'Bearer test-secret' } }));
+    // Exactly as if no code were set: the host's code message is held, and
+    // the floor message (if any) says the way in will follow.
+    assert.equal(messages.filter((m) => /lockbox code is/.test(m.body)).length, 0, 'the code message is held');
+    for (const m of messages) {
+        assert.doesNotMatch(m.body, /v1:/, 'never the ciphertext');
+        assert.match(m.body, /confirm exactly how to get in/, 'the way in is said to follow');
+    }
+}));
+
+test('a code stored before encryption still reaches the guest', withSecretsKey(async () => {
+    const { route, messages } = loadScopedRun({
+        templates: [codeTemplate], scopes: [], bookings: [arrivingSoon('b1', 'harbour')], listings: [harbour],
+        codes: [{ listing_id: 'harbour', code: '1234' }],
+    });
+    await route.GET(new Request('http://example.invalid/x', { headers: { authorization: 'Bearer test-secret' } }));
+    assert.equal(messages[0].body, 'The lockbox code is 1234.');
+}));

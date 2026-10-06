@@ -75,6 +75,10 @@
     {
       "path": "/api/cron/resend-quota",
       "schedule": "50 * * * *"
+    },
+    {
+      "path": "/api/cron/seal-listing-secrets",
+      "schedule": "25 * * * *"
     }
   ]
 }

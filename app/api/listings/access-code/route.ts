@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { logError } from '@/lib/logError';
+import { revealSecret, sealSecret } from '@/lib/listingSecrets';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,9 +50,11 @@ export async function GET(request: Request) {
             .eq('listing_id', listingId)
             .maybeSingle();
 
+        // Stored sealed (lib/secretBox); opened here, for the host, only.
+        const code = data ? await revealSecret(data.code, { table: 'listing_access_codes', id: listingId }, 'listings/access-code') : null;
         return NextResponse.json({
             ok: true,
-            code: (data && data.code) || '',
+            code: code || '',
             updated_at: (data && data.updated_at) || null,
         });
     } catch (err: any) {
@@ -96,7 +99,9 @@ export async function POST(request: Request) {
             .upsert(
                 {
                     listing_id: listingId,
-                    code: code,
+                    // Encrypted before it is stored: a copy of the database
+                    // shows ciphertext, never the code.
+                    code: sealSecret(code, { table: 'listing_access_codes', id: listingId }),
                     updated_at: new Date().toISOString(),
                     // A door code is a credential. Being able to say who set
                     // it, and when, is part of being able to answer for it.

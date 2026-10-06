@@ -24,6 +24,7 @@ import {
     ChevronRight,
 } from "lucide-react";
 import ReservationHeader from "@/components/dashboard/reservation/ReservationHeader";
+import { revealSecret } from '@/lib/listingSecrets';
 
 // One booking, in full.
 //
@@ -161,8 +162,9 @@ export default async function BookingDetail({ params }: { params: { id: string }
             admin.from('booking_access_codes').select('code').eq('booking_id', booking.id).maybeSingle(),
         ])
         : [{ data: null }, { data: null }];
-    const listingCode = access.can_listing ? (codeRow?.code || null) : null;
-    const doorCodeOverride = access.can_listing ? (overrideRow?.code || null) : null;
+    // Stored sealed (lib/secretBox); opened only here, behind can_listing.
+    const listingCode = access.can_listing && codeRow ? await revealSecret(codeRow.code, { table: 'listing_access_codes', id: booking.listing_id }, 'dashboard/bookings') : null;
+    const doorCodeOverride = access.can_listing && overrideRow ? await revealSecret(overrideRow.code, { table: 'booking_access_codes', id: booking.id }, 'dashboard/bookings') : null;
     const doorCode = doorCodeOverride || listingCode;
 
     // The host's private notes box has been removed from this page. The table
