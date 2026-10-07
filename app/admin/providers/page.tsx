@@ -248,6 +248,120 @@ export default async function AdminProviders() {
         };
     });
 
+    // Split by CATEGORY now (Liam, 7 Oct 2026): experiences (a guest audience)
+    // and trades (host/both) each get their own section, and within each the
+    // waiting-for-review rows sit above the live ones — so "waiting" is always
+    // separate from "approved". Holiday lets are a separate table reviewed on
+    // /admin/listings and are not shown here. The section anchors (#experiences /
+    // #trades) are what the burger-menu and owner-tools counts deep-link to, so
+    // a number takes you straight to the right section.
+    const isExp = (r: any) => r.audience === 'guest';
+    const isTrade = (r: any) => r.audience === 'host' || r.audience === 'both';
+
+    // One review row, so the three buckets don't each repeat the whole prop
+    // wiring (they did, and a fourth would have been a fourth copy). `changed`
+    // adds the edited-fields summary the "Live, with changes" bucket shows.
+    const reviewRow = (p: any, opts: { changed?: boolean } = {}) => (
+        <ProviderReviewRow
+            key={p.id}
+            provider={{
+                ...p,
+                tradeLabel: tradeLabel(p.trade),
+                logoUrl: p.headshot ? getImageUrl(p.headshot) : (p.logo ? getImageUrl(p.logo) : null),
+                initials: initialsFor(p.business_name),
+                ...(opts.changed ? { changedFields: changedFields(p).map(fieldLabel) } : {}),
+                calloutLine: calloutLine(p.callout_fee, p.callout_waived),
+                personName: personName(p),
+                items: itemsFor(p.id),
+            }}
+            areas={areasFor(p.id)}
+            photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
+            registrations={regsFor(p.id)}
+            blockers={blockersFor(p)}
+            emailVerified={verified.has(p.owner_id) ? verified.get(p.owner_id) : null}
+            skills={skillsFor(p.id).map((skill: any) => ({
+                ...skill,
+                public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({
+                    scheme: r.scheme,
+                    verified: r.verified,
+                }))),
+                reason: blockedSkillReason(skill, p.trade,
+                    skill.regulated_concept === 'electrical'
+                        ? p.trade === 'electrician'
+                        : asksAboutFuel(p.trade)),
+            }))}
+        />
+    );
+
+    // A whole category (Experiences or Trades): its waiting-for-review rows,
+    // then its live-with-changes rows, then everyone else — each only when it
+    // has something. The header and its anchor always render, so the deep link
+    // works and an empty category reads as "nothing here" rather than vanishing.
+    const categorySection = (
+        anchor: string,
+        title: string,
+        inCat: (r: any) => boolean,
+        noun: string,
+        nounPlural: string,
+    ) => {
+        const w = waiting.filter(inCat);
+        const ch = changed.filter(inCat);
+        const rs = rest.filter(inCat);
+        const sweepable = w.filter((p: any) => blockersFor(p).length === 0).map((p: any) => p.id);
+        return (
+            <section id={anchor} className="mb-14 scroll-mt-6">
+                <h2 className="text-lg font-bold text-slate-900 mb-1">{title}</h2>
+                <p className="text-sm text-slate-500 mb-5">
+                    {w.length > 0
+                        ? `${w.length} waiting for review`
+                        : 'Nothing waiting for review'}
+                    {ch.length > 0 ? ` · ${ch.length} with changes to look at` : ''}
+                </p>
+
+                {w.length > 0 && (
+                    <div className="mb-10">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-700 mb-3">
+                            Waiting for review
+                        </h3>
+                        <BulkApprove
+                            endpoint="/api/admin/providers"
+                            ids={sweepable}
+                            noun={noun}
+                            nounPlural={nounPlural}
+                        />
+                        <div className="space-y-4">
+                            {w.map((p: any) => reviewRow(p))}
+                        </div>
+                    </div>
+                )}
+
+                {ch.length > 0 && (
+                    <div className="mb-10">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                            Live, with changes to look at
+                        </h3>
+                        <div className="space-y-4">
+                            {ch.map((p: any) => reviewRow(p, { changed: true }))}
+                        </div>
+                    </div>
+                )}
+
+                <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                        Approved and the rest
+                    </h3>
+                    {rs.length === 0 ? (
+                        <p className="text-sm text-slate-500">None yet.</p>
+                    ) : (
+                        <div className="space-y-4">
+                            {rs.map((p: any) => reviewRow(p))}
+                        </div>
+                    )}
+                </div>
+            </section>
+        );
+    };
+
     return (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
             <Link href="/admin" className="text-sm text-slate-500 hover:text-slate-800 underline">
@@ -269,123 +383,10 @@ export default async function AdminProviders() {
 
             <WaitingOnApplicant rows={unclaimed} />
 
-            {waiting.length > 0 && (
-                <section className="mb-12">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                        Waiting for review
-                    </h2>
-
-                    {/* Only the ones with nothing blocking them. A business
-                        whose registration has not been verified is in the list
-                        below to be looked at, not swept through with the rest. */}
-                    <BulkApprove
-                        endpoint="/api/admin/providers"
-                        ids={waiting.filter((p: any) => blockersFor(p).length === 0).map((p: any) => p.id)}
-                        noun="business"
-                        nounPlural="businesses"
-                    />
-
-                    <div className="space-y-4">
-                        {waiting.map((p: any) => (
-                            <ProviderReviewRow
-                                key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.headshot ? getImageUrl(p.headshot) : (p.logo ? getImageUrl(p.logo) : null), initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p), items: itemsFor(p.id) }}
-                                areas={areasFor(p.id)}
-                                photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
-                                registrations={regsFor(p.id)}
-                                blockers={blockersFor(p)}
-                                emailVerified={verified.has(p.owner_id) ? verified.get(p.owner_id) : null}
-                                skills={skillsFor(p.id).map((skill: any) => ({
-                                    ...skill,
-                                    public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({
-                                        scheme: r.scheme,
-                                        verified: r.verified,
-                                    }))),
-                                    reason: blockedSkillReason(skill, p.trade,
-                                        skill.regulated_concept === 'electrical'
-                                            ? p.trade === 'electrician'
-                                            : asksAboutFuel(p.trade)),
-                                }))}
-                            />
-                        ))}
-                    </div>
-                </section>
-            )}
-
-            {changed.length > 0 && (
-                <section className="mb-12">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                        Live, with changes to look at
-                    </h2>
-                    <div className="space-y-4">
-                        {changed.map((p: any) => (
-                            <ProviderReviewRow
-                                key={p.id}
-                                provider={{
-                                    ...p,
-                                    tradeLabel: tradeLabel(p.trade),
-                                    logoUrl: p.headshot ? getImageUrl(p.headshot) : (p.logo ? getImageUrl(p.logo) : null),
-                                    initials: initialsFor(p.business_name),
-                                    changedFields: changedFields(p).map(fieldLabel),
-                                    calloutLine: calloutLine(p.callout_fee, p.callout_waived),
-                                    personName: personName(p),
-                                    items: itemsFor(p.id),
-                                }}
-                                areas={areasFor(p.id)}
-                                photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
-                                registrations={regsFor(p.id)}
-                                blockers={blockersFor(p)}
-                                emailVerified={verified.has(p.owner_id) ? verified.get(p.owner_id) : null}
-                                skills={skillsFor(p.id).map((skill: any) => ({
-                                    ...skill,
-                                    public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({
-                                        scheme: r.scheme,
-                                        verified: r.verified,
-                                    }))),
-                                    reason: blockedSkillReason(skill, p.trade,
-                                        skill.regulated_concept === 'electrical'
-                                            ? p.trade === 'electrician'
-                                            : asksAboutFuel(p.trade)),
-                                }))}
-                            />
-                        ))}
-                    </div>
-                </section>
-            )}
-
-            <section>
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                    Everyone else
-                </h2>
-                {rest.length === 0 ? (
-                    <p className="text-sm text-slate-500">Nobody has signed up yet.</p>
-                ) : (
-                    <div className="space-y-4">
-                        {rest.map((p: any) => (
-                            <ProviderReviewRow
-                                key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.headshot ? getImageUrl(p.headshot) : (p.logo ? getImageUrl(p.logo) : null), initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p), items: itemsFor(p.id) }}
-                                areas={areasFor(p.id)}
-                                photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
-                                registrations={regsFor(p.id)}
-                                blockers={blockersFor(p)}
-                                emailVerified={verified.has(p.owner_id) ? verified.get(p.owner_id) : null}
-                                skills={skillsFor(p.id).map((skill: any) => ({
-                                    ...skill,
-                                    public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({
-                                        scheme: r.scheme,
-                                        verified: r.verified,
-                                    }))),
-                                    reason: blockedSkillReason(skill, p.trade,
-                                        skill.regulated_concept === 'electrical'
-                                            ? p.trade === 'electrician'
-                                            : asksAboutFuel(p.trade)),
-                                }))}
-                            />
-                        ))}
-                    </div>
-                )}
-            </section>
+            {/* Two category sections, each waiting-above-approved, each with its
+                own deep-link anchor. Holiday lets live on /admin/listings. */}
+            {categorySection('experiences', 'Experiences', isExp, 'experience', 'experiences')}
+            {categorySection('trades', 'Trades', isTrade, 'business', 'businesses')}
         </div>
     );
 }

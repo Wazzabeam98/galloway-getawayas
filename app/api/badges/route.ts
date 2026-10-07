@@ -1,7 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { unreadFor, pendingFor, providerRequestsFor } from '@/lib/badgeCounts';
+import { unreadFor, pendingFor, providerRequestsFor, adminPendingFor, EMPTY_ADMIN_PENDING } from '@/lib/badgeCounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,16 +32,19 @@ export async function GET() {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-        return NextResponse.json({ unread: 0, pending: 0, requests: 0 });
+        return NextResponse.json({ unread: 0, pending: 0, requests: 0, admin: EMPTY_ADMIN_PENDING });
     }
 
     // In parallel: they touch different tables and none needs another's answer,
-    // so the request costs the slowest of the three rather than the sum.
-    const [unread, pending, requests] = await Promise.all([
+    // so the request costs the slowest rather than the sum. `admin` is zeros for
+    // a non-admin (adminPendingFor short-circuits on the profile check), so this
+    // stays the owner-only numbers it looks like.
+    const [unread, pending, requests, admin] = await Promise.all([
         unreadFor(supabase, user.id),
         pendingFor(user.id),
         providerRequestsFor(user.id),
+        adminPendingFor(user.id),
     ]);
 
-    return NextResponse.json({ unread, pending, requests });
+    return NextResponse.json({ unread, pending, requests, admin });
 }

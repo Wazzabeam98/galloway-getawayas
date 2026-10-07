@@ -27,14 +27,26 @@ import { useEffect, useState } from 'react';
 
 const POLL_MS = 120000;
 
+// The three "waiting on the admin" numbers, split so each can point at the page
+// and section that clears it. Zeros for a non-admin.
+export interface AdminCounts {
+    holidayLets: number;
+    experiences: number;
+    trades: number;
+}
+
 interface Counts {
     unread: number;
     pending: number;
     // Requests waiting on a trade to answer (the provider mirror of `pending`).
     requests: number;
+    // Admin review queues, by category. Zeros unless the viewer is an admin.
+    admin: AdminCounts;
 }
 
-let counts: Counts = { unread: 0, pending: 0, requests: 0 };
+const ZERO_ADMIN: AdminCounts = { holidayLets: 0, experiences: 0, trades: 0 };
+
+let counts: Counts = { unread: 0, pending: 0, requests: 0, admin: { ...ZERO_ADMIN } };
 let timer: ReturnType<typeof setInterval> | null = null;
 let inFlight: Promise<void> | null = null;
 
@@ -67,10 +79,16 @@ async function refresh(): Promise<void> {
             const res = await fetch('/api/badges');
             if (!res.ok) return;
             const data = await res.json();
+            const a = data.admin || {};
             publish({
                 unread: Number(data.unread) || 0,
                 pending: Number(data.pending) || 0,
                 requests: Number(data.requests) || 0,
+                admin: {
+                    holidayLets: Number(a.holidayLets) || 0,
+                    experiences: Number(a.experiences) || 0,
+                    trades: Number(a.trades) || 0,
+                },
             });
         } catch (err) {
             // A missing badge is not worth surfacing to anyone.
@@ -139,5 +157,11 @@ export default function useBadgeCounts(enabled = true): Counts {
         };
     }, [enabled]);
 
-    return enabled ? local : { unread: 0, pending: 0, requests: 0 };
+    return enabled ? local : { unread: 0, pending: 0, requests: 0, admin: { ...ZERO_ADMIN } };
+}
+
+// The total still waiting on the admin, across the three categories — what the
+// burger dot lights for and the "Owner tools" count shows.
+export function adminPendingTotal(a: AdminCounts): number {
+    return a.holidayLets + a.experiences + a.trades;
 }

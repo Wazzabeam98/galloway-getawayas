@@ -1,8 +1,18 @@
 import { requireAdmin } from '@/lib/access';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { adminPendingFor, EMPTY_ADMIN_PENDING } from '@/lib/badgeCounts';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
+
+// The three review queues, each pointing at the page and section that clears it.
+// Shown as a "Needs review" row at the top so the owner sees, from the page they
+// land on, exactly what is waiting and where to go for it.
+const reviewQueues: { key: 'holidayLets' | 'experiences' | 'trades'; href: string; title: string; blurb: string }[] = [
+    { key: 'holidayLets', href: '/admin/listings', title: 'Holiday lets', blurb: 'Property listings waiting for approval.' },
+    { key: 'experiences', href: '/admin/providers#experiences', title: 'Experiences', blurb: 'Guest experiences waiting for review.' },
+    { key: 'trades', href: '/admin/providers#trades', title: 'Trades', blurb: 'Tradespeople and businesses waiting for review.' },
+];
 
 const tools = [
     {
@@ -83,7 +93,7 @@ const tools = [
 export default async function AdminHome() {
     // Every owner page checks for itself. Hiding the link is tidiness, not
     // security — this is what actually keeps people out.
-    await requireAdmin();
+    const authUser = await requireAdmin();
 
     // A number on the tile, so the count is visible from the page you land on
     // rather than from the one you had to remember. Counted rather than
@@ -93,22 +103,14 @@ export default async function AdminHome() {
     // tile; a whole owner-tools page that will not render because a count
     // query failed is worse than not knowing.
     const badges: Record<string, number> = {};
+    // The three review queues, the same numbers as the burger dot and the
+    // "Owner tools" count (one helper, so they can't drift).
+    let pending = { ...EMPTY_ADMIN_PENDING };
 
     try {
         const admin = adminClient();
 
-        const [{ count: toReview }, { count: toChase }] = await Promise.all([
-            admin
-                .from('service_providers')
-                .select('id', { count: 'exact', head: true })
-                .eq('status', 'pending_review'),
-            admin
-                .from('service_applications')
-                .select('id', { count: 'exact', head: true })
-                .is('claimed_at', null),
-        ]);
-
-        badges['/admin/providers'] = Number(toReview || 0) + Number(toChase || 0);
+        pending = await adminPendingFor(authUser.id);
 
         const { count: openReports } = await admin
             .from('listing_reports')
@@ -125,6 +127,36 @@ export default async function AdminHome() {
             <p className="text-sm text-slate-500 mb-8">
                 Only you and your business partner can see these pages.
             </p>
+
+            {/* NEEDS REVIEW — the three queues waiting on you, each a tap from
+                the page and section that clears it. The number drops as each item
+                is approved or declined (it's counted live, never stored). */}
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Needs review</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10">
+                {reviewQueues.map((q) => {
+                    const n = pending[q.key];
+                    return (
+                        <Link
+                            key={q.key}
+                            href={q.href}
+                            className={'block rounded-2xl border p-4 transition hover:border-slate-900 '
+                                + (n > 0 ? 'border-emerald-300 bg-emerald-50/40' : '')}
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className="font-semibold text-slate-900">{q.title}</span>
+                                {n > 0 && (
+                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-700 text-white">
+                                        {n}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="text-sm text-slate-500 mt-0.5">
+                                {n > 0 ? q.blurb : 'Nothing waiting.'}
+                            </div>
+                        </Link>
+                    );
+                })}
+            </div>
 
             <div className="space-y-3">
                 {tools.map((t) => (
