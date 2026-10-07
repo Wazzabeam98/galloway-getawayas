@@ -19,6 +19,8 @@
 
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from './strings';
 import { townKey } from './places';
+import { areaForTownKey, areaBySlug } from '../config/areas';
+import { COVERAGE_TOWNS, milesBetween } from './serviceProviders';
 
 // The region each town page sits in — the same split GUEST_REGIONS' hints name.
 export const REGION_FOR_AREA: Record<string, string> = {
@@ -66,4 +68,31 @@ export function servesTown(p: TownProvider, area: { slug: string; townKeys: stri
     if (region && keys.includes(region)) return true;
     if (!travelsOnly(p) && p.based_line && area.townKeys.includes(townKey(p.based_line))) return true;
     return false;
+}
+
+// The town page a PROPERTY belongs to, for its "Experiences nearby" — so a
+// listing shows exactly what its town page shows. A property in one of the
+// towns takes that town; one in a village takes the nearest town (by its public
+// ~110m point) and its region, and keeps its own village too, so a provider
+// based in that village still counts as based where the property is. Null with
+// neither a known town nor a usable point.
+export function experienceAreaForListing(
+    location: string | null | undefined,
+    approxLat: number | string | null | undefined,
+    approxLng: number | string | null | undefined,
+): { slug: string; townKeys: string[] } | null {
+    const own = townKey(location || null);
+    const inTown = areaForTownKey(own);
+    if (inTown) return { slug: inTown.slug, townKeys: inTown.townKeys };
+
+    const lat = Number(approxLat), lng = Number(approxLng);
+    if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) return null;
+    let best: { key: string; miles: number } | null = null;
+    for (const t of COVERAGE_TOWNS) {
+        const miles = milesBetween(lat, lng, t.lat, t.lng);
+        if (!best || miles < best.miles) best = { key: t.key, miles };
+    }
+    const near = best ? areaBySlug(best.key) : null;
+    if (!near) return null;
+    return { slug: near.slug, townKeys: own ? [...near.townKeys, own] : near.townKeys };
 }
