@@ -777,10 +777,17 @@ export default function Hero() {
         <h1 className="text-[clamp(1.625rem,calc((100vw-2rem)/9.3),2.25rem)] leading-[1.12] md:text-6xl md:leading-none font-extrabold tracking-tight mb-3 drop-shadow-lg">
           Book your trip to <span className="whitespace-nowrap">Dumfries &amp; Galloway</span>
         </h1>
-        <p className="text-lg md:text-xl font-medium mb-5 md:mb-8 drop-shadow-md text-white">
-          {/* Each phrase kept whole, so a narrow phone wraps at a dot, never
-              mid-phrase ("All / local"). */}
-          <span className="whitespace-nowrap">Places to stay</span> · <span className="whitespace-nowrap">Things to do</span> · <span className="whitespace-nowrap">All local</span>
+        {/* Phones: two deliberate lines — "Places to stay · Local experiences"
+            then "No booking fee" — so no line ever ends on a dangling dot. The
+            first line is ~15.1em wide, so the size follows the screen width
+            ((100vw − 2rem) / 15.6), capped at the old 18px and floored at 15px
+            (only a folded 280px screen goes below 18px). Desktop: one line,
+            three phrases. Each phrase is kept whole. */}
+        <p className="text-[clamp(0.9375rem,calc((100vw-2rem)/15.6),1.125rem)] leading-7 md:text-xl font-medium mb-5 md:mb-8 drop-shadow-md text-white">
+          <span className="whitespace-nowrap">Places to stay · Local experiences</span>
+          <span className="md:hidden"><br /></span>
+          <span className="hidden md:inline"> · </span>
+          <span className="whitespace-nowrap">No booking fee</span>
         </p>
 
         {/* Compact search — phones only. A single Airbnb-style pill that names
