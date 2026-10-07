@@ -259,7 +259,7 @@ export default async function AreaPage({ params }: { params: { area: string } })
                     D&G, or this town's region, or based in this town
                     (lib/experienceTowns). Nothing at all when the town has none,
                     or while the feature is dormant. */}
-                <AreaExperiences lat={null} lng={null} townLabel={area.name} area={area}
+                <AreaExperiences area={area}
                     heading={`Experiences in ${area.name}`} />
 
                 {/* --- things to do --- */}

@@ -30,6 +30,7 @@ import AmenityList from '@/components/AmenityList';
 import NotTakingBookings from '@/components/NotTakingBookings';
 import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import AreaExperiences from '@/components/AreaExperiences';
+import { experienceAreaForListing } from '@/lib/experienceTowns';
 import ReportListing from '@/components/ReportListing';
 import WhereYoullSleep from '@/components/WhereYoullSleep';
 import AboutThisPlace from '@/components/AboutThisPlace';
@@ -1091,14 +1092,13 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 </section>
             )}
 
-            {/* Experiences a guest on THIS stay could have — based in the town or
-                covering this point. Self-gates to nothing while the feature is
-                dormant or nothing matches. */}
+            {/* Experiences a guest on THIS stay could have — the same region rule
+                as the town pages (lib/experienceTowns): covering all of D&G, this
+                property's region, or based in its town. A property in a village
+                takes the nearest town's region. Nothing when none match. */}
             <AreaExperiences
-                lat={home.approx_latitude != null ? Number(home.approx_latitude) : null}
-                lng={home.approx_longitude != null ? Number(home.approx_longitude) : null}
-                townLabel={area?.name || null}
-                intro={`Local chefs, bakers, saunas and guides who come to ${area?.name || 'this area'} — add one to your stay.`}
+                area={experienceAreaForListing(home.location, home.approx_latitude, home.approx_longitude)}
+                heading="Experiences nearby"
             />
 
         </div>

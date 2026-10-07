@@ -105,22 +105,23 @@ export function ExperiencesForBusinesses() {
         <section className="mt-16 pt-10 border-t border-stone-200">
             <div className="grid items-center gap-10 rounded-2xl bg-white border border-stone-200 p-6 sm:p-10 md:grid-cols-[1fr_auto]">
                 <div className="max-w-xl">
+                    {/* Its own heading, not a second "Experiences" — the shelf above
+                        already has that one. */}
                     <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
-                        Experiences
+                        Run an experience?
                     </h2>
                     <p className="mt-3 text-stone-600 leading-relaxed">
-                        A private chef on your first night, a wood-fired sauna by the shore, fresh
-                        bread on the doorstep, a guided day on the hills. Book them alongside your
-                        stay, from local businesses across Dumfries &amp; Galloway.
+                        A private chef on a guest’s first night, a wood-fired sauna by the shore,
+                        fresh bread on the doorstep, a guided day on the hills — guests staying
+                        across Dumfries &amp; Galloway book them alongside their stay.
                     </p>
 
                     <div className="mt-8 border-t border-stone-200 pt-6">
                         <p className="font-semibold text-stone-900">
-                            Run an experience in the region?
+                            List yours with us
                         </p>
                         <p className="mt-1 text-sm text-stone-600">
-                            We’re choosing the first businesses to list now. You set your prices
-                            and your times, and there’s no monthly fee.
+                            You set your prices and your times, and there’s no monthly fee.
                         </p>
                         <Link
                             href={href}
