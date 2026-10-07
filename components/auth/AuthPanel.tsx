@@ -196,6 +196,20 @@ export default function AuthPanelHost() {
     const send = async (t: CodeTarget): Promise<'sent' | 'already' | false> => {
         setError('');
         setNotice('');
+        // A number saved on an account but not yet confirmed for login must not
+        // start a sign-in — that is what created a second, empty account. Block
+        // it here (the server decides; see /api/auth/phone-login-check) and point
+        // the person at the fix. Fails open, so a lookup blip never locks anyone
+        // out. A confirmed login phone, and a brand-new number, both proceed.
+        if (t.kind === 'phone') {
+            setBusy(true);
+            const chk = await fetch('/api/auth/phone-login-check', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: t.value }),
+            }).then((r) => r.json()).catch(() => null);
+            setBusy(false);
+            if (chk && chk.blocked) { setError(chk.message); return false; }
+        }
         const left = secondsUntilResend(t.value);
         if (left > 0) {
             savePending({ kind: t.kind, value: t.value, at: Date.now(), next });

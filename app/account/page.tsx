@@ -9,6 +9,8 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Logo from '@/components/base/Logo';
+import PhoneRow from '@/components/account/PhoneRow';
+import EmailRow from '@/components/account/EmailRow';
 import MessageTemplates from '@/components/account/MessageTemplates';
 import LoginModel from '@/components/auth/LoginModel';
 import { forgetAccount } from '@/lib/signInMemory';
@@ -90,10 +92,11 @@ interface Field {
     hint?: string;
 }
 
+// Phone is no longer a plain field here — it is a login identity now, edited and
+// text-confirmed by PhoneRow below.
 const FIELDS: Field[] = [
     { key: 'full_name', label: 'Legal name' },
     { key: 'preferred_name', label: 'Preferred name' },
-    { key: 'phone', label: 'Phone number' },
 ];
 
 export default function AccountSettings() {
@@ -919,6 +922,10 @@ export default function AccountSettings() {
                                     </div>
                                 ))}
 
+                                {/* Phone number — a login identity, text-confirmed. */}
+                                <PhoneRow supabase={supabase} initialPhone={profile.phone}
+                                    onSaved={(p) => setProfile((prev) => ({ ...prev, phone: p }))} />
+
                                 {/* Residential address — its own structured form, matching Airbnb's layout */}
                                 <div className="p-5">
                                     {editingField === 'residential_address' ? (
@@ -1023,13 +1030,9 @@ export default function AccountSettings() {
                                     )}
                                 </div>
 
-                                <div className="p-5 flex items-center justify-between">
-                                    <div>
-                                        <div className="font-semibold text-slate-900 text-sm mb-1">Email address</div>
-                                        <div className="text-slate-500 text-sm">{email}</div>
-                                    </div>
-                                    <span className="text-xs text-slate-400 ml-4">Contact support to change</span>
-                                </div>
+                                {/* Email — a login identity; add one (a phone-signup
+                                    account) or change it, confirmed by a link. */}
+                                <EmailRow supabase={supabase} initialEmail={email} />
                             </div>
                         </div>
                     ) : activeSection === 'security' ? (
