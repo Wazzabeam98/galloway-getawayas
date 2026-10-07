@@ -80,7 +80,10 @@ export const metadata = {
     // The home page's own search description, so "self-catering" stays in
     // front of search engines now the hero headline no longer says it. Set
     // here rather than in the layout, whose description every page without
-    // one inherits. The title stays the layout's default.
+    // one inherits.
+    // The home page's own title (browser tab and search result). `absolute`
+    // so the layout's " | Galloway Getaways" template isn't added.
+    title: { absolute: 'Self-catering Accommodation in Dumfries & Galloway' },
     description:
         'Book self-catering holiday cottages and accommodation across Dumfries & Galloway. Book direct with the people who own them — no booking fee, ever.',
 };
