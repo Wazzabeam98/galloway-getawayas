@@ -11,7 +11,7 @@ import {
     ImagePlus, User, Pencil,
     MapPin, Tag, ListChecks, Flag, Image as ImageIcon,
 } from 'lucide-react';
-import { NumberStepper, ChoiceCard, ChoiceTiles, BigAmountInput, durationLabel } from './wizardKit';
+import { NumberStepper, ChoiceCard, BigAmountInput, durationLabel } from './wizardKit';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
@@ -149,34 +149,6 @@ const YEARS_DEFAULT = 5;
 // booking; 6 is a sensible dinner party.
 const CAPACITY_DEFAULT_SLOT = 2;
 const CAPACITY_DEFAULT_TRAVEL = 6;
-
-// The group-size bands on g_capacity (Liam, 7 Oct 2026). A real provider found
-// "What's the largest group?" ambiguous and typing a number broke for larger
-// groups, so this is now a PICK from plain bands rather than a text box. Each
-// band stores a representative slot_capacity integer — its upper bound — so the
-// seat engine still has a concrete ceiling; "40+" stores a high, effectively-open
-// value, because those large bookings are typically priced on enquiry/as a range
-// and the exact seats are refined per offering in the editor. The band is derived
-// back from the stored number on reload, so an existing provider's number maps to
-// the band it falls in. The value keys are internal; the labels are what shows.
-const CAPACITY_BANDS: { value: string; label: string; cap: number }[] = [
-    { value: 'u10', label: 'Under 10', cap: 9 },
-    { value: '10_20', label: '10–20', cap: 20 },
-    { value: '20_30', label: '20–30', cap: 30 },
-    { value: '30_40', label: '30–40', cap: 40 },
-    { value: '40p', label: '40+', cap: 99 },
-];
-// Which band a stored capacity falls in, '' when nothing is set yet (so Next
-// stays greyed until a band is picked — see the footer gate).
-function capacityBandFor(maxGuests: string): string {
-    const n = parseInt(maxGuests, 10);
-    if (!Number.isFinite(n) || n <= 0) return '';
-    if (n < 10) return 'u10';
-    if (n <= 20) return '10_20';
-    if (n <= 30) return '20_30';
-    if (n <= 40) return '30_40';
-    return '40p';
-}
 
 // A collapsed hub row, Airbnb-style: a square button on the left (a plus when
 // empty, a check once filled), a bold label with a grey one-line description
@@ -2055,10 +2027,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             // The listing must be named before Next — it is the h1 a guest reads.
             : step === 'g_title' && !listingTitle.trim()
             ? GUEST_SCREEN_COPY.experienceTitleGate
-            // Group size is a band pick now — say to pick one rather than leaving
-            // a greyed button unexplained.
-            : step === 'g_capacity' && !maxGuests.trim()
-            ? GUEST_SCREEN_COPY.capacityGate
             // The booking-shape fork gates Next until answered.
             : step === 'g_shape' && !shape
             ? GUEST_SCREEN_COPY.shapeGate
@@ -4952,19 +4920,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 )}
 
                 {onStep('g_capacity') && isGuest && (
-                <section className="mb-8 w-full max-w-sm mx-auto">
-                    {/* A pick, not a typed number: plain bands a provider reads at a
-                        glance, which also fixes the old text box breaking for larger
-                        groups. Each band stores a representative capacity (CAPACITY_BANDS). */}
-                    <ChoiceTiles
-                        cols={1}
-                        value={capacityBandFor(maxGuests)}
-                        onChange={(v) => {
-                            const band = CAPACITY_BANDS.find((b) => b.value === v) || CAPACITY_BANDS[0];
-                            setMaxGuests(String(band.cap));
-                        }}
-                        options={CAPACITY_BANDS.map((b) => ({ value: b.value, label: b.label }))}
-                    />
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    {/* An EXACT number, on the big −/+ counter — not a band (Liam,
+                        7 Oct 2026). A band can't stop a seventh person booking a
+                        six-seat sauna, so a shared session needs the real ceiling.
+                        It's the listing default; each offering can set its own exact
+                        capacity in the editor. max is high so a large catering group
+                        can say its real number (the old 60 broke for bigger groups).
+                        You can type the number or step to it. */}
+                    <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={300} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
                 </section>
                 )}
 
@@ -6500,8 +6464,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             : step === 'g_creds' ? !professionalTitle.trim()
                             // The listing needs a name — it is the h1 and the card.
                             : step === 'g_title' ? !listingTitle.trim()
-                            // Group size is a band pick now, so Next waits for one.
-                            : step === 'g_capacity' ? !maxGuests.trim()
                             : step === 'g_photos' ? photos.length === 0
                             // The booking-shape fork ('something else') must be
                             // answered — it decides the location screen and the rest.
@@ -6526,8 +6488,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             // number is the answer they accepted, so store it now.
                             // Both flows share this step, so it is not gated on isGuest.
                             if (step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
-                            // Max guests is a required band pick now (no untouched
-                            // pass-through), so there is nothing to default here.
+                            // Max guests: an untouched pass stores the shown default
+                            // (the big counter is solid), a loaded value is kept.
+                            if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));
                             // Same for the notice screen: an untouched pass stores
                             // the shown suggestion (2 days).
                             if (isGuest && step === 'g_notice' && !leadTimeDays.trim()) setLeadTimeDays('2');

@@ -136,16 +136,16 @@ export const GUEST_SCREEN_COPY = {
     // largest group they'll take; where guests come to them it's what the space
     // or session holds. For a shared slot this number becomes sellable seats.
     // Worded the same way for both shapes now (Liam, 7 Oct 2026): a real provider
-    // read "largest group" as ambiguous, and typing a number broke for bigger
-    // groups — so this asks plainly about PEOPLE and is answered by picking a
-    // band, not typing (see the ChoiceTiles on g_capacity and CAPACITY_BANDS).
+    // read "largest group" as ambiguous, so this asks plainly about PEOPLE. It's an
+    // EXACT number on the big −/+ counter, not a band — a band can't stop a seventh
+    // person booking a six-seat sauna, so a shared session needs the real ceiling.
+    // The subtext says it's the listing default and each offering can set its own
+    // exact number (service_provider_items.capacity overrides it).
     capacityHeadingTravel: 'How many people can you take at once?',
-    capacitySubtextTravel: 'Roughly the biggest group you’ll take on — you can fine-tune the exact number for each offering later.',
+    capacitySubtextTravel: 'The most you’ll take at one time. It’s your default — each offering can set its own exact number.',
     capacityHeadingVenue: 'How many people can you take at once?',
-    capacitySubtextVenue: 'The most people you’ll take in one session — pick the band that fits.',
+    capacitySubtextVenue: 'The most you’ll take in one session. It’s your default — each offering can set its own exact number.',
     capacitySuffix: 'guests',
-    // The gate under a greyed Next when no group-size band is picked yet.
-    capacityGate: 'Pick how many people you can take at once to carry on.',
 
     // The slot pricing-basis screen (g_slot_basis) — how a booking works: one
     // group takes the whole thing (a private booking, one flat price) vs several
