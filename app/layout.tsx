@@ -50,7 +50,7 @@ const baseMetadata: Metadata = {
     template: '%s | Galloway Getaways',
   },
   description:
-    'Book holiday cottages and accommodation across Dumfries & Galloway. Booked direct with the people who own them — no booking fee, ever.',
+    'Book holiday cottages and accommodation across Dumfries & Galloway. Book direct with the people who own them — no booking fee, ever.',
 
   // Tells search engines which address is the real one, so the www and
   // vercel.app versions don't compete with this one.
