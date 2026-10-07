@@ -83,6 +83,18 @@ export default async function ProviderDashboardPage() {
         // A slot provider's home is a CALENDAR — a three-column workspace that
         // wants room; everyone else keeps the narrow inbox column.
         const isSlotHome = shapeOf(provider) === 'slot';
+        // A COMES-TO-YOU provider travels to the guest, so it has no per-session
+        // page to block a time on — but it still needs a diary to mark the days it
+        // can't take. Its availability already honours slot_blocks (built in
+        // lib/experiencesData, and the order route refuses a booking on a blocked
+        // day), so a whole-day block made here is real, not cosmetic.
+        const isComesToYou = shapeOf(provider) === 'comes_to_you';
+        let comesToYouBlocks: string[] = [];
+        if (isComesToYou) {
+            const { data: blk } = await admin
+                .from('slot_blocks').select('blocked_date').eq('provider_id', provider.id).gte('blocked_date', todayKey());
+            comesToYouBlocks = (blk || []).map((b: any) => String(b.blocked_date).slice(0, 10));
+        }
         // The export secret for the iCal panel — read here under the service role
         // (it's revoked from the browser roles) and handed to the provider's own
         // dashboard, the way the cottage editor shows a listing's export link.
@@ -96,7 +108,7 @@ export default async function ProviderDashboardPage() {
         const awaitingPayouts = isAwaitingConnect(provider);
         const held = awaitingPayouts ? heldSummary(await loadHeldOrders(admin, [provider.id]).catch(() => []), todayKey()) : null;
         return (
-            <div className={`${isSlotHome ? 'max-w-6xl' : 'max-w-2xl'} mx-auto px-4 sm:px-6 py-8 pb-24`}>
+            <div className={`${isSlotHome ? 'max-w-6xl' : isComesToYou ? 'max-w-3xl' : 'max-w-2xl'} mx-auto px-4 sm:px-6 py-8 pb-24`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
@@ -139,6 +151,17 @@ export default async function ProviderDashboardPage() {
                         <div className="space-y-6">
                             <ProviderSlotDashboard providerId={provider.id} editHref="/services/dashboard/listing" live={isLiveToGuests(provider)} />
                             <ExperienceIcalFeeds providerId={provider.id} icalToken={icalToken} />
+                        </div>
+                    )
+                    : isComesToYou
+                    ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+                            <p className="mb-4 text-sm text-slate-600">
+                                Tap a day to mark yourself unavailable. Guests can&rsquo;t book you on a day
+                                you&rsquo;ve blocked — your confirmed bookings stay as they are, and you&rsquo;ll
+                                find them on your Reservations page.
+                            </p>
+                            <TradeCalendar providerId={provider.id} jobs={[]} blockedDays={comesToYouBlocks} variant="guest" />
                         </div>
                     )
                     : <ProviderExperienceDashboard providerId={provider.id} live={isLiveToGuests(provider)} payoutsReady={!awaitingPayouts} />}

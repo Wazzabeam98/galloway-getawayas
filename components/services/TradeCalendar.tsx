@@ -35,6 +35,7 @@ export default function TradeCalendar({
     jobs,
     blockedDays,
     clashDays = [],
+    variant = 'trade',
 }: {
     providerId: string;
     jobs: CalendarJob[];
@@ -42,6 +43,11 @@ export default function TradeCalendar({
     // Days where two accepted jobs overlap in the same window — flagged amber, not
     // blocked (a soft double-book the trade chose to take).
     clashDays?: string[];
+    // 'trade' is the host-trade diary (jobs asked for, agreed with an owner).
+    // 'guest' is a comes-to-you experience provider marking days it can't travel:
+    // no jobs are passed, so the work legend and the "agree with the owner" note
+    // are dropped for guest-appropriate copy.
+    variant?: 'trade' | 'guest';
 }) {
     const router = useRouter();
     const todayKey = format(new Date(), 'yyyy-MM-dd');
@@ -237,6 +243,22 @@ export default function TradeCalendar({
             {error && <p className="mt-3 text-[13px] text-rose-700">{error}</p>}
 
             <div className="mt-6 border-t pt-5">
+                {variant === 'guest' ? (
+                    <>
+                        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+                            <div className="flex items-center gap-1.5">
+                                <span className="h-3 w-3 rounded bg-slate-100 border border-slate-300" /> Day off
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="h-3 w-3 rounded border-2 border-slate-200" /> Available
+                            </div>
+                        </div>
+                        <p className="mt-3 text-xs text-slate-400">
+                            Tap a free day to take it off; tap it again to put it back. A day off hides you from guests for that day — it doesn&rsquo;t touch a booking you&rsquo;ve already taken.
+                        </p>
+                    </>
+                ) : (
+                <>
                 <div className="mb-4 text-xs text-slate-500">
                     {jobDaysThisMonth > 0 ? (
                         `${jobDaysThisMonth} day${jobDaysThisMonth === 1 ? '' : 's'} with work asked for this month`
@@ -274,6 +296,8 @@ export default function TradeCalendar({
                 <p className="mt-3 text-xs text-slate-400">
                     Click a free day to take it off; click it again to put it back. A day off is for your own diary — you still agree the actual day with the owner.
                 </p>
+                </>
+                )}
             </div>
         </div>
     );
