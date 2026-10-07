@@ -316,9 +316,19 @@ export function priceOrder(
 // not a silent charge — and it lives in one place so the route and the surface
 // cannot disagree.
 
-export type OrderUnit = 'flat' | 'person' | 'night' | 'hour' | 'ticket' | 'item';
+export type OrderUnit = 'flat' | 'person' | 'night' | 'hour' | 'ticket' | 'item' | 'event';
 
-export const ORDER_UNITS: OrderUnit[] = ['flat', 'person', 'night', 'hour', 'ticket', 'item'];
+export const ORDER_UNITS: OrderUnit[] = ['flat', 'person', 'night', 'hour', 'ticket', 'item', 'event'];
+
+// The units a NEW offering may be given, in the order the picker shows them —
+// the four that suit an experience or a service: a price per guest, one price
+// for the whole session, one price for the whole event, or a price per item.
+// 'night'/'hour'/'ticket' are LEGACY: still understood and still shown on any
+// offering already priced that way (a cottage is per night; these units came
+// from the trades directory), but no longer offered — "per night" on an oyster
+// shucking read as nonsense. A row already on a legacy unit keeps it (the picker
+// adds it back as its own tile) until the provider changes it.
+export const OFFERED_UNITS: OrderUnit[] = ['person', 'flat', 'event', 'item'];
 
 /** A fat-finger guard, not a business rule. Tune freely; it is the one cap. */
 export const MAX_ORDER_QUANTITY = 50;
@@ -328,15 +338,19 @@ export function normaliseUnit(unit: string | null | undefined): OrderUnit {
     return (ORDER_UNITS as string[]).includes(String(unit)) ? (unit as OrderUnit) : 'flat';
 }
 
-/** A flat price is charged once; every other unit multiplies by a quantity. */
+/** A flat price — or a whole-event price — is charged once; every other unit
+ *  multiplies by a quantity the guest picks. 'event' sits beside 'flat' here:
+ *  an oyster shucker turns up to the one event, so it is one charge, not a rate. */
 export function unitMultiplies(unit: string | null | undefined): boolean {
-    return normaliseUnit(unit) !== 'flat';
+    const u = normaliseUnit(unit);
+    return u !== 'flat' && u !== 'event';
 }
 
-/** The word for one of them, singular. 'flat' has none — it is not counted. */
+/** The word for one of them, singular. 'flat' and 'event' have none — they are
+ *  charged once, not counted. */
 export function unitNoun(unit: string | null | undefined): string {
     const map: Record<OrderUnit, string> = {
-        flat: '', person: 'person', night: 'night', hour: 'hour', ticket: 'ticket', item: 'item',
+        flat: '', person: 'person', night: 'night', hour: 'hour', ticket: 'ticket', item: 'item', event: '',
     };
     return map[normaliseUnit(unit)];
 }

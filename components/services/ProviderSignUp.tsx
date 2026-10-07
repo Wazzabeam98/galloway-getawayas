@@ -16,7 +16,7 @@ import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
 import { buildStreetAddress } from '@/lib/address';
-import { ORDER_UNITS, unitLabel } from '@/lib/serviceOrders';
+import { OFFERED_UNITS, unitLabel } from '@/lib/serviceOrders';
 import { slotOfferingFromUnits, offeringHasShared, type SlotOffering } from '@/lib/serviceSlots';
 import Env from '@/config/Env';
 import {
@@ -4749,7 +4749,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                                             saveLabel={GUEST_SCREEN_COPY.save}
                                                         >
                                                             <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuPriceTypeLabel} className="mx-auto w-full max-w-md space-y-2">
-                                                                {ORDER_UNITS.map((u) => {
+                                                                {((OFFERED_UNITS as string[]).includes(it.unit || 'flat') ? (OFFERED_UNITS as string[]) : [...(OFFERED_UNITS as string[]), (it.unit || 'flat')]).map((u) => {
                                                                     const on = (it.unit || 'flat') === u;
                                                                     return (
                                                                         <button
