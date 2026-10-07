@@ -683,7 +683,12 @@ export default function Hero() {
 
   return (
     <div
-      className="relative z-40 w-full min-h-[68svh] md:h-[500px] py-10 md:py-0 flex items-stretch md:items-center justify-center bg-stone-600 text-white overflow-visible"
+      // Phones: about half the screen, as Airbnb's — the search pill sits
+      // higher and the first of Our Properties peeks in below. The height is
+      // the heading, line and pill with tighter spacing (min 50svh, so a tall
+      // phone keeps it at half); pb leaves room for the dots. Desktop unchanged
+      // — including the 68svh floor it always had (min-height beats the 500px).
+      className="relative z-40 w-full min-h-[50svh] md:min-h-[68svh] md:h-[500px] pt-6 pb-10 md:py-0 flex items-stretch md:items-center justify-center bg-stone-600 text-white overflow-visible"
       ref={heroRef}
     >
       {/* Rotating background images */}
@@ -734,7 +739,10 @@ export default function Hero() {
             the mint that used to sit here. Note the colour was not the whole
             problem — pure white under the old overlays still only reached
             1.4:1, so the scrim is the part doing the work. */}
-        <div className="md:hidden absolute inset-0 bg-[linear-gradient(to_bottom,rgba(12,10,9,0.62)_0%,rgba(12,10,9,0.56)_24%,rgba(12,10,9,0.47)_32%,rgba(12,10,9,0.18)_44%,transparent_58%)]" />
+        {/* Stops moved down with the half-height hero (7 Oct 2026): the subtitle
+            now ends ~70% down rather than ~27%, so the shade holds to there and
+            fades over the pill, which is white and carries itself. */}
+        <div className="md:hidden absolute inset-0 bg-[linear-gradient(to_bottom,rgba(12,10,9,0.62)_0%,rgba(12,10,9,0.56)_45%,rgba(12,10,9,0.47)_72%,rgba(12,10,9,0.18)_86%,transparent_100%)]" />
         {/* md and up only. The text is vertically centred at this width, which
             is below where the top scrim has faded out, so the centred pool is
             still the thing carrying it. Unchanged from before. */}
@@ -763,7 +771,7 @@ export default function Hero() {
         <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-3 drop-shadow-lg">
           Self-catering accommodation across Dumfries &amp; Galloway
         </h1>
-        <p className="text-lg md:text-xl font-medium mb-8 drop-shadow-md text-white">
+        <p className="text-lg md:text-xl font-medium mb-5 md:mb-8 drop-shadow-md text-white">
           Booked direct with the people who own them. No booking fee, ever.
         </p>
 
