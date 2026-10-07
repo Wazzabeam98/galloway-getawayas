@@ -12,6 +12,7 @@
 /.next/
 /.next-verify/
 /.next-dev-verify/
+/.next-dev/
 /out/
 
 # production
