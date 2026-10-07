@@ -51,3 +51,20 @@ test('a legacy radius label or nothing at all puts a provider nowhere', () => {
     const legacy = { shape: 'comes_to_you', areas: ['Kirkcudbright and 25 miles'], based_line: null };
     for (const a of AREAS) assert.equal(servesTown(legacy, a), false, a.slug);
 });
+
+test('a property page uses its town’s rule — or, in a village, the nearest town’s region', () => {
+    const { experienceAreaForListing } = require('../lib/experienceTowns');
+    // In a town: that town page's area, exactly.
+    const inTown = experienceAreaForListing('Castle Douglas, Dumfries and Galloway', 54.94, -3.93);
+    assert.equal(inTown.slug, 'castle-douglas');
+    // In a village (Borgue, ~5 miles from Kirkcudbright): Kirkcudbright's region,
+    // and a provider based in Borgue itself still counts as based there.
+    const village = experienceAreaForListing('Borgue, Dumfries and Galloway', 54.80, -4.13);
+    assert.equal(village.slug, 'kirkcudbright');
+    assert.equal(servesTown({ shape: 'comes_to_you', areas: ['The Stewartry'] }, village), true);
+    assert.equal(servesTown({ shape: 'comes_to_you', areas: ['The Rhins'] }, village), false);
+    assert.equal(servesTown({ shape: 'slot', based_line: 'Borgue' }, village), true);
+    assert.equal(servesTown({ shape: 'slot', based_line: 'Castle Douglas' }, village), false);
+    // No town and no point: nothing to match against.
+    assert.equal(experienceAreaForListing('Somewhere', null, null), null);
+});
