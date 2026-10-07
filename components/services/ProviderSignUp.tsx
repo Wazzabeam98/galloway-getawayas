@@ -11,7 +11,7 @@ import {
     ImagePlus, User, Pencil,
     MapPin, Tag, ListChecks, Flag, Image as ImageIcon,
 } from 'lucide-react';
-import { NumberStepper, ChoiceCard } from './wizardKit';
+import { NumberStepper, ChoiceCard, BigAmountInput, durationLabel } from './wizardKit';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
@@ -4244,7 +4244,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         // reads by its length; a shared class reads by its unit.
                         const timedRow = perItemShape || (mixedShape && String(r.unit) === 'flat');
                         const qualifier = timedRow
-                            ? (Number(r.duration) > 0 ? String(Math.round(Number(r.duration))) + ' min' : '')
+                            ? (Number(r.duration) > 0 ? durationLabel(Number(r.duration)) : '')
                             : unitWord(r);
                         return '£' + p + (qualifier ? ' · ' + qualifier : '');
                     };
@@ -4572,7 +4572,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                                 value={it.duration || ''}
                                                 onChange={(v: string) => setField(menuIndex, 'duration', v)}
                                                 min={15} max={480} step={15} suggestion={60}
-                                                size="lg" suffix=" min"
+                                                size="lg" format={durationLabel}
                                             />
                                             <p className="mt-4 text-center text-sm text-slate-500">How long a guest books this treatment for.</p>
                                         </div>
@@ -4584,16 +4584,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                                 zero) and no box; the number is the thing
                                                 you see, the £ sits quietly at its baseline.
                                                 Airbnb's price register. */}
-                                            <div className="flex items-baseline justify-center gap-2">
-                                                <span className="text-4xl font-extrabold text-slate-400 sm:text-5xl">£</span>
-                                                <input
-                                                    type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
-                                                    onChange={(e) => setField(menuIndex, 'price', e.target.value)}
-                                                    placeholder={GUEST_SCREEN_COPY.menuPricePlaceholder}
-                                                    aria-label={GUEST_SCREEN_COPY.menuPriceTitle}
-                                                    className="w-48 bg-transparent text-center text-6xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none sm:text-7xl"
-                                                />
-                                            </div>
+                                            <BigAmountInput value={it.price}
+                                                onChange={(v) => setField(menuIndex, 'price', v)}
+                                                placeholder={GUEST_SCREEN_COPY.menuPricePlaceholder}
+                                                ariaLabel={GUEST_SCREEN_COPY.menuPriceTitle} />
                                             {/* Price type — the same options and the same
                                                 model as before, but no native <select>: a
                                                 current-choice HubRow that opens a sub-flow of

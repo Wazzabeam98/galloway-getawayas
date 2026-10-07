@@ -1,6 +1,7 @@
 'use client';
 
 import { Minus, Plus } from 'lucide-react';
+import { durationWords } from '@/lib/durationWords';
 
 // The shared pick-from-options / stepper controls for the guest-experience
 // surfaces — the listing editor and the diary scheduler both use these, so a
@@ -47,11 +48,9 @@ export function Stepper({ value, onChange, min = 1, max = 60 }: {
     );
 }
 
-// Common session lengths, and "90" -> "1 hr 30 min".
+// Common session lengths, read the one way everywhere (lib/durationWords):
+// "90" -> "90 min", "150" -> "2 hr 30 min".
 export const SESSION_LENGTH_OPTIONS = [30, 45, 60, 90, 120];
 export function minutesLabel(m: number): string {
-    if (m < 60) return `${m} min`;
-    const hrs = Math.floor(m / 60);
-    const mins = m % 60;
-    return `${hrs} hr${hrs > 1 ? 's' : ''}${mins ? ` ${mins} min` : ''}`;
+    return durationWords(m);
 }

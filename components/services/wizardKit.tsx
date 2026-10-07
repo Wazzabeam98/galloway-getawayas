@@ -1,6 +1,6 @@
 'use client';
 
-import { Minus, Plus, X } from 'lucide-react';
+import { Minus, Plus, X, type LucideIcon } from 'lucide-react';
 import { minutesLabel } from './editorControls';
 
 // The guest provider sign-up wizard's reusable pieces, lifted out of
@@ -69,7 +69,8 @@ export function NumberStepper({
                 <Minus className={glyph} strokeWidth={2} />
             </button>
             {format ? (
-                <span className={labelField} aria-label="Amount">{format(shown)}</span>
+                // Greyed until touched, like the numeral's placeholder, unless solid.
+                <span className={labelField + (!solid && !has ? ' !text-slate-300' : '')} aria-label="Amount">{format(shown)}</span>
             ) : (
                 <input
                     type="number" inputMode="numeric" aria-label="Amount"
@@ -91,25 +92,61 @@ export function NumberStepper({
 // The one large, centred choice card every either/or fork in the guest wizard
 // uses (the fulfilment fork, the slot private/shared answer, per person / whole
 // session). Tall so a screenful of two or three options fills the space.
-export function ChoiceCard({ selected, onSelect, title, hint, radio }: {
+export function ChoiceCard({ selected, onSelect, title, hint, radio, icon: Icon }: {
     selected: boolean;
     onSelect: () => void;
     title: string;
     hint: string;
     radio?: boolean;
+    // A large icon above the title — the sign-up wizard's illustration zone.
+    icon?: LucideIcon;
 }) {
     return (
         <button type="button" onClick={onSelect}
             {...(radio ? { role: 'radio', 'aria-checked': selected } : { 'aria-pressed': selected })}
             className={'flex min-h-[9rem] flex-col items-center justify-start gap-1.5 rounded-2xl border-2 bg-white px-5 py-7 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[13rem] sm:py-9 '
                 + (selected ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
+            {Icon && (
+                <span className="mb-1 flex h-14 items-center justify-center">
+                    <Icon className={'h-11 w-11 ' + (selected ? 'text-emerald-700' : 'text-emerald-600')} strokeWidth={1.5} aria-hidden />
+                </span>
+            )}
             <span className="flex items-center text-lg font-semibold text-slate-900 sm:min-h-[3.5rem]">{title}</span>
             <span className="text-sm text-slate-500">{hint}</span>
         </button>
     );
 }
 
-// "1 hr 30 min" / "45 min" — the duration label the add flow and the edit card show.
+// The sign-up wizard's price: a big numeral you TYPE into — no spinner arrows
+// (nobody sets £45 by nudging up from zero) and no box; the number is the
+// thing you see, the £ sits quietly at its baseline. Airbnb's price register.
+// The wizard and the experience editor's Price sheet use this one control.
+//   numeric: true  — the wizard's own type="number" box, passed through as typed
+//   numeric: false — a text box with a decimal keypad; the caller cleans the value
+export function BigAmountInput({ value, onChange, placeholder = '0', ariaLabel, numeric = true, autoFocus }: {
+    value: string;
+    onChange: (raw: string) => void;
+    placeholder?: string;
+    ariaLabel: string;
+    numeric?: boolean;
+    autoFocus?: boolean;
+}) {
+    return (
+        <div className="flex items-baseline justify-center gap-2">
+            <span className="text-4xl font-extrabold text-slate-400 sm:text-5xl">£</span>
+            <input
+                {...(numeric ? { type: 'number', min: '0', step: '0.01' } : { type: 'text', autoComplete: 'off' })}
+                inputMode="decimal" value={value} autoFocus={autoFocus}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder}
+                aria-label={ariaLabel}
+                className="w-48 bg-transparent text-center text-6xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none sm:text-7xl"
+            />
+        </div>
+    );
+}
+
+// "90 min" / "2 hr 30 min" — the duration label the add flow and the edit card show.
 export function durationLabel(mins: number): string {
     if (!mins) return 'None';
     return minutesLabel(mins);

@@ -160,7 +160,7 @@ function MaxCapacityCard({ isSlot, value, onSave }: { isSlot: boolean; value: nu
             <EditorCard title="Maximum capacity" summary={`Up to ${value} ${value === 1 ? 'guest' : 'guests'}`} onClick={c.start} />
             {c.open && (
                 <EditorPanel title="Maximum capacity" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <Field label="Maximum capacity" hint={isSlot ? 'The most people a session can take, as a default — a per-person item can set its own under Pricing & booking.' : 'The most people you’ll take for one booking.'}>
+                    <Field label="Maximum capacity" hint={isSlot ? 'The most people a session can take, as a default — a per-person offering can set its own under What you offer.' : 'The most people you’ll take for one booking.'}>
                         <Stepper value={c.draft} onChange={c.setDraft} min={1} max={60} />
                     </Field>
                 </EditorPanel>
@@ -321,16 +321,28 @@ function AmenityTiles({ draft, set }: { draft: AmenityDraft; set: (d: AmenityDra
                     </div>
                 </div>
             ))}
-            <div className="border-t border-slate-200 pt-4">
-                <Field label="Accessibility" hint="The nearest option — a guest who needs it wants a clear answer.">
-                    <OptionPills options={ACCESSIBILITY_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
-                        value={draft.accessibility} onChange={(v) => set({ ...draft, accessibility: draft.accessibility === v ? '' : v })} />
-                </Field>
-            </div>
-            <Field label="Parking">
-                <OptionPills options={PARKING_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
-                    value={draft.parking} onChange={(v) => set({ ...draft, parking: draft.parking === v ? '' : v })} />
-            </Field>
+            {/* Accessibility and Parking: the same tiles, one choice per group —
+                tapping the chosen tile again clears it. */}
+            {([
+                ['Accessibility', ACCESSIBILITY_OPTIONS, draft.accessibility, (v: string) => set({ ...draft, accessibility: v })],
+                ['Parking', PARKING_OPTIONS, draft.parking, (v: string) => set({ ...draft, parking: v })],
+            ] as const).map(([title, options, chosen, choose]) => (
+                <div key={title}>
+                    <h3 className="mb-2 text-sm font-semibold text-slate-800">{title}</h3>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-3" role="radiogroup" aria-label={title}>
+                        {options.map((o) => {
+                            const on = chosen === o.key;
+                            return (
+                                <button key={o.key} type="button" role="radio" aria-checked={on} onClick={() => choose(on ? '' : o.key)}
+                                    className={`relative rounded-2xl border-2 p-3 text-left text-sm transition ${on ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                    <span className="font-semibold text-slate-900">{o.label}</span>
+                                    {on && <Check className="absolute right-3 top-3 h-4 w-4 text-slate-900" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            ))}
         </div>
     );
 }
@@ -586,12 +598,12 @@ function HostYearsCard({ years, onSave }: { years: string; onSave: (v: string) =
     );
 }
 
-// A "+ Add an item" launcher that opens the stepped add flow.
+// A "+ Add an offering" launcher that opens the stepped add flow.
 function AddItemLauncher({ ctx, onAdd }: { ctx: ItemCtx; onAdd: (row: MenuRow) => unknown }) {
     const [open, setOpen] = useState(false);
     return (
         <>
-            <button type="button" onClick={() => setOpen(true)} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
+            <button type="button" onClick={() => setOpen(true)} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an offering</button>
             {open && <AddItemFlow ctx={ctx} onClose={() => setOpen(false)} onAdd={onAdd} />}
         </>
     );
@@ -786,7 +798,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         { key: 'know', label: 'Good to know', short: 'Good to know', icon: Info },
         { key: 'location', label: fixedInPlace ? 'Location' : 'Location', short: 'Location', icon: MapPin },
         ...(hasHours ? [{ key: 'availability' as NavKey, label: p.isSlot ? 'Availability' : 'Opening hours', short: p.isSlot ? 'Availability' : 'Hours', icon: CalendarRange }] : []),
-        { key: 'pricing', label: 'Pricing & booking', short: 'Pricing', icon: ShoppingBag },
+        { key: 'pricing', label: 'What you offer', short: 'Offerings', icon: ShoppingBag },
         { key: 'cancellation', label: 'Cancellation', short: 'Cancellation', icon: RotateCcw },
         { key: 'host', label: 'Host profile', short: 'Host', icon: User },
         ...(p.isFood ? [{ key: 'dietary' as NavKey, label: 'Food & dietary', short: 'Food', icon: Salad }] : []),
@@ -912,7 +924,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         {!hasPricedItem && (
                             <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
                                 <Info className="mt-0.5 h-4 w-4 flex-none" />
-                                You have no priced item. Until you add one, your listing can’t be booked and won’t appear.
+                                You have no priced offering. Until you add one, your listing can’t be booked and won’t appear.
                             </div>
                         )}
                         {menu.map((row, i) => (
