@@ -9,6 +9,7 @@ import { stayCountdown, arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import CopyField from '@/components/arrival/CopyField';
+import { revealSecret } from '@/lib/listingSecrets';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,11 +99,17 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
         : await admin.from('booking_access_codes').select('booking_id').eq('booking_id', booking.id).maybeSingle();
 
     const l: any = listing;
-    const a: any = arrival || {};
+    const a: any = { ...(arrival || {}) };
+    // The wifi password is stored sealed. Opened only inside the window, when it
+    // is shown; outside it the page only needs to know one exists.
+    if (a.wifi_password) a.wifi_password = codeReady ? await revealSecret(a.wifi_password, { table: 'listing_arrival', id: booking.listing_id }, 'arrival') : 'set';
     // Override wins where set; else the listing's standing code. Same precedence
     // the host editor and the scheduled sender apply.
+    // Stored sealed (lib/secretBox); opened only inside the window.
     const doorCode: string | null = codeReady
-        ? (((override && (override as any).code) || (access && (access as any).code)) || null)
+        ? ((override && (override as any).code && await revealSecret((override as any).code, { table: 'booking_access_codes', id: booking.id }, 'arrival'))
+            || (access && (access as any).code && await revealSecret((access as any).code, { table: 'listing_access_codes', id: booking.listing_id }, 'arrival'))
+            || null)
         : null;
     // A code is on file — an override or the listing code — whether or not we've
     // fetched its value yet.

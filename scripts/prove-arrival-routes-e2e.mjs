@@ -22,6 +22,9 @@
 
 import { loadEnv, assertTestEnvironment, supabaseClient, sessionCookieViaApp, SEED_DOMAIN } from './seed-lib.mjs';
 import { resolveTarget, LOCAL_URL } from './target.cjs';
+import { createRequire } from 'node:module';
+// Door codes and wifi passwords are stored sealed (lib/secretBox); so are these.
+const { sealSecret } = createRequire(import.meta.url)('./secretBox.cjs');
 
 const env = loadEnv();
 assertTestEnvironment(env);
@@ -102,10 +105,10 @@ async function main() {
         status: 'published', street_address: ADDRESS, postcode: POSTCODE,
     }]))[0];
     await db.insert('listing_arrival', [{
-        listing_id: listing.id, wifi_name: 'CottageWifi', wifi_password: WIFIPW,
+        listing_id: listing.id, wifi_name: 'CottageWifi', wifi_password: sealSecret(WIFIPW, 'listing_arrival', listing.id, env),
         what3words: W3W, arrival_directions: 'Down the track past the gate.',
     }]);
-    await db.insert('listing_access_codes', [{ listing_id: listing.id, code: DOORCODE }]);
+    await db.insert('listing_access_codes', [{ listing_id: listing.id, code: sealSecret(DOORCODE, 'listing_access_codes', listing.id, env) }]);
 
     // attacker: planted pending_payment; legit: confirmed. Both check in tomorrow.
     const planted = (await db.insert('bookings', [{

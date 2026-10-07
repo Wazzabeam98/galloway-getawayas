@@ -13,6 +13,7 @@ import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { rateFor, netOfFee } from '@/lib/fees';
 import { formatGBP } from '@/lib/formatMoney';
 import { publicArea } from '@/lib/places';
+import { revealSecret } from '@/lib/listingSecrets';
 
 export const dynamic = 'force-dynamic';
 
@@ -188,10 +189,13 @@ export async function GET(
             admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle(),
             admin.from('booking_access_codes').select('code').eq('booking_id', booking.id).maybeSingle(),
         ]);
+        // Stored sealed (lib/secretBox); opened only behind the gates above.
+        const where = 'messages/threads';
         arrival = {
-            doorCode: (override && override.code) || (code && code.code) || null,
+            doorCode: (override && await revealSecret(override.code, { table: 'booking_access_codes', id: booking.id }, where))
+                || (code && await revealSecret(code.code, { table: 'listing_access_codes', id: booking.listing_id }, where)) || null,
             wifiName: (arr && arr.wifi_name) || null,
-            wifiPassword: (arr && arr.wifi_password) || null,
+            wifiPassword: (arr && arr.wifi_password && await revealSecret(arr.wifi_password, { table: 'listing_arrival', id: booking.listing_id }, where)) || null,
         };
     }
 

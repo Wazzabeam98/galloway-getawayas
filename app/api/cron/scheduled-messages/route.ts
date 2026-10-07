@@ -1,6 +1,7 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { logError } from '@/lib/logError';
+import { revealSecret } from '@/lib/listingSecrets';
 import { londonDayKey, shiftDayKey, ukDate } from '@/lib/dayKey';
 import { arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
 import { displayName } from '@/lib/utils';
@@ -104,7 +105,11 @@ async function checkInFallbackPass(
             .select('listing_id, code')
             .in('listing_id', fbListingIds);
         const fbCodeByListing: Record<string, string> = {};
-        (fbCodes || []).forEach((c: any) => { fbCodeByListing[c.listing_id] = c.code; });
+        // Stored sealed (lib/secretBox): opened here, at the moment of sending.
+        for (const c of fbCodes || []) {
+            const v = await revealSecret(c.code, { table: 'listing_access_codes', id: c.listing_id }, 'cron/scheduled-messages');
+            if (v) fbCodeByListing[c.listing_id] = v;
+        }
 
         // Per-booking overrides win over the listing code here too.
         const fbBookingIds = fb.map((b: any) => b.id);
@@ -114,7 +119,10 @@ async function checkInFallbackPass(
                 .from('booking_access_codes')
                 .select('booking_id, code')
                 .in('booking_id', fbBookingIds);
-            (fbOverrides || []).forEach((c: any) => { fbCodeByBooking[c.booking_id] = c.code; });
+            for (const c of fbOverrides || []) {
+                const v = await revealSecret(c.code, { table: 'booking_access_codes', id: c.booking_id }, 'cron/scheduled-messages');
+                if (v) fbCodeByBooking[c.booking_id] = v;
+            }
         }
 
         for (const booking of fb) {
@@ -392,7 +400,12 @@ export async function GET(request: Request) {
                 .select('listing_id, code')
                 .in('listing_id', listingIds);
 
-            (codes || []).forEach((c: any) => { codeByListing[c.listing_id] = c.code; });
+            // Stored sealed: opened here, at the moment of sending. One that
+            // won't open reads as no code, so the message is held, not sent blank.
+            for (const c of codes || []) {
+                const v = await revealSecret(c.code, { table: 'listing_access_codes', id: c.listing_id }, 'cron/scheduled-messages');
+                if (v) codeByListing[c.listing_id] = v;
+            }
         }
 
         // A per-booking override takes precedence over the listing's standing
@@ -406,7 +419,10 @@ export async function GET(request: Request) {
                     .from('booking_access_codes')
                     .select('booking_id, code')
                     .in('booking_id', bookingIds);
-                (overrides || []).forEach((c: any) => { codeByBooking[c.booking_id] = c.code; });
+                for (const c of overrides || []) {
+                    const v = await revealSecret(c.code, { table: 'booking_access_codes', id: c.booking_id }, 'cron/scheduled-messages');
+                    if (v) codeByBooking[c.booking_id] = v;
+                }
             }
         }
         // The code a given booking should actually receive: its override, else

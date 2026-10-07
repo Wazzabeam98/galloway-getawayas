@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { logError } from '@/lib/logError';
+import { revealSecret, sealSecret } from '@/lib/listingSecrets';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,7 +65,8 @@ export async function GET(request: Request) {
             .eq('booking_id', bookingId)
             .maybeSingle();
 
-        return NextResponse.json({ ok: true, code: (data && data.code) || '', updated_at: (data && data.updated_at) || null });
+        const code = data ? await revealSecret(data.code, { table: 'booking_access_codes', id: bookingId }, 'bookings/access-code') : null;
+        return NextResponse.json({ ok: true, code: code || '', updated_at: (data && data.updated_at) || null });
     } catch (err: any) {
         await logError('[bookings/access-code GET] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/access-code' });
         return NextResponse.json({ ok: false, error: 'Could not read the code.' }, { status: 500 });
@@ -98,7 +100,7 @@ export async function POST(request: Request) {
         } else {
             const { error } = await g.admin
                 .from('booking_access_codes')
-                .upsert({ booking_id: bookingId, code, updated_at: new Date().toISOString(), updated_by: g.uid }, { onConflict: 'booking_id' });
+                .upsert({ booking_id: bookingId, code: sealSecret(code, { table: 'booking_access_codes', id: bookingId }), updated_at: new Date().toISOString(), updated_by: g.uid }, { onConflict: 'booking_id' });
             if (error) {
                 await logError('[bookings/access-code] could not save', { bookingId, message: error.message }, { path: 'bookings/access-code' });
                 return NextResponse.json({ ok: false, error: 'Could not save the code.' }, { status: 500 });
@@ -112,7 +114,7 @@ export async function POST(request: Request) {
         if (!effective) {
             const { data: listingCode } = await g.admin
                 .from('listing_access_codes').select('code').eq('listing_id', g.booking.listing_id).maybeSingle();
-            effective = (listingCode && listingCode.code) || '';
+            effective = (listingCode && await revealSecret(listingCode.code, { table: 'listing_access_codes', id: g.booking.listing_id }, 'bookings/access-code')) || '';
         }
 
         // If the guest was ALREADY sent a check-in message, the code they hold is

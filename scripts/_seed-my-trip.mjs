@@ -15,6 +15,9 @@
 // two days out so the door code and wifi fall inside the 3-day secrets window.
 
 import { loadEnv, assertTestEnvironment, supabaseClient, dayOffset } from './seed-lib.mjs';
+import { createRequire } from 'node:module';
+// Door codes and wifi passwords are stored sealed (lib/secretBox); so are these.
+const { sealSecret } = createRequire(import.meta.url)('./secretBox.cjs');
 
 const env = loadEnv();
 assertTestEnvironment(env);
@@ -85,10 +88,10 @@ async function main() {
         arrival_directions: 'Off the A75 at Creetown, follow the shore road into Garlieston; the cottage is the white one at the end of Harbour Row, blue door facing the water.',
         parking_info: 'Free private parking for two cars on the gravel in front of the cottage.',
         wifi_name: 'HarbourRow-Guest',
-        wifi_password: 'saltmarsh1997',
+        wifi_password: sealSecret('saltmarsh1997', 'listing_arrival', listing.id, env),
         what3words: '///daisy.harbour.lantern',
     });
-    await db.insert('listing_access_codes', { listing_id: listing.id, code: '4729' });
+    await db.insert('listing_access_codes', { listing_id: listing.id, code: sealSecret('4729', 'listing_access_codes', listing.id, env) });
 
     // 2 — the stay. Starts in two days so daysUntilCheckIn <= 3 and the door
     // code + wifi render (see app/arrival/[bookingId]/page.tsx: codeReady).
