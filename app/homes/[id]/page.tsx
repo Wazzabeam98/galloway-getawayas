@@ -39,7 +39,7 @@ import MeetYourHost from '@/components/MeetYourHost';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
 import { hostResponsiveness } from '@/lib/hostResponsiveness';
 import { describePlace } from '@/lib/propertyTypes';
-import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck } from 'lucide-react';
+import { KeyRound, Zap, Car, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck } from 'lucide-react';
 
 // "Entire flat" / "Private room in a static caravan" — the type words live in
 // lib/propertyTypes.ts, with every other place a type is shown.
@@ -101,6 +101,15 @@ function propertyHighlights(home: any): { title: string; detail: string; icon: a
     }
     if (has('Hot tub')) {
         out.push({ title: 'Hot tub', detail: 'Unwind in the hot tub after a day out.', icon: Bath });
+    }
+    if (has('Sauna')) {
+        out.push({ title: 'Sauna', detail: 'Warm up in the sauna after a day out.', icon: ThermometerSun });
+    }
+    if (has('Cold plunge')) {
+        out.push({ title: 'Cold plunge', detail: 'Brace the cold plunge straight from the heat.', icon: ThermometerSnowflake });
+    }
+    if (has('Outdoor shower')) {
+        out.push({ title: 'Outdoor shower', detail: 'Rinse off in the fresh air after the beach.', icon: ShowerHead });
     }
     if (has('Waterfront') || has('Beach access')) {
         out.push({ title: 'By the water', detail: 'Right by the shore on the Solway coast.', icon: Waves });

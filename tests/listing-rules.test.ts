@@ -309,6 +309,35 @@ test('the hot tub comes first, whatever order the host ticked them in', () => {
     assert.deepEqual(badges.map((b: any) => b.label), ['Hot tub', 'Pet friendly']);
 });
 
+test('a sauna lodge with no hot tub shows a sauna badge', () => {
+    // The whole point of ranking the badges by demand rather than hard-coding
+    // two: a place that has none of the top two still surfaces the best it has.
+    const badges = cardBadges(['Wifi', 'Sauna', 'Kitchen']);
+    assert.deepEqual(badges.map((b: any) => b.label), ['Sauna']);
+});
+
+test('hot tub and sauna, no dog: both show, hot tub first', () => {
+    const badges = cardBadges(['Sauna', 'Hot tub']);
+    assert.deepEqual(badges.map((b: any) => b.label), ['Hot tub', 'Sauna']);
+});
+
+test('all three qualify: the two highest demand win, sauna drops', () => {
+    // Hot tub > dog-friendly > sauna. Three qualify, the cap is two, and it is
+    // sauna — the lowest demand — that is left off, not whichever the host
+    // happened to tick last.
+    const badges = cardBadges(['Sauna', 'Pets allowed', 'Hot tub']);
+    assert.deepEqual(badges.map((b: any) => b.label), ['Hot tub', 'Pet friendly']);
+});
+
+test('BADGE_AMENITIES is held in demand order, highest first', () => {
+    // cardBadges trusts this order to decide which two survive the cap, so the
+    // order is load-bearing, not cosmetic.
+    assert.deepEqual(
+        BADGE_AMENITIES.map((b: any) => b.amenity),
+        ['Hot tub', 'Pets allowed', 'Sauna'],
+    );
+});
+
 test('a cottage with neither gets no badges at all', () => {
     assert.deepEqual(cardBadges(['Wifi', 'Kitchen', 'Smoke alarm']), []);
     assert.deepEqual(cardBadges([]), []);

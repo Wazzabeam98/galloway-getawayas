@@ -402,12 +402,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const [termsAgreed, setTermsAgreed] = useState(false);
     const [termsError, setTermsError] = useState('');
     // The Guest Terms tick, alongside the role agreement on the finish screen.
-    // A provider is a user of the site too, so they accept the Guest Terms here —
-    // at the end of sign-up, with the role agreement — rather than being stopped
-    // by the sign-in prompt mid-sign-up. Only shown when they have not already
-    // accepted the current version.
-    const [guestAgreed, setGuestAgreed] = useState(false);
-    const [guestTermsError, setGuestTermsError] = useState('');
     // Which agreements this account already has on record at the current
     // version (from /api/agreements; null until known). A guest experience asks
     // for the Experience Provider Agreement, a trade for the Tradesperson
@@ -1867,10 +1861,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // record. Unknown (null) counts as not on record — the server decides.
     const needsAgreementTick = status !== 'approved'
         && !(agreementsOnRecord && agreementsOnRecord[agreementDoc]);
-    // The Guest Terms are taken here too — the end of sign-up — for anyone who
-    // has not already accepted the current version.
-    const needsGuestTick = status !== 'approved'
-        && !(agreementsOnRecord && agreementsOnRecord.guest);
+    // The role agreement is the ONLY one taken in this sign-up. Guest Terms are
+    // not asked here — a provider agrees to them at a first booking checkout,
+    // like every other guest.
 
     // What they have already agreed to — asked once signed in, and again when
     // the sign-in prompt records something (AGREEMENTS_CHANGED).
@@ -2783,15 +2776,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // Checked before the account/validation branches so it applies whichever
         // submit path they are on. Not a submitProblems field: it lives on the
         // finish screen, so its own error shows there.
-        if (submit && needsGuestTick) {
-            const guestMsg = agreementProblem('guest', null, versionForTick('guest', guestAgreed));
-            if (guestMsg) {
-                setTouchedSubmit(true);
-                setGuestTermsError(guestMsg);
-                goToFirstProblem();
-                return;
-            }
-        }
         if (submit && needsAgreementTick) {
             const termsMsg = agreementProblem(agreementDoc, null, versionForTick(agreementDoc, termsAgreed));
             if (termsMsg) {
@@ -2929,17 +2913,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // Submitting is its own step now, after the row exists and its columns
         // are saved. The function is the only thing that may move `status`.
         if (Object.keys(statusPatch).length > 0) {
-            // The agreement first: recorded (version + server time) through the
-            // one route, which refuses it unticked; submit_service_provider()
+            // The role agreement first: recorded (version + server time) through
+            // the one route, which refuses it unticked; submit_service_provider()
             // then refuses a submit with no acceptance on record.
-            if (needsGuestTick) {
-                const failedGuest = await recordAgreement('guest', isGuest ? 'experience_signup' : 'trade_signup');
-                if (failedGuest) {
-                    setSaving(false);
-                    setGuestTermsError(failedGuest);
-                    return;
-                }
-            }
             if (needsAgreementTick) {
                 const failed = await recordAgreement(agreementDoc, isGuest ? 'experience_signup' : 'trade_signup');
                 if (failed) {
@@ -6158,20 +6134,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 </section>
             )}
 
-            {/* The agreements, the last thing before Send — the Guest Terms (which
-                every account accepts) and the Tradesperson Agreement on top, each
-                the same one-line tick box (lib/agreements). Taken here, at the end
-                of sign-up, rather than as a pop-up part-way through it. */}
-            {onStep('finish') && !isGuest && !locked && needsGuestTick && (
-                <section className="mb-4">
-                    <AgreementTick
-                        doc="guest"
-                        checked={guestAgreed}
-                        onChange={(v) => { setGuestAgreed(v); setGuestTermsError(''); }}
-                        error={guestTermsError}
-                    />
-                </section>
-            )}
+            {/* The agreement, the last thing before Send — the one-line
+                Tradesperson Agreement tick box (lib/agreements). Taken here, at
+                the end of sign-up, not as a pop-up part-way through it. */}
             {onStep('finish') && !isGuest && !locked && needsAgreementTick && (
                 <section className="mb-8">
                     <AgreementTick
@@ -6347,22 +6312,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         </div>
                     </div>
 
-                    {/* The agreements, one line each: the Guest Terms (which every
-                        account accepts) and the Experience Provider Agreement on
-                        top, each behind an underlined link. Taken here, at the end
-                        of sign-up, not as a pop-up part-way through it. */}
-                    {needsGuestTick && (
-                        <div className="mt-6">
-                            <AgreementTick
-                                doc="guest"
-                                checked={guestAgreed}
-                                onChange={(v) => { setGuestAgreed(v); setGuestTermsError(''); }}
-                                error={guestTermsError}
-                            />
-                        </div>
-                    )}
+                    {/* The agreement, one line behind an underlined link: the
+                        Experience Provider Agreement. Taken here, at the end of
+                        sign-up, not as a pop-up part-way through it. */}
                     {needsAgreementTick && (
-                        <div className={needsGuestTick ? 'mt-3' : 'mt-6'}>
+                        <div className="mt-6">
                             <AgreementTick
                                 doc="experience_provider"
                                 checked={termsAgreed}
@@ -6615,7 +6569,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             // the button makes it visible (matching how Next greys on
                             // the other steps), with the agree box right above on the
                             // finish screen.
-                            disabled={saving || (needsGuestTick && !guestAgreed) || (needsAgreementTick && !termsAgreed)}
+                            disabled={saving || (needsAgreementTick && !termsAgreed)}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >
                             <span className="block truncate">
