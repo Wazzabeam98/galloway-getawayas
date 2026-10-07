@@ -659,6 +659,10 @@ export default function AddHome() {
                 eyebrow="List your place"
                 intro="Sign in or create your free host account. You only pay a commission when you get a booking."
                 exitHref="/business"
+                // No Guest Terms during the host sign-up — the only agreement
+                // here is the Host Agreement, ticked on the final step. Guest
+                // Terms are agreed at a first booking, like every other guest.
+                collectGuestTerms={false}
                 below={<RecruitFaq audience="host" />}
                 onSignedIn={(s) => {
                     // A ?draft= link loads its draft only for a signed-in owner,
@@ -1266,8 +1270,11 @@ export default function AddHome() {
 
                         <button
                             type="submit"
-                            disabled={submitting}
-                            className="w-full py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60"
+                            // Stays disabled until the Host Agreement is ticked
+                            // (when one is owed), the same rule as the provider
+                            // sign-ups' Submit.
+                            disabled={submitting || (termsOnRecord === false && !termsTicked)}
+                            className="w-full py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                             {submitting ? 'Publishing...' : 'Publish listing'}
                         </button>
