@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, Feather, Users, Gem, MapPin, Maximize2, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
+import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, Flame, Armchair, Umbrella, Anchor, Feather, Users, Gem, MapPin, Maximize2, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import RecruitFaq from '@/components/business/RecruitFaq';
 import AgreementTick from '@/components/legal/AgreementTick';
@@ -130,6 +130,7 @@ export default function AddHome() {
         {
             category: 'Features',
             items: [
+                { name: 'Cold plunge', icon: ThermometerSnowflake },
                 { name: 'Cot', icon: Baby },
                 { name: 'Dedicated workspace', icon: Briefcase },
                 { name: 'EV charger', icon: Zap },
@@ -140,6 +141,7 @@ export default function AddHome() {
                 { name: 'Indoor fireplace', icon: Flame },
                 { name: 'Outdoor furniture', icon: Armchair },
                 { name: 'Pool', icon: Waves },
+                { name: 'Sauna', icon: ThermometerSun },
             ],
         },
         {

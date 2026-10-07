@@ -2,6 +2,7 @@ import {
     Wifi, Car, PawPrint, Waves, Flame, Tv, Thermometer, Plug, Laptop,
     Baby, Umbrella, Dumbbell, Armchair, Shirt, Droplet, Utensils,
     Bath, Trees, Snowflake, Coffee, Wind,
+    ThermometerSun, ThermometerSnowflake,
     ShieldCheck, Sofa, Check, Accessibility, type LucideIcon,
 } from 'lucide-react';
 import { ACCESSIBILITY_AMENITIES } from './listingFilters';
@@ -22,6 +23,8 @@ const ICONS: Record<string, LucideIcon> = {
     'Waterfront': Waves,
     'Beach access': Umbrella,
     'Hot tub': Bath,
+    'Sauna': ThermometerSun,
+    'Cold plunge': ThermometerSnowflake,
     'Indoor fireplace': Flame,
     'Fireplace': Flame,
     'Heating': Thermometer,

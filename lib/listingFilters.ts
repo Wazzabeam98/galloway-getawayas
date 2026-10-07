@@ -26,6 +26,8 @@ export const ACCESSIBILITY_AMENITIES = [
 // needs step-free access should see that we ask, not that we don't.)
 export const FILTER_AMENITIES = [
     'Hot tub',
+    'Sauna',
+    'Cold plunge',
     'Free parking on premises',
     'Wifi',
     'Heating',
@@ -46,6 +48,8 @@ export const FILTER_AMENITIES = [
 export const QUICK_CHIPS: { amenity: string; label: string }[] = [
     { amenity: 'Pets allowed', label: 'Dog friendly' },
     { amenity: 'Hot tub', label: 'Hot tub' },
+    { amenity: 'Sauna', label: 'Sauna' },
+    { amenity: 'Cold plunge', label: 'Cold plunge' },
     { amenity: 'Step-free guest entrance', label: 'Step-free access' },
     { amenity: 'Indoor fireplace', label: 'Fireplace' },
     { amenity: 'Free parking on premises', label: 'Free parking' },

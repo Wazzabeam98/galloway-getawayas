@@ -11,6 +11,8 @@ import { groupAmenities } from '@/lib/amenityGroups';
 // behind, which is where "Hangers" and "Hot water" belong.
 const DECIDES_ON = [
     'Hot tub',
+    'Sauna',
+    'Cold plunge',
     'Wifi',
     'Free parking on premises',
     'Free street parking',
