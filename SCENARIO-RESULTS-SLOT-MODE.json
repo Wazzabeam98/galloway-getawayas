@@ -1,7 +1,7 @@
 {
-  "ranAt": "2026-09-30T08:49:41.468Z",
-  "target": "http://localhost:3900",
-  "account": "acct_1U6iMxAJfMhUsIVc",
+  "ranAt": "2026-10-07T12:26:50.284Z",
+  "target": "http://localhost:3440",
+  "account": "acct_1UNtIwAovrM8qge1",
   "passed": 2,
   "failed": 1,
   "scenarios": [
@@ -69,7 +69,7 @@
         {
           "desc": "the same time now takes a SHARED booking (reopened as either)",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1hgS1ovhYuJ0rhJGNLOe0SP07OdeQx5evz4FONx"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1w442sNNx4PsCUiJbpU8kHFOClRmfAHFLPPndL1"
         },
         {
           "desc": "the session re-established as a shared table (private=false, capacity 8)",
