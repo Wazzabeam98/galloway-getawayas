@@ -39,9 +39,9 @@ export default function ChooseMenu({ items, minAge, providerMax, providerId, pro
                                 never leaves a ragged gap in the row. */}
                             {it.image ? (
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img src={it.image} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-xl object-cover" />
+                                <img src={it.image} alt="" loading="lazy" className="h-24 w-32 flex-none rounded-xl object-cover" />
                             ) : (
-                                <span className="flex h-16 w-16 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                                <span className="flex h-24 w-32 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                                     <Utensils className="h-6 w-6" aria-hidden />
                                 </span>
                             )}

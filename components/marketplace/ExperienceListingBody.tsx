@@ -12,8 +12,8 @@ import AboutThisPlace from '@/components/AboutThisPlace';
 import ReportListing from '@/components/ReportListing';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
-import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, ShieldCheck, Accessibility, Car, Check, ShoppingBag, Utensils, Package, Truck } from 'lucide-react';
-import { experienceSteps, type StepIcon } from '@/lib/experienceSteps';
+import { MapPin, Clock, Users, User, BadgeCheck, Activity, Backpack, ShieldAlert, ShieldCheck, Accessibility, Car, Check, Utensils } from 'lucide-react';
+import { experienceSteps } from '@/lib/experienceSteps';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
 import ReviewStars from '@/components/ReviewStars';
@@ -24,21 +24,6 @@ import { capitializeFirst } from '@/lib/utils';
 import { MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
 import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
-
-// Icon for an itinerary phase, by its generic/real step key (see
-// lib/experienceSteps). Titles are decided there — never per-category — so this
-// maps only the fixed keys.
-function phaseIcon(icon: StepIcon) {
-    switch (icon) {
-        case 'arrival': return MapPin;
-        case 'finish': return Flag;
-        case 'order': return ShoppingBag;
-        case 'prep': return Utensils;
-        case 'collect': return Package;
-        case 'deliver': return Truck;
-        default: return Compass;
-    }
-}
 
 // The listing body, in the cottage-page craft (photo mosaic, facts icon-list,
 // section rhythm). Shared by the against-a-stay page and the public/standalone
@@ -255,9 +240,9 @@ export default function ExperienceListingBody({
                                             <li key={it.id} className="flex gap-4 py-4 first:pt-0">
                                                 {it.image ? (
                                                     // eslint-disable-next-line @next/next/no-img-element
-                                                    <img src={it.image} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-xl object-cover" />
+                                                    <img src={it.image} alt="" loading="lazy" className="h-24 w-32 flex-none rounded-xl object-cover" />
                                                 ) : (
-                                                    <span className="flex h-16 w-16 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                                                    <span className="flex h-24 w-32 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                                                         <Utensils className="h-6 w-6" aria-hidden />
                                                     </span>
                                                 )}
@@ -340,9 +325,9 @@ export default function ExperienceListingBody({
                                             <li key={it.id} className="flex gap-4 py-4 first:pt-0">
                                                 {it.image ? (
                                                     // eslint-disable-next-line @next/next/no-img-element
-                                                    <img src={it.image} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-xl object-cover" />
+                                                    <img src={it.image} alt="" loading="lazy" className="h-24 w-32 flex-none rounded-xl object-cover" />
                                                 ) : (
-                                                    <span className="flex h-16 w-16 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                                                    <span className="flex h-24 w-32 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                                                         <Utensils className="h-6 w-6" aria-hidden />
                                                     </span>
                                                 )}
@@ -421,21 +406,22 @@ export default function ExperienceListingBody({
                                     <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
                                 ) : null}
                                 {steps.length > 0 ? (
+                                    // Numbered steps, Airbnb-style — a filled numeral, the step's
+                                    // label in bold, then the detail. `experienceSteps` has already
+                                    // dropped any phase the provider left blank, so the numbers run
+                                    // 1, 2, 3 over the steps that are actually there.
                                     <ol className="mt-5 space-y-5">
-                                        {steps.map((step, i) => {
-                                            const Icon = phaseIcon(step.icon);
-                                            return (
-                                                <li key={i} className="flex gap-3.5">
-                                                    <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
-                                                        <Icon className="h-4 w-4" aria-hidden />
-                                                    </span>
-                                                    <div className="min-w-0">
-                                                        <div className="font-semibold text-slate-900">{step.title}</div>
-                                                        <p className="mt-0.5 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{step.detail}</p>
-                                                    </div>
-                                                </li>
-                                            );
-                                        })}
+                                        {steps.map((step, i) => (
+                                            <li key={i} className="flex gap-3.5">
+                                                <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-emerald-50 text-sm font-bold tabular-nums text-emerald-700 ring-1 ring-emerald-100">
+                                                    {i + 1}
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="font-semibold text-slate-900">{step.title}</div>
+                                                    <p className="mt-0.5 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{step.detail}</p>
+                                                </div>
+                                            </li>
+                                        ))}
                                     </ol>
                                 ) : null}
                             </section>

@@ -355,8 +355,9 @@ function AmenitiesPhoneCard({ current, onSave }: { current: AmenityDraft; onSave
 }
 
 // ── Availability ─────────────────────────────────────────────────────────────
-function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onSave }: {
+function AvailabilityCard({ isSlot, comesToYou, hours, slotLength, turnaround, leadDays, onSave }: {
     isSlot: boolean;
+    comesToYou: boolean;
     hours: { on: boolean; open: string; close: string }[];
     slotLength: number; turnaround: number; leadDays: number;
     onSave: (draft: { hours: { on: boolean; open: string; close: string }[]; slotLength: number; turnaround: number; leadDays: number }) => unknown;
@@ -406,13 +407,18 @@ function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onS
                                 </Field>
                             </>
                         )}
-                        {/* Only a slot calendar can block a day, or part of one. */}
-                        {isSlot && (
+                        {/* The diary. A slot provider can block a whole day or part
+                            of one; a comes-to-you provider has no sessions, so it
+                            blocks whole days it can't travel. Both reach the same
+                            calendar page, which renders the right tool for the shape. */}
+                        {(isSlot || comesToYou) && (
                         <Link href="/services/dashboard/calendar" className="flex items-center justify-between gap-3 rounded-xl border border-slate-300 bg-slate-50 p-4 transition hover:border-slate-400">
                             <div className="flex items-start gap-3">
                                 <CalendarRange className="mt-0.5 h-5 w-5 flex-none text-slate-500" />
                                 <div>
-                                    <div className="text-sm font-semibold text-slate-900">Blocking a specific day, or part of one?</div>
+                                    <div className="text-sm font-semibold text-slate-900">
+                                        {isSlot ? 'Blocking a specific day, or part of one?' : 'Need to block a day you can’t take?'}
+                                    </div>
                                 </div>
                             </div>
                             <span className="flex-none text-sm font-semibold text-emerald-700">Open calendar →</span>
@@ -943,7 +949,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     </>))}
 
                     {hasHours && sec('availability', (<>
-                        <AvailabilityCard isSlot={p.isSlot} hours={hours} slotLength={slotLength} turnaround={turnaround} leadDays={leadDays}
+                        <AvailabilityCard isSlot={p.isSlot} comesToYou={p.shape === 'comes_to_you'} hours={hours} slotLength={slotLength} turnaround={turnaround} leadDays={leadDays}
                             onSave={(d) => runThen('availability', {
                                 slot_length_minutes: d.slotLength, slot_turnaround_minutes: d.turnaround, lead_time_days: d.leadDays,
                                 availability: d.hours.map((h, day) => ({ ...h, day_of_week: day }))

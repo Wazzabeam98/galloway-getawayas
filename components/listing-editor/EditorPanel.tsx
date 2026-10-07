@@ -26,8 +26,12 @@ export function EditorCard({ title, summary, onClick, children }: {
         >
             <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                    <div className="font-semibold text-slate-900">{title}</div>
-                    {summary && <div className="mt-0.5 truncate text-sm text-slate-500">{summary}</div>}
+                    <div className="font-semibold text-slate-900 line-clamp-2 break-words">{title}</div>
+                    {/* A couple of lines, then "…" — a long description/address/rule
+                        never runs off the card or widens it. break-words so an
+                        unbroken token (a URL, a what3words) wraps rather than
+                        pushing the card past the page edge. */}
+                    {summary && <div className="mt-0.5 line-clamp-2 break-words text-sm text-slate-500">{summary}</div>}
                 </div>
                 <ChevronRight className="h-5 w-5 flex-none text-slate-400" />
             </div>
