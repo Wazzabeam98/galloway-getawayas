@@ -15,6 +15,7 @@ import MessagesLink from './MessagesLink'
 import MenuUnreadDot from './MenuUnreadDot'
 import BookingsLink from './BookingsLink'
 import RequestsLink from './RequestsLink'
+import OwnerToolsLink from './OwnerToolsLink'
 
 const itemClass = 'hover:bg-slate-200 rounded-md p-2 cursor-pointer';
 
@@ -72,7 +73,7 @@ const NavMenu = ({
                     aria-label='Your account and menu'
                     className='flex items-center gap-2 border p-1.5 pl-3 rounded-full cursor-pointer hover:shadow-md transition'
                 >
-                    <MenuUnreadDot enabled={session != null} host={isHost} provider={isProvider && !isGuestProvider} />
+                    <MenuUnreadDot enabled={session != null} host={isHost} provider={isProvider && !isGuestProvider} admin={isAdmin} />
                     {session != null ? (
                         <div className='w-8 h-8 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0'>
                             {avatarUrl ? (
@@ -222,9 +223,9 @@ const NavMenu = ({
                                 <>
                                     <div className='border-t my-1' />
                                     <li className={itemClass}>
-                                        <Link href='/admin' className='font-semibold text-emerald-800'>
-                                            Owner tools
-                                        </Link>
+                                        {/* Carries the count still waiting on the
+                                            admin across all three review queues. */}
+                                        <OwnerToolsLink className='font-semibold text-emerald-800' />
                                     </li>
                                 </>
                             )}
