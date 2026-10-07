@@ -438,16 +438,18 @@ test('a guest opens on the picker if no category, else the first content screen'
         'trade',
     );
     assert.equal(
-        // First content screen is the About-you opener for an expertise category.
+        // First content screen is the name step (g_title) now — it opens About you
+        // and every guest has it, whatever their category.
         openingStep({ hydrated: true, restored: false, trade: 'guest', guestNeedsCategory: false, category: 'chef' }),
-        'g_you',
+        'g_title',
     );
     assert.equal(
-        // A sauna skips the expertise screens, so it opens on Location (g_area) —
-        // its where-and-when step, which holds the weekly schedule — never g_you,
-        // a step it does not have. This is the returning-sauna reorder fix.
+        // A sauna skips the expertise screens but still names its experience, so it
+        // too opens on the name step (g_title) — a step it does have. The old
+        // returning-sauna fix (open on a step it has, never g_you) still holds,
+        // just landing on the name rather than Location now.
         openingStep({ hydrated: true, restored: false, trade: 'guest', guestNeedsCategory: false, category: 'sauna' }),
-        'g_area',
+        'g_title',
     );
 });
 
@@ -467,21 +469,24 @@ test('a guest with no context still sees the old three steps', () => {
 
 // The rebuilt flow, reordered to Airbnb's sequence (Sep 2026). The account is
 // made before the wizard renders at all (the shared email-first sign-in), so the
-// flow opens on the picker ('trade' group grid), then g_subtype, and the content: About you (g_you, g_creds), Location (g_area)
-// straight after, Photos (g_photos) BEFORE the writing, Pricing (g_menu),
-// Details (g_expect), and the Finish screen (the account). The booking shape is
+// flow opens on the picker ('trade' group grid), then g_subtype, and the content:
+// About you — now opening with the NAMING step (g_title, what the experience/
+// business is CALLED, written to business_name) ahead of the years (g_you) and
+// expertise hub (g_creds) — then Location (g_area) straight after, Photos
+// (g_photos) BEFORE the writing, Pricing (g_menu), Details (g_expect), and the
+// Finish screen (the account). The naming step moved to the FRONT of About you on
+// 7 Oct 2026 (a real provider was thrown by being asked the name after everything
+// else); it used to sit late, opening the Details section. The booking shape is
 // inferred from the category and never a step; availability folds into g_area;
-// dietary folds into g_expect; the business step is host-only. The Details
-// section opens with a NAMING step (g_title — what the experience is CALLED,
-// written to business_name), then g_expect; the professional title is asked
-// separately on g_creds and is NOT the listing name. There is NO contact step (a
-// guest signs in up front, so the account address is the contact address, and
-// the phone lives on the profile) and NO checks step (the per-category checks
-// collapsed to one responsibility confirmation folded onto the finish screen).
-// So an applicant with a sub-type walks these keys.
+// dietary folds into g_expect; the business step is host-only. The professional
+// title is asked separately on g_creds and is NOT the listing name. There is NO
+// contact step (a guest signs in up front, so the account address is the contact
+// address, and the phone lives on the profile) and NO checks step (the
+// per-category checks collapsed to one responsibility confirmation folded onto
+// the finish screen). So an applicant with a sub-type walks these keys.
 const TEN = [
-    'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
-    'g_menu', 'g_title', 'g_expect', 'finish',
+    'trade', 'g_subtype', 'g_title', 'g_you', 'g_creds', 'g_area', 'g_photos',
+    'g_menu', 'g_expect', 'finish',
 ];
 
 // A comes-to-you or slot category also has a max-guests step (g_capacity) at the
@@ -535,7 +540,9 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
 // `expertise` is true for every slot category except the sauna, which skips the
 // years and expertise screens.
 const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean; perItemDuration?: boolean; mixed?: boolean } = {}) => {
-    const keys = ['trade', 'g_subtype'];
+    // g_title (the name) opens About you now, so it comes first — every guest has
+    // it, including a sauna that skips the years/expertise screens below.
+    const keys = ['trade', 'g_subtype', 'g_title'];
     if (opts.expertise !== false) keys.push('g_you', 'g_creds');
     if (opts.fork) keys.push('g_slot_where');
     keys.push('g_area');
@@ -557,7 +564,7 @@ const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boole
     // sessions and drops both (the perItemDuration/travelling cases never reach
     // this helper with mixed set — those are asserted directly via stepApplies).
     if (opts.perPerson || opts.mixed) keys.push('g_slot_min');
-    keys.push('g_menu', 'g_title', 'g_expect', 'finish');
+    keys.push('g_menu', 'g_expect', 'finish');
     return keys;
 };
 
@@ -736,10 +743,11 @@ test('the something-else group skips the sub-type screen but is asked its shape'
     assert.equal(stepApplies('g_shape', 'guest', ctx), true, 'other is asked its booking shape');
     // A real category, whose shape came from its sub-type, is never asked g_shape.
     assert.equal(stepApplies('g_shape', 'guest', { group: 'wellness', category: 'sauna', shape: 'slot' }), false, 'a real category already has a shape');
-    // g_shape is the second picker, before About-you and the location step.
+    // g_shape is the second picker, before About-you and the location step; the
+    // naming step (g_title) opens About you, right after it.
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'g_shape', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_title', 'g_expect', 'finish'],
+        ['trade', 'g_shape', 'g_title', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'finish'],
     );
     // And like the other pickers it sits before the rail, in no section.
     assert.equal(sectionForStep('g_shape'), null, 'the shape picker is pre-rail');
@@ -765,12 +773,14 @@ test('the guest-only split never touches a host trade', () => {
 
 test('guest movement and the last step honour the context', () => {
     const ctx = { group: 'wellness', category: 'sauna', shape: 'slot' };
-    // The Details section opens on the naming step (g_title) now, between the
-    // price and what-happens.
-    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_title');
-    assert.equal(nextStep('guest', 'g_title', ctx), 'g_expect');
-    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_title');
-    assert.equal(previousStep('guest', 'g_title', ctx), 'g_menu');
+    // The naming step (g_title) opens About you now, right after the sub-type —
+    // a sauna skips the years/expertise screens, so from the name it goes on to
+    // Location (g_area).
+    assert.equal(nextStep('guest', 'g_title', ctx), 'g_area');
+    assert.equal(previousStep('guest', 'g_title', ctx), 'g_subtype');
+    // The Details section is now just what-happens, straight after the price.
+    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_expect');
+    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_menu');
     assert.equal(isLastStep('guest', 'finish', ctx), true);
     assert.equal(isLastStep('guest', 'g_expect', ctx), false);
     // The business step is off for a guest-with-context, so it resolves back to
@@ -787,14 +797,13 @@ test('guest movement and the last step honour the context', () => {
 test('the guest flow is six named sections, in Airbnb order', () => {
     const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
     const secs = sectionsFor('guest', ctx);
-    // The old "Experience" section is gone: its only screen was the naming step,
-    // which is now a pre-rail name-only step (g_about) and its description field
-    // was cut. What is left is six sections.
+    // Six sections. The naming step opens About you now (it used to open a
+    // separate Details-leading step); Details is left with just what-happens.
     assert.deepEqual(secs.map((s: any) => s.key),
         ['about', 'location', 'photos', 'pricing', 'details', 'finish']);
-    // About you pairs the years screen and the expertise hub; every other
-    // content section is a single screen; Finish gathers the wrap-up.
-    assert.deepEqual(secs.find((s: any) => s.key === 'about').steps, ['g_you', 'g_creds']);
+    // About you opens with the name, then the years screen and the expertise hub;
+    // every other content section is a single screen; Finish gathers the wrap-up.
+    assert.deepEqual(secs.find((s: any) => s.key === 'about').steps, ['g_title', 'g_you', 'g_creds']);
     // Pricing leads with the capacity step, then the priced offerings.
     assert.deepEqual(secs.find((s: any) => s.key === 'pricing').steps, ['g_capacity', 'g_menu']);
     // Finish is now a single screen — the checks and contact steps that used to
@@ -805,16 +814,17 @@ test('the guest flow is six named sections, in Airbnb order', () => {
     assert.equal(secs.find((s: any) => s.key === 'location').firstStep, 'g_area');
 });
 
-test('a section with no screens drops out of the rail entirely', () => {
-    // The sauna skips BOTH the years screen and the expertise hub, so its About
-    // you section has nothing in it — and a section with no live steps drops
-    // out rather than sitting in the rail as a dead label. As a slot it DOES have
-    // a When section (session length + hours), so its rail opens at Location and
-    // carries When after it.
+test('a section with no live screens drops out of the rail entirely', () => {
+    // The sauna skips BOTH the years screen and the expertise hub, but it still
+    // NAMES its experience — and the name step now opens About you — so its About
+    // section survives with just that one screen (the dead-section drop-out is
+    // proved by the When/notice cases below instead). As a slot it also has a When
+    // section (session length), so its rail runs About → Location → When → …
     const sauna = sectionsFor('guest', { group: 'wellness', category: 'sauna', shape: 'slot' });
-    assert.equal(sauna.some((s: any) => s.key === 'about'), false, 'sauna has no About you section');
+    const aboutSauna = sauna.find((s: any) => s.key === 'about');
+    assert.deepEqual(aboutSauna ? aboutSauna.steps : null, ['g_title'], 'sauna About you is just the name');
     assert.deepEqual(sauna.map((s: any) => s.key),
-        ['location', 'when', 'photos', 'pricing', 'details', 'finish']);
+        ['about', 'location', 'when', 'photos', 'pricing', 'details', 'finish']);
     // A made-to-order guest's When is its notice period (since 5 Oct 2026), and a
     // traveller has neither screen — proof the section still drops out for a
     // shape with nothing in it.
@@ -824,16 +834,17 @@ test('a section with no screens drops out of the rail entirely', () => {
     assert.equal(chef.some((s: any) => s.key === 'when'), false, 'a traveller has no When section');
 });
 
-test('the pickers and the name step sit before the rail, in no section', () => {
+test('the pickers sit before the rail; the name step opens About you', () => {
     // The flow branches on the group and the sub-type, so the rail can't be
     // drawn until they're answered — and listing them would imply you can change
     // category mid-flow and invalidate everything after it.
     assert.equal(sectionForStep('trade'), null);
     assert.equal(sectionForStep('g_subtype'), null);
-    // The name step (g_about) sits right after the sub-type, before the rail
-    // begins — it belongs to no section, like the pickers it follows.
+    // The retired g_about key belongs to no section.
     assert.equal(sectionForStep('g_about'), null);
-    // A content screen carries its section; About you covers the first two.
+    // The name step (g_title) now opens the About you section, ahead of the
+    // years screen and the expertise hub.
+    assert.equal(sectionForStep('g_title').key, 'about');
     assert.equal(sectionForStep('g_you').key, 'about');
     assert.equal(sectionForStep('g_creds').key, 'about');
 });

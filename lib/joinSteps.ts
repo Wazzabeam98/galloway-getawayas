@@ -126,6 +126,17 @@ const ALL_STEPS: Step[] = [
     // stored) then follows exactly as for a real category of that shape. Only
     // shown for a null-shape category; every real one answered this at its pick.
     { key: 'g_shape', label: 'Format', title: GUEST_SCREEN_COPY.shapeQuestion },
+    // The listing's own name — what the EXPERIENCE (or the business) is called —
+    // asked EARLY, as the opener of the About-you section, right after the person
+    // has said what kind of thing they offer (Liam, 7 Oct 2026 — a real provider
+    // was thrown by being asked the name "much later", after everything else). It
+    // becomes business_name (the denormalised display copy the card, the
+    // marketplace sort, the review queue and the order/emails all read). One
+    // account can hold several offerings, each named and priced on the Price
+    // screen (g_menu); this is the name of the business/listing they all sit
+    // under. The professional title (what the PERSON is) stays a credential on
+    // the expertise hub (g_creds).
+    { key: 'g_title', label: 'Name', title: GUEST_SCREEN_COPY.experienceTitleQuestion },
     // About you (years, then the expertise hub), one question a screen, in
     // Airbnb's order. These come BEFORE the host 'business' step so a trade opens
     // on the years counter and the "Tell hosts about yourself" hub, the same way
@@ -183,14 +194,9 @@ const ALL_STEPS: Step[] = [
     // M" as one thought. Dropped entirely for a private/whole-group slot.
     { key: 'g_slot_min', label: 'Minimum', title: GUEST_SCREEN_COPY.slotMinQuestion },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
-    // The listing's own name — what the EXPERIENCE is called, not what the person
-    // is. It becomes business_name (the denormalised display copy the card, the
-    // marketplace sort, the review queue and the order/emails all read), so the
-    // guest's first line describes the thing they're buying; the professional
-    // title moved to the About block as a credential. Its own step, first in the
-    // Details section, near the end — the naming/describing moment the original
-    // flow always placed here.
-    { key: 'g_title', label: 'Title', title: GUEST_SCREEN_COPY.experienceTitleQuestion },
+    // g_title (the listing's name) used to sit HERE, first in the Details section
+    // near the end. It moved to the top of the About-you section (see above) so a
+    // provider names their experience early, not after every other answer.
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
     // Not "Registration". Registration and skills never co-occur across the
     // trade list — the electrician and plumber give numbers, the handyman gives
@@ -432,7 +438,10 @@ export function stepsFor(trade: string, ctx?: StepContext): Step[] {
 // ---------------------------------------------------------------------------
 
 const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
-    { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
+    // g_title (the experience/business name) opens the section: every guest has
+    // it, so a no-expertise category (a sauna, which skips g_you/g_creds) still
+    // names its listing here rather than being asked much later.
+    { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_title', 'g_you', 'g_creds'] },
     // g_shape is a picker now (it precedes the rail, like g_subtype) — the flow
     // branches on it, so it belongs to no section.
     { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_slot_where', 'g_area'] },
@@ -446,7 +455,7 @@ const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_notice', 'g_slot_length'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
     { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu'] },
-    { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_title', 'g_expect'] },
+    { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
     // Finish is now a single screen: the account, with one responsibility
     // confirmation folded in above submit. The old checks and contact steps that
     // shared this section are gone.
@@ -752,7 +761,11 @@ export function openingStep(state: OpeningState): StepKey | null {
     // than a step it does not have.
     if (!state.trade) return 'trade';
     if (audienceForTrade(state.trade) !== 'guest') return 'g_you';
-    return guestAsksExpertise(state.category) ? 'g_you' : 'g_area';
+    // A guest now opens on the name screen (g_title) — the opener of the
+    // About-you section and the first thing every guest fills, whatever their
+    // category (a no-expertise sauna has g_title but no g_you/g_creds). Naming
+    // first is the fix for a provider thrown by being asked the name late.
+    return 'g_title';
 }
 
 // What counts as already seen when opening there. Everything up to and
