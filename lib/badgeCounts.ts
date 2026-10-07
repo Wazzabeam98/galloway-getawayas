@@ -129,3 +129,65 @@ export async function providerRequestsFor(uid: string): Promise<number> {
 
     return count || 0;
 }
+
+export interface AdminPending {
+    // Holiday-let listings waiting for approval (reviewed on /admin/listings).
+    holidayLets: number;
+    // Guest experiences waiting for review (on /admin/providers#experiences).
+    experiences: number;
+    // Trades waiting for review (on /admin/providers#trades).
+    trades: number;
+}
+
+export const EMPTY_ADMIN_PENDING: AdminPending = { holidayLets: 0, experiences: 0, trades: 0 };
+
+/**
+ * The three "waiting on the admin" numbers behind the green dot and the
+ * owner-tools counts, split so each one can point at the page and section that
+ * clears it.
+ *
+ * Only an admin gets real numbers; everyone else gets zeros without any count
+ * query running, so this costs a signed-in non-admin a single indexed lookup on
+ * their own profile row. Counted with the service key: a pending listing or
+ * provider is invisible to a normal caller under RLS, which is the whole point.
+ *
+ * These are "waiting for review" only — rows the admin must act on — so they
+ * drop to zero as each is approved or declined, with no clear step. Unclaimed
+ * applications (waiting on the APPLICANT, not the admin) are deliberately not
+ * counted here: they are not the admin's move.
+ */
+export async function adminPendingFor(uid: string): Promise<AdminPending> {
+    const admin = adminClient();
+
+    const { data: profile } = await admin
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', uid)
+        .maybeSingle();
+
+    if (!profile || profile.is_admin !== true) return { ...EMPTY_ADMIN_PENDING };
+
+    // In parallel: three head counts on different tables.
+    const [lets, experiences, trades] = await Promise.all([
+        admin
+            .from('listings')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'pending_review'),
+        admin
+            .from('service_providers')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'pending_review')
+            .eq('audience', 'guest'),
+        admin
+            .from('service_providers')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'pending_review')
+            .in('audience', ['host', 'both']),
+    ]);
+
+    return {
+        holidayLets: Number(lets.count || 0),
+        experiences: Number(experiences.count || 0),
+        trades: Number(trades.count || 0),
+    };
+}
