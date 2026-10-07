@@ -51,6 +51,9 @@ const TABLES: TableDecision[] = [
             'status', 'submitted_at', 'subscription_status', 'trade', 'trial_ends_at', 'updated_at',
         ]),
         revoked: {
+            vat_name: 'VAT registration (number + registered name); private to the owner, written/read by /api/account/vat with the service role only, published only via the booking/order supplier snapshot on that guest\'s receipt',
+            vat_number: 'VAT registration (number + registered name); private to the owner, written/read by /api/account/vat with the service role only, published only via the booking/order supplier snapshot on that guest\'s receipt',
+            vat_registered: 'VAT registration (number + registered name); private to the owner, written/read by /api/account/vat with the service role only, published only via the booking/order supplier snapshot on that guest\'s receipt',
             admin_hidden_at: 'admin take-down tombstone — set and cleared only by the admin provider-visibility route (service role); consulted server-side by isLiveToGuests/visibleInDirectory and by the public SELECT policy, never browser-read (mirrors owner_paused)',
             ical_token: 'calendar-export secret — subscribing to a provider\'s feed reads their bookings; read only via the service role in the experiences iCal export route, never browser-read (mirrors listings.ical_token)',
             owner_paused: 'owner\'s self-serve take-down flag; read and written only via the provider editor\'s service-role route (ownership-checked), never browser-read — isLiveToGuests consults it server-side',
@@ -96,6 +99,9 @@ const TABLES: TableDecision[] = [
             'trading_name', 'welcome_message', 'welcome_message_enabled',
         ]),
         revoked: {
+            vat_name: 'VAT registration (number + registered name); private to the owner, written/read by /api/account/vat with the service role only, published only via the booking/order supplier snapshot on that guest\'s receipt',
+            vat_number: 'VAT registration (number + registered name); private to the owner, written/read by /api/account/vat with the service role only, published only via the booking/order supplier snapshot on that guest\'s receipt',
+            vat_registered: 'VAT registration (number + registered name); private to the owner, written/read by /api/account/vat with the service role only, published only via the booking/order supplier snapshot on that guest\'s receipt',
             host_terms_agreed_at: 'host terms acceptance record; written and read by the server only (publish route), never by the browser',
             host_terms_version: 'host terms acceptance record; written and read by the server only (publish route), never by the browser',
             anonymised_at: 'audit tombstone — when the account was anonymised; server/admin only, no user or public read',

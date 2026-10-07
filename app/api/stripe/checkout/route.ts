@@ -184,25 +184,40 @@ export async function POST(request: Request) {
         // (lib/stayRules). Preparation time keeps nights free around the
         // OTHER stays: bookings here (this one excluded) and on other platforms.
         // ------------------------------------------------------------------
-        let prepBuffer: Set<string> | null = null;
-        if (prepDays(listing) > 0) {
-            const [{ data: otherStays }, { data: feedRows }] = await Promise.all([
-                admin.from('bookings')
-                    .select('check_in, check_out')
-                    .eq('listing_id', booking.listing_id)
-                    .in('status', ['pending', 'confirmed'])
-                    .neq('id', booking.id),
-                admin.from('listing_ical_feeds')
-                    .select('events')
-                    .eq('listing_id', booking.listing_id),
-            ]);
-            const ranges: { start: string; end: string }[] = [];
-            (otherStays || []).forEach((b: any) => ranges.push({ start: String(b.check_in).slice(0, 10), end: String(b.check_out).slice(0, 10) }));
-            (feedRows || []).forEach((f: any) => (f.events || []).forEach((e: any) => {
-                if (e && e.start && e.end) ranges.push({ start: String(e.start).slice(0, 10), end: String(e.end).slice(0, 10) });
-            }));
-            prepBuffer = prepBufferNights(ranges, prepDays(listing));
-        }
+        // The other stays here and on other platforms. Needed for two things:
+        // preparation time keeps nights free around them, and a stay shorter
+        // than the minimum is allowed only when it fills the gap between two of
+        // them exactly (lib/stayRules). The cached feed events are enough to
+        // find a gap's edges — the LIVE re-check further down only ever adds
+        // blocks, so it can never turn a real gap into an open stretch.
+        const [{ data: otherStays }, { data: feedRows }] = await Promise.all([
+            admin.from('bookings')
+                .select('check_in, check_out')
+                .eq('listing_id', booking.listing_id)
+                .in('status', ['pending', 'confirmed'])
+                .neq('id', booking.id),
+            admin.from('listing_ical_feeds')
+                .select('events')
+                .eq('listing_id', booking.listing_id),
+        ]);
+        const otherRanges: { start: string; end: string }[] = [];
+        (otherStays || []).forEach((b: any) => otherRanges.push({ start: String(b.check_in).slice(0, 10), end: String(b.check_out).slice(0, 10) }));
+        (feedRows || []).forEach((f: any) => (f.events || []).forEach((e: any) => {
+            if (e && e.start && e.end) otherRanges.push({ start: String(e.start).slice(0, 10), end: String(e.end).slice(0, 10) });
+        }));
+
+        const prepBuffer: Set<string> | null = prepDays(listing) > 0
+            ? prepBufferNights(otherRanges, prepDays(listing))
+            : null;
+
+        // Every unavailable night, used ONLY to let a gap-filling stay through
+        // below the minimum (stayProblem's `unavailable`): taken here or
+        // elsewhere, host-blocked, or held by preparation time. It opens no
+        // night up — the night-by-night and clash checks below are what
+        // actually protect the dates.
+        const unavailable = blockedNightsFromEvents(otherRanges);
+        Object.keys(blockedDates).forEach((d) => unavailable.add(d));
+        if (prepBuffer) prepBuffer.forEach((d) => unavailable.add(d));
 
         // Pets: the host's House rules — none if pets aren't allowed, otherwise
         // up to their maximum — whatever the link asked for.
@@ -218,6 +233,7 @@ export async function POST(request: Request) {
             todayKey: londonTodayKey(),
             minOverrides: minNightsOverrides,
             prepBuffer,
+            unavailable,
         });
         if (ruleProblem) {
             return NextResponse.json({ ok: false, error: ruleProblem }, { status: 400 });
