@@ -31,6 +31,11 @@ const tools = [
         blurb: 'What each host is owed, and what has already been sent.',
     },
     {
+        href: '/admin/held-payouts',
+        title: 'Money held for providers',
+        blurb: 'Experience providers who are live but haven\u2019t set up payouts, and how much we\u2019re holding for each.',
+    },
+    {
         href: '/admin/experience-orders',
         title: 'Experience orders',
         blurb: 'Paid experience bookings. Refund all or part of one.',

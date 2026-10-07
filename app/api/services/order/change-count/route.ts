@@ -66,7 +66,7 @@ async function loadForCount(admin: any, orderId: string, userId: string): Promis
     if (shape === 'made_to_order') return { error: { status: 400, message: 'This booking’s quantity can’t be changed — message the provider.' } };
 
     const { data: provider } = await admin.from('service_providers')
-        .select('id, business_name, trade, shape, status, plan, stripe_account_id, stripe_payouts_enabled, commission_rate, cancellation_window_hours, guest_details')
+        .select('id, business_name, trade, shape, status, plan, stripe_account_id, stripe_payouts_enabled, stripe_charges_enabled, commission_rate, cancellation_window_hours, guest_details')
         .eq('id', order.provider_id).maybeSingle();
     if (!providerTakesChanges(provider)) return { error: { status: 400, message: 'That experience isn’t taking changes right now.' } };
 
@@ -123,7 +123,7 @@ async function startIncreaseRequest(
             payment_intent_data: {
                 // On behalf of the provider (the seller): captured to us on
                 // accept, held, and paid out after the date.
-                ...heldChargeSeller(provider.stripe_account_id),
+                ...heldChargeSeller(provider),
                 capture_method: 'manual',
                 description: 'Galloway experience — extra places (request) · ' + business + ' · ' + itemName,
                 metadata: { kind: 'change_request', order_id: row.id, parent_order_id: order.id, provider_id: provider.id, ...heldChargeMetadata(pricing) },

@@ -227,11 +227,27 @@ test('SELLER: if the charge was made on behalf of a different Stripe account, no
     assert.ok(logged.some((l) => l.money && /seller on the charge/.test(l.message)));
 });
 
-test('SELLER: heldChargeSeller names the provider as seller and refuses to build a charge without their account', () => {
+test('SELLER: a provider whose account takes card payments is the seller; one still setting up is not — we are', () => {
     clearModule('@/lib/experienceFunds');
     const { heldChargeSeller } = require('../lib/experienceFunds');
-    assert.deepEqual(heldChargeSeller('acct_p1'), { on_behalf_of: 'acct_p1' });
-    assert.throws(() => heldChargeSeller(''), /no Stripe account/);
+    assert.deepEqual(heldChargeSeller({ stripe_account_id: 'acct_p1', stripe_charges_enabled: true }), { on_behalf_of: 'acct_p1' });
+    // Stripe refuses on_behalf_of without the card_payments capability, so an
+    // unfinished account (or none) is sold as us — never a failed checkout.
+    assert.deepEqual(heldChargeSeller({ stripe_account_id: 'acct_p1', stripe_charges_enabled: false }), {});
+    assert.deepEqual(heldChargeSeller({ stripe_account_id: null, stripe_charges_enabled: null }), {});
+    assert.deepEqual(heldChargeSeller(null), {});
+    // Never money-moving fields, whichever way it goes.
+    for (const v of [heldChargeSeller({ stripe_account_id: 'acct_p1', stripe_charges_enabled: true }), heldChargeSeller(null)]) {
+        assert.equal((v as any).transfer_data, undefined);
+        assert.equal((v as any).application_fee_amount, undefined);
+    }
+});
+
+test('HELD: a charge made as us (no on_behalf_of) is paid to the provider once their payouts are on', async () => {
+    const { route, stripeCalls } = load({ pi: { id: 'pi_1', latest_charge: 'ch_1', on_behalf_of: null } });
+    const res: any = await route.GET(authorised());
+    assert.equal(res.body.failed, 0);
+    assert.equal(transfers(stripeCalls).length, 1, 'released to the provider by the run');
 });
 
 test('HELD: a provider without payouts enabled waits — skipped, not failed, and said out loud', async () => {

@@ -106,8 +106,10 @@ async function guestPI({ total, account, capture, metadata, pm = 'pm_card_visa' 
         payment_method: pm,
         payment_method_types: ['card'],
         confirm: 'true',
-        on_behalf_of: account,
-        description: EXP_TAG + ' held charge on behalf of the provider',
+        // No account: a provider still setting up Stripe — sold as us (no
+        // on_behalf_of), exactly as lib/experienceFunds heldChargeSeller does.
+        ...(account ? { on_behalf_of: account } : {}),
+        description: EXP_TAG + (account ? ' held charge on behalf of the provider' : ' held charge, sold as the platform (provider not set up yet)'),
         metadata: { funds_flow: 'held', platform_fee_pence: String(feePence), ...(metadata || {}) },
     };
     if (capture) body.capture_method = capture;
@@ -1653,6 +1655,67 @@ async function main() {
         const after = await orderRow(order.id);
         check('APP: still confirmed, £55 refunded, never paid out by us', after.status === 'confirmed' && Number(after.amount_refunded) === 55 && !after.paid_out_at,
             after.status + ' £' + after.amount_refunded);
+    }
+
+    scenario('30', 'Approved but payouts not set up: bookable, the guest pays as normal (sold as us), the share is held — then released once payouts are on');
+    {
+        // The chef as a provider who was approved but never finished Stripe.
+        // It also needs what any live listing needs to be on the marketplace — an
+        // assigned MCC (the seed chef has none) — and to be the business the
+        // owner's dashboard opens on (the most recently touched).
+        const before = (await db.select('service_providers', '?select=stripe_account_id,stripe_payouts_enabled,stripe_charges_enabled,stripe_mcc&id=eq.' + chef.id))[0];
+        await db.update('service_providers', '?id=eq.' + chef.id, { stripe_account_id: null, stripe_payouts_enabled: false, stripe_charges_enabled: false, stripe_mcc: '5812', updated_at: new Date().toISOString() });
+        try {
+            const started = await postRoute('/api/services/order', guestCookie, { itemId: chefItem.id, bookingId: booking.id, serviceDate: dayOffset(6), quantity: 1 });
+            check('BOOKABLE: services/order builds a Checkout for a provider with no Stripe account',
+                started.status === 200 && started.body.ok && !!started.body.url, 'HTTP ' + started.status + ' ' + JSON.stringify(started.body).slice(0, 160));
+            // The guest-facing page — the same gate the marketplace uses (approved,
+            // not taken down) — renders the bookable listing, not "not taking bookings".
+            const page = await fetch(SITE + '/experiences/browse/' + chef.id, { headers: { cookie: guestCookie } });
+            const html = await page.text();
+            const chefRow = (await db.select('service_providers', '?select=status,owner_paused,admin_hidden_at,trade,stripe_mcc&id=eq.' + chef.id))[0];
+            check('VISIBLE: the provider’s public page is live and bookable', page.status === 200 && html.indexOf('EXP Chef') >= 0 && !/not taking bookings/i.test(html),
+                'HTTP ' + page.status + ' ' + JSON.stringify(chefRow));
+
+            // The guest's money, taken as us — a dinner for two four days ago, £110
+            // (its own date: a comes-to-you provider holds a date exclusively).
+            const serviceDate = dayOffset(-4);
+            const pi = await guestPI({ total: 110, account: null, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+            check('STRIPE: the charge is ours — no on_behalf_of, no transfer_data, no application fee',
+                !pi.on_behalf_of && !pi.transfer_data && !pi.application_fee_amount, 'on_behalf_of=' + pi.on_behalf_of);
+            const base = sessionForServiceOrder({ pi: pi.id, total: 110, provider: chef, guest, booking, serviceDate, item: chefPerson });
+            await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'person', unit_price: '55', quantity: '2', adults: '2', children: '0' } });
+            const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + serviceDate + '&order=created_at.desc&limit=1'))[0];
+            const acc = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'confirm' });
+            check('the provider accepts and it is captured', acc.status === 200 && acc.body.ok, 'HTTP ' + acc.status);
+            const charge = await settledCharge(pi.id);
+            check('STRIPE: £110 captured to us', charge && charge.captured && charge.amount_captured === 11000, charge && String(charge.amount_captured));
+
+            // The payout run holds it: no transfer, not failed, said out loud.
+            const held = await runPayouts();
+            const stillHeld = await orderRow(order.id);
+            check('HELD: the run sends nothing and counts the provider as waiting',
+                held.status === 200 && !stillHeld.paid_out_at && (await transfersFor(order.id)).length === 0 && Number(held.body.providersWaitingToOnboard) >= 1,
+                JSON.stringify(held.body).slice(0, 160));
+
+            // Their dashboard says money is waiting, and how much (£99 = £110 less our £11).
+            const dash = await fetch(SITE + '/services/dashboard', { headers: { cookie: ownerCookie } }).then((r) => r.text()).catch(() => '');
+            check('DASHBOARD: "£99 is waiting for you" with the set-up button', /£99(\.00)? is waiting for you/.test(dash) && /Set up payouts/.test(dash),
+                (dash.match(/[^<>]{0,40}(is waiting for you|holding)[^<>]{0,20}/) || ['(no notice) shows: ' + ((dash.match(/EXP [A-Za-z]+/) || ['?'])[0])])[0]);
+
+            // Payouts come on: the next run releases it to their account.
+            await db.update('service_providers', '?id=eq.' + chef.id, { stripe_account_id: before.stripe_account_id, stripe_payouts_enabled: true, stripe_charges_enabled: true });
+            const released = await runPayouts();
+            const paid = await orderRow(order.id);
+            const tr = paid.payout_transfer_id ? await stripe.request('GET', '/transfers/' + paid.payout_transfer_id) : null;
+            check('RELEASED: paid on the next run — £99 to the provider, drawn on the order’s own charge',
+                released.status === 200 && !!paid.paid_out_at && Number(paid.payout_amount) === 99 && tr && tr.amount === 9900 && tr.destination === account && tr.source_transaction === charge.id,
+                'paid_out_at=' + paid.paid_out_at + ' £' + paid.payout_amount + ' dest=' + (tr && tr.destination));
+            const again = await runPayouts();
+            check('a further run pays nothing more', again.status === 200 && (await transfersFor(order.id)).length === 1, null);
+        } finally {
+            await db.update('service_providers', '?id=eq.' + chef.id, before);
+        }
     }
 
     /* ----------------------------------------------------------------- write + sum */

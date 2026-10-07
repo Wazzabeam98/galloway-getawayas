@@ -407,13 +407,7 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
                     <button type="button" onClick={reloadAll} className="mt-3 rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white hover:bg-red-800">Try again</button>
                 </div>
             )}
-            {!live && (
-                <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4">
-                    <p className="font-semibold text-amber-900">One step before guests can book you</p>
-                    <p className="mt-1 text-sm text-amber-900/80">Set up payouts so we can pay you. You won’t appear to guests until this is done.</p>
-                    <button type="button" disabled={busy === 'payouts'} onClick={setUpPayouts} className="mt-3 rounded-lg bg-amber-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60">{busy === 'payouts' ? 'Starting…' : (payouts && payouts.connected ? 'Finish setting up payouts' : 'Set up payouts')}</button>
-                </div>
-            )}
+            {/* Payouts not set up: the calendar page shows the held-money notice above (HeldPayoutsBanner). */}
             {hasHours === false && declaredSessions.length === 0 && (
                 <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4">
                     <p className="font-semibold text-amber-900">Nothing’s bookable yet</p>

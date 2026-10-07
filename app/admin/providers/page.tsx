@@ -26,6 +26,7 @@ import ProviderReviewRow from '@/components/admin/ProviderReviewRow';
 import WaitingOnApplicant from '@/components/admin/WaitingOnApplicant';
 import { daysWaiting, daysUntilDeleted, RETENTION_DAYS } from '@/lib/serviceApplications';
 import BulkApprove from '@/components/admin/BulkApprove';
+import HeldPayoutsTable from '@/components/admin/HeldPayoutsTable';
 
 export const dynamic = 'force-dynamic';
 
@@ -268,6 +269,10 @@ export default async function AdminProviders() {
             </p>
 
             <WaitingOnApplicant rows={unclaimed} />
+
+            <div className="mb-12">
+                <HeldPayoutsTable compact />
+            </div>
 
             {waiting.length > 0 && (
                 <section className="mb-12">

@@ -170,7 +170,7 @@ const EXPERIENCE: FaqItem[] = [
     {
         q: 'How do I get set up?',
         a: [
-            'Apply here and we review your application. Once you’re approved, you connect your bank and verify your ID with Stripe. You can’t take bookings until Stripe has approved you, which can take a few days.',
+            'Apply here and we review your application. Once you’re approved you’re live and guests can book you straight away. To be paid, connect your bank and verify your ID with Stripe — your share of any bookings waits safely until you have.',
         ],
     },
     {

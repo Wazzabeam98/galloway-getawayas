@@ -189,9 +189,9 @@ export async function POST(request: Request) {
             const byId = new Map<string, any>(cartItems.map((i: any) => [i.id, i]));
 
             const { data: prov } = await admin.from('service_providers')
-                .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_fee, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, owner_paused, admin_hidden_at, plan, commission_rate, guest_details')
+                .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_fee, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, stripe_charges_enabled, owner_paused, admin_hidden_at, plan, commission_rate, guest_details')
                 .eq('id', providerId).maybeSingle();
-            if (!prov || prov.shape !== 'made_to_order' || !isLiveToGuests(prov) || !prov.stripe_account_id) {
+            if (!prov || prov.shape !== 'made_to_order' || !isLiveToGuests(prov)) {
                 return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
             }
 
@@ -330,7 +330,7 @@ export async function POST(request: Request) {
                     // On behalf of the provider — they are the seller, their name
                     // is on the statement — but held by us until after the date,
                     // then paid out by the experience-payouts run (lib/experienceFunds).
-                    ...heldChargeSeller(prov.stripe_account_id),
+                    ...heldChargeSeller(prov),
                     description: 'Galloway food order — ' + businessC + (hasCustom ? ' (request)' : ''),
                     metadata: mdC,
                 },
@@ -374,7 +374,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, owner_paused, admin_hidden_at, plan, commission_rate, exclusive_per_date, guest_details')
+            .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, stripe_charges_enabled, owner_paused, admin_hidden_at, plan, commission_rate, exclusive_per_date, guest_details')
             .eq('id', item.provider_id)
             .maybeSingle();
 
@@ -422,7 +422,7 @@ export async function POST(request: Request) {
 
         // A provider a guest may not buy from must never be reachable here, not
         // only hidden from the surface — the gate is enforced, not decorative.
-        if (!provider || !isLiveToGuests(provider) || !provider.stripe_account_id) {
+        if (!provider || !isLiveToGuests(provider)) {
             return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
         }
 
@@ -657,7 +657,7 @@ export async function POST(request: Request) {
                 // On behalf of the provider (the seller, named on the guest's
                 // statement), captured to us on confirm and held until the day
                 // after the experience (lib/experienceFunds).
-                ...heldChargeSeller(provider.stripe_account_id),
+                ...heldChargeSeller(provider),
                 description: 'Galloway experience — ' + business + ' · ' + itemName,
                 // The full order shape on the held PaymentIntent, so the sweep
                 // can rebuild the order from Stripe alone if the webhook is lost.

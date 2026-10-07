@@ -3,7 +3,7 @@ import Image from 'next/image';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen, businessSignupsOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace, type MpProvider } from '@/lib/experiencesData';
-import ProviderCard from '@/components/marketplace/ProviderCard';
+import { locationTag, cardLocationLine, priceParts } from '@/components/marketplace/present';
 
 // Experiences on the home page, so a visitor sees everything on offer without
 // having to know the /experiences URL. Two states, and the page places each
@@ -16,8 +16,8 @@ import ProviderCard from '@/components/marketplace/ProviderCard';
 // business sign-up switch says: the real guest-experience start once sign-ups
 // open, register-interest until then.
 //
-// Cards carry no rating: master's ProviderCard deliberately shows the
-// "Verified business" badge, not stars, until there are reviews to mean one.
+// Cards carry no rating, like a new property's — no stars until there are
+// reviews to mean one.
 const MAX_ON_HOME = 8;
 
 // The live providers to show on the home shelf (an empty array means the shelf
@@ -33,40 +33,55 @@ export async function liveHomeProviders(): Promise<MpProvider[]> {
     return mp.providers.filter((p) => !!p.hero).slice(0, MAX_ON_HOME);
 }
 
-// The shelf of live experience cards, placed by the page directly under Our
-// Properties. The empty state is ExperiencesComingSoon, placed lower down by the
-// page (between the towns row and the map), so this renders nothing when there
-// are no providers.
+// The "Experiences" section, placed by the page directly under Our Properties
+// and built the same way: the same heading treatment and the same card — photo,
+// name, town, price — so the second thing to book reads as part of one shelf.
+// Renders nothing when no experience is live (the page then shows the
+// coming-soon panel further down instead).
 export default function HomeExperiences({ providers }: { providers: MpProvider[] }) {
     if (providers.length === 0) return null;
-    const shown = providers;
 
     return (
-        <section className="mt-16 pt-10 border-t border-stone-200">
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <section className="mt-16" aria-labelledby="home-experiences">
+            <div className="mb-10 border-b border-stone-200 pb-4 flex flex-wrap items-end justify-between gap-3">
                 <div>
-                    <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
-                        Experiences to book
-                    </h2>
+                    <h2 id="home-experiences" className="text-2xl md:text-3xl font-bold text-stone-900">Experiences</h2>
                     <p className="text-stone-600 text-sm md:text-base mt-1">
-                        Local chefs, bakers, saunas and guides across Dumfries &amp; Galloway — add
-                        one to your stay, or book it on its own.
+                        Local chefs, saunas, classes and guides across Dumfries &amp; Galloway
                     </p>
                 </div>
-                <Link
-                    href="/experiences/browse"
-                    className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-4"
-                >
+                <Link href="/experiences/browse" className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-4">
                     See all experiences
                 </Link>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-                {shown.map((p) => (
-                    <ProviderCard key={p.id} p={p} href={`/experiences/browse/${p.id}`} />
-                ))}
+                {providers.map((p) => <ExperienceCard key={p.id} p={p} />)}
             </div>
         </section>
+    );
+}
+
+// One experience in the property card's shape (components/ListingCard): the
+// photo in the same h-64 rounded frame, the name bold on one line, the town
+// beneath, the price last — "From £20 / guest" where ListingCard says "£140 night".
+function ExperienceCard({ p }: { p: MpProvider }) {
+    const town = locationTag(p) || cardLocationLine(p) || 'Dumfries & Galloway';
+    const cheapest = [...p.items].sort((a, b) => a.price - b.price)[0];
+    const { money, per } = priceParts(p.priceFrom, cheapest ? cheapest.unit : 'flat');
+    return (
+        <Link href={`/experiences/browse/${p.id}`} className="group flex flex-col space-y-2">
+            <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.hero!} alt={`${p.business_name}, an experience in ${town}`} loading="lazy"
+                    className="h-full w-full object-cover group-hover:scale-105 transition duration-300" />
+            </div>
+            <h3 className="font-bold text-stone-900 text-base truncate">{p.business_name}</h3>
+            <p className="text-sm text-stone-500 truncate">{town}</p>
+            <p className="text-sm font-semibold text-stone-900">
+                {p.items.length > 1 ? 'From ' : ''}{money}{per && <span className="font-normal text-stone-500"> {per}</span>}
+            </p>
+        </Link>
     );
 }
 

@@ -12,7 +12,9 @@ import ProviderExperienceDashboard from '@/components/services/ProviderExperienc
 import ProviderSlotDashboard from '@/components/services/ProviderSlotDashboard';
 import ExperienceIcalFeeds from '@/components/services/ExperienceIcalFeeds';
 import { shapeOf } from '@/lib/serviceSlots';
-import { isLiveToGuests } from '@/lib/serviceOrders';
+import { isLiveToGuests, isAwaitingConnect } from '@/lib/serviceOrders';
+import { loadHeldOrders, heldSummary } from '@/lib/heldPayouts';
+import HeldPayoutsBanner from '@/components/services/HeldPayoutsBanner';
 
 export const metadata = {
     title: 'Your calendar',
@@ -38,7 +40,7 @@ export default async function ProviderDashboardPage() {
     // half-finished draft for a second trade.
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, trial_ends_at, approved_at, callout_fee, shape, fulfilment, photos')
+        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, stripe_account_id, owner_paused, admin_hidden_at, trial_ends_at, approved_at, callout_fee, shape, fulfilment, photos')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -90,6 +92,9 @@ export default async function ProviderDashboardPage() {
                 .from('service_providers').select('ical_token').eq('id', provider.id).maybeSingle();
             icalToken = (tok && tok.ical_token) || '';
         }
+        // Live before payouts are set up; the share they're owed is held — say how much.
+        const awaitingPayouts = isAwaitingConnect(provider);
+        const held = awaitingPayouts ? heldSummary(await loadHeldOrders(admin, [provider.id]).catch(() => []), todayKey()) : null;
         return (
             <div className={`${isSlotHome ? 'max-w-6xl' : 'max-w-2xl'} mx-auto px-4 sm:px-6 py-8 pb-24`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -120,9 +125,15 @@ export default async function ProviderDashboardPage() {
                     </div>
                 </div>
 
+                {awaitingPayouts && (
+                    <div className="mt-6">
+                        <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />
+                    </div>
+                )}
+
                 {/* Two homes by shape: a slot provider gets a CALENDAR (a booked
                     week, nothing to approve), everyone else the INBOX (requests
-                    to confirm, then coming up). The payouts gate is in both. */}
+                    to confirm, then coming up). */}
                 {isSlotHome
                     ? (
                         <div className="space-y-6">
@@ -130,7 +141,7 @@ export default async function ProviderDashboardPage() {
                             <ExperienceIcalFeeds providerId={provider.id} icalToken={icalToken} />
                         </div>
                     )
-                    : <ProviderExperienceDashboard providerId={provider.id} live={isLiveToGuests(provider)} />}
+                    : <ProviderExperienceDashboard providerId={provider.id} live={isLiveToGuests(provider)} payoutsReady={!awaitingPayouts} />}
             </div>
         );
     }

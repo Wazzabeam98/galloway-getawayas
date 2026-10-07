@@ -57,7 +57,8 @@ export function dayKeyFromNow(offsetDays: number, now: Date): string {
 // A provider that a guest may still change a booking against. NOT the live gate
 // the booking flow uses: a paused or taken-down provider still serves the
 // bookings it already has (servesExistingBookings), so the guest can still
-// change theirs — only brand-new orders are refused.
+// change theirs — only brand-new orders are refused. No Stripe account needed:
+// a change's charge is held like the booking's (lib/experienceFunds).
 export function providerTakesChanges(provider: any): boolean {
-    return !!provider && servesExistingBookings(provider) && !!provider.stripe_account_id;
+    return !!provider && servesExistingBookings(provider);
 }

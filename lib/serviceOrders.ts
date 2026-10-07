@@ -208,15 +208,17 @@ export function stripeProfileForProvider(
 // WHO A GUEST MAY SEE
 // ---------------------------------------------------------------------------
 //
-// Two gates, and BOTH are required. Approval is the human decision that the
-// business is real. Payout-readiness is Stripe saying it can pay them. A guest
-// must never be shown a provider we cannot take money for, because the offer
-// would fail at the checkout — better an empty category than a broken payment.
-//
-// This is the single reason "approved" stopped meaning "live" for guest trades.
+// Approval is the gate — Airbnb's model. Once the owner approves a provider
+// they are live and bookable whether or not their Stripe payouts are set up:
+// every experience order is a HELD platform charge (lib/experienceFunds), so we
+// can always take the guest's money, and the provider's share simply waits in
+// our balance until they can be paid (the experience-payouts run holds it and
+// releases it once stripe_payouts_enabled is on). Until 7 Oct 2026 payout-
+// readiness was a second gate here, which hid an approved provider from guests
+// entirely until they finished Stripe.
 export function isLiveToGuests(provider: any): boolean {
     if (!provider) return false;
-    // owner_paused is the provider's own take-down: approved and payout-ready, but
+    // owner_paused is the provider's own take-down: approved, but
     // hidden by their choice for now. admin_hidden_at is ours — an admin took it
     // down (app/api/admin/providers/visibility). Undefined (a caller that didn't
     // select the columns) reads as not-taken-down, so every caller that decides
@@ -224,8 +226,7 @@ export function isLiveToGuests(provider: any): boolean {
     // holds each new-order route to that. (The order routes once forgot
     // owner_paused, and a paused experience could still be ordered from a stale
     // tab.)
-    return provider.status === 'approved' && provider.stripe_payouts_enabled === true
-        && !provider.owner_paused && !provider.admin_hidden_at;
+    return provider.status === 'approved' && !provider.owner_paused && !provider.admin_hidden_at;
 }
 
 // Whether a guest may CHANGE a booking they already hold — move it to another
@@ -233,15 +234,16 @@ export function isLiveToGuests(provider: any): boolean {
 // take-down (the provider's own pause, or ours) closes the shop window to NEW
 // orders only. Like a confirmed reservation on an unlisted Airbnb listing, the
 // booking stands and can still be managed. What still stops a change is the
-// provider no longer being approved (declined, or their account deactivated)
-// or Stripe being unable to pay them.
+// provider no longer being approved (declined, or their account deactivated).
+// Payouts not set up does not: the change is a held charge like the booking.
 export function servesExistingBookings(provider: any): boolean {
     if (!provider) return false;
-    return provider.status === 'approved' && provider.stripe_payouts_enabled === true;
+    return provider.status === 'approved';
 }
 
-// A provider who has been approved but has not finished Stripe. Not a guest's
-// problem — they never see them — but the provider's own dashboard says so.
+// A provider who has been approved but has not finished Stripe. Live and
+// bookable — not a guest's problem — but their share is held until they do, so
+// their dashboard, the reminder emails and the admin list all say so.
 export function isAwaitingConnect(provider: any): boolean {
     if (!provider) return false;
     return provider.status === 'approved' && provider.stripe_payouts_enabled !== true;

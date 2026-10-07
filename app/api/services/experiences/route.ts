@@ -11,9 +11,9 @@ export const dynamic = 'force-dynamic';
 
 // The experiences a guest may book for one of their own stays.
 //
-// Live only — approved AND payout-ready (isLiveToGuests). A guest is never
-// shown a provider we cannot take money for, because the offer would fail at
-// the checkout. Coverage no longer narrows the list: every live D&G experience
+// Live only — approved and not taken down (isLiveToGuests). Payouts not set up
+// doesn't hide anyone: the guest's money is taken as normal and the provider's
+// share is held until they can be paid. Coverage no longer narrows the list: every live D&G experience
 // is offered to every cottage, and the regions a provider covers ride along
 // only as a line on the card. (Enquiry-first sorts out the exact distance, and
 // a mileage radius was meaningless across a rural region anyway.)
@@ -83,15 +83,14 @@ export async function GET(request: Request) {
             return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
         }
 
-        // Live guest providers. "Live" now means approved + payouts on + AT
-        // LEAST ONE PRICED ITEM on the menu — a provider with an empty menu has
+        // Live guest providers. "Live" means approved (payouts set up or not —
+        // their share is held until they are) + AT LEAST ONE PRICED ITEM on the menu — a provider with an empty menu has
         // nothing for a guest to buy, the same way one with no price used to.
         const { data: rows } = await admin
             .from('service_providers')
             .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, photos, status, stripe_payouts_enabled, owner_paused, admin_hidden_at')
             .eq('audience', 'guest')
-            .eq('status', 'approved')
-            .eq('stripe_payouts_enabled', true);
+            .eq('status', 'approved');
 
         const providerIds = (rows || []).map((r) => r.id);
         // Coverage is now the region labels only — no centre or radius. It is

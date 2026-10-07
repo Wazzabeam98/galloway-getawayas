@@ -81,11 +81,11 @@ async function loadForTopUp(admin: any, orderId: string, userId: string): Promis
 
     const { data: provider } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, shape, status, plan, stripe_account_id, stripe_payouts_enabled, commission_rate, slot_capacity, slot_min_people, cancellation_window_hours, guest_details')
+        .select('id, business_name, trade, shape, status, plan, stripe_account_id, stripe_payouts_enabled, stripe_charges_enabled, commission_rate, slot_capacity, slot_min_people, cancellation_window_hours, guest_details')
         .eq('id', order.provider_id).maybeSingle();
     // Places added to a booking the guest already holds: allowed while the
     // listing is taken down (theirs or ours) — only brand-new orders are refused.
-    if (!provider || !isSlot(provider) || !servesExistingBookings(provider) || !provider.stripe_account_id) {
+    if (!provider || !isSlot(provider) || !servesExistingBookings(provider)) {
         return { error: { status: 400, message: 'That experience isn’t taking bookings right now.' } };
     }
 
@@ -323,7 +323,7 @@ export async function POST(request: Request) {
                 // provider (the seller), held by us and paid out with the
                 // session (lib/experienceFunds).
                 payment_intent_data: {
-                    ...heldChargeSeller(provider.stripe_account_id),
+                    ...heldChargeSeller(provider),
                     description: 'Galloway experience — added places · ' + business + ' · ' + itemName,
                     metadata: { kind: 'slot_order', order_id: child.id, parent_order_id: order.id, provider_id: provider.id, ...heldChargeMetadata(pricing) },
                 },
