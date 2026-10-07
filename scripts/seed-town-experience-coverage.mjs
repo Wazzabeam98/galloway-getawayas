@@ -6,6 +6,7 @@
 // .env.local; it never touches production. Run:  node scripts/seed-town-experience-coverage.mjs
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
+import { assertTestSupabaseUrl } from './seed-lib.mjs';
 
 const env = Object.fromEntries(
     readFileSync('.env.local', 'utf8')
@@ -15,7 +16,9 @@ const env = Object.fromEntries(
 );
 
 const url = env.NEXT_PUBLIC_SUPABASE_URL || '';
-if (/supabase\.co/.test(url) === false) { console.error('Unexpected Supabase URL; aborting.'); process.exit(1); }
+// The header always said TEST only; until 7 Oct 2026 nothing enforced it —
+// any supabase.co URL passed. Now production is refused before a client exists.
+assertTestSupabaseUrl(url);
 const s = createClient(url, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
 // The nine main towns the site runs an area page for, with their centres — the

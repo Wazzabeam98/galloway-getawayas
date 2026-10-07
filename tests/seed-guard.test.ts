@@ -90,3 +90,59 @@ test('a live Stripe key is refused even on the test database', () => {
     assert.equal(accepted, false, 'THE GUARD ACCEPTED A LIVE STRIPE KEY');
     assert.match(message, /not a test key/);
 });
+
+/* ------------------------------------------------- the client refuses too */
+
+function clientGuard(url: string): string {
+    const script = `
+        import('${SEED_LIB.replace(/\\/g, '/')}').then((m) => {
+            try {
+                m.supabaseClient({ NEXT_PUBLIC_SUPABASE_URL: ${JSON.stringify(url)}, SUPABASE_SERVICE_ROLE_KEY: 'k' });
+                console.log('ACCEPTED');
+            } catch (e) {
+                console.log('REFUSED:' + e.message);
+            }
+        }).catch((e) => console.log('THREW_ON_IMPORT:' + e.message));
+    `;
+    return String(execFileSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 30_000 })).trim();
+}
+
+test('supabaseClient itself refuses production, whether or not the script asserted first', () => {
+    // Every seeder and runner writes through this client. Guarding it means a
+    // new script that forgets assertTestEnvironment still cannot reach
+    // production — the way seed rows would get there.
+    assert.equal(clientGuard(TEST_URL), 'ACCEPTED');
+    const refused = clientGuard(PROD_URL);
+    assert.match(refused, /^REFUSED:.*not the test project/, 'supabaseClient ACCEPTED PRODUCTION: ' + refused);
+});
+
+/* ----------------------------------- every script that holds the key is guarded */
+
+// Scripts that take the service-role key and are allowed to reach production,
+// each on purpose and each with its own check against the production ref.
+// Adding to this list is a decision; say why on the line.
+const PROD_ON_PURPOSE: Record<string, string> = {
+    'write-side-allowed.mjs': 'security audit; --target prod, plants and removes its own canary',
+    'write-side-rls.mjs': 'security audit; --target prod, plants and removes its own canary',
+    'create-removed-bucket.mjs': 'one-off infrastructure: creates the private listings-removed bucket, no rows',
+    'experience-review-gate.mjs': 'refuses the production ref by name itself',
+};
+
+test('no script holds the service-role key without a TEST-only guard', () => {
+    // How seed data could reach production: a script reads .env.local, takes
+    // the service key and writes, with nothing checking which project the URL
+    // is. seed-town-experience-coverage.mjs did exactly that until 7 Oct 2026
+    // (its only check was "is it supabase.co"). This fails the build for the
+    // next one.
+    const fs = require('fs');
+    const dir = path.join(ROOT, 'scripts');
+    const GUARDS = /assertTestEnvironment|assertTestSupabaseUrl|supabaseClient\(|TEST_PROJECT_REF|assertSafeTarget|resolveTarget/;
+    const unguarded = fs.readdirSync(dir)
+        .filter((f: string) => /\.(mjs|cjs|js)$/.test(f))
+        .filter((f: string) => !PROD_ON_PURPOSE[f])
+        .filter((f: string) => {
+            const src = fs.readFileSync(path.join(dir, f), 'utf8');
+            return /SUPABASE_SERVICE_ROLE_KEY/.test(src) && !GUARDS.test(src);
+        });
+    assert.deepEqual(unguarded, [], 'these scripts can write to whatever project .env.local names: ' + unguarded.join(', '));
+});
