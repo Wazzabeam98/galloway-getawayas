@@ -6,22 +6,22 @@ import { loadPublicMarketplace, type MpProvider } from '@/lib/experiencesData';
 import { locationTag, cardLocationLine, fromPriceLabel } from '@/components/marketplace/present';
 
 // Experiences on the home page, so a visitor sees everything on offer without
-// having to know the /experiences URL. Two states, and the page places each
-// where it belongs: with live providers (GUEST_EXPERIENCES_OPEN on, at least one
-// with a real photo) the shelf of cards sits directly under Our Properties;
-// while the shelf is still empty the "coming soon" panel drops down between the
-// towns row and the map instead, so an empty section never leads the page. Never
-// an empty shelf and never nothing — the coming-soon panel says what is coming
-// and asks local businesses to be among the first listed. The ask goes where the
-// business sign-up switch says: the real guest-experience start once sign-ups
-// open, register-interest until then.
+// having to know the /experiences URL. With live providers (GUEST_EXPERIENCES_OPEN
+// on, at least one with a real photo) the shelf of cards sits directly under Our
+// Properties — EVERY live experience, a row at a time as more come in. The
+// "See all experiences" link only appears once there are SEE_ALL_FROM of them;
+// until then the shelf is all there is. Separately, the "Offer an experience"
+// panel (ExperiencesForBusinesses) always sits between the towns row and the map,
+// asking local businesses to list. The ask goes where the business sign-up switch
+// says: the real guest-experience start once sign-ups open, register-interest
+// until then.
 //
 // Cards carry no rating, like a new property's — no stars until there are
 // reviews to mean one.
-const MAX_ON_HOME = 8;
+export const SEE_ALL_FROM = 12;
 
-// The live providers to show on the home shelf (an empty array means the shelf
-// is still coming soon). Exported so app/page.tsx can place each state where it
+// The live providers to show on the home shelf (an empty array means none are
+// live, and the shelf isn't shown). Exported so app/page.tsx can place each state where it
 // belongs, deciding from the same read it renders — without loading the (heavy)
 // marketplace twice.
 export async function liveHomeProviders(): Promise<MpProvider[]> {
@@ -30,14 +30,13 @@ export async function liveHomeProviders(): Promise<MpProvider[]> {
     if (!mp.open) return [];
     // Only ones with a real photo — a card on a bare gradient block reads as
     // unfinished, so it is not shown at all.
-    return mp.providers.filter((p) => !!p.hero).slice(0, MAX_ON_HOME);
+    return mp.providers.filter((p) => !!p.hero);
 }
 
 // The "Experiences" section, placed by the page directly under Our Properties
 // and built the same way: the same heading treatment and the same card — photo,
 // name, town, price — so the second thing to book reads as part of one shelf.
-// Renders nothing when no experience is live (the page then shows the
-// coming-soon panel further down instead).
+// Renders nothing when no experience is live.
 export default function HomeExperiences({ providers }: { providers: MpProvider[] }) {
     if (providers.length === 0) return null;
 
@@ -50,9 +49,12 @@ export default function HomeExperiences({ providers }: { providers: MpProvider[]
                         Local chefs, saunas, classes and guides across Dumfries &amp; Galloway
                     </p>
                 </div>
-                <Link href="/experiences/browse" className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-4">
-                    See all experiences
-                </Link>
+                {/* Only once the shelf is long enough to need a page of its own. */}
+                {providers.length >= SEE_ALL_FROM && (
+                    <Link href="/experiences/browse" className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-4">
+                        See all experiences
+                    </Link>
+                )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
@@ -65,7 +67,7 @@ export default function HomeExperiences({ providers }: { providers: MpProvider[]
 // One experience in the property card's shape (components/ListingCard): the
 // photo in the same h-64 rounded frame, the name bold on one line, the town
 // beneath, the price last — "From £20 / guest" where ListingCard says "£140 night".
-function ExperienceCard({ p }: { p: MpProvider }) {
+export function ExperienceCard({ p }: { p: MpProvider }) {
     const town = locationTag(p) || cardLocationLine(p) || 'Dumfries & Galloway';
     // The marketplace's own price line — fixed, from, a range or "Price on
     // enquiry" — with the unit set quiet like the property card's "night".
@@ -88,10 +90,13 @@ function ExperienceCard({ p }: { p: MpProvider }) {
     );
 }
 
-// The pair of licensed photographs the provider sign-up already uses on its
-// empty Photos screen (see public/images/experience-photos/README.md), so the
-// panel looks like the product it is announcing rather than a placeholder.
-export function ExperiencesComingSoon() {
+// The panel asking local businesses to list an experience — what was the
+// "coming soon" panel, now reading as open: the same layout, photographs and ask,
+// without the "Coming soon" pill or the "soon you'll be able to" line. Shown
+// whether or not any experience is live yet. The pair of licensed photographs is
+// the one the provider sign-up uses on its empty Photos screen (see
+// public/images/experience-photos/README.md).
+export function ExperiencesForBusinesses() {
     const href = businessSignupsOpen()
         ? '/services/join?trade=guest'
         : '/register-interest?type=guest_experience';
@@ -100,17 +105,13 @@ export function ExperiencesComingSoon() {
         <section className="mt-16 pt-10 border-t border-stone-200">
             <div className="grid items-center gap-10 rounded-2xl bg-white border border-stone-200 p-6 sm:p-10 md:grid-cols-[1fr_auto]">
                 <div className="max-w-xl">
-                    <span className="inline-block rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
-                        Coming soon
-                    </span>
-                    <h2 className="mt-4 text-2xl md:text-3xl font-bold text-stone-900">
+                    <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
                         Experiences
                     </h2>
                     <p className="mt-3 text-stone-600 leading-relaxed">
                         A private chef on your first night, a wood-fired sauna by the shore, fresh
-                        bread on the doorstep, a guided day on the hills. Soon you’ll be able to
-                        book them alongside your stay, from local businesses across Dumfries &amp;
-                        Galloway.
+                        bread on the doorstep, a guided day on the hills. Book them alongside your
+                        stay, from local businesses across Dumfries &amp; Galloway.
                     </p>
 
                     <div className="mt-8 border-t border-stone-200 pt-6">
