@@ -746,7 +746,9 @@ export default function Hero() {
         {/* md and up only. The text is vertically centred at this width, which
             is below where the top scrim has faded out, so the centred pool is
             still the thing carrying it. Unchanged from before. */}
-        <div className="hidden md:block absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.35)_0%,rgba(0,0,0,0.12)_45%,transparent_75%)]" />
+        {/* Reaches a little further since the subheading moved below the search
+            bar (7 Oct 2026): it now sits ~62% down, where this used to have faded. */}
+        <div className="hidden md:block absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.35)_0%,rgba(0,0,0,0.22)_50%,transparent_85%)]" />
       </div>
 
       {/* Which image you're on — also lets people skip ahead */}
@@ -767,36 +769,24 @@ export default function Hero() {
       )}
 
       {/* Hero Content */}
-      <div className="relative z-30 text-center max-w-5xl px-4 flex flex-col items-center w-full">
+      <div className="relative z-30 text-center max-w-5xl px-4 flex flex-col items-center justify-center w-full">
         {/* Phones: the size follows the screen width so "Dumfries & Galloway"
             always fits on its own line — the phrase is ~9.3em wide with this
             font and tracking, so (100vw − the 2rem padding) / 9.3 — capped at
             the old 36px (a 390px phone keeps it) and floored at 26px for a
             folded 280px screen. Held together with nowrap so it never splits
             as "Dumfries &" / "Galloway". Desktop unchanged (text-6xl). */}
-        <h1 className="text-[clamp(1.625rem,calc((100vw-2rem)/9.3),2.25rem)] leading-[1.12] md:text-6xl md:leading-none font-extrabold tracking-tight mb-3 drop-shadow-lg">
+        <h1 className="text-[clamp(1.625rem,calc((100vw-2rem)/9.3),2.25rem)] leading-[1.12] md:text-6xl md:leading-none font-extrabold tracking-tight mb-6 md:mb-8 drop-shadow-lg">
           Book your trip to <span className="whitespace-nowrap">Dumfries &amp; Galloway</span>
         </h1>
-        {/* Phones: two deliberate lines — "Places to stay · Local experiences"
-            then "No booking fee" — so no line ever ends on a dangling dot. The
-            first line is ~15.1em wide, so the size follows the screen width
-            ((100vw − 2rem) / 15.6), capped at the old 18px and floored at 15px
-            (only a folded 280px screen goes below 18px). Desktop: one line,
-            three phrases. Each phrase is kept whole. */}
-        <p className="text-[clamp(0.9375rem,calc((100vw-2rem)/15.6),1.125rem)] leading-7 md:text-xl font-medium mb-5 md:mb-8 drop-shadow-md text-white">
-          <span className="whitespace-nowrap">Places to stay · Local experiences</span>
-          <span className="md:hidden"><br /></span>
-          <span className="hidden md:inline"> · </span>
-          <span className="whitespace-nowrap">No booking fee</span>
-        </p>
 
         {/* Compact search — phones only. A single Airbnb-style pill that names
             what the guest has chosen so far (or "Where to?") and opens the full
-            Where / When / Who search in a sheet when tapped. `mt-auto` drops it
-            into the middle of the space under the heading, so it sits in the body of
-            the photo rather than on its bottom edge. The desktop pill bar below
+            Where / When / Who search in a sheet when tapped. It sits between the
+            headline and the subheading; the three are centred together in the
+            photo. The desktop pill bar below
             is untouched. */}
-        <div className="md:hidden my-auto w-full max-w-md text-stone-800">
+        <div className="md:hidden w-full max-w-md text-stone-800">
           <button
             type="button"
             // Opens with every row folded to its label and value; a row
@@ -941,6 +931,22 @@ export default function Hero() {
           )}
 
         </div>
+
+        {/* Below the search bar (7 Oct 2026): headline → search → this line.
+            Phones: two deliberate lines — "Places to stay · Local experiences"
+            then "No booking fee" — so no line ever ends on a dangling dot. The
+            first line is ~15.1em wide, so the size follows the screen width
+            ((100vw − 2rem) / 15.6), capped at the old 18px and floored at 15px
+            (only a folded 280px screen goes below 18px). Desktop: one line,
+            three phrases. Each phrase is kept whole. A soft text shadow (not
+            a box) keeps it readable on the bright stonework and evening-sky
+            photos, which fell to 2.3–3.8:1 against white without it. */}
+        <p className="text-[clamp(0.9375rem,calc((100vw-2rem)/15.6),1.125rem)] leading-7 md:text-xl font-medium mt-6 md:mt-8 text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7),0_0_8px_rgba(0,0,0,0.65),0_0_18px_rgba(0,0,0,0.5)]">
+          <span className="whitespace-nowrap">Places to stay · Local experiences</span>
+          <span className="md:hidden"><br /></span>
+          <span className="hidden md:inline"> · </span>
+          <span className="whitespace-nowrap">No booking fee</span>
+        </p>
       </div>
 
       {/* Full-screen mobile search sheet. Phones only; opened from the pill
