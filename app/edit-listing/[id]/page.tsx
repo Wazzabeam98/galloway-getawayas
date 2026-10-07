@@ -615,8 +615,10 @@ export default function EditListing() {
                         ))}
                     </div>}
 
-                    {/* Content */}
-                    <div>
+                    {/* Content — min-w-0 so the 1fr grid track can shrink below
+                        its content's width; without it a long card summary blows
+                        the track out and the cards run off the right of the page. */}
+                    <div className="min-w-0">
                         {shows('basics') && (<PhoneSection id="basics" phone={isPhone}>
                             <div className="space-y-4">
                                 <section className="space-y-4">
