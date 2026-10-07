@@ -262,16 +262,18 @@ test('guest experiences: gated by the exact env var on PRODUCTION only, open els
 // --- units, the quantity that multiplies them, and the cap -------------------
 
 test('the unit vocabulary is closed, and anything else falls back to flat', () => {
-    assert.deepEqual(ORDER_UNITS, ['flat', 'person', 'night', 'hour', 'ticket', 'item']);
+    assert.deepEqual(ORDER_UNITS, ['flat', 'person', 'night', 'hour', 'ticket', 'item', 'event']);
     assert.equal(normaliseUnit('person'), 'person');
+    assert.equal(normaliseUnit('event'), 'event');
     assert.equal(normaliseUnit('PERSON'), 'flat', 'case matters — an unknown value is flat');
     assert.equal(normaliseUnit(''), 'flat');
     assert.equal(normaliseUnit(null), 'flat');
     assert.equal(normaliseUnit('subscription'), 'flat', 'a made-up unit charges once, never guesses a rate');
 });
 
-test('flat is charged once; every other unit multiplies', () => {
+test('flat and event are charged once; every other unit multiplies', () => {
     assert.equal(unitMultiplies('flat'), false);
+    assert.equal(unitMultiplies('event'), false, 'a whole-event price is one charge, not a rate');
     for (const u of ['person', 'night', 'hour', 'ticket', 'item']) {
         assert.equal(unitMultiplies(u), true, u + ' multiplies');
     }
@@ -281,14 +283,18 @@ test('the words read naturally — "per person", "How many people?"', () => {
     assert.equal(unitLabel('person'), 'per person');
     assert.equal(unitLabel('night'), 'per night');
     assert.equal(unitLabel('flat'), '', 'a flat price has no per-unit suffix');
+    assert.equal(unitLabel('event'), '', 'an event is charged once — no per-unit suffix here');
     assert.equal(unitNoun('flat'), '');
+    assert.equal(unitNoun('event'), '');
     assert.equal(quantityQuestion('person'), 'How many people?', 'people, not persons');
     assert.equal(quantityQuestion('item'), 'How many items?');
     assert.equal(quantityQuestion('flat'), '', 'a flat price asks nothing');
+    assert.equal(quantityQuestion('event'), '', 'an event asks nothing');
 });
 
 test('a flat item is always one, whatever quantity the browser sends', () => {
     assert.equal(orderQuantity('flat', 6), 1);
+    assert.equal(orderQuantity('event', 6), 1, 'an event is one booking, never multiplied');
     assert.equal(orderQuantity('flat', 0), 1);
     assert.equal(orderQuantity('flat', 'nonsense'), 1);
     assert.equal(orderQuantity('flat', undefined), 1);
