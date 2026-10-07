@@ -39,7 +39,8 @@ import SleepingArrangementsEditor from '@/components/SleepingArrangementsEditor'
 import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, type Room } from '@/lib/sleeping';
 import { publishProblems } from '@/lib/listingRules';
 import { amountForBox, amountOrNull, amountOrZero } from '@/lib/amountInput';
-import IcalFeeds from '@/components/IcalFeeds';
+import { CalendarSyncCard } from '@/components/IcalFeeds';
+import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
 } from 'lucide-react';
@@ -527,6 +528,8 @@ export default function EditListing() {
     }
 
     return (
+        // Every card's sheet opens as one full-screen question in the add flow's style.
+        <QuestionSheetContext.Provider value={true}>
         <div className="max-w-5xl mx-auto px-6 py-10 w-full">
             <div className="flex justify-between items-center mb-8">
                 <h1 className="text-2xl font-extrabold text-emerald-800">Edit listing</h1>
@@ -798,7 +801,7 @@ export default function EditListing() {
                                 // move a photo; the full editor is in its sheet.
                                 <section>
                                     <h2 className="text-xl font-bold text-slate-900 mb-4">Photos</h2>
-                                    <PhotosCard photos={photos} savePhotos={savePhotos} beforeChange={moderationReady} />
+                                    <PhotosCard photos={photos} savePhotos={savePhotos} beforeChange={moderationReady} question="Show guests what it’s like" />
                                 </section>
                             ) : (
                                 <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone={false} beforeChange={moderationReady} />
@@ -841,7 +844,7 @@ export default function EditListing() {
                         {shows('calendar') && (<PhoneSection id="calendar" phone={isPhone}>
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-4">Calendar sync</h2>
-                                <IcalFeeds
+                                <CalendarSyncCard
                                     listingId={listingId}
                                     exportUrl={typeof window !== 'undefined' && icalToken ? `${window.location.origin}/api/ical/${listingId}?token=${icalToken}` : null}
                                 />
@@ -874,5 +877,6 @@ export default function EditListing() {
                 </div>
             </div>
         </div>
+        </QuestionSheetContext.Provider>
     );
 }

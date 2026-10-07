@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Minus, Plus } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
+import { NumberStepper } from '@/components/services/wizardKit';
 
 // Airbnb's "Number of guests" card: "7 guests · 4 beds · 1 bathroom", opening
 // to the counters. Beds can't drop below the beds already placed in sleeping
@@ -16,21 +16,12 @@ export function capacitySummary(guests: number, beds: number, bathrooms: number)
     return [plural(guests, 'guest'), plural(beds, 'bed'), plural(bathrooms, 'bathroom')].join(' · ');
 }
 
+// One count: its label, then the add flow's big − and + counter.
 function Counter({ label, value, onChange, min }: { label: string; value: number; onChange: (v: number) => void; min: number }) {
     return (
-        <div className="flex items-center justify-between py-4 border-b border-slate-100 last:border-b-0">
-            <span className="font-medium text-slate-800">{label}</span>
-            <div className="flex items-center space-x-4">
-                <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min} aria-label={'Fewer ' + label.toLowerCase()}
-                    className="w-8 h-8 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30">
-                    <Minus className="w-4 h-4" />
-                </button>
-                <span className="w-6 text-center">{value}</span>
-                <button type="button" onClick={() => onChange(value + 1)} aria-label={'More ' + label.toLowerCase()}
-                    className="w-8 h-8 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900">
-                    <Plus className="w-4 h-4" />
-                </button>
-            </div>
+        <div className="flex flex-col items-center gap-2" role="group" aria-label={label}>
+            <span className="text-base font-semibold text-slate-800">{label}</span>
+            <NumberStepper value={String(value)} onChange={(v) => onChange(Math.max(min, Number(v) || min))} min={min} max={99} solid />
         </div>
     );
 }
@@ -53,11 +44,13 @@ export default function CapacityCard({ guests, beds, bathrooms, minBeds, onSave 
         <>
             <EditorCard title="Capacity" summary={capacitySummary(guests, beds, bathrooms)} onClick={openPanel} />
             {open && (
-                <EditorPanel title="Capacity" onClose={() => setOpen(false)}
+                <EditorPanel title="How many guests, beds and bathrooms?" onClose={() => setOpen(false)}
                     footer={<PanelSave onClick={async () => { if (await saved(onSave(g, b, ba))) setOpen(false); }} />}>
-                    <Counter label="Guests" value={g} onChange={setG} min={1} />
-                    <Counter label="Beds" value={b} onChange={setB} min={Math.max(1, minBeds)} />
-                    <Counter label="Bathrooms" value={ba} onChange={setBa} min={0.5} />
+                    <div className="space-y-8">
+                        <Counter label="Guests" value={g} onChange={setG} min={1} />
+                        <Counter label="Beds" value={b} onChange={setB} min={Math.max(1, minBeds)} />
+                        <Counter label="Bathrooms" value={ba} onChange={setBa} min={0.5} />
+                    </div>
                 </EditorPanel>
             )}
         </>
