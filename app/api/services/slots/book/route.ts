@@ -181,7 +181,7 @@ export async function POST(request: Request) {
         // private/shared — derives from this row, never from the browser.
         const itemQuery = admin
             .from('service_provider_items')
-            .select('id, name, description, price, unit, active, duration_minutes, fulfilment, capacity, min_people')
+            .select('id, name, description, price, price_mode, unit, active, duration_minutes, fulfilment, capacity, min_people')
             .eq('provider_id', provider.id)
             .eq('active', true)
             .gt('price', 0);
@@ -189,6 +189,15 @@ export async function POST(request: Request) {
             ? await itemQuery.eq('id', requestedItemId).maybeSingle()
             : await itemQuery.order('sort_order', { ascending: true }).limit(1).maybeSingle();
         if (!item) return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
+
+        // Only a FIXED-price offering is instant-booked. A range or
+        // price-on-enquiry offering has no settled figure to charge — its price
+        // is agreed with the provider first — so refuse it here, not only in the
+        // UI: a range item's from-price is a real number and would otherwise pass
+        // the .gt('price', 0) filter above and be charged the minimum.
+        if (item.price_mode && item.price_mode !== 'fixed') {
+            return NextResponse.json({ ok: false, error: 'The price for this is agreed with the provider — message them for a quote.' }, { status: 400 });
+        }
 
         const unit = normaliseUnit(item.unit);
 

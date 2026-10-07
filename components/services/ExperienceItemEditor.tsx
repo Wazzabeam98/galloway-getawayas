@@ -20,13 +20,15 @@ import { SinglePhotoSheet, ConfirmRemove } from './SinglePhotoSheet';
 // raised cards, one per detail). ProviderListingEditor owns the array and its
 // save; these only produce / edit one MenuRow and hand it back.
 
-export type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string };
+export type MenuRow = { id?: string; name: string; description: string; price: string; priceMode: string; priceMax: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string };
 
 export type ItemCtx = { isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number; supabase: SupabaseClient };
 
-export function rowFromItem(it: { id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null }): MenuRow {
+export function rowFromItem(it: { id: string; name: string; description: string; price: number; price_mode?: string | null; price_max?: number | null; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null }): MenuRow {
     return {
         id: it.id, name: it.name, description: it.description, price: amountForBox(it.price),
+        priceMode: (['fixed', 'range', 'enquiry'].indexOf(String(it.price_mode)) !== -1 ? String(it.price_mode) : 'fixed'),
+        priceMax: amountForBox(it.price_max ?? null),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
         fulfilment: it.fulfilment, active: it.active,
         capacity: it.capacity != null ? String(it.capacity) : '',
@@ -41,7 +43,7 @@ export function rowFromItem(it: { id: string; name: string; description: string;
 }
 
 export function newRow(isSlot: boolean, fulfilment: string): MenuRow {
-    return { name: '', description: '', price: '', unit: isSlot ? 'person' : 'flat', image: null,
+    return { name: '', description: '', price: '', priceMode: 'fixed', priceMax: '', unit: isSlot ? 'person' : 'flat', image: null,
         duration: isSlot ? '60' : '', fulfilment: (isSlot && fulfilment === 'both') ? 'collection' : null, active: true,
         capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '',
         isCustom: false, ingredients: '', allergens: '', category: '' };
@@ -53,7 +55,10 @@ export const unitLabel = (unit: string): string => (
 
 export function itemSummary(r: MenuRow, isSlot: boolean): string {
     const bits: string[] = [];
-    bits.push(r.price ? `£${r.price} ${unitLabel(r.unit)}` : 'No price yet');
+    const mode = r.priceMode || 'fixed';
+    if (mode === 'enquiry') bits.push('Price on enquiry');
+    else if (mode === 'range' && r.price && r.priceMax) bits.push(`£${r.price}–£${r.priceMax} ${unitLabel(r.unit)}`);
+    else bits.push(r.price ? `£${r.price} ${unitLabel(r.unit)}` : 'No price yet');
     if (isSlot && r.duration) bits.push(durationLabel(Number(r.duration)));
     if (!r.active) bits.push('hidden');
     return bits.join(' · ');
@@ -85,16 +90,66 @@ const chargeChoices = (r: { unit: string }): { v: string; l: string }[] => ([
 // same. An older offering priced another way (per hour, per night…) keeps that
 // as a third tile, so it's never silently changed. `units: false` hides the
 // tiles (a travelling offering is always one price for the booking).
-function PriceChoice({ price, unit, onPrice, onUnit, units = true, autoFocus }: {
-    price: string; unit: string; onPrice: (v: string) => void; onUnit: (u: string) => void; units?: boolean; autoFocus?: boolean;
+// A compact "£ amount" box for the two ends of a range, where the single big
+// BigAmountInput would be too large shown twice.
+function RangeAmount({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+    return (
+        <label className="flex flex-1 flex-col items-center gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+            <span className="flex items-center gap-1 rounded-xl border-2 border-slate-200 px-3 py-2 focus-within:border-emerald-600">
+                <span className="text-xl font-bold text-slate-400">£</span>
+                <input type="text" inputMode="decimal" autoComplete="off" value={value}
+                    onChange={(e) => onChange(cleanAmountInput(e.target.value))}
+                    className="w-20 bg-transparent text-center text-2xl font-extrabold tabular-nums text-slate-900 placeholder:text-slate-300 focus:outline-none" placeholder="0" />
+            </span>
+        </label>
+    );
+}
+
+// The price, in the sign-up wizard's style. A mode toggle at the top — one price,
+// a range, or price on enquiry — then the amount(s) and the per-person/whole-
+// session tiles (hidden for enquiry, which has no figure to charge). Shared by
+// the add flow and the Price edit sheet so both read the same. `onMode` is
+// optional: a caller that doesn't pass it keeps the old single-price control.
+function PriceChoice({ price, unit, mode = 'fixed', priceMax = '', onPrice, onUnit, onMode, onPriceMax, units = true, autoFocus }: {
+    price: string; unit: string; mode?: string; priceMax?: string;
+    onPrice: (v: string) => void; onUnit: (u: string) => void;
+    onMode?: (m: string) => void; onPriceMax?: (v: string) => void;
+    units?: boolean; autoFocus?: boolean;
 }) {
     const icon = (v: string) => (v === 'person' ? User : v === 'flat' ? Users : undefined);
     const hint = (v: string) => (v === 'person' ? 'A price each' : v === 'flat' ? 'One price for the booking' : 'As it’s priced now');
+    const m = mode || 'fixed';
     return (
         <div className="mx-auto w-full max-w-md space-y-8">
-            <BigAmountInput value={price} numeric={false} autoFocus={autoFocus} ariaLabel="Price"
-                onChange={(v) => onPrice(cleanAmountInput(v))} />
-            {units && (
+            {onMode && (
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="How it’s priced">
+                    {[['fixed', 'One price'], ['range', 'A range'], ['enquiry', 'On enquiry']].map(([v, l]) => (
+                        <button key={v} type="button" role="radio" aria-checked={m === v} onClick={() => onMode(v)}
+                            className={'rounded-xl border-2 px-3 py-2 text-sm font-semibold transition '
+                                + (m === v ? 'border-emerald-600 bg-emerald-50/60 text-slate-900' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>
+                            {l}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {m === 'enquiry' ? (
+                <p className="text-center text-sm text-slate-500 [text-wrap:balance]">
+                    You’ll agree the price with the guest when they message you. Guests see “Price on enquiry”.
+                </p>
+            ) : m === 'range' ? (
+                <div className="flex items-end justify-center gap-4">
+                    <RangeAmount label="From" value={price} onChange={(v) => onPrice(v)} />
+                    <span className="pb-3 text-lg text-slate-400">–</span>
+                    <RangeAmount label="To" value={priceMax} onChange={(v) => (onPriceMax ? onPriceMax(v) : undefined)} />
+                </div>
+            ) : (
+                <BigAmountInput value={price} numeric={false} autoFocus={autoFocus} ariaLabel="Price"
+                    onChange={(v) => onPrice(cleanAmountInput(v))} />
+            )}
+
+            {units && m !== 'enquiry' && (
                 <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="How it’s charged">
                     {chargeChoices({ unit }).map((o) => (
                         <ChoiceCard key={o.v} radio selected={unit === o.v} onSelect={() => onUnit(o.v)} title={o.l} hint={hint(o.v)} icon={icon(o.v)} />
@@ -103,6 +158,15 @@ function PriceChoice({ price, unit, onPrice, onUnit, units = true, autoFocus }: 
             )}
         </div>
     );
+}
+
+// Whether a row's price step is complete, by mode: a fixed price > 0, a range
+// with a from and a larger to, or enquiry (nothing to fill).
+export function priceRowValid(r: { price: string; priceMode?: string; priceMax?: string }): boolean {
+    const m = r.priceMode || 'fixed';
+    if (m === 'enquiry') return true;
+    if (m === 'range') return Number(r.price) > 0 && Number(r.priceMax) > Number(r.price);
+    return Number(r.price) > 0;
 }
 
 // The add flow's photo step: a big tap-to-add tile, or the photo with a bin on
@@ -172,7 +236,7 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
 
     const valid = (): boolean => {
         if (key === 'name') return !!r.name.trim();
-        if (key === 'price') return Number(r.price) > 0;
+        if (key === 'price') return priceRowValid(r);
         return true;
     };
 
@@ -200,7 +264,9 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
             )}
 
             {key === 'price' && (
-                <PriceChoice price={r.price} unit={r.unit} autoFocus onPrice={(v) => set({ price: v })} onUnit={(u) => set({ unit: u })} />
+                <PriceChoice price={r.price} unit={r.unit} mode={r.priceMode} priceMax={r.priceMax} autoFocus
+                    onPrice={(v) => set({ price: v })} onUnit={(u) => set({ unit: u })}
+                    onMode={(mo) => set({ priceMode: mo })} onPriceMax={(v) => set({ priceMax: v })} />
             )}
 
             {key === 'duration' && (
@@ -279,11 +345,16 @@ function NameCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow) => unkno
 }
 
 function PriceCard({ row, perItemLocation, onSave }: { row: MenuRow; perItemLocation: boolean; onSave: (r: MenuRow) => unknown }) {
-    const c = useCardSheet({ price: row.price, unit: row.unit, fulfilment: row.fulfilment }, (d) => onSave({ ...row, ...d }));
+    const c = useCardSheet({ price: row.price, unit: row.unit, fulfilment: row.fulfilment, priceMode: row.priceMode || 'fixed', priceMax: row.priceMax || '' }, (d) => onSave({ ...row, ...d }));
     const travelled = perItemLocation && c.draft.fulfilment === 'delivery';
+    const priceSummary = (row.priceMode || 'fixed') === 'enquiry'
+        ? 'Price on enquiry'
+        : (row.priceMode === 'range' && row.price && row.priceMax)
+            ? `£${row.price}–£${row.priceMax} ${unitLabel(row.unit)}`
+            : (row.price ? `£${row.price} ${unitLabel(row.unit)}` : 'Add a price');
     return (
         <>
-            <EditorCard title="Price" summary={row.price ? `£${row.price} ${unitLabel(row.unit)}` : 'Add a price'} onClick={c.start} />
+            <EditorCard title="Price" summary={priceSummary} onClick={c.start} />
             {c.open && (
                 <EditorPanel title={STEP_QUESTIONS.price} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <div className="space-y-4">
@@ -294,7 +365,9 @@ function PriceCard({ row, perItemLocation, onSave }: { row: MenuRow; perItemLoca
                         )}
                         <div className="py-4">
                             <PriceChoice price={c.draft.price} unit={c.draft.unit} units={!travelled}
-                                onPrice={(v) => c.setDraft({ ...c.draft, price: v })} onUnit={(u) => c.setDraft({ ...c.draft, unit: u })} />
+                                mode={c.draft.priceMode} priceMax={c.draft.priceMax}
+                                onPrice={(v) => c.setDraft({ ...c.draft, price: v })} onUnit={(u) => c.setDraft({ ...c.draft, unit: u })}
+                                onMode={(mo) => c.setDraft({ ...c.draft, priceMode: mo })} onPriceMax={(v) => c.setDraft({ ...c.draft, priceMax: v })} />
                         </div>
                     </div>
                 </EditorPanel>

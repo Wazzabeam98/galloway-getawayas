@@ -11,13 +11,42 @@ const UNIT_SUFFIX: Record<string, string> = {
     person: ' / guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
 };
 
-/** "£45", "from £18", "from £20 / guest" — the card's price line. */
+/** A money figure, "£45" or "£45.50". */
+function money(n: number): string {
+    return '£' + (Number.isInteger(n) ? String(n) : n.toFixed(2));
+}
+
+/** Only a FIXED offering is instant-bookable; a range or price-on-enquiry
+ *  offering routes the guest to "Message the provider". */
+export function itemIsBookable(item: MpItem): boolean {
+    return (item.priceMode || 'fixed') === 'fixed';
+}
+
+/** The per-offering price as the guest reads it, by mode: a single "£45",
+ *  a range "£475–£675", or "Price on enquiry". The unit suffix ("/ guest")
+ *  rides along for fixed and range. */
+export function itemPriceDisplay(item: MpItem): string {
+    const mode = item.priceMode || 'fixed';
+    const suffix = UNIT_SUFFIX[item.unit] || '';
+    if (mode === 'enquiry') return 'Price on enquiry';
+    if (mode === 'range' && item.priceMax != null && item.priceMax > item.price) {
+        return money(item.price) + '–' + money(item.priceMax) + suffix;
+    }
+    return money(item.price) + suffix;
+}
+
+/** "£45", "from £18", "from £20 / guest", or "Price on enquiry" — the card's
+ *  price line. Skips price-on-enquiry offerings when picking the cheapest; shows
+ *  "Price on enquiry" only when there is nothing priced at all. */
 export function fromPriceLabel(p: MpProvider): string {
-    const min = p.priceFrom;
-    const cheapest = [...p.items].sort((a, b) => a.price - b.price)[0];
+    if (p.allOnEnquiry) return 'Price on enquiry';
+    const priced = p.items.filter((i) => (i.priceMode || 'fixed') !== 'enquiry' && i.price > 0);
+    const cheapest = [...priced].sort((a, b) => a.price - b.price)[0];
     const suffix = cheapest ? (UNIT_SUFFIX[cheapest.unit] || '') : '';
-    const money = '£' + (Number.isInteger(min) ? String(min) : min.toFixed(2));
-    return (p.items.length > 1 ? 'from ' + money : money) + suffix;
+    // "from" when there is more than one priced option, or a price-on-enquiry
+    // option sits alongside — either way the one figure isn't the whole story.
+    const more = priced.length > 1 || p.items.some((i) => (i.priceMode || 'fixed') === 'enquiry');
+    return (more ? 'from ' + money(p.priceFrom) : money(p.priceFrom)) + suffix;
 }
 
 /** The headline price split so the unit can be set smaller and grey, Airbnb-style:

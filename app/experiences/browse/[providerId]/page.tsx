@@ -85,7 +85,10 @@ export default async function PublicListingPage({ params }: { params: { provider
     if (p.shape === 'made_to_order') {
         return (
             <PackageStaysProvider stays={packageStays}>
-            <FoodCartProvider items={p.items}>
+            {/* Only fixed-price offerings go in the orderable menu; a range or
+                price-on-enquiry item is reached through "Message the provider"
+                in the listing body (and refused server-side anyway). */}
+            <FoodCartProvider items={p.items.filter((i) => (i.priceMode || 'fixed') === 'fixed')}>
                 <ExperienceListingBody
                     p={p}
                     backHref="/experiences/browse"
@@ -162,7 +165,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             sticky
             responsiveness={responsiveness}
             reportable
-            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
+            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} providerId={p.id} providerName={p.business_name} /> : undefined}
             reviews={reviews}
         />
     );

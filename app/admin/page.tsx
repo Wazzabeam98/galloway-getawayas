@@ -46,6 +46,11 @@ const tools = [
         blurb: 'Paid experience bookings. Refund all or part of one.',
     },
     {
+        href: '/admin/experience-enquiries',
+        title: 'Experience enquiries',
+        blurb: 'Guests asking a provider for a price on a range or price-on-enquiry offering.',
+    },
+    {
         href: '/admin/disputes',
         title: 'Chargebacks',
         blurb: 'Disputes raised by guests\u2019 banks, and what evidence to send.',
