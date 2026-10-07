@@ -1,8 +1,8 @@
 {
-  "ranAt": "2026-10-03T06:24:59.741Z",
-  "target": "http://localhost:3820",
-  "account": "acct_1UMM5tA09L8ZuNyQ",
-  "passed": 29,
+  "ranAt": "2026-10-07T12:25:19.891Z",
+  "target": "http://localhost:3440",
+  "account": "acct_1UNtIwAovrM8qge1",
+  "passed": 30,
   "failed": 0,
   "lostWebhookReconciled": true,
   "lostWebhookRequestReconciled": true,
@@ -14,7 +14,7 @@
         {
           "description": "slot/book accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1GIS0iTCcEosdd14IAbAZjNTba7l26WfwyqankYG2tUL4EM335lNUdVXM#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Ld7q5lXtakatoETITi8fKScdmjWoVvWC9fJ38ppSQPnZD6Gh6Lu8Ndap#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "a holding order exists after booking",
@@ -64,7 +64,7 @@
         {
           "description": "STRIPE: the provider is the seller — the charge is on their behalf and their name is on the statement",
           "ok": true,
-          "detail": "on_behalf_of=acct_1UMM5tA09L8ZuNyQ statement=\"GALLOWAYGETAWAYS.CO.UK\" provider=\"GALLOWAYGETAWAYS.CO.UK\" platform=\"GALLOWAY GETAWAYS SAND\""
+          "detail": "on_behalf_of=acct_1UNtIwAovrM8qge1 statement=\"GALLOWAYGETAWAYS.CO.UK\" provider=\"GALLOWAYGETAWAYS.CO.UK\" platform=\"GALLOWAY GETAWAYS SAND\""
         },
         {
           "description": "APP: the order is marked held with our frozen £6 fee",
@@ -79,7 +79,7 @@
         {
           "description": "APP: the order now carries the PaymentIntent id",
           "ok": true,
-          "detail": "pi_3UMMDrPTBrEa7mS70JX3bQy7"
+          "detail": "pi_3UNtl2PTBrEa7mS71LEsCsUz"
         },
         {
           "description": "APP: the seat was KEPT (seats_taken still 1 — not resold)",
@@ -98,7 +98,7 @@
         {
           "description": "services/order accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1DC9N3BUdtcd2c1xAuWVDENiem6nvveAyBdBOf9oi8b5I0BMCvSCxo4nX#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1AbfL2v2Oj5gP2Hkud0zNjTXoYraK6PFsQA3GQgSGiobSS5e1dJoHgceB#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "the card is HELD not charged (requires_capture)",
@@ -123,7 +123,7 @@
         {
           "description": "the order carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UMMEpPTBrEa7mS70SaXSczL"
+          "detail": "pi_3UNtlsPTBrEa7mS70reKxBFx"
         },
         {
           "description": "orders/respond confirm succeeded",
@@ -143,7 +143,7 @@
         {
           "description": "STRIPE: the provider is the seller — the charge is on their behalf and their name is on the statement",
           "ok": true,
-          "detail": "on_behalf_of=acct_1UMM5tA09L8ZuNyQ statement=\"GALLOWAYGETAWAYS.CO.UK\" provider=\"GALLOWAYGETAWAYS.CO.UK\" platform=\"GALLOWAY GETAWAYS SAND\""
+          "detail": "on_behalf_of=acct_1UNtIwAovrM8qge1 statement=\"GALLOWAYGETAWAYS.CO.UK\" provider=\"GALLOWAYGETAWAYS.CO.UK\" platform=\"GALLOWAY GETAWAYS SAND\""
         },
         {
           "description": "APP: the order is confirmed, held, with our £18 fee frozen",
@@ -181,7 +181,7 @@
         {
           "description": "STRIPE: the provider is the seller — the charge is on their behalf and their name is on the statement",
           "ok": true,
-          "detail": "on_behalf_of=acct_1UMM5tA09L8ZuNyQ statement=\"GALLOWAYGETAWAYS.CO.UK\" provider=\"GALLOWAYGETAWAYS.CO.UK\" platform=\"GALLOWAY GETAWAYS SAND\""
+          "detail": "on_behalf_of=acct_1UNtIwAovrM8qge1 statement=\"GALLOWAYGETAWAYS.CO.UK\" provider=\"GALLOWAYGETAWAYS.CO.UK\" platform=\"GALLOWAY GETAWAYS SAND\""
         },
         {
           "description": "the webhook was accepted (200)",
@@ -394,12 +394,12 @@
         {
           "description": "APP: it carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UMMGrPTBrEa7mS71iku1Pyt"
+          "detail": "pi_3UNtniPTBrEa7mS71yFu0Ogh"
         },
         {
           "description": "APP: it belongs to the right guest and provider",
           "ok": true,
-          "detail": "0569dd56-936d-4542-812e-90029b728520/863592ee-c352-4c39-8b0f-e2b6fe73c2ea"
+          "detail": "1627877b-aa27-4bed-bf65-872424176470/bc388fda-c9d4-40ad-8c92-ea28ea87b212"
         },
         {
           "description": "STRIPE: the hold is still LIVE (requires_capture — nothing captured early, nothing lost)",
@@ -438,7 +438,7 @@
         {
           "description": "A: exactly one top-up won the last seat",
           "ok": true,
-          "detail": "r1=409 r2=200"
+          "detail": "r1=200 r2=409"
         },
         {
           "description": "A: the session is full (seats_taken = 6), never oversold",
@@ -581,7 +581,7 @@
         {
           "description": "A: move succeeded",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"moved\":2,\"seats\":3,\"serviceDate\":\"2026-10-09\",\"serviceTime\":\"10:00\",\"from\":{\"date\":\"2026-10-09\",\"time\":\"09:0"
+          "detail": "HTTP 200 {\"ok\":true,\"moved\":2,\"seats\":3,\"serviceDate\":\"2026-10-13\",\"serviceTime\":\"10:00\",\"from\":{\"date\":\"2026-10-13\",\"time\":\"09:0"
         },
         {
           "description": "A: the WHOLE family moved (2 rows, 3 seats)",
@@ -591,7 +591,7 @@
         {
           "description": "A: the move names BOTH times (old → new)",
           "ok": true,
-          "detail": "from={\"date\":\"2026-10-09\",\"time\":\"09:00\"} to=10:00"
+          "detail": "from={\"date\":\"2026-10-13\",\"time\":\"09:00\"} to=10:00"
         },
         {
           "description": "A: parent repointed to the new session, re-dated, and stamped",
@@ -702,7 +702,7 @@
         {
           "description": "a party of 6 on the £220-for-4 item is accepted (stay is 8)",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1oVnhq9G9UPkpT6XU9DRxcOM6Oit6pn2NV5H1pLJ8BOH3nYmJB1TJkJI3#fidnandhYHdWcXxpYCc%2"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Fy2QJBqt44N12Qf0gqXLPEWst713cTsuCLJxW9Jo7mrirbGcoDFXSy97#fidnandhYHdWcXxpYCc%2"
         },
         {
           "description": "the order records £300 for a party of 6 (220 + 2×£40)",
@@ -725,7 +725,7 @@
         {
           "description": "the increase is a REQUEST — a Checkout hold, not an instant charge",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1sc570GtYcvTCBDfUfrdGH5EcAOi1hukvdgwbVCAFqDCs7vOw3OsdSMkP#fidnandhYHdWcXxpYCc%2"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1rTktJf54lAAAuc5rWhXmflSTuurbp68uNsYHrXTma71OMdONEFkH3qfi#fidnandhYHdWcXxpYCc%2"
         },
         {
           "description": "a holding child was written for the extra place (£55)",
@@ -801,12 +801,12 @@
         {
           "description": "a date change is a REQUEST, not an instant move",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"requested\":true,\"date\":\"2026-10-23\",\"time\":null}"
+          "detail": "HTTP 200 {\"ok\":true,\"requested\":true,\"date\":\"2026-10-27\",\"time\":null}"
         },
         {
           "description": "the requested date is parked and the order stays on its date",
           "ok": true,
-          "detail": "pending=2026-10-23 date=2026-10-22"
+          "detail": "pending=2026-10-27 date=2026-10-26"
         },
         {
           "description": "the provider accepts the date and it applies",
@@ -816,7 +816,7 @@
         {
           "description": "the booking is now on the new date, the request cleared",
           "ok": true,
-          "detail": "date=2026-10-23"
+          "detail": "date=2026-10-27"
         }
       ],
       "status": "passed",
@@ -852,12 +852,12 @@
         {
           "description": "the increase is a request — a holding child is written",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a18KN3GeiHmQ0weQEXW0mRxMy0IXAG2dHxzQGubL3bcKqenlB6HheZ7TEG#f"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1ENVj3S8BgIlefY5eXMkNUYBpDyYEr9TQ0edTZ745oaMT2yaaKBFh7khn#f"
         },
         {
           "description": "the rebuild sweep reconciled the lost hold to AUTHORISED",
           "ok": true,
-          "detail": "authorised pi=pi_3UMMKUPTBrEa7mS70SL9xZW1"
+          "detail": "authorised pi=pi_3UNtrHPTBrEa7mS71ZL5g5ny"
         },
         {
           "description": "the hold is kept — the PaymentIntent still requires capture",
@@ -885,7 +885,7 @@
         {
           "description": "the order is INSTANT (books straight away, not a request)",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_b1rc21fjptGJIWoPU8yxfo0lS5Z8njKyJBMirZqSpoJZSMCCFrgtmvg7aU#fidnandhYHdWcXxpYCc%2"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_b1FCYLiL2S4RMDP60jatR0RRdp1lp5XahvHmFRXJ39H41YVz7kvuemvC3t#fidnandhYHdWcXxpYCc%2"
         },
         {
           "description": "the order is CONFIRMED at once — no provider step",
@@ -913,7 +913,7 @@
         {
           "description": "the order is a REQUEST (held, not instant)",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_b1R0LMeAFeW8SggelKNVMHzuHV7XA7o8NLLUYAuSjYahHX38b2KsPxfhjA#fidnandhYHdWcXxpYCc%2"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_b1A6QgazHZrLRDWIv4BkgSR5Y6kCSOTIrCs5PV9HxWLwSDqbYSZTontPNZ#fidnandhYHdWcXxpYCc%2"
         },
         {
           "description": "the held order is AUTHORISED — a request to answer",
@@ -961,17 +961,17 @@
         {
           "description": "APP: the order is paid out — £99 (£110 less our £11)",
           "ok": true,
-          "detail": "paid_out_at=2026-10-03T06:23:57.823+00:00 £99"
+          "detail": "paid_out_at=2026-10-07T12:23:58.586+00:00 £99"
         },
         {
           "description": "STRIPE: a £99 transfer to the provider’s account",
           "ok": true,
-          "detail": "amount=9900 dest=acct_1UMM5tA09L8ZuNyQ"
+          "detail": "amount=9900 dest=acct_1UNtIwAovrM8qge1"
         },
         {
           "description": "STRIPE: drawn on the order’s own charge (source_transaction), in the order’s transfer group",
           "ok": true,
-          "detail": "source=ch_3UMMMOPTBrEa7mS70hZUWjI0 group=service_order_645cdbf9-1d36-4971-b34d-995ba935a0c4"
+          "detail": "source=ch_3UNtszPTBrEa7mS70iY36DPJ group=service_order_ca4606c6-f416-4f25-9a1d-54e3679e8180"
         },
         {
           "description": "APP: no order dated today or later was paid — only the day after",
@@ -1027,7 +1027,7 @@
         {
           "description": "STRIPE: the provider was paid by Stripe at capture (old flow)",
           "ok": true,
-          "detail": "transfer=tr_3UMMMZPTBrEa7mS70gIJJbZL fee=1100"
+          "detail": "transfer=tr_3UNttBPTBrEa7mS70XHbns1k fee=1100"
         },
         {
           "description": "DB: a paid direct order cannot be re-marked held (trigger refuses)",
@@ -1113,7 +1113,7 @@
         {
           "description": "STRIPE: the refund carries the audit row id, and the key was built from it",
           "ok": true,
-          "detail": "d162cf9a-d97c-489c-ba98-ec0698a1180e"
+          "detail": "24ed0b7b-332d-47e7-b4b1-586d74ef0305"
         },
         {
           "description": "APP: the order is refunded, amount_refunded £110",
@@ -1123,7 +1123,7 @@
         {
           "description": "AUDIT: who, what, why, when, flow, before payout, the Stripe refund id",
           "ok": true,
-          "detail": "{\"id\":\"d162cf9a-d97c-489c-ba98-ec0698a1180e\",\"order_id\":\"4756c240-9a6f-4ff1-b785-3bbd73a3faee\",\"provider_id\":\"863592ee-c352-4c39-8b0f-e2b6fe73c2ea\",\"admin_id\":\"540ef6eb-9fc2-45d5-8b7d-a060e4b2dbab\",\"amount\":110,\"reason\":"
+          "detail": "{\"id\":\"24ed0b7b-332d-47e7-b4b1-586d74ef0305\",\"order_id\":\"24945eee-aae6-4276-947d-e3d6cd0525e0\",\"provider_id\":\"bc388fda-c9d4-40ad-8c92-ea28ea87b212\",\"admin_id\":\"bf798cf6-2095-45dc-a62e-1e54e68e5ba1\",\"amount\":110,\"reason\":"
         },
         {
           "description": "the payout run sends the provider nothing — no transfer, never paid out",
@@ -1194,7 +1194,7 @@
         {
           "description": "AUDIT: after payout, the reversal id and £27 recorded",
           "ok": true,
-          "detail": "{\"id\":\"a266e868-2be2-43c2-8e1d-c62ae3cb30c5\",\"order_id\":\"d669805c-2381-4c59-92e6-6f66ba5c7a20\",\"provider_id\":\"863592ee-c352-4c39-8b0f-e2b6fe73c2ea\",\"admin_id\":\"540ef6eb-9fc2-45d5-8b7d-a060e4b2dbab\",\"a"
+          "detail": "{\"id\":\"ed87cff9-0095-497a-b608-d199399e7598\",\"order_id\":\"98602a09-b4e6-4d39-8c0c-19e9f37eecb2\",\"provider_id\":\"bc388fda-c9d4-40ad-8c92-ea28ea87b212\",\"admin_id\":\"bf798cf6-2095-45dc-a62e-1e54e68e5ba1\",\"a"
         }
       ],
       "status": "passed",
@@ -1237,7 +1237,7 @@
         {
           "description": "AUDIT: the shortfall recorded against the refund",
           "ok": true,
-          "detail": "{\"id\":\"7070da50-b408-4e83-ad15-b3d631e02563\",\"order_id\":\"918ad021-9354-450b-a70c-f5da53d6a36e\",\"provider_id\":\"863592ee-c352-4c39-8b0f-e2b6fe73c2ea\",\"admin_id\":\"540ef6eb-9fc2-45d5-8b7d-a060e4b2dbab\",\"a"
+          "detail": "{\"id\":\"f54eab04-dd0c-4833-bf1d-595e641f7b95\",\"order_id\":\"538115cd-ffac-457c-a327-28f62b93310e\",\"provider_id\":\"bc388fda-c9d4-40ad-8c92-ea28ea87b212\",\"admin_id\":\"bf798cf6-2095-45dc-a62e-1e54e68e5ba1\",\"a"
         },
         {
           "description": "the director alert path fired (logMoneyFailure → alertDirectorsNow), naming the order",
@@ -1265,12 +1265,65 @@
         {
           "description": "AUDIT: direct flow, the transfer reversal id recorded",
           "ok": true,
-          "detail": "{\"id\":\"986e2760-3e4d-4ed9-b20d-97afc02a38f8\",\"order_id\":\"f9401433-f128-43f9-a856-fd27e799912f\",\"provider_id\":\"863592ee-c352-4c39-8b0f-e2b6fe73c2ea\",\"admin_id\":\"540ef6eb-9fc2-45d5-8b7d-a060e4b2dbab\",\"a"
+          "detail": "{\"id\":\"738aeb68-e34b-4f0f-bf54-730ee15b1d70\",\"order_id\":\"c9da9337-deed-4ce7-8a76-a3848a262c9f\",\"provider_id\":\"bc388fda-c9d4-40ad-8c92-ea28ea87b212\",\"admin_id\":\"bf798cf6-2095-45dc-a62e-1e54e68e5ba1\",\"a"
         },
         {
           "description": "APP: still confirmed, £55 refunded, never paid out by us",
           "ok": true,
           "detail": "confirmed £55"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "30",
+      "title": "Approved but payouts not set up: bookable, the guest pays as normal (sold as us), the share is held — then released once payouts are on",
+      "checks": [
+        {
+          "description": "BOOKABLE: services/order builds a Checkout for a provider with no Stripe account",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1VFiMoV5da98Cbq09CjGuYwhF5oiQfWnX5HjiXwggraAB7AEqQrQMPn6D#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+        },
+        {
+          "description": "VISIBLE: the provider’s public page is live and bookable",
+          "ok": true,
+          "detail": "HTTP 200 {\"status\":\"approved\",\"owner_paused\":false,\"admin_hidden_at\":null,\"trade\":\"chef\",\"stripe_mcc\":\"5812\"}"
+        },
+        {
+          "description": "STRIPE: the charge is ours — no on_behalf_of, no transfer_data, no application fee",
+          "ok": true,
+          "detail": "on_behalf_of=null"
+        },
+        {
+          "description": "the provider accepts and it is captured",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "STRIPE: £110 captured to us",
+          "ok": true,
+          "detail": "11000"
+        },
+        {
+          "description": "HELD: the run sends nothing and counts the provider as waiting",
+          "ok": true,
+          "detail": "{\"ok\":true,\"sent\":0,\"skipped\":1,\"failed\":0,\"reconciled\":0,\"nothingToPay\":0,\"providersWaitingToOnboard\":1,\"notReached\":0,\"problems\":0}"
+        },
+        {
+          "description": "DASHBOARD: \"£99 is waiting for you\" with the set-up button",
+          "ok": true,
+          "detail": "£99.00 is waiting for you"
+        },
+        {
+          "description": "RELEASED: paid on the next run — £99 to the provider, drawn on the order’s own charge",
+          "ok": true,
+          "detail": "paid_out_at=2026-10-07T12:25:19.076+00:00 £99 dest=acct_1UNtIwAovrM8qge1"
+        },
+        {
+          "description": "a further run pays nothing more",
+          "ok": true,
+          "detail": null
         }
       ],
       "status": "passed",

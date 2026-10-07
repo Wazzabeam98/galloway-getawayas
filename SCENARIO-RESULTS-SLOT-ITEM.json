@@ -1,6 +1,6 @@
 {
-  "ranAt": "2026-09-30T08:49:06.008Z",
-  "target": "http://localhost:3900",
+  "ranAt": "2026-10-07T12:26:11.757Z",
+  "target": "http://localhost:3440",
   "passed": 4,
   "failed": 0,
   "scenarios": [
@@ -11,12 +11,12 @@
         {
           "desc": "book accepted",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a10UQcYOznLkKsON9OuWlsjwBWdbxvbkZuTLReDdeNWPrK5qRL3qpN9EcO#f"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a13bBlXANgeMHDqUExzQZZfZwpAgTs1myblNKjhqbWvFBn2FpIjT67RBDm#f"
         },
         {
           "desc": "the order is for the PRIVATE item, not items[0] (shared)",
           "ok": true,
-          "detail": "item_id=abb20b66"
+          "detail": "item_id=209e0e81"
         },
         {
           "desc": "unit/price came from that item (flat, £120)",
@@ -43,7 +43,7 @@
         {
           "desc": "two seats is accepted",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1hd3ByfY4p5yrCQJGtpbCzrjP0mYBNGWEHXkWt8"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1sT68flWtenkINMGHMRvuEQbpUIwOyAsYnTZrGy"
         },
         {
           "desc": "the order is the shared item, 2 seats, £60",
@@ -112,7 +112,7 @@
         {
           "desc": "the flat item on the same capacity-less provider still books (a private hire is one booking)",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1YBdoCosU8vyWUQbmRzKK2XOJOzSJtVESRlxgsU"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1Ql4M0lzP7q6TmXh6hFACr75zzNk668leSkz4d4"
         }
       ],
       "status": "passed"

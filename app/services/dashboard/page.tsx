@@ -10,6 +10,10 @@ import { firstName } from '@/lib/utils';
 import { ukDateTime } from '@/lib/dayKey';
 import ProviderUpcoming from '@/components/services/ProviderUpcoming';
 import { loadProviderReservations } from '@/lib/providerReservations';
+import { isAwaitingConnect } from '@/lib/serviceOrders';
+import { loadHeldOrders, heldSummary } from '@/lib/heldPayouts';
+import { londonDayKey } from '@/lib/dayKey';
+import HeldPayoutsBanner from '@/components/services/HeldPayoutsBanner';
 
 export const metadata = {
     // One static tab title for both audiences. The visible heading carries the
@@ -37,7 +41,7 @@ export default async function ProviderReservationsPage() {
 
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, status, plan, stripe_payouts_enabled, trial_ends_at, fulfilment, photos, cancellation_window_hours, guest_details, collection_street, collection_town, collection_postcode')
+        .select('id, business_name, trade, audience, status, plan, stripe_payouts_enabled, stripe_account_id, trial_ends_at, fulfilment, photos, cancellation_window_hours, guest_details, collection_street, collection_town, collection_postcode')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -96,6 +100,11 @@ export default async function ProviderReservationsPage() {
     // it does not belong on a chef's or a class's dashboard.
     const heading = isTrade ? 'Enquiries' : 'Your bookings';
 
+    // A guest provider is live once approved, payouts or not (Airbnb's model);
+    // until they're set up their share is held — the notice says how much.
+    const awaitingPayouts = !isTrade && isAwaitingConnect(provider);
+    const held = awaitingPayouts ? heldSummary(await loadHeldOrders(admin, [provider.id]).catch(() => []), londonDayKey()) : null;
+
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-24">
             <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
@@ -123,6 +132,8 @@ export default async function ProviderReservationsPage() {
                     </div>
                 )}
             </div>
+
+            {awaitingPayouts && <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />}
 
             {!isTrade && enquiries.length > 0 && (
                 <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5">

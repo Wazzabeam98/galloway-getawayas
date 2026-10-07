@@ -95,16 +95,19 @@ test('exclusivity is a per-provider flag, not a trade', () => {
 
 // --- who a guest may see -----------------------------------------------------
 
-test('live to guests needs approval AND payouts, not either alone', () => {
+// Airbnb's model since 7 Oct 2026: approval makes a provider live. Payouts not
+// set up hides nobody — their share is held until they are (experience-payouts).
+test('live to guests is approval — payouts set up or not', () => {
     assert.equal(isLiveToGuests({ status: 'approved', stripe_payouts_enabled: true }), true);
+    assert.equal(isLiveToGuests({ status: 'approved', stripe_payouts_enabled: false }), true,
+        'approved but not connected is live — the money is held for them');
+    assert.equal(isLiveToGuests({ status: 'approved' }), true, 'no Stripe account yet is still live');
 
-    assert.equal(isLiveToGuests({ status: 'approved', stripe_payouts_enabled: false }), false,
-        'approved but not connected is not live');
     assert.equal(isLiveToGuests({ status: 'pending_review', stripe_payouts_enabled: true }), false,
         'connected but not approved is not live');
     assert.equal(isLiveToGuests({ status: 'declined', stripe_payouts_enabled: true }), false);
     assert.equal(isLiveToGuests(null), false);
-    assert.equal(isLiveToGuests({}), false, 'a missing payout flag is not a yes');
+    assert.equal(isLiveToGuests({}), false, 'no status is not approved');
 });
 
 test('awaiting-connect is exactly approved-but-not-payable', () => {

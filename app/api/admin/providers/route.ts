@@ -100,7 +100,7 @@ export async function POST(req: Request) {
 
             const { data: provider } = await admin
                 .from('service_providers')
-                .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, plan, trial_ends_at, kind, pricing_choice, billable_hourly_rate, covered_bands, stripe_mcc, stripe_product_description, custom_label, shape')
+                .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, stripe_payouts_enabled, photos, does_gas, does_oil, plan, trial_ends_at, kind, pricing_choice, billable_hourly_rate, covered_bands, stripe_mcc, stripe_product_description, custom_label, shape')
                 .eq('id', id)
                 .maybeSingle();
 
@@ -476,6 +476,11 @@ export async function POST(req: Request) {
                             '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + name
                                 + '</strong> has been approved and is now on the site.</p>'
                                 + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
+                                // An experience provider is live before payouts are
+                                // set up (Airbnb's model); their share is held until then.
+                                + (provider.audience === 'guest' && provider.stripe_payouts_enabled !== true
+                                    ? '<p style="margin:0 0 16px;font-size:16px;">Guests can book you now. Set up payouts from your dashboard so we can pay you — your share of each booking is held safely until you do.</p>'
+                                    : '')
                                 + terms
                                 + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'See your listing'),
                             FOOT, undefined, NEUTRAL_SUBTITLE

@@ -203,10 +203,11 @@ test('a paused or taken-down experience still serves the bookings it already has
     }
 });
 
-test('a declined or deactivated provider, or one Stripe cannot pay, takes no changes', () => {
+test('a declined or deactivated provider takes no changes; one still setting up payouts does', () => {
     assert.equal(servesExistingBookings({ ...live, status: 'hidden' }), false);
     assert.equal(servesExistingBookings({ ...live, status: 'declined' }), false);
-    assert.equal(servesExistingBookings({ ...live, stripe_payouts_enabled: false }), false);
+    assert.equal(servesExistingBookings({ ...live, stripe_payouts_enabled: false }), true,
+        'payouts not set up: the change is a held charge, the share waits with the rest');
 });
 
 test('moving a booking and adding places use the existing-booking gate, not the new-order one', () => {

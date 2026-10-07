@@ -7,14 +7,14 @@ import { whenLabel, partyMatters } from '@/components/marketplace/present';
 import OrderThread from '@/components/marketplace/OrderThread';
 import { formatGBP } from '@/lib/formatMoney';
 
-// What an approved guest-trade provider does after approval: set up payouts,
-// and answer the requests that come in.
+// What an approved guest-trade provider does after approval: answer the
+// requests that come in (and set up payouts, if they haven't).
 //
-// Two gates, and this screen is where the second one is crossed. Approval is
-// already done — that is why this renders. Until payouts are set up, the
-// provider is not live to guests and this says so plainly, with the one button
-// that fixes it. Once live, it becomes the list of requests to confirm or
-// decline, each with a held card and a 48-hour window.
+// Approval is already done — that is why this renders — and approval alone makes
+// a provider live (Airbnb's model, since 7 Oct 2026). Until payouts are set up
+// their share is held; the page above says how much (HeldPayoutsBanner). This is
+// the list of requests to confirm or decline, each with a held card and a
+// 48-hour window.
 
 interface Order {
     id: string;
@@ -95,8 +95,8 @@ const STATUS_WORD: Record<string, string> = {
     refunded: 'Refunded',
 };
 
-export default function ProviderExperienceDashboard(props: { providerId: string; live?: boolean }) {
-    const { providerId, live: liveToGuests = false } = props;
+export default function ProviderExperienceDashboard(props: { providerId: string; live?: boolean; payoutsReady?: boolean }) {
+    const { providerId, live: liveToGuests = false, payoutsReady = false } = props;
 
     const [payouts, setPayouts] = useState<null | { connected: boolean; payouts_enabled: boolean }>(null);
     const [orders, setOrders] = useState<Order[]>([]);
@@ -182,25 +182,9 @@ export default function ProviderExperienceDashboard(props: { providerId: string;
 
     return (
         <div className="mt-5 space-y-5">
-            {/* Payouts — the second gate */}
-            {!live && (
-                <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-                    <p className="font-semibold text-amber-900">One step before guests can book you</p>
-                    <p className="mt-1 text-sm text-amber-900/80">
-                        Set up payouts so we can pay you. You won’t appear to guests until this is done.
-                    </p>
-                    <button
-                        type="button"
-                        disabled={busy === 'payouts'}
-                        onClick={setUpPayouts}
-                        className="mt-3 rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
-                    >
-                        {busy === 'payouts' ? 'Starting…' : (payouts && payouts.connected ? 'Finish setting up payouts' : 'Set up payouts')}
-                    </button>
-                </div>
-            )}
-
-            {live && (
+            {/* Payouts not set up: the page above shows the held-money notice
+                (HeldPayoutsBanner) — live and bookable, the share waits. */}
+            {live && payoutsReady && (
                 <p className="text-sm text-emerald-800">Payouts are set up — you’re live to guests.</p>
             )}
 

@@ -63,15 +63,23 @@ export function heldChargeMetadata(pricing: { applicationFeePence: number }): Re
     };
 }
 
-// Who the card networks see as the seller of a held charge: the provider.
-// Spread into payment_intent_data at every place an experience is charged, so
-// the five routes cannot disagree. on_behalf_of makes the provider the
-// settlement merchant (their statement descriptor, their card_payments
-// capability — requested at Connect onboarding); the money still settles to
-// our balance and waits for the payout run, because there is no transfer_data.
-export function heldChargeSeller(providerAccountId: string): { on_behalf_of: string } {
-    if (!providerAccountId) throw new Error('heldChargeSeller: the provider has no Stripe account');
-    return { on_behalf_of: providerAccountId };
+// Who the card networks see as the seller of a held charge. Spread into
+// payment_intent_data at every place an experience is charged, so the five
+// routes cannot disagree.
+//
+// A provider whose Stripe account can take card payments (charges_enabled) is
+// the seller: on_behalf_of makes them the settlement merchant (their statement
+// descriptor). Stripe refuses on_behalf_of for an account without that
+// capability, so a provider who is approved but has not finished Stripe — live
+// and bookable since 7 Oct 2026 — is sold with NO on_behalf_of: we are the
+// business of record and our name is on the guest's statement. Either way the
+// money settles to our balance and waits for the payout run (no transfer_data),
+// which holds the provider's share until their payouts are on.
+export function heldChargeSeller(provider: { stripe_account_id?: string | null; stripe_charges_enabled?: boolean | null } | null | undefined): { on_behalf_of?: string } {
+    if (provider && provider.stripe_account_id && provider.stripe_charges_enabled === true) {
+        return { on_behalf_of: provider.stripe_account_id };
+    }
+    return {};
 }
 
 // The name on the guest's card statement for a held charge. on_behalf_of makes

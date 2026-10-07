@@ -1,7 +1,7 @@
 {
-  "ranAt": "2026-09-30T08:48:44.960Z",
-  "target": "http://localhost:3900",
-  "account": "acct_1U6iMxAJfMhUsIVc",
+  "ranAt": "2026-10-07T12:25:48.895Z",
+  "target": "http://localhost:3440",
+  "account": "acct_1UNtIwAovrM8qge1",
   "passed": 2,
   "failed": 1,
   "scenarios": [

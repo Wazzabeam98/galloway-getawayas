@@ -1,7 +1,7 @@
 {
-  "ranAt": "2026-09-30T08:48:55.083Z",
-  "target": "http://localhost:3900",
-  "account": "acct_1U6iMxAJfMhUsIVc",
+  "ranAt": "2026-10-07T12:25:59.930Z",
+  "target": "http://localhost:3440",
+  "account": "acct_1UNtIwAovrM8qge1",
   "passed": 4,
   "failed": 0,
   "scenarios": [
@@ -12,7 +12,7 @@
         {
           "desc": "the declared 6pm books (200) though no weekly template generates it",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1ObdltsK6LUMx6m1kAzWhTZDQHhz5094CZMpf6DPuMQcF3r4aniuqWrlk#f"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a16lGkzCqXr5hbEUfGO1DpnkgGJT5juSrPzaWvnQfYiJ2pnqSkDrtQR8gj#f"
         },
         {
           "desc": "the booking is paid and confirmed",
@@ -49,7 +49,7 @@
         {
           "desc": "the other is refused with 409 \"just filled up\"",
           "ok": true,
-          "detail": "B={\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a12ElRMQajg9AH308dDL C={\"ok\":false,\"error\":\"That time just filled up. Pick another.\"}"
+          "detail": "B={\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1M2BnT87O77qTUhrUrM C={\"ok\":false,\"error\":\"That time just filled up. Pick another.\"}"
         },
         {
           "desc": "the session is now FULL at the declared 2 — not overfilled to 3",
@@ -76,7 +76,7 @@
         {
           "desc": "the rejection is the no-overlap exclusion (23P01)",
           "ok": true,
-          "detail": "POST /slot_sessions: {\"code\":\"23P01\",\"details\":\"Key (provider_id, session_date, block_minutes)=(1fd24aaf-f147-4150-be96-"
+          "detail": "POST /slot_sessions: {\"code\":\"23P01\",\"details\":\"Key (provider_id, session_date, block_minutes)=(86c740fc-12f8-4d79-8372-"
         }
       ],
       "status": "passed"

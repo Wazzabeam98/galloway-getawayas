@@ -41,6 +41,10 @@
       "schedule": "40 * * * *"
     },
     {
+      "path": "/api/cron/experience-payout-reminders",
+      "schedule": "45 * * * *"
+    },
+    {
       "path": "/api/cron/needs-reply",
       "schedule": "30 * * * *"
     },

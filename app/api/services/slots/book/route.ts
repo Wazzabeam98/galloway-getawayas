@@ -165,11 +165,11 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, owner_paused, admin_hidden_at, plan, commission_rate, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, fulfilment, guest_details')
+            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, stripe_charges_enabled, owner_paused, admin_hidden_at, plan, commission_rate, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, fulfilment, guest_details')
             .eq('id', providerId)
             .maybeSingle();
 
-        if (!provider || !isSlot(provider) || !isLiveToGuests(provider) || !provider.stripe_account_id) {
+        if (!provider || !isSlot(provider) || !isLiveToGuests(provider)) {
             return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
         }
 
@@ -713,7 +713,7 @@ export async function POST(request: Request) {
                 // statement — but the money is held by us and paid to them the
                 // day after the session (lib/experienceFunds).
                 payment_intent_data: {
-                    ...heldChargeSeller(provider.stripe_account_id),
+                    ...heldChargeSeller(provider),
                     description: 'Galloway experience — ' + business + ' · ' + itemName,
                     metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: standalone ? '' : booking.id, ...heldChargeMetadata(pricing) },
                 },

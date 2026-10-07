@@ -2,7 +2,7 @@
 // page and the /api/services/experiences endpoint all show the same answer.
 //
 // Server-only: it is handed an admin (service-role) client and does the reads.
-// Eligibility is unchanged — approved, payouts on, an assigned MCC, at least one
+// Eligibility — approved (payouts set up or not), an assigned MCC, at least one
 // priced item, and covering the cottage — with shape and, for a slot provider,
 // the bookable sessions inside the stay folded in.
 
@@ -129,7 +129,8 @@ export interface MpProvider {
     // shared MeetYourHost card). ownerId is the provider's one owner (no co-hosts
     // on the provider side) — the page uses it to work out response rate/time.
     // verified = Stripe has them payout-ready (identity confirmed), which gates the
-    // "verified host" line; every live provider is, so it reads true here. hostBio
+    // "verified host" line. Since approval alone makes a provider live (7 Oct
+    // 2026), one still finishing Stripe reads false — no badge until it's true. hostBio
     // is the person's own words (owner profiles.host_bio), hostAvatar the raw photo
     // key (their headshot, else their profile avatar) the card resolves itself.
     // Tenure is "hosting since" + whole months, from when they became a provider
@@ -385,11 +386,11 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     // pausedId: shape that ONE provider, and only if the single thing keeping it
     // off the marketplace is a take-down — its own pause, or ours
     // (admin_hidden_at) — for loadPausedProvider. Every other gate — approved,
-    // payout-ready, an MCC — still applies exactly as for a live one.
+    // an MCC — still applies exactly as for a live one.
     let query = admin
         .from('service_providers')
         .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at, venue_lat, venue_lng, show_precise_location')
-        .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
+        .eq('audience', 'guest').eq('status', 'approved');
     query = pausedId
         ? query.eq('id', pausedId).or('owner_paused.eq.true,admin_hidden_at.not.is.null')
         : query.eq('owner_paused', false).is('admin_hidden_at', null);
@@ -690,7 +691,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
  * A provider that is TAKEN DOWN — paused by its owner (owner_paused) or by an
  * admin (admin_hidden_at) — shaped like a live one, for the direct link only: the page still opens, with the booking panel replaced
  * by "not taking bookings" — the same treatment as a hidden cottage. Null for
- * anything else (not approved, not payout-ready, not paused, launch flag off),
+ * anything else (not approved, not paused, launch flag off),
  * so those still fall back to browse. Never used to sell: every order route
  * gates on isLiveToGuests, which a paused provider fails.
  */
