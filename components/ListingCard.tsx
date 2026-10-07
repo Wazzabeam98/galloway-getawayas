@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Star, PawPrint, Bath } from 'lucide-react';
+import { Star, PawPrint, Bath, ThermometerSun, Check, type LucideIcon } from 'lucide-react';
 import ListingImage from '@/components/ListingImage';
 import { cardBadges } from '@/lib/listingRules';
 import { publicArea } from '@/lib/places';
@@ -50,6 +50,20 @@ export interface CardListing {
     property_type?: string | null;
 }
 
+// Which icon and colour draws which badge. The rule and the cap live in
+// lib/listingRules.ts (cardBadges, BADGE_AMENITIES); this is the only part
+// that belongs to the card. Each colour is a Tailwind 700 so the three sit in
+// one family on the near-white pill (bg-white/95): sky-700 5.9:1, emerald-700
+// 5.5:1 and amber-700 5.0:1 against white — all clear of the 4.5:1 AA floor,
+// white being the worst case. A badge amenity with no entry here draws a
+// neutral tick rather than the wrong icon (the old ternary gave everything
+// that was not a hot tub a green paw).
+const BADGE_STYLE: Record<string, { Icon: LucideIcon; color: string }> = {
+    'Hot tub': { Icon: Bath, color: 'text-sky-700' },
+    'Pets allowed': { Icon: PawPrint, color: 'text-emerald-700' },
+    'Sauna': { Icon: ThermometerSun, color: 'text-amber-700' },
+};
+
 export default function ListingCard({ listing }: { listing: CardListing }) {
     const rating = listing.rating_avg ? Number(listing.rating_avg) : null;
     const count = listing.rating_count || 0;
@@ -82,31 +96,31 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
                     // second one off the edge of the photo. `right-2` gives it
                     // something to wrap against.
                     <div className="absolute top-2 left-2 right-2 flex flex-wrap gap-1">
-                        {badges.map((badge) => (
-                            <span
-                                key={badge.amenity}
-                                // Hairline ring + drop shadow so the edge holds
-                                // on any photo — a bare white pill dissolves
-                                // into a pale sky. Unchanged from the paw,
-                                // which was hardened for exactly that in
-                                // 2813116; the hot tub inherits it rather than
-                                // inventing a second treatment that would need
-                                // checking on its own.
-                                className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-1 text-xs font-semibold text-stone-800 shadow-md ring-1 ring-black/10 backdrop-blur"
-                                title={badge.title}
-                            >
-                                {badge.amenity === 'Hot tub' ? (
-                                    // sky-700 on the pill, not sky-500: the pill
-                                    // is near-white on a bright photo and a mid
-                                    // blue on near-white is the exact failure
-                                    // the paw already had. 5.9:1 against white.
-                                    <Bath className="w-3.5 h-3.5 text-sky-700" />
-                                ) : (
-                                    <PawPrint className="w-3.5 h-3.5 text-emerald-700" />
-                                )}
-                                {badge.label}
-                            </span>
-                        ))}
+                        {badges.map((badge) => {
+                            // Each badge draws its own icon and colour (see
+                            // BADGE_STYLE). The colour is a 700 for the same
+                            // reason the hot tub's was: the pill is near-white
+                            // on a bright photo, and a mid tone on near-white is
+                            // the exact failure the paw was hardened against.
+                            const { Icon, color } = BADGE_STYLE[badge.amenity]
+                                || { Icon: Check, color: 'text-slate-700' };
+                            return (
+                                <span
+                                    key={badge.amenity}
+                                    // Hairline ring + drop shadow so the edge
+                                    // holds on any photo — a bare white pill
+                                    // dissolves into a pale sky. Hardened for
+                                    // exactly that in 2813116; every badge
+                                    // inherits it rather than inventing a second
+                                    // treatment that would need checking on its own.
+                                    className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-1 text-xs font-semibold text-stone-800 shadow-md ring-1 ring-black/10 backdrop-blur"
+                                    title={badge.title}
+                                >
+                                    <Icon className={`w-3.5 h-3.5 ${color}`} />
+                                    {badge.label}
+                                </span>
+                            );
+                        })}
                     </div>
                 )}
             </div>
