@@ -118,7 +118,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, total_price, status, amount_paid, amount_refunded, balance_amount, balance_due_date')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, total_price, status, amount_paid, amount_refunded, balance_amount, balance_due_date, supplier_vat_number, supplier_vat_name')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -222,6 +222,8 @@ export async function POST(request: Request) {
                     amountRefunded: Number(booking.amount_refunded || 0),
                     balanceAmount: Number(booking.balance_amount || 0),
                     balanceDueDate: booking.balance_due_date || null,
+                    supplierVatNumber: booking.supplier_vat_number || null,
+                    supplierVatName: booking.supplier_vat_name || null,
                     // Worked out live from the stamped policy, not read from a
                     // stored column — one deadline, computed the same way as the
                     // cards, and never a day early under BST.

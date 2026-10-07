@@ -92,7 +92,7 @@ export async function settlePaidBookingSession(
 
     const { data: booking } = await admin
         .from('bookings')
-        .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, guest_id, check_in, check_out, host_id, commission_rate')
+        .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, guest_id, check_in, check_out, host_id, commission_rate, supplier_vat_number, supplier_vat_name')
         .eq('id', bookingId)
         .maybeSingle();
 
@@ -504,6 +504,8 @@ export async function settlePaidBookingSession(
                     amountRefunded: Number(booking.amount_refunded || 0),
                     balanceAmount: Number(booking.balance_amount || 0),
                     balanceDueDate: booking.balance_due_date || null,
+                    supplierVatNumber: booking.supplier_vat_number || null,
+                    supplierVatName: booking.supplier_vat_name || null,
                     // Live from the stamped policy, the same deadline
                     // the cards show — not a stored column that lands
                     // a day early under BST.

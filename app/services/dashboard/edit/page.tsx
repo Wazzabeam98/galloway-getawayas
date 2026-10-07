@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import VatSettingsCard from '@/components/account/VatSettingsCard';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -212,6 +213,13 @@ export default async function EditBusinessPage() {
                     verified: !!r.verified_at && String(r.verified_number || '').trim() === String(r.number || '').trim(),
                 }))}
             />
+
+            {/* VAT registration — private, never on the public profile. Owners
+                pay a trade directly, so there is no receipt of ours for it to
+                appear on; it is kept with the business for when there is. */}
+            <div className="mt-10">
+                <VatSettingsCard providerId={provider.id} audience="trade" />
+            </div>
 
             <div className="mt-10">
                 <TradeListingStatus place="section" providerId={provider.id} paused={paused} adminHidden={adminHidden} billing={billing} />

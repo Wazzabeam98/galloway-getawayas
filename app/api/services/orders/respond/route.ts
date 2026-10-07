@@ -7,6 +7,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { canTransition } from '@/lib/serviceOrders';
 import { providerFirstName } from '@/lib/providerName';
 import { sendEmail, emailLayout, escapeHtml, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
+import { supplierVatHtml } from '@/lib/vat';
 import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
@@ -62,7 +63,8 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
             '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + who
             + '</strong> has confirmed your booking for <strong>' + date + '</strong>.</p>'
             + '<p style="margin:0 0 16px;font-size:16px;">Your card has now been charged '
-            + escapeHtml(amount) + '. They are expecting you; they will be in touch to sort the details.</p>',
+            + escapeHtml(amount) + '. They are expecting you; they will be in touch to sort the details.</p>'
+            + supplierVatHtml(order),
             'You’re receiving this because you booked an experience through Galloway Getaways.', undefined, NEUTRAL_SUBTITLE
         );
     } else if (outcome === 'date_accepted') {
@@ -118,7 +120,7 @@ export async function POST(request: Request) {
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, provider_id, status, shape, slot_session_id, quantity, stripe_payment_intent_id, guest_email, guest_name, service_date, service_time, price, provider_business_name, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, exclusive_per_date, funds_flow, platform_fee, paid_out_at, payout_amount, payout_transfer_id, payout_reversed, payout_clawback_owed')
+            .select('id, provider_id, status, shape, slot_session_id, quantity, stripe_payment_intent_id, guest_email, guest_name, service_date, service_time, price, provider_business_name, supplier_vat_number, supplier_vat_name, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, exclusive_per_date, funds_flow, platform_fee, paid_out_at, payout_amount, payout_transfer_id, payout_reversed, payout_clawback_owed')
             .eq('id', orderId)
             .maybeSingle();
 

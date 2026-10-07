@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import SupplierVat from '@/components/receipt/SupplierVat';
 import Link from 'next/link';
 import {
     ArrowLeft, MapPin, CheckCircle2, Clock3, XCircle, MessageSquare, Phone,
@@ -507,6 +508,8 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                         </div>
                                     )}
                                 </div>
+
+                                <SupplierVat row={booking} />
 
                                 {booking.status === 'cancelled' ? (
                                     <div className="mt-4">

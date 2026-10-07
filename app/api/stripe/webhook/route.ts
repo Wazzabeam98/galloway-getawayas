@@ -2,6 +2,7 @@ import { logError } from '@/lib/logError';
 import { logMoneyFailure } from '@/lib/moneyAlert';
 import { guidanceFor } from '@/lib/disputes';
 import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, noteCallout, allergyCallout, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
+import { supplierVatHtml } from '@/lib/vat';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
@@ -617,7 +618,7 @@ export async function POST(request: Request) {
                         .update(confirmPatch)
                         .eq('id', orderId)
                         .eq('status', 'holding')
-                        .select('id, parent_order_id, provider_id, provider_business_name, guest_email, service_date, service_time, item_name, quantity, price, note, allergy');
+                        .select('id, parent_order_id, provider_id, provider_business_name, guest_email, service_date, service_time, item_name, quantity, price, note, allergy, supplier_vat_number, supplier_vat_name');
                     if (slotConfErr) {
                         console.error('[webhook] slot-order confirm', orderId, slotConfErr.message);
                     }
@@ -717,7 +718,8 @@ export async function POST(request: Request) {
                                         + '.</p>'
                                         + (slotOrder.price != null
                                             ? '<p>You paid £' + Number(slotOrder.price).toFixed(2) + '.</p>' : '')
-                                        + button(viewUrl, 'View your booking'),
+                                        + button(viewUrl, 'View your booking')
+                                        + supplierVatHtml(slotOrder),
                                         'You’re receiving this because you booked an experience on Galloway Getaways.',
                                         undefined, NEUTRAL_SUBTITLE
                                     )

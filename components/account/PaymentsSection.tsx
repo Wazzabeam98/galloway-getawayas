@@ -11,6 +11,7 @@ import {
     Clock,
     Check,
 } from 'lucide-react';
+import VatSettingsCard from '@/components/account/VatSettingsCard';
 
 interface Status {
     connected: boolean;
@@ -422,6 +423,12 @@ export default function PaymentsSection() {
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {isHost && (
+                <div className="mt-6">
+                    <VatSettingsCard />
                 </div>
             )}
 

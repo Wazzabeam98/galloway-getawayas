@@ -11,6 +11,8 @@ import EarningsDateFilter from '@/components/EarningsDateFilter';
 import MonthlyTrendChart, { type TrendMonth } from '@/components/MonthlyTrendChart';
 import { ArrowLeft } from 'lucide-react';
 import { formatGBP } from '@/lib/formatMoney';
+import { supplierFromSnapshot } from '@/lib/vat';
+import VatSettingsCard from '@/components/account/VatSettingsCard';
 
 export const metadata = {
     title: 'Earnings',
@@ -47,11 +49,16 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
     // the same resolution the dashboard uses.
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, status')
+        .select('id, business_name, status, vat_registered, vat_number, vat_name')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
     const provider = (providers || []).find((p: any) => p.status === 'approved') || (providers || [])[0];
     if (!provider) redirect('/services/dashboard');
+    // Their own VAT registration at the head of the statement — the name and
+    // number their guests' receipts carry. Nothing when not VAT registered.
+    const ownVat = provider.vat_registered
+        ? supplierFromSnapshot({ supplier_vat_number: provider.vat_number, supplier_vat_name: provider.vat_name })
+        : null;
 
     // Range: default to the current calendar year, filtered on SERVICE_DATE (the
     // day the session runs — the experience analogue of a stay's check-in).
@@ -143,7 +150,10 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Earnings</h1>
                 <EarningsDateFilter from={from} to={to} basePath="/services/dashboard/earnings" />
             </div>
-            <p className="text-slate-500 mb-8">{ukDate(from)} – {ukDate(to)}</p>
+            <p className={`text-slate-500 ${ownVat ? 'mb-1' : 'mb-8'}`}>{ukDate(from)} – {ukDate(to)}</p>
+            {ownVat && (
+                <p className="text-sm text-slate-500 mb-8">{ownVat.name} · VAT number {ownVat.vatNumber}</p>
+            )}
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                 <StatCard label="What you've earned" value={money(netTotal)} sub={`${money(grossTotal)} taken`} />
@@ -174,6 +184,10 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
                     bank, which usually takes about a week. If a booking is cancelled and refunded before then, the
                     refund comes from the money we hold.
                 </p>
+            </div>
+
+            <div className="mb-10">
+                <VatSettingsCard providerId={provider.id} audience="experience" />
             </div>
 
             <div className="border rounded-2xl p-6 mb-10">
