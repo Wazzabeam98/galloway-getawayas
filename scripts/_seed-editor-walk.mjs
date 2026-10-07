@@ -4,6 +4,9 @@
 //   node scripts/_seed-editor-walk.mjs          # create / rebuild
 //   node scripts/_seed-editor-walk.mjs --reset  # remove
 import { loadEnv, assertTestEnvironment, supabaseClient } from './seed-lib.mjs';
+import { createRequire } from 'node:module';
+// Door codes and wifi passwords are stored sealed (lib/secretBox); so are these.
+const { sealSecret } = createRequire(import.meta.url)('./secretBox.cjs');
 
 const env = loadEnv();
 assertTestEnvironment(env);
@@ -124,7 +127,7 @@ async function main() {
     }]);
     await db.insert('listing_arrival', [{
         listing_id: listing.id, parking_info: 'Space for one car outside.',
-        wifi_name: 'HarbourTownhouse', wifi_password: 'walk-the-wifi', what3words: '///harbour.candle.brave',
+        wifi_name: 'HarbourTownhouse', wifi_password: sealSecret('walk-the-wifi', 'listing_arrival', listing.id, env), what3words: '///harbour.candle.brave',
     }]);
     await seedTrades(now);
     console.log('host', HOST_EMAIL, '| listing', listing.id);

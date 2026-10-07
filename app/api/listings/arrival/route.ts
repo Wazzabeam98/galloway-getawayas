@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { checkListing } from '@/lib/access';
 import { logError } from '@/lib/logError';
+import { revealSecret, sealSecret } from '@/lib/listingSecrets';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,10 @@ export async function GET(request: Request) {
     if (g.error) return g.error;
     const admin = adminClient();
     const { data } = await admin.from('listing_arrival').select(FIELDS.join(', ')).eq('listing_id', listingId).maybeSingle();
-    return NextResponse.json({ ok: true, arrival: data || {} });
+    // The wifi password is stored sealed; opened here, for the host, only.
+    const arrival: any = data || {};
+    if (arrival.wifi_password) arrival.wifi_password = await revealSecret(arrival.wifi_password, { table: 'listing_arrival', id: listingId }, '/api/listings/arrival');
+    return NextResponse.json({ ok: true, arrival });
 }
 
 export async function POST(request: Request) {
@@ -62,6 +66,8 @@ export async function POST(request: Request) {
             const v = typeof body[f] === 'string' ? body[f].trim().slice(0, 2000) : '';
             row[f] = v || null;
         }
+        // Encrypted before it is stored (lib/secretBox).
+        if (row.wifi_password) row.wifi_password = sealSecret(row.wifi_password, { table: 'listing_arrival', id: listingId });
 
         const admin = adminClient();
         const { error } = await admin.from('listing_arrival').upsert(row, { onConflict: 'listing_id' });

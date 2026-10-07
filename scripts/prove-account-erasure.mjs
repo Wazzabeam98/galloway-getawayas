@@ -23,6 +23,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
 import { loadEnv, assertTestEnvironment, isProtectedEmail, ROOT } from './seed-lib.mjs';
+import { createRequire } from 'node:module';
+// Door codes and wifi passwords are stored sealed (lib/secretBox); so are these.
+const { sealSecret } = createRequire(import.meta.url)('./secretBox.cjs');
 
 // The migration whose function this proves. Applied INSIDE the rolled-back
 // transaction below, so the proof validates the exact file before it ever
@@ -200,9 +203,9 @@ try {
         const { uid } = await makeSubject('host');
         const listing = await listingFor(uid);
         const booking = await bookingFor({ guestId: other, hostId: uid, listingId: listing });
-        await q(`insert into public.listing_arrival (listing_id, arrival_directions, parking_info, wifi_name, wifi_password, what3words) values ($1,'SENTINEL dir','SENTINEL park','SENTINEL-WIFI','SENTINEL-pass123','SENTINEL.word.word')`, [listing]);
-        await q(`insert into public.listing_access_codes (listing_id, code) values ($1,'SENTINEL1234')`, [listing]);
-        await q(`insert into public.booking_access_codes (booking_id, code) values ($1,'SENTINEL5678')`, [booking]);
+        await q(`insert into public.listing_arrival (listing_id, arrival_directions, parking_info, wifi_name, wifi_password, what3words) values ($1,'SENTINEL dir','SENTINEL park','SENTINEL-WIFI',$2,'SENTINEL.word.word')`, [listing, sealSecret('SENTINEL-pass123', 'listing_arrival', listing, env)]);
+        await q(`insert into public.listing_access_codes (listing_id, code) values ($1,$2)`, [listing, sealSecret('SENTINEL1234', 'listing_access_codes', listing, env)]);
+        await q(`insert into public.booking_access_codes (booking_id, code) values ($1,$2)`, [booking, sealSecret('SENTINEL5678', 'booking_access_codes', booking, env)]);
         await q(`insert into public.listing_ical_feeds (listing_id, url, events) values ($1,'https://sentinel.example/cal.ics','[]'::jsonb)`, [listing]);
         await q(`insert into public.booking_host_notes (booking_id, host_note, created_by) values ($1,'SENTINEL private note about guest',$2)`, [booking, uid]);
         await q(`insert into public.listing_access (listing_id, email, invited_by, role) values ($1,'SENTINEL@cohost.test',$2,'co_host')`, [listing, uid]);

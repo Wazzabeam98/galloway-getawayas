@@ -13,6 +13,10 @@ installAliases();
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://example.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
+// The code is encrypted before it is stored (lib/secretBox).
+process.env.LISTING_SECRETS_KEY = require('crypto').randomBytes(32).toString('base64');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { openSecret, sealSecret } = require('../lib/secretBox');
 
 const ROUTE = '@/app/api/listings/access-code/route';
 
@@ -123,9 +127,19 @@ test('saving records who set it', async () => {
 
     assert.equal(res.status, 200);
     assert.equal(writes.length, 1);
-    assert.equal(writes[0].code, '1860', 'trimmed — a stray space is a door that will not open');
+    assert.notEqual(writes[0].code, '1860', 'never stored as plain text — a copy of the database must not hold the code');
+    assert.ok(!String(writes[0].code).includes('1860'));
+    assert.equal(openSecret(writes[0].code, { table: 'listing_access_codes', id: 'l1' }), '1860', 'trimmed — a stray space is a door that will not open');
     assert.equal(writes[0].listing_id, 'l1');
     assert.equal(writes[0].updated_by, 'host-7', 'a credential should say who set it');
+});
+
+test('the host is shown the plain code, opened from the sealed row', async () => {
+    const stored = { code: sealSecret('2417', { table: 'listing_access_codes', id: 'l1' }), updated_at: null };
+    const { route } = load({ user: 'host-7', stored });
+    const res: any = await route.GET(get());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.code, '2417');
 });
 
 test('clearing the code removes the row rather than storing an empty string', async () => {
