@@ -2,7 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { isAdmin, recordAdminAction, cleanReason } from '@/lib/adminAudit';
+import { isAdmin, cleanReason, setListingHiddenAsAdmin } from '@/lib/adminAudit';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,41 +60,13 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'No such listing' }, { status: 404 });
         }
 
-        // A draft is half-written, not published. Hiding one would strand it
-        // somewhere its host cannot finish it from. Same rule the host route
-        // applies to itself.
-        if (listing.status === 'draft') {
-            return NextResponse.json(
-                { ok: false, error: 'That listing is still a draft, so it is not on the site.' },
-                { status: 400 }
-            );
+        // The take-down itself is shared with Remove, which hides a listing
+        // that has taken money instead of deleting it.
+        const result = await setListingHiddenAsAdmin(user.id, listing, hidden, reason);
+        if ('error' in result) {
+            return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
         }
-
-        const next = hidden ? 'hidden' : 'published';
-
-        if (listing.status === next) {
-            return NextResponse.json({ ok: true, status: next, unchanged: true });
-        }
-
-        const { error } = await admin
-            .from('listings')
-            .update({ status: next })
-            .eq('id', listingId);
-
-        if (error) {
-            return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-        }
-
-        await recordAdminAction({
-            adminId: user.id,
-            action: hidden ? 'listing_hidden' : 'listing_relisted',
-            listingId: listingId,
-            hostId: listing.host_id,
-            reason: reason,
-            detail: { title: listing.title, from: listing.status, to: next },
-        });
-
-        return NextResponse.json({ ok: true, status: next });
+        return NextResponse.json({ ok: true, status: result.status, ...(result.unchanged ? { unchanged: true } : {}) });
     } catch (err: any) {
         console.error('[admin/listings/visibility]', err && err.message);
         return NextResponse.json(

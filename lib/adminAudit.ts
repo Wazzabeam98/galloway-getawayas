@@ -17,6 +17,9 @@ export type AdminAction =
     | 'listing_relisted'
     | 'listing_edited'
     | 'listing_photo_removed'
+    // Removed for good from /admin/listings (never took money). listing_id is
+    // null — the row is gone — and detail carries its id and title.
+    | 'listing_deleted'
     // An experience or a trade taken down / put back (admin_hidden_at). The row
     // carries provider_id instead of listing_id.
     | 'provider_hidden'
@@ -115,4 +118,45 @@ export function cleanReason(raw: unknown): string | null {
     const reason = raw.trim();
     if (reason.length < 3) return null;
     return reason.slice(0, 500);
+}
+
+// An owner taking somebody else's listing off the site, or putting it back.
+// The one implementation behind both the Hide/Relist control and the Remove
+// action's take-down (a listing that has taken money is hidden, never deleted),
+// so the two cannot disagree about what "taken down" means.
+//
+// Nothing here touches bookings: it changes one column on listings, so a guest
+// who has paid still has their stay and the host still has to honour it.
+export async function setListingHiddenAsAdmin(
+    adminId: string,
+    listing: { id: string; host_id: string | null; title: string | null; status: string },
+    hidden: boolean,
+    reason: string,
+    extra: Record<string, unknown> = {}
+): Promise<{ ok: true; status: string; unchanged?: boolean } | { ok: false; error: string; status: number }> {
+    // A draft is half-written, not published. Hiding one would strand it
+    // somewhere its host cannot finish it from.
+    if (listing.status === 'draft') {
+        return { ok: false, error: 'That listing is still a draft, so it is not on the site.', status: 400 };
+    }
+
+    const next = hidden ? 'hidden' : 'published';
+    if (listing.status === next) return { ok: true, status: next, unchanged: true };
+
+    const { error } = await adminClient()
+        .from('listings')
+        .update({ status: next })
+        .eq('id', listing.id);
+    if (error) return { ok: false, error: error.message, status: 500 };
+
+    await recordAdminAction({
+        adminId,
+        action: hidden ? 'listing_hidden' : 'listing_relisted',
+        listingId: listing.id,
+        hostId: listing.host_id,
+        reason,
+        detail: { title: listing.title, from: listing.status, to: next, ...extra },
+    });
+
+    return { ok: true, status: next };
 }

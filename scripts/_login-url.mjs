@@ -1,5 +1,6 @@
-import { loadEnv } from './seed-lib.mjs';
+import { loadEnv, assertTestSupabaseUrl } from './seed-lib.mjs';
 const env = loadEnv();
+assertTestSupabaseUrl(env.NEXT_PUBLIC_SUPABASE_URL); // TEST only — never mint a sign-in on production
 const ME = 'liamworrall18@hotmail.com';
 const site = process.env.SITE;
 const admin = { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json' };

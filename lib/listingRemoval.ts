@@ -118,3 +118,73 @@ export function photosToRemove(images: unknown, stillUsedElsewhere: string[]): s
     });
     return out;
 }
+
+export type DeleteOutcome = 'deleted' | 'must_hide' | 'gone';
+
+// Deleting a listing for good, once the caller has decided who may. The one
+// sequence both doors use — the host's own Delete (/api/listings/delete) and
+// the owner's Remove (/api/admin/listings/remove) — so they cannot drift:
+//
+//   refuse if it took money; clear the never-paid rows the foreign keys would
+//   refuse over; delete the row (the database refuses too if a paid row has
+//   landed since — 23503); and only then the tidying — message templates, and
+//   the photos no other listing still uses — so a refused delete never loses
+//   an image. A tidying failure is passed to `log`, never reported as a failed
+//   delete: the listing is already gone by then.
+//
+// `ownerId`, when given, narrows the delete to that host's row — the host door
+// passes it; the owner door does not, because it acts on somebody else's.
+export async function deleteListingForGood(
+    admin: any,
+    listing: { id: string; images?: unknown },
+    opts: { bucket: string; ownerId?: string; log: (what: string, err: unknown) => Promise<void> | void }
+): Promise<DeleteOutcome> {
+    const listingId = listing.id;
+
+    const paid = await listingsWithPaidRecords(admin, [listingId]);
+    if (paid.has(listingId)) return 'must_hide';
+
+    await clearUnpaidRecords(admin, listingId);
+
+    let del = admin.from('listings').delete().eq('id', listingId);
+    if (opts.ownerId) del = del.eq('host_id', opts.ownerId);
+    const { data: gone, error: deleteError } = await del.select('id');
+
+    if (deleteError) {
+        if (deleteError.code === '23503') return 'must_hide';
+        throw deleteError;
+    }
+    if (!gone || !gone.length) return 'gone';
+
+    // Message templates name their listings in an array, not a foreign key,
+    // so nothing cascades there — take this id out of them.
+    const { data: templates, error: tplError } = await admin
+        .from('message_templates')
+        .select('id, listing_ids')
+        .contains('listing_ids', [listingId]);
+    if (tplError) await opts.log('templates could not be read to drop the deleted listing', tplError);
+    for (const t of templates || []) {
+        const next = (t.listing_ids || []).filter((x: string) => x !== listingId);
+        const { error } = await admin.from('message_templates').update({ listing_ids: next }).eq('id', t.id);
+        if (error) await opts.log('a template still names the deleted listing', error);
+    }
+
+    // The photos. The bucket has no DELETE policy for hosts, so this is the
+    // service role, and only for paths no other listing still uses.
+    const own: string[] = Array.isArray(listing.images)
+        ? (listing.images as unknown[]).filter((p): p is string => typeof p === 'string' && !!p)
+        : [];
+    if (own.length) {
+        const { data: sharing } = await admin.from('listings').select('images').overlaps('images', own);
+        const elsewhere: string[] = [];
+        (sharing || []).forEach((l: any) => (l.images || []).forEach((p: string) => elsewhere.push(p)));
+
+        const paths = photosToRemove(own, elsewhere);
+        if (paths.length) {
+            const { error: rmError } = await admin.storage.from(opts.bucket).remove(paths);
+            if (rmError) await opts.log('the deleted listing’s photos could not be removed', rmError);
+        }
+    }
+
+    return 'deleted';
+}

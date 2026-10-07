@@ -36,6 +36,20 @@ export function assertTestEnvironment(env) {
     if (!env.SUPABASE_SERVICE_ROLE_KEY) throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set');
 }
 
+// The Supabase half of the guard on its own, for scripts that have no Stripe
+// key to check (sign-in links, coverage seeds). supabaseClient() calls it too,
+// so every seeder and runner built on it is refused production by
+// construction rather than by remembering to call assertTestEnvironment first
+// — the rule seeds own their .test domain only works if they can only ever
+// reach the database those domains live in.
+export function assertTestSupabaseUrl(url) {
+    if (!url || !String(url).includes(TEST_PROJECT_REF)) {
+        throw new Error(
+            'refusing to run: the Supabase URL is not the test project (' + TEST_PROJECT_REF + ')'
+        );
+    }
+}
+
 // galloway-getaways-test. Production is hviwjxigqivjfhmhpjiy — never this.
 // Defined in target.cjs, not here. That file has to be CommonJS so Playwright
 // can load it, and on Node 20 CommonJS cannot require an ESM module — so the
@@ -168,6 +182,7 @@ function backoff(attempt) {
 /* -------------------------------------------------------------- Supabase */
 
 export function supabaseClient(env) {
+    assertTestSupabaseUrl(env.NEXT_PUBLIC_SUPABASE_URL);
     const base = env.NEXT_PUBLIC_SUPABASE_URL;
     const key = env.SUPABASE_SERVICE_ROLE_KEY;
     const headers = { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' };

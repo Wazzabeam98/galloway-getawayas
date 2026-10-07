@@ -1,8 +1,9 @@
 import { chromium } from '@playwright/test';
-import { loadEnv } from './seed-lib.mjs';
+import { loadEnv, assertTestSupabaseUrl } from './seed-lib.mjs';
 import { LOCAL_URL } from './target.cjs';
 
 const env = loadEnv();
+assertTestSupabaseUrl(env.NEXT_PUBLIC_SUPABASE_URL); // TEST only — never mint a sign-in on production
 const SITE = process.env.SITE || LOCAL_URL;
 const OUT = process.env.OUT || '.';
 const BK = process.env.BK;

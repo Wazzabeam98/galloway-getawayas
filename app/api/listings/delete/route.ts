@@ -3,7 +3,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { HAS_BOOKINGS_MESSAGE, clearUnpaidRecords, listingsWithPaidRecords, photosToRemove } from '@/lib/listingRemoval';
+import { HAS_BOOKINGS_MESSAGE, deleteListingForGood } from '@/lib/listingRemoval';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,83 +64,22 @@ export async function POST(request: Request) {
             );
         }
 
-        const paid = await listingsWithPaidRecords(admin, [listingId]);
-        if (paid.has(listingId)) {
+        // The sequence — paid check, unpaid rows cleared, delete, then the
+        // templates and photos — lives in lib/listingRemoval so the owner's
+        // Remove (/api/admin/listings/remove) runs exactly the same one.
+        const outcome = await deleteListingForGood(admin, listing, {
+            bucket: BUCKET,
+            ownerId: user.id,
+            log: (what, err) => logError('listings/delete: ' + what, err, {
+                path: 'api/listings/delete', userId: user.id,
+            }),
+        });
+
+        if (outcome === 'must_hide') {
             return NextResponse.json({ ok: false, mustHide: true, error: HAS_BOOKINGS_MESSAGE }, { status: 409 });
         }
-
-        // No paid booking, so there is no record to keep — but the foreign keys
-        // refuse the delete while any booking or order row still points at the
-        // listing, paid or not. Clear the never-paid rows (and only those)
-        // first. A paid row can't be here (just checked) and one landing in
-        // between is left for the foreign key below.
-        await clearUnpaidRecords(admin, listingId);
-
-        const { data: gone, error: deleteError } = await admin
-            .from('listings')
-            .delete()
-            .eq('id', listingId)
-            .eq('host_id', user.id)
-            .select('id');
-
-        if (deleteError) {
-            // 23503: a booking (or order) arrived between the check and the
-            // delete, and the foreign key refused. Same answer as above.
-            if (deleteError.code === '23503') {
-                return NextResponse.json({ ok: false, mustHide: true, error: HAS_BOOKINGS_MESSAGE }, { status: 409 });
-            }
-            throw deleteError;
-        }
-        if (!gone || !gone.length) {
+        if (outcome === 'gone') {
             return NextResponse.json({ ok: false, error: 'That listing no longer exists.' }, { status: 404 });
-        }
-
-        // The listing is gone. What follows is tidying: a failure is logged,
-        // never reported as a failed delete.
-
-        // Message templates name their listings in an array, not a foreign key,
-        // so nothing cascades there — take this id out of the host's own.
-        const { data: templates, error: tplError } = await admin
-            .from('message_templates')
-            .select('id, listing_ids')
-            .contains('listing_ids', [listingId]);
-        if (tplError) {
-            await logError('listings/delete: templates could not be read to drop the deleted listing', tplError, {
-                path: 'api/listings/delete', userId: user.id,
-            });
-        }
-        for (const t of templates || []) {
-            const next = (t.listing_ids || []).filter((x: string) => x !== listingId);
-            const { error } = await admin.from('message_templates').update({ listing_ids: next }).eq('id', t.id);
-            if (error) {
-                await logError('listings/delete: a template still names the deleted listing', error, {
-                    path: 'api/listings/delete', userId: user.id,
-                });
-            }
-        }
-
-        // The photos. The bucket has no DELETE policy for hosts, so this is the
-        // service role, and only for paths no other listing still uses.
-        const own: string[] = Array.isArray(listing.images)
-            ? listing.images.filter((p: unknown) => typeof p === 'string' && p)
-            : [];
-        if (own.length) {
-            const { data: sharing } = await admin
-                .from('listings')
-                .select('images')
-                .overlaps('images', own);
-            const elsewhere: string[] = [];
-            (sharing || []).forEach((l: any) => (l.images || []).forEach((p: string) => elsewhere.push(p)));
-
-            const paths = photosToRemove(own, elsewhere);
-            if (paths.length) {
-                const { error: rmError } = await admin.storage.from(BUCKET).remove(paths);
-                if (rmError) {
-                    await logError('listings/delete: the deleted listing’s photos could not be removed', rmError, {
-                        path: 'api/listings/delete', userId: user.id,
-                    });
-                }
-            }
         }
 
         return NextResponse.json({ ok: true });

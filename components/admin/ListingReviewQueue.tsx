@@ -41,8 +41,12 @@ export default function ListingReviewQueue({ items }: { items: QueueItem[] }) {
     const [failures, setFailures] = useState<Record<string, string>>({});
     const [decliningId, setDecliningId] = useState<string | null>(null);
     const [reason, setReason] = useState('');
+    // Decline is two steps: write the reason, then confirm what the host is
+    // about to receive. The email cannot be unsent.
+    const [confirming, setConfirming] = useState(false);
 
     const chosen = ready.filter((i) => selected[i.id]).map((i) => i.id);
+    const declining = items.find((i) => i.id === decliningId) || null;
 
     async function decide(payload: any, describe: (result: any) => string) {
         setBusy(true);
@@ -74,6 +78,7 @@ export default function ListingReviewQueue({ items }: { items: QueueItem[] }) {
             setSelected({});
             setDecliningId(null);
             setReason('');
+            setConfirming(false);
 
             // The rows that succeeded are gone from the queue now, and the
             // counts above are server-rendered.
@@ -175,7 +180,17 @@ export default function ListingReviewQueue({ items }: { items: QueueItem[] }) {
                                 )}
                             </div>
 
-                            <div className="flex flex-col items-end gap-2">
+                            {/* Approve and Decline side by side, the same weight —
+                                both are a decision, and a decline is not a footnote. */}
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => { setDecliningId(item.id); setReason(''); setConfirming(false); }}
+                                    className="px-3 py-1.5 rounded-lg border border-slate-300 hover:border-slate-900 text-slate-800 text-xs font-bold disabled:opacity-40"
+                                >
+                                    Decline
+                                </button>
                                 <button
                                     type="button"
                                     disabled={busy || !finished}
@@ -187,57 +202,106 @@ export default function ListingReviewQueue({ items }: { items: QueueItem[] }) {
                                 >
                                     Approve
                                 </button>
-                                <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => { setDecliningId(item.id); setReason(''); }}
-                                    className="text-xs font-semibold text-slate-500 underline"
-                                >
-                                    Send back
-                                </button>
                             </div>
-
-                            {decliningId === item.id && (
-                                <div className="w-full border-t pt-3 mt-1">
-                                    <label className="block text-sm font-semibold text-slate-800 mb-1">
-                                        What needs changing?
-                                    </label>
-                                    <p className="text-xs text-slate-500 mb-2">
-                                        This is emailed to {item.hostName} word for word, so write it to them.
-                                    </p>
-                                    <textarea
-                                        value={reason}
-                                        onChange={(e) => setReason(e.target.value)}
-                                        rows={3}
-                                        className="w-full p-2.5 border rounded-lg text-sm"
-                                        placeholder="The photos are all of the garden — could you add a couple of the inside?"
-                                    />
-                                    <div className="flex gap-2 mt-2">
-                                        <button
-                                            type="button"
-                                            disabled={busy || !reason.trim()}
-                                            onClick={() => decide(
-                                                { decision: 'decline', id: item.id, note: reason.trim() },
-                                                () => 'Sent back, and the host has been told.'
-                                            )}
-                                            className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold disabled:opacity-40"
-                                        >
-                                            Send back to the host
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setDecliningId(null)}
-                                            className="px-3 py-1.5 text-xs font-semibold text-slate-500"
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     );
                 })}
             </div>
+
+            {declining && (
+                <div
+                    className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+                    onClick={() => !busy && setDecliningId(null)}
+                >
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="decline-title"
+                        className="bg-white rounded-2xl p-6 max-w-md w-full"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {!confirming ? (
+                            <>
+                                <h3 id="decline-title" className="font-bold text-slate-900 mb-1">
+                                    Decline {declining.title}
+                                </h3>
+                                <p className="text-sm text-slate-600 mb-4">
+                                    It goes back to {declining.hostName}&rsquo;s drafts, nothing is deleted, and
+                                    they can fix it and send it again.
+                                </p>
+                                <label htmlFor="decline-reason" className="block text-sm font-semibold text-slate-800 mb-1">
+                                    What needs changing?
+                                </label>
+                                <p className="text-xs text-slate-500 mb-2">
+                                    Emailed to {declining.hostName} word for word, so write it to them.
+                                </p>
+                                <textarea
+                                    id="decline-reason"
+                                    value={reason}
+                                    onChange={(e) => setReason(e.target.value)}
+                                    rows={4}
+                                    autoFocus
+                                    maxLength={1000}
+                                    className="w-full p-2.5 border rounded-lg text-sm"
+                                    placeholder="The photos are all of the garden — could you add a couple of the inside?"
+                                />
+                                <div className="flex items-center justify-end gap-2 mt-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setDecliningId(null)}
+                                        className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={!reason.trim()}
+                                        onClick={() => setConfirming(true)}
+                                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-xl disabled:opacity-40"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <h3 id="decline-title" className="font-bold text-slate-900 mb-1">
+                                    Decline and email {declining.hostName}?
+                                </h3>
+                                <p className="text-sm text-slate-600 mb-3">
+                                    {declining.title} goes back to their drafts, and they get this:
+                                </p>
+                                <p className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-lg p-3 whitespace-pre-wrap mb-4">
+                                    {reason.trim()}
+                                </p>
+                                <div className="flex items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => setConfirming(false)}
+                                        className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
+                                    >
+                                        Back
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => decide(
+                                            { decision: 'decline', id: declining.id, note: reason.trim() },
+                                            (r) => (r.outcomes && r.outcomes[0] && r.outcomes[0].ok && r.outcomes[0].emailed === false)
+                                                ? 'Declined — but the email did not send. Tell the host yourself.'
+                                                : 'Declined, and the host has been emailed.'
+                                        )}
+                                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-xl disabled:opacity-40"
+                                    >
+                                        {busy ? 'Sending…' : 'Decline and send'}
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
         </section>
     );
 }
