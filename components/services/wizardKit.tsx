@@ -4,7 +4,7 @@ import { Minus, Plus, X, type LucideIcon } from 'lucide-react';
 import { minutesLabel } from './editorControls';
 
 // The guest provider sign-up wizard's reusable pieces, lifted out of
-// ProviderSignUp so the experience listing editor's "+ Add an item" flow is the
+// ProviderSignUp so the experience listing editor's "+ Add an offering" flow is the
 // SAME control, not a look-alike. ProviderSignUp imports NumberStepper and
 // ChoiceCard from here; the editor imports all three.
 
