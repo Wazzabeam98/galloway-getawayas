@@ -3,7 +3,7 @@ import Image from 'next/image';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen, businessSignupsOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace, type MpProvider } from '@/lib/experiencesData';
-import { locationTag, cardLocationLine, priceParts } from '@/components/marketplace/present';
+import { locationTag, cardLocationLine, fromPriceLabel } from '@/components/marketplace/present';
 
 // Experiences on the home page, so a visitor sees everything on offer without
 // having to know the /experiences URL. Two states, and the page places each
@@ -67,8 +67,11 @@ export default function HomeExperiences({ providers }: { providers: MpProvider[]
 // beneath, the price last — "From £20 / guest" where ListingCard says "£140 night".
 function ExperienceCard({ p }: { p: MpProvider }) {
     const town = locationTag(p) || cardLocationLine(p) || 'Dumfries & Galloway';
-    const cheapest = [...p.items].sort((a, b) => a.price - b.price)[0];
-    const { money, per } = priceParts(p.priceFrom, cheapest ? cheapest.unit : 'flat');
+    // The marketplace's own price line — fixed, from, a range or "Price on
+    // enquiry" — with the unit set quiet like the property card's "night".
+    const label = fromPriceLabel(p);
+    const [main, per] = label.split(' / ');
+    const shown = main.charAt(0).toUpperCase() + main.slice(1);
     return (
         <Link href={`/experiences/browse/${p.id}`} className="group flex flex-col space-y-2">
             <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
@@ -79,7 +82,7 @@ function ExperienceCard({ p }: { p: MpProvider }) {
             <h3 className="font-bold text-stone-900 text-base truncate">{p.business_name}</h3>
             <p className="text-sm text-stone-500 truncate">{town}</p>
             <p className="text-sm font-semibold text-stone-900">
-                {p.items.length > 1 ? 'From ' : ''}{money}{per && <span className="font-normal text-stone-500"> {per}</span>}
+                {shown}{per && <span className="font-normal text-stone-500"> / {per}</span>}
             </p>
         </Link>
     );
