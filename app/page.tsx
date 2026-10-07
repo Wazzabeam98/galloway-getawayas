@@ -77,6 +77,12 @@ function townPhotoAlt(slug: string, name: string): string {
 // be the home page. See the note in app/layout.tsx.
 export const metadata = {
     alternates: { canonical: '/' },
+    // The home page's own search description, so "self-catering" stays in
+    // front of search engines now the hero headline no longer says it. Set
+    // here rather than in the layout, whose description every page without
+    // one inherits. The title stays the layout's default.
+    description:
+        'Book self-catering holiday cottages and accommodation across Dumfries & Galloway. Book direct with the people who own them — no booking fee, ever.',
 };
 
 // The `where` slug the hero sends is the town with its spaces turned into
@@ -321,7 +327,7 @@ export default async function HomePage({
                         <p className="text-stone-600 text-sm md:text-base mt-1">
                             {searching
                                 ? criteria.join(' · ')
-                                : 'Handpicked holiday rentals in Dumfries & Galloway'}
+                                : 'Handpicked self-catering accommodation in Dumfries & Galloway'}
                         </p>
                     </div>
                     {searching && (

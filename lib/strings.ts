@@ -230,15 +230,19 @@ export const GUEST_SCREEN_COPY = {
     menuPricePlaceholder: '45',        // the big numeral's placeholder — an example price
     menuPriceTypeLabel: 'How this is priced',   // the current-choice row on the price step
     menuPriceTypeTitle: 'How is this priced?',  // the basis picker's heading
-    // The six pricing bases, in ORDER_UNITS order. The labels live here so the
-    // wording is changed in one place; the keys are the logic and stay in code.
+    // The pricing bases. The labels live here so the wording is changed in one
+    // place; the keys are the logic and stay in code. 'flat'/'person'/'event'/
+    // 'item' are what a new offering is offered (see OFFERED_UNITS); 'night'/
+    // 'hour'/'ticket' are legacy — still labelled so an existing offering reads
+    // right, but no longer offered.
     priceUnitLabels: {
-        flat: 'One set price',
+        flat: 'Whole session',
         person: 'Per person',
+        event: 'Per event',
+        item: 'Per item',
         night: 'Per night',
         hour: 'Per hour',
         ticket: 'Per ticket',
-        item: 'Per item',
     } as Record<string, string>,
     // SLOT 'offer both' only: the unit is chosen per item, as its own step in the
     // sub-flow. A private-only slot is flat and a shared-only slot is per person —
