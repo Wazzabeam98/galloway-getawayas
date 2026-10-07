@@ -183,12 +183,12 @@ export const GUEST_SCREEN_COPY = {
     // Required before a guest listing can be sent: a listing with no priced item
     // never appears on the marketplace and can't be booked.
     menuRequiredGate: 'Add at least one thing a guest can book, with a price — without one your listing can’t be booked.',
-    menuAddRow: 'Add an item',
+    menuAddRow: 'Add an offering',
     // The add row for a slot offering 'both': the two starters (private hire,
     // shared table) are seeded, and this adds a further option beside them.
     menuSlotAddRow: 'Add another option',
     menuRowPrompt: 'Name it and set a price',
-    menuUntitled: 'Untitled item',
+    menuUntitled: 'Untitled offering',
     menuSlotRowLabel: 'Your session',
 
     // The per-item sub-flow, one thing a screen (Airbnb's itinerary shape).
