@@ -13,6 +13,7 @@ const DECIDES_ON = [
     'Hot tub',
     'Sauna',
     'Cold plunge',
+    'Outdoor shower',
     'Wifi',
     'Free parking on premises',
     'Free street parking',

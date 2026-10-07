@@ -42,7 +42,7 @@ import { amountForBox, amountOrNull, amountOrZero } from '@/lib/amountInput';
 import { CalendarSyncCard } from '@/components/IcalFeeds';
 import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
 import {
-    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
+    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
 } from 'lucide-react';
 
 
@@ -86,6 +86,7 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
             { name: 'Hot tub', icon: Bath },
             { name: 'Indoor fireplace', icon: Flame },
             { name: 'Outdoor furniture', icon: Armchair },
+            { name: 'Outdoor shower', icon: ShowerHead },
             { name: 'Pool', icon: Waves },
             { name: 'Sauna', icon: ThermometerSun },
         ],

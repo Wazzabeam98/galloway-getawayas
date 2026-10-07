@@ -12,7 +12,7 @@ import { ACCESSIBILITY_AMENITIES } from './listingFilters';
 // The groups, in Airbnb's order, each with the amenities that belong to it.
 // Labels are shown as the dialog's section headings.
 const GROUP_DEFS: { label: string; items: string[] }[] = [
-    { label: 'Bathroom', items: ['Hairdryer', 'Shampoo', 'Hot water'] },
+    { label: 'Bathroom', items: ['Hairdryer', 'Shampoo', 'Hot water', 'Outdoor shower'] },
     { label: 'Bedroom and laundry', items: ['Essentials', 'Hangers', 'Iron', 'Washing machine', 'Tumble dryer'] },
     { label: 'Entertainment', items: ['TV'] },
     { label: 'Family', items: ['Cot'] },
