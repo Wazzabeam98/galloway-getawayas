@@ -14,6 +14,7 @@ import { rateFor, netOfFee } from '@/lib/fees';
 import { formatGBP } from '@/lib/formatMoney';
 import { publicArea } from '@/lib/places';
 import { revealSecret } from '@/lib/listingSecrets';
+import { renderSecretTokens, type SecretView } from '@/lib/messageSecrets';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,7 +102,7 @@ export async function GET(
 
     const { data: messages } = await admin
         .from('messages')
-        .select('id, sender_id, body, created_at, read_at')
+        .select('id, sender_id, body, created_at, read_at, automated')
         .eq('booking_id', bookingId)
         .order('created_at', { ascending: true });
 
@@ -302,6 +303,19 @@ export async function GET(
         viewListingHref: listing ? '/homes/' + listing.id : null,
     };
 
+    // Check-in messages are stored with the door code and wifi password as
+    // placeholders (lib/messageSecrets). Filled in here, only for a viewer the
+    // gate above already lets see them; a guest outside the window is told when
+    // they will show, and anyone else gets the plain words.
+    const today = new Date().toISOString().slice(0, 10);
+    const secretView: SecretView = arrival
+        ? { doorCode: arrival.doorCode, wifiPassword: arrival.wifiPassword }
+        : isGuest ? (String(booking.check_in) > today ? 'before' : 'after') : 'preview';
+    const shownMessages = (messages || []).map((m: any) => {
+        const { automated, ...rest } = m;
+        return { ...rest, body: renderSecretTokens(m.body, automated, secretView) };
+    });
+
     return NextResponse.json({
         ok: true,
         role: isGuest ? 'guest' : isHost ? 'host' : isCoHost ? 'co_host' : 'companion',
@@ -344,6 +358,6 @@ export async function GET(
             balance_due_date: showMoney ? booking.balance_due_date : null,
             payment_status: showMoney ? booking.payment_status : null,
         },
-        messages: messages || [],
+        messages: shownMessages,
     });
 }

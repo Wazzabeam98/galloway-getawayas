@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { logError } from '@/lib/logError';
 import { revealSecret, sealSecret } from '@/lib/listingSecrets';
+import { DOOR_TOKEN } from '@/lib/messageSecrets';
 
 export const dynamic = 'force-dynamic';
 
@@ -137,7 +138,9 @@ export async function POST(request: Request) {
                     booking_id: bookingId,
                     sender_id: g.uid,
                     recipient_id: g.booking.guest_id,
-                    body: 'Quick update for ' + where + ': the door code has changed to ' + effective
+                    // The code as a placeholder (lib/messageSecrets), filled in only
+                    // when shown — so it always reads as the code in force.
+                    body: 'Quick update for ' + where + ': the door code has changed to ' + DOOR_TOKEN
                         + '. Please use this one when you arrive — it replaces the code in your earlier check-in message.',
                     automated: true, // a system-composed code-changed notice
                 });

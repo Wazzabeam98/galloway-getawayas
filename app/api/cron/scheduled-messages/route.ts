@@ -2,6 +2,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { logError } from '@/lib/logError';
 import { revealSecret } from '@/lib/listingSecrets';
+import { DOOR_TOKEN, tokeniseSecrets } from '@/lib/messageSecrets';
 import { londonDayKey, shiftDayKey, ukDate } from '@/lib/dayKey';
 import { arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
 import { displayName } from '@/lib/utils';
@@ -160,11 +161,13 @@ async function checkInFallbackPass(
 
             const guest = fbGuestById[booking.guest_id];
             const firstName = displayName(guest, 'there').split(' ')[0] || 'there';
+            // Stored with the code as a placeholder (lib/messageSecrets): it is
+            // filled in only when the message is shown, to someone who may see it.
             const body = checkInFallbackBody({
                 firstName,
                 listing,
                 checkIn: formatDate(booking.check_in),
-                code,
+                code: code ? DOOR_TOKEN : null,
             });
 
             const { error: messageError } = await admin.from('messages').insert({
@@ -425,6 +428,22 @@ export async function GET(request: Request) {
                 }
             }
         }
+        // Each listing's wifi password — never filled in by a placeholder, but a
+        // host may have typed it into a template, and the stored message must
+        // not hold it.
+        const wifiByListing: Record<string, string> = {};
+        {
+            const { data: wifis } = await admin
+                .from('listing_arrival')
+                .select('listing_id, wifi_password')
+                .in('listing_id', listingIds);
+            for (const w of wifis || []) {
+                if (!w.wifi_password) continue;
+                const v = await revealSecret(w.wifi_password, { table: 'listing_arrival', id: w.listing_id }, 'cron/scheduled-messages');
+                if (v) wifiByListing[w.listing_id] = v;
+            }
+        }
+
         // The code a given booking should actually receive: its override, else
         // the listing code. Used for both the hold-back check and the fill.
         const codeFor = (b: BookingLike) => codeByBooking[b.id] || codeByListing[b.listing_id] || null;
@@ -505,12 +524,18 @@ export async function GET(request: Request) {
                 const fullName = displayName(guest, 'there');
                 const firstName = fullName.split(' ')[0] || 'there';
 
-                const body = fillPlaceholders(template.body, {
+                // The code goes in as a placeholder, never the value
+                // (lib/messageSecrets), and so does any copy of the code or the
+                // wifi password the host typed into the template itself.
+                const body = tokeniseSecrets(fillPlaceholders(template.body, {
                     guestName: firstName,
                     listing: listing.title || 'your stay',
                     checkIn: formatDate(booking.check_in),
                     checkOut: formatDate(booking.check_out),
-                    lockboxCode: codeFor(booking),
+                    lockboxCode: codeFor(booking) ? DOOR_TOKEN : null,
+                }), {
+                    codes: [codeByBooking[booking.id], codeByListing[booking.listing_id]],
+                    wifi: wifiByListing[booking.listing_id],
                 });
 
                 const { error: messageError } = await admin.from('messages').insert({

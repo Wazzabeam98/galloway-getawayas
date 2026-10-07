@@ -539,7 +539,7 @@ const withSecretsKey = <T>(fn: () => Promise<T>) => async () => {
 const codeTemplate = scopedTemplate('t-code', 'Check-in', 'The lockbox code is {lockbox_code}.');
 const harbour = { id: 'harbour', title: 'Harbour Cottage', check_in_time: '15:00:00', check_out_time: '11:00:00' };
 
-test('a sealed door code reaches the guest as the plain code', withSecretsKey(async () => {
+test('a check-in message is stored with a placeholder: never the code, sealed or plain', withSecretsKey(async () => {
     const { route, messages } = loadScopedRun({
         templates: [codeTemplate], scopes: [],
         bookings: [arrivingSoon('b1', 'harbour'), arrivingSoon('b2', 'harbour')],
@@ -550,9 +550,16 @@ test('a sealed door code reaches the guest as the plain code', withSecretsKey(as
     await route.GET(new Request('http://example.invalid/x', { headers: { authorization: 'Bearer test-secret' } }));
     const b1 = messages.filter((m) => m.booking_id === 'b1')[0];
     const b2 = messages.filter((m) => m.booking_id === 'b2')[0];
-    assert.equal(b1.body, 'The lockbox code is 4821.', 'the listing code, opened');
-    assert.equal(b2.body, 'The lockbox code is 9073.', 'this booking\u2019s own code wins, opened');
-    for (const m of messages) assert.doesNotMatch(m.body, /v1:/, 'never the ciphertext');
+    // Sent (both have a code, so neither is held) with the placeholder that is
+    // filled in only when shown (lib/messageSecrets); which code — the
+    // booking's own or the listing's — is decided then.
+    assert.equal(b1.body, 'The lockbox code is {{gg.door_code}}.');
+    assert.equal(b2.body, 'The lockbox code is {{gg.door_code}}.');
+    for (const m of messages) {
+        assert.doesNotMatch(m.body, /4821|9073/, 'the stored message never holds the code');
+        assert.doesNotMatch(m.body, /v1:/, 'nor the ciphertext');
+        assert.equal(m.automated, true, 'flagged as the system\u2019s, so it is filled in when shown');
+    }
 }));
 
 test('a sealed code this key cannot open is treated as no code: held, never sent blank or as ciphertext', withSecretsKey(async () => {
@@ -575,11 +582,11 @@ test('a sealed code this key cannot open is treated as no code: held, never sent
     }
 }));
 
-test('a code stored before encryption still reaches the guest', withSecretsKey(async () => {
+test('a code stored before encryption still counts: the message goes, with a placeholder', withSecretsKey(async () => {
     const { route, messages } = loadScopedRun({
         templates: [codeTemplate], scopes: [], bookings: [arrivingSoon('b1', 'harbour')], listings: [harbour],
         codes: [{ listing_id: 'harbour', code: '1234' }],
     });
     await route.GET(new Request('http://example.invalid/x', { headers: { authorization: 'Bearer test-secret' } }));
-    assert.equal(messages[0].body, 'The lockbox code is 1234.');
+    assert.equal(messages[0].body, 'The lockbox code is {{gg.door_code}}.');
 }));
