@@ -768,8 +768,14 @@ export default function Hero() {
 
       {/* Hero Content */}
       <div className="relative z-30 text-center max-w-5xl px-4 flex flex-col items-center w-full">
-        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-3 drop-shadow-lg">
-          Book your trip to Dumfries &amp; Galloway
+        {/* Phones: the size follows the screen width so "Dumfries & Galloway"
+            always fits on its own line — the phrase is ~9.3em wide with this
+            font and tracking, so (100vw − the 2rem padding) / 9.3 — capped at
+            the old 36px (a 390px phone keeps it) and floored at 26px for a
+            folded 280px screen. Held together with nowrap so it never splits
+            as "Dumfries &" / "Galloway". Desktop unchanged (text-6xl). */}
+        <h1 className="text-[clamp(1.625rem,calc((100vw-2rem)/9.3),2.25rem)] leading-[1.12] md:text-6xl md:leading-none font-extrabold tracking-tight mb-3 drop-shadow-lg">
+          Book your trip to <span className="whitespace-nowrap">Dumfries &amp; Galloway</span>
         </h1>
         <p className="text-lg md:text-xl font-medium mb-5 md:mb-8 drop-shadow-md text-white">
           {/* Each phrase kept whole, so a narrow phone wraps at a dot, never
