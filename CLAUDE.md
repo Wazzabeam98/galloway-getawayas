@@ -215,6 +215,7 @@ distinct:
 - `@gallowaypassport.test` — the passport seed
 - `@gallowaywalk.test` — the enquiry-walkthrough seed
 - `@gallowayreview.test` — the review-row seed
+- `@gallowaycal.test` — the host-calendar seed (`seed-host-calendar`)
 
 If you add a seed, give it a new domain and do not reuse one above. The trade
 logins for walking the trade side are `seed-joiner@gallowaytrade.test` and

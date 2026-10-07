@@ -115,3 +115,57 @@ test('the minimum and maximum still apply to a checkout', () => {
     assert.equal(checkoutPickable('2026-11-01', '2026-11-04', none, 3, 14), true);
     assert.equal(checkoutPickable('2026-11-01', '2026-11-16', none, 3, 14), false);
 });
+
+import { fillsGapExactly, unsellableNights } from '../lib/stayRules';
+
+// Two stays hold the nights of 10–12 Nov and 15–17 Nov, leaving a 2-night gap
+// (the 13th and 14th) between them. The minimum is 3.
+const GAP_UNAVAILABLE = new Set(['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-15', '2026-11-16', '2026-11-17']);
+
+test('a below-minimum stay is allowed only when it fills a gap exactly', () => {
+    const l = { min_nights: 3 };
+    const u = { minOverrides: null, prepBuffer: null, unavailable: GAP_UNAVAILABLE };
+    // The 2-night stay that fills the gap exactly, 13th to 15th, is allowed
+    // even though it is under the 3-night minimum.
+    assert.equal(ok(l, '2026-11-13', '2026-11-15', u), null);
+    // A single night inside the gap orphans the other — refused.
+    assert.match(ok(l, '2026-11-13', '2026-11-14', u) || '', /3-night minimum/);
+    assert.match(ok(l, '2026-11-14', '2026-11-15', u) || '', /3-night minimum/);
+    // A short stay that is NOT up against taken nights on both sides is still
+    // refused: this is a gap-fill, not a blanket exemption.
+    assert.match(ok(l, '2026-11-20', '2026-11-22', u) || '', /3-night minimum/);
+    // Without the unavailable set there is no exception at all (old behaviour).
+    assert.match(ok(l, '2026-11-13', '2026-11-15') || '', /3-night minimum/);
+});
+
+test('fillsGapExactly needs a taken night on both sides and free nights between', () => {
+    assert.equal(fillsGapExactly('2026-11-13', '2026-11-15', GAP_UNAVAILABLE), true);
+    assert.equal(fillsGapExactly('2026-11-13', '2026-11-14', GAP_UNAVAILABLE), false, 'checkout night free');
+    assert.equal(fillsGapExactly('2026-11-14', '2026-11-15', GAP_UNAVAILABLE), false, 'night before free');
+    assert.equal(fillsGapExactly('2026-11-13', '2026-11-15', new Set()), false, 'no boundaries at all');
+});
+
+test('the checkout picker offers the exact gap fill, nothing shorter', () => {
+    // Checking in on the 13th (the first free gap night).
+    assert.equal(checkoutPickable('2026-11-13', '2026-11-15', GAP_UNAVAILABLE, 3, null), true, 'out on the 15th fills the gap');
+    assert.equal(checkoutPickable('2026-11-13', '2026-11-14', GAP_UNAVAILABLE, 3, null), false, 'one night orphans the 14th');
+});
+
+test('unsellableNights marks orphan runs and leaves fillable gaps alone', () => {
+    // Every night from the 8th to the 25th, in order.
+    const nights: string[] = [];
+    for (let d = 8; d <= 25; d++) nights.push('2026-11-' + String(d).padStart(2, '0'));
+    const out = unsellableNights(nights, GAP_UNAVAILABLE, () => 3);
+
+    // The 8th–9th are a 2-night run open on the left (nothing taken before the
+    // 8th in this window) and bounded by the stay on the right — too short for
+    // the 3-night minimum and not fillable, so unsellable.
+    assert.equal(out.has('2026-11-08'), true);
+    assert.equal(out.has('2026-11-09'), true);
+    // The 13th–14th gap is closed on both sides, so it CAN be filled exactly —
+    // it is sellable and must not be marked.
+    assert.equal(out.has('2026-11-13'), false);
+    assert.equal(out.has('2026-11-14'), false);
+    // The long open run after the second stay is sellable.
+    assert.equal(out.has('2026-11-20'), false);
+});
