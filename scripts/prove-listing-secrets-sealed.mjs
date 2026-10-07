@@ -98,6 +98,16 @@ try {
     await db.insert('booking_access_codes', [{ booking_id: b1.id, code: put('booking_access_codes', b1.id, V.booking) }]);
     await db.insert('listing_arrival', [{ listing_id: listing.id, wifi_name: 'SealedWifi', wifi_password: put('listing_arrival', listing.id, V.wifi) }]);
 
+    // Two messages on guest 1's stay, written the old way: a check-in message
+    // the system sent with the code and wifi written in, and a chat line the
+    // host typed with the code in it, which must stay exactly as typed.
+    const checkinText = `Hi! The lockbox code is ${V.booking}. Wifi password: ${V.wifi}. See you soon.`;
+    const typedText = `Just in case: the code is ${V.booking}.`;
+    const [mCheckin, mTyped] = await db.insert('messages', [
+        { booking_id: b1.id, sender_id: host.id, recipient_id: g1.id, body: checkinText, automated: true },
+        { booking_id: b1.id, sender_id: host.id, recipient_id: g1.id, body: typedText, automated: false },
+    ]);
+
     // ── 1. Fingerprint every secret on TEST ──────────────────────────────
     const before = await everyRow();
     const prints = new Map(before.map((r) => [r.table + '|' + r.id, r.value.startsWith('v1:') ? null : hash(r.table, r.id, r.value)]));
@@ -113,6 +123,12 @@ try {
     const second = await cron();
     const again = second.body.listingCodes?.sealedNow + second.body.bookingCodes?.sealedNow + second.body.wifiPasswords?.sealedNow;
     check('A second run finds nothing to do, and every value opens', second.body.ok && again === 0, JSON.stringify(second.body));
+
+    const [mc] = await db.select('messages', `?id=eq.${mCheckin.id}&select=body,automated`);
+    const [mt] = await db.select('messages', `?id=eq.${mTyped.id}&select=body`);
+    check('The sent check-in message is stored with placeholders, not the code or wifi password',
+        mc.body === 'Hi! The lockbox code is {{gg.door_code}}. Wifi password: {{gg.wifi_password}}. See you soon.' && mc.automated === true, JSON.stringify(first.body.checkinMessages || {}));
+    check('A code the host typed into the chat is left exactly as typed', mt.body === typedText);
 
     // ── 3. At rest: ciphertext only, and each opens to what it was ────────
     const after = await everyRow();
@@ -136,6 +152,14 @@ try {
     const resv = await as(host.cookie, '/dashboard/bookings/' + b1.id);
     check('Reservation page (host): the code this guest will use', resv.status === 200 && resv.text.includes(V.booking) && !resv.text.includes('v1:'), `HTTP ${resv.status}`);
     const thread = await as(host.cookie, '/api/messages/threads/' + b1.id);
+    const threadMsgs = JSON.parse(thread.text).messages || [];
+    const g1Thread = JSON.parse((await as(g1.cookie, '/api/messages/threads/' + b1.id)).text).messages || [];
+    const shownTo = (msgs) => (msgs.find((m) => m.id === mCheckin.id) || {}).body;
+    const expected = `Hi! The lockbox code is ${V.booking}. Wifi password: ${V.wifi}. See you soon.`;
+    check('The check-in message shows the code and wifi to the host and to the guest inside the window', shownTo(threadMsgs) === expected && shownTo(g1Thread) === expected);
+    const inbox = JSON.parse((await as(g1.cookie, '/api/messages/threads')).text);
+    const preview = JSON.stringify(inbox);
+    check('The inbox list never shows the wifi password (only the check-in message held it)', !preview.includes(V.wifi));
     check('Message thread (host): the booking’s own code and the wifi', thread.text.includes(V.booking) && thread.text.includes(V.wifi) && !thread.text.includes('v1:'), `HTTP ${thread.status}`);
     const a1 = await as(g1.cookie, '/arrival/' + b1.id), a2 = await as(g2.cookie, '/arrival/' + b2.id);
     check('Arrival screen, guest 1: their own override code and the wifi', a1.status === 200 && a1.text.includes(V.booking) && a1.text.includes(V.wifi) && !a1.text.includes(V.listing), `HTTP ${a1.status}`);

@@ -15,6 +15,7 @@ import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
 import { toast } from 'react-toastify';
+import { hasSecretTokens } from '@/lib/messageSecrets';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
 // A conversation's identity is now "kind:id" — booking, enquiry or order — so the
@@ -274,6 +275,16 @@ export default function MessagesInboxPage() {
                     filter: kind + '_id=eq.' + id,
                 },
                 (payload: any) => {
+                    // A check-in message holds placeholders for the door code and
+                    // wifi password, filled in only by the server for someone who
+                    // may see them — so fetch the thread rather than show the row.
+                    if (payload.new && payload.new.automated && hasSecretTokens(payload.new.body)) {
+                        fetch(THREAD_GET[kind](id))
+                            .then((r) => (r.ok ? r.json() : null))
+                            .then((data) => { if (data && data.ok) setThread(data); })
+                            .catch(() => {});
+                        return;
+                    }
                     setThread((prev: any) => {
                         if (!prev) return prev;
                         if (prev.messages.some((m: any) => m.id === payload.new.id)) return prev;

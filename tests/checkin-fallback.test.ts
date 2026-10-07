@@ -124,7 +124,7 @@ test('the fallback stays quiet when the host already covers the listing', async 
     assert.equal(fallbacks.length, 0, 'no fallback on top of the host message');
 });
 
-test('a self-check-in fallback opens a sealed code for the guest', async () => {
+test('a self-check-in fallback with a code set goes out with a placeholder, never the code', async () => {
     const before = process.env.LISTING_SECRETS_KEY;
     process.env.LISTING_SECRETS_KEY = require('crypto').randomBytes(32).toString('base64');
     try {
@@ -133,8 +133,9 @@ test('a self-check-in fallback opens a sealed code for the guest', async () => {
         const { route, messages } = load({ templates: [], booking: BOOKING(), listing: { ...LISTING, check_in_method: 'Lockbox' }, code: sealed });
         await route.GET(authed());
         assert.equal(messages.length, 1);
-        assert.match(messages[0].body, /5150/, 'the plain code');
-        assert.doesNotMatch(messages[0].body, /v1:/, 'never the ciphertext');
+        assert.match(messages[0].body, /the code is \{\{gg\.door_code\}\}\./, 'the code line, as a placeholder');
+        assert.doesNotMatch(messages[0].body, /5150|v1:/, 'never the code, nor the ciphertext');
+        assert.doesNotMatch(messages[0].body, /send the code before you arrive/, 'a code is set, so not the "will follow" line');
     } finally {
         if (before === undefined) delete process.env.LISTING_SECRETS_KEY; else process.env.LISTING_SECRETS_KEY = before;
     }

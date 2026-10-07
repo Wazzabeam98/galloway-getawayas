@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { listingIdsFor } from '@/lib/access';
+import { renderSecretTokens } from '@/lib/messageSecrets';
 import { firstName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -111,7 +112,7 @@ export async function GET() {
     const { data: lastMessages } = bookings.length
         ? await admin
             .from('messages')
-            .select('booking_id, body, created_at, sender_id, recipient_id, read_at')
+            .select('booking_id, body, created_at, sender_id, recipient_id, read_at, automated')
             .in('booking_id', bookings.map((b) => b.id))
             .order('created_at', { ascending: false })
         : { data: [] };
@@ -123,7 +124,11 @@ export async function GET() {
     const lastInboundMap: Record<string, string> = {};
 
     (lastMessages || []).forEach((m: any) => {
-        if (!lastMap[m.booking_id]) lastMap[m.booking_id] = m;
+        // A check-in message's placeholders never become values in a preview.
+        if (!lastMap[m.booking_id]) {
+            const { automated, ...rest } = m;
+            lastMap[m.booking_id] = { ...rest, body: renderSecretTokens(m.body, automated, 'preview') };
+        }
 
         if (m.recipient_id === uid && !lastInboundMap[m.booking_id]) {
             // Already sorted newest first, so the first one seen is the newest.
