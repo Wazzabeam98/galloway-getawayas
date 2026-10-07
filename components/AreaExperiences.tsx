@@ -4,6 +4,8 @@ import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace } from '@/lib/experiencesData';
 import { coversPoint } from '@/lib/serviceProviders';
 import ProviderCard from '@/components/marketplace/ProviderCard';
+import { ExperienceCard } from '@/components/HomeExperiences';
+import { servesTown } from '@/lib/experienceTowns';
 
 // Experiences for one PLACE — the listing page and each town page — rather than
 // the whole region. HomeExperiences shows everything; this shows the ones a
@@ -16,6 +18,12 @@ import ProviderCard from '@/components/marketplace/ProviderCard';
 // is based_line naming the town — derived from the provider's collection town,
 // so it is the town they work from. Either one qualifies.
 //
+// A TOWN PAGE passes `area` instead and gets the region rule (lib/experienceTowns):
+// a provider covering all of D&G is on every town page, one covering certain
+// regions only on those regions' towns, one based at a place on that town's page.
+// Guest coverage is named regions now, which the circles above never match. All
+// of them are shown, as the property-style card the holiday lets above use.
+//
 // Self-gating exactly like HomeExperiences: nothing while GUEST_EXPERIENCES_OPEN
 // is unset, nothing when no live provider matches — a page never advertises an
 // empty shelf. Same starless ProviderCard, the design benchmark for a card.
@@ -27,12 +35,15 @@ export default async function AreaExperiences({
     townLabel,
     heading = 'Experiences nearby',
     intro,
+    area,
 }: {
     lat: number | null | undefined;
     lng: number | null | undefined;
     townLabel: string | null | undefined;
     heading?: string;
     intro?: string;
+    // A town page: match by region / based town rather than by point.
+    area?: { slug: string; townKeys: string[] };
 }) {
     if (!guestExperiencesOpen()) return null;
 
@@ -42,6 +53,19 @@ export default async function AreaExperiences({
 
     const withPhoto = mp.providers.filter((p) => !!p.hero);
     if (withPhoto.length === 0) return null;
+
+    if (area) {
+        const inTown = withPhoto.filter((p) => servesTown(p, area));
+        if (inTown.length === 0) return null;
+        return (
+            <section className="mt-16" aria-labelledby="town-experiences">
+                <h2 id="town-experiences" className="text-2xl md:text-3xl font-bold text-stone-900 border-b border-stone-200 pb-4 mb-8">{heading}</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+                    {inTown.map((p) => <ExperienceCard key={p.id} p={p} />)}
+                </div>
+            </section>
+        );
+    }
 
     // The coverage circles for exactly these providers, so "covers this point"
     // is their real declared travel area rather than a guess.
