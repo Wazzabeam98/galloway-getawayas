@@ -10,9 +10,9 @@ import { childrenAllowed } from '@/lib/guestAges';
 import { cleanAmountInput, amountForBox } from '@/lib/amountInput';
 import AutoTextarea from '@/components/AutoTextarea';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
-import { NumberStepper, ChoiceCard, WizardShell, durationLabel } from './wizardKit';
+import { NumberStepper, ChoiceCard, WizardShell, BigAmountInput, durationLabel } from './wizardKit';
 import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
-import { ImageIcon, Image as ImageIconLucide } from 'lucide-react';
+import { ImageIcon, Image as ImageIconLucide, User, Users } from 'lucide-react';
 
 // The experience listing's items — the shared MenuRow shape, the add flow (a
 // stepped wizard reusing the sign-up components) and the edit page (a page of
@@ -78,6 +78,32 @@ const chargeChoices = (r: { unit: string }): { v: string; l: string }[] => ([
     ...(['hour', 'night', 'ticket', 'item'].includes(r.unit) ? [{ v: r.unit, l: unitLabel(r.unit) }] : []),
 ]);
 
+// The price, in the sign-up wizard's style and with its components: the big £
+// amount in the middle, then two large tiles with icons — Per person and Whole
+// session. Shared by the add flow and the Price edit sheet, so both read the
+// same. An older offering priced another way (per hour, per night…) keeps that
+// as a third tile, so it's never silently changed. `units: false` hides the
+// tiles (a travelling offering is always one price for the booking).
+function PriceChoice({ price, unit, onPrice, onUnit, units = true, autoFocus }: {
+    price: string; unit: string; onPrice: (v: string) => void; onUnit: (u: string) => void; units?: boolean; autoFocus?: boolean;
+}) {
+    const icon = (v: string) => (v === 'person' ? User : v === 'flat' ? Users : undefined);
+    const hint = (v: string) => (v === 'person' ? 'A price each' : v === 'flat' ? 'One price for the booking' : 'As it’s priced now');
+    return (
+        <div className="mx-auto w-full max-w-md space-y-8">
+            <BigAmountInput value={price} numeric={false} autoFocus={autoFocus} ariaLabel="Price"
+                onChange={(v) => onPrice(cleanAmountInput(v))} />
+            {units && (
+                <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="How it’s charged">
+                    {chargeChoices({ unit }).map((o) => (
+                        <ChoiceCard key={o.v} radio selected={unit === o.v} onSelect={() => onUnit(o.v)} title={o.l} hint={hint(o.v)} icon={icon(o.v)} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // A big photo picker, shared by the add flow and the Photo edit card.
 function PhotoPicker({ ctx, image, onChange }: { ctx: ItemCtx; image: string | null; onChange: (k: string | null) => void }) {
     const [uploading, setUploading] = useState(false);
@@ -118,10 +144,12 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
     const set = (patch: Partial<MenuRow>) => setR((cur) => ({ ...cur, ...patch }));
 
     type StepKey = 'name' | 'photo' | 'price' | 'duration' | 'capacity' | 'party' | 'describe' | 'review';
-    const steps: StepKey[] = ['name', 'photo', 'price'];
+    // The same order as an offering's cards: Name, Price, Duration, Capacity,
+    // Description, Photo.
+    const steps: StepKey[] = ['name', 'price'];
     if (ctx.isSlot) steps.push('duration');
     if (r.unit === 'person') steps.push(ctx.isSlot ? 'capacity' : 'party');
-    steps.push('describe', 'review');
+    steps.push('describe', 'photo', 'review');
     const safeIdx = Math.min(idx, steps.length - 1);
     const key = steps[safeIdx];
     const isReview = key === 'review';
@@ -143,13 +171,13 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
     const titles: Record<StepKey, string> = {
         name: 'What’s it called?', photo: 'Add a photo', price: 'How much is it?',
         duration: 'How long does it last?', capacity: 'How many people can it take?',
-        party: 'What’s the smallest party?', describe: 'Describe it', review: 'Review your item',
+        party: 'What’s the smallest party?', describe: 'Describe it', review: 'Review your offering',
     };
 
     return (
         <WizardShell step={safeIdx + 1} total={steps.length} title={titles[key]}
             subtitle={key === 'describe' ? 'Optional — you can skip this.' : undefined}
-            onClose={onClose} onBack={back} onNext={next} nextDisabled={busy || !valid()} nextLabel={isReview ? 'Add item' : 'Next'}>
+            onClose={onClose} onBack={back} onNext={next} nextDisabled={busy || !valid()} nextLabel={isReview ? 'Add offering' : 'Next'}>
 
             {key === 'name' && (
                 <input autoFocus className="w-full border-0 border-b-2 border-slate-200 bg-transparent pb-3 text-center text-2xl font-semibold text-slate-900 placeholder:text-slate-300 focus:border-emerald-600 focus:outline-none"
@@ -161,18 +189,7 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
             )}
 
             {key === 'price' && (
-                <div className="mx-auto w-full max-w-md space-y-6">
-                    <div className="grid grid-cols-2 gap-3">
-                        {chargeChoices(r).map((o) => (
-                            <ChoiceCard key={o.v} selected={r.unit === o.v} onSelect={() => set({ unit: o.v })} title={o.l} hint={o.v === 'person' ? 'A price each' : 'One price for the booking'} />
-                        ))}
-                    </div>
-                    <label className="mx-auto flex max-w-[12rem] items-center gap-2 border-b-2 border-slate-200 pb-2 focus-within:border-emerald-600">
-                        <span className="text-3xl font-extrabold text-slate-400">£</span>
-                        <input autoFocus className="w-full bg-transparent text-center text-5xl font-extrabold tabular-nums text-slate-900 placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            type="text" inputMode="decimal" placeholder="0" value={r.price} onChange={(e) => set({ price: cleanAmountInput(e.target.value) })} />
-                    </label>
-                </div>
+                <PriceChoice price={r.price} unit={r.unit} autoFocus onPrice={(v) => set({ price: v })} onUnit={(u) => set({ unit: u })} />
             )}
 
             {key === 'duration' && (
@@ -210,7 +227,7 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
                         <div className="flex h-24 w-full items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><ImageIconLucide className="h-7 w-7" /></div>
                     )}
                     <div className="rounded-2xl border border-slate-200 p-4">
-                        <div className="text-lg font-bold text-slate-900">{r.name || 'Untitled item'}</div>
+                        <div className="text-lg font-bold text-slate-900">{r.name || 'Untitled offering'}</div>
                         <div className="mt-1 text-sm text-slate-600">{itemSummary(r, ctx.isSlot)}</div>
                         {r.unit === 'person' && ctx.isSlot && <div className="mt-0.5 text-sm text-slate-500">Capacity: {r.capacity || `default (${ctx.maxGuests})`} people</div>}
                         {r.description.trim() && <p className="mt-2 text-sm text-slate-500">{r.description}</p>}
@@ -243,7 +260,7 @@ function NameCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow) => unkno
             <EditorCard title="Name" summary={row.name.trim() || 'Add a name'} onClick={c.start} />
             {c.open && (
                 <EditorPanel title="Name" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <Field label="Name"><input className={inputCls} value={c.draft} maxLength={80} onChange={(e) => c.setDraft(e.target.value)} placeholder="e.g. 90-minute private sauna" /></Field>
+                    <Field label="What’s it called?"><input className={inputCls} value={c.draft} maxLength={80} onChange={(e) => c.setDraft(e.target.value)} placeholder="e.g. 90-minute private sauna" aria-label="What’s it called?" /></Field>
                 </EditorPanel>
             )}
         </>
@@ -269,22 +286,10 @@ function PriceCard({ row, perItemLocation, onSave }: { row: MenuRow; perItemLoca
                                 </div>
                             </Field>
                         )}
-                        {!travelled && (
-                            <Field label="Charged">
-                                <div className="flex flex-wrap gap-2">
-                                    {chargeChoices(c.draft).map((o) => (
-                                        <button key={o.v} type="button" onClick={() => c.setDraft({ ...c.draft, unit: o.v })}
-                                            className={`rounded-xl border px-4 py-2 text-sm transition ${c.draft.unit === o.v ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>{o.l}</button>
-                                    ))}
-                                </div>
-                            </Field>
-                        )}
-                        <Field label="Price">
-                            <div className="flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-3 focus-within:border-slate-500">
-                                <span className="text-slate-500">£</span>
-                                <input className="w-full border-0 bg-transparent p-0 text-sm outline-none" type="text" inputMode="decimal" placeholder="0" value={c.draft.price} onChange={(e) => c.setDraft({ ...c.draft, price: cleanAmountInput(e.target.value) })} />
-                            </div>
-                        </Field>
+                        <div className="py-4">
+                            <PriceChoice price={c.draft.price} unit={c.draft.unit} units={!travelled}
+                                onPrice={(v) => c.setDraft({ ...c.draft, price: v })} onUnit={(u) => c.setDraft({ ...c.draft, unit: u })} />
+                        </div>
                     </div>
                 </EditorPanel>
             )}
@@ -350,9 +355,9 @@ function StandardCustomCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow
     const c = useCardSheet(row.isCustom, (v) => onSave({ ...row, isCustom: v }));
     return (
         <>
-            <EditorCard title="This item is" summary={row.isCustom ? 'Custom — you approve first' : 'Standard — books instantly'} onClick={c.start} />
+            <EditorCard title="This offering is" summary={row.isCustom ? 'Custom — you approve first' : 'Standard — books instantly'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="This item is" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="This offering is" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => c.setDraft(false)} className={`rounded-full border px-3 py-1.5 text-sm transition ${!c.draft ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Standard — books instantly</button>
                         <button type="button" onClick={() => c.setDraft(true)} className={`rounded-full border px-3 py-1.5 text-sm transition ${c.draft ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>Custom — you approve first</button>
@@ -387,7 +392,7 @@ function ExtraGuestsCard({ row, minAge, onSave }: { row: MenuRow; minAge: string
     );
 }
 
-// The item card on the Pricing page; tapping it opens the detail page of cards.
+// The offering card under What you offer; tapping it opens the detail page of cards.
 export function ItemDetailCard({ ctx, row, onSave, onDelete }: { ctx: ItemCtx; row: MenuRow; onSave: (r: MenuRow) => unknown; onDelete: () => unknown }) {
     const [open, setOpen] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -397,11 +402,11 @@ export function ItemDetailCard({ ctx, row, onSave, onDelete }: { ctx: ItemCtx; r
     const partySummary = row.minPeople ? `${row.minPeople} guests` : 'One is fine';
     return (
         <>
-            <EditorCard title={row.name.trim() || 'Untitled item'} summary={itemSummary(row, ctx.isSlot)} onClick={() => setOpen(true)} />
+            <EditorCard title={row.name.trim() || 'Untitled offering'} summary={itemSummary(row, ctx.isSlot)} onClick={() => setOpen(true)} />
             {open && (
-                <EditorPanel title={row.name.trim() || 'Item'} onClose={() => setOpen(false)}>
+                <EditorPanel title={row.name.trim() || 'Offering'} onClose={() => setOpen(false)}>
+                    {/* Name, Price, Duration, Capacity, Description, Photo, Available to book. */}
                     <div className="space-y-4">
-                        <PhotoCard ctx={ctx} row={row} onSave={onSave} />
                         <NameCard row={row} onSave={onSave} />
                         <PriceCard row={row} perItemLocation={perItemLocation} onSave={onSave} />
                         {ctx.isSlot && (
@@ -422,12 +427,13 @@ export function ItemDetailCard({ ctx, row, onSave, onDelete }: { ctx: ItemCtx; r
                         {ctx.shape === 'made_to_order' && <TextDetailCard title="Menu section" placeholder="e.g. Cakes" value={row.category} empty="None" onSave={(v) => onSave({ ...row, category: v })} />}
                         {ctx.shape === 'made_to_order' && <TextDetailCard title="Ingredients" placeholder="e.g. Wheat flour, butter, eggs…" value={row.ingredients} empty="Not added" onSave={(v) => onSave({ ...row, ingredients: v })} />}
                         {ctx.shape === 'made_to_order' && <TextDetailCard title="Allergens" placeholder="e.g. Contains wheat, egg, milk…" value={row.allergens} empty="Not added" onSave={(v) => onSave({ ...row, allergens: v })} />}
+                        <PhotoCard ctx={ctx} row={row} onSave={onSave} />
                         <AvailableCard row={row} onSave={onSave} />
 
                         <div className="border-t border-slate-100 pt-4">
                             {confirmDelete ? (
                                 <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
-                                    <p className="text-sm font-semibold text-rose-900">Delete this item?</p>
+                                    <p className="text-sm font-semibold text-rose-900">Delete this offering?</p>
                                     <p className="mt-0.5 text-xs text-rose-800">It comes off your listing straight away.</p>
                                     <div className="mt-3 flex justify-end gap-3">
                                         <button type="button" onClick={() => setConfirmDelete(false)} className="text-sm font-semibold text-slate-900 underline">Cancel</button>
@@ -435,7 +441,7 @@ export function ItemDetailCard({ ctx, row, onSave, onDelete }: { ctx: ItemCtx; r
                                     </div>
                                 </div>
                             ) : (
-                                <button type="button" onClick={() => setConfirmDelete(true)} className="text-sm font-semibold text-rose-600 hover:text-rose-700">Delete this item</button>
+                                <button type="button" onClick={() => setConfirmDelete(true)} className="text-sm font-semibold text-rose-600 hover:text-rose-700">Delete this offering</button>
                             )}
                         </div>
                     </div>

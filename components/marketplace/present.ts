@@ -5,6 +5,7 @@
 import type { MpProvider, MpItem } from '@/lib/experiencesData';
 import { extraGuestsLine, hasExtraGuests } from '@/lib/extraGuests';
 import { unitMultiplies } from '@/lib/serviceOrders';
+import { durationWords } from '@/lib/durationWords';
 
 const UNIT_SUFFIX: Record<string, string> = {
     person: ' / guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
@@ -178,16 +179,11 @@ export function itemGuestRange(item: MpItem, providerMax?: number | null): strin
     return null;
 }
 
-/** A length in minutes as a guest reads it: "45 min", "1 hr", "1 hr 30 min",
- *  "2 hr". Null/0/negative → null, so a caller renders nothing rather than "0 min". */
+/** A length in minutes as a guest reads it — the one rule everywhere
+ *  (lib/durationWords): "45 min", "90 min", "2 hr", "2 hr 30 min".
+ *  Null/0/negative → null, so a caller renders nothing rather than "0 min". */
 export function durationLabel(minutes: number | null | undefined): string | null {
-    const m = Math.round(Number(minutes) || 0);
-    if (m <= 0) return null;
-    const h = Math.floor(m / 60);
-    const mm = m % 60;
-    if (h === 0) return mm + ' min';
-    if (mm === 0) return h + ' hr';
-    return h + ' hr ' + mm + ' min';
+    return durationWords(minutes) || null;
 }
 
 /**
