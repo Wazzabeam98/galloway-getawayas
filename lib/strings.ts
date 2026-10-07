@@ -86,15 +86,20 @@ export const GUEST_SCREEN_COPY = {
     // optional row; the only sometimes-required one is qualifications.
     optionalSuffix: '(optional)',
 
-    // The listing's own name — what the EXPERIENCE is called, asked on its own
-    // step (g_title) and separate from the person's professional title below. It
-    // becomes business_name (the h1, the card, the sort, the order emails), so
-    // the guest's first line names the thing they're buying.
-    experienceTitleQuestion: 'What’s your experience called?',
-    experienceTitleSubtext: 'A short name a guest sees first — the thing, not you.',
-    experienceTitlePlaceholder: 'e.g. “Sunrise wild swim”, “Beginners’ wheel throwing”',
+    // The listing's own name — what the EXPERIENCE or BUSINESS is called, asked
+    // EARLY now (the opener of the About-you section) and separate from the
+    // person's professional title below. It becomes business_name (the h1, the
+    // card, the sort, the order emails), so the guest's first line names who
+    // they're buying from. The subtext makes the one-account-many-offerings model
+    // plain up front: this is the name everything sits under, and each separate
+    // thing you offer is added (with its own name and price) on the Price screen —
+    // so a caterer with a buffet and a hog roast names the business once here, not
+    // twice through two sign-ups.
+    experienceTitleQuestion: 'What’s your business or experience called?',
+    experienceTitleSubtext: 'The name guests see first. You can offer several different things under it — you’ll name and price each one in a moment, so there’s no need to sign up more than once.',
+    experienceTitlePlaceholder: 'e.g. “Galloway Wild Food”, “Sunrise Wild Swim”',
     // The gate under a greyed Next when the (required) listing name is still empty.
-    experienceTitleGate: 'Give your experience a name — it’s the first thing a guest reads.',
+    experienceTitleGate: 'Give your business or experience a name — it’s the first thing a guest reads.',
 
     // Row: the person's professional title — one field, a 0/40 counter. NOT the
     // listing name (that is g_title); this is their credential, shown in the
@@ -130,10 +135,16 @@ export const GUEST_SCREEN_COPY = {
     // provider travels to the guest the room is the guest's problem, so it's the
     // largest group they'll take; where guests come to them it's what the space
     // or session holds. For a shared slot this number becomes sellable seats.
-    capacityHeadingTravel: 'What’s the largest group you’ll take?',
-    capacitySubtextTravel: 'The room is the guest’s to sort — this is just the biggest group you’ll take on.',
-    capacityHeadingVenue: 'How many guests can join at once?',
-    capacitySubtextVenue: 'The most people you’ll take in one session.',
+    // Worded the same way for both shapes now (Liam, 7 Oct 2026): a real provider
+    // read "largest group" as ambiguous, so this asks plainly about PEOPLE. It's an
+    // EXACT number on the big −/+ counter, not a band — a band can't stop a seventh
+    // person booking a six-seat sauna, so a shared session needs the real ceiling.
+    // The subtext says it's the listing default and each offering can set its own
+    // exact number (service_provider_items.capacity overrides it).
+    capacityHeadingTravel: 'How many people can you take at once?',
+    capacitySubtextTravel: 'The most you’ll take at one time. It’s your default — each offering can set its own exact number.',
+    capacityHeadingVenue: 'How many people can you take at once?',
+    capacitySubtextVenue: 'The most you’ll take in one session. It’s your default — each offering can set its own exact number.',
     capacitySuffix: 'guests',
 
     // The slot pricing-basis screen (g_slot_basis) — how a booking works: one
@@ -177,7 +188,7 @@ export const GUEST_SCREEN_COPY = {
     // a quiet "You keep £X" line that expands to the maths. Copy only — the
     // pricing model (units, commission) is unchanged.
     menuHeading: 'What you offer, and what it costs',
-    menuSubtext: 'Add each thing a guest can book.',
+    menuSubtext: 'Add each thing a guest can book — one account can list as many different offerings as you like, so add them all here.',
     menuHeadingSlot: 'Set your price',
     menuSubtextSlot: 'Name what guests book and say what it costs. You can add more options later.',
     // Required before a guest listing can be sent: a listing with no priced item
