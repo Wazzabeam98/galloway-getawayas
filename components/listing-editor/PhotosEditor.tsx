@@ -337,8 +337,8 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
     return (
         <section>
             {!inSheet && <h2 className="text-xl font-bold text-slate-900 mb-1">Photos</h2>}
-            {/* The experience editor's question sheets drop the small grey line. */}
-            {!question && <p className="text-xs text-slate-400 mb-4">
+            {/* A question sheet drops the small grey line; the page keeps it. */}
+            {!(question && inSheet) && <p className="text-xs text-slate-400 mb-4">
                 {isPhone
                     ? 'Press and hold a photo to drag it. Tap a photo to move it, make it the cover or delete it.'
                     : 'Drag to reorder. Click the star to set the cover photo.'}

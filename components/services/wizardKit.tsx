@@ -43,7 +43,10 @@ export function NumberStepper({
 }) {
     const has = String(value).trim() !== '' && Number.isFinite(Number(value));
     const shown = has ? Number(value) : (suggestion ?? min);
-    const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, Math.round(n)))));
+    // Whole numbers — but a count already on a half (1.5 bathrooms) steps from
+    // where it is rather than being rounded off it.
+    const snap = (n: number) => (Number.isInteger(shown) ? Math.round(n) : n);
+    const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, snap(n)))));
     const nudge = (dir: number) => ((solid || has) ? commit(shown + dir * step) : commit(suggestion ?? min));
 
     const lg = size === 'lg';
@@ -250,6 +253,10 @@ export function BigTextInput({ value, onChange, placeholder, ariaLabel, maxLengt
             className="w-full border-0 border-b-2 border-slate-200 bg-transparent pb-3 text-center text-2xl font-semibold text-slate-900 placeholder:text-slate-300 focus:border-emerald-600 focus:outline-none" />
     );
 }
+
+// The wizard's one-line field where the big centred box doesn't fit (an
+// address line, a time, a network name).
+export const bigFieldCls = 'mt-1 w-full rounded-2xl border-2 border-slate-200 px-4 py-3.5 text-base text-slate-900 placeholder:text-slate-300 focus:border-emerald-600 focus:outline-none';
 
 // The wizard's text box for a sentence or two — larger text, roomy.
 export const wizardAreaCls = 'w-full rounded-2xl border-2 border-slate-200 p-4 text-base text-slate-900 placeholder:text-slate-300 focus:border-emerald-600 focus:outline-none';
