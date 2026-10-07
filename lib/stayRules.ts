@@ -133,6 +133,12 @@ export function stayProblem(input: {
     todayKey: string;
     minOverrides?: Record<string, number> | null;
     prepBuffer?: Set<string> | null;
+    // Every unavailable night — taken here, taken on another platform, host
+    // blocked, or kept free by preparation time. Only used to let a stay
+    // SHORTER than the minimum through when it fills a gap exactly (see
+    // fillsGapExactly). Omit it and the minimum is enforced with no exception,
+    // which is the old behaviour.
+    unavailable?: Set<string> | null;
 }): string | null {
     const { listing, checkIn, checkOut, todayKey } = input;
     const nights = nightsBetweenKeys(checkIn, checkOut);
@@ -151,7 +157,14 @@ export function stayProblem(input: {
     }
 
     const min = minNightsFor(listing, input.minOverrides, checkIn);
-    if (nights < min) return `This place has a ${min}-night minimum for those dates.`;
+    // A stay shorter than the minimum is refused UNLESS it fills a gap between
+    // two unavailable periods exactly — the night before check-in and the
+    // checkout night are both taken — so nothing bookable is orphaned either
+    // side. Airbnb does the same: a 2-night stay can take the only 2 free
+    // nights between two bookings even where the minimum is 3.
+    if (nights < min && !fillsGapExactly(checkIn, checkOut, input.unavailable)) {
+        return `This place has a ${min}-night minimum for those dates.`;
+    }
 
     const max = maxNightsFor(listing);
     if (max && nights > max) return `This place has a ${max}-night maximum.`;
@@ -183,13 +196,80 @@ export function checkInPickable(key: string, unavailable: Set<string>): boolean 
     return !unavailable.has(key);
 }
 
+/**
+ * Does the stay [checkIn, checkOut) fill a gap between two unavailable periods
+ * EXACTLY? True only when every night of the stay is free, the night before
+ * check-in is unavailable, and the checkout night is unavailable — so the stay
+ * butts onto a taken (or blocked, or prep-held) night at both ends and leaves
+ * no free night stranded. This is the one case a stay shorter than the host's
+ * minimum is allowed, the same gap-night booking Airbnb permits.
+ *
+ * The edge of the calendar, the past and the booking window are NOT boundaries:
+ * a short run of free nights trapped against one of those is not a gap that can
+ * be filled, it is an orphan the host cannot sell — which is exactly what the
+ * calendar marks as unsellable.
+ */
+export function fillsGapExactly(checkIn: string, checkOut: string, unavailable?: Set<string> | null): boolean {
+    if (!unavailable || unavailable.size === 0) return false;
+    const nights = nightsBetweenKeys(checkIn, checkOut);
+    if (nights <= 0) return false;
+    for (let i = 0; i < nights; i++) {
+        if (unavailable.has(addDaysKey(checkIn, i))) return false;
+    }
+    return unavailable.has(addDaysKey(checkIn, -1)) && unavailable.has(checkOut);
+}
+
 /** A day can be the checkout for a stay starting `startKey` if every night is free and the length fits. */
 export function checkoutPickable(startKey: string, key: string, unavailable: Set<string>, min: number, max: number | null): boolean {
     const nights = nightsBetweenKeys(startKey, key);
     if (nights <= 0) return false;
-    if (nights < min || (max !== null && nights > max)) return false;
+    if (max !== null && nights > max) return false;
     for (let i = 0; i < nights; i++) {
         if (unavailable.has(addDaysKey(startKey, i))) return false;
     }
+    // Below the minimum only when the stay fills a gap exactly (see above).
+    if (nights < min && !fillsGapExactly(startKey, key, unavailable)) return false;
     return true;
+}
+
+/**
+ * Which of these free nights the host cannot sell to anyone.
+ *
+ * `orderedNights` is a run of CONSECUTIVE night keys (pass the whole bookable
+ * horizon, not just one month, so a run that crosses the month edge is not
+ * cut short and mis-judged). The free nights between unavailable ones are
+ * grouped into runs; a run is sellable when either a stay of at least its
+ * minimum fits inside it, or it is closed by an unavailable night on BOTH
+ * sides so a guest can fill it exactly (fillsGapExactly). A run that is too
+ * short for the minimum and open on at least one side — trapped against the
+ * past, the booking window, or simply a long empty stretch it cannot reach the
+ * end of — has no stay that can include it, so every night in it is returned.
+ *
+ * `minFor(checkInKey)` gives the minimum for a stay checking in on that day,
+ * i.e. minNightsFor(listing, overrides, key).
+ */
+export function unsellableNights(
+    orderedNights: string[],
+    unavailable: Set<string>,
+    minFor: (checkInKey: string) => number,
+): Set<string> {
+    const out = new Set<string>();
+    const n = orderedNights.length;
+    let i = 0;
+    while (i < n) {
+        if (unavailable.has(orderedNights[i])) { i++; continue; }
+        let j = i;
+        while (j < n && !unavailable.has(orderedNights[j])) j++;
+        const runStart = orderedNights[i];
+        const runEnd = orderedNights[j - 1];
+        const runLen = nightsBetweenKeys(runStart, runEnd) + 1;
+        const leftBounded = unavailable.has(addDaysKey(runStart, -1));
+        const rightBounded = unavailable.has(addDaysKey(runEnd, 1));
+        const sellable = runLen >= minFor(runStart) || (leftBounded && rightBounded);
+        if (!sellable) {
+            for (let k = i; k < j; k++) out.add(orderedNights[k]);
+        }
+        i = j;
+    }
+    return out;
 }
