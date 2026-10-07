@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { useQuestionSheets } from './questionSheets';
+import { WizardShell, wizardPrimaryCls } from '@/components/services/wizardKit';
 import { createPortal } from 'react-dom';
 import { ChevronRight, X } from 'lucide-react';
 
@@ -33,6 +35,8 @@ export function EditorCard({ title, summary, onClick, children }: {
         </button>
     );
 }
+
+export { QuestionSheetContext, useQuestionSheets } from './questionSheets';
 
 // On a phone a full-screen sheet that slides up from the bottom (Airbnb's):
 // close X top left, the footer (Save) fixed at the bottom. From sm up the
@@ -68,7 +72,17 @@ export function EditorPanel({ title, onClose, footer, children, leading, trailin
         };
     }, [onClose]);
 
+    const question = useQuestionSheets();
     if (typeof document === 'undefined') return null;
+
+    if (question) {
+        return createPortal(
+            <WizardShell single title={title} onClose={onClose} leading={leading} trailing={trailing} footer={footer}>
+                {children}
+            </WizardShell>,
+            document.body,
+        );
+    }
 
     return createPortal(
         <div className={`fixed inset-0 z-50 flex items-end justify-center bg-black/50 transition-opacity duration-200 sm:items-center sm:px-4 sm:opacity-100 ${shown ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}>
@@ -105,11 +119,19 @@ export function EditorPanel({ title, onClose, footer, children, leading, trailin
 // host typed. "Saving…" while it runs, and a second tap does nothing.
 export function PanelSave({ onClick, label = 'Save', disabled }: { onClick: () => unknown; label?: string; disabled?: boolean }) {
     const [busy, setBusy] = useState(false);
+    const question = useQuestionSheets();
     const run = async () => {
         if (busy) return;
         setBusy(true);
         try { await onClick(); } finally { setBusy(false); }
     };
+    if (question) {
+        return (
+            <button type="button" onClick={run} disabled={disabled || busy} className={wizardPrimaryCls(disabled || busy)}>
+                {busy ? 'Saving…' : label}
+            </button>
+        );
+    }
     return (
         <div className="flex justify-end">
             <button type="button" onClick={run} disabled={disabled || busy}

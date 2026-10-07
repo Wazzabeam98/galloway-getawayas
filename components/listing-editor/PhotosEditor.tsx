@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ImageIcon, ImageOff, Plus, Trash2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { EditorCard, EditorPanel } from '@/components/listing-editor/EditorPanel';
+import { useQuestionSheets } from './questionSheets';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import Env from '@/config/Env';
@@ -152,6 +153,7 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
 }) {
     const own = usePhotoUploads(savePhotos);
     const { uploads, local, start, loaded } = uploader || own;
+    const question = useQuestionSheets();
     const [preparing, setPreparing] = useState(false);
     const [menuFor, setMenuFor] = useState<number | null>(null);
     const [confirmFor, setConfirmFor] = useState<string | null>(null);
@@ -335,11 +337,12 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
     return (
         <section>
             {!inSheet && <h2 className="text-xl font-bold text-slate-900 mb-1">Photos</h2>}
-            <p className="text-xs text-slate-400 mb-4">
+            {/* The experience editor's question sheets drop the small grey line. */}
+            {!question && <p className="text-xs text-slate-400 mb-4">
                 {isPhone
                     ? 'Press and hold a photo to drag it. Tap a photo to move it, make it the cover or delete it.'
                     : 'Drag to reorder. Click the star to set the cover photo.'}
-            </p>
+            </p>}
             {(photos.length > 0 || uploads.length > 0) && (
                 <div ref={gridRef} className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                     {photos.map((path, i) => {
@@ -443,7 +446,7 @@ function PhotoMenu({ index, count, onClose, onEarlier, onLater, onCover, onDelet
     }, []);
     const item = 'w-full px-5 py-4 text-left text-base font-medium text-slate-900 disabled:text-slate-300';
     return createPortal(
-        <div className="fixed inset-0 z-50 flex items-end bg-black/50" onClick={onClose}>
+        <div className="fixed inset-0 z-[80] flex items-end bg-black/50" onClick={onClose}>
             <div role="dialog" aria-modal="true" aria-label={`Photo ${index + 1}`}
                 className="w-full rounded-t-2xl bg-white pb-[max(0.5rem,env(safe-area-inset-bottom))]"
                 onClick={(e) => e.stopPropagation()}>
@@ -470,7 +473,7 @@ function ConfirmDelete({ onCancel, onConfirm }: { onCancel: () => void; onConfir
         return () => document.removeEventListener('keydown', onKey);
     }, [onCancel]);
     return createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-6" onClick={onCancel}>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-6" onClick={onCancel}>
             <div role="alertdialog" aria-modal="true" aria-label="Delete this photo?"
                 className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
                 <h2 className="text-lg font-bold text-slate-900">Delete this photo?</h2>
@@ -489,8 +492,10 @@ function ConfirmDelete({ onCancel, onConfirm }: { onCancel: () => void; onConfir
 // the first two photos (the cover first) and "+N more", so scrolling past can
 // never move or delete one. Tapping it opens the full editor in the sheet —
 // each change there saves as it's made, exactly as on the page before.
-export function PhotosCard({ photos, savePhotos, beforeChange }: {
+export function PhotosCard({ photos, savePhotos, beforeChange, question }: {
     photos: string[];
+    // The sheet's heading when it opens as a question (the experience editor).
+    question?: string;
     savePhotos: SavePhotos;
     beforeChange?: () => boolean;
 }) {
@@ -547,7 +552,7 @@ export function PhotosCard({ photos, savePhotos, beforeChange }: {
                 className="sr-only" tabIndex={-1} aria-hidden="true" data-photo-picker />
 
             {open && (
-                <EditorPanel title="Photos" onClose={() => setOpen(false)}
+                <EditorPanel title={question || 'Photos'} onClose={() => setOpen(false)}
                     trailing={
                         <button type="button" onClick={() => setAdding(true)} aria-label="Add photos"
                             className="rounded-full p-1.5 text-slate-900 hover:bg-slate-100">
@@ -574,7 +579,7 @@ function AddPhotosPanel({ onClose, onAdd }: { onClose: () => void; onAdd: () => 
     const [shown, setShown] = useState(false);
     useEffect(() => { const r = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(r); }, []);
     return createPortal(
-        <div className={`fixed inset-0 z-[60] flex items-end bg-black/50 transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}>
+        <div className={`fixed inset-0 z-[80] flex items-end bg-black/50 transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}>
             <div role="dialog" aria-modal="true" aria-label="Add photos"
                 className={`w-full rounded-t-2xl bg-white px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-300 ease-out ${shown ? 'translate-y-0' : 'translate-y-full'}`}
                 onClick={(e) => e.stopPropagation()}>
@@ -606,7 +611,7 @@ function UploadPhotosPage({ items, onRemove, onMore, onCancel, onUpload }: {
     }, []);
     const n = items.length;
     return createPortal(
-        <div role="dialog" aria-modal="true" aria-label="Upload photos" className="fixed inset-0 z-[60] flex h-[100dvh] flex-col bg-white">
+        <div role="dialog" aria-modal="true" aria-label="Upload photos" className="fixed inset-0 z-[80] flex h-[100dvh] flex-col bg-white">
             <div className="flex items-start justify-between px-5 pt-5 pb-3">
                 <div>
                     <h2 className="text-2xl font-bold text-slate-900">Upload photos</h2>
