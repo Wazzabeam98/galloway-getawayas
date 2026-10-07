@@ -122,14 +122,14 @@ function PhotoPicker({ ctx, image, onChange }: { ctx: ItemCtx; image: string | n
     };
     if (image) {
         return (
-            <div className="relative">
+            <div className="relative mx-auto w-fit max-w-full">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={getImageUrl(image)} alt="" className="h-56 w-full rounded-2xl bg-slate-100 object-cover ring-1 ring-slate-200" />
+                <img src={getImageUrl(image)} alt="" className="block h-auto max-h-[55vh] w-auto max-w-full rounded-2xl bg-slate-100 ring-1 ring-slate-200" />
                 <button type="button" onClick={() => setConfirming(true)} aria-label="Remove this photo"
                     className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-800 shadow">
                     <Trash2 className="h-4 w-4" />
                 </button>
-                {confirming && <ConfirmRemove onCancel={() => setConfirming(false)} onConfirm={() => { setConfirming(false); onChange(null); }} />}
+                {confirming && <ConfirmRemove body="It won’t be added with this offering." onCancel={() => setConfirming(false)} onConfirm={() => { setConfirming(false); onChange(null); }} />}
             </div>
         );
     }
@@ -256,7 +256,7 @@ function PhotoCard({ ctx, row, onSave }: { ctx: ItemCtx; row: MenuRow; onSave: (
         <>
             <EditorCard title="Photo" summary={row.image ? 'Photo added' : 'None yet'} onClick={() => setOpen(true)} />
             {open && (
-                <SinglePhotoSheet title={STEP_QUESTIONS.photo} image={row.image} onClose={() => setOpen(false)}
+                <SinglePhotoSheet emptyTitle={STEP_QUESTIONS.photo} title="Photo" image={row.image} onClose={() => setOpen(false)}
                     upload={(file) => uploadImage(ctx.supabase, file, 'item')}
                     onSave={(img) => onSave({ ...row, image: img })} />
             )}
@@ -383,6 +383,7 @@ function ExtraGuestsCard({ row, minAge, onSave }: { row: MenuRow; minAge: string
                             <Field label="Price per extra child"><div className="flex items-center gap-1"><span className="text-base text-slate-700">£</span><input className="w-28 rounded-2xl border-2 border-slate-200 px-4 py-3 text-base text-slate-900 focus:border-emerald-600 focus:outline-none" type="text" inputMode="decimal" placeholder="0" value={c.draft.extraChildFee} onChange={(e) => c.setDraft({ ...c.draft, extraChildFee: cleanAmountInput(e.target.value) })} /></div></Field>
                         )}
                         <Field label="Maximum group size"><input className="w-28 rounded-2xl border-2 border-slate-200 px-4 py-3 text-base text-slate-900 focus:border-emerald-600 focus:outline-none" type="text" inputMode="numeric" placeholder="—" value={c.draft.maxParty} onChange={(e) => c.setDraft({ ...c.draft, maxParty: cleanAmountInput(e.target.value, false) })} /></Field>
+                        <p className="text-sm text-slate-600">Leave blank for one flat price. The price never drops below the base.</p>
                     </div>
                 </EditorPanel>
             )}
@@ -407,7 +408,7 @@ export function ItemDetailCard({ ctx, row, onSave, onDelete, selecting, selected
             {selecting ? (
                 <button type="button" role="checkbox" aria-checked={!!selected} onClick={onToggle}
                     className={`flex w-full items-center gap-4 rounded-2xl border bg-white p-5 text-left shadow-[0_6px_16px_rgba(0,0,0,0.12)] transition ${selected ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <span aria-hidden className={`flex h-6 w-6 flex-none items-center justify-center rounded-md border-2 ${selected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white'}`}>
+                    <span aria-hidden className={`flex h-7 w-7 flex-none items-center justify-center rounded-full border-2 ${selected ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-300 bg-white'}`}>
                         {selected && <Check className="h-4 w-4" strokeWidth={3} />}
                     </span>
                     <span className="min-w-0">

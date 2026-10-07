@@ -43,7 +43,7 @@ export { QuestionSheetContext, useQuestionSheets } from './questionSheets';
 // centred dialog, unchanged. Rendered in a portal,
 // but React events still bubble to the editor's <form>, so every button in a
 // panel must be type="button".
-export function EditorPanel({ title, onClose, footer, children, leading, trailing }: {
+export function EditorPanel({ title, onClose, footer, children, leading, trailing, alignTop }: {
     title: string;
     onClose: () => void;
     footer?: ReactNode;
@@ -52,6 +52,8 @@ export function EditorPanel({ title, onClose, footer, children, leading, trailin
     leading?: ReactNode;
     // A button on the right of the title (the Photos sheet's "+").
     trailing?: ReactNode;
+    // A question sheet: content under the question, not centred (a photo).
+    alignTop?: boolean;
 }) {
     // Mounted off-screen, then moved into place on the next frame so the slide
     // runs. The transform only applies below sm.
@@ -77,7 +79,7 @@ export function EditorPanel({ title, onClose, footer, children, leading, trailin
 
     if (question) {
         return createPortal(
-            <WizardShell single title={title} onClose={onClose} leading={leading} trailing={trailing} footer={footer}>
+            <WizardShell single title={title} onClose={onClose} leading={leading} trailing={trailing} footer={footer} alignTop={alignTop}>
                 {children}
             </WizardShell>,
             document.body,
