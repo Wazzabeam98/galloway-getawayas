@@ -688,7 +688,9 @@ export default function Hero() {
       // the heading, line and pill with tighter spacing (min 50svh, so a tall
       // phone keeps it at half); pb leaves room for the dots. Desktop unchanged
       // — including the 68svh floor it always had (min-height beats the 500px).
-      className="relative z-40 w-full min-h-[50svh] md:min-h-[68svh] md:h-[500px] pt-6 pb-10 md:py-0 flex items-stretch md:items-center justify-center bg-stone-600 text-white overflow-visible"
+      // md:pb-16 lifts the group to the optical centre (~45% down) rather than
+      // the geometric one, which reads as sitting low under a lot of sky.
+      className="relative z-40 w-full min-h-[50svh] md:min-h-[68svh] md:h-[500px] pt-6 pb-10 md:pt-0 md:pb-16 flex items-stretch md:items-center justify-center bg-stone-600 text-white overflow-visible"
       ref={heroRef}
     >
       {/* Rotating background images */}
@@ -775,8 +777,11 @@ export default function Hero() {
             font and tracking, so (100vw − the 2rem padding) / 9.3 — capped at
             the old 36px (a 390px phone keeps it) and floored at 26px for a
             folded 280px screen. Held together with nowrap so it never splits
-            as "Dumfries &" / "Galloway". Desktop unchanged (text-6xl). */}
-        <h1 className="text-[clamp(1.625rem,calc((100vw-2rem)/9.3),2.25rem)] leading-[1.12] md:text-6xl md:leading-none font-extrabold tracking-tight mb-6 md:mb-8 drop-shadow-lg">
+            as "Dumfries &" / "Galloway". Desktop: 52px (was 60px, which ran
+            nearly the page width at 1280), with equal visible gaps above and
+            below the search bar (mb-12 here, mt-10 on the subheading — the
+            subheading's line box carries extra leading above its glyphs). */}
+        <h1 className="text-[clamp(1.625rem,calc((100vw-2rem)/9.3),2.25rem)] leading-[1.12] md:text-[3.25rem] md:leading-none font-extrabold tracking-tight mb-6 md:mb-12 drop-shadow-lg">
           Book your trip to <span className="whitespace-nowrap">Dumfries &amp; Galloway</span>
         </h1>
 
@@ -941,7 +946,7 @@ export default function Hero() {
             three phrases. Each phrase is kept whole. A soft text shadow (not
             a box) keeps it readable on the bright stonework and evening-sky
             photos, which fell to 2.3–3.8:1 against white without it. */}
-        <p className="text-[clamp(0.9375rem,calc((100vw-2rem)/15.6),1.125rem)] leading-7 md:text-xl font-medium mt-6 md:mt-8 text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7),0_0_8px_rgba(0,0,0,0.65),0_0_18px_rgba(0,0,0,0.5)]">
+        <p className="text-[clamp(0.9375rem,calc((100vw-2rem)/15.6),1.125rem)] leading-7 md:text-xl font-medium mt-6 md:mt-10 text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7),0_0_8px_rgba(0,0,0,0.65),0_0_18px_rgba(0,0,0,0.5)]">
           <span className="whitespace-nowrap">Places to stay · Local experiences</span>
           <span className="md:hidden"><br /></span>
           <span className="hidden md:inline"> · </span>
