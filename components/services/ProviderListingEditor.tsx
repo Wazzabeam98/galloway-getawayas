@@ -407,15 +407,18 @@ function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onS
                                 </Field>
                             </>
                         )}
-                        <Link href="/services/dashboard" className="flex items-center justify-between gap-3 rounded-xl border border-slate-300 bg-slate-50 p-4 transition hover:border-slate-400">
+                        {/* Only a slot calendar can block a day, or part of one. */}
+                        {isSlot && (
+                        <Link href="/services/dashboard/calendar" className="flex items-center justify-between gap-3 rounded-xl border border-slate-300 bg-slate-50 p-4 transition hover:border-slate-400">
                             <div className="flex items-start gap-3">
                                 <CalendarRange className="mt-0.5 h-5 w-5 flex-none text-slate-500" />
                                 <div>
                                     <div className="text-sm font-semibold text-slate-900">Blocking a specific day, or part of one?</div>
                                 </div>
                             </div>
-                            <span className="flex-none text-sm font-semibold text-emerald-700">Open diary →</span>
+                            <span className="flex-none text-sm font-semibold text-emerald-700">Open calendar →</span>
                         </Link>
+                        )}
                     </div>
                 </EditorPanel>
             )}
@@ -525,7 +528,7 @@ function HostPhotoCard({ supabase, headshot, onSave }: { supabase: SupabaseClien
         <>
             <EditorCard title="Your photo" summary={headshot ? 'Photo added' : 'None yet'} onClick={() => setOpen(true)} />
             {open && (
-                <SinglePhotoSheet title="Add a photo of yourself" image={headshot} round onClose={() => setOpen(false)}
+                <SinglePhotoSheet emptyTitle="Add a photo of yourself" title="Your photo" image={headshot} round onClose={() => setOpen(false)}
                     upload={(file) => uploadImage(supabase, file, 'headshot')}
                     onSave={onSave} />
             )}

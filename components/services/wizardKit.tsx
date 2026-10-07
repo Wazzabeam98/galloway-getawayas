@@ -162,7 +162,7 @@ export function durationLabel(mins: number): string {
 // top right (the Photos +), there's no progress bar and no Back, and `footer`
 // (the sheet's Save, bottom right) replaces Next. So "What's it called?" looks
 // the same whether adding or editing.
-export function WizardShell({ step = 1, total = 1, title, subtitle, onClose, onBack, onNext, nextLabel = 'Next', nextDisabled, children, single, footer, leading, trailing, label }: {
+export function WizardShell({ step = 1, total = 1, title, subtitle, onClose, onBack, onNext, nextLabel = 'Next', nextDisabled, children, single, footer, leading, trailing, label, alignTop }: {
     step?: number; // 1-based
     total?: number;
     title: string;
@@ -178,6 +178,8 @@ export function WizardShell({ step = 1, total = 1, title, subtitle, onClose, onB
     leading?: React.ReactNode;
     trailing?: React.ReactNode;
     label?: string;
+    // Content sits under the question rather than centred in the space (a photo).
+    alignTop?: boolean;
 }) {
     const pct = Math.round((step / Math.max(1, total)) * 100);
     const close = (
@@ -207,12 +209,16 @@ export function WizardShell({ step = 1, total = 1, title, subtitle, onClose, onB
                 <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-6 py-8 sm:px-10">
                     <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">{title}</h2>
                     {subtitle && <p className="mt-2 text-center text-sm text-slate-500 [text-wrap:balance]">{subtitle}</p>}
-                    <div className="flex flex-1 flex-col justify-center py-10">{children}</div>
+                    <div className={'flex flex-1 flex-col ' + (alignTop ? 'justify-start py-6' : 'justify-center py-10')}>{children}</div>
                 </div>
             </div>
 
             {single ? (footer ? (
-                <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8">{footer}</div>
+                <div className="flex items-center justify-end gap-5 border-t border-slate-100 px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8">
+                    {/* Cancel beside Save: closes without saving, as the X does. */}
+                    <button type="button" onClick={onClose} className="text-sm font-semibold text-slate-900 underline underline-offset-2 hover:text-slate-700">Cancel</button>
+                    {footer}
+                </div>
             ) : null) : (
             <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8">
                 {onBack ? (

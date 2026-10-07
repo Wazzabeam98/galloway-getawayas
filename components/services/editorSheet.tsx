@@ -27,7 +27,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 export function SheetFooter({ busy, onCancel, onSave, disabled, disabledLabel }: {
     busy: boolean; onCancel: () => void; onSave: () => void; disabled?: boolean; disabledLabel?: string;
 }) {
-    // A question sheet: Save bottom right; the close X top left is the cancel.
+    // A question sheet: Save bottom right; the shell puts Cancel beside it.
     if (useQuestionSheets()) {
         return (
             <button type="button" onClick={onSave} disabled={busy || disabled} className={wizardPrimaryCls(busy || disabled)}>
