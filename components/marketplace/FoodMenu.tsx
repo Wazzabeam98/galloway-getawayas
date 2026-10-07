@@ -136,12 +136,12 @@ function MenuCard({ it, qty, onOpen, onSet }: {
                     ) : null}
                 </div>
 
-                <div className="relative h-24 w-24 flex-none">
+                <div className="relative h-24 w-32 flex-none">
                     {it.image ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={it.image} alt="" loading="lazy" className="h-24 w-24 rounded-xl object-cover" />
+                        <img src={it.image} alt="" loading="lazy" className="h-24 w-32 rounded-xl object-cover" />
                     ) : (
-                        <span className="flex h-24 w-24 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                        <span className="flex h-24 w-32 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                             <Utensils className="h-8 w-8" aria-hidden />
                         </span>
                     )}
