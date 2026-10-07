@@ -12,7 +12,8 @@ import AutoTextarea from '@/components/AutoTextarea';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
 import { NumberStepper, ChoiceCard, WizardShell, BigAmountInput, durationLabel } from './wizardKit';
 import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
-import { ImageIcon, Image as ImageIconLucide, User, Users } from 'lucide-react';
+import { ImageIcon, Image as ImageIconLucide, User, Users, Trash2 } from 'lucide-react';
+import { SinglePhotoSheet, ConfirmRemove } from './SinglePhotoSheet';
 
 // The experience listing's items — the shared MenuRow shape, the add flow (a
 // stepped wizard reusing the sign-up components) and the edit page (a page of
@@ -104,9 +105,12 @@ function PriceChoice({ price, unit, onPrice, onUnit, units = true, autoFocus }: 
     );
 }
 
-// A big photo picker, shared by the add flow and the Photo edit card.
+// The add flow's photo step: a big tap-to-add tile, or the photo with a bin on
+// it ("Remove this photo?"). Nothing is saved until the offering is added. The
+// edit card uses SinglePhotoSheet, which saves as it goes.
 function PhotoPicker({ ctx, image, onChange }: { ctx: ItemCtx; image: string | null; onChange: (k: string | null) => void }) {
     const [uploading, setUploading] = useState(false);
+    const [confirming, setConfirming] = useState(false);
     const change = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = (e.target.files || [])[0];
         e.target.value = '';
@@ -116,23 +120,27 @@ function PhotoPicker({ ctx, image, onChange }: { ctx: ItemCtx; image: string | n
         if (k) onChange(k);
         setUploading(false);
     };
+    if (image) {
+        return (
+            <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={getImageUrl(image)} alt="" className="h-56 w-full rounded-2xl bg-slate-100 object-cover ring-1 ring-slate-200" />
+                <button type="button" onClick={() => setConfirming(true)} aria-label="Remove this photo"
+                    className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-800 shadow">
+                    <Trash2 className="h-4 w-4" />
+                </button>
+                {confirming && <ConfirmRemove onCancel={() => setConfirming(false)} onConfirm={() => { setConfirming(false); onChange(null); }} />}
+            </div>
+        );
+    }
     return (
-        <div>
-            <label className="group relative block cursor-pointer">
-                {image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={getImageUrl(image)} alt="" className="h-56 w-full rounded-2xl object-cover ring-1 ring-slate-200" />
-                ) : (
-                    <span className="flex h-56 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-300 text-slate-400">
-                        <ImageIcon className="h-8 w-8" />
-                        <span className="text-sm font-medium">{uploading ? 'Uploading…' : 'Add photo'}</span>
-                    </span>
-                )}
-                {image && <span className="absolute inset-x-0 bottom-0 rounded-b-2xl bg-black/45 py-2 text-center text-sm font-semibold text-white opacity-0 transition group-hover:opacity-100">Change photo</span>}
-                <input type="file" accept="image/png, image/jpeg" onChange={change} className="hidden" disabled={uploading} />
-            </label>
-            {image && <button type="button" onClick={() => onChange(null)} className="mt-2 text-sm text-slate-500 hover:text-red-600">Remove photo</button>}
-        </div>
+        <label className="block cursor-pointer">
+            <span className="flex h-56 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-300 text-slate-400">
+                <ImageIcon className="h-8 w-8" />
+                <span className="text-sm font-medium">{uploading ? 'Uploading…' : 'Add photo'}</span>
+            </span>
+            <input type="file" accept="image/png, image/jpeg" onChange={change} className="hidden" disabled={uploading} />
+        </label>
     );
 }
 
@@ -240,14 +248,14 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
 
 // ── The edit page: a page of raised cards, one per detail ────────────────────
 function PhotoCard({ ctx, row, onSave }: { ctx: ItemCtx; row: MenuRow; onSave: (r: MenuRow) => unknown }) {
-    const c = useCardSheet(row.image, (img) => onSave({ ...row, image: img }));
+    const [open, setOpen] = useState(false);
     return (
         <>
-            <EditorCard title="Photo" summary={row.image ? 'Photo added' : 'None yet'} onClick={c.start} />
-            {c.open && (
-                <EditorPanel title="Photo" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <PhotoPicker ctx={ctx} image={c.draft} onChange={c.setDraft} />
-                </EditorPanel>
+            <EditorCard title="Photo" summary={row.image ? 'Photo added' : 'None yet'} onClick={() => setOpen(true)} />
+            {open && (
+                <SinglePhotoSheet title="Photo" image={row.image} onClose={() => setOpen(false)}
+                    upload={(file) => uploadImage(ctx.supabase, file, 'item')}
+                    onSave={(img) => onSave({ ...row, image: img })} />
             )}
         </>
     );
