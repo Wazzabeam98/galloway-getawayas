@@ -49,6 +49,7 @@
     "app/api/listings/publish/route.ts",
     "app/api/agreements/route.ts",
     "app/api/admin/listings/decide/route.ts",
+    "app/api/admin/listings/remove/route.ts",
     "app/api/services/wanted/route.ts",
     "app/api/services/enquiries/route.ts",
     "app/api/services/enquiries/respond/route.ts",

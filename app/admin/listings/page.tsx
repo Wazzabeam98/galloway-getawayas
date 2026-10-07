@@ -12,6 +12,7 @@ import ListingReviewQueue from '@/components/admin/ListingReviewQueue';
 import { publishProblems, fromRow } from '@/lib/listingRules';
 import { propertyTypeLabel } from '@/lib/propertyTypes';
 import { waitedFor } from '@/lib/email';
+import { listingsWithPaidRecords, removalFor } from '@/lib/listingRemoval';
 
 // "Flat in Kirkcudbright" — the guest card's line, so admin reads a listing's
 // type the way a guest will. Just the area when no type was picked.
@@ -96,9 +97,20 @@ export default async function AdminListings() {
         liveCount[b.listing_id] = (liveCount[b.listing_id] || 0) + 1;
     });
 
+    // Which listings Remove would only take down (a paid booking or order —
+    // the record must survive) and which it would delete. The rule the host's
+    // own Delete uses. A failed read falls back to "take down" for every row,
+    // never to "delete".
+    let paidIds: Set<string>;
+    try {
+        paidIds = await listingsWithPaidRecords(admin, rows.map((l) => l.id));
+    } catch {
+        paidIds = new Set(rows.map((l) => l.id));
+    }
+
     const { data: recent } = await admin
         .from('admin_actions')
-        .select('id, action, listing_id, reason, created_at, admin_id')
+        .select('id, action, listing_id, reason, created_at, admin_id, detail')
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -166,6 +178,7 @@ export default async function AdminListings() {
                         hostName={hostName[l.host_id] || 'Host'}
                         isMine={l.host_id === myId}
                         liveBookings={liveCount[l.id] || 0}
+                        removal={removalFor(paidIds.has(l.id))}
                     />
                 ))}
                 {!rows.length && (
@@ -189,7 +202,9 @@ export default async function AdminListings() {
                                     <span className="font-semibold text-slate-900">
                                         {a.action.replace('listing_', '').replace('_', ' ')}
                                         {' — '}
-                                        {listing ? listing.title || 'Untitled listing' : 'a since-deleted listing'}
+                                        {listing
+                                            ? listing.title || 'Untitled listing'
+                                            : (a.detail && a.detail.title) || 'a since-deleted listing'}
                                     </span>
                                     <span className="text-xs text-slate-400">
                                         {new Date(a.created_at).toLocaleString('en-GB')}
