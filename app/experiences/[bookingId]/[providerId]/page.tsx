@@ -57,7 +57,9 @@ export default async function ListingPage(
     if (p.shape === 'made_to_order') {
         return (
             <PackageStaysProvider stays={packageStays}>
-            <FoodCartProvider items={p.items}>
+            {/* Fixed-price offerings only in the orderable menu; range / price-on-
+                enquiry items are reached through "Message the provider". */}
+            <FoodCartProvider items={p.items.filter((i) => (i.priceMode || 'fixed') === 'fixed')}>
                 <ExperienceListingBody
                     p={p}
                     backHref={`/experiences/${params.bookingId}`}
@@ -82,7 +84,7 @@ export default async function ListingPage(
             backHref={`/experiences/${params.bookingId}`}
             backLabel="All experiences"
             reviews={reviews}
-            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
+            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} providerId={p.id} providerName={p.business_name} /> : undefined}
             panel={
                 <BookingPanel
                     bookingId={params.bookingId}

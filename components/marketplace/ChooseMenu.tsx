@@ -1,8 +1,9 @@
 'use client';
 
 import { Utensils, Clock, Users } from 'lucide-react';
-import { itemPriceLabel, itemGuestRange, itemExtrasSubline, durationLabel } from '@/components/marketplace/present';
+import { itemPriceDisplay, itemIsBookable, itemGuestRange, itemExtrasSubline, durationLabel } from '@/components/marketplace/present';
 import { useRequestBooking } from '@/components/marketplace/RequestBookingContext';
+import EnquireButton from '@/components/marketplace/EnquireButton';
 import type { MpItem } from '@/lib/experiencesData';
 
 // The "What you get" list for a comes-to-you experience, made interactive: each
@@ -11,10 +12,12 @@ import type { MpItem } from '@/lib/experiencesData';
 // that option — so the option list is gone from the dialog and the guest only
 // picks guests, a date and a time. Replaces the static list ExperienceListingBody
 // otherwise renders in this slot.
-export default function ChooseMenu({ items, minAge, providerMax }: {
+export default function ChooseMenu({ items, minAge, providerMax, providerId, providerName }: {
     items: MpItem[];
     minAge?: number | null;
     providerMax?: number | null;
+    providerId: string;
+    providerName: string;
 }) {
     const ctx = useRequestBooking();
     // Cheapest first — the same order the panel and dialog use, so "From £X" and
@@ -45,7 +48,7 @@ export default function ChooseMenu({ items, minAge, providerMax }: {
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-baseline justify-between gap-3">
                                     <span className="font-semibold text-slate-900">{it.name}</span>
-                                    <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
+                                    <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceDisplay(it)}</span>
                                 </div>
                                 {range ? (
                                     <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-slate-500">
@@ -59,13 +62,21 @@ export default function ChooseMenu({ items, minAge, providerMax }: {
                                     </p>
                                 ) : null}
                                 {it.description ? <p className="mt-1 text-sm leading-relaxed text-slate-600">{it.description}</p> : null}
-                                <button
-                                    type="button"
-                                    onClick={() => ctx?.openItem(it.id)}
-                                    className="mt-3 inline-flex items-center justify-center rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                                >
-                                    Choose
-                                </button>
+                                {itemIsBookable(it) ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => ctx?.openItem(it.id)}
+                                        className="mt-3 inline-flex items-center justify-center rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                                    >
+                                        Choose
+                                    </button>
+                                ) : (
+                                    // A range or price-on-enquiry offering isn't
+                                    // instant-booked — message the provider for a price.
+                                    <div className="mt-3">
+                                        <EnquireButton providerId={providerId} providerName={providerName} itemId={it.id} itemName={it.name} />
+                                    </div>
+                                )}
                             </div>
                         </li>
                     );

@@ -2,9 +2,10 @@ import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
 import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
 import {
-    itemPriceLabel, itemExtrasSubline, itemGuestRange, cancellationSentence, whereLine, locationTag, travelCoverageLine,
+    itemPriceLabel, itemPriceDisplay, itemExtrasSubline, itemGuestRange, cancellationSentence, whereLine, locationTag, travelCoverageLine,
     durationLabel, durationSummary, yearsLabel, capacityLabel, fromPriceLabel,
 } from '@/components/marketplace/present';
+import EnquireButton from '@/components/marketplace/EnquireButton';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
 import MeetYourHost from '@/components/MeetYourHost';
 import AboutThisPlace from '@/components/AboutThisPlace';
@@ -237,6 +238,46 @@ export default function ExperienceListingBody({
                             <section className="mt-8 border-t border-slate-200 pt-6">{menu}</section>
                         ) : null}
 
+                        {/* Available on enquiry — the range and price-on-enquiry
+                            offerings, which aren't instant-booked. A comes-to-you
+                            listing shows these inline in its "What you get" list
+                            (ChooseMenu), so this section is for the other shapes,
+                            where they'd otherwise have nowhere to appear. */}
+                        {(() => {
+                            const enquiryItems = (p.items || []).filter((i) => (i.priceMode || 'fixed') !== 'fixed');
+                            if (p.shape === 'comes_to_you' || enquiryItems.length === 0) return null;
+                            return (
+                                <section className="mt-8 border-t border-slate-200 pt-8">
+                                    <h2 className="text-xl md:text-2xl font-bold text-slate-900">Available on enquiry</h2>
+                                    <p className="mt-1 text-sm text-slate-500">Priced with the provider — send a message for a quote.</p>
+                                    <ul className="mt-4 divide-y divide-slate-100">
+                                        {enquiryItems.map((it) => (
+                                            <li key={it.id} className="flex gap-4 py-4 first:pt-0">
+                                                {it.image ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img src={it.image} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-xl object-cover" />
+                                                ) : (
+                                                    <span className="flex h-16 w-16 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                                                        <Utensils className="h-6 w-6" aria-hidden />
+                                                    </span>
+                                                )}
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-baseline justify-between gap-3">
+                                                        <span className="font-semibold text-slate-900">{it.name}</span>
+                                                        <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceDisplay(it)}</span>
+                                                    </div>
+                                                    {it.description ? <p className="mt-1 text-sm leading-relaxed text-slate-600">{it.description}</p> : null}
+                                                    <div className="mt-3">
+                                                        <EnquireButton providerId={p.id} providerName={p.business_name} itemId={it.id} itemName={it.name} />
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </section>
+                            );
+                        })()}
+
                         {/* The compact host block — kept for the pages that don't
                             pass responsiveness (against a stay, the order page). The
                             public listing shows the full "Meet your host" card
@@ -293,7 +334,7 @@ export default function ExperienceListingBody({
                             <section className="mt-8 border-t border-slate-200 pt-8">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">What you get</h2>
                                 <ul className="mt-4 divide-y divide-slate-100">
-                                    {p.items.map((it) => {
+                                    {p.items.filter((it) => (it.priceMode || 'fixed') === 'fixed').map((it) => {
                                         const dur = durationLabel(it.duration_minutes);
                                         return (
                                             <li key={it.id} className="flex gap-4 py-4 first:pt-0">
@@ -308,7 +349,7 @@ export default function ExperienceListingBody({
                                                 <div className="min-w-0 flex-1">
                                                     <div className="flex items-baseline justify-between gap-3">
                                                         <span className="font-semibold text-slate-900">{it.name}</span>
-                                                        <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
+                                                        <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceDisplay(it)}</span>
                                                     </div>
                                                     {itemGuestRange(it, p.maxGuests) ? (
                                                         <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-slate-500">

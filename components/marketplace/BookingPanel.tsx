@@ -17,7 +17,7 @@ import { fetchAgreementStatus, recordAgreement } from '@/components/legal/Agreem
 import { AGREEMENTS } from '@/lib/agreements';
 
 interface PanelItem {
-    id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
+    id: string; name: string; description: string | null; price: number; priceMode?: string; unit: string; image: string | null;
     duration_minutes?: number | null;
     fulfilment?: string | null;
     capacity: number | null;
@@ -151,9 +151,12 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
         ? dayKeyFromNow(Math.max(1, provider.horizonDays || 90))
         : lastNight(String(checkOut));
 
-    const cheapest = provider.items.length ? provider.items.reduce((a, b) => (a.price <= b.price ? a : b)) : null;
+    // The cheapest PRICED option; a price-on-enquiry offering has no figure and
+    // is skipped (no "From £0"), while a range's from-price counts.
+    const pricedItems = provider.items.filter((i) => (i.priceMode || 'fixed') !== 'enquiry' && i.price > 0);
+    const cheapest = pricedItems.length ? pricedItems.reduce((a, b) => (a.price <= b.price ? a : b)) : null;
     const priceParts_ = cheapest ? priceParts(cheapest.price, cheapest.unit) : null;
-    const showFrom = provider.items.length > 1;
+    const showFrom = pricedItems.length > 1 || pricedItems.length < provider.items.length;
     const cancel = cancellationBadge(provider.cancellationHours, provider.noRefund);
 
     // ---- SLOT ---------------------------------------------------------------

@@ -17,7 +17,7 @@ import { isFillingUp, spotsLeftLabel } from '@/lib/spotsLeft';
 import { timeRange24 } from '@/lib/timeRange';
 import type { AddressParts } from '@/components/address/AddressLookup';
 
-export interface DialogItem { id: string; name: string; price: number; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; duration_minutes?: number | null; }
+export interface DialogItem { id: string; name: string; price: number; priceMode?: string; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; duration_minutes?: number | null; }
 export interface DialogOpenSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 export interface DialogDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 
@@ -86,7 +86,10 @@ export default function BookingDialog({
     // dialog opens on it instead of jumping to a pricier default (a whole-session
     // "private" option, say). Derived from price, not hardcoded, so it's right for
     // any provider; a stable sort keeps the provider's own order for equal prices.
-    const orderedItems = useMemo(() => [...items].sort((a, b) => a.price - b.price), [items]);
+    // Only FIXED-price options are bookable here; a range or price-on-enquiry
+    // offering has no settled price to charge and is reached through "Message the
+    // provider" in the listing body instead (and refused server-side anyway).
+    const orderedItems = useMemo(() => items.filter((i) => (i.priceMode || 'fixed') === 'fixed').sort((a, b) => a.price - b.price), [items]);
     const [itemId, setItemId] = useState<string>(orderedItems[0]?.id || '');
     // The Guest Terms tick, when this guest still owes them — the Book button is
     // held until it is ticked (the panel records the acceptance before the order).
