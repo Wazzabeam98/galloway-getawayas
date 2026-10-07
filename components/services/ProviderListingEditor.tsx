@@ -994,6 +994,12 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     </>))}
 
                     {sec('pricing', (<>
+                        {/* One account, several offerings — made explicit so a
+                            provider (a caterer with a buffet and a hog roast) adds
+                            them here rather than signing up a second time. */}
+                        <p className="text-sm text-slate-500">
+                            You can offer several different things under this one listing — add each as its own offering below, with its own name and price.
+                        </p>
                         {!hasPricedItem && (
                             <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
                                 <Info className="mt-0.5 h-4 w-4 flex-none" />
