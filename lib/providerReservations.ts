@@ -12,7 +12,7 @@
 import { orderNet, orderReference } from '@/lib/serviceOrders';
 import { orderLocation } from '@/lib/orderLocation';
 import { whenLabel, timeLabel, dateLabel, cancellationSentence, townFromLocation } from '@/components/marketplace/present';
-import { requestedWhen, windowsClash, windowPhrase } from '@/lib/serviceEnquiries';
+import { requestedWhen, windowsClash, windowPhrase, contactReleased } from '@/lib/serviceEnquiries';
 import { groupLabel } from '@/lib/bookingDisplay';
 import { formatGBP } from '@/lib/formatMoney';
 import { getImageUrl, displayName } from '@/lib/utils';
@@ -376,9 +376,11 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
     const listingIds = Array.from(new Set(relevant.map((e: any) => e.listing_id).filter(Boolean)));
     const listings: Record<string, any> = {};
     if (listingIds.length) {
-        // street_address + postcode are the private columns; they only ever reach
-        // the trade AFTER they accept (see the address wall in mapEnquiry). Read
-        // under the service role here; the gate is what we put in the payload.
+        // Read under the service role. whereForTradeJob below decides what of the
+        // address the trade is shown — today it shows the full street so they can
+        // judge the job before deciding. (The message-thread route shows only the
+        // town until acceptance; the two surfaces disagree, flagged for a decision.
+        // Whatever that decision, the owner's PHONE is gated until acceptance above.)
         const { data: ls } = await admin.from('listings').select('id, title, location, images, street_address, postcode').in('id', listingIds);
         (ls || []).forEach((l: any) => { listings[l.id] = l; });
     }
@@ -446,7 +448,12 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             // card of its own; it earned no card and is gone (Liam, round six).
             money: null,
             moneyNote: null,
-            phone: e.host_phone || null,
+            // The owner's phone is released only once the trade has ACCEPTED —
+            // "on acceptance and not before" (service_enquiries migration; the
+            // same rule the message-thread route applies). Before that it stays
+            // null so no tap-to-call button can leak it from an unanswered
+            // request. Matches the gated-until-acceptance note above.
+            phone: contactReleased(e.status) ? (e.host_phone || null) : null,
             messageHref: '/messages?e=' + e.id,
             needsReply,
             inWeek: !!dateKey && dateKey >= today && dateKey <= weekEnd,
