@@ -6,6 +6,8 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { tradeLabel } from '@/lib/serviceProviders';
+import { firstName } from '@/lib/utils';
+import { ukDateTime } from '@/lib/dayKey';
 import ProviderUpcoming from '@/components/services/ProviderUpcoming';
 import { loadProviderReservations } from '@/lib/providerReservations';
 import { isAwaitingConnect } from '@/lib/serviceOrders';
@@ -68,6 +70,25 @@ export default async function ProviderReservationsPage() {
 
     const isTrade = provider.audience !== 'guest';
 
+    // Price-on-enquiry / range enquiries — a guest experience only. Shown here so
+    // a provider sees a guest's question on the platform, not only in the email
+    // that was sent when it landed. The guest's first name (the site's rule).
+    const { data: enquiryRows } = !isTrade
+        ? await admin
+            .from('experience_enquiries')
+            .select('id, guest_id, item_name, message, created_at')
+            .eq('provider_id', provider.id)
+            .order('created_at', { ascending: false })
+            .limit(50)
+        : { data: [] as any[] };
+    const enquiries = enquiryRows || [];
+    const enquiryGuestIds = Array.from(new Set(enquiries.map((e: any) => e.guest_id).filter(Boolean)));
+    const { data: enquiryGuests } = enquiryGuestIds.length
+        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', enquiryGuestIds)
+        : { data: [] as any[] };
+    const enquiryGuestName: Record<string, string> = {};
+    for (const g of enquiryGuests || []) enquiryGuestName[g.id] = firstName(g, 'A guest');
+
     // The page heading reads like a host's dashboard: the section name (the top
     // bar already greets them by first name), with the business name as the quiet
     // line beneath — not a big business-name H1 competing with "Welcome, Ewan".
@@ -113,6 +134,27 @@ export default async function ProviderReservationsPage() {
             </div>
 
             {awaitingPayouts && <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />}
+
+            {!isTrade && enquiries.length > 0 && (
+                <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5">
+                    <h2 className="text-lg font-bold text-slate-900">Enquiries</h2>
+                    <p className="mt-0.5 mb-4 text-sm text-slate-500">Guests asking about a price. Reply to agree one.</p>
+                    <ul className="space-y-3">
+                        {enquiries.map((e: any) => (
+                            <li key={e.id} className="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                    <span className="font-semibold text-slate-900">
+                                        {enquiryGuestName[e.guest_id] || 'A guest'}
+                                        {e.item_name ? <span className="font-normal text-slate-500"> · {e.item_name}</span> : null}
+                                    </span>
+                                    <span className="text-xs text-slate-400">{ukDateTime(e.created_at)}</span>
+                                </div>
+                                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{e.message}</p>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
 
             <ProviderUpcoming reservations={reservations} past={past} summary={summary} title={isTrade ? null : 'Upcoming bookings'} folders={isTrade} />
         </div>

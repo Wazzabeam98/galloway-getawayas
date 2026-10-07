@@ -320,8 +320,28 @@ export async function POST(request: Request) {
                 for (let i = 0; i < incoming.length; i++) {
                     const it = incoming[i];
                     const name = String(it.name || '').trim();
-                    const price = Number(it.price);
-                    if (!name || !(price > 0)) continue; // a blank / priceless row
+                    // The pricing shape, validated server-side (the client is never
+                    // trusted): a fixed price > 0, a range (from > 0 and to > from),
+                    // or price-on-enquiry (no figure). A range that doesn't hold up
+                    // falls back to a fixed price; a non-fixed row with no valid
+                    // price still survives only when it's genuinely on enquiry.
+                    const rawMode = String(it.price_mode || 'fixed');
+                    let priceMode = ['fixed', 'range', 'enquiry'].indexOf(rawMode) !== -1 ? rawMode : 'fixed';
+                    let price = Number(it.price) > 0 ? Number(it.price) : 0;
+                    let priceMax: number | null = null;
+                    if (priceMode === 'enquiry') {
+                        price = 0;
+                    } else if (priceMode === 'range') {
+                        const to = Number(it.price_max);
+                        if (price > 0 && to > price) priceMax = to;
+                        else priceMode = 'fixed'; // a broken range is just a fixed price
+                    } else {
+                        priceMode = 'fixed';
+                    }
+                    // Keep a named row that is either priced (fixed/range) or on
+                    // enquiry; drop a blank / priceless non-enquiry row.
+                    if (!name) continue;
+                    if (priceMode !== 'enquiry' && !(price > 0)) continue;
                     const itemFulfilment = perItemLocation
                         ? (String(it.fulfilment) === 'delivery' ? 'delivery' : 'collection')
                         : null;
@@ -342,6 +362,7 @@ export async function POST(request: Request) {
                     const kidsOk = childrenAllowed(p.guest_details && (p.guest_details as any).min_age != null ? Number((p.guest_details as any).min_age) : null);
                     const row: any = {
                         name, description: strOrNull(it.description), price,
+                        price_mode: priceMode, price_max: priceMax,
                         unit,
                         image: strOrNull(it.image),
                         duration_minutes: (it.duration_minutes == null || it.duration_minutes === '')

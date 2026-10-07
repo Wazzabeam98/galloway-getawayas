@@ -19,7 +19,7 @@ import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './ed
 import { NumberStepper, BigTextInput, ChoiceTiles, wizardAreaCls } from './wizardKit';
 import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
 import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
-import { AddItemFlow, ItemDetailCard, rowFromItem, uploadImage, type MenuRow, type ItemCtx } from './ExperienceItemEditor';
+import { AddItemFlow, ItemDetailCard, rowFromItem, uploadImage, priceRowValid, type MenuRow, type ItemCtx } from './ExperienceItemEditor';
 import { SinglePhotoSheet } from './SinglePhotoSheet';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { savePaused, TakenDownBanner } from '@/components/services/ListingPauseControl';
@@ -726,7 +726,9 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
     const menuPayload = (rows: MenuRow[]) => ({
         items: rows.map((r) => ({
-            id: r.id, name: r.name, description: r.description, price: r.price, unit: r.unit, image: r.image,
+            id: r.id, name: r.name, description: r.description, price: r.price,
+            price_mode: r.priceMode, price_max: r.priceMax,
+            unit: r.unit, image: r.image,
             duration_minutes: r.duration, fulfilment: r.fulfilment, active: r.active,
             capacity: r.capacity, min_people: r.minPeople, included_guests: r.includedGuests,
             extra_adult_fee: r.extraAdultFee, extra_child_fee: r.extraChildFee, max_party: r.maxParty,
@@ -745,7 +747,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [picked, setPicked] = useState<Set<number>>(new Set());
     const [confirmBulk, setConfirmBulk] = useState(false);
     const [bulkBusy, setBulkBusy] = useState(false);
-    const bookable = (r: MenuRow) => r.active && !!r.name.trim() && Number(r.price) > 0;
+    // Only a FIXED offering is instant-bookable; a range or price-on-enquiry one
+    // is reached through "Message the provider", so it doesn't count toward the
+    // "keep at least one bookable" guard.
+    const bookable = (r: MenuRow) => r.active && !!r.name.trim() && (r.priceMode || 'fixed') === 'fixed' && Number(r.price) > 0;
     const keptRows = menu.filter((_, j) => !picked.has(j));
     const bulkRefusal = keptRows.length === 0
         ? 'You can’t delete every offering — guests would have nothing to book. Keep at least one.'
@@ -839,7 +844,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
             : <div className="space-y-4">{heading}{children}</div>;
     };
 
-    const hasPricedItem = menu.some((r) => r.active && r.name.trim() && Number(r.price) > 0);
+    // A showable offering: a fixed price, a complete range, or price-on-enquiry.
+    // A listing with any of these appears to guests (an enquiry offering shows
+    // "Message the provider"); only with none does it stay hidden.
+    const hasPricedItem = menu.some((r) => r.active && r.name.trim() && priceRowValid(r));
 
     return (
         <QuestionSheetContext.Provider value={true}>

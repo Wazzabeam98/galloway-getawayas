@@ -181,7 +181,7 @@ export async function POST(request: Request) {
 
             const ids = Array.from(new Set(wanted.map((w: any) => w.id)));
             const { data: cartItems } = await admin.from('service_provider_items')
-                .select('id, provider_id, name, description, price, active, unit, fulfilment, is_custom')
+                .select('id, provider_id, name, description, price, price_mode, active, unit, fulfilment, is_custom')
                 .in('id', ids);
             if (!cartItems || !cartItems.length) return NextResponse.json({ ok: false, error: 'Those items aren’t available.' }, { status: 400 });
             const providerId = cartItems[0].provider_id;
@@ -202,6 +202,11 @@ export async function POST(request: Request) {
             for (const w of wanted) {
                 const it = byId.get(w.id);
                 if (!it || it.active !== true || !(Number(it.price) > 0)) return NextResponse.json({ ok: false, error: 'One of those items isn’t available.' }, { status: 400 });
+                // A range or price-on-enquiry offering is never ordered — its price
+                // is agreed with the provider first. The from-price of a range is a
+                // real number and would pass the price>0 check above, so refuse it
+                // on its mode, not its figure.
+                if (it.price_mode && it.price_mode !== 'fixed') return NextResponse.json({ ok: false, error: 'The price for one of those is agreed with the provider — message them for a quote.' }, { status: 400 });
                 const up = Number(it.price);
                 const lineTotal = Math.round(up * w.qty * 100) / 100;
                 lines.push({ item_id: it.id, name: it.name, unit: normaliseUnit(it.unit), qty: w.qty, unit_price: up, line_total: lineTotal, is_custom: !!it.is_custom });
