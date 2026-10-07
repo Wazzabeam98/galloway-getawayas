@@ -34,6 +34,7 @@ export default async function ProviderListingPage() {
             + 'photos, headshot, logo, dietary_note, guest_details, fulfilment, delivery_fee, delivery_radius_miles, '
             + 'collection_street, collection_town, collection_postcode, '
             + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, '
+            + 'venue_lat, venue_lng, show_precise_location, '
             + 'lead_time_days, cancellation_window_hours, owner_paused, admin_hidden_at')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
@@ -89,6 +90,11 @@ export default async function ProviderListingPage() {
                 collection_street: provider.collection_street || '',
                 collection_town: provider.collection_town || '',
                 collection_postcode: provider.collection_postcode || '',
+                // The venue map point (approximate, ~110m) for the provider's own
+                // Location map, and whether the public page shows it precisely.
+                venue_lat: provider.venue_lat != null ? Number(provider.venue_lat) : null,
+                venue_lng: provider.venue_lng != null ? Number(provider.venue_lng) : null,
+                show_precise_location: provider.show_precise_location === true,
                 slot_length_minutes: provider.slot_length_minutes ?? null,
                 slot_turnaround_minutes: provider.slot_turnaround_minutes ?? 0,
                 slot_capacity: provider.slot_capacity ?? null,

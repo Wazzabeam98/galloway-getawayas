@@ -75,6 +75,7 @@ const PLATFORM_ONLY: Record<string, string> = {
     // The venue map point — geocoded by the server, never typed by a provider.
     venue_lat: 'venue map point, server-written from the collection postcode (lib/venuePoint.ts)',
     venue_lng: 'venue map point, server-written from the collection postcode (lib/venuePoint.ts)',
+    show_precise_location: 'Location-sharing flag — written only through the provider editor\'s service-role save route (/api/services/listing/save, ownership-checked), never a browser write (mirrors listings.show_precise_location)',
     // Service-role booking rule and server bookkeeping.
     cancellation_window_hours: 'booking rule read/written only via the service role',
     delivery_fee: 'made-to-order delivery fee — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write',

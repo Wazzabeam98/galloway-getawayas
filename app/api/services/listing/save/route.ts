@@ -215,6 +215,12 @@ export async function POST(request: Request) {
             case 'where': {
                 const fulfilment = strOrNull(data.fulfilment);
                 patch = { fulfilment };
+                // Location sharing: off (the default) keeps the public map's
+                // approximate pin; on shows the venue point unjittered. Only
+                // written here; the public page reads it via the service role.
+                if (data.show_precise_location !== undefined) {
+                    patch.show_precise_location = data.show_precise_location === true;
+                }
                 const collects = fulfilment === 'collection' || fulfilment === 'both';
                 // A flat delivery fee, only meaningful when the provider travels;
                 // clamped to a sane range, and forced to 0 for a collection-only one.
@@ -237,6 +243,16 @@ export async function POST(request: Request) {
                     return NextResponse.json({ ok: false, error: 'Add your base postcode — a delivery distance is measured from it.' }, { status: 400 });
                 }
                 if (travels && basePostcode) patch.collection_postcode = basePostcode;
+                // A traveller must say where they go, so the marketplace can match
+                // them to a guest's stay. Refused here too, not only in the editor,
+                // so it can't be bypassed — and so an existing travel row with no
+                // area can't be saved past the prompt.
+                const areaLabels = Array.isArray(data.areas)
+                    ? data.areas.map((label: any) => strOrNull(label)).filter(Boolean)
+                    : [];
+                if (travels && areaLabels.length === 0) {
+                    return NextResponse.json({ ok: false, error: 'Pick at least one area you travel to.' }, { status: 400 });
+                }
                 // Coverage regions: replace the set.
                 if (Array.isArray(data.areas)) {
                     await admin.from('service_areas').delete().eq('provider_id', providerId);
