@@ -10,7 +10,6 @@ import ChromeGate from '@/components/base/ChromeGate';
 import { ToastContainer } from 'react-toastify';
 import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
-import AgreementGate from '@/components/legal/AgreementGate';
 import AuthPanelHost from '@/components/auth/AuthPanel';
 import KeepSignedIn from '@/components/auth/KeepSignedIn';
 import { Analytics } from '@vercel/analytics/next';
@@ -186,9 +185,6 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <Toast />
         </Suspense>
-        {/* The sign-in prompt for a missing or out-of-date agreement — one
-            document at a time (lib/agreements.ts). */}
-        <AgreementGate />
         {/* The one Log in or sign up panel. Every "Log in" button on the site
             opens this (components/auth/LoginModel → openAuthPanel). */}
         <AuthPanelHost />

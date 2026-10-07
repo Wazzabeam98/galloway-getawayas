@@ -22,9 +22,12 @@
 // (Wording lives in markdown inside a .ts file, rendered by
 // components/legal/LegalMarkdown, so new wording can be pasted straight in.)
 //
-// Every account whose recorded version no longer matches is asked to accept the
-// new one the next time they sign in (components/legal/AgreementGate), and every
-// server wall compares against this registry, so nothing else needs touching.
+// Each agreement is accepted once, as the single tick on the final page of the
+// sign-up it belongs to (the Host Agreement on the last step of the become-a-host
+// wizard; the Experience Provider / Tradesperson Agreement on the provider
+// sign-up's finish screen; the Guest Terms at a first booking checkout). There is
+// no roaming re-prompt: a wording change bumps the version here, every server
+// wall compares against it, but nobody is blocked mid-session to re-accept.
 //
 // Where an acceptance is recorded: public.agreement_acceptances (user, document,
 // version, server time), written only by the server with the service role —

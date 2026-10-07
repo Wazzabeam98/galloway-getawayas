@@ -164,7 +164,7 @@ test('no per-device log out calls the global default any more', () => {
     const fs = require('fs');
     const path = require('path');
     const ROOT = path.resolve(__dirname, '..', '..');
-    for (const rel of ['components/common/SignOut.tsx', 'components/legal/AgreementGate.tsx', 'components/auth/AuthPanel.tsx', 'components/auth/EmailFirstStep.tsx']) {
+    for (const rel of ['components/common/SignOut.tsx', 'components/auth/AuthPanel.tsx', 'components/auth/EmailFirstStep.tsx']) {
         const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
         assert.doesNotMatch(src, /auth\.signOut\(\s*\)/, rel + ' must not sign out every device');
         assert.match(src, /signOutThisDevice\(supabase\)/, rel);
