@@ -7,13 +7,59 @@ import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
 import {
-    startOfMonth, endOfMonth, eachDayOfInterval, format, addMonths, subMonths,
-    isSameDay, isBefore, startOfDay, getDay,
+    startOfMonth, endOfMonth, format, addMonths, subMonths, getDay,
 } from 'date-fns';
+import {
+    minNightsFor, prepBufferNights, prepDays, earliestCheckInKey,
+    latestCheckOutKey, londonTodayKey, addDaysKey, nightsBetweenKeys,
+    unsellableNights,
+} from '@/lib/stayRules';
 import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
 import { firstName } from "@/lib/utils";
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
+
+// Our own bookings have no platform colour, so they get a neutral slate — "this
+// one is ours", distinct from every imported channel's colour.
+const DIRECT_COLOUR = '#334155';
+
+// The diagonal wash on a night the host cannot sell (a gap too short to book).
+const ORPHAN_HATCH =
+    'repeating-linear-gradient(45deg, rgba(180,83,9,0.12) 0, rgba(180,83,9,0.12) 4px, transparent 4px, transparent 9px)';
+
+// A platform's colour, lightened towards white so a whole month of bars reads
+// as calm rather than a wall of saturated blocks — Airbnb's bars are soft too.
+function soften(hex: string, amount: number): string {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    const mix = (c: number) => Math.round(c + (255 - c) * amount);
+    return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+
+// Dark or white text, whichever reads on the softened fill.
+function textOn(rgb: string): string {
+    const m = rgb.match(/\d+/g);
+    if (!m) return '#1f2937';
+    const r = Number(m[0]), g = Number(m[1]), b = Number(m[2]);
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return lum > 0.62 ? '#1f2937' : '#ffffff';
+}
+
+// A day number out of a 'yyyy-mm-dd' key, and the weekday, without ever going
+// through Date-from-ISO (which shifts under BST). Local construction only.
+function dayNumber(key: string): number {
+    return Number(key.slice(8, 10));
+}
+function dowFromKey(key: string): number {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, m - 1, d).getDay(); // 0=Sun … 5=Fri, 6=Sat
+}
+function keyLabel(key: string, fmt: string): string {
+    const [y, m, d] = key.split('-').map(Number);
+    return format(new Date(y, m - 1, d), fmt);
+}
 
 interface Listing {
     id: string;
@@ -59,6 +105,26 @@ interface Work {
     window_to: string | null;
 }
 
+// A date taken on another platform, as /api/ical-import returns it: a range,
+// not a single day, so the calendar can draw it as one continuous bar.
+interface ChannelEvent {
+    start: string;
+    end: string;
+    platform: string;
+    platformName: string;
+}
+
+// One reservation to draw as a bar — ours or imported. `start`/`end` are day
+// keys; the stay holds the nights [start, end), so the bar runs from the middle
+// of the check-in day to the middle of the checkout day.
+interface Reservation {
+    start: string;
+    end: string;
+    platform: string | null; // null = our own (direct) booking
+    label: string;
+    kind: 'direct' | 'channel';
+}
+
 const ADVANCE_NOTICE_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '7 days'];
 const PREP_TIME_OPTIONS = ['None', '1 day', '2 days', '3 days'];
 const AVAILABILITY_WINDOW_OPTIONS = ['3 months', '6 months', '9 months', '12 months', 'All future dates'];
@@ -76,8 +142,8 @@ export default function CalendarPage() {
     // preferred_date -> the accepted, planned work asked for that day. Keyed by
     // the day, because more than one job can be asked for on the same date.
     const [workByDate, setWorkByDate] = useState<Record<string, Work[]>>({});
-    // date -> which platform has it, from the imported calendars
-    const [external, setExternal] = useState<Record<string, { platform: string; name: string }>>({});
+    // Dates taken on other platforms, as ranges, from the imported calendars.
+    const [channelEvents, setChannelEvents] = useState<ChannelEvent[]>([]);
     const [guestNames, setGuestNames] = useState<Record<string, string>>({});
     // Which listing the bookings/blocks/synced nights above belong to. Until it
     // matches the selected listing the month is not drawn — an empty map would
@@ -93,8 +159,9 @@ export default function CalendarPage() {
     // co-host without it would be a button that can only fail.
     const [canEditListing, setCanEditListing] = useState<Record<string, boolean>>({});
 
-    const [selectionStart, setSelectionStart] = useState<Date | null>(null);
-    const [selectionEnd, setSelectionEnd] = useState<Date | null>(null);
+    // Day keys, not Dates — the whole grid reasons in 'yyyy-mm-dd' keys now.
+    const [selectionStart, setSelectionStart] = useState<string | null>(null);
+    const [selectionEnd, setSelectionEnd] = useState<string | null>(null);
     const [panelOpen, setPanelOpen] = useState(false);
     const [panelBlocked, setPanelBlocked] = useState(false);
     const [panelPrice, setPanelPrice] = useState('');
@@ -236,27 +303,22 @@ export default function CalendarPage() {
                 const res = icalRes;
                 const data = res && res.ok ? await res.json() : { events: [] };
 
-                const map: Record<string, any> = {};
+                // Kept as ranges (not expanded to a per-day map) so each stay
+                // can be drawn as one continuous bar. A co-host without detail
+                // gets events with no platform — dropped here.
+                const evs: ChannelEvent[] = (data.events || [])
+                    .filter((ev: any) => ev && ev.start && ev.end && ev.platform)
+                    .map((ev: any) => ({
+                        start: String(ev.start).slice(0, 10),
+                        end: String(ev.end).slice(0, 10),
+                        platform: ev.platform,
+                        platformName: ev.platformName || '',
+                    }));
 
-                (data.events || []).forEach((ev: any) => {
-                    const day = new Date(ev.start);
-                    const end = new Date(ev.end);
-
-                    // An iCal event runs up to its checkout date, which is
-                    // itself free — the same convention as a booking here.
-                    while (day < end) {
-                        map[format(day, 'yyyy-MM-dd')] = {
-                            platform: ev.platform,
-                            name: ev.platformName,
-                        };
-                        day.setDate(day.getDate() + 1);
-                    }
-                });
-
-                setExternal(map);
+                if (live) setChannelEvents(evs);
             } catch (err) {
                 // A calendar we can't reach shouldn't stop the page loading.
-                setExternal({});
+                if (live) setChannelEvents([]);
             }
 
             const guestIds = Array.from(new Set((bookingRows || []).map((b) => b.guest_id)));
@@ -275,74 +337,126 @@ export default function CalendarPage() {
         return () => { live = false; };
     }, [supabase, selectedListingId]);
 
-    const days = useMemo(() => {
-        const start = startOfMonth(month);
-        const end = endOfMonth(month);
-        return eachDayOfInterval({ start, end });
+    const todayKey = londonTodayKey();
+    const monthKey = format(month, 'yyyy-MM');
+
+    // The month as weeks of day keys, Monday-first, carrying the overflow days
+    // of the neighbouring months so a reservation bar flows across the edge
+    // rather than being chopped at the 1st or the 31st.
+    const weeks = useMemo(() => {
+        const monthStartKey = format(startOfMonth(month), 'yyyy-MM-dd');
+        const leading = (getDay(startOfMonth(month)) + 6) % 7;
+        const gridStart = addDaysKey(monthStartKey, -leading);
+        const total = Math.ceil((leading + endOfMonth(month).getDate()) / 7) * 7;
+        const out: string[][] = [];
+        for (let w = 0; w * 7 < total; w++) {
+            const row: string[] = [];
+            for (let d = 0; d < 7; d++) row.push(addDaysKey(gridStart, w * 7 + d));
+            out.push(row);
+        }
+        return out;
     }, [month]);
 
-    const leadingBlanks = useMemo(() => {
-        const firstDay = getDay(startOfMonth(month));
-        return (firstDay + 6) % 7;
-    }, [month]);
+    // Every reservation to draw — our own confirmed stays and the ones imported
+    // from other platforms — as ranges, so each becomes one continuous bar.
+    const reservations = useMemo<Reservation[]>(() => {
+        const out: Reservation[] = [];
+        bookings.forEach((b) => out.push({
+            start: String(b.check_in).slice(0, 10),
+            end: String(b.check_out).slice(0, 10),
+            platform: null,
+            label: guestNames[b.guest_id] || 'Guest',
+            kind: 'direct',
+        }));
+        channelEvents.forEach((e) => out.push({
+            start: e.start,
+            end: e.end,
+            platform: e.platform,
+            label: e.platformName || (PLATFORMS[e.platform] || PLATFORMS.other).name,
+            kind: 'channel',
+        }));
+        return out;
+    }, [bookings, channelEvents, guestNames]);
 
-    // How full the month is, counting every source together. A host sees
-    // Galloway as one channel among several, so singling our own bookings out
-    // as "direct" would be our framing, not theirs — and the split between
-    // channels is their business, not something this page needs to total up.
-    const monthSummary = useMemo(() => {
-        const sources: Record<string, { name: string; colour: string }> = {};
-        let sold = 0;
-        let blocked = 0;
-        let free = 0;
+    // The per-night reservation lookup, the full unavailable-night set (taken +
+    // host-blocked + preparation time), and the nights that cannot be sold at
+    // all — a gap too short to meet the minimum and not closed on both sides,
+    // so no stay can ever include it. Computed across the whole bookable
+    // horizon (not just this month) so a run crossing the month edge is judged
+    // whole. The booking card and checkout enforce the matching rule
+    // (lib/stayRules), so what is marked unsellable here is exactly what a guest
+    // would be refused.
+    const { takenByNight, unsellable } = useMemo(() => {
+        const taken: Record<string, Reservation> = {};
+        const ranges: { start: string; end: string }[] = [];
+        reservations.forEach((r) => {
+            ranges.push({ start: r.start, end: r.end });
+            let k = r.start;
+            while (k < r.end) { if (!taken[k]) taken[k] = r; k = addDaysKey(k, 1); }
+        });
 
-        days.forEach((day) => {
-            const key = format(day, 'yyyy-MM-dd');
+        const unavail = new Set<string>();
+        Object.keys(taken).forEach((k) => unavail.add(k));
+        Object.keys(overrides).forEach((k) => { if (overrides[k].is_blocked) unavail.add(k); });
+        if (selectedListing) {
+            prepBufferNights(ranges, prepDays(selectedListing)).forEach((k) => unavail.add(k));
+        }
 
-            const booked = bookings.find((b) => {
-                const start = new Date(b.check_in);
-                const end = new Date(b.check_out);
-                return day >= start && day < end;
+        let unsell = new Set<string>();
+        if (selectedListing) {
+            const minOv: Record<string, number> = {};
+            Object.keys(overrides).forEach((k) => {
+                const m = overrides[k].min_nights_override;
+                if (m) minOv[k] = Number(m);
             });
+            const from = earliestCheckInKey(selectedListing, todayKey);
+            const to = latestCheckOutKey(selectedListing, todayKey) || addDaysKey(todayKey, 365);
+            const ordered: string[] = [];
+            for (let k = from; k <= to; k = addDaysKey(k, 1)) ordered.push(k);
+            unsell = unsellableNights(ordered, unavail, (key) => minNightsFor(selectedListing, minOv, key));
+        }
+        return { takenByNight: taken, unsellable: unsell };
+    }, [reservations, overrides, selectedListing, todayKey]);
 
-            if (booked) {
-                sold = sold + 1;
-                return;
-            }
-
-            const away = external[key];
-            if (away) {
-                const p = PLATFORMS[away.platform] || PLATFORMS.other;
-                const id = away.name || p.name;
-                if (!sources[id]) sources[id] = { name: id, colour: p.colour };
-                sold = sold + 1;
-                return;
-            }
-
-            if (overrides[key]?.is_blocked) {
-                blocked = blocked + 1;
-                return;
-            }
-
-            free = free + 1;
-        });
-
-        return {
-            sold: sold,
-            blocked: blocked,
-            free: free,
-            sources: Object.keys(sources).map((k) => sources[k]),
-            occupancy: days.length ? Math.round((sold / days.length) * 100) : 0,
-        };
-    }, [days, bookings, external, overrides]);
-
-    const bookingForDate = (date: Date) => {
-        return bookings.find((b) => {
-            const start = new Date(b.check_in);
-            const end = new Date(b.check_out);
-            return date >= start && date < end;
-        });
+    const dayPriceFor = (key: string) => {
+        const ov = overrides[key];
+        if (ov?.price_override) return ov.price_override;
+        const dow = dowFromKey(key); // 0=Sun … 5=Fri, 6=Sat
+        if ((dow === 5 || dow === 6) && selectedListing?.weekend_price) return selectedListing.weekend_price;
+        return selectedListing?.price_per_night ?? 0;
     };
+
+    // How the month breaks down. "Sold" counts every channel together — a host
+    // sees Galloway as one channel among several. The split that matters to
+    // them is what is left: the nights they can still sell, and the orphan
+    // nights they cannot.
+    const monthSummary = useMemo(() => {
+        const channels: Record<string, { name: string; colour: string }> = {};
+        let sold = 0, blocked = 0, sellable = 0, cannotSell = 0, inMonth = 0;
+        weeks.forEach((row) => row.forEach((key) => {
+            if (key.slice(0, 7) !== monthKey) return;
+            inMonth = inMonth + 1;
+            const res = takenByNight[key];
+            if (res) {
+                sold = sold + 1;
+                if (res.kind === 'channel' && res.platform) {
+                    const p = PLATFORMS[res.platform] || PLATFORMS.other;
+                    const id = res.label || p.name;
+                    if (!channels[id]) channels[id] = { name: id, colour: p.colour };
+                }
+                return;
+            }
+            if (overrides[key]?.is_blocked) { blocked = blocked + 1; return; }
+            if (key < todayKey) return; // a past free night is gone, not for sale
+            if (unsellable.has(key)) { cannotSell = cannotSell + 1; return; }
+            sellable = sellable + 1;
+        }));
+        return {
+            sold, blocked, sellable, cannotSell,
+            channels: Object.keys(channels).map((k) => channels[k]),
+            occupancy: inMonth ? Math.round((sold / inMonth) * 100) : 0,
+        };
+    }, [weeks, monthKey, takenByNight, overrides, unsellable, todayKey]);
 
     // The hover text for a day that has work asked for. requestedWhen carries
     // the "Asked for …" wording from lib/serviceEnquiries, so a tooltip can
@@ -356,36 +470,30 @@ export default function CalendarPage() {
         return (collision ? 'A guest is in on this day — check before it clashes.\n' : '') + lines.join('\n');
     };
 
-    const isInSelection = (date: Date) => {
+    const inSelection = (key: string) => {
         if (!selectionStart) return false;
         const end = selectionEnd || selectionStart;
-        return date >= (selectionStart < end ? selectionStart : end) && date <= (selectionStart < end ? end : selectionStart);
+        const lo = selectionStart < end ? selectionStart : end;
+        const hi = selectionStart < end ? end : selectionStart;
+        return key >= lo && key <= hi;
     };
 
-    const dayPrice = (date: Date, key: string, override?: Override) => {
-        if (override?.price_override) return override.price_override;
-        const dow = getDay(date); // 0=Sun, 5=Fri, 6=Sat
-        if ((dow === 5 || dow === 6) && selectedListing?.weekend_price) return selectedListing.weekend_price;
-        return selectedListing?.price_per_night ?? 0;
-    };
-
-    const handleDayClick = (date: Date) => {
-        if (isBefore(date, startOfDay(new Date()))) return;
-        if (bookingForDate(date)) return;
+    const handleDayClick = (key: string) => {
+        if (key < todayKey) return;
+        if (takenByNight[key]) return;
 
         if (!selectionStart || selectionEnd) {
-            setSelectionStart(date);
+            setSelectionStart(key);
             setSelectionEnd(null);
             return;
         }
 
-        const start = date < selectionStart ? date : selectionStart;
-        const end = date < selectionStart ? selectionStart : date;
+        const start = key < selectionStart ? key : selectionStart;
+        const end = key < selectionStart ? selectionStart : key;
         setSelectionStart(start);
         setSelectionEnd(end);
 
-        const key = format(start, 'yyyy-MM-dd');
-        const existing = overrides[key];
+        const existing = overrides[start];
         setPanelBlocked(existing?.is_blocked || false);
         setPanelPrice(existing?.price_override ? String(existing.price_override) : '');
         setPanelMinNights(existing?.min_nights_override ? String(existing.min_nights_override) : '');
@@ -399,16 +507,25 @@ export default function CalendarPage() {
         setSelectionEnd(null);
     };
 
+    // Every day key from the selection's lower bound to its upper bound.
+    const selectedKeys = () => {
+        if (!selectionStart) return [] as string[];
+        const end = selectionEnd || selectionStart;
+        const lo = selectionStart < end ? selectionStart : end;
+        const hi = selectionStart < end ? end : selectionStart;
+        const out: string[] = [];
+        for (let k = lo; k <= hi; k = addDaysKey(k, 1)) out.push(k);
+        return out;
+    };
+
     const saveOverrides = async () => {
         if (!selectionStart) return;
-        const end = selectionEnd || selectionStart;
-        const rangeDays = eachDayOfInterval({ start: selectionStart, end });
 
         setSaving(true);
         try {
-            const rows = rangeDays.map((d) => ({
+            const rows = selectedKeys().map((k) => ({
                 listing_id: selectedListingId,
-                date: format(d, 'yyyy-MM-dd'),
+                date: k,
                 is_blocked: panelBlocked,
                 price_override: panelPrice ? Number(panelPrice) : null,
                 min_nights_override: panelMinNights ? Number(panelMinNights) : null,
@@ -438,9 +555,7 @@ export default function CalendarPage() {
 
     const clearOverrides = async () => {
         if (!selectionStart) return;
-        const end = selectionEnd || selectionStart;
-        const rangeDays = eachDayOfInterval({ start: selectionStart, end });
-        const dateStrs = rangeDays.map((d) => format(d, 'yyyy-MM-dd'));
+        const dateStrs = selectedKeys();
 
         setSaving(true);
         const { error } = await supabase
@@ -578,83 +693,146 @@ export default function CalendarPage() {
 
                     <div className="relative">
                     {calendarFor !== selectedListingId && (
-                        <div className="absolute inset-0 z-20 grid grid-cols-7 gap-1.5 bg-white" aria-busy="true" aria-label="Loading calendar">
-                            {Array.from({ length: leadingBlanks }).map((_, i) => <div key={`sk-blank-${i}`} />)}
-                            {days.map((day) => (
-                                <div key={'sk-' + day.toISOString()} className="aspect-square rounded-xl bg-slate-100 animate-pulse" />
+                        <div className="absolute inset-0 z-20 bg-white" aria-busy="true" aria-label="Loading calendar">
+                            {weeks.map((row, wi) => (
+                                <div key={'sk-w' + wi} className="grid grid-cols-7">
+                                    {row.map((key) => <div key={'sk-' + key} className="h-[4.75rem] border border-slate-100 bg-slate-100 animate-pulse" />)}
+                                </div>
                             ))}
                         </div>
                     )}
-                    <div className={`grid grid-cols-7 gap-1.5 ${calendarFor !== selectedListingId ? 'invisible' : ''}`}>
-                        {Array.from({ length: leadingBlanks }).map((_, i) => <div key={`blank-${i}`} />)}
-                        {days.map((day) => {
-                            const key = format(day, 'yyyy-MM-dd');
-                            const override = overrides[key];
-                            const booking = bookingForDate(day);
-                            const away = !booking ? external[key] : null;
-                            const awayColour = away
-                                ? (PLATFORMS[away.platform] || PLATFORMS.other).colour
-                                : null;
-                            const isPast = isBefore(day, startOfDay(new Date()));
-                            const selected = isInSelection(day);
-                            const price = dayPrice(day, key, override);
-
-                            const work = workByDate[key];
-                            const hasWork = !isPast && !!(work && work.length);
-                            // A guest is "in" whether the stay is ours or came
-                            // off another channel — either way the cottage is
-                            // occupied, so either counts as a clash with work.
-                            const collision = hasWork && (!!booking || !!away);
-
+                    <div className={`overflow-hidden rounded-xl border border-slate-200 ${calendarFor !== selectedListingId ? 'invisible' : ''}`}>
+                        {weeks.map((row, wi) => {
+                            const weekStart = row[0];
+                            const weekEnd = row[6];
                             return (
-                                <button
-                                    key={key}
-                                    type="button"
-                                    disabled={isPast}
-                                    onClick={() => handleDayClick(day)}
-                                    className={`relative aspect-square rounded-xl border-2 p-1.5 flex flex-col items-start justify-between text-left transition ${
-                                        isPast ? 'opacity-30 cursor-not-allowed border-slate-100' :
-                                        booking ? 'border-slate-900 bg-slate-900 text-white' :
-                                        awayColour ? 'text-white' :
-                                        override?.is_blocked ? 'border-slate-300 bg-slate-100 text-slate-400' :
-                                        selected ? 'border-slate-900 bg-slate-50' :
-                                        'border-slate-200 hover:border-slate-400'
-                                    } ${collision ? 'ring-2 ring-amber-400 ring-offset-1' : ''}`}
-                                    style={
-                                        awayColour
-                                            ? { backgroundColor: awayColour, borderColor: awayColour }
-                                            : undefined
-                                    }
-                                >
-                                    {/* Work asked for that day. Amber when a
-                                        guest is also in — the one case a host
-                                        needs to catch. A request, never a slot:
-                                        the hover text says "asked for". */}
-                                    {hasWork && (
-                                        <span
-                                            title={workTitle(work, collision)}
-                                            className={`absolute top-1 right-1 z-10 flex items-center justify-center w-4 h-4 rounded-full shadow-sm ${
-                                                collision ? 'bg-amber-400 text-amber-950'
-                                                    : (booking || awayColour) ? 'bg-white text-slate-900'
-                                                    : 'bg-emerald-600 text-white'
-                                            }`}
-                                        >
-                                            <Wrench className="w-2.5 h-2.5" />
-                                        </span>
-                                    )}
-                                    <span className={`text-xs font-medium ${booking || awayColour ? 'text-white' : override?.is_blocked ? 'line-through' : 'text-[#222222]'}`}>
-                                        {format(day, 'd')}
-                                    </span>
-                                    {booking ? (
-                                        <span className="text-[9px] truncate w-full">{guestNames[booking.guest_id] || 'Guest'}</span>
-                                    ) : away ? (
-                                        <span className="text-[9px] truncate w-full">{away.name}</span>
-                                    ) : override?.is_blocked ? (
-                                        <span className="text-[9px]">Blocked</span>
-                                    ) : (
-                                        <span className="text-[10px] font-medium text-slate-600">£{price}</span>
-                                    )}
-                                </button>
+                                <div key={'w' + wi} className="relative grid grid-cols-7">
+                                    {/* The day cells — flat; a reservation is drawn on top as a bar. */}
+                                    {row.map((key) => {
+                                        const inMonth = key.slice(0, 7) === monthKey;
+                                        const isPast = key < todayKey;
+                                        const ov = overrides[key];
+                                        const booked = !!takenByNight[key];
+                                        const blockedDay = !booked && !!ov?.is_blocked;
+                                        const orphan = !booked && !blockedDay && !isPast && inMonth && unsellable.has(key);
+                                        const selected = inSelection(key);
+                                        const clickable = !isPast && !booked;
+                                        const price = dayPriceFor(key);
+
+                                        return (
+                                            <button
+                                                key={key}
+                                                type="button"
+                                                disabled={!clickable}
+                                                onClick={() => handleDayClick(key)}
+                                                className={[
+                                                    'relative h-[4.75rem] border border-slate-100 p-1.5 text-left align-top transition',
+                                                    // Focus ring for keyboard users only — a click must not leave one behind.
+                                                    'focus:outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400',
+                                                    !inMonth ? 'bg-slate-50/70' : 'bg-white',
+                                                    clickable ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default',
+                                                    selected ? 'z-10 ring-2 ring-inset ring-slate-900' : '',
+                                                ].join(' ')}
+                                                style={orphan ? { backgroundImage: ORPHAN_HATCH } : undefined}
+                                            >
+                                                <span className={[
+                                                    'text-xs font-medium',
+                                                    (isPast || !inMonth) ? 'text-slate-300' : 'text-slate-700',
+                                                    blockedDay ? 'line-through text-slate-400' : '',
+                                                ].join(' ')}>
+                                                    {dayNumber(key)}
+                                                </span>
+
+                                                {!booked && (
+                                                    blockedDay ? (
+                                                        <span className="absolute bottom-1 left-1.5 text-[9px] text-slate-400">Blocked</span>
+                                                    ) : orphan ? (
+                                                        <span className="absolute bottom-1 left-1.5 text-[9px] font-medium text-amber-700">
+                                                            Can’t sell<span className="sr-only"> — a gap too short to book</span>
+                                                        </span>
+                                                    ) : (!isPast && inMonth) ? (
+                                                        <span className="absolute bottom-1 left-1.5 text-[10px] font-medium text-slate-500">£{price}</span>
+                                                    ) : null
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+
+                                    {/* Reservation bars: one per stay, from the middle of the
+                                        check-in day to the middle of the checkout day, so a
+                                        back-to-back stay or a same-day turnover shows as two
+                                        bars meeting at a cell with a small gap between them. */}
+                                    <div className="pointer-events-none absolute inset-0">
+                                        {reservations.map((res, ri) => {
+                                            if (!(res.start <= weekEnd && res.end >= weekStart)) return null;
+
+                                            let leftFrac = 0;
+                                            let leftOpen = true;
+                                            if (res.start >= weekStart) {
+                                                leftFrac = (nightsBetweenKeys(weekStart, res.start) + 0.5) / 7;
+                                                leftOpen = false;
+                                            }
+                                            let rightFrac = 1;
+                                            let rightOpen = true;
+                                            if (res.end <= weekEnd) {
+                                                rightFrac = (nightsBetweenKeys(weekStart, res.end) + 0.5) / 7;
+                                                rightOpen = false;
+                                            }
+                                            if (rightFrac <= leftFrac) return null;
+
+                                            const colour = res.kind === 'direct'
+                                                ? DIRECT_COLOUR
+                                                : (PLATFORMS[res.platform as string] || PLATFORMS.other).colour;
+                                            const fill = soften(colour, 0.78);
+                                            const fg = textOn(fill);
+
+                                            return (
+                                                <div
+                                                    key={'r' + ri}
+                                                    className="absolute flex items-center overflow-hidden rounded-md px-2 text-[11px] font-medium shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+                                                    style={{
+                                                        top: '2.55rem',
+                                                        height: '1.65rem',
+                                                        left: `calc(${leftFrac * 100}% + ${leftOpen ? 0 : 3}px)`,
+                                                        right: `calc(${(1 - rightFrac) * 100}% + ${rightOpen ? 0 : 3}px)`,
+                                                        backgroundColor: fill,
+                                                        color: fg,
+                                                        borderTopLeftRadius: leftOpen ? 0 : undefined,
+                                                        borderBottomLeftRadius: leftOpen ? 0 : undefined,
+                                                        borderTopRightRadius: rightOpen ? 0 : undefined,
+                                                        borderBottomRightRadius: rightOpen ? 0 : undefined,
+                                                    }}
+                                                >
+                                                    <span className="truncate">{res.label}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Work-asked-for markers, on top of the bars so they stay
+                                        visible on a booked day. Amber where a guest is also in. */}
+                                    <div className="pointer-events-none absolute inset-0">
+                                        {row.map((key) => {
+                                            const isPast = key < todayKey;
+                                            const work = workByDate[key];
+                                            if (isPast || !(work && work.length)) return null;
+                                            const collision = !!takenByNight[key];
+                                            const idx = nightsBetweenKeys(weekStart, key);
+                                            return (
+                                                <span
+                                                    key={'wk' + key}
+                                                    title={workTitle(work, collision)}
+                                                    className={`pointer-events-auto absolute flex items-center justify-center w-4 h-4 rounded-full shadow-sm ${
+                                                        collision ? 'bg-amber-400 text-amber-950' : 'bg-emerald-600 text-white'
+                                                    }`}
+                                                    style={{ top: '0.3rem', left: `calc(${((idx + 1) / 7) * 100}% - 1.25rem)` }}
+                                                >
+                                                    <Wrench className="w-2.5 h-2.5" />
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
                             );
                         })}
                     </div>
@@ -670,9 +848,10 @@ export default function CalendarPage() {
                             </div>
 
                             <div className="text-xs text-slate-500">
-                                {monthSummary.sold} {monthSummary.sold === 1 ? 'night' : 'nights'} booked
-                                {monthSummary.free > 0
-                                    ? ', ' + monthSummary.free + ' still free'
+                                {monthSummary.sold} booked
+                                {', ' + monthSummary.sellable + ' to sell'}
+                                {monthSummary.cannotSell > 0
+                                    ? ', ' + monthSummary.cannotSell + ' can’t be sold'
                                     : ''}
                                 {monthSummary.blocked > 0
                                     ? ', ' + monthSummary.blocked + ' blocked'
@@ -682,41 +861,28 @@ export default function CalendarPage() {
 
                         <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
                             <div className="flex items-center gap-1.5">
-                                <span className="w-3 h-3 rounded bg-slate-900" /> Booked here
+                                <span className="w-4 h-3 rounded-sm" style={{ backgroundColor: soften(DIRECT_COLOUR, 0.78) }} /> Booked direct
                             </div>
 
-                            {monthSummary.sources.map((p) => (
+                            {monthSummary.channels.map((p) => (
                                 <div key={p.name} className="flex items-center gap-1.5">
-                                    <span
-                                        className="w-3 h-3 rounded"
-                                        style={{ backgroundColor: p.colour }}
-                                    />
+                                    <span className="w-4 h-3 rounded-sm" style={{ backgroundColor: soften(p.colour, 0.78) }} />
                                     {p.name}
                                 </div>
                             ))}
 
+                            {monthSummary.cannotSell > 0 && (
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-4 h-3 rounded-sm border border-amber-300" style={{ backgroundImage: ORPHAN_HATCH }} /> Can’t be sold
+                                </div>
+                            )}
                             <div className="flex items-center gap-1.5">
-                                <span className="w-3 h-3 rounded bg-slate-100 border border-slate-300" /> Blocked
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <span className="w-3 h-3 rounded border-2 border-slate-200" /> Available
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <span className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center">
-                                    <Wrench className="w-2.5 h-2.5 text-white" />
-                                </span>
-                                Work asked for
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <span className="w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center">
-                                    <Wrench className="w-2.5 h-2.5 text-amber-950" />
-                                </span>
-                                Guest in + work asked — check
+                                <span className="w-4 h-3 rounded-sm bg-slate-100 border border-slate-300" /> Blocked
                             </div>
                         </div>
                     </div>
 
-                    <p className="text-xs text-slate-400 mt-3">Click a date to select it, then click another date to select a range for date-specific overrides.</p>
+                    <p className="text-xs text-slate-400 mt-3">Click a free date, then another, to set a price, a minimum stay or to block those nights.</p>
                 </div>
 
                 {/* Right column: tabs + panel */}
@@ -739,9 +905,9 @@ export default function CalendarPage() {
                             <div className="border rounded-2xl p-5">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="font-bold text-slate-900">
-                                        {selectionEnd && !isSameDay(selectionStart, selectionEnd)
-                                            ? `${format(selectionStart, 'd MMM')} – ${format(selectionEnd, 'd MMM')}`
-                                            : format(selectionStart, 'd MMM yyyy')}
+                                        {selectionEnd && selectionEnd !== selectionStart
+                                            ? `${keyLabel(selectionStart, 'd MMM')} – ${keyLabel(selectionEnd, 'd MMM')}`
+                                            : keyLabel(selectionStart, 'd MMM yyyy')}
                                     </h3>
                                     <button type="button" onClick={closePanel}><X className="w-4 h-4 text-slate-400" /></button>
                                 </div>

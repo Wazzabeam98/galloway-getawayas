@@ -600,6 +600,9 @@ export default function BookingWidget({
             todayKey,
             minOverrides: minNightsOverrides,
             prepBuffer: prepBufferNights(stayRanges, prepDays(rules)),
+            // Lets an exactly-gap-filling stay through below the minimum, the
+            // same allowance checkoutPickable makes when offering the dates.
+            unavailable: unavailableNights,
         });
         if (ruleProblem) {
             setError(ruleProblem);
