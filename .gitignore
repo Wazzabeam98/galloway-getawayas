@@ -57,3 +57,6 @@ next-env.d.ts
 # created in the working tree by mistake.
 .claude-browser-profiles/
 browser-profile*/
+
+# Throwaway dist dir from the pre-push build gate (NEXT_DIST_DIR)
+.next-preview/
