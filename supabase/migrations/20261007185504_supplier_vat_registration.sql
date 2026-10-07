@@ -20,7 +20,10 @@
 --
 -- Nothing changes for anyone not VAT registered: the new columns default to
 -- false/null, every existing row stays null, and a null snapshot shows nothing.
--- No VAT of our own and no VAT on commission — that is still undecided.
+-- Galloway Getaways is NOT VAT registered: there is no VAT on our commission
+-- and no VAT number of ours anywhere. A supplier's price already includes their
+-- VAT by law, so a receipt only BREAKS the price paid into net + VAT + total —
+-- it never adds VAT on top.
 
 alter table "public"."profiles"
     add column if not exists "vat_registered" boolean not null default false,

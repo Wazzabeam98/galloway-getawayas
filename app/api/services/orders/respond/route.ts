@@ -64,7 +64,7 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
             + '</strong> has confirmed your booking for <strong>' + date + '</strong>.</p>'
             + '<p style="margin:0 0 16px;font-size:16px;">Your card has now been charged '
             + escapeHtml(amount) + '. They are expecting you; they will be in touch to sort the details.</p>'
-            + supplierVatHtml(order),
+            + supplierVatHtml(order, Number(order.price || 0)),
             'You’re receiving this because you booked an experience through Galloway Getaways.', undefined, NEUTRAL_SUBTITLE
         );
     } else if (outcome === 'date_accepted') {

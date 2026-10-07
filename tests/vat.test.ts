@@ -8,7 +8,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     vatNumberProblem, normaliseVatNumber, formatVatNumber, checkVatSettings, supplierFromSnapshot,
+    vatBreakdown,
 } from '../lib/vat';
+
+test('vatBreakdown splits a VAT-inclusive gross into net + VAT that add back to it', () => {
+    const b = vatBreakdown(120);
+    assert.deepEqual(b, { net: 100, vat: 20, gross: 120 });
+    const odd = vatBreakdown(99.99);
+    assert.equal(Math.round((odd.net + odd.vat) * 100) / 100, 99.99, 'net + VAT is exactly the price paid');
+    assert.equal(vatBreakdown(0).gross, 0);
+});
 
 test('a valid number is accepted however it is typed, and stored one way', () => {
     for (const typed of ['GB999999973', 'gb 999 9999 73', '999 9999 73', 'GB-999.9999.73']) {
@@ -65,8 +74,17 @@ test('a receipt shows a supplier only when the snapshot has both halves', () => 
 
 test('the receipt-email line is empty for a non-registered supplier and escapes the name', () => {
     const { supplierVatHtml } = require('../lib/vat');
-    assert.equal(supplierVatHtml({ supplier_vat_number: null, supplier_vat_name: null }), '');
-    const html = supplierVatHtml({ supplier_vat_number: 'GB999999973', supplier_vat_name: 'Burns & <Co>' });
+    assert.equal(supplierVatHtml({ supplier_vat_number: null, supplier_vat_name: null }, 120), '');
+    const html = supplierVatHtml({ supplier_vat_number: 'GB999999973', supplier_vat_name: 'Burns & <Co>' }, 120);
     assert.ok(html.includes('Burns &amp; &lt;Co&gt;'));
     assert.ok(html.includes('GB 999 9999 73'));
+});
+
+test('the receipt-email line breaks the gross into net + VAT @20% + total', () => {
+    const { supplierVatHtml } = require('../lib/vat');
+    const html = supplierVatHtml({ supplier_vat_number: 'GB999999973', supplier_vat_name: 'Millburn Ltd' }, 120);
+    assert.ok(html.includes('VAT at 20%'));
+    assert.ok(html.includes('&pound;100.00'), 'net');
+    assert.ok(html.includes('&pound;20.00'), 'VAT');
+    assert.ok(html.includes('&pound;120.00'), 'total equals the price paid');
 });

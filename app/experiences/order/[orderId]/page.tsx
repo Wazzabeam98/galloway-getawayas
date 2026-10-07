@@ -1079,7 +1079,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     </details>
                                 )}
                             </div>
-                            <SupplierVat row={supplierVat} what="experience" />
+                            <SupplierVat row={supplierVat} gross={breakdownTotal > 0 ? breakdownTotal : Number(price)} what="experience" />
                         </section>
                         )}
 

@@ -12,7 +12,26 @@
 // and the post-2010 "+55" series), so a single mistyped digit is caught here
 // rather than printed on a guest's receipt.
 //
-// No VAT of our own and no VAT on commission lives here — that is undecided.
+// Settled: Galloway Getaways is NOT VAT registered. There is no VAT on our
+// commission and no VAT number of ours anywhere — not on receipts, not in the
+// email footer, not in config. Everything here is about a SUPPLIER's own VAT.
+//
+// A supplier's price already includes their VAT by law, so VAT is never added on
+// top of a price or as an extra line in a total — the guest pays exactly the
+// price shown. Where a registered supplier's receipt shows VAT it only BREAKS
+// the price already paid into net + VAT + total (vatBreakdown below), so a
+// business guest can reclaim it; the gross never changes.
+export const UK_VAT_RATE = 0.20;
+
+// Split a VAT-inclusive gross into the net and the VAT within it. VAT is gross −
+// net, so the three figures always add to the penny and the "total" printed is
+// exactly what the guest paid.
+export function vatBreakdown(gross: number | string | null | undefined): { net: number; vat: number; gross: number } {
+    const g = Math.round((Number(gross) || 0) * 100) / 100;
+    const net = Math.round((g / (1 + UK_VAT_RATE)) * 100) / 100;
+    const vat = Math.round((g - net) * 100) / 100;
+    return { net, vat, gross: g };
+}
 
 export interface VatSettings {
     registered: boolean;
@@ -104,12 +123,30 @@ function escapeHtml(value: string): string {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// The same "Supplied by" for a receipt email (experience orders): one line under
-// the body. '' — nothing at all — when the supplier isn't VAT registered.
-export function supplierVatHtml(row: { supplier_vat_number?: string | null; supplier_vat_name?: string | null } | null | undefined): string {
+// The supplier block for a receipt email, from the snapshot plus the gross the
+// guest paid. '' — nothing at all — when the supplier isn't VAT registered. The
+// price already includes VAT, so this only breaks `gross` into net + VAT @20% +
+// total so a business guest can reclaim it; nothing is added.
+export function supplierVatHtml(
+    row: { supplier_vat_number?: string | null; supplier_vat_name?: string | null } | null | undefined,
+    gross?: number | string | null,
+): string {
     const supplier = supplierFromSnapshot(row);
     if (!supplier) return '';
-    return '<p style="margin:16px 0 0;font-size:13px;color:#6b7280;">Supplied by <strong style="color:#111827;">'
-        + escapeHtml(supplier.name) + '</strong> &middot; VAT number ' + escapeHtml(supplier.vatNumber)
-        + '. Galloway Getaways takes payment on their behalf.</p>';
+    const b = vatBreakdown(gross);
+    const money = (n: number) => '&pound;' + n.toFixed(2);
+    const line = (label: string, value: number, strong = false) =>
+        '<tr>'
+        + '<td style="padding:3px 0;font-size:13px;color:' + (strong ? '#111827' : '#6b7280') + ';' + (strong ? 'font-weight:600;' : '') + '">' + label + '</td>'
+        + '<td style="padding:3px 0;font-size:13px;text-align:right;color:' + (strong ? '#111827' : '#6b7280') + ';' + (strong ? 'font-weight:600;' : '') + '">' + money(value) + '</td>'
+        + '</tr>';
+    return '<div style="margin:16px 0 0;padding:14px 16px;border:1px solid #e5e7eb;border-radius:10px;">'
+        + '<div style="font-size:13px;color:#6b7280;">Supplied by <strong style="color:#111827;">'
+        + escapeHtml(supplier.name) + '</strong> &middot; VAT number ' + escapeHtml(supplier.vatNumber) + '</div>'
+        + '<div style="margin-top:8px;font-size:12px;color:#9ca3af;">This price includes VAT at 20%</div>'
+        + '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:2px;">'
+        + line('Net', b.net) + line('VAT (20%)', b.vat) + line('Total', b.gross, true)
+        + '</table>'
+        + '<div style="margin-top:8px;font-size:13px;color:#6b7280;">Galloway Getaways takes payment on their behalf.</div>'
+        + '</div>';
 }

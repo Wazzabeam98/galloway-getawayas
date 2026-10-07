@@ -509,7 +509,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                     )}
                                 </div>
 
-                                <SupplierVat row={booking} />
+                                <SupplierVat row={booking} gross={payTotal} />
 
                                 {booking.status === 'cancelled' ? (
                                     <div className="mt-4">

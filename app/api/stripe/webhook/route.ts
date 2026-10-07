@@ -719,7 +719,7 @@ export async function POST(request: Request) {
                                         + (slotOrder.price != null
                                             ? '<p>You paid £' + Number(slotOrder.price).toFixed(2) + '.</p>' : '')
                                         + button(viewUrl, 'View your booking')
-                                        + supplierVatHtml(slotOrder),
+                                        + supplierVatHtml(slotOrder, Number(slotOrder.price || 0)),
                                         'You’re receiving this because you booked an experience on Galloway Getaways.',
                                         undefined, NEUTRAL_SUBTITLE
                                     )
