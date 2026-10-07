@@ -156,38 +156,54 @@ export function durationLabel(mins: number): string {
 // takeover with the brand and a close X, a thin progress bar, one centred
 // question at a time, and Back / Next at the foot. One question per screen is
 // what keeps it calm — the same register as sign-up.
-export function WizardShell({ step, total, title, subtitle, onClose, onBack, onNext, nextLabel = 'Next', nextDisabled, children }: {
-    step: number; // 1-based
-    total: number;
+//
+// single: ONE screen for one thing — the experience editor's sheets. The close
+// X moves to the top left (or `leading`, e.g. a back arrow), `trailing` sits
+// top right (the Photos +), there's no progress bar and no Back, and `footer`
+// (the sheet's Save, bottom right) replaces Next. So "What's it called?" looks
+// the same whether adding or editing.
+export function WizardShell({ step = 1, total = 1, title, subtitle, onClose, onBack, onNext, nextLabel = 'Next', nextDisabled, children, single, footer, leading, trailing, label }: {
+    step?: number; // 1-based
+    total?: number;
     title: string;
     subtitle?: string;
     onClose: () => void;
     onBack?: () => void;
-    onNext: () => void;
+    onNext?: () => void;
     nextLabel?: string;
     nextDisabled?: boolean;
     children: React.ReactNode;
+    single?: boolean;
+    footer?: React.ReactNode;
+    leading?: React.ReactNode;
+    trailing?: React.ReactNode;
+    label?: string;
 }) {
     const pct = Math.round((step / Math.max(1, total)) * 100);
+    const close = (
+        <button type="button" onClick={onClose} aria-label="Close"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition">
+            <X className="h-5 w-5" />
+        </button>
+    );
     return (
-        <div className="fixed inset-0 z-[70] flex flex-col bg-white">
+        <div className={'fixed inset-0 z-[70] flex flex-col bg-white'} {...(single ? { role: 'dialog', 'aria-modal': true, 'aria-label': label || title } : {})}>
             <div className="shrink-0 border-b border-slate-100 px-4 sm:px-8">
                 <div className="flex h-16 items-center justify-between gap-3">
-                    <span className="w-9" aria-hidden />
+                    {single ? <span className="flex w-9 justify-start">{leading || close}</span> : <span className="w-9" aria-hidden />}
                     <span className="text-sm font-bold tracking-tight text-slate-900">Galloway Getaways</span>
-                    <button type="button" onClick={onClose} aria-label="Close"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition">
-                        <X className="h-5 w-5" />
-                    </button>
+                    {single ? <span className="flex w-9 justify-end">{trailing}</span> : close}
                 </div>
             </div>
-            {/* Progress bar */}
-            <div className="h-1 w-full shrink-0 bg-slate-100">
-                <div className="h-full bg-emerald-600 transition-[width] duration-300 ease-out" style={{ width: `${pct}%` }}
-                    role="progressbar" aria-valuenow={step} aria-valuemin={1} aria-valuemax={total} aria-label={`Step ${step} of ${total}`} />
-            </div>
+            {/* Progress bar — the stepped flow only */}
+            {!single && (
+                <div className="h-1 w-full shrink-0 bg-slate-100">
+                    <div className="h-full bg-emerald-600 transition-[width] duration-300 ease-out" style={{ width: `${pct}%` }}
+                        role="progressbar" aria-valuenow={step} aria-valuemin={1} aria-valuemax={total} aria-label={`Step ${step} of ${total}`} />
+                </div>
+            )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto" data-sheet-scroll>
                 <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-6 py-8 sm:px-10">
                     <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">{title}</h2>
                     {subtitle && <p className="mt-2 text-center text-sm text-slate-500 [text-wrap:balance]">{subtitle}</p>}
@@ -195,6 +211,9 @@ export function WizardShell({ step, total, title, subtitle, onClose, onBack, onN
                 </div>
             </div>
 
+            {single ? (footer ? (
+                <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8">{footer}</div>
+            ) : null) : (
             <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8">
                 {onBack ? (
                     <button type="button" onClick={onBack} className="text-sm font-semibold text-slate-700 underline hover:text-slate-900">Back</button>
@@ -205,6 +224,47 @@ export function WizardShell({ step, total, title, subtitle, onClose, onBack, onN
                     {nextLabel}
                 </button>
             </div>
+            )}
+        </div>
+    );
+}
+
+// The add flow's Next / the question sheet's Save: the wizard's own button.
+export const wizardPrimaryCls = (disabled?: boolean) => 'rounded-full px-7 py-2.5 text-sm font-semibold transition '
+    + (disabled ? 'cursor-not-allowed bg-slate-200 text-slate-400' : 'bg-emerald-700 text-white hover:bg-emerald-800');
+
+// The add flow's big one-line answer — "What's it called?" — used by the add
+// flow and the edit sheet alike.
+export function BigTextInput({ value, onChange, placeholder, ariaLabel, maxLength = 80, autoFocus }: {
+    value: string; onChange: (v: string) => void; placeholder?: string; ariaLabel: string; maxLength?: number; autoFocus?: boolean;
+}) {
+    return (
+        <input autoFocus={autoFocus} aria-label={ariaLabel} value={value} maxLength={maxLength} placeholder={placeholder}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full border-0 border-b-2 border-slate-200 bg-transparent pb-3 text-center text-2xl font-semibold text-slate-900 placeholder:text-slate-300 focus:border-emerald-600 focus:outline-none" />
+    );
+}
+
+// The wizard's text box for a sentence or two — larger text, roomy.
+export const wizardAreaCls = 'w-full rounded-2xl border-2 border-slate-200 p-4 text-base text-slate-900 placeholder:text-slate-300 focus:border-emerald-600 focus:outline-none';
+
+// Large choice tiles — the wizard's selection style, for picking one of a few.
+export function ChoiceTiles({ options, value, onChange, cols = 2 }: {
+    options: { value: string; label: string; hint?: string }[]; value: string; onChange: (v: string) => void; cols?: 1 | 2 | 3;
+}) {
+    return (
+        <div role="radiogroup" className={'grid gap-3 ' + (cols === 1 ? 'grid-cols-1' : cols === 3 ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2')}>
+            {options.map((o) => {
+                const on = value === o.value;
+                return (
+                    <button key={o.value} type="button" role="radio" aria-checked={on} onClick={() => onChange(o.value)}
+                        className={'rounded-2xl border-2 bg-white px-4 py-5 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
+                            + (on ? 'border-emerald-600 bg-emerald-50/60 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
+                        <span className="block text-base font-semibold text-slate-900">{o.label}</span>
+                        {o.hint && <span className="mt-1 block text-sm text-slate-500">{o.hint}</span>}
+                    </button>
+                );
+            })}
         </div>
     );
 }

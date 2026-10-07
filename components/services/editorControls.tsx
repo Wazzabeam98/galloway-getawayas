@@ -2,6 +2,8 @@
 
 import { Minus, Plus } from 'lucide-react';
 import { durationWords } from '@/lib/durationWords';
+import { useQuestionSheets } from '@/components/listing-editor/questionSheets';
+import { ChoiceTiles, NumberStepper } from './wizardKit';
 
 // The shared pick-from-options / stepper controls for the guest-experience
 // surfaces — the listing editor and the diary scheduler both use these, so a
@@ -12,6 +14,8 @@ import { durationWords } from '@/lib/durationWords';
 export function OptionPills({ options, value, onChange }: {
     options: { value: string; label: string }[]; value: string; onChange: (v: string) => void;
 }) {
+    // In a question sheet, the wizard's large choice tiles.
+    if (useQuestionSheets()) return <ChoiceTiles options={options} value={value} onChange={onChange} cols={options.length > 4 ? 3 : 2} />;
     return (
         <div className="flex flex-wrap gap-2">
             {options.map((o) => {
@@ -33,6 +37,14 @@ export function OptionPills({ options, value, onChange }: {
 export function Stepper({ value, onChange, min = 1, max = 60 }: {
     value: number; onChange: (v: number) => void; min?: number; max?: number;
 }) {
+    // In a question sheet, the wizard's big − and + counter.
+    if (useQuestionSheets()) {
+        return (
+            <div className="flex justify-center">
+                <NumberStepper value={String(value)} onChange={(v) => onChange(Number(v))} min={min} max={max} size="lg" solid />
+            </div>
+        );
+    }
     return (
         <div className="flex items-center gap-4">
             <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min}

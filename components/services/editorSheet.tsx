@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { saved } from '@/components/listing-editor/EditorPanel';
+import { useQuestionSheets } from '@/components/listing-editor/questionSheets';
+import { wizardPrimaryCls } from './wizardKit';
 
 // Small shared pieces for the experience editor's sheets — a sentence-case field
 // label (not the uppercase the reused holiday cards use), the Cancel/Save footer,
@@ -11,10 +13,12 @@ import { saved } from '@/components/listing-editor/EditorPanel';
 export const inputCls = 'w-full rounded-xl border border-slate-300 p-3 text-sm';
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+    // In a question sheet the question is the label: no grey hint under it.
+    const question = useQuestionSheets();
     return (
         <label className="block">
-            <span className="block text-sm font-semibold text-slate-800">{label}</span>
-            {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
+            <span className={'block font-semibold text-slate-800 ' + (question ? 'text-base' : 'text-sm')}>{label}</span>
+            {hint && !question && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
             <div className="mt-1.5">{children}</div>
         </label>
     );
@@ -23,6 +27,14 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 export function SheetFooter({ busy, onCancel, onSave, disabled, disabledLabel }: {
     busy: boolean; onCancel: () => void; onSave: () => void; disabled?: boolean; disabledLabel?: string;
 }) {
+    // A question sheet: Save bottom right; the close X top left is the cancel.
+    if (useQuestionSheets()) {
+        return (
+            <button type="button" onClick={onSave} disabled={busy || disabled} className={wizardPrimaryCls(busy || disabled)}>
+                {busy ? 'Saving…' : (disabled && disabledLabel) ? disabledLabel : 'Save'}
+            </button>
+        );
+    }
     return (
         <div className="flex items-center justify-between gap-3">
             <button type="button" onClick={onCancel} className="text-sm font-semibold text-slate-900 underline">Cancel</button>

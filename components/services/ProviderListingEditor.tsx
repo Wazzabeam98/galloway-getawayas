@@ -11,21 +11,23 @@ import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_C
 import AutoTextarea from '@/components/AutoTextarea';
 import { cleanAmountInput, amountForBox } from '@/lib/amountInput';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
-import { AddressCard, LocationSharingCard } from '@/components/listing-editor/LocationCards';
+import { addressSummary } from '@/components/listing-editor/LocationCards';
+import { listingLocation } from '@/lib/places';
 import PropertyMap from '@/components/PropertyMap';
 import PhotosEditor, { PhotosCard, type SavePhotos } from '@/components/listing-editor/PhotosEditor';
 import PhoneSectionTabs, { goToEditorSection } from '@/components/listing-editor/PhoneSectionTabs';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
-import { NumberStepper } from './wizardKit';
+import { NumberStepper, BigTextInput, ChoiceTiles, wizardAreaCls } from './wizardKit';
+import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
 import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
 import { AddItemFlow, ItemDetailCard, rowFromItem, uploadImage, type MenuRow, type ItemCtx } from './ExperienceItemEditor';
 import { SinglePhotoSheet } from './SinglePhotoSheet';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { savePaused, TakenDownBanner, ListingStatusSection } from '@/components/services/ListingPauseControl';
+import { savePaused, TakenDownBanner } from '@/components/services/ListingPauseControl';
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
     ShoppingBag, MapPin, CalendarRange, Sparkles, RotateCcw,
-    Eye, EyeOff, ExternalLink, Check,
+    Eye, EyeOff, ExternalLink, Check, Trash2,
 } from 'lucide-react';
 
 // The guest-experience listing editor, on the same shape as the holiday-let
@@ -84,6 +86,7 @@ const LEAD_TIME_OPTIONS: { days: number; label: string }[] = [
 const leadLabel = (days: number) => LEAD_TIME_OPTIONS.find((o) => o.days === days)?.label || `${days} days`;
 
 const TURNAROUND_OPTIONS = [0, 15, 30, 45, 60];
+const bigAreaCls = wizardAreaCls;
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // ── Basics & guests ──────────────────────────────────────────────────────────
@@ -93,10 +96,8 @@ function TitleCard({ value, onSave }: { value: string; onSave: (v: string) => un
         <>
             <EditorCard title="Title" summary={value.trim() || 'Add a title'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Title" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <Field label="Listing title" hint="The name at the top of your listing.">
-                        <input className={inputCls} value={c.draft} maxLength={80} onChange={(e) => c.setDraft(e.target.value)} aria-label="Listing title" />
-                    </Field>
+                <EditorPanel title="What’s your experience called?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <BigTextInput value={c.draft} onChange={c.setDraft} ariaLabel="Listing title" placeholder="e.g. Sunrise yoga above the harbour" />
                 </EditorPanel>
             )}
         </>
@@ -110,11 +111,9 @@ function DescriptionExpCard({ value, onSave }: { value: string; onSave: (v: stri
         <>
             <EditorCard title="Description" summary={value.trim() || 'Add a description'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Description" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <Field label="In a sentence, what is it?">
-                        <AutoTextarea className={inputCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)}
-                            placeholder="A wood-fired lakeside sauna with cold-water dips between rounds." />
-                    </Field>
+                <EditorPanel title="In a sentence, what is it?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <AutoTextarea className={bigAreaCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)} aria-label="Description"
+                        placeholder="A wood-fired lakeside sauna with cold-water dips between rounds." />
                 </EditorPanel>
             )}
         </>
@@ -133,15 +132,14 @@ function FlowCard({ phases, headings, onSave }: {
         <>
             <EditorCard title="The flow" summary={summary} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="The flow" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <p className="mb-3 text-xs text-slate-400">Take a guest through it, start to finish. Leave a step blank to skip it.</p>
+                <EditorPanel title="How does it go, start to finish?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <div className="space-y-3">
                         {headings.map((h, i) => (
                             <div key={h.title} className="flex gap-3">
                                 <div className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-emerald-700 text-xs font-bold text-white">{i + 1}</div>
                                 <div className="flex-1">
-                                    <div className="text-sm font-semibold text-slate-900">{h.title}</div>
-                                    <AutoTextarea className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm" rows={2}
+                                    <div className="text-base font-semibold text-slate-900">{h.title}</div>
+                                    <AutoTextarea className={'mt-1 ' + bigAreaCls} rows={2}
                                         value={c.draft[i]} onChange={(e) => { const next = [...c.draft] as [string, string, string]; next[i] = e.target.value; c.setDraft(next); }}
                                         placeholder={ph[i]} />
                                 </div>
@@ -160,10 +158,8 @@ function MaxCapacityCard({ isSlot, value, onSave }: { isSlot: boolean; value: nu
         <>
             <EditorCard title="Maximum capacity" summary={`Up to ${value} ${value === 1 ? 'guest' : 'guests'}`} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Maximum capacity" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <Field label="Maximum capacity" hint={isSlot ? 'The most people a session can take, as a default — a per-person offering can set its own under What you offer.' : 'The most people you’ll take for one booking.'}>
-                        <Stepper value={c.draft} onChange={c.setDraft} min={1} max={60} />
-                    </Field>
+                <EditorPanel title={isSlot ? 'How many people can a session take?' : 'How many guests can you take?'} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <Stepper value={c.draft} onChange={c.setDraft} min={1} max={60} />
                 </EditorPanel>
             )}
         </>
@@ -177,11 +173,9 @@ function MinimumAgeCard({ minAge, onSave }: { minAge: string; onSave: (v: string
         <>
             <EditorCard title="Minimum age" summary={minAge ? `${minAge}+` : 'No minimum'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Minimum age" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <Field label="The youngest a guest can be to take part">
-                        <OptionPills options={[{ value: '', label: 'No minimum' }, { value: '12', label: '12+' }, { value: '16', label: '16+' }, { value: '18', label: '18+' }, { value: '21', label: '21+' }]}
-                            value={c.draft} onChange={c.setDraft} />
-                    </Field>
+                <EditorPanel title="How old do guests need to be?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <OptionPills options={[{ value: '', label: 'No minimum' }, { value: '12', label: '12+' }, { value: '16', label: '16+' }, { value: '18', label: '18+' }, { value: '21', label: '21+' }]}
+                        value={c.draft} onChange={c.setDraft} />
                 </EditorPanel>
             )}
         </>
@@ -195,11 +189,9 @@ function ActivityLevelCard({ activity, onSave }: { activity: string; onSave: (v:
         <>
             <EditorCard title="Activity level" summary={label} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Activity level" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <Field label="How much effort it takes">
-                        <OptionPills options={[{ value: 'gentle', label: 'Gentle' }, { value: 'moderate', label: 'Moderate' }, { value: 'challenging', label: 'Challenging' }]}
-                            value={c.draft} onChange={(v) => c.setDraft(c.draft === v ? '' : v)} />
-                    </Field>
+                <EditorPanel title="How active is it?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <OptionPills options={[{ value: 'gentle', label: 'Gentle' }, { value: 'moderate', label: 'Moderate' }, { value: 'challenging', label: 'Challenging' }]}
+                        value={c.draft} onChange={(v) => c.setDraft(c.draft === v ? '' : v)} />
                 </EditorPanel>
             )}
         </>
@@ -212,10 +204,8 @@ function WhatToBringCard({ whatToBring, onSave }: { whatToBring: string; onSave:
         <>
             <EditorCard title="What to bring" summary={whatToBring.trim() || 'Nothing listed'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="What to bring" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <Field label="What a guest should bring">
-                        <AutoTextarea className={inputCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)} placeholder="Warm layers, sturdy shoes, a towel…" />
-                    </Field>
+                <EditorPanel title="What should guests bring?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <AutoTextarea className={bigAreaCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)} aria-label="What to bring" placeholder="Warm layers, sturdy shoes, a towel…" />
                 </EditorPanel>
             )}
         </>
@@ -230,19 +220,19 @@ function CancellationCard({ hours, noRefund, onSave }: { hours: number; noRefund
         <>
             <EditorCard title="Cancellation policy" summary={current.label} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Cancellation policy" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <p className="mb-3 text-xs text-slate-500">After the window it’s your call. Refunds always exclude the Galloway Getaways service fee.</p>
+                <EditorPanel title="What’s your cancellation policy?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <div className="space-y-3">
                         {EXPERIENCE_CANCELLATION_OPTIONS.map((o) => {
                             const on = draftKey === o.key;
                             return (
                                 <button key={o.key} type="button" onClick={() => c.setDraft({ hours: o.hours, noRefund: !!o.noRefund })}
-                                    className={`w-full rounded-2xl border-2 p-4 text-left transition ${on ? 'border-emerald-700 bg-emerald-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                    role="radio" aria-checked={on}
+                                    className={`w-full rounded-2xl border-2 p-5 text-left transition ${on ? 'border-emerald-600 bg-emerald-50/60 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}>
                                     <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-slate-900">{o.label}</span>
+                                        <span className="text-base font-semibold text-slate-900">{o.label}</span>
                                         {on && <Check className="h-4 w-4 text-emerald-700" />}
                                     </div>
-                                    <p className="mt-0.5 text-xs text-slate-500">{o.blurb}</p>
+                                    <p className="mt-1 text-sm text-slate-500">{o.blurb}</p>
                                 </button>
                             );
                         })}
@@ -259,10 +249,8 @@ function DietaryCard({ dietaryNote, onSave }: { dietaryNote: string; onSave: (v:
         <>
             <EditorCard title="Food & dietary" summary={dietaryNote.trim() || 'Add what you cater for'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Food & dietary" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <Field label="Dietary note" hint="What you can cater for.">
-                        <AutoTextarea className={inputCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)} placeholder="Vegetarian and gluten-free on request; not a nut-free kitchen." />
-                    </Field>
+                <EditorPanel title="What dietary needs can you cater for?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <AutoTextarea className={bigAreaCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)} aria-label="Dietary note" placeholder="Vegetarian and gluten-free on request; not a nut-free kitchen." />
                 </EditorPanel>
             )}
         </>
@@ -275,7 +263,7 @@ function HorizonCard({ horizonDays, onSave }: { horizonDays: number; onSave: (v:
         <>
             <EditorCard title="How far ahead guests can book" summary={`${horizonLabel(horizonDays).toLowerCase()} ahead`} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="How far ahead guests can book" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="How far ahead can guests book?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <OptionPills options={BOOKING_HORIZON_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
                         value={String(c.draft)} onChange={(v) => c.setDraft(Number(v))} />
                 </EditorPanel>
@@ -290,7 +278,7 @@ function NoticeCard({ leadDays, onSave }: { leadDays: number; onSave: (v: number
         <>
             <EditorCard title="Notice needed" summary={leadLabel(leadDays)} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Notice needed" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="How much notice do you need?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <OptionPills options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
                         value={String(c.draft)} onChange={(v) => c.setDraft(Number(v))} />
                 </EditorPanel>
@@ -359,7 +347,7 @@ function AmenitiesPhoneCard({ current, onSave }: { current: AmenityDraft; onSave
         <>
             <EditorCard title="Amenities" summary={amenitiesSummary(current.amenities)} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Amenities" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="What’s included?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <AmenityTiles draft={c.draft} set={c.setDraft} />
                 </EditorPanel>
             )}
@@ -383,16 +371,15 @@ function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onS
         <>
             <EditorCard title={title} summary={openDays.length ? openDays.join(', ') : 'No hours set'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title={title} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="space-y-5">
+                <EditorPanel title={isSlot ? 'When can guests book?' : 'When are you open?'} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <div className="space-y-6">
                         <div>
-                            <span className="block text-sm font-semibold text-slate-800">Weekly hours</span>
-                            <p className="mt-0.5 text-xs text-slate-400">A specific day off is set in your diary.</p>
-                            <div className="mt-2 space-y-1.5">
+                            <span className="block text-base font-semibold text-slate-800">Weekly hours</span>
+                            <div className="mt-2 space-y-2">
                                 {DAY_NAMES.map((name, d) => (
                                     <div key={d} className="flex items-center gap-3">
-                                        <button type="button" onClick={() => setHour(d, { on: !c.draft.hours[d].on })}
-                                            className={`w-16 rounded-lg border px-2 py-1.5 text-sm font-medium ${c.draft.hours[d].on ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-400'}`}>{name}</button>
+                                        <button type="button" onClick={() => setHour(d, { on: !c.draft.hours[d].on })} aria-pressed={c.draft.hours[d].on}
+                                            className={`w-20 rounded-xl border-2 px-2 py-2.5 text-base font-semibold ${c.draft.hours[d].on ? 'border-emerald-600 bg-emerald-50/60 text-slate-900' : 'border-slate-200 text-slate-400'}`}>{name}</button>
                                         {c.draft.hours[d].on ? (
                                             <>
                                                 <input type="time" value={c.draft.hours[d].open} onChange={(e) => setHour(d, { open: e.target.value })} className="rounded-lg border border-slate-300 p-1.5 text-sm" />
@@ -425,7 +412,6 @@ function AvailabilityCard({ isSlot, hours, slotLength, turnaround, leadDays, onS
                                 <CalendarRange className="mt-0.5 h-5 w-5 flex-none text-slate-500" />
                                 <div>
                                     <div className="text-sm font-semibold text-slate-900">Blocking a specific day, or part of one?</div>
-                                    <p className="text-xs text-slate-500">Those are exceptions to your weekly hours — set them in your diary.</p>
                                 </div>
                             </div>
                             <span className="flex-none text-sm font-semibold text-emerald-700">Open diary →</span>
@@ -469,7 +455,7 @@ function HowGuestsReachCard({ current, onSave }: { current: WhereExtra; onSave: 
         <>
             <EditorCard title="How guests reach you" summary={needsAreaPrompt ? 'Pick at least one area you travel to' : summary} onClick={start} />
             {open && (
-                <EditorPanel title="How guests reach you" onClose={() => setOpen(false)}
+                <EditorPanel title="How do guests reach you?" onClose={() => setOpen(false)}
                     footer={<SheetFooter busy={busy} onCancel={() => setOpen(false)} onSave={save} />}>
                     <div className="space-y-4">
                         <Field label="How guests get it">
@@ -480,17 +466,17 @@ function HowGuestsReachCard({ current, onSave }: { current: WhereExtra; onSave: 
                                     { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
                                 ].map((o) => (
                                     <button key={o.key} type="button" onClick={() => { setError(''); setDraft({ ...d, fulfilment: o.key }); }}
-                                        className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${d.fulfilment === o.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'}`}>
-                                        <div className="font-semibold text-slate-900">{o.label}</div>
-                                        <div className="text-xs text-slate-500">{o.note}</div>
+                                        role="radio" aria-checked={d.fulfilment === o.key}
+                                        className={`w-full rounded-2xl border-2 p-5 text-left transition ${d.fulfilment === o.key ? 'border-emerald-600 bg-emerald-50/60 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}>
+                                        <div className="text-base font-semibold text-slate-900">{o.label}</div>
+                                        <div className="mt-1 text-sm text-slate-500">{o.note}</div>
                                     </button>
                                 ))}
                             </div>
                         </Field>
                         {travels && (
                             <div>
-                                <span className="block text-sm font-semibold text-slate-800">Regions you travel to</span>
-                                <p className="mt-0.5 text-xs text-slate-400">Pick the parts of Dumfries &amp; Galloway you’ll come to.</p>
+                                <span className="block text-base font-semibold text-slate-800">Regions you travel to</span>
                                 {error && <p className="mt-1 text-sm font-semibold text-rose-600">{error}</p>}
                                 <div className="mt-2 space-y-2">
                                     {GUEST_REGIONS.map((rg) => {
@@ -539,7 +525,7 @@ function HostPhotoCard({ supabase, headshot, onSave }: { supabase: SupabaseClien
         <>
             <EditorCard title="Your photo" summary={headshot ? 'Photo added' : 'None yet'} onClick={() => setOpen(true)} />
             {open && (
-                <SinglePhotoSheet title="Your photo" image={headshot} round onClose={() => setOpen(false)}
+                <SinglePhotoSheet title="Add a photo of yourself" image={headshot} round onClose={() => setOpen(false)}
                     upload={(file) => uploadImage(supabase, file, 'headshot')}
                     onSave={onSave} />
             )}
@@ -547,16 +533,16 @@ function HostPhotoCard({ supabase, headshot, onSave }: { supabase: SupabaseClien
     );
 }
 
-function HostTextCard({ title, value, empty, placeholder, multiline, onSave }: { title: string; value: string; empty: string; placeholder?: string; multiline?: boolean; onSave: (v: string) => unknown }) {
+function HostTextCard({ title, question, value, empty, placeholder, multiline, onSave }: { title: string; question: string; value: string; empty: string; placeholder?: string; multiline?: boolean; onSave: (v: string) => unknown }) {
     const c = useCardSheet(value, onSave);
     return (
         <>
             <EditorCard title={title} summary={value.trim() || empty} onClick={c.start} />
             {c.open && (
-                <EditorPanel title={title} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title={question} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     {multiline
-                        ? <AutoTextarea className={inputCls} rows={3} value={c.draft} placeholder={placeholder} onChange={(e) => c.setDraft(e.target.value)} />
-                        : <input className={inputCls} value={c.draft} placeholder={placeholder} onChange={(e) => c.setDraft(e.target.value)} />}
+                        ? <AutoTextarea className={bigAreaCls} rows={3} value={c.draft} placeholder={placeholder} aria-label={title} onChange={(e) => c.setDraft(e.target.value)} />
+                        : <BigTextInput value={c.draft} placeholder={placeholder} ariaLabel={title} onChange={c.setDraft} />}
                 </EditorPanel>
             )}
         </>
@@ -569,7 +555,7 @@ function HostYearsCard({ years, onSave }: { years: string; onSave: (v: string) =
         <>
             <EditorCard title="Years of experience" summary={years.trim() ? `${years} years` : 'Not added'} onClick={c.start} />
             {c.open && (
-                <EditorPanel title="Years of experience" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                <EditorPanel title="How many years’ experience do you have?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <div className="flex justify-center py-4">
                         <NumberStepper value={c.draft} onChange={c.setDraft} min={0} max={70} suggestion={5} size="lg" />
                     </div>
@@ -580,6 +566,80 @@ function HostYearsCard({ years, onSave }: { years: string; onSave: (v: string) =
 }
 
 // A "+ Add an offering" launcher that opens the stepped add flow.
+// Location and status, the experience editor's own: the holiday-let editor's
+// Address / Location sharing cards stay as they are, these ask the question.
+const bigFieldCls = 'mt-1 w-full rounded-2xl border-2 border-slate-200 px-4 py-3.5 text-base text-slate-900 placeholder:text-slate-300 focus:border-emerald-600 focus:outline-none';
+
+function AddressQuestionCard({ town, street, postcode, onSave }: { town: string; street: string; postcode: string; onSave: (town: string, street: string, postcode: string) => unknown }) {
+    const c = useCardSheet({ town, street, postcode }, (d) => onSave(d.town, d.street, d.postcode));
+    const set = (patch: Partial<typeof c.draft>) => c.setDraft({ ...c.draft, ...patch });
+    return (
+        <>
+            <EditorCard title="Address" summary={addressSummary(street, town, postcode) || 'Add the address'} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="Where is it?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <div className="space-y-5">
+                        <label className="block text-base font-semibold text-slate-800">Town
+                            <input className={bigFieldCls} value={c.draft.town} onChange={(e) => set({ town: e.target.value })} placeholder="e.g. Kirkcudbright" />
+                        </label>
+                        <label className="block text-base font-semibold text-slate-800">Street address (private until booked)
+                            <input className={bigFieldCls} value={c.draft.street} onChange={(e) => set({ street: e.target.value })} placeholder="e.g. 57 St Cuthbert Street" />
+                        </label>
+                        <label className="block text-base font-semibold text-slate-800">Postcode (private until booked)
+                            <input className={bigFieldCls} value={c.draft.postcode} onChange={(e) => set({ postcode: e.target.value })} placeholder="e.g. DG6 4JS" />
+                        </label>
+                        <p className="text-sm text-slate-600">Guests will see <span className="font-semibold text-slate-900">{listingLocation(c.draft.town) || 'your town'}</span>.</p>
+                    </div>
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+function LocationSharingQuestionCard({ precise, onSave }: { precise: boolean; onSave: (precise: boolean) => unknown }) {
+    const c = useCardSheet(precise, onSave);
+    return (
+        <>
+            <EditorCard title="Location sharing" summary={precise ? 'Precise location shown' : 'Approximate location shown'} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="Show guests the exact location?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <ChoiceTiles cols={1} value={c.draft ? 'precise' : 'approx'} onChange={(v) => c.setDraft(v === 'precise')}
+                        options={[
+                            { value: 'approx', label: 'Approximate', hint: 'A rough area on the map until they’ve booked.' },
+                            { value: 'precise', label: 'Exact pin', hint: 'The exact spot on the map. The address still waits for a booking.' },
+                        ]} />
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+// Listing status as a card like the rest: "Is your listing live?". When we took
+// it down the provider can't lift it, so the sheet says so with nothing to save.
+function ListingStatusCard({ paused, adminHidden, onSave }: { paused: boolean; adminHidden: boolean; onSave: (paused: boolean) => Promise<boolean> }) {
+    const c = useCardSheet(paused, async (v) => (v === paused ? true : onSave(v)));
+    const summary = adminHidden ? 'Taken down by us' : paused ? 'Taken down — guests can’t find or book it' : 'Live and bookable';
+    return (
+        <>
+            <EditorCard title="Listing status" summary={summary} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="Is your listing live?" onClose={c.close}
+                    footer={adminHidden ? undefined : <SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    {adminHidden ? (
+                        <p className="text-base text-slate-700">We’ve taken your listing down, so only we can put it back up. If you think this is a mistake, reply to any email from us and we’ll look at it.</p>
+                    ) : (
+                        <ChoiceTiles cols={1} value={c.draft ? 'down' : 'live'} onChange={(v) => c.setDraft(v === 'down')}
+                            options={[
+                                { value: 'live', label: 'Live', hint: 'Guests can find and book it. Putting it back up is instant, with no review.' },
+                                { value: 'down', label: 'Taken down', hint: 'It stops taking new bookings and leaves the marketplace. Bookings you’ve confirmed still stand.' },
+                            ]} />
+                    )}
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
 function AddItemLauncher({ ctx, onAdd }: { ctx: ItemCtx; onAdd: (row: MenuRow) => unknown }) {
     const [open, setOpen] = useState(false);
     return (
@@ -723,6 +783,32 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const addItem = (row: MenuRow) => saveMenu([...menu, row]);
     const deleteItemAt = (i: number) => saveMenu(menu.filter((_, j) => j !== i));
 
+    // What you offer's Edit mode: tick offerings, delete them in one save. It
+    // won't take away the last bookable one (or leave none at all) — there'd be
+    // nothing for a guest to book.
+    const [selecting, setSelecting] = useState(false);
+    const [picked, setPicked] = useState<Set<number>>(new Set());
+    const [confirmBulk, setConfirmBulk] = useState(false);
+    const [bulkBusy, setBulkBusy] = useState(false);
+    const bookable = (r: MenuRow) => r.active && !!r.name.trim() && Number(r.price) > 0;
+    const keptRows = menu.filter((_, j) => !picked.has(j));
+    const bulkRefusal = keptRows.length === 0
+        ? 'You can’t delete every offering — guests would have nothing to book. Keep at least one.'
+        : menu.some(bookable) && !keptRows.some(bookable)
+            ? 'That would remove every offering guests can book. Keep at least one bookable offering.'
+            : null;
+    const stopSelecting = () => { setSelecting(false); setPicked(new Set()); setConfirmBulk(false); };
+    const togglePicked = (i: number) => setPicked((prev) => { const next = new Set(prev); if (next.has(i)) next.delete(i); else next.add(i); return next; });
+    // Leaving What you offer (desktop's section list) leaves Edit mode too.
+    useEffect(() => { if (active !== 'pricing') stopSelecting(); }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+    const deletePicked = async () => {
+        if (bulkBusy || bulkRefusal) return;
+        setBulkBusy(true);
+        const ok = await saveMenu(keptRows);
+        setBulkBusy(false);
+        if (ok) stopSelecting();
+    };
+
     const savePhotos: SavePhotos = (change) => {
         const before = photosRef.current;
         const next = change(before);
@@ -750,13 +836,14 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         run('amenities', amenitiesPayload({ parking: next })).then((ok) => { if (!ok) setParking(before); });
     };
 
-    async function togglePaused() {
+    async function setPausedTo(next: boolean) {
         setPausing(true);
-        const next = !paused;
         const ok = await savePaused(p.id, next);
         if (ok) setPaused(next);
         setPausing(false);
+        return ok;
     }
+    const togglePaused = () => { setPausedTo(!paused); };
 
     const headings = stepHeadings(p.shape, fulfilment);
     const itemCtx: ItemCtx = { isSlot: p.isSlot, shape: p.shape, fulfilment, minAge, maxGuests, supabase };
@@ -786,11 +873,12 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         { key: 'status', label: 'Listing status', short: 'Status', icon: (paused || p.admin_hidden) ? EyeOff : Eye },
     ];
 
-    const OWN_HEADING = new Set<NavKey>(['photos', 'status']);
-    const sec = (key: NavKey, children: React.ReactNode) => {
+    const OWN_HEADING = new Set<NavKey>(['photos']);
+    const sec = (key: NavKey, children: React.ReactNode, action?: React.ReactNode) => {
         if (!shows(key)) return null;
         const label = SECTIONS.find((s) => s.key === key)?.label;
-        const heading = !OWN_HEADING.has(key) && <h2 className="text-xl font-bold text-slate-900">{label}</h2>;
+        const title = <h2 className="text-xl font-bold text-slate-900">{label}</h2>;
+        const heading = !OWN_HEADING.has(key) && (action ? <div className="flex items-center justify-between gap-3">{title}{action}</div> : title);
         return isPhone
             ? <div data-editor-section={key} className="mt-14 space-y-4 first:mt-0">{heading}{children}</div>
             : <div className="space-y-4">{heading}{children}</div>;
@@ -799,6 +887,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const hasPricedItem = menu.some((r) => r.active && r.name.trim() && Number(r.price) > 0);
 
     return (
+        <QuestionSheetContext.Provider value={true}>
         <div className="mx-auto w-full max-w-5xl px-5 py-8">
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -855,7 +944,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     </>))}
 
                     {sec('photos', (
-                        isPhone ? <PhotosCard photos={photos} savePhotos={savePhotos} /> : <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone={false} />
+                        isPhone ? <PhotosCard photos={photos} savePhotos={savePhotos} question="Show guests what it’s like" /> : <PhotosEditor photos={photos} savePhotos={savePhotos} isPhone={false} />
                     ))}
 
                     {sec('amenities', (
@@ -878,7 +967,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {sec('location', (<>
                         {hasVenue && <PropertyMap variant="host" latitude={p.venue_lat!} longitude={p.venue_lng!} />}
-                        <AddressCard town={town} street={street} postcode={postcode} propertyType=""
+                        <AddressQuestionCard town={town} street={street} postcode={postcode}
                             onSave={(t, st, pc) => runThen('where', wherePayload({ town: t, street: st, postcode: pc }),
                                 () => { setTown(t); setStreet(st); setPostcode(pc); })} />
                         {canTravel && (
@@ -886,7 +975,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 onSave={(d) => runThen('where', wherePayload({ fulfilment: d.fulfilment, deliveryFee: d.deliveryFee, deliveryRadius: d.deliveryRadius, areas: d.areas }),
                                     () => { setFulfilment(d.fulfilment); setDeliveryFee(d.deliveryFee); setDeliveryRadius(d.deliveryRadius); setAreas(d.areas); })} />
                         )}
-                        <LocationSharingCard precise={showPrecise}
+                        <LocationSharingQuestionCard precise={showPrecise}
                             onSave={(v) => runThen('where', wherePayload({ showPrecise: v }), () => setShowPrecise(v))} />
                     </>))}
 
@@ -910,16 +999,23 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         )}
                         {menu.map((row, i) => (
                             <ItemDetailCard key={row.id || `new-${i}`} ctx={itemCtx} row={row}
-                                onSave={(r) => saveItemAt(i, r)} onDelete={() => deleteItemAt(i)} />
+                                onSave={(r) => saveItemAt(i, r)} onDelete={() => deleteItemAt(i)}
+                                selecting={selecting} selected={picked.has(i)} onToggle={() => togglePicked(i)} />
                         ))}
-                        <AddItemLauncher ctx={itemCtx} onAdd={addItem} />
+                        {!selecting && <AddItemLauncher ctx={itemCtx} onAdd={addItem} />}
+                        {selecting && <div className="h-20" aria-hidden />}
                         {!hasHours && (
                             <div className="space-y-4 pt-2">
                                 <NoticeCard leadDays={leadDays} onSave={(v) => runThen('booking', bookingPayload({ leadDays: v }), () => setLeadDays(v))} />
                                 <HorizonCard horizonDays={horizonDays} onSave={(v) => runThen('booking', bookingPayload({ horizonDays: v }), () => setHorizonDays(v))} />
                             </div>
                         )}
-                    </>))}
+                    </>), menu.length > 0 && (
+                        <button type="button" onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+                            className="rounded-full px-3 py-1.5 text-sm font-semibold text-slate-900 underline underline-offset-2 hover:bg-slate-100">
+                            {selecting ? 'Done' : 'Edit'}
+                        </button>
+                    ))}
 
                     {sec('cancellation', (
                         <CancellationCard hours={cancelHours} noRefund={noRefund}
@@ -928,10 +1024,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {sec('host', (<>
                         <HostPhotoCard supabase={supabase} headshot={headshot} onSave={(v) => runThen('about', aboutPayload({ headshot: v }), () => setHeadshot(v))} />
-                        <HostTextCard title="Professional title" value={profTitle} empty="Not added" onSave={(v) => runThen('about', aboutPayload({ profTitle: v }), () => setProfTitle(v))} />
+                        <HostTextCard title="Professional title" question="What’s your professional title?" value={profTitle} empty="Not added" onSave={(v) => runThen('about', aboutPayload({ profTitle: v }), () => setProfTitle(v))} />
                         <HostYearsCard years={years} onSave={(v) => runThen('about', aboutPayload({ years: v }), () => setYears(v))} />
-                        <HostTextCard title="Qualifications" value={quals} empty="Not added" multiline onSave={(v) => runThen('about', aboutPayload({ quals: v }), () => setQuals(v))} />
-                        <HostTextCard title="Recognition" value={recognition} empty="Not added yet" multiline onSave={(v) => runThen('about', aboutPayload({ recognition: v }), () => setRecognition(v))} />
+                        <HostTextCard title="Qualifications" question="What qualifications do you have?" value={quals} empty="Not added" multiline onSave={(v) => runThen('about', aboutPayload({ quals: v }), () => setQuals(v))} />
+                        <HostTextCard title="Recognition" question="Any awards or recognition?" value={recognition} empty="Not added yet" multiline onSave={(v) => runThen('about', aboutPayload({ recognition: v }), () => setRecognition(v))} />
                     </>))}
 
                     {p.isFood && sec('dietary', (
@@ -939,10 +1035,52 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     ))}
 
                     {sec('status', (
-                        <ListingStatusSection paused={paused} adminHidden={p.admin_hidden} pausing={pausing} onToggle={togglePaused} who="guests" />
+                        <ListingStatusCard paused={paused} adminHidden={p.admin_hidden} onSave={setPausedTo} />
                     ))}
                 </div>
             </div>
+
+            {selecting && (
+                <div role="region" aria-label="Selected offerings" className="fixed inset-x-0 bottom-0 z-[60] border-t border-slate-200 bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+                    <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3">
+                        <span className="text-base font-semibold text-slate-900">{picked.size} selected</span>
+                        <div className="flex items-center gap-4">
+                            <button type="button" onClick={stopSelecting} className="text-sm font-semibold text-slate-900 underline underline-offset-2">Cancel</button>
+                            <button type="button" disabled={picked.size === 0} onClick={() => setConfirmBulk(true)}
+                                className="inline-flex items-center gap-1.5 rounded-full bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40">
+                                <Trash2 className="h-4 w-4" /> Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {confirmBulk && (
+                <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4 sm:items-center" onClick={() => setConfirmBulk(false)}>
+                    <div role="alertdialog" aria-modal="true" aria-label={bulkRefusal ? 'Can’t delete these' : `Delete ${picked.size} ${picked.size === 1 ? 'offering' : 'offerings'}?`}
+                        className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                        {bulkRefusal ? (
+                            <>
+                                <div className="text-lg font-bold text-slate-900">Can’t delete these</div>
+                                <p className="mt-2 text-sm text-slate-600">{bulkRefusal}</p>
+                                <div className="mt-6 flex justify-end">
+                                    <button type="button" onClick={() => setConfirmBulk(false)} className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white">OK</button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="text-lg font-bold text-slate-900">Delete {picked.size} {picked.size === 1 ? 'offering' : 'offerings'}?</div>
+                                <p className="mt-2 text-sm text-slate-600">{picked.size === 1 ? 'It comes' : 'They come'} off your listing straight away.</p>
+                                <div className="mt-6 flex items-center justify-end gap-4">
+                                    <button type="button" onClick={() => setConfirmBulk(false)} className="text-sm font-semibold text-slate-900 underline underline-offset-2">Cancel</button>
+                                    <button type="button" disabled={bulkBusy} onClick={deletePicked}
+                                        className="rounded-full bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">{bulkBusy ? 'Deleting…' : 'Delete'}</button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
+        </QuestionSheetContext.Provider>
     );
 }
