@@ -48,6 +48,9 @@ const PROVIDER_WRITABLE = new Set([
 // Everything else on service_providers: the platform sets it, never a browser
 // write. The value is the reason — the decision, in writing. Keep them true.
 const PLATFORM_ONLY: Record<string, string> = {
+    vat_name: 'VAT registration (number + registered name); private to the owner, written/read by /api/account/vat with the service role only, published only via the booking/order supplier snapshot on that guest\'s receipt',
+    vat_number: 'VAT registration (number + registered name); private to the owner, written/read by /api/account/vat with the service role only, published only via the booking/order supplier snapshot on that guest\'s receipt',
+    vat_registered: 'VAT registration (number + registered name); private to the owner, written/read by /api/account/vat with the service role only, published only via the booking/order supplier snapshot on that guest\'s receipt',
     admin_hidden_at: 'admin take-down tombstone — set and cleared only by the admin provider-visibility route (service role); consulted server-side by isLiveToGuests/visibleInDirectory and by the public SELECT policy, never browser-read (mirrors owner_paused)',
     id: 'primary key',
     ical_token: 'system-generated calendar-export secret; never provider-written (default gen_random_uuid())',
