@@ -5,6 +5,8 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import { Trash2 } from 'lucide-react';
 import { feedUrlProblem } from '@/lib/feedUrl';
+import { EditorCard, EditorPanel } from '@/components/listing-editor/EditorPanel';
+import { ChoiceTiles, bigFieldCls } from '@/components/services/wizardKit';
 
 interface Feed {
     id: string;
@@ -46,7 +48,36 @@ const SITES = [
     },
 ];
 
-export default function IcalFeeds({ listingId, exportUrl }: { listingId: string; exportUrl: string | null }) {
+// Calendar sync as a card like the rest of the editor: the linked calendars on
+// the card, the steps behind it in one full screen. Each linked calendar saves
+// (and is removed) on its own, so the screen has no Save — the X closes it.
+export function CalendarSyncCard({ listingId, exportUrl }: { listingId: string; exportUrl: string | null }) {
+    const [open, setOpen] = useState(false);
+    const [linked, setLinked] = useState<string[] | null>(null);
+    const summary = linked === null ? 'Loading…'
+        : linked.length ? `${linked.length} linked · ${linked.join(', ')}` : 'None linked yet';
+    return (
+        <>
+            <EditorCard title="Linked calendars" summary={summary} onClick={() => setOpen(true)} />
+            {/* Mounted off-screen too, so the card's summary is right before it opens. */}
+            {!open && <div className="hidden"><IcalFeeds listingId={listingId} exportUrl={exportUrl} onFeeds={setLinked} /></div>}
+            {open && (
+                <EditorPanel title="Which calendars should we sync?" onClose={() => setOpen(false)}>
+                    <IcalFeeds listingId={listingId} exportUrl={exportUrl} onFeeds={setLinked} large />
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+export default function IcalFeeds({ listingId, exportUrl, onFeeds, large = false }: {
+    listingId: string;
+    exportUrl: string | null;
+    // Told the linked calendars' names whenever they load (the card's summary).
+    onFeeds?: (labels: string[]) => void;
+    // In the full-screen sheet: the add flow's large tiles and fields.
+    large?: boolean;
+}) {
     const supabase = createClientComponentClient();
     const [feeds, setFeeds] = useState<Feed[]>([]);
     const [loading, setLoading] = useState(true);
@@ -63,6 +94,7 @@ export default function IcalFeeds({ listingId, exportUrl }: { listingId: string;
 
         setFeeds(data || []);
         setLoading(false);
+        onFeeds?.((data || []).map((f) => f.label || 'Calendar'));
     };
 
     useEffect(() => {
@@ -137,6 +169,12 @@ export default function IcalFeeds({ listingId, exportUrl }: { listingId: string;
 
     return (
         <div>
+            {large ? (
+                <div className="mb-6">
+                    <ChoiceTiles value={site.key} onChange={(k) => { setSite(SITES.find((s) => s.key === k) || SITES[0]); setUrl(''); }}
+                        options={SITES.map((s) => ({ value: s.key, label: s.key }))} />
+                </div>
+            ) : (
             <div role="tablist" aria-label="Site" className="mb-5 flex flex-wrap gap-2">
                 {SITES.map((s) => (
                     <button key={s.key} type="button" role="tab" aria-selected={site.key === s.key}
@@ -146,12 +184,13 @@ export default function IcalFeeds({ listingId, exportUrl }: { listingId: string;
                     </button>
                 ))}
             </div>
+            )}
 
-            <ol className="space-y-4">
+            <ol className={large ? 'space-y-5 text-base' : 'space-y-4'}>
                 <li className="flex gap-3">
                     <span className={num}>1</span>
                     <div className="min-w-0 flex-1">
-                        <p className="text-sm text-slate-800">Copy your Galloway Getaways calendar link</p>
+                        <p className={large ? "text-base text-slate-800" : "text-sm text-slate-800"}>Copy your Galloway Getaways calendar link</p>
                         <button type="button" onClick={copy}
                             className="mt-2 rounded-xl border px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
                             Copy link
@@ -160,28 +199,28 @@ export default function IcalFeeds({ listingId, exportUrl }: { listingId: string;
                 </li>
                 <li className="flex gap-3">
                     <span className={num}>2</span>
-                    <p className="min-w-0 flex-1 text-sm text-slate-800">{site.importAt}</p>
+                    <p className={"min-w-0 flex-1 text-slate-800 " + (large ? "text-base" : "text-sm")}>{site.importAt}</p>
                 </li>
                 <li className="flex gap-3">
                     <span className={num}>3</span>
-                    <p className="min-w-0 flex-1 text-sm text-slate-800">{site.exportAt}</p>
+                    <p className={"min-w-0 flex-1 text-slate-800 " + (large ? "text-base" : "text-sm")}>{site.exportAt}</p>
                 </li>
                 <li className="flex gap-3">
                     <span className={num}>4</span>
                     <div className="min-w-0 flex-1">
-                        <p className="text-sm text-slate-800">Paste it here and press Save</p>
-                        <div className="mt-2 flex gap-2">
+                        <p className={large ? "text-base text-slate-800" : "text-sm text-slate-800"}>{large ? 'Paste it here and add it' : 'Paste it here and press Save'}</p>
+                        <div className={large ? "mt-3 flex flex-col gap-3 sm:flex-row" : "mt-2 flex gap-2"}>
                             <input
                                 type="url"
                                 value={url}
                                 onChange={(e) => setUrl(e.target.value)}
                                 placeholder={site.placeholder}
                                 aria-label={`${site.key} export link`}
-                                className="min-w-0 flex-1 rounded-xl border p-3 text-sm placeholder:text-slate-300"
+                                className={large ? 'min-w-0 flex-1 ' + bigFieldCls.replace('mt-1 ', '') : 'min-w-0 flex-1 rounded-xl border p-3 text-sm placeholder:text-slate-300'}
                             />
                             <button type="button" onClick={save} disabled={saving}
-                                className="flex-none rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50">
-                                {saving ? 'Saving…' : 'Save'}
+                                className={large ? 'flex-none self-end rounded-full bg-emerald-700 px-6 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50' : 'flex-none rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50'}>
+                                {saving ? 'Saving…' : large ? 'Add calendar' : 'Save'}
                             </button>
                         </div>
                     </div>

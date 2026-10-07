@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Minus, BedDouble, Check, ChevronRight } from 'lucide-react';
+import { Plus, BedDouble, Check, ChevronRight } from 'lucide-react';
 import { BED_TYPES, bedSummary, bedsLeftToPlace, deriveCounts, type Room, type Bed } from '@/lib/sleeping';
 import { getImageUrl } from '@/lib/utils';
-import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
+import { NumberStepper, bigFieldCls } from '@/components/services/wizardKit';
 
 // Sleeping arrangements, Airbnb's way: a raised card with the first three
 // rooms, which opens the rooms as cards; a room opens its bed-type counters.
@@ -107,26 +108,17 @@ export default function SleepingArrangementsEditor({
             </EditorCard>
 
             {open && !editing && (
-                <EditorPanel
-                    title="Sleeping arrangements"
-                    onClose={() => setOpen(false)}
-                    footer={
-                        <div className="flex justify-end">
-                            <button type="button" onClick={() => setOpen(false)}
-                                className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black">
-                                Done
-                            </button>
-                        </div>
-                    }
-                >
-                    <p className="mb-4 text-sm text-slate-500">{counts.beds} of {plural(totalBeds, 'bed')} placed</p>
+                // Each room saves on its own screen, so this list has no Save — the X closes it.
+                <EditorPanel title="Where do guests sleep?" onClose={() => setOpen(false)}>
+                    {/* Kept: the cap on beds isn't guessable. */}
+                    <p className="mb-4 text-base text-slate-600">{counts.beds} of {plural(totalBeds, 'bed')} placed</p>
                     <div className="space-y-3">
                         {rooms.map((room, i) => (
                             <button key={i} type="button" onClick={() => setEditing({ index: i, room: { ...room, beds: room.beds.map((b) => ({ ...b })) } })}
-                                className="flex w-full items-center gap-4 rounded-2xl border border-slate-200 p-3 text-left hover:border-slate-400">
+                                className="flex w-full items-center gap-4 rounded-2xl border-2 border-slate-200 p-4 text-left hover:border-slate-300">
                                 <RoomThumb room={room} className="h-14 w-14 flex-none rounded-lg" />
                                 <span className="min-w-0 flex-1">
-                                    <span className="block truncate font-semibold text-slate-900">{room.label || 'Bedroom'}</span>
+                                    <span className="block truncate text-base font-semibold text-slate-900">{room.label || 'Bedroom'}</span>
                                     <span className="block truncate text-sm text-slate-500">{bedSummary(room.beds)}</span>
                                 </span>
                                 <ChevronRight className="h-5 w-5 flex-none text-slate-400" />
@@ -135,13 +127,13 @@ export default function SleepingArrangementsEditor({
                     </div>
                     {/* Every bed placed: nothing left to put in a new room. */}
                     {bedsLeftToPlace(totalBeds, rooms) > 0 && (
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="mt-5 flex flex-wrap gap-3">
                         <button type="button" onClick={() => startNew('bedroom')}
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400">
+                            className="inline-flex items-center gap-1.5 rounded-full border-2 border-slate-200 px-4 py-2.5 text-base font-semibold text-slate-800 hover:border-slate-300">
                             <Plus className="h-4 w-4" /> Add bedroom
                         </button>
                         <button type="button" onClick={() => startNew('common')}
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400">
+                            className="inline-flex items-center gap-1.5 rounded-full border-2 border-slate-200 px-4 py-2.5 text-base font-semibold text-slate-800 hover:border-slate-300">
                             <Plus className="h-4 w-4" /> Add common space
                         </button>
                     </div>
@@ -196,24 +188,15 @@ function RoomPanel({ draft, setDraft, left, photos, isNew, onCancel, onDone, onR
 
     return (
         <EditorPanel
-            title={draft.kind === 'common' ? (draft.label || 'Common space') : (isNew ? 'Bedroom' : draft.label)}
+            title={draft.kind === 'common' ? 'What’s in this space?' : `What beds are in ${isNew ? 'this bedroom' : draft.label}?`}
             onClose={onCancel}
-            footer={
-                <div className="flex items-center justify-between">
-                    <button type="button" onClick={onCancel} className="text-sm font-semibold text-slate-900 underline">Cancel</button>
-                    <button type="button" onClick={() => run(onDone)} disabled={busy}
-                        className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black disabled:opacity-40">
-                        {busy ? 'Saving…' : 'Save'}
-                    </button>
-                </div>
-            }
+            footer={<PanelSave onClick={() => run(onDone)} disabled={busy} />}
         >
             {draft.kind === 'common' && (
                 <div className="mb-4">
-                    <label htmlFor="room-name" className="mb-1 block text-xs font-semibold text-slate-700">Room name</label>
+                    <label htmlFor="room-name" className="block text-base font-semibold text-slate-800">Room name</label>
                     <input id="room-name" type="text" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-                        placeholder="Living room" maxLength={40}
-                        className="w-full rounded-lg border border-slate-300 p-2.5 text-sm outline-none focus:border-slate-900" />
+                        placeholder="Living room" maxLength={40} className={bigFieldCls} />
                 </div>
             )}
 
@@ -221,19 +204,11 @@ function RoomPanel({ draft, setDraft, left, photos, isNew, onCancel, onDone, onR
                 {types.map((type) => {
                     const n = countOf(type);
                     return (
-                        <div key={type} className="flex items-center justify-between py-3">
-                            <span className="text-sm text-slate-800">{type}</span>
-                            <div className="flex items-center gap-3">
-                                <button type="button" onClick={() => setCount(type, n - 1)} disabled={n <= 0} aria-label={'Fewer ' + type}
-                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:border-slate-900 disabled:cursor-not-allowed disabled:opacity-30">
-                                    <Minus className="h-4 w-4" />
-                                </button>
-                                <span className="w-5 text-center text-sm">{n}</span>
-                                <button type="button" onClick={() => setCount(type, n + 1)} disabled={left <= 0 || n >= 16} aria-label={'More ' + type}
-                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:border-slate-900 disabled:cursor-not-allowed disabled:opacity-30">
-                                    <Plus className="h-4 w-4" />
-                                </button>
-                            </div>
+                        <div key={type} className="flex items-center justify-between gap-3 py-3" role="group" aria-label={type}>
+                            <span className="text-base font-medium text-slate-800">{type}</span>
+                            {/* The cap: + stops once every bed is placed (or at 16). */}
+                            <NumberStepper value={String(n)} min={0} max={Math.min(16, n + Math.max(0, left))} solid
+                                onChange={(v) => setCount(type, Math.max(0, Math.min(16, n + Math.max(0, left), Number(v) || 0)))} />
                         </div>
                     );
                 })}
@@ -241,8 +216,8 @@ function RoomPanel({ draft, setDraft, left, photos, isNew, onCancel, onDone, onR
 
             {photos.length > 0 && (
                 <div className="mt-5 border-t border-slate-100 pt-4">
-                    <div className="mb-2 text-xs font-semibold text-slate-700">
-                        Room photo <span className="font-normal text-slate-400">(optional)</span>
+                    <div className="mb-2 text-base font-semibold text-slate-800">
+                        Room photo <span className="font-normal text-slate-500">(optional)</span>
                     </div>
                     <div className="flex gap-2 overflow-x-auto pb-1">
                         <button type="button" onClick={() => setDraft({ ...draft, photo: null })} aria-label="No photo"

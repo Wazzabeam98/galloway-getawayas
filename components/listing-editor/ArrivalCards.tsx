@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { Check, X, Minus, Plus, ArrowLeft } from 'lucide-react';
+import { Check, X, ArrowLeft } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import AutoTextarea from '@/components/AutoTextarea';
+import { useQuestionSheets } from '@/components/listing-editor/questionSheets';
+import { NumberStepper, wizardAreaCls, bigFieldCls } from '@/components/services/wizardKit';
 import {
     CHECKOUT_TASKS, CHECKOUT_NOTE_MAX, MAX_PETS_CAP, DEFAULT_MAX_PETS, checkoutTaskLabels,
     SAFETY_GROUPS, SAFETY_DETAILS_MAX, sharedSpacesForced, guestSafetyProblem,
@@ -16,8 +18,11 @@ import {
 
 // ✗ / ✓ pair, as the house rules have always used.
 export function YesNo({ value, onChange, label }: { value: boolean | null; onChange: (v: boolean) => void; label: string }) {
-    const btn = (on: boolean) =>
-        `w-8 h-8 rounded-full flex items-center justify-center ${on ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`;
+    // In a question sheet, larger and in the add flow's green.
+    const big = useQuestionSheets();
+    const btn = (on: boolean) => big
+        ? `w-11 h-11 rounded-full flex items-center justify-center border-2 ${on ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`
+        : `w-8 h-8 rounded-full flex items-center justify-center ${on ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`;
     return (
         <div className="flex gap-2 flex-none">
             <button type="button" aria-label={label + ': no'} aria-pressed={value === false} onClick={() => onChange(false)} className={btn(value === false)}>
@@ -72,55 +77,48 @@ export function HouseRulesCard({ rules, onSave }: { rules: HouseRules; onSave: (
         <>
             <EditorCard title="House rules" summary={houseRulesSummary(rules)} onClick={() => { setD(rules); setOpen(true); }} />
             {open && (
-                <EditorPanel title="House rules" onClose={() => setOpen(false)} footer={<PanelSave onClick={async () => { if (await saved(onSave(d))) setOpen(false); }} />}>
-                    <p className="text-sm text-slate-500 mb-4">Guests are expected to follow your rules and may be removed if they don&apos;t.</p>
-                    <div className="border rounded-2xl divide-y">
+                <EditorPanel title="What are your house rules?" onClose={() => setOpen(false)} footer={<PanelSave onClick={async () => { if (await saved(onSave(d))) setOpen(false); }} />}>
+                    <div className="border-2 border-slate-200 rounded-2xl divide-y">
                         <div className="p-4">
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-sm font-medium text-slate-800">Pets allowed</span>
+                                <span className="text-base font-medium text-slate-800">Pets allowed</span>
                                 <YesNo label="Pets allowed" value={d.petsAllowed} onChange={(v) => set({ petsAllowed: v, maxPets: v && !d.petsAllowed ? DEFAULT_MAX_PETS : d.maxPets })} />
                             </div>
                             {d.petsAllowed && (
-                                <div className="mt-3 flex items-center justify-between">
-                                    <span className="text-sm text-slate-700">Maximum number of pets</span>
-                                    <div className="flex items-center space-x-4">
-                                        <button type="button" aria-label="Fewer pets" disabled={d.maxPets <= 1} onClick={() => set({ maxPets: d.maxPets - 1 })}
-                                            className="w-8 h-8 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"><Minus className="w-4 h-4" /></button>
-                                        <span className="w-6 text-center" aria-live="polite">{d.maxPets}</span>
-                                        <button type="button" aria-label="More pets" disabled={d.maxPets >= MAX_PETS_CAP} onClick={() => set({ maxPets: d.maxPets + 1 })}
-                                            className="w-8 h-8 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"><Plus className="w-4 h-4" /></button>
-                                    </div>
+                                <div className="mt-4 flex flex-col items-center gap-2" role="group" aria-label="Maximum number of pets">
+                                    <span className="text-base text-slate-700">Maximum number of pets</span>
+                                    <NumberStepper value={String(d.maxPets)} onChange={(v) => set({ maxPets: Math.max(1, Math.min(MAX_PETS_CAP, Number(v) || 1)) })} min={1} max={MAX_PETS_CAP} solid />
                                 </div>
                             )}
                         </div>
                         {rows.map((r) => (
                             <div key={r.key} className="p-4 flex items-center justify-between gap-3">
-                                <span className="text-sm font-medium text-slate-800">{r.label}</span>
+                                <span className="text-base font-medium text-slate-800">{r.label}</span>
                                 <YesNo label={r.label} value={d[r.key]} onChange={(v) => set({ [r.key]: v } as Partial<HouseRules>)} />
                             </div>
                         ))}
                         <div className="p-4">
                             <div className="flex items-center justify-between gap-3 mb-3">
-                                <span className="text-sm font-medium text-slate-800">Quiet hours</span>
+                                <span className="text-base font-medium text-slate-800">Quiet hours</span>
                                 <YesNo label="Quiet hours" value={d.quietHoursEnabled} onChange={(v) => set({ quietHoursEnabled: v })} />
                             </div>
                             {d.quietHoursEnabled && (
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label htmlFor="qh-start" className="text-xs text-slate-500">Start time</label>
-                                        <input id="qh-start" type="time" value={d.quietHoursStart} onChange={(e) => set({ quietHoursStart: e.target.value })} className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                        <label htmlFor="qh-start" className="text-base font-semibold text-slate-800">Start time</label>
+                                        <input id="qh-start" type="time" value={d.quietHoursStart} onChange={(e) => set({ quietHoursStart: e.target.value })} className={bigFieldCls} />
                                     </div>
                                     <div>
-                                        <label htmlFor="qh-end" className="text-xs text-slate-500">End time</label>
-                                        <input id="qh-end" type="time" value={d.quietHoursEnd} onChange={(e) => set({ quietHoursEnd: e.target.value })} className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                        <label htmlFor="qh-end" className="text-base font-semibold text-slate-800">End time</label>
+                                        <input id="qh-end" type="time" value={d.quietHoursEnd} onChange={(e) => set({ quietHoursEnd: e.target.value })} className={bigFieldCls} />
                                     </div>
                                 </div>
                             )}
                         </div>
                     </div>
-                    <h3 className="font-semibold text-slate-800 mt-6 mb-2">Additional rules</h3>
+                    <h3 className="text-base font-semibold text-slate-800 mt-6 mb-2">Additional rules</h3>
                     <AutoTextarea value={d.additionalRules} onChange={(e) => set({ additionalRules: e.target.value })} rows={4}
-                        aria-label="Additional rules" placeholder="Share anything else you expect from guests..." className="w-full p-3 border rounded-xl text-sm" />
+                        aria-label="Additional rules" placeholder="Share anything else you expect from guests..." className={wizardAreaCls} />
                 </EditorPanel>
             )}
         </>
@@ -142,25 +140,25 @@ export function CheckoutInstructionsCard({ tasks, note, onSave }: { tasks: strin
         <>
             <EditorCard title="Checkout instructions" summary={summary} onClick={() => { setT(tasks); setN(note); setOpen(true); }} />
             {open && (
-                <EditorPanel title="Checkout instructions" onClose={() => setOpen(false)} footer={<PanelSave onClick={async () => { if (await saved(onSave(t, n))) setOpen(false); }} />}>
-                    <div className="divide-y border-y">
+                <EditorPanel title="What should guests do before they leave?" onClose={() => setOpen(false)} footer={<PanelSave onClick={async () => { if (await saved(onSave(t, n))) setOpen(false); }} />}>
+                    <div className="space-y-3">
                         {CHECKOUT_TASKS.map((task) => {
                             const on = t.indexOf(task.key) !== -1;
                             return (
                                 <button key={task.key} type="button" role="checkbox" aria-checked={on}
                                     onClick={() => setT(on ? t.filter((k) => k !== task.key) : [...t, task.key])}
-                                    className="flex w-full items-center justify-between gap-3 py-3.5 text-left">
-                                    <span className="text-sm text-slate-800">{task.label}</span>
-                                    <span className={`h-6 w-6 flex-none rounded-md flex items-center justify-center ${on ? 'bg-slate-900' : 'border-2 border-slate-300'}`}>
+                                    className={`flex w-full items-center justify-between gap-3 rounded-2xl border-2 p-5 text-left transition ${on ? 'border-emerald-600 bg-emerald-50/60 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}>
+                                    <span className="text-base font-semibold text-slate-900">{task.label}</span>
+                                    <span className={`h-7 w-7 flex-none rounded-full flex items-center justify-center ${on ? 'bg-emerald-700' : 'border-2 border-slate-300 bg-white'}`}>
                                         {on && <Check className="h-4 w-4 text-white" />}
                                     </span>
                                 </button>
                             );
                         })}
                     </div>
-                    <label htmlFor="checkout-note" className="mt-5 block text-sm font-semibold text-slate-900 mb-1">Anything else</label>
+                    <label htmlFor="checkout-note" className="mt-6 block text-base font-semibold text-slate-900 mb-2">Anything else</label>
                     <AutoTextarea id="checkout-note" value={n} onChange={(e) => setN(e.target.value)} rows={3} maxLength={CHECKOUT_NOTE_MAX}
-                        placeholder="Leave the keys on the kitchen table." className="w-full p-3 border rounded-xl text-sm" />
+                        placeholder="Leave the keys on the kitchen table." className={wizardAreaCls} />
                 </EditorPanel>
             )}
         </>
@@ -170,6 +168,13 @@ export function CheckoutInstructionsCard({ tasks, note, onSave }: { tasks: strin
 // ---------------------------------------------------------------------------
 // Guest safety — a card opening to three cards, each a list of ✗ / ✓ items.
 // ---------------------------------------------------------------------------
+
+// Each group's screen asks its question; the cards keep the group's name.
+const SAFETY_QUESTIONS: Record<string, string> = {
+    considerations: 'Anything guests should be careful of?',
+    devices: 'Which safety devices are there?',
+    property: 'What else should guests know about the place?',
+};
 
 export function GuestSafetyCard({ safety, privacyType, alarmAnswers, onSave }: {
     safety: GuestSafety;
@@ -237,7 +242,7 @@ export function GuestSafetyCard({ safety, privacyType, alarmAnswers, onSave }: {
                     return (
                         <div key={item.key} className="py-4">
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-sm font-medium text-slate-800">{item.label}</span>
+                                <span className="text-base font-medium text-slate-800">{item.label}</span>
                                 {locked
                                     ? <span className="text-xs text-slate-500">Yes — it&apos;s a room</span>
                                     : <YesNo label={item.label} value={a ? a.yes : null} onChange={(v) => setItem(item.key, { yes: v })} />}
@@ -247,7 +252,7 @@ export function GuestSafetyCard({ safety, privacyType, alarmAnswers, onSave }: {
                                     <AutoTextarea aria-label={item.label + ' details'} value={a.details || ''} rows={2} maxLength={SAFETY_DETAILS_MAX}
                                         onChange={(e) => setItem(item.key, { details: e.target.value })}
                                         placeholder={item.detailsRequired ? 'Where is it? (required)' : 'Add details (optional)'}
-                                        className="w-full p-2.5 border rounded-xl text-sm" />
+                                        className={wizardAreaCls} />
                                 </div>
                             )}
                         </div>
@@ -263,7 +268,7 @@ export function GuestSafetyCard({ safety, privacyType, alarmAnswers, onSave }: {
             <EditorCard title="Guest safety" summary={allTicked.length ? allTicked.join(' · ') : 'Not added yet'}
                 onClick={() => { setD(seed()); setGroup(null); setError(''); setOpen(true); }} />
             {open && (
-                <EditorPanel title={group ? group.title : 'Guest safety'} onClose={() => { setOpen(false); setGroup(null); }}
+                <EditorPanel title={group ? (SAFETY_QUESTIONS[group.key] || group.title) : 'What should guests know about safety?'} onClose={() => { setOpen(false); setGroup(null); }}
                     leading={group ? back : undefined}
                     footer={<PanelSave onClick={save} />}>
                     {body}

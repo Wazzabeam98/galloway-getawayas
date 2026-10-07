@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
 import AutoTextarea from '@/components/AutoTextarea';
+import { BigTextInput, bigFieldCls, wizardAreaCls } from '@/components/services/wizardKit';
 
 // The host-facing editors for a listing's arrival details — the wifi,
 // directions and what3words cards in the editor's Arrival section. Every field is
@@ -64,7 +65,7 @@ function useArrival(listingId: string) {
     return { loaded, base, saving, error, save };
 }
 
-const inputClass = 'w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700';
+const inputClass = bigFieldCls;
 
 // "Wifi · HarbourCottage" on a raised card; the name and password behind it.
 export function WifiCard({ listingId }: { listingId: string }) {
@@ -91,7 +92,7 @@ export function WifiCard({ listingId }: { listingId: string }) {
         <>
             <EditorCard title="Wi-Fi details" summary={summary} onClick={() => arrival.loaded && openPanel()} />
             {open && (
-                <EditorPanel title="Wi-Fi details" onClose={() => setOpen(false)}
+                <EditorPanel title="What are the Wi-Fi details?" onClose={() => setOpen(false)}
                     footer={
                         <div className="flex items-center justify-end gap-3">
                             {arrival.error && <span className="text-sm text-red-600">{arrival.error}</span>}
@@ -100,14 +101,14 @@ export function WifiCard({ listingId }: { listingId: string }) {
                     }>
                     <div className="space-y-4">
                         <div>
-                            <label htmlFor="wifi-name" className="block text-sm font-semibold text-slate-900 mb-1">Network name</label>
+                            <label htmlFor="wifi-name" className="block text-base font-semibold text-slate-800">Network name</label>
                             <input id="wifi-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="HarbourCottage" className={inputClass} />
                         </div>
                         <div>
-                            <label htmlFor="wifi-password" className="block text-sm font-semibold text-slate-900 mb-1">Password</label>
+                            <label htmlFor="wifi-password" className="block text-base font-semibold text-slate-800">Password</label>
                             <div className="relative">
                                 <input id="wifi-password" type={showPw ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="off" className={inputClass + ' pr-10'} />
-                                <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700" aria-label={showPw ? 'Hide password' : 'Show password'}>
+                                <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-3 top-1/2 mt-0.5 -translate-y-1/2 text-slate-400 hover:text-slate-700" aria-label={showPw ? 'Hide password' : 'Show password'}>
                                     {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                 </button>
                             </div>
@@ -135,15 +136,14 @@ export function What3wordsCard({ listingId }: { listingId: string }) {
         <>
             <EditorCard title="what3words" summary={summary} onClick={() => { if (arrival.loaded) { setW3w(arrival.base.what3words || ''); setOpen(true); } }} />
             {open && (
-                <EditorPanel title="what3words" onClose={() => setOpen(false)}
+                <EditorPanel title="What’s the what3words address?" onClose={() => setOpen(false)}
                     footer={
                         <div className="flex items-center justify-end gap-3">
                             {arrival.error && <span className="text-sm text-red-600">{arrival.error}</span>}
                             <PanelSave onClick={save} disabled={arrival.saving} />
                         </div>
                     }>
-                    <label htmlFor="arrival-w3w" className="block text-sm font-semibold text-slate-900 mb-1">what3words</label>
-                    <input id="arrival-w3w" value={w3w} onChange={(e) => setW3w(e.target.value)} placeholder="///harbour.candle.brave" className={inputClass} />
+                    <BigTextInput value={w3w} onChange={setW3w} placeholder="///harbour.candle.brave" ariaLabel="what3words" />
                 </EditorPanel>
             )}
         </>
@@ -167,7 +167,7 @@ export function DirectionsCard({ listingId }: { listingId: string }) {
         <>
             <EditorCard title="Directions" summary={summary} onClick={() => { if (arrival.loaded) { setDirs(arrival.base.arrival_directions || ''); setOpen(true); } }} />
             {open && (
-                <EditorPanel title="Directions" onClose={() => setOpen(false)}
+                <EditorPanel title="Any directions for the last stretch?" onClose={() => setOpen(false)}
                     footer={
                         <div className="flex items-center justify-end gap-3">
                             {arrival.error && <span className="text-sm text-red-600">{arrival.error}</span>}
@@ -176,7 +176,7 @@ export function DirectionsCard({ listingId }: { listingId: string }) {
                     }>
                     <AutoTextarea id="arrival-directions" aria-label="Directions" value={dirs} onChange={(e) => setDirs(e.target.value)} rows={3}
                         placeholder="Turn at the red postbox, the track is bumpy — park on the gravel by the blue door."
-                        className={inputClass} />
+                        className={wizardAreaCls} />
                 </EditorPanel>
             )}
         </>

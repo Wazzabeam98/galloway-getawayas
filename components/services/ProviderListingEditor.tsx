@@ -11,8 +11,7 @@ import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_C
 import AutoTextarea from '@/components/AutoTextarea';
 import { cleanAmountInput, amountForBox } from '@/lib/amountInput';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
-import { addressSummary } from '@/components/listing-editor/LocationCards';
-import { listingLocation } from '@/lib/places';
+import { AddressCard, LocationSharingCard } from '@/components/listing-editor/LocationCards';
 import PropertyMap from '@/components/PropertyMap';
 import PhotosEditor, { PhotosCard, type SavePhotos } from '@/components/listing-editor/PhotosEditor';
 import PhoneSectionTabs, { goToEditorSection } from '@/components/listing-editor/PhoneSectionTabs';
@@ -569,53 +568,6 @@ function HostYearsCard({ years, onSave }: { years: string; onSave: (v: string) =
 }
 
 // A "+ Add an offering" launcher that opens the stepped add flow.
-// Location and status, the experience editor's own: the holiday-let editor's
-// Address / Location sharing cards stay as they are, these ask the question.
-const bigFieldCls = 'mt-1 w-full rounded-2xl border-2 border-slate-200 px-4 py-3.5 text-base text-slate-900 placeholder:text-slate-300 focus:border-emerald-600 focus:outline-none';
-
-function AddressQuestionCard({ town, street, postcode, onSave }: { town: string; street: string; postcode: string; onSave: (town: string, street: string, postcode: string) => unknown }) {
-    const c = useCardSheet({ town, street, postcode }, (d) => onSave(d.town, d.street, d.postcode));
-    const set = (patch: Partial<typeof c.draft>) => c.setDraft({ ...c.draft, ...patch });
-    return (
-        <>
-            <EditorCard title="Address" summary={addressSummary(street, town, postcode) || 'Add the address'} onClick={c.start} />
-            {c.open && (
-                <EditorPanel title="Where is it?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="space-y-5">
-                        <label className="block text-base font-semibold text-slate-800">Town
-                            <input className={bigFieldCls} value={c.draft.town} onChange={(e) => set({ town: e.target.value })} placeholder="e.g. Kirkcudbright" />
-                        </label>
-                        <label className="block text-base font-semibold text-slate-800">Street address (private until booked)
-                            <input className={bigFieldCls} value={c.draft.street} onChange={(e) => set({ street: e.target.value })} placeholder="e.g. 57 St Cuthbert Street" />
-                        </label>
-                        <label className="block text-base font-semibold text-slate-800">Postcode (private until booked)
-                            <input className={bigFieldCls} value={c.draft.postcode} onChange={(e) => set({ postcode: e.target.value })} placeholder="e.g. DG6 4JS" />
-                        </label>
-                        <p className="text-sm text-slate-600">Guests will see <span className="font-semibold text-slate-900">{listingLocation(c.draft.town) || 'your town'}</span>.</p>
-                    </div>
-                </EditorPanel>
-            )}
-        </>
-    );
-}
-
-function LocationSharingQuestionCard({ precise, onSave }: { precise: boolean; onSave: (precise: boolean) => unknown }) {
-    const c = useCardSheet(precise, onSave);
-    return (
-        <>
-            <EditorCard title="Location sharing" summary={precise ? 'Precise location shown' : 'Approximate location shown'} onClick={c.start} />
-            {c.open && (
-                <EditorPanel title="Show guests the exact location?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <ChoiceTiles cols={1} value={c.draft ? 'precise' : 'approx'} onChange={(v) => c.setDraft(v === 'precise')}
-                        options={[
-                            { value: 'approx', label: 'Approximate', hint: 'A rough area on the map until they’ve booked.' },
-                            { value: 'precise', label: 'Exact pin', hint: 'The exact spot on the map. The address still waits for a booking.' },
-                        ]} />
-                </EditorPanel>
-            )}
-        </>
-    );
-}
 
 // Listing status as a card like the rest: "Is your listing live?". When we took
 // it down the provider can't lift it, so the sheet says so with nothing to save.
@@ -970,7 +922,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {sec('location', (<>
                         {hasVenue && <PropertyMap variant="host" latitude={p.venue_lat!} longitude={p.venue_lng!} />}
-                        <AddressQuestionCard town={town} street={street} postcode={postcode}
+                        <AddressCard town={town} street={street} postcode={postcode} propertyType=""
                             onSave={(t, st, pc) => runThen('where', wherePayload({ town: t, street: st, postcode: pc }),
                                 () => { setTown(t); setStreet(st); setPostcode(pc); })} />
                         {canTravel && (
@@ -978,7 +930,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 onSave={(d) => runThen('where', wherePayload({ fulfilment: d.fulfilment, deliveryFee: d.deliveryFee, deliveryRadius: d.deliveryRadius, areas: d.areas }),
                                     () => { setFulfilment(d.fulfilment); setDeliveryFee(d.deliveryFee); setDeliveryRadius(d.deliveryRadius); setAreas(d.areas); })} />
                         )}
-                        <LocationSharingQuestionCard precise={showPrecise}
+                        <LocationSharingCard precise={showPrecise}
                             onSave={(v) => runThen('where', wherePayload({ showPrecise: v }), () => setShowPrecise(v))} />
                     </>))}
 

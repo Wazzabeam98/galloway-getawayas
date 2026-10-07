@@ -2,32 +2,36 @@
 
 import { useState, type ComponentType } from 'react';
 import { Check } from 'lucide-react';
-import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
+import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 
 export type AmenityCategory = { category: string; items: { name: string; icon: ComponentType<{ className?: string }>; note?: string }[] };
 
 // The amenity tiles, grouped. Desktop shows them in the page (a tap saves);
 // a phone shows them inside the Amenities sheet.
-export function AmenityGrid({ categories, selected, onToggle }: {
+export function AmenityGrid({ categories, selected, onToggle, large = false }: {
     categories: AmenityCategory[];
     selected: string[];
     onToggle: (name: string) => void;
+    // The phone sheet: the add flow's large tiles. Desktop's in-page grid stays as it is.
+    large?: boolean;
 }) {
     return (
         <div className="space-y-6">
             {categories.map(({ category, items }) => (
                 <div key={category}>
-                    <h3 className="font-semibold text-slate-800 text-sm mb-2">{category}</h3>
+                    <h3 className={`font-semibold text-slate-800 mb-2 ${large ? 'text-base' : 'text-sm'}`}>{category}</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {items.map(({ name, icon: Icon, note }) => {
                             const on = selected.includes(name);
                             return (
                                 <button key={name} type="button" onClick={() => onToggle(name)} aria-pressed={on}
-                                    className={`p-3 rounded-2xl border-2 text-left transition relative ${on ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                    <Icon className="w-4 h-4 mb-2 text-slate-700" />
-                                    <div className="text-xs font-semibold text-slate-900">{name}</div>
-                                    {note && <div className="text-[10px] text-slate-400 mt-0.5">{note}</div>}
-                                    {on && <Check className="w-4 h-4 text-slate-900 absolute top-3 right-3" />}
+                                    className={large
+                                        ? `p-4 rounded-2xl border-2 text-left transition relative ${on ? 'border-emerald-600 bg-emerald-50/60 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`
+                                        : `p-3 rounded-2xl border-2 text-left transition relative ${on ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                    <Icon className={large ? 'w-6 h-6 mb-2 text-slate-800' : 'w-4 h-4 mb-2 text-slate-700'} />
+                                    <div className={large ? 'text-base font-semibold text-slate-900' : 'text-xs font-semibold text-slate-900'}>{name}</div>
+                                    {note && <div className={large ? 'text-sm text-slate-500 mt-0.5' : 'text-[10px] text-slate-400 mt-0.5'}>{note}</div>}
+                                    {on && <Check className={large ? 'w-5 h-5 text-emerald-700 absolute top-3 right-3' : 'w-4 h-4 text-slate-900 absolute top-3 right-3'} />}
                                 </button>
                             );
                         })}
@@ -69,18 +73,9 @@ export default function AmenitiesCard({ categories, amenities, onSave }: {
         <>
             <EditorCard title="Amenities" summary={amenitiesSummary(categories, amenities)} onClick={() => { setDraft(amenities); setOpen(true); }} />
             {open && (
-                <EditorPanel title="Amenities" onClose={() => setOpen(false)}
-                    footer={
-                        <div className="flex items-center justify-between">
-                            <button type="button" onClick={() => setOpen(false)} className="text-sm font-semibold text-slate-900 underline">Cancel</button>
-                            <button type="button" onClick={save} disabled={busy}
-                                className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white hover:bg-black disabled:opacity-40">
-                                {busy ? 'Saving…' : 'Save'}
-                            </button>
-                        </div>
-                    }>
-                    <p className="text-sm text-slate-500 mb-4">{draft.length} selected</p>
-                    <AmenityGrid categories={categories} selected={draft} onToggle={toggle} />
+                <EditorPanel title="What does your place offer?" onClose={() => setOpen(false)}
+                    footer={<PanelSave onClick={save} disabled={busy} />}>
+                    <AmenityGrid categories={categories} selected={draft} onToggle={toggle} large />
                 </EditorPanel>
             )}
         </>
