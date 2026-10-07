@@ -12,7 +12,8 @@ import AutoTextarea from '@/components/AutoTextarea';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
 import { NumberStepper, ChoiceCard, ChoiceTiles, WizardShell, BigAmountInput, BigTextInput, durationLabel, wizardAreaCls } from './wizardKit';
 import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
-import { ImageIcon, Image as ImageIconLucide, User, Users, Trash2, Check } from 'lucide-react';
+import { ImageIcon, Image as ImageIconLucide, User, Users, CalendarDays, Package, Trash2, Check } from 'lucide-react';
+import { OFFERED_UNITS } from '@/lib/serviceOrders';
 import { SinglePhotoSheet, ConfirmRemove } from './SinglePhotoSheet';
 
 // The experience listing's items — the shared MenuRow shape, the add flow (a
@@ -50,8 +51,16 @@ export function newRow(isSlot: boolean, fulfilment: string): MenuRow {
 }
 
 export const unitLabel = (unit: string): string => (
-    { flat: 'per session', person: 'per person', hour: 'per hour', night: 'per night', ticket: 'per ticket', item: 'per item' }[unit] || 'per session'
+    { flat: 'per session', person: 'per person', hour: 'per hour', night: 'per night', ticket: 'per ticket', item: 'per item', event: 'per event' }[unit] || 'per session'
 );
+
+// The label on a charge-basis tile. Offered: Per person, Whole session, Per
+// event, Per item. Legacy units keep a readable tile so an existing offering
+// can be seen and changed.
+const UNIT_TILE_LABEL: Record<string, string> = {
+    person: 'Per person', flat: 'Whole session', event: 'Per event', item: 'Per item',
+    night: 'Per night', hour: 'Per hour', ticket: 'Per ticket',
+};
 
 export function itemSummary(r: MenuRow, isSlot: boolean): string {
     const bits: string[] = [];
@@ -79,10 +88,17 @@ export async function uploadImage(supabase: SupabaseClient, file: File, prefix: 
     }
 }
 
-const chargeChoices = (r: { unit: string }): { v: string; l: string }[] => ([
-    { v: 'person', l: 'Per person' }, { v: 'flat', l: 'Whole session' },
-    ...(['hour', 'night', 'ticket', 'item'].includes(r.unit) ? [{ v: r.unit, l: unitLabel(r.unit) }] : []),
-]);
+// Which charge bases a provider is offered, by shape. A SLOT time is sold as a
+// private hire (flat) or a seat at a shared table (person) — the seat machinery
+// knows only those two, so a slot is never offered 'event'/'item'. Every other
+// shape (a chef who comes to you, a baker who makes to order) gets the full
+// offered set. A row already on a legacy unit (per night/hour/ticket) keeps that
+// as its own tile so it is never silently changed.
+const chargeChoices = (r: { unit: string }, isSlot: boolean): { v: string; l: string }[] => {
+    const offered: string[] = isSlot ? ['person', 'flat'] : [...OFFERED_UNITS];
+    const list = offered.includes(r.unit) ? offered : [...offered, r.unit];
+    return list.map((v) => ({ v, l: UNIT_TILE_LABEL[v] || unitLabel(v) }));
+};
 
 // The price, in the sign-up wizard's style and with its components: the big £
 // amount in the middle, then two large tiles with icons — Per person and Whole
@@ -111,14 +127,14 @@ function RangeAmount({ label, value, onChange }: { label: string; value: string;
 // session tiles (hidden for enquiry, which has no figure to charge). Shared by
 // the add flow and the Price edit sheet so both read the same. `onMode` is
 // optional: a caller that doesn't pass it keeps the old single-price control.
-function PriceChoice({ price, unit, mode = 'fixed', priceMax = '', onPrice, onUnit, onMode, onPriceMax, units = true, autoFocus }: {
+function PriceChoice({ price, unit, mode = 'fixed', priceMax = '', onPrice, onUnit, onMode, onPriceMax, units = true, isSlot = false, autoFocus }: {
     price: string; unit: string; mode?: string; priceMax?: string;
     onPrice: (v: string) => void; onUnit: (u: string) => void;
     onMode?: (m: string) => void; onPriceMax?: (v: string) => void;
-    units?: boolean; autoFocus?: boolean;
+    units?: boolean; isSlot?: boolean; autoFocus?: boolean;
 }) {
-    const icon = (v: string) => (v === 'person' ? User : v === 'flat' ? Users : undefined);
-    const hint = (v: string) => (v === 'person' ? 'A price each' : v === 'flat' ? 'One price for the booking' : 'As it’s priced now');
+    const icon = (v: string) => (v === 'person' ? User : v === 'flat' ? Users : v === 'event' ? CalendarDays : v === 'item' ? Package : undefined);
+    const hint = (v: string) => (v === 'person' ? 'A price each' : v === 'flat' ? 'One price for the booking' : v === 'event' ? 'One price for the whole event' : v === 'item' ? 'A price for each one' : 'As it’s priced now');
     const m = mode || 'fixed';
     return (
         <div className="mx-auto w-full max-w-md space-y-8">
@@ -151,7 +167,7 @@ function PriceChoice({ price, unit, mode = 'fixed', priceMax = '', onPrice, onUn
 
             {units && m !== 'enquiry' && (
                 <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="How it’s charged">
-                    {chargeChoices({ unit }).map((o) => (
+                    {chargeChoices({ unit }, isSlot).map((o) => (
                         <ChoiceCard key={o.v} radio selected={unit === o.v} onSelect={() => onUnit(o.v)} title={o.l} hint={hint(o.v)} icon={icon(o.v)} />
                     ))}
                 </div>
@@ -264,7 +280,7 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
             )}
 
             {key === 'price' && (
-                <PriceChoice price={r.price} unit={r.unit} mode={r.priceMode} priceMax={r.priceMax} autoFocus
+                <PriceChoice price={r.price} unit={r.unit} mode={r.priceMode} priceMax={r.priceMax} isSlot={ctx.isSlot} autoFocus
                     onPrice={(v) => set({ price: v })} onUnit={(u) => set({ unit: u })}
                     onMode={(mo) => set({ priceMode: mo })} onPriceMax={(v) => set({ priceMax: v })} />
             )}
@@ -344,7 +360,7 @@ function NameCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow) => unkno
     );
 }
 
-function PriceCard({ row, perItemLocation, onSave }: { row: MenuRow; perItemLocation: boolean; onSave: (r: MenuRow) => unknown }) {
+function PriceCard({ row, perItemLocation, isSlot, onSave }: { row: MenuRow; perItemLocation: boolean; isSlot: boolean; onSave: (r: MenuRow) => unknown }) {
     const c = useCardSheet({ price: row.price, unit: row.unit, fulfilment: row.fulfilment, priceMode: row.priceMode || 'fixed', priceMax: row.priceMax || '' }, (d) => onSave({ ...row, ...d }));
     const travelled = perItemLocation && c.draft.fulfilment === 'delivery';
     const priceSummary = (row.priceMode || 'fixed') === 'enquiry'
@@ -364,7 +380,7 @@ function PriceCard({ row, perItemLocation, onSave }: { row: MenuRow; perItemLoca
                                 options={[{ value: 'collection', label: 'At my place' }, { value: 'delivery', label: 'I travel to them' }]} />
                         )}
                         <div className="py-4">
-                            <PriceChoice price={c.draft.price} unit={c.draft.unit} units={!travelled}
+                            <PriceChoice price={c.draft.price} unit={c.draft.unit} units={!travelled} isSlot={isSlot}
                                 mode={c.draft.priceMode} priceMax={c.draft.priceMax}
                                 onPrice={(v) => c.setDraft({ ...c.draft, price: v })} onUnit={(u) => c.setDraft({ ...c.draft, unit: u })}
                                 onMode={(mo) => c.setDraft({ ...c.draft, priceMode: mo })} onPriceMax={(v) => c.setDraft({ ...c.draft, priceMax: v })} />
@@ -497,7 +513,7 @@ export function ItemDetailCard({ ctx, row, onSave, onDelete, selecting, selected
                     {/* Name, Price, Duration, Capacity, Description, Photo, Available to book. */}
                     <div className="space-y-4">
                         <NameCard row={row} onSave={onSave} />
-                        <PriceCard row={row} perItemLocation={perItemLocation} onSave={onSave} />
+                        <PriceCard row={row} perItemLocation={perItemLocation} isSlot={ctx.isSlot} onSave={onSave} />
                         {ctx.isSlot && (
                             <StepperCard title="Duration" question={STEP_QUESTIONS.duration} summary={row.duration ? durationLabel(Number(row.duration)) : 'Not set'} value={row.duration} suggestion={60} min={15} step={15} format={durationLabel}
                                 onSave={(v) => onSave({ ...row, duration: v })} />

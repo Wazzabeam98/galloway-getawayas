@@ -8,7 +8,7 @@ import { unitMultiplies } from '@/lib/serviceOrders';
 import { durationWords } from '@/lib/durationWords';
 
 const UNIT_SUFFIX: Record<string, string> = {
-    person: ' / guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
+    person: ' / guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '', event: ' / event',
 };
 
 /** A money figure, "£45" or "£45.50". */
@@ -277,7 +277,7 @@ export function capacityLabel(capacity: number | null | undefined): string | nul
 /** The full "per person / per night" phrase for prose. Empty for flat. */
 export function unitPhrase(unit: string): string {
     const map: Record<string, string> = {
-        person: 'per person', night: 'per night', hour: 'per hour', ticket: 'per ticket', item: 'per item', flat: '',
+        person: 'per person', night: 'per night', hour: 'per hour', ticket: 'per ticket', item: 'per item', flat: '', event: 'per event',
     };
     return map[unit] || '';
 }
