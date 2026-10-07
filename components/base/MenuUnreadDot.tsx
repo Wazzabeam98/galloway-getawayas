@@ -1,7 +1,7 @@
 'use client';
 
 import { MenuIcon } from 'lucide-react';
-import useBadgeCounts from './useBadgeCounts';
+import useBadgeCounts, { adminPendingTotal } from './useBadgeCounts';
 
 // The hamburger with a dot on it when something is waiting.
 //
@@ -18,22 +18,30 @@ export default function MenuUnreadDot({
     enabled = true,
     host = false,
     provider = false,
+    admin = false,
 }: {
     enabled?: boolean;
     host?: boolean;
     // A trade: light the dot for enquiries waiting on them too, the same way it
     // lights for a host's booking requests.
     provider?: boolean;
+    // An admin: light the dot when anything is waiting for review (a holiday let,
+    // an experience or a trade), so "something needs me" shows from any page.
+    admin?: boolean;
 }) {
     const counts = useBadgeCounts(enabled);
     const unread = enabled ? counts.unread : 0;
     const pending = enabled && host ? counts.pending : 0;
     const requests = enabled && provider ? counts.requests : 0;
+    const adminWaiting = enabled && admin ? adminPendingTotal(counts.admin) : 0;
 
-    const waiting = unread > 0 || pending > 0 || requests > 0;
+    const waiting = unread > 0 || pending > 0 || requests > 0 || adminWaiting > 0;
 
     const label = () => {
         const parts: string[] = [];
+        if (adminWaiting > 0) {
+            parts.push(`${adminWaiting} waiting for review`);
+        }
         if (pending > 0) {
             parts.push(`${pending} booking request${pending === 1 ? '' : 's'} to answer`);
         }

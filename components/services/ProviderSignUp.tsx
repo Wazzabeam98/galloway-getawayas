@@ -72,7 +72,6 @@ import {
     categoriesForGroup,
     guestCategoryByKey,
     guestCategoryIsFood,
-    guestAsksExpertise,
     guestAsksQualifications,
     slotAsksWhereFork,
     slotIsMeetingPoint,
@@ -1150,17 +1149,17 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // what you filled in last time" before they had filled in anything.
         if (!chosen) return;
 
-        // The guest experience sign-up keeps no browser draft. It always opens on
-        // step one, "What experience are you offering?", with nothing selected
-        // (Liam, 5 Oct 2026) — a restored draft put a signed-in provider back on
-        // "Tell me about yourself" with "Something else" still ticked, even after
-        // the browser was closed. Everyone is signed in before the wizard shows,
-        // so "Save and finish later" (the database) is where work is kept. Any
-        // draft an earlier version left behind is removed here.
-        if (audienceForTrade(tradeFromUrl) === 'guest') {
-            forgetDraft();
-            return;
-        }
+        // The guest experience sign-up now keeps a browser draft too (Liam, 7 Oct
+        // 2026 — "save each step as it's completed so a provider who leaves or
+        // loses the page comes back where they were"). This reverses the 5 Oct
+        // decision that guests always open fresh: the new requirement is exactly
+        // the opposite, and the drag-and-drop guard above means losing the page is
+        // no longer common, but a draft is the belt-and-braces for when it still
+        // happens. The host path below (one restore, gated on filledIn, with the
+        // "we kept your details" state) is reused as-is — the guest fields are
+        // already serialised by the persist effect, they were only being skipped.
+        // Once a DB row exists (providerId) the database is the copy that counts
+        // and this draft is ignored, so "Save and finish later" is unaffected.
 
         try {
             const raw = window.localStorage.getItem(draftKey(tradeFromUrl));
@@ -1310,6 +1309,37 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         }
     };
 
+    // THE DRAG-AND-DROP GUARD (Liam, 7 Oct 2026).
+    //
+    // A provider dragged a photo onto the "a photo that sells it best" step and
+    // was thrown back to step one, losing everything. The cause was not a form
+    // submit or a reset — there is neither — but the BROWSER DEFAULT: a file
+    // dropped anywhere on a page the page does not handle makes the browser
+    // navigate to that file (open it), which unloads this whole single-page app
+    // and takes every in-memory answer with it. On the way back the wizard opens
+    // fresh on the picker.
+    //
+    // These window-level listeners swallow any drop that is NOT on a real drop
+    // zone, so a near-miss can never navigate away. The zones themselves
+    // (the gallery step and each item row) call preventDefault + stopPropagation
+    // in their own onDrop and upload the file, so dropping ON them still works.
+    // Belt-and-braces with the restored draft below: even a drop that somehow got
+    // through would now come back where they were, not at step one.
+    useEffect(() => {
+        const swallow = (e: DragEvent) => {
+            // A drop that a zone has already handled set its own dropEffect; leave
+            // those. Everything else: stop the browser opening the file.
+            if ((e as any).__ggHandled) return;
+            e.preventDefault();
+        };
+        window.addEventListener('dragover', swallow);
+        window.addEventListener('drop', swallow);
+        return () => {
+            window.removeEventListener('dragover', swallow);
+            window.removeEventListener('drop', swallow);
+        };
+    }, []);
+
     useEffect(() => {
         if (!hydrated) return;
         // Once it is in the database, the database is the copy that counts.
@@ -1318,8 +1348,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // also stops an empty draft being written under the empty key on every
         // first visit, which is what the restore was then finding.
         if (!chosen) return;
-        // Nor for a guest experience, which never restores one (restoreDraft).
-        if (audienceForTrade(tradeFromUrl) === 'guest') return;
+        // Guests persist too now (Liam, 7 Oct 2026 — save each step so a provider
+        // who leaves or loses the page comes back where they were). The guest
+        // fields below were always serialised; the early return that skipped them
+        // is gone. See restoreDraft for the matching change.
 
         try {
             window.localStorage.setItem(
@@ -2307,13 +2339,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // Next on screen one. A group with real sub-types opens screen two; 'other'
     // (alone under its group) skips it — its lone category is set and we go
     // straight to the business step, no screen-two of one card.
-    // Where a guest goes after the category pick: the About-you opener (g_you) if
-    // the category asks about expertise, otherwise straight to Location (g_area),
-    // which every guest has. There is no naming step any more — the title is the
-    // account name, derived at submit. The account is already made by now (verify
-    // is the first screen of all, before the picker), so there is no auth detour.
-    const firstGuestContentStep = (category: string): StepKey =>
-        guestAsksExpertise(category) ? 'g_you' : 'g_area';
+    // Where a guest goes after the category pick: the name screen (g_title), the
+    // opener of the About-you section and the first thing every guest fills,
+    // whatever their category. Naming early is the fix for a provider thrown by
+    // being asked the experience name after everything else (Liam, 7 Oct 2026).
+    // From there the step model carries them on to g_you/g_creds (where the
+    // category asks about the person) or straight to Location. The account is
+    // already made by now (verify is the first screen of all, before the picker),
+    // so there is no auth detour.
+    const firstGuestContentStep = (_category: string): StepKey => 'g_title';
 
     const advanceFromGroup = () => {
         const subs = categoriesForGroup(guestGroup);
@@ -2380,14 +2414,20 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // owner-prefixed path and compression as the gallery and headshot; it lands
     // on the item row at index i so the picture and the price stay together.
     const uploadItemPhoto = async (i: number, e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = (e.target.files || [])[0];
+        await uploadItemFile(i, (e.target.files || [])[0]);
+        e.target.value = '';
+    };
+
+    // The core item-photo upload, shared by the file picker (above) and a photo
+    // DROPPED onto the row (the drag-and-drop path). Takes a File directly so the
+    // two callers don't each need an <input> event.
+    const uploadItemFile = async (i: number, file: File | undefined | null) => {
         if (!file) return;
 
         if (!session) {
             toast.info('Your photo can go on as soon as this is sent — nothing has been lost, just pick it again then.', {
                 theme: 'colored',
             });
-            e.target.value = '';
             return;
         }
 
@@ -2411,7 +2451,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         }
 
         setUploadingItem(null);
-        e.target.value = '';
     };
 
     // A gallery photo for the guest listing — the room, the table, the view. The
@@ -2420,14 +2459,19 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // appended to `photos`, which already saves and loads and is read by the
     // listing. More than one file at a time, so a provider can add a set at once.
     const uploadGalleryPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files || []);
+        await uploadGalleryFiles(Array.from(e.target.files || []));
+        e.target.value = '';
+    };
+
+    // The core gallery upload, shared by the file picker (above) and photos
+    // DROPPED onto the step (the drag-and-drop path). Takes a File[] directly.
+    const uploadGalleryFiles = async (files: File[]) => {
         if (!files.length) return;
 
         if (!session) {
             toast.info('Your photos can go on as soon as this is sent — nothing has been lost, just pick them again then.', {
                 theme: 'colored',
             });
-            e.target.value = '';
             return;
         }
 
@@ -2453,8 +2497,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         }
 
         setUploadingPhotos(false);
-        e.target.value = '';
     };
+
+    // Image files from a drag-and-drop DataTransfer, in order, images only — so a
+    // stray non-image drop never becomes a broken upload. Shared by the gallery
+    // and item drop zones.
+    const imageFilesFrom = (dt: DataTransfer | null): File[] =>
+        Array.from(dt?.files || []).filter((f) => f.type.startsWith('image/'));
 
     // Removing a draft. Drafts only: an application we are looking at, or a
     // business already on the site, is not something to throw away with a
@@ -4723,7 +4772,19 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                     )}
                                     {stepKind === 'photo' && (
                                         <div className="flex flex-col items-center">
-                                            <label className="relative flex h-40 w-40 cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 text-center hover:border-emerald-400">
+                                            {/* Drop a photo onto the tile, or choose one — both
+                                                upload. The window guard stops a stray drop
+                                                navigating away; this claims the drop. */}
+                                            <label
+                                                className="relative flex h-40 w-40 cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 text-center hover:border-emerald-400"
+                                                onDragOver={(e) => { e.preventDefault(); }}
+                                                onDrop={(e) => {
+                                                    e.preventDefault();
+                                                    (e.nativeEvent as any).__ggHandled = true;
+                                                    const file = imageFilesFrom(e.dataTransfer)[0];
+                                                    if (file) uploadItemFile(menuIndex, file);
+                                                }}
+                                            >
                                                 {it.image ? (
                                                     <img src={getImageUrl(it.image)} alt="" className="h-full w-full object-cover" />
                                                 ) : (
@@ -4860,7 +4921,14 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
 
                 {onStep('g_capacity') && isGuest && (
                 <section className="flex-1 flex flex-col items-center justify-center">
-                    <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
+                    {/* An EXACT number, on the big −/+ counter — not a band (Liam,
+                        7 Oct 2026). A band can't stop a seventh person booking a
+                        six-seat sauna, so a shared session needs the real ceiling.
+                        It's the listing default; each offering can set its own exact
+                        capacity in the editor. max is high so a large catering group
+                        can say its real number (the old 60 broke for bigger groups).
+                        You can type the number or step to it. */}
+                    <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={300} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
                 </section>
                 )}
 
@@ -5020,7 +5088,20 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     were only ever the per-item pictures. These append to `photos`,
                     which already saves, loads and feeds the listing. */}
                 {onStep('g_photos') && isGuest && (
-                <section className="mb-8">
+                <section
+                    className="mb-8"
+                    // Drag-and-drop works as well as choosing a file: drop photos
+                    // anywhere on this step and they upload. The window guard above
+                    // stops a stray drop navigating away; this handler claims the
+                    // drop (marks it handled) and does the upload.
+                    onDragOver={(e) => { e.preventDefault(); }}
+                    onDrop={(e) => {
+                        e.preventDefault();
+                        (e.nativeEvent as any).__ggHandled = true;
+                        const files = imageFilesFrom(e.dataTransfer);
+                        if (files.length) uploadGalleryFiles(files);
+                    }}
+                >
                     {/* The screen instruction sits under the heading in both states
                         — it asks for three; the Next gate stays at one (they differ
                         on purpose), so this line is NOT wired to the gate. */}
@@ -6407,8 +6488,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             // number is the answer they accepted, so store it now.
                             // Both flows share this step, so it is not gated on isGuest.
                             if (step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
-                            // Same rule for max guests: an untouched pass stores
-                            // the shown default; a loaded value is left as it is.
+                            // Max guests: an untouched pass stores the shown default
+                            // (the big counter is solid), a loaded value is kept.
                             if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));
                             // Same for the notice screen: an untouched pass stores
                             // the shown suggestion (2 days).
