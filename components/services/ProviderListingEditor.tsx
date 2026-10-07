@@ -19,6 +19,7 @@ import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './ed
 import { NumberStepper } from './wizardKit';
 import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
 import { AddItemFlow, ItemDetailCard, rowFromItem, uploadImage, type MenuRow, type ItemCtx } from './ExperienceItemEditor';
+import { SinglePhotoSheet } from './SinglePhotoSheet';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { savePaused, TakenDownBanner, ListingStatusSection } from '@/components/services/ListingPauseControl';
 import {
@@ -531,36 +532,16 @@ function HowGuestsReachCard({ current, onSave }: { current: WhereExtra; onSave: 
 
 // ── Host profile, as cards (one per detail) ──────────────────────────────────
 function HostPhotoCard({ supabase, headshot, onSave }: { supabase: SupabaseClient; headshot: string | null; onSave: (v: string | null) => unknown }) {
-    const c = useCardSheet(headshot, onSave);
-    const [uploading, setUploading] = useState(false);
-    const change = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = (e.target.files || [])[0];
-        e.target.value = '';
-        if (!file) return;
-        setUploading(true);
-        const k = await uploadImage(supabase, file, 'headshot');
-        if (k) c.setDraft(k);
-        setUploading(false);
-    };
+    // The same single-photo sheet as an offering's Photo: + to add or replace,
+    // a bin to remove, saved as it goes.
+    const [open, setOpen] = useState(false);
     return (
         <>
-            <EditorCard title="Your photo" summary={headshot ? 'Photo added' : 'None yet'} onClick={c.start} />
-            {c.open && (
-                <EditorPanel title="Your photo" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="flex items-center gap-3">
-                        {c.draft ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={getImageUrl(c.draft)} alt="" className="h-20 w-20 rounded-full object-cover ring-1 ring-slate-200" />
-                        ) : (
-                            <span className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-100 text-slate-400"><User className="h-7 w-7" /></span>
-                        )}
-                        <label className="cursor-pointer rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                            {c.draft ? 'Change photo' : 'Add photo'}
-                            <input type="file" accept="image/png, image/jpeg" onChange={change} className="hidden" disabled={uploading} />
-                        </label>
-                        {c.draft && <button type="button" onClick={() => c.setDraft(null)} className="text-sm text-slate-500 hover:text-red-600">Remove</button>}
-                    </div>
-                </EditorPanel>
+            <EditorCard title="Your photo" summary={headshot ? 'Photo added' : 'None yet'} onClick={() => setOpen(true)} />
+            {open && (
+                <SinglePhotoSheet title="Your photo" image={headshot} round onClose={() => setOpen(false)}
+                    upload={(file) => uploadImage(supabase, file, 'headshot')}
+                    onSave={onSave} />
             )}
         </>
     );
