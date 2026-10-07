@@ -12,7 +12,7 @@ import { ACCESSIBILITY_AMENITIES } from './listingFilters';
 // The groups, in Airbnb's order, each with the amenities that belong to it.
 // Labels are shown as the dialog's section headings.
 const GROUP_DEFS: { label: string; items: string[] }[] = [
-    { label: 'Bathroom', items: ['Hairdryer', 'Shampoo', 'Hot water'] },
+    { label: 'Bathroom', items: ['Hairdryer', 'Shampoo', 'Hot water', 'Outdoor shower'] },
     { label: 'Bedroom and laundry', items: ['Essentials', 'Hangers', 'Iron', 'Washing machine', 'Tumble dryer'] },
     { label: 'Entertainment', items: ['TV'] },
     { label: 'Family', items: ['Cot'] },
@@ -22,7 +22,7 @@ const GROUP_DEFS: { label: string; items: string[] }[] = [
     { label: 'Kitchen and dining', items: ['Kitchen', 'Fridge', 'Coffee maker', 'Cooking basics', 'Dishwasher'] },
     { label: 'Location features', items: ['Beach access', 'Waterfront'] },
     { label: 'Outdoor', items: ['Outdoor furniture'] },
-    { label: 'Parking and facilities', items: ['Free parking on premises', 'Free street parking', 'EV charger', 'Gym', 'Pool', 'Hot tub'] },
+    { label: 'Parking and facilities', items: ['Free parking on premises', 'Free street parking', 'EV charger', 'Gym', 'Pool', 'Hot tub', 'Sauna', 'Cold plunge'] },
     { label: 'Services', items: ['Pets allowed'] },
     // Not one of the twelve, but a listing may carry step-free features and they
     // need a home; Airbnb keeps them in their own group too.
