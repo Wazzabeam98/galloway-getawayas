@@ -164,11 +164,21 @@ test('no per-device log out calls the global default any more', () => {
     const fs = require('fs');
     const path = require('path');
     const ROOT = path.resolve(__dirname, '..', '..');
-    for (const rel of ['components/common/SignOut.tsx', 'components/auth/AuthPanel.tsx', 'components/auth/EmailFirstStep.tsx']) {
+    // AuthPanel dropped off this list on 8 Oct 2026: its only sign-out was the
+    // Guest Terms screen's "Not now — log out", and that screen is gone (a plain
+    // guest agrees to nothing at sign-up). The panel no longer signs anyone out —
+    // "Not you?" only forgets the remembered account — so there is nothing here
+    // to hold to the per-device helper. The rule still binds wherever a sign-out
+    // DOES live.
+    const signsOut = ['components/common/SignOut.tsx', 'components/auth/EmailFirstStep.tsx'];
+    for (const rel of signsOut) {
         const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
         assert.doesNotMatch(src, /auth\.signOut\(\s*\)/, rel + ' must not sign out every device');
         assert.match(src, /signOutThisDevice\(supabase\)/, rel);
     }
+    // And AuthPanel must not have quietly gained a global sign-out in the meantime.
+    const panel = fs.readFileSync(path.join(ROOT, 'components/auth/AuthPanel.tsx'), 'utf8');
+    assert.doesNotMatch(panel, /auth\.signOut\(\s*\)/, 'AuthPanel must not sign out every device');
 });
 
 /* ------------------------------------------ every sign-in records the choice */

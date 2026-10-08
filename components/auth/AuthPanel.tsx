@@ -6,8 +6,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { ArrowLeft, X } from 'lucide-react';
 import { GooseMark } from '@/components/base/Logo';
 import GoogleButton from '@/components/auth/GoogleButton';
-import AgreementTick, { fetchAgreementStatus, holdAgreementGate, recordAgreement } from '@/components/legal/AgreementTick';
-import { agreementProblem, versionForTick } from '@/lib/agreements';
+import { holdAgreementGate } from '@/components/legal/AgreementTick';
 import { isProviderEnabled } from '@/lib/authProviders';
 import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { CODE_MAX_LENGTH, looksLikeEmail, needsName, tidyCode, tidyEmail } from '@/lib/emailCodeSignIn';
@@ -25,7 +24,7 @@ import {
     savePending,
     secondsUntilResend,
 } from '@/lib/signInMemory';
-import { recordStayChoice, signOutThisDevice } from '@/lib/staySignedIn';
+import { recordStayChoice } from '@/lib/staySignedIn';
 import { getImageUrl } from '@/lib/utils';
 
 /**
@@ -43,8 +42,9 @@ import { getImageUrl } from '@/lib/utils';
  *   code    — the six digits, emailed or texted depending on what was typed.
  *   details — new accounts only (an account with no name): their name, and an
  *             email address when they signed up with a phone number, so booking
- *             confirmations have somewhere to go.
- *   terms   — new accounts only: the Guest Terms, the last screen of sign-up.
+ *             confirmations have somewhere to go. This is the last screen: a
+ *             plain guest agrees to nothing at sign-up (the Guest Terms are
+ *             taken at a first booking checkout), so there is no terms screen.
  *
  * A returning person goes straight from the code to wherever they were.
  *
@@ -62,7 +62,7 @@ export function openAuthPanel(next?: string | null) {
     window.dispatchEvent(new CustomEvent(OPEN_AUTH_PANEL, { detail: { next: next || null } }));
 }
 
-type Screen = 'welcome' | 'start' | 'code' | 'details' | 'terms';
+type Screen = 'welcome' | 'start' | 'code' | 'details';
 
 const INPUT = 'w-full rounded-xl border border-slate-400 px-4 py-3.5 text-base text-slate-900 placeholder:text-slate-500 focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900';
 const PRIMARY = 'w-full rounded-xl bg-emerald-700 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400';
@@ -87,8 +87,6 @@ export default function AuthPanelHost() {
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [wait, setWait] = useState(0);
-    const [ticked, setTicked] = useState(false);
-    const [termsError, setTermsError] = useState('');
     // "Stay signed in on this device" — on by default (lib/staySignedIn).
     const [stay, setStay] = useState(true);
     const firstField = useRef<HTMLInputElement>(null);
@@ -116,8 +114,6 @@ export default function AuthPanelHost() {
         setName('');
         setEmail('');
         setTarget(null);
-        setTicked(false);
-        setTermsError('');
         setError('');
         setNotice('');
         setScreen(r ? 'welcome' : 'start');
@@ -340,7 +336,8 @@ export default function AuthPanelHost() {
         setSession(s);
         const { data: prof } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', s.user.id).maybeSingle();
         if (needsName(prof?.full_name)) {
-            // New: name (and an email if they came by phone), then the terms.
+            // New: name (and an email if they came by phone), then straight in —
+            // no Guest Terms screen; a guest agrees to those at checkout.
             setNeedEmail(!s.user.email);
             setBusy(false);
             go('details');
@@ -376,28 +373,13 @@ export default function AuthPanelHost() {
             return;
         }
         remember(session, full, null);
-        const st = await fetchAgreementStatus();
-        // Fail closed: skip the terms only on a positive confirmation.
-        if (st && st.documents && st.documents.guest && st.documents.guest.agreed) { await finish(session); return; }
-        setBusy(false);
-        go('terms');
-    };
-
-    const submitTerms = async (e?: FormEvent) => {
-        e?.preventDefault();
-        const problem = agreementProblem('guest', null, versionForTick('guest', ticked));
-        if (problem) { setTermsError(problem); return; }
-        setBusy(true);
-        setTermsError('');
-        const failed = await recordAgreement('guest', 'signup');
-        if (failed) { setBusy(false); setTermsError(failed); return; }
+        // A plain guest agrees to nothing at sign-up: the Guest Terms are taken
+        // at a first booking checkout (and at the end of a provider/trade
+        // sign-up), which is the right place and the only one. So the account is
+        // finished the moment the name is saved — no terms screen (Liam, 8 Oct
+        // 2026). Removed the old post-name Guest Terms tick that interrupted
+        // every new guest who had booked nothing.
         await finish(session);
-    };
-
-    // The way out for someone who will not agree: signed out, panel closed.
-    const leaveWithoutAgreeing = async () => {
-        await signOutThisDevice(supabase);
-        window.location.reload();
     };
 
     if (!mounted || !open) return null;
@@ -416,13 +398,12 @@ export default function AuthPanelHost() {
         </label>
     );
 
-    const signedIn = screen === 'details' || screen === 'terms';
+    const signedIn = screen === 'details';
     const heading =
         screen === 'welcome' ? `Welcome back, ${remembered?.firstName || ''}`
             : screen === 'start' ? 'Log in or sign up'
                 : screen === 'code' ? 'Confirm it’s you'
-                    : screen === 'details' ? 'Finish signing up'
-                        : 'Our Guest Terms';
+                    : 'Finish signing up';
 
     // Masked when the code went to the remembered account: whoever pressed Log
     // in on the welcome screen has not shown they know the full address yet.
@@ -622,29 +603,6 @@ export default function AuthPanelHost() {
                     </>
                 )}
 
-                {screen === 'terms' && (
-                    <>
-                        <p className="mt-2 text-center text-slate-600 [text-wrap:pretty]">
-                            Before you carry on, please read and agree to our Guest Terms. They cover your account, bookings and how the site works.
-                        </p>
-                        <form onSubmit={submitTerms} className="mt-6 space-y-5" noValidate>
-                            <AgreementTick
-                                doc="guest"
-                                id="auth-agree-guest"
-                                open="tab"
-                                checked={ticked}
-                                onChange={(v) => { setTicked(v); setTermsError(''); }}
-                                error={termsError}
-                            />
-                            <button type="submit" disabled={busy || !ticked} className={PRIMARY}>
-                                {busy ? 'Saving…' : 'Agree and continue'}
-                            </button>
-                        </form>
-                        <p className="mt-6 text-center text-sm text-slate-600">
-                            <button type="button" onClick={leaveWithoutAgreeing} className={LINK}>Not now — log out</button>
-                        </p>
-                    </>
-                )}
             </div>
         </div>,
         document.body
