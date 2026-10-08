@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { supplierFromSnapshot } from '@/lib/vat';
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import EarningsDateFilter from "@/components/EarningsDateFilter";
@@ -189,6 +190,17 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         .eq('id', viewerId)
         .maybeSingle();
 
+    // The host's own VAT registration, printed at the head of their statement —
+    // the same name and number their guests' receipts carry. Private columns,
+    // read with the service role for the viewer alone; nothing for a host who
+    // isn't VAT registered (or a co-host viewing someone else's listings).
+    const { data: vatProfile } = viewerId
+        ? await admin.from('profiles').select('vat_registered, vat_number, vat_name').eq('id', viewerId).maybeSingle()
+        : { data: null };
+    const ownVat = vatProfile && vatProfile.vat_registered
+        ? supplierFromSnapshot({ supplier_vat_number: vatProfile.vat_number, supplier_vat_name: vatProfile.vat_name })
+        : null;
+
     const payoutSchedule = payoutProfile && payoutProfile.stripe_account_id
         ? await readSchedule(payoutProfile.stripe_account_id)
         : null;
@@ -257,9 +269,14 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Earnings</h1>
                 <EarningsDateFilter from={from} to={to} />
             </div>
-            <p className="text-slate-500 mb-8">
+            <p className={`text-slate-500 ${ownVat ? 'mb-1' : 'mb-8'}`}>
                 {new Date(from).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} – {new Date(to).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
             </p>
+            {ownVat && (
+                <p className="text-sm text-slate-500 mb-8">
+                    {ownVat.name} · VAT number {ownVat.vatNumber}
+                </p>
+            )}
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                 <StatCard label="Net revenue" value={formatGBP(netTotal)} sub={`${formatGBP(grossTotal)} gross`} />

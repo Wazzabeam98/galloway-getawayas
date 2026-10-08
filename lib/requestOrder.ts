@@ -8,6 +8,7 @@ import {
     sendEmail, emailLayout, escapeHtml, button, noteCallout, allergyCallout, SITE_URL,
     NEUTRAL_SUBTITLE, formatDate,
 } from '@/lib/email';
+import { supplierVatHtml } from '@/lib/vat';
 import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
 import { ltaNoticeRecord } from '@/lib/linkedTravelNotice';
@@ -228,7 +229,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             expires_at: expiryFrom(nowIso),
             created_at: nowIso,
         })
-        .select('id')
+        .select('id, supplier_vat_number, supplier_vat_name')
         .single();
 
     if (orderErr) {
@@ -292,7 +293,8 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     '<p style="margin:0 0 16px;font-size:16px;">Thanks — your order with <strong>' + escapeHtml((prov && prov.business_name) || 'your provider') + '</strong> is confirmed and paid' + whereWhen + '.</p>'
                     + linesHtml
                     + '<p style="margin:0 0 16px;font-size:16px;">Total paid: <strong>' + escapeHtml(totalStr) + '</strong>.</p>'
-                    + allergyCallout(md.allergy) + noteCallout(md.note),
+                    + allergyCallout(md.allergy) + noteCallout(md.note)
+                    + supplierVatHtml(order, null),
                     'You’re receiving this because you booked through Galloway Getaways.',
                     undefined, NEUTRAL_SUBTITLE));
             }
