@@ -84,6 +84,7 @@ const HOST: FaqItem[] = [
         q: 'What if I cancel on a guest?',
         a: [
             'The guest gets a full refund, and a cancellation fee of 5% of the booking comes off your next payout. Repeated cancellations can lead to your listings being removed.',
+            'There’s no fee when a major disruptive event stops the stay — a government travel restriction, an evacuation, police or the council closing access, or a widespread loss of power or water at the property. Weather warnings on their own don’t count.',
         ],
     },
     {

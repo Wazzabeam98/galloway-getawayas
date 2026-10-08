@@ -1,4 +1,5 @@
-// The approved wording of this agreement, final as of 03/10/2026. THE ONE
+// The approved wording of this agreement, as of 08/10/2026 (5.5–5.6 added:
+// major disruptive events). THE ONE
 // COPY — its page, the tick box's panel and the sign-in prompt all render this.
 // To change it: replace the text between the backticks with the new markdown,
 // then move this document's `version` and `lastUpdated` in lib/agreements.ts
@@ -12,7 +13,7 @@ export const GUEST_TERMS = String.raw`# Guest Terms
 
 **Galloway Getaways Ltd** (company number {{COMPANY_NUMBER}}), registered office {{REGISTERED_OFFICE}} ("we", "us", "Galloway Getaways").
 
-Version: v1-2026-10-03
+Version: v2-2026-10-08
 
 ---
 
@@ -57,6 +58,10 @@ We are not a party to either contract. We are responsible for running the platfo
 5.3 If the Host cancels, you receive a full refund of everything you paid for the stay. We will help you find an alternative where we can, but we do not guarantee one and we are not liable for the cost of any replacement.
 
 5.4 Experiences have their own cancellation terms, set by the Provider and shown before you pay.
+
+5.5 A major disruptive event is something official that stops your stay going ahead: a government travel restriction, an evacuation, police or the council closing access to the property, or a widespread loss of power or water at the property. If one stops your stay, ask your Host through your booking's messages to cancel it. When the Host cancels for a major disruptive event, you receive a full refund under 5.3.
+
+5.6 A weather warning of any colour, including red, is not a major disruptive event on its own. Winter weather is foreseeable in Dumfries & Galloway, so a booking affected by it follows the listing's cancellation policy under 5.2. The Host may choose to refund more than the policy gives; any extra refund is at the Host's discretion and comes from the Host's payout.
 
 ## 6. Your stay
 

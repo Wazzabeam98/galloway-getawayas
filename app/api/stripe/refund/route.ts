@@ -58,6 +58,17 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
         }
 
+        // A MAJOR DISRUPTIVE EVENT (the cancellation policy and the Host
+        // Agreement): something official stops the stay — a government travel
+        // restriction, an evacuation, police or the council closing access, or a
+        // widespread loss of power or water at the property. The guest asks the
+        // host, and the host cancels choosing it: the guest is refunded in full,
+        // as on every host cancellation, and the 5% fee below is not taken. Only
+        // the host's say-so counts — a guest cannot set it — and nobody here
+        // reviews it; it is recorded on the booking (cancelled_for_major_event).
+        const majorEvent = isHost && reason === 'cancelled' && booking.status === 'confirmed'
+            && !!(body && body.majorDisruptiveEvent === true);
+
         const paid = Number(booking.amount_paid || 0);
         const alreadyRefunded = Number(booking.amount_refunded || 0);
         const refundable = round2(paid - alreadyRefunded);
@@ -80,6 +91,7 @@ export async function POST(request: Request) {
                         cancelled_at: new Date().toISOString(),
                         cancelled_by_user: user.id,
                         cancelled_by_role: isHost ? 'host' : 'guest',
+                        cancelled_for_major_event: majorEvent,
                     })
                     .eq('id', booking.id);
                 if (closeError) {
@@ -219,7 +231,9 @@ export async function POST(request: Request) {
         // damaging thing a host can do — they may have travel booked. A
         // declined request costs nothing, but a cancellation carries a fee,
         // taken off the host's next payout rather than invoiced.
-        if (isHost && reason === 'cancelled' && booking.status === 'confirmed') {
+        // Not for a major disruptive event (above): no fee when the stay was
+        // stopped by something official.
+        if (isHost && reason === 'cancelled' && booking.status === 'confirmed' && !majorEvent) {
             const penalty = round2(Number(booking.total_price || 0) * 0.05);
 
             if (penalty > 0) {
@@ -318,6 +332,7 @@ export async function POST(request: Request) {
                     cancelled_at: new Date().toISOString(),
                     cancelled_by_user: user.id,
                     cancelled_by_role: isHost ? 'host' : 'guest',
+                    cancelled_for_major_event: majorEvent,
                 })
                 .eq('id', booking.id);
 

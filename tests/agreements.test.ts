@@ -56,7 +56,7 @@ test('the host wrapper still answers as lib/hostTerms did', () => {
     assert.equal(hostTerms.hasAgreedToCurrentTerms(null), false);
     assert.ok(hostTerms.termsProblem(null, undefined));
     assert.equal(hostTerms.termsProblem(null, v), null);
-    assert.equal(hostTerms.TERMS_LAST_UPDATED, '03/10/2026', 'DD/MM/YYYY from the day key');
+    assert.equal(hostTerms.TERMS_LAST_UPDATED, '08/10/2026', 'DD/MM/YYYY from the day key');
 });
 
 test('the approved terms carry no draft marker, and each text states the version it is recorded as', () => {
