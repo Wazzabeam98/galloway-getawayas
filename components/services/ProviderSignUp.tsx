@@ -2927,7 +2927,23 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             const { error } = await supabase.rpc('submit_service_provider', { p_id: id });
             if (error) {
                 setSaving(false);
-                toast.error(error.message, { theme: 'colored' });
+                // Never fail silently. The wizard's own checks run before this,
+                // so a refusal here is something they didn't catch — a message
+                // about a box on some other step is exactly what this form exists
+                // to stop. Say plainly what's missing (the function's own words)
+                // AND open the step that owns it so the fix is in front of them.
+                const m = String(error.message || '');
+                const field =
+                    /coverage area/i.test(m) ? 'areas'
+                        : /way to price|price the job/i.test(m) ? 'hourly_rate'
+                            : /needs a description|sentence or two/i.test(m) ? (isGuest ? 'description' : 'professional_title')
+                                : null;
+                const where = field ? stepForField(field, stepCtx) : null;
+                if (where && where !== step) {
+                    setVisited(steps.map((x) => x.key));
+                    goToStep(where);
+                }
+                toast.error(m, { theme: 'colored' });
                 return;
             }
         }
