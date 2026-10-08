@@ -110,6 +110,21 @@ function ListingCard({ item, isDraft, booked }: { item: any; isDraft: boolean; b
                         View
                     </Link>
                 )}
+                {/* Waiting for approval: the host still can't tell how their
+                    photos will look cropped without seeing the real page, so let
+                    them preview it exactly as a guest would — the listing page
+                    already lets an owner open their own pending listing, and it
+                    wears a "Preview" banner saying guests can't see it yet. */}
+                {isWaiting && (
+                    <Link
+                        href={`/homes/${item.id}`}
+                        title="Preview how guests will see it"
+                        className="h-8 px-3 rounded-full bg-white/95 hover:bg-white shadow-sm flex items-center gap-1.5 text-xs font-semibold text-slate-700"
+                    >
+                        <Eye className="w-3.5 h-3.5" />
+                        Preview
+                    </Link>
+                )}
                 {/* Delete or Hide — whichever applies, never a Delete that then
                     refuses. A listing that has never had a booking can be
                     deleted outright; one with any booking can only be hidden,
