@@ -20,6 +20,7 @@ import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
 import { resolveSelection, unitLabel, type ListingExtra } from '@/lib/listingExtras';
 import { getImageUrl } from '@/lib/utils';
 import { EXTRA_CROP_ASPECT } from '@/lib/photoRules';
+import { useExtrasSelection } from '@/components/extras/ExtrasSelectionProvider';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
@@ -360,7 +361,14 @@ export default function BookingWidget({
     const [children, setChildren] = useState(0);
     const [pets, setPets] = useState(0);
     // Chosen quantity per extra id. Priced from the catalogue, never from here.
-    const [extraQtys, setExtraQtys] = useState<Record<string, number>>({});
+    // Shared with the listing-page extras cards through the provider when one is
+    // present (the listing page), so adding on a card and in the panel are the
+    // same selection; falls back to local state anywhere without the provider.
+    const extrasSel = useExtrasSelection();
+    const [localExtraQtys, setLocalExtraQtys] = useState<Record<string, number>>({});
+    const extraQtys = extrasSel ? extrasSel.qtys : localExtraQtys;
+    const setExtraQty = (id: string, v: number) =>
+        extrasSel ? extrasSel.setQty(id, v) : setLocalExtraQtys((q) => ({ ...q, [id]: v }));
     const [dateRange, setDateRange] = useState<Range>({
         startDate: undefined,
         endDate: undefined,
@@ -546,6 +554,34 @@ export default function BookingWidget({
     const cleaningFeeTotal = quote.cleaningFeeTotal;
     const discount = quote.discount;
     const total = quote.total;
+
+    // Tell the shared selection whether a stay is chosen yet, so the listing-page
+    // extras cards know whether tapping "+" should prompt for dates.
+    useEffect(() => {
+        if (extrasSel) extrasSel.setHasDates(nights > 0);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [nights]);
+
+    // Register how to prompt for dates, for a card tapped before any are picked.
+    // Reuses the booking flow's own ways in: on a phone, open the sheet on the
+    // calendar (the same openPanel(1) the "Check availability" bar uses); on
+    // desktop, where the calendar is always on screen, bring the booking card
+    // into view and show the flow's own "select your dates" message.
+    useEffect(() => {
+        if (!extrasSel) return;
+        extrasSel.registerDatePrompt(() => {
+            const desktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
+            if (desktop) {
+                if (typeof document !== 'undefined') {
+                    document.getElementById('booking-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                setError('Please select your check-in and check-out dates.');
+            } else {
+                openPanel(1);
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [extrasSel]);
 
     // Which days can be picked. Choosing a check-in: any day whose night is
     // free. Choosing a checkout (a check-in is picked and the range is still
@@ -886,21 +922,24 @@ export default function BookingWidget({
         </div>
     ) : null;
 
-    // The optional-extras picker, shown once dates are chosen so a per-night
-    // price reads against real nights — the way Vrbo surfaces optional fees at
-    // the final step rather than in the headline price. Priced from the host's
-    // catalogue; the guest only chooses how many.
-    const extrasBlock = nights > 0 && activeExtras.length > 0 ? (
+    // The extras a guest has actually added — a basket, like the bakery's: the
+    // panel shows ONLY what's been chosen (on the cards above), each with its
+    // count and the −/+ to adjust. Choosing happens on the cards, so nothing is
+    // listed here at zero; a line appears when it's added and disappears again
+    // when it goes back to zero. Hidden entirely until dates are picked and at
+    // least one extra is on.
+    const addedExtras = activeExtras.filter((e) => (extraQtys[e.id] || 0) > 0);
+    const extrasBlock = nights > 0 && addedExtras.length > 0 ? (
         <div className="border-t pt-3 mb-4">
-            <div className="text-sm font-semibold text-slate-900">Add to your stay</div>
+            <div className="text-sm font-semibold text-slate-900">Extras on your stay</div>
             <div className="mt-1">
-                {activeExtras.map((e) => (
+                {addedExtras.map((e) => (
                     <Counter
                         key={e.id}
                         label={e.label}
                         sub={formatGBP(Number(e.price)) + ' ' + unitLabel(e.unit)}
                         value={extraQtys[e.id] || 0}
-                        onChange={(v) => setExtraQtys((q) => ({ ...q, [e.id]: v }))}
+                        onChange={(v) => setExtraQty(e.id, v)}
                         min={0}
                         max={10}
                         leading={e.photo ? (
@@ -1203,7 +1242,7 @@ export default function BookingWidget({
         <>
             {/* The inline card is desktop only. On a phone it is hidden and the
                 portalled bottom bar + panel below take its place, Airbnb-style. */}
-            <div className="hidden lg:block bg-white border border-slate-200 rounded-2xl p-4 lg:p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+            <div id="booking-card" className="hidden lg:block bg-white border border-slate-200 rounded-2xl p-4 lg:p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
                 {priceHeader}
                 {calendarEl}
                 {guestsBlock}
