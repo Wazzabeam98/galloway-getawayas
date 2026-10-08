@@ -19,18 +19,61 @@ import ChooseMenu from '@/components/marketplace/ChooseMenu';
 import { PackageStaysProvider } from '@/components/marketplace/PackageNotice';
 import { loadStayWindows } from '@/lib/packageNotice';
 import { londonDayKey } from '@/lib/dayKey';
+import { getImageUrl } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
 // The browser tab carries the provider's name — "Loch Sauna | Galloway Getaways"
-// (the root layout appends the suffix, so this returns the bare name).
+// (the root layout appends the suffix, so the title here is the bare name).
+//
+// Description, canonical and the social image are set here too. Without them
+// this public listing inherited the root layout's home-page description ("Book
+// holiday cottages and accommodation…") — wrong for an experience — and had no
+// canonical of its own. Kept to one light query on the row the page shows.
 export async function generateMetadata(
     { params }: { params: { providerId: string } }
 ): Promise<import('next').Metadata> {
     const admin = adminClient();
     const { data } = await admin
-        .from('service_providers').select('business_name').eq('id', params.providerId).maybeSingle();
-    return { title: (data && data.business_name) || 'Experience' };
+        .from('service_providers')
+        .select('business_name, based_line, description, headshot, photos')
+        .eq('id', params.providerId)
+        .maybeSingle();
+
+    if (!data) return { title: 'Experience' };
+
+    const name = data.business_name || 'Experience';
+    const where = data.based_line ? `${data.based_line}, ` : '';
+    // The provider's own blurb, collapsed to one line and clamped, else a
+    // sensible default that still says what and where.
+    const raw = (data.description || '').replace(/\s+/g, ' ').trim();
+    const description = raw
+        ? (raw.length > 155 ? raw.slice(0, 152).trimEnd() + '…' : raw)
+        : `${name} — a local experience in ${where}Dumfries & Galloway. Booked and paid securely through Galloway Getaways.`;
+
+    const key = (Array.isArray(data.photos) && data.photos[0]) || data.headshot;
+    const image = key ? getImageUrl(key) : undefined;
+
+    return {
+        title: name,
+        description,
+        alternates: { canonical: `/experiences/browse/${params.providerId}` },
+        openGraph: {
+            type: 'website',
+            locale: 'en_GB',
+            url: `/experiences/browse/${params.providerId}`,
+            siteName: 'Galloway Getaways',
+            title: name,
+            description,
+            ...(image ? { images: [{ url: image, alt: name }] } : {}),
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title: name,
+            description,
+            ...(image ? { images: [image] } : {}),
+        },
+    };
 }
 
 // The PUBLIC (bookingless) listing — readable logged out. Same body as the
