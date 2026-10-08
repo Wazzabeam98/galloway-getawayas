@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
-import { logError } from '@/lib/logError';
+import { logError, logInfo } from '@/lib/logError';
 import { idsFrom, decideBatch, MAX_BATCH } from '@/lib/reviewQueue';
 import {
     reviewDigest, approvalBlockers, schemeLabel,
@@ -297,7 +297,9 @@ export async function POST(req: Request) {
                     return { status: 500, body: { ok: false, error: catError.message } };
                 }
 
-                await logError(
+                // A record of a decision, not a failure: kept, but as
+                // information so it stays out of the error list.
+                await logInfo(
                     'service-provider-category-assigned',
                     {
                         provider: id,

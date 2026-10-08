@@ -16,6 +16,7 @@
 import {
     S3Client,
     PutObjectCommand,
+    ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 
 export type BackupStore = {
@@ -133,4 +134,44 @@ export async function putObject(
             ContentType: contentType,
         }),
     );
+}
+
+// Every object under a prefix, with its size, read back from the store itself.
+// This is how a run proves the copy landed: not "the uploads did not throw" but
+// "the bucket now holds these keys at these sizes". An "Object Read & Write" R2
+// token is allowed to list its own bucket.
+export async function listObjects(
+    store: BackupStore,
+    prefix: string,
+): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    let token: string | undefined;
+    do {
+        const page: any = await store.client.send(
+            new ListObjectsV2Command({ Bucket: store.bucket, Prefix: prefix, ContinuationToken: token }),
+        );
+        for (const o of page.Contents || []) {
+            if (o.Key) out.set(o.Key, Number(o.Size || 0));
+        }
+        token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    return out;
+}
+
+// The dated snapshots the store holds (storage/<YYYY-MM-DD>/), oldest first —
+// the record of which nights the backup actually ran.
+export async function listSnapshotDays(store: BackupStore): Promise<string[]> {
+    const days: string[] = [];
+    let token: string | undefined;
+    do {
+        const page: any = await store.client.send(
+            new ListObjectsV2Command({ Bucket: store.bucket, Prefix: 'storage/', Delimiter: '/', ContinuationToken: token }),
+        );
+        for (const p of page.CommonPrefixes || []) {
+            const m = /^storage\/(\d{4}-\d{2}-\d{2})\/$/.exec(String(p.Prefix || ''));
+            if (m) days.push(m[1]);
+        }
+        token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    return days.sort();
 }

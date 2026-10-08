@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
+import { INFO_SOURCE } from '@/lib/logSources';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,9 @@ export async function GET(req: NextRequest) {
         .limit(500);
 
     if (!includeResolved) query = query.eq('resolved', false);
+    // ?info=true for the information entries instead of the errors.
+    if (req.nextUrl.searchParams.get('info') === 'true') query = query.eq('source', INFO_SOURCE);
+    else query = query.neq('source', INFO_SOURCE);
 
     const { data: rows, error } = await query;
 
