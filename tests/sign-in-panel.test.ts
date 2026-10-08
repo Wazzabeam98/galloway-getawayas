@@ -46,6 +46,20 @@ test('welcome back masks the address: recognisable, not readable', () => {
     assert.equal(id.displayPhone('+447700900123'), '07700 900123');
 });
 
+test('a plain guest is asked to agree to nothing at sign-up', () => {
+    // The panel used to show a Guest Terms screen after the name — a pop-up that
+    // demanded agreement from a guest who had booked nothing. The Guest Terms are
+    // taken at a first booking checkout instead (the right place and the only
+    // one), so the terms screen is gone (Liam, 8 Oct 2026). Asserted on the
+    // source, since the screen is reached only through the OTP code flow.
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'components/auth/AuthPanel.tsx'), 'utf8');
+    assert.doesNotMatch(src, /screen === 'terms'/, 'no Guest Terms screen in the sign-up panel');
+    assert.doesNotMatch(src, /recordAgreement\(/, 'the panel records no agreement at sign-up');
+    assert.doesNotMatch(src, /Guest Terms\./, 'no "agree to our Guest Terms" copy in the panel');
+});
+
 function fakeClient(over: Record<string, any> = {}) {
     const calls: any[] = [];
     return {
