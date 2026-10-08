@@ -23,7 +23,7 @@ import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
 import { plural } from '@/lib/plural';
 import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
-import { areaForTownKey, areaBySlug, hasCopy } from '@/config/areas';
+import { areaForTownKey, areaBySlug, hasCopy, areaCentroid } from '@/config/areas';
 import ListingCard, { CardListing } from '@/components/ListingCard';
 import PropertyMap from '@/components/PropertyMap';
 import AmenityList from '@/components/AmenityList';
@@ -650,6 +650,20 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     ];
     const reserveLabel = home.instant_book === true ? 'Reserve' : 'Request to book';
 
+    // The point that goes in the structured-data `geo`. Google rejects a
+    // VacationRental with no geo, so this always resolves to something when we
+    // can: the property's own ~110m approx point when it has one, else the
+    // approximate centre of its town. Both are deliberately coarse — neither is
+    // the exact location, which never leaves the server. Null only for a listing
+    // whose town isn't one of our area pages AND has no coordinate at all.
+    const schemaGeo: { latitude: number; longitude: number } | null =
+        home.approx_latitude && home.approx_longitude
+            ? { latitude: Number(home.approx_latitude), longitude: Number(home.approx_longitude) }
+            : (() => {
+                  const c = areaCentroid(townForNearby);
+                  return c ? { latitude: c.lat, longitude: c.lng } : null;
+              })();
+
     return (
         <div className='min-h-screen bg-slate-50'>
         {bookable && (
@@ -729,35 +743,60 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             name: home.title,
                             description: home.description,
                             url: `${SITE_URL}/homes/${home.id}`,
-                            image: (home.images || []).slice(0, 6).map((img: string) => getImageUrl(img)),
+                            // A stable, unique id for the listing — one of the
+                            // fields Google requires before it will show a
+                            // VacationRental rich result. The listing's own id.
+                            identifier: {
+                                '@type': 'PropertyValue',
+                                propertyID: 'Galloway Getaways listing ID',
+                                value: home.id,
+                            },
+                            // Google wants several images; we publish all of them
+                            // (capped high, not at 6) so a listing with a full
+                            // gallery is not trimmed below the threshold.
+                            image: (home.images || []).slice(0, 20).map((img: string) => getImageUrl(img)),
                             address: {
                                 '@type': 'PostalAddress',
+                                // No streetAddress / postalCode, deliberately —
+                                // the approximate-location privacy model stays as
+                                // it is. Google flags both as "could be better";
+                                // that is accepted, not an oversight.
                                 addressLocality: (placeSummary(home.location) || '').split(',')[0].trim(),
                                 addressRegion: 'Dumfries & Galloway',
                                 addressCountry: 'GB',
                             },
-                            // Search engines get the approximate point too.
-                            // Publishing the exact one in structured data would
-                            // undo the whole change in a way nobody would look at.
-                            ...(home.approx_latitude && home.approx_longitude
+                            // Required by Google. Always the APPROXIMATE point —
+                            // the property's own ~110m one, or its town centre as
+                            // a fallback (schemaGeo). The exact location never
+                            // leaves the server.
+                            ...(schemaGeo
                                 ? {
                                       geo: {
                                           '@type': 'GeoCoordinates',
-                                          latitude: Number(home.approx_latitude),
-                                          longitude: Number(home.approx_longitude),
+                                          latitude: schemaGeo.latitude,
+                                          longitude: schemaGeo.longitude,
                                       },
                                   }
                                 : {}),
-                            numberOfRooms: home.bedrooms,
-                            occupancy: {
-                                '@type': 'QuantitativeValue',
-                                maxValue: home.max_guests,
+                            // The rentable unit itself. Google requires
+                            // `containsPlace` with an occupancy; the bedroom,
+                            // bathroom, bed and amenity detail rides along to make
+                            // the result richer.
+                            containsPlace: {
+                                '@type': 'Accommodation',
+                                numberOfBedrooms: home.bedrooms,
+                                ...(home.bathrooms ? { numberOfBathroomsTotal: Number(home.bathrooms) } : {}),
+                                ...(home.beds ? { bed: { '@type': 'BedDetails', numberOfBeds: Number(home.beds) } } : {}),
+                                occupancy: {
+                                    '@type': 'QuantitativeValue',
+                                    value: home.max_guests,
+                                },
+                                amenityFeature: (home.amenities || []).map((a: string) => ({
+                                    '@type': 'LocationFeatureSpecification',
+                                    name: a,
+                                    value: true,
+                                })),
                             },
-                            amenityFeature: (home.amenities || []).map((a: string) => ({
-                                '@type': 'LocationFeatureSpecification',
-                                name: a,
-                                value: true,
-                            })),
                             ...(showScore
                                 ? {
                                       aggregateRating: {
