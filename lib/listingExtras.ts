@@ -30,6 +30,9 @@ export interface ListingExtra {
     vat_treatment: ExtraVat;
     active?: boolean;
     sort_order?: number | null;
+    // The storage PATH of an optional photo (display only — never read by the
+    // price or the payout). The public URL is derived from it by getImageUrl.
+    photo?: string | null;
 }
 
 // The guest's claim, written onto the booking at insert: which extra, how many.
