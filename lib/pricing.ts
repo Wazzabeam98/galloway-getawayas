@@ -5,6 +5,8 @@
 // anything. Because both call the same code, the two can never drift apart —
 // and a total posted from the browser can never be taken on trust.
 
+import type { QuoteExtra, ExtraUnit, ExtraVat } from './listingExtras';
+
 export interface PricingListing {
     price_per_night: number;
     weekend_price?: number | null;
@@ -82,12 +84,34 @@ export interface NightRate {
     kind: 'base' | 'weekend' | 'override';
 }
 
+// One host-sold extra, priced. unitPrice and vat_treatment are the catalogue's,
+// frozen here the way a night's rate is: the checkout route snapshots this array
+// onto the booking (extras_breakdown) so the receipt and the VAT split read what
+// was actually charged, never the host's catalogue as it stands later.
+export interface ExtraLine {
+    id: string;
+    label: string;
+    unit: ExtraUnit;
+    unitPrice: number;
+    qty: number;
+    // How many units were multiplied: the night count for a per-night extra, 1
+    // for a per-stay one. Kept so the breakdown can say "£20 × 3 nights".
+    units: number;
+    lineTotal: number;
+    vat_treatment: ExtraVat;
+}
+
 export interface PriceQuote {
     nights: number;
     nightsSubtotal: number;
     extraGuestTotal: number;
     petFeeTotal: number;
     cleaningFeeTotal: number;
+    // Host-sold optional extras. extrasTotal is already inside `total`; `extras`
+    // is the per-line series behind it, for the breakdown and the snapshot. An
+    // extra is never discounted and never commissioned (the host's own supply).
+    extrasTotal: number;
+    extras: ExtraLine[];
     // The one discount that applies, or null. The money off is in `amount`, and
     // it has already been taken out of `total` below — a reader adds the lines
     // and subtracts this, exactly as the breakdown shows them.
@@ -240,7 +264,8 @@ export function quoteBooking(
     adults: number,
     children: number,
     pets: number,
-    opts?: DiscountContext
+    opts?: DiscountContext,
+    extras?: QuoteExtra[]
 ): PriceQuote {
     const nights = nightsBetween(checkIn, checkOut);
 
@@ -251,6 +276,8 @@ export function quoteBooking(
             extraGuestTotal: 0,
             petFeeTotal: 0,
             cleaningFeeTotal: 0,
+            extrasTotal: 0,
+            extras: [],
             discount: null,
             total: 0,
             nightly: [],
@@ -295,14 +322,45 @@ export function quoteBooking(
     });
     const discountAmount = discount ? discount.amount : 0;
 
+    // Host-sold extras. A per-stay extra is charged once; a per-night extra once
+    // for each night of the stay. Priced from the catalogue's unit price (passed
+    // in already resolved against the live catalogue — never the browser's
+    // figure), never discounted, and summed into the total after the discount so
+    // a weekly discount can't quietly come off a sauna pack. Each line also
+    // carries its VAT treatment, frozen for the receipt.
+    const extraLines: ExtraLine[] = [];
+    let extrasTotal = 0;
+    for (const e of extras || []) {
+        if (!e) continue;
+        const qty = Math.floor(Number(e.qty) || 0);
+        const unitPrice = Number(e.unitPrice) || 0;
+        if (!(qty > 0) || !(unitPrice > 0)) continue;
+        const units = e.unit === 'night' ? nights : 1;
+        const lineTotal = money(unitPrice * qty * units);
+        extraLines.push({
+            id: String(e.id),
+            label: String(e.label),
+            unit: e.unit === 'night' ? 'night' : 'stay',
+            unitPrice: money(unitPrice),
+            qty,
+            units,
+            lineTotal,
+            vat_treatment: e.vat_treatment === 'zero' ? 'zero' : 'standard',
+        });
+        extrasTotal += lineTotal;
+    }
+    extrasTotal = money(extrasTotal);
+
     return {
         nights: nights,
         nightsSubtotal: money(nightsSubtotal),
         extraGuestTotal: money(extraGuestTotal),
         petFeeTotal: money(petFeeTotal),
         cleaningFeeTotal: money(cleaningFeeTotal),
+        extrasTotal: extrasTotal,
+        extras: extraLines,
         discount: discount,
-        total: money(nightsSubtotal - discountAmount + extraGuestTotal + petFeeTotal + cleaningFeeTotal),
+        total: money(nightsSubtotal - discountAmount + extraGuestTotal + petFeeTotal + cleaningFeeTotal + extrasTotal),
         nightly: nightly,
     };
 }

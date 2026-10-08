@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { returnUrl } from '@/lib/email';
 import { quoteBooking, totalsMatch, dateFromKey, dateKey, NEW_LISTING_MAX_BOOKINGS } from '@/lib/pricing';
+import { resolveSelection } from '@/lib/listingExtras';
 import { balanceDueKey } from '@/lib/balanceDue';
 import { londonDayKey } from '@/lib/dayKey';
 import { blockedNightsFromEvents, fetchLiveIcalEvents } from '@/lib/availability';
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, total_price, status, payment_status, adults, children, pets, created_at')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, total_price, status, payment_status, adults, children, pets, extras_selection, created_at')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -151,6 +152,21 @@ export async function POST(request: Request) {
             newListingEligible = (count || 0) < NEW_LISTING_MAX_BOOKINGS;
         }
 
+        // Host-sold extras. The booking carries only the guest's CLAIM — which
+        // extras and how many (extras_selection). The price, unit and VAT are
+        // read back here from the listing's live catalogue, so a browser can
+        // never name its own price for a sauna pack, exactly as it can never
+        // name the nightly rate. An inactive or unknown extra resolves to
+        // nothing (resolveSelection), so a stale tab cannot buy a withdrawn one.
+        const { data: extraRows } = await admin
+            .from('listing_extras')
+            .select('id, label, price, unit, vat_treatment, active')
+            .eq('listing_id', booking.listing_id);
+        const resolvedExtras = resolveSelection(
+            Array.isArray(booking.extras_selection) ? booking.extras_selection : [],
+            extraRows || []
+        );
+
         const quote = quoteBooking(
             listing,
             overrides,
@@ -159,7 +175,8 @@ export async function POST(request: Request) {
             Number(booking.adults || 0),
             Number(booking.children || 0),
             Number(booking.pets || 0),
-            { newListingEligible, asOf: new Date() }
+            { newListingEligible, asOf: new Date() },
+            resolvedExtras
         );
 
         if (quote.nights <= 0) {
@@ -521,6 +538,14 @@ export async function POST(request: Request) {
                 // record of what each night cost is the one taken now. Every
                 // later view reads this snapshot rather than recomputing.
                 nightly_breakdown: quote.nightly,
+                // Host-sold extras, frozen on the same principle and at the same
+                // moment as the fees: the catalogue is host-mutable, so the
+                // booking has to remember what each extra cost and how it was
+                // rated, not what the host has set since. extras_total feeds the
+                // commission split in the payout cron (extras carry none);
+                // extras_breakdown is the per-line receipt record.
+                extras_total: quote.extrasTotal,
+                extras_breakdown: quote.extras,
                 status: 'pending_payment',
             })
             .eq('id', booking.id);

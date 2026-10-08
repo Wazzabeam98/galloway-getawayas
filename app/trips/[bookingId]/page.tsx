@@ -216,13 +216,30 @@ export default async function StayReservationPage({ params }: { params: { bookin
     // shortfall between them is what the discount took off. Shown as its own
     // line, as Airbnb does; only its amount survives on the booking, so the line
     // reads "Discount" rather than naming which of the four it was.
-    const payDiscount = Math.max(0, payAccommodation + payCleaning + payPet + payExtraGuest - payTotal);
-    const payOtherFees = Math.max(0, payTotal - payAccommodation - payCleaning - payPet - payExtraGuest + payDiscount);
+    // Host-sold extras, frozen on the booking. Pulled out as their own figure so
+    // they get their own receipt line and never fall into "other fees" (the
+    // residual below). Each line keeps its VAT treatment so a zero-rated hamper
+    // is kept out of the 20% split further down.
+    const payExtras = Number(booking.extras_total || 0);
+    const extrasBreakdown: any[] = Array.isArray(booking.extras_breakdown) ? booking.extras_breakdown : [];
+    const payDiscount = Math.max(0, payAccommodation + payCleaning + payPet + payExtraGuest + payExtras - payTotal);
+    const payOtherFees = Math.max(0, payTotal - payAccommodation - payCleaning - payPet - payExtraGuest - payExtras + payDiscount);
     const payPaid = Number(booking.amount_paid || 0);
     const payRefunded = Number(booking.amount_refunded || 0);
     // What the VAT block splits: the price the guest is still paying for once
     // refunds are out — on a cancelled stay, only what was kept.
     const vatGross = Math.max(0, Math.round(((booking.status === 'cancelled' ? payPaid : payTotal) - payRefunded) * 100) / 100);
+    // The 20% split covers the standard-rated supply only — the stay and any
+    // standard-rated extra. A zero-rated extra (a hamper, say) is kept out of
+    // it, so it never prints a 20% line. Scaled by the same kept fraction as
+    // vatGross, since a refund comes off the whole booking in proportion.
+    const zeroRatedExtras = extrasBreakdown.reduce(
+        (s: number, e: any) => s + (e && e.vat_treatment === 'zero' ? Number(e.lineTotal || 0) : 0),
+        0
+    );
+    const standardVatGross = payTotal > 0
+        ? Math.max(0, Math.round(vatGross * ((payTotal - zeroRatedExtras) / payTotal) * 100) / 100)
+        : vatGross;
     const payRemaining = Number(booking.balance_amount || 0);
     const balanceOverdue = !!booking.balance_due_date && String(booking.balance_due_date) < todayIso;
     const balanceDue = isBooker && booking.payment_status === 'deposit_paid' && payRemaining > 0
@@ -512,7 +529,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                     )}
                                 </div>
 
-                                <SupplierVat row={booking} gross={vatGross} />
+                                <SupplierVat row={booking} gross={standardVatGross} />
 
                                 {booking.status === 'cancelled' ? (
                                     <div className="mt-4">
@@ -569,6 +586,21 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                                     {payExtraGuest > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Extra guest fee</span><span className="tabular-nums">{formatGBP(payExtraGuest)}</span></div>}
                                                     {payCleaning > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Cleaning fee</span><span className="tabular-nums">{formatGBP(payCleaning)}</span></div>}
                                                     {payPet > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Pet fee</span><span className="tabular-nums">{formatGBP(payPet)}</span></div>}
+                                                    {/* Host-sold extras, each its own line at the price FROZEN on
+                                                        the booking (extras_breakdown), so a sauna pack reads as
+                                                        itself rather than disappearing into a residual. */}
+                                                    {extrasBreakdown.map((e: any, i: number) => (
+                                                        Number(e?.lineTotal) > 0 ? (
+                                                            <div key={'extra-' + (e.id || i)} className="flex items-baseline justify-between text-slate-600">
+                                                                <span>
+                                                                    {e.label}
+                                                                    {e.unit === 'night' && Number(e.units) > 1 && <span className="ml-1.5 text-slate-400">· {formatGBP(Number(e.unitPrice))} × {e.units} nights{Number(e.qty) > 1 ? ' × ' + e.qty : ''}</span>}
+                                                                    {e.unit === 'stay' && Number(e.qty) > 1 && <span className="ml-1.5 text-slate-400">· {formatGBP(Number(e.unitPrice))} × {e.qty}</span>}
+                                                                </span>
+                                                                <span className="tabular-nums">{formatGBP(Number(e.lineTotal))}</span>
+                                                            </div>
+                                                        ) : null
+                                                    ))}
                                                     {payOtherFees > 0 && <div className="flex items-baseline justify-between text-slate-600"><span>Other fees</span><span className="tabular-nums">{formatGBP(payOtherFees)}</span></div>}
                                                     <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">{formatGBP(payTotal)}</span></div>
                                                     <div className="flex items-baseline justify-between text-slate-600"><span>Paid so far</span><span className="tabular-nums">{formatGBP(payPaid)}</span></div>

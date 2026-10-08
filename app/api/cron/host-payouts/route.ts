@@ -2,7 +2,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
-import { DEFAULT_COMMISSION_PERCENT, netOfFee, feeAmount } from '@/lib/fees';
+import { DEFAULT_COMMISSION_PERCENT, feeAmount, commissionableCollected } from '@/lib/fees';
 import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { logMoneyFailure, alertDirectorsNow } from '@/lib/moneyAlert';
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
     // caught by the `collected <= 0` check below.
     const { data: due, error: dueError } = await admin
         .from('bookings')
-        .select('id, listing_id, host_id, check_in, total_price, amount_paid, amount_refunded, commission_rate, status, payment_status, paid_out_at, stripe_payment_intent_id, balance_payment_intent_id')
+        .select('id, listing_id, host_id, check_in, total_price, extras_total, amount_paid, amount_refunded, commission_rate, status, payment_status, paid_out_at, stripe_payment_intent_id, balance_payment_intent_id')
         .eq('status', 'confirmed')
         .in('payment_status', ['paid', 'partially_refunded'])
         .is('paid_out_at', null)
@@ -283,8 +283,19 @@ export async function GET(request: Request) {
                 continue;
             }
 
-            const hostShare = netOfFee(collected, rate);
-            const commission = feeAmount(collected, rate);
+            // Commission comes off the STAY only, never a host-sold extra (the
+            // host's own supply — we take nothing on it). commissionableCollected
+            // removes the extras' proportional share of what was collected; with
+            // no extras it is the whole figure, so a stay without extras pays out
+            // exactly as before. The host keeps the full extras plus the net of
+            // the rest, so hostShare is collected minus that commission.
+            const commissionBase = commissionableCollected(
+                collected,
+                Number(booking.total_price || 0),
+                Number(booking.extras_total || 0)
+            );
+            const commission = feeAmount(commissionBase, rate);
+            const hostShare = round2(collected - commission);
 
             // Anything the host already owes comes off this payout first.
             const owed = round2(Number(host.payout_balance_owed || 0));
