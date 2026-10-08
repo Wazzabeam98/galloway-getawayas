@@ -26,7 +26,7 @@ test('the host and a guest inside the window see the real values, current at the
 
 test('outside the window a guest sees neither, and the inbox preview never shows them', () => {
     const stored = `Code ${DOOR_TOKEN}.`;
-    assert.equal(renderSecretTokens(stored, true, 'before'), 'Code [shown here 3 days before you arrive].');
+    assert.equal(renderSecretTokens(stored, true, 'before'), 'Code [shown here closer to your arrival].');
     assert.equal(renderSecretTokens(stored, true, 'after'), 'Code [no longer shown].');
     assert.equal(renderSecretTokens(stored, true, 'preview'), 'Code [door code].');
 });
