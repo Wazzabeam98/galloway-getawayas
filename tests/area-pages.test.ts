@@ -83,28 +83,33 @@ test('written, and with somewhere to stay, is publishable', () => {
 
 /* ------------------------------------------------------- shipping unwritten */
 
-test('only Kirkcudbright and Castle Douglas are released — every other written area is still held', () => {
-    // The copy is written for all ten towns; each carries `hold: true` and stays
-    // out of the index and the sitemap until it is deliberately released.
-    // Kirkcudbright was the first off hold: its copy was checked live (its
-    // attractions verified — the Cocoabean Company at Twynholm now stands in for
-    // the closed Cream o' Galloway visitor centre), so it is publishable.
-    // Castle Douglas is the second (released 08/10/2026): the food town, with
-    // Threave Garden/Castle and Carlingwark Loch — all open — and two published
-    // cottages, so it clears the "real content + stock" bar.
+test('every written area is released — the stock gate is what holds an empty one back', () => {
+    // All ten towns are written AND off hold (08/10/2026). `hold` was a staging
+    // switch; it has been deliberately pre-cleared on every town so that each
+    // page releases itself the moment its first listing is published — the index
+    // and sitemap gates still require listings.length > 0, so an empty town page
+    // never reaches Google and self-parks if its stock goes to zero.
+    // Kirkcudbright (3 cottages) and Castle Douglas (2) are live now; the rest
+    // wait on stock.
     //
-    // WHEN YOU CLEAR ANOTHER HOLD, this test fails and names the town. Read
-    // AREA-BRIEF.md, check its attractions are still open, and add the slug to
-    // the expected list below. That failure is the checkpoint, not a nuisance.
+    // This test now guards the OTHER direction: a NEW area must arrive with a
+    // deliberate decision. If you add one, this fails — read AREA-BRIEF.md, make
+    // sure its copy is written and its attractions are open, then add its slug
+    // here. If an area ever loses its copy or is re-held, that fails too. The
+    // failure is the checkpoint, not a nuisance.
     const readyToPublish = (AREAS as Area[])
         .filter((a) => hasCopy(a) && !a.hold)
         .map((a) => a.slug);
 
     assert.deepEqual(
-        readyToPublish, ['kirkcudbright', 'castle-douglas'],
-        'The set of written, released areas changed. Expected Kirkcudbright and Castle Douglas.\n'
+        readyToPublish,
+        [
+            'kirkcudbright', 'castle-douglas', 'gatehouse-of-fleet', 'dalbeattie',
+            'newton-stewart', 'wigtown', 'dumfries', 'moffat', 'stranraer', 'portpatrick',
+        ],
+        'The set of written, released areas changed.\n'
         + 'Now released: ' + readyToPublish.join(', ')
-        + '\n\nIf you meant to release another town, add its slug here. If not, restore hold: true.'
+        + '\n\nIf you added or re-held a town, update this list to match the deliberate decision.'
     );
 });
 

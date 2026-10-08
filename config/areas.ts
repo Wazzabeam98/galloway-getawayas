@@ -167,9 +167,12 @@ export const AREAS: Area[] = [
         slug: "gatehouse-of-fleet",
         name: "Gatehouse of Fleet",
         townKeys: ["gatehouseoffleet"],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Pre-cleared (08/10/2026): no longer staged. The index + sitemap gates
+        // still require a published listing, so this page reaches Google only
+        // once the town has stock, and self-parks again if that stock hits zero.
+        // Read its copy before its first listing goes live — the attractions
+        // named here have not been re-verified since they were written.
+        hold: false,
         intro: [
             "Gatehouse of Fleet takes its name from the toll house that stood on the old coach road between Dumfries and Stranraer. Robert Burns stayed at what is now the Murray Arms in 1793 and wrote the first draft of Scots Wha Hae there.",
             "The town was once a proper industrial place — mills, a brewery, its own port — and is now one of the quietest and prettiest villages in the south of Scotland. The clock tower at the end of the main street is the picture everyone takes. It sits on the Water of Fleet with wooded hills behind it, on the edge of a National Scenic Area and within reach of the Galloway Forest Park.",
@@ -199,9 +202,12 @@ export const AREAS: Area[] = [
         slug: "dalbeattie",
         name: "Dalbeattie",
         townKeys: ["dalbeattie"],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Pre-cleared (08/10/2026): no longer staged. The index + sitemap gates
+        // still require a published listing, so this page reaches Google only
+        // once the town has stock, and self-parks again if that stock hits zero.
+        // Read its copy before its first listing goes live — the attractions
+        // named here have not been re-verified since they were written.
+        hold: false,
         intro: [
             "Dalbeattie was built out of the grey granite quarried beside it — stone from here went into the Thames Embankment and lighthouses around the world — and the town still has the sparkle of it in the walls on a bright day.",
             "What most people come for is what surrounds it. Kippford and Rockcliffe sit on the Urr estuary a few minutes away, joined by the Jubilee Path along the shore. Sandyhills has one of the best beaches on the Solway. The Dalbeattie forest trails are among the better-known mountain biking routes in the south of Scotland, with something for children as well as the people in full body armour.",
@@ -231,9 +237,12 @@ export const AREAS: Area[] = [
         slug: "newton-stewart",
         name: "Newton Stewart",
         townKeys: ["newtonstewart"],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Pre-cleared (08/10/2026): no longer staged. The index + sitemap gates
+        // still require a published listing, so this page reaches Google only
+        // once the town has stock, and self-parks again if that stock hits zero.
+        // Read its copy before its first listing goes live — the attractions
+        // named here have not been re-verified since they were written.
+        hold: false,
         intro: [
             "Newton Stewart sits on the River Cree where the coast road meets the hills, and it is the obvious base for anyone heading into the Galloway Forest Park. The park covers three hundred square miles of forest, loch and hill, and was the first place in Britain to be designated a Dark Sky Park — on a clear night you can see the Milky Way with the naked eye.",
             "Glen Trool, Loch Trool and the Merrick, the highest hill in southern Scotland, are all reached from here. The Cree is a well-known salmon and sea trout river. Wigtown, Scotland’s National Book Town, with its shops and its autumn book festival, is fifteen minutes south, and the Machars peninsula runs down from there to Whithorn and the sea.",
@@ -262,9 +271,12 @@ export const AREAS: Area[] = [
         slug: 'wigtown',
         name: 'Wigtown',
         townKeys: ['wigtown'],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Pre-cleared (08/10/2026): no longer staged. The index + sitemap gates
+        // still require a published listing, so this page reaches Google only
+        // once the town has stock, and self-parks again if that stock hits zero.
+        // Read its copy before its first listing goes live — the attractions
+        // named here have not been re-verified since they were written.
+        hold: false,
         intro: [
             "Wigtown is Scotland’s National Book Town, which for a place of about a thousand people means an improbable number of bookshops — second-hand, antiquarian and new — strung around a broad central square. The designation came in 1998 and the town rebuilt itself around it; The Bookshop on North Main Street is the largest second-hand bookshop in Scotland.",
             "Every autumn the Wigtown Book Festival brings ten days of writers, talks and events and fills the town. The rest of the year it is quiet, which is the other half of the appeal — a wet afternoon works through the shelves, a dry one goes down to the salt marsh below the town where the Bladnoch meets Wigtown Bay.",
@@ -292,9 +304,12 @@ export const AREAS: Area[] = [
         slug: "dumfries",
         name: "Dumfries",
         townKeys: ["dumfries"],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Pre-cleared (08/10/2026): no longer staged. The index + sitemap gates
+        // still require a published listing, so this page reaches Google only
+        // once the town has stock, and self-parks again if that stock hits zero.
+        // Read its copy before its first listing goes live — the attractions
+        // named here have not been re-verified since they were written.
+        hold: false,
         intro: [
             "Dumfries is the biggest town in the region and the one with the most going on — shops, restaurants, a theatre, and the practical things a longer stay needs. It sits on the River Nith, crossed by the fifteenth-century Devorgilla Bridge, one of the oldest standing bridges in Scotland.",
             "Robert Burns spent his final years here and is buried in St Michael’s churchyard. The Robert Burns Centre, his house on Burns Street and the Globe Inn are all within walking distance of each other, which makes for a good afternoon whether or not you arrived a Burns enthusiast.",
@@ -324,9 +339,12 @@ export const AREAS: Area[] = [
         slug: "moffat",
         name: "Moffat",
         townKeys: ["moffat"],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Pre-cleared (08/10/2026): no longer staged. The index + sitemap gates
+        // still require a published listing, so this page reaches Google only
+        // once the town has stock, and self-parks again if that stock hits zero.
+        // Read its copy before its first listing goes live — the attractions
+        // named here have not been re-verified since they were written.
+        hold: false,
         intro: [
             "Moffat is in the east of the region, in the hills near the head of Annandale, and it does not look like anywhere else nearby — a broad main street of substantial buildings from its days as a spa town, when people came to take the sulphurous waters.",
             "The landscape around it is the draw. The Devil’s Beef Tub is a vast natural hollow in the hills north of the town where the Border reivers once hid stolen cattle. The Grey Mare’s Tail is one of the highest waterfalls in Britain, a two-hundred-foot drop on the road towards St Mary’s Loch. Both are within a short drive.",
@@ -356,9 +374,12 @@ export const AREAS: Area[] = [
         slug: "stranraer",
         name: "Stranraer",
         townKeys: ["stranraer"],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Pre-cleared (08/10/2026): no longer staged. The index + sitemap gates
+        // still require a published listing, so this page reaches Google only
+        // once the town has stock, and self-parks again if that stock hits zero.
+        // Read its copy before its first listing goes live — the attractions
+        // named here have not been re-verified since they were written.
+        hold: false,
         intro: [
             "Stranraer sits at the head of Loch Ryan, a deep sea loch on the west coast, and is the largest town in that half of the region. It was the ferry port for Northern Ireland for generations; since the ferries moved up the loch to Cairnryan the waterfront has been slowly turning back towards the town, with the oyster festival in September now one of the bigger events in the local calendar.",
             "It is the practical base for the Rhins of Galloway — the long peninsula running south to the Mull, with Portpatrick on its western shore and the Logan Botanic Garden partway down, where the Gulf Stream lets palms and tree ferns grow outdoors. Castle Kennedy Gardens, between two lochs on the road east, are worth an afternoon.",
@@ -387,9 +408,12 @@ export const AREAS: Area[] = [
         slug: "portpatrick",
         name: "Portpatrick",
         townKeys: ["portpatrick"],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Pre-cleared (08/10/2026): no longer staged. The index + sitemap gates
+        // still require a published listing, so this page reaches Google only
+        // once the town has stock, and self-parks again if that stock hits zero.
+        // Read its copy before its first listing goes live — the attractions
+        // named here have not been re-verified since they were written.
+        hold: false,
         intro: [
             "Portpatrick sits in a small rocky bay on the far west of the Rhins of Galloway, its harbour ringed by pastel houses and cliffs. It grew up on fishing and later on the crossing to Northern Ireland — Irish couples once came here to marry, the way others went to Gretna.",
             "These days it is a place for walking, eating and looking at the sea. The Southern Upland Way starts here and climbs straight onto the clifftops, which means you can do a serious coastal walk in the morning and be in a harbour pub by lunchtime. The Mull of Galloway, Scotland’s most southerly point, with its lighthouse and seabird cliffs, is about forty minutes down the peninsula.",
@@ -431,6 +455,34 @@ export function areaForTownKey(key: string): Area | null {
         if (AREAS[i].townKeys.indexOf(key) !== -1) return AREAS[i];
     }
     return null;
+}
+
+// APPROXIMATE town-centre coordinates, by slug. These are a FALLBACK for a
+// listing's structured-data geo when the property itself has no coordinate (no
+// geocoded postcode, so approx_latitude/longitude are null) — Google rejects a
+// VacationRental with no `geo`. A town centre is coarser than the property's own
+// ~110m approx point, so it never leaks a location: it is the same "approximate
+// area, not the exact property" promise, one notch vaguer. Decimals to 3 places
+// (~100m), which is as precise as a town-centre point deserves to claim.
+// Verified against OpenStreetMap / place databases, 08/10/2026.
+const AREA_CENTRES: Record<string, { lat: number; lng: number }> = {
+    'kirkcudbright': { lat: 54.835, lng: -4.053 },
+    'castle-douglas': { lat: 54.939, lng: -3.933 },
+    'gatehouse-of-fleet': { lat: 54.881, lng: -4.187 },
+    'dalbeattie': { lat: 54.936, lng: -3.819 },
+    'newton-stewart': { lat: 54.957, lng: -4.489 },
+    'wigtown': { lat: 54.867, lng: -4.441 },
+    'dumfries': { lat: 55.070, lng: -3.603 },
+    'moffat': { lat: 55.333, lng: -3.444 },
+    'stranraer': { lat: 54.903, lng: -5.024 },
+    'portpatrick': { lat: 54.842, lng: -5.116 },
+};
+
+/** The approximate centre of the town a listing sits in, or null when its town
+ *  isn't one of the area pages. Takes a townKey(), not a raw address. */
+export function areaCentroid(key: string): { lat: number; lng: number } | null {
+    const area = areaForTownKey(key);
+    return area ? (AREA_CENTRES[area.slug] ?? null) : null;
 }
 
 /**
