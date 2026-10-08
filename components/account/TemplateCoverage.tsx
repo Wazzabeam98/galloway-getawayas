@@ -61,12 +61,23 @@ export default function TemplateCoverage() {
 
     // Counted by property rather than by cell: a host thinks in cottages, not
     // in cottage-by-message combinations.
-    const propertiesWith = (test: (c: Cell) => boolean) =>
-        data.listings.filter((l: any) => data.cells.some((c: Cell) => c.listingId === l.id && test(c))).length;
-
-    const silent = propertiesWith((c) => c.state === 'none');
-    const switchedOff = propertiesWith((c) => c.state === 'disabled' && !c.clash);
-    const clashing = propertiesWith((c) => !!c.clash);
+    //
+    // Deliberately three flat expressions, not one `propertiesWith(test)`
+    // helper. The helper read better, but the production minifier inlined it
+    // and gave the predicate and the filter's own parameter the SAME mangled
+    // name, so `test(c)` became `listing(c)` — "t is not a function", the whole
+    // Messaging tab down for any host with a listing. It never showed in dev,
+    // which doesn't minify. Inlining the condition leaves no function variable
+    // to collide, so keep it inline. (Liam, 8 Oct 2026.)
+    const silent = data.listings.filter((l: any) =>
+        data.cells.some((c: Cell) => c.listingId === l.id && c.state === 'none')
+    ).length;
+    const switchedOff = data.listings.filter((l: any) =>
+        data.cells.some((c: Cell) => c.listingId === l.id && c.state === 'disabled' && !c.clash)
+    ).length;
+    const clashing = data.listings.filter((l: any) =>
+        data.cells.some((c: Cell) => c.listingId === l.id && !!c.clash)
+    ).length;
 
     // Worst state wins the headline, so the one line a host reads is the one
     // that matters.
