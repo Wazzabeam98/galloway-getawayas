@@ -223,3 +223,17 @@ test('a lost sign-in is reported once, on a page load, only where this device ha
     assert.equal(stay.lostSignInToReport({ seen: null, hasAuthCookie: false, sessionOk: false, isDocument: true }), null, 'never signed in here');
     assert.equal(stay.parseSeen('nonsense'), null);
 });
+
+test('a sign-in that ends overnight is information; one lost within hours is still an error', () => {
+    // The 7 Oct entry: a Mac Safari device back after 934 minutes with no cookie.
+    assert.equal(stay.lostSignInIsExpected('cookie_gone', 934), true);
+    assert.equal(stay.lostSignInIsExpected('cookie_gone', stay.EXPECTED_COOKIE_LOSS_MINUTES), true);
+    // The fault the report exists for: gone around the first token refresh.
+    assert.equal(stay.lostSignInIsExpected('cookie_gone', 70), false);
+    assert.equal(stay.lostSignInIsExpected('cookie_gone', stay.EXPECTED_COOKIE_LOSS_MINUTES - 1), false);
+    // A refused session is never the normal end of a sign-in, however long ago.
+    assert.equal(stay.lostSignInIsExpected('session_refused', 10_000), false);
+    // Nothing usable to judge by: treat it as an error, not quietly as normal.
+    assert.equal(stay.lostSignInIsExpected('cookie_gone', undefined), false);
+    assert.equal(stay.lostSignInIsExpected('cookie_gone', 'soon'), false);
+});

@@ -1,10 +1,12 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { logError } from '@/lib/logError';
+import { INFO_SOURCE } from '@/lib/logSources';
 import { sendEmailToAll, recipients, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { RETENTION_DAYS, daysWaiting } from '@/lib/serviceApplications';
 import { cronRunOverdue } from '@/lib/cronHeartbeat';
 import { alertDirectorsNow } from '@/lib/moneyAlert';
+import { BACKUP_JOB } from '@/lib/backupVerify';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -45,7 +47,8 @@ export async function GET(request: Request) {
         .order('created_at', { ascending: false })
         .limit(500);
 
-    const errors = rows || [];
+    // Information entries (logInfo) are not failures; they never reach the digest.
+    const errors = (rows || []).filter((r: any) => r.source !== INFO_SOURCE);
 
     // ------------------------------------------------------------------
     // TRADESMEN WAITING ON THEMSELVES.
@@ -192,6 +195,27 @@ export async function GET(request: Request) {
         }
     } catch (e) {
         await logError('error-digest: could not check the experience payout cron heartbeat', e, {
+            path: '/api/cron/error-digest',
+        });
+    }
+
+    // And for the nightly photo backup. A failed run emails the directors itself;
+    // this catches the other silence — the job no longer running at all (a
+    // removed cron, a deploy that dropped it), which sends nothing on its own.
+    try {
+        const backupCron = await cronRunOverdue(BACKUP_JOB);
+        if (backupCron.overdue) {
+            await alertDirectorsNow({
+                headline: 'The nightly photo backup may have stopped',
+                lines: [
+                    'The storage-backup cron ' + backupCron.reason + '.',
+                    'While it is not running, there is no off-Supabase copy of the listing photos. See docs/BACKUP-AND-RESTORE.md.',
+                ],
+                facts: { 'last run': backupCron.ranAt || 'never' },
+            });
+        }
+    } catch (e) {
+        await logError('error-digest: could not check the storage backup heartbeat', e, {
             path: '/api/cron/error-digest',
         });
     }
