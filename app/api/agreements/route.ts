@@ -13,6 +13,7 @@ import {
     isAgreementKey,
     nextOwed,
     nextRoleOwed,
+    requiredAgreements,
 } from '@/lib/agreements';
 import { recordAcceptance, recordedAgreements, roleFacts } from '@/lib/agreementRecords';
 
@@ -60,10 +61,13 @@ export async function GET() {
         const roles = await roleFacts(admin, user.id);
         // `earlier`: they accepted an older version — the prompt says the
         // document has changed rather than introducing it.
-        const documents: Record<string, { version: string; agreed: boolean; earlier: boolean }> = {};
+        // `required`: this account's role needs it (the dashboard update notice
+        // shows only for a required role agreement not agreed at this version).
+        const owed = requiredAgreements(roles);
+        const documents: Record<string, { version: string; agreed: boolean; earlier: boolean; required: boolean }> = {};
         for (const key of AGREEMENT_ORDER) {
             const agreed = !!currentFrom(key, recorded[key]);
-            documents[key] = { version: AGREEMENTS[key].version, agreed, earlier: !agreed && (recorded[key] || []).length > 0 };
+            documents[key] = { version: AGREEMENTS[key].version, agreed, earlier: !agreed && (recorded[key] || []).length > 0, required: owed.indexOf(key) !== -1 };
         }
         // `next` is the next document owed at all (Guest Terms first) — kept for
         // callers that still want it. `nextRole` is what the sign-in prompt now
