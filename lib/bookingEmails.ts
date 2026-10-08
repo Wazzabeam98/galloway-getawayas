@@ -29,7 +29,7 @@ import {
 } from '@/lib/email';
 import { formatTime } from '@/lib/utils';
 import { formatGBPAmount } from '@/lib/formatMoney';
-import { supplierFromSnapshot } from '@/lib/vat';
+import { supplierFromSnapshot, vatBreakdown } from '@/lib/vat';
 
 function round2(value: number): number {
     return Math.round(Number(value || 0) * 100) / 100;
@@ -56,16 +56,27 @@ export function arrivalLineFrom(listing: {
     ].filter(Boolean).join('. ');
 }
 
-// The supplier row on the guest's confirmation: the host, as named for VAT, with
-// their VAT number. Nothing for a host who isn't VAT registered.
-function supplierRows(input: { supplierVatNumber?: string | null; supplierVatName?: string | null }) {
+// The supplier rows on the guest's confirmation: the host, as named for VAT, with
+// their VAT number, then the Total above split into net + VAT @20%. The price
+// already includes VAT, so nothing is added — the split adds back to the Total.
+// Nothing for a host who isn't VAT registered.
+function supplierRows(input: { supplierVatNumber?: string | null; supplierVatName?: string | null }, gross: number) {
     const supplier = supplierFromSnapshot({ supplier_vat_number: input.supplierVatNumber, supplier_vat_name: input.supplierVatName });
     if (!supplier) return [];
-    return [{
-        label: 'Supplied by',
-        value: escapeHtml(supplier.name) + '<br><span style="font-weight:400;color:#6b7280;">VAT number '
-            + escapeHtml(supplier.vatNumber) + '</span>',
-    }];
+    const b = vatBreakdown(gross);
+    return [
+        {
+            label: 'Supplied by',
+            value: escapeHtml(supplier.name) + '<br><span style="font-weight:400;color:#6b7280;">VAT number '
+                + escapeHtml(supplier.vatNumber) + '</span>',
+        },
+        ...(b.gross > 0
+            ? [
+                { label: 'Net', value: '&pound;' + formatGBPAmount(b.net) },
+                { label: 'VAT (20%)', value: '&pound;' + formatGBPAmount(b.vat) + ' <span style="font-weight:400;color:#6b7280;">included in the total</span>' },
+            ]
+            : []),
+    ];
 }
 
 export interface GuestBookedInput {
@@ -143,7 +154,7 @@ export function guestBookedEmail(input: GuestBookedInput): { subject: string; ht
             { label: 'Guests', value: String(input.guests || 1) },
             { label: 'Total', value: '&pound;' + formatGBPAmount(Number(input.total || 0)) },
             ...moneyRows,
-            ...supplierRows(input),
+            ...supplierRows(input, Number(input.total || 0)),
         ]) +
         button(SITE_URL + '/trips', 'View your trip'),
         "You're receiving this because you have a booking with Galloway Getaways. Booking emails can't be switched off."

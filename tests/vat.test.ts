@@ -88,3 +88,21 @@ test('the receipt-email line breaks the gross into net + VAT @20% + total', () =
     assert.ok(html.includes('&pound;20.00'), 'VAT');
     assert.ok(html.includes('&pound;120.00'), 'total equals the price paid');
 });
+
+test('a food order names the supplier and number but prints no 20% split', () => {
+    const { supplierVatHtml, singleRateShape } = require('../lib/vat');
+    assert.equal(singleRateShape('made_to_order'), false, 'food is mostly zero-rated, not one 20% supply');
+    assert.equal(singleRateShape('slot'), true);
+    assert.equal(singleRateShape('comes_to_you'), true);
+    const html = supplierVatHtml({ supplier_vat_number: 'GB999999973', supplier_vat_name: 'Millburn Bakes' }, null);
+    assert.ok(html.includes('GB 999 9999 73'));
+    assert.ok(!html.includes('VAT at 20%'));
+    assert.ok(!html.includes('VAT (20%)'));
+});
+
+test('nothing kept (a full refund) prints no split', () => {
+    const { supplierVatHtml } = require('../lib/vat');
+    const html = supplierVatHtml({ supplier_vat_number: 'GB999999973', supplier_vat_name: 'Millburn Ltd' }, 0);
+    assert.ok(html.includes('Millburn Ltd'));
+    assert.ok(!html.includes('VAT (20%)'));
+});

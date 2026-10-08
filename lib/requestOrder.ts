@@ -294,7 +294,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     + linesHtml
                     + '<p style="margin:0 0 16px;font-size:16px;">Total paid: <strong>' + escapeHtml(totalStr) + '</strong>.</p>'
                     + allergyCallout(md.allergy) + noteCallout(md.note)
-                    + supplierVatHtml(order, Number(cs.amount_total || 0) / 100),
+                    + supplierVatHtml(order, null),
                     'You’re receiving this because you booked through Galloway Getaways.',
                     undefined, NEUTRAL_SUBTITLE));
             }

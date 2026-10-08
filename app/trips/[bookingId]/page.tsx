@@ -220,6 +220,9 @@ export default async function StayReservationPage({ params }: { params: { bookin
     const payOtherFees = Math.max(0, payTotal - payAccommodation - payCleaning - payPet - payExtraGuest + payDiscount);
     const payPaid = Number(booking.amount_paid || 0);
     const payRefunded = Number(booking.amount_refunded || 0);
+    // What the VAT block splits: the price the guest is still paying for once
+    // refunds are out — on a cancelled stay, only what was kept.
+    const vatGross = Math.max(0, Math.round(((booking.status === 'cancelled' ? payPaid : payTotal) - payRefunded) * 100) / 100);
     const payRemaining = Number(booking.balance_amount || 0);
     const balanceOverdue = !!booking.balance_due_date && String(booking.balance_due_date) < todayIso;
     const balanceDue = isBooker && booking.payment_status === 'deposit_paid' && payRemaining > 0
@@ -509,7 +512,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                     )}
                                 </div>
 
-                                <SupplierVat row={booking} gross={payTotal} />
+                                <SupplierVat row={booking} gross={vatGross} />
 
                                 {booking.status === 'cancelled' ? (
                                     <div className="mt-4">

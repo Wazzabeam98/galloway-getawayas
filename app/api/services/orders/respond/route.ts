@@ -7,7 +7,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { canTransition } from '@/lib/serviceOrders';
 import { providerFirstName } from '@/lib/providerName';
 import { sendEmail, emailLayout, escapeHtml, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
-import { supplierVatHtml } from '@/lib/vat';
+import { supplierVatHtml, singleRateShape } from '@/lib/vat';
 import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
@@ -64,7 +64,7 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
             + '</strong> has confirmed your booking for <strong>' + date + '</strong>.</p>'
             + '<p style="margin:0 0 16px;font-size:16px;">Your card has now been charged '
             + escapeHtml(amount) + '. They are expecting you; they will be in touch to sort the details.</p>'
-            + supplierVatHtml(order, Number(order.price || 0)),
+            + supplierVatHtml(order, singleRateShape(order.shape) ? Number(order.price || 0) : null),
             'You’re receiving this because you booked an experience through Galloway Getaways.', undefined, NEUTRAL_SUBTITLE
         );
     } else if (outcome === 'date_accepted') {

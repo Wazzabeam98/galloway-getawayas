@@ -21,7 +21,18 @@
 // price shown. Where a registered supplier's receipt shows VAT it only BREAKS
 // the price already paid into net + VAT + total (vatBreakdown below), so a
 // business guest can reclaim it; the gross never changes.
+//
+// The 20% split is only printed where 20% is the rate: a stay, and an experience
+// or session. FOOD (a made-to-order order — cakes, fish, a hamper) is mostly
+// zero-rated and sometimes mixed, so a food receipt names the supplier and their
+// VAT number but prints no split; the guest asks the supplier for a VAT invoice.
+// And nothing is split once nothing is kept (a fully refunded booking).
 export const UK_VAT_RATE = 0.20;
+
+// The shapes whose price is a single standard-rated supply.
+export function singleRateShape(shape: string | null | undefined): boolean {
+    return shape !== 'made_to_order';
+}
 
 // Split a VAT-inclusive gross into the net and the VAT within it. VAT is gross −
 // net, so the three figures always add to the penny and the "total" printed is
@@ -126,13 +137,27 @@ function escapeHtml(value: string): string {
 // The supplier block for a receipt email, from the snapshot plus the gross the
 // guest paid. '' — nothing at all — when the supplier isn't VAT registered. The
 // price already includes VAT, so this only breaks `gross` into net + VAT @20% +
-// total so a business guest can reclaim it; nothing is added.
+// total so a business guest can reclaim it; nothing is added. A null gross (a
+// food order) or nothing kept prints the supplier and number with no split.
 export function supplierVatHtml(
     row: { supplier_vat_number?: string | null; supplier_vat_name?: string | null } | null | undefined,
-    gross?: number | string | null,
+    gross: number | string | null,
 ): string {
     const supplier = supplierFromSnapshot(row);
     if (!supplier) return '';
+    const head = '<div style="margin:16px 0 0;padding:14px 16px;border:1px solid #e5e7eb;border-radius:10px;">'
+        + '<div style="font-size:13px;color:#6b7280;">Supplied by <strong style="color:#111827;">'
+        + escapeHtml(supplier.name) + '</strong> &middot; VAT number ' + escapeHtml(supplier.vatNumber) + '</div>';
+    const foot = '<div style="margin-top:8px;font-size:13px;color:#6b7280;">Galloway Getaways takes payment on their behalf.</div>'
+        + '</div>';
+    if (gross == null || !(Number(gross) > 0)) {
+        return head
+            + (gross == null
+                ? '<div style="margin-top:8px;font-size:12px;color:#9ca3af;">Prices include any VAT due. For a VAT invoice, ask '
+                    + escapeHtml(supplier.name) + '.</div>'
+                : '')
+            + foot;
+    }
     const b = vatBreakdown(gross);
     const money = (n: number) => '&pound;' + n.toFixed(2);
     const line = (label: string, value: number, strong = false) =>
@@ -140,13 +165,10 @@ export function supplierVatHtml(
         + '<td style="padding:3px 0;font-size:13px;color:' + (strong ? '#111827' : '#6b7280') + ';' + (strong ? 'font-weight:600;' : '') + '">' + label + '</td>'
         + '<td style="padding:3px 0;font-size:13px;text-align:right;color:' + (strong ? '#111827' : '#6b7280') + ';' + (strong ? 'font-weight:600;' : '') + '">' + money(value) + '</td>'
         + '</tr>';
-    return '<div style="margin:16px 0 0;padding:14px 16px;border:1px solid #e5e7eb;border-radius:10px;">'
-        + '<div style="font-size:13px;color:#6b7280;">Supplied by <strong style="color:#111827;">'
-        + escapeHtml(supplier.name) + '</strong> &middot; VAT number ' + escapeHtml(supplier.vatNumber) + '</div>'
+    return head
         + '<div style="margin-top:8px;font-size:12px;color:#9ca3af;">This price includes VAT at 20%</div>'
         + '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:2px;">'
         + line('Net', b.net) + line('VAT (20%)', b.vat) + line('Total', b.gross, true)
         + '</table>'
-        + '<div style="margin-top:8px;font-size:13px;color:#6b7280;">Galloway Getaways takes payment on their behalf.</div>'
-        + '</div>';
+        + foot;
 }
