@@ -8,7 +8,8 @@ import { useQuestionSheets } from './questionSheets';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import Env from '@/config/Env';
-import { compressImage } from '@/lib/compressImage';
+import { compressImage, readImageDimensions } from '@/lib/compressImage';
+import { photoDimensionProblem, GALLERY_CROP_ASPECT, CARD_CROP_ASPECT } from '@/lib/photoRules';
 import { generateRandomNumber, getImageUrl } from '@/lib/utils';
 
 // The editor's Photos, saved as Airbnb's are — there is no Save for them. A new
@@ -83,7 +84,29 @@ export function usePhotoUploads(savePhotos: SavePhotos) {
     const [local, setLocal] = useState<Record<string, string>>({});
 
     const start = async (items: { file: File; url: string }[]) => {
-        const queued = items.map((it) => ({ ...it, id: `${Date.now()}_${generateRandomNumber()}` }));
+        // Refuse a photo too small to look sharp before it joins the queue
+        // (lib/photoRules) — the same wall the wizard applies. A size we can't
+        // read (0 × 0) is let through rather than blocked on a reader quirk.
+        const good: { file: File; url: string }[] = [];
+        let tooSmall = 0;
+        for (const it of items) {
+            const size = await readImageDimensions(it.file);
+            if (size.width && size.height) {
+                const problem = photoDimensionProblem(size.width, size.height);
+                if (problem) {
+                    tooSmall += 1;
+                    if (items.length === 1) toast.error(problem, { theme: 'colored' });
+                    URL.revokeObjectURL(it.url);
+                    continue;
+                }
+            }
+            good.push(it);
+        }
+        if (tooSmall > 1) {
+            toast.error(tooSmall + ' photos were too small to look sharp (they need to be at least 1024 × 683 pixels) and weren’t added.', { theme: 'colored' });
+        }
+        if (!good.length) return;
+        const queued = good.map((it) => ({ ...it, id: `${Date.now()}_${generateRandomNumber()}` }));
         setUploads((u) => [...u, ...queued.map(({ id, url }) => ({ id, url, progress: 0 }))]);
         for (const q of queued) {
             const setProgress = (progress: number) => setUploads((u) => u.map((x) => (x.id === q.id ? { ...x, progress } : x)));
@@ -340,8 +363,8 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
             {/* A question sheet drops the small grey line; the page keeps it. */}
             {!(question && inSheet) && <p className="text-xs text-slate-400 mb-4">
                 {isPhone
-                    ? 'Press and hold a photo to drag it. Tap a photo to move it, make it the cover or delete it.'
-                    : 'Drag to reorder. Click the star to set the cover photo.'}
+                    ? 'Press and hold to drag; tap a photo to move it, make it the cover or delete it. Shown cropped to fill, as below.'
+                    : 'Drag to reorder; star your cover. Shown cropped to fill, as below.'}
             </p>}
             {(photos.length > 0 || uploads.length > 0) && (
                 <div ref={gridRef} className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
@@ -358,8 +381,8 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
                                 onDrop={() => { if (draggedIndex !== null) reorder(draggedIndex, i); setDraggedIndex(null); setDragOverIndex(null); }}
                                 onDragEnd={() => { setDraggedIndex(null); setDragOverIndex(null); }}
                                 onClick={() => { if (isPhone && !swallowClick.current) setMenuFor(i); }}
-                                style={tileStyle(i)}
-                                className={`relative h-40 rounded-2xl overflow-hidden border-2 group select-none [-webkit-touch-callout:none] ${
+                                style={{ ...tileStyle(i), aspectRatio: GALLERY_CROP_ASPECT }}
+                                className={`relative rounded-2xl overflow-hidden border-2 group select-none [-webkit-touch-callout:none] ${
                                     isPhone ? '' : 'cursor-grab active:cursor-grabbing'
                                 } ${settling ? '' : 'transition-transform duration-200 ease-out'} ${
                                     cover ? 'border-emerald-700' : 'border-slate-200'
@@ -386,7 +409,7 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
                         );
                     })}
                     {uploads.map((u) => (
-                        <div key={u.id} data-uploading className="relative h-40 rounded-2xl overflow-hidden border-2 border-slate-200 bg-slate-100">
+                        <div key={u.id} data-uploading style={{ aspectRatio: GALLERY_CROP_ASPECT }} className="relative rounded-2xl overflow-hidden border-2 border-slate-200 bg-slate-100">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={u.url} alt="" className="w-full h-full object-cover opacity-50" />
                             {isPhone ? (
@@ -401,6 +424,17 @@ export default function PhotosEditor({ photos, savePhotos, isPhone, beforeChange
                             )}
                         </div>
                     ))}
+                </div>
+            )}
+            {/* The search card shows the COVER photo only, cropped squarer than
+                the gallery — so the host sees that crop too, for the cover. */}
+            {photos.length > 0 && (
+                <div className="mb-4 flex items-center gap-3">
+                    <div className="w-24 flex-none rounded-xl overflow-hidden border border-slate-200 bg-slate-100" style={{ aspectRatio: CARD_CROP_ASPECT }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={getImageUrl(photos[0])} alt="Search card preview" className="w-full h-full object-cover" />
+                    </div>
+                    <p className="text-xs text-slate-400">How your cover looks on a search result card.</p>
                 </div>
             )}
             {inSheet ? (photos.length === 0 && uploads.length === 0 && (

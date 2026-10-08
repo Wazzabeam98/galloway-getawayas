@@ -160,6 +160,11 @@ export default function VatSettingsCard({ providerId, audience = 'host' }: { pro
                             </span>
                         )}
                     </div>
+                    {audience === 'experience' && registered && (
+                        <p className="mt-3 text-xs text-slate-500">
+                            Each offering is standard rate (20%) unless you change it. Set zero-rated or exempt offerings under What you offer in your listing.
+                        </p>
+                    )}
                 </>
             )}
         </div>

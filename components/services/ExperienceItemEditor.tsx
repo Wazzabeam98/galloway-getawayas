@@ -15,17 +15,19 @@ import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
 import { ImageIcon, Image as ImageIconLucide, User, Users, CalendarDays, Package, Trash2, Check } from 'lucide-react';
 import { OFFERED_UNITS } from '@/lib/serviceOrders';
 import { SinglePhotoSheet, ConfirmRemove } from './SinglePhotoSheet';
+import { VAT_TREATMENTS, normaliseVatTreatment } from '@/lib/vat';
 
 // The experience listing's items — the shared MenuRow shape, the add flow (a
 // stepped wizard reusing the sign-up components) and the edit page (a page of
 // raised cards, one per detail). ProviderListingEditor owns the array and its
 // save; these only produce / edit one MenuRow and hand it back.
 
-export type MenuRow = { id?: string; name: string; description: string; price: string; priceMode: string; priceMax: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string };
+export type MenuRow = { id?: string; name: string; description: string; price: string; priceMode: string; priceMax: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string; vatTreatment: string };
 
-export type ItemCtx = { isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number; supabase: SupabaseClient };
+// vatRegistered: the provider is VAT registered, so each offering shows its VAT treatment card.
+export type ItemCtx = { isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number; supabase: SupabaseClient; vatRegistered?: boolean };
 
-export function rowFromItem(it: { id: string; name: string; description: string; price: number; price_mode?: string | null; price_max?: number | null; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null }): MenuRow {
+export function rowFromItem(it: { id: string; name: string; description: string; price: number; price_mode?: string | null; price_max?: number | null; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null; vat_treatment?: string | null }): MenuRow {
     return {
         id: it.id, name: it.name, description: it.description, price: amountForBox(it.price),
         priceMode: (['fixed', 'range', 'enquiry'].indexOf(String(it.price_mode)) !== -1 ? String(it.price_mode) : 'fixed'),
@@ -40,6 +42,7 @@ export function rowFromItem(it: { id: string; name: string; description: string;
         maxParty: it.max_party != null ? String(it.max_party) : '',
         isCustom: !!it.is_custom,
         ingredients: it.ingredients || '', allergens: it.allergens || '', category: it.category || '',
+        vatTreatment: normaliseVatTreatment(it.vat_treatment),
     };
 }
 
@@ -47,7 +50,7 @@ export function newRow(isSlot: boolean, fulfilment: string): MenuRow {
     return { name: '', description: '', price: '', priceMode: 'fixed', priceMax: '', unit: isSlot ? 'person' : 'flat', image: null,
         duration: isSlot ? '60' : '', fulfilment: (isSlot && fulfilment === 'both') ? 'collection' : null, active: true,
         capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '',
-        isCustom: false, ingredients: '', allergens: '', category: '' };
+        isCustom: false, ingredients: '', allergens: '', category: '', vatTreatment: 'standard' };
 }
 
 export const unitLabel = (unit: string): string => (
@@ -439,6 +442,27 @@ function AvailableCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow) => 
     );
 }
 
+// A VAT-registered provider's treatment for this offering — it decides whether
+// the guest's receipt splits out 20% VAT (standard) or names the supplier and
+// VAT number with no split (zero-rated, exempt). Standard unless they change it;
+// we never guess it from the category.
+function VatTreatmentCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow) => unknown }) {
+    const c = useCardSheet(row.vatTreatment, (v) => onSave({ ...row, vatTreatment: v }));
+    const label = (VAT_TREATMENTS.find((t) => t.value === row.vatTreatment) || VAT_TREATMENTS[0]).label;
+    return (
+        <>
+            <EditorCard title="VAT" summary={label} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="How is this offering treated for VAT?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <ChoiceTiles value={c.draft} onChange={(v) => c.setDraft(v)}
+                        options={VAT_TREATMENTS.map((t) => ({ value: t.value, label: t.label }))} />
+                    <p className="mt-4 text-sm text-slate-600">Most offerings are standard rate. If you’re unsure, check with your accountant.</p>
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
 // Extra-guest pricing (whole-session), standard/custom, menu section and
 // ingredients kept as cards so nothing that affects booking becomes uneditable.
 function StandardCustomCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow) => unknown }) {
@@ -533,6 +557,7 @@ export function ItemDetailCard({ ctx, row, onSave, onDelete, selecting, selected
                         {ctx.shape === 'made_to_order' && <TextDetailCard title="Ingredients" question="What’s in it?" placeholder="e.g. Wheat flour, butter, eggs…" value={row.ingredients} empty="Not added" onSave={(v) => onSave({ ...row, ingredients: v })} />}
                         {ctx.shape === 'made_to_order' && <TextDetailCard title="Allergens" question="Which allergens does it contain?" placeholder="e.g. Contains wheat, egg, milk…" value={row.allergens} empty="Not added" onSave={(v) => onSave({ ...row, allergens: v })} />}
                         <PhotoCard ctx={ctx} row={row} onSave={onSave} />
+                        {ctx.vatRegistered && <VatTreatmentCard row={row} onSave={onSave} />}
                         <AvailableCard row={row} onSave={onSave} />
 
                         <div className="border-t border-slate-100 pt-4">
