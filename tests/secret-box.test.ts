@@ -44,7 +44,12 @@ test('the wrong key, or a tampered value, throws rather than showing gibberish',
     withKeys(KEY, undefined, () => { sealed = sealSecret('wifi-pass-123', { table: 'listing_arrival', id: 'l' }); });
     withKeys(OTHER, undefined, () => assert.throws(() => openSecret(sealed, { table: 'listing_arrival', id: 'l' })));
     withKeys(KEY, undefined, () => {
-        const flipped = sealed.slice(0, -2) + (sealed.endsWith('A') ? 'B' : 'A') + sealed.slice(-1);
+        // Flip the second-to-last character to one that is GUARANTEED to differ
+        // from it — picking a fixed 'A'/'B' flaked ~1 in 64 runs, when that
+        // character was already the one we "changed" it to, so the ciphertext was
+        // untouched and openSecret happily succeeded.
+        const c = sealed[sealed.length - 2];
+        const flipped = sealed.slice(0, -2) + (c === 'A' ? 'B' : 'A') + sealed.slice(-1);
         assert.throws(() => openSecret(flipped, { table: 'listing_arrival', id: 'l' }));
     });
 });

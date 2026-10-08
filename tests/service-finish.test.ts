@@ -306,6 +306,44 @@ test('a trade with a blank description is refused', async () => {
     assert.equal((inserted.service_providers || []).length, 0);
 });
 
+/* ---------------------------------------- the coverage-area wall (server side)
+
+   A host trade with no coverage area can never be matched to a job — it lands in
+   the directory unfindable. The signed-in path refuses this in
+   submit_service_provider(); this anonymous path must too, and before the account
+   is made (no orphan user). A guest experience is exempt — its areas are
+   informational, not a matching key. Decision of 8 Oct 2026. */
+
+test('a host trade with no coverage area is refused, and no account or row is made', async () => {
+    const { route, created, inserted } = load({ ...LIVE, payload: { ...PAYLOAD, areas: [] } });
+    const res: any = await route.POST(call(GOOD));
+
+    assert.equal(res.status, 400);
+    assert.match(String(res.body.error), /coverage area/);
+    assert.equal((created || []).length, 0, 'no orphan account when the submit is refused');
+    assert.equal((inserted.service_providers || []).length, 0, 'nothing reaches the queue');
+});
+
+test('a guest experience is exempt from the coverage-area wall', async () => {
+    // trade 'guest' → audience guest; its description clears the 40-char guest
+    // rule, and it carries no areas. It must still be created.
+    const guest = {
+        ...LIVE,
+        trade: 'guest',
+        payload: {
+            ...PAYLOAD,
+            provider: { ...PAYLOAD.provider, trade: 'guest', description: 'We meet at the slipway at seven and swim for forty minutes.' },
+            areas: [],
+        },
+    };
+    const { route, created, inserted } = load(guest);
+    const res: any = await route.POST(call(GOOD));
+
+    assert.equal(res.status, 200);
+    assert.equal(created.length, 1);
+    assert.equal(inserted.service_providers.length, 1);
+});
+
 /* ------------------------------------------------------------- refusals */
 
 test('an unknown, an expired and a used token all answer identically', async () => {

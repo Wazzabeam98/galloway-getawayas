@@ -123,6 +123,28 @@ export async function POST(req: Request) {
             return NextResponse.json({ ok: false, error: submitBlock }, { status: 400 });
         }
 
+        // A host trade needs at least one coverage area — the same wall the
+        // signed-in path enforces in submit_service_provider(). Without one the
+        // trade is created but can never be matched to a job: it lands in the
+        // directory unfindable. tradeSubmitBlock above does not cover this (it is
+        // row-shaped and areas are a child table), so it is checked here, against
+        // the payload, before the account is made — like the two walls above, so a
+        // refusal leaves no orphan user. A guest experience has no coverage wall
+        // (its areas are informational), so this is host-trade only; audience
+        // comes from the trade, never the payload. The children below log-and-
+        // continue on a failed area insert, so this up-front check is also what
+        // stops a trade reaching pending_review with the areas silently dropped.
+        if (audienceForTrade(row.trade) !== 'guest') {
+            const areaList = Array.isArray(payload.areas) ? payload.areas : [];
+            if (areaList.length === 0) {
+                await logError('service-finish-no-area', { application: row.id });
+                return NextResponse.json({
+                    ok: false,
+                    error: 'a trade listing needs at least one coverage area before it can be submitted',
+                }, { status: 400 });
+            }
+        }
+
         // ------------------------------------------------------------------
         // The account — theirs already, or made now.
         // ------------------------------------------------------------------
