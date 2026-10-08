@@ -630,7 +630,7 @@ export async function POST(request: Request) {
                         .update(confirmPatch)
                         .eq('id', orderId)
                         .eq('status', 'holding')
-                        .select('id, parent_order_id, provider_id, provider_business_name, guest_email, service_date, service_time, item_name, quantity, price, note, allergy, supplier_vat_number, supplier_vat_name');
+                        .select('id, parent_order_id, provider_id, provider_business_name, guest_email, service_date, service_time, item_name, quantity, price, note, allergy, supplier_vat_number, supplier_vat_name, supplier_vat_treatment');
                     if (slotConfErr) {
                         console.error('[webhook] slot-order confirm', orderId, slotConfErr.message);
                     }

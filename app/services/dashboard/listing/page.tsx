@@ -35,7 +35,7 @@ export default async function ProviderListingPage() {
             + 'collection_street, collection_town, collection_postcode, '
             + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, '
             + 'venue_lat, venue_lng, show_precise_location, '
-            + 'lead_time_days, cancellation_window_hours, owner_paused, admin_hidden_at')
+            + 'lead_time_days, cancellation_window_hours, owner_paused, admin_hidden_at, vat_registered')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -55,7 +55,7 @@ export default async function ProviderListingPage() {
     const isSlot = shapeOf(provider) === 'slot';
     const [{ data: areas }, { data: items }, { data: avail }] = await Promise.all([
         admin.from('service_areas').select('label').eq('provider_id', provider.id).order('created_at', { ascending: true }),
-        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category')
+        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category, vat_treatment')
             .eq('provider_id', provider.id).order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         isSlot
             ? admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id).order('day_of_week', { ascending: true })
@@ -71,6 +71,7 @@ export default async function ProviderListingPage() {
                 shape: provider.shape,
                 isSlot,
                 isFood: isFoodProvider(provider),
+                vat_registered: provider.vat_registered === true,
                 business_name: provider.business_name || '',
                 category_label: provider.custom_label || '',
                 // The picked category KEY (guest_details.category) — what the
@@ -146,6 +147,7 @@ export default async function ProviderListingPage() {
                     ingredients: it.ingredients ?? null,
                     allergens: it.allergens ?? null,
                     category: it.category ?? null,
+                    vat_treatment: it.vat_treatment ?? 'standard',
                 })),
                 availability: (avail || []).map((a: any) => ({
                     day_of_week: Number(a.day_of_week), open_time: String(a.open_time).slice(0, 5), close_time: String(a.close_time).slice(0, 5),

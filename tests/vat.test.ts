@@ -68,7 +68,7 @@ test('a receipt shows a supplier only when the snapshot has both halves', () => 
     assert.equal(supplierFromSnapshot({ supplier_vat_number: null, supplier_vat_name: null }), null);
     assert.deepEqual(
         supplierFromSnapshot({ supplier_vat_number: 'GB999999973', supplier_vat_name: 'Millburn Ltd' }),
-        { name: 'Millburn Ltd', vatNumber: 'GB 999 9999 73' },
+        { name: 'Millburn Ltd', vatNumber: 'GB 999 9999 73', noSplit: null },
     );
 });
 
@@ -89,15 +89,25 @@ test('the receipt-email line breaks the gross into net + VAT @20% + total', () =
     assert.ok(html.includes('&pound;120.00'), 'total equals the price paid');
 });
 
-test('a food order names the supplier and number but prints no 20% split', () => {
-    const { supplierVatHtml, singleRateShape } = require('../lib/vat');
-    assert.equal(singleRateShape('made_to_order'), false, 'food is mostly zero-rated, not one 20% supply');
-    assert.equal(singleRateShape('slot'), true);
-    assert.equal(singleRateShape('comes_to_you'), true);
-    const html = supplierVatHtml({ supplier_vat_number: 'GB999999973', supplier_vat_name: 'Millburn Bakes' }, null);
-    assert.ok(html.includes('GB 999 9999 73'));
-    assert.ok(!html.includes('VAT at 20%'));
-    assert.ok(!html.includes('VAT (20%)'));
+test('zero-rated, exempt or mixed orders name the supplier and number but print no 20% split', () => {
+    const { supplierVatHtml } = require('../lib/vat');
+    for (const [treatment, words] of [['zero', 'Zero-rated'], ['exempt', 'Exempt from VAT'], ['mixed', 'mixes VAT rates']]) {
+        const html = supplierVatHtml({ supplier_vat_number: 'GB999999973', supplier_vat_name: 'Millburn Bakes', supplier_vat_treatment: treatment }, 42);
+        assert.ok(html.includes('GB 999 9999 73'), treatment);
+        assert.ok(html.includes(words), treatment);
+        assert.ok(!html.includes('VAT (20%)'), treatment + ' has no 20% split');
+    }
+    const std = supplierVatHtml({ supplier_vat_number: 'GB999999973', supplier_vat_name: 'Millburn Bakes', supplier_vat_treatment: 'standard' }, 42);
+    assert.ok(std.includes('VAT (20%)'), 'standard keeps the split');
+    assert.ok(std.includes('&pound;42.00'), 'the total is the price paid, nothing added');
+});
+
+test('an offering is standard unless the provider says zero or exempt', () => {
+    const { normaliseVatTreatment } = require('../lib/vat');
+    assert.equal(normaliseVatTreatment(undefined), 'standard');
+    assert.equal(normaliseVatTreatment('reduced'), 'standard');
+    assert.equal(normaliseVatTreatment('zero'), 'zero');
+    assert.equal(normaliseVatTreatment('exempt'), 'exempt');
 });
 
 test('nothing kept (a full refund) prints no split', () => {
