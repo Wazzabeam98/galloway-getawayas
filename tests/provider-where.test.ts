@@ -66,14 +66,20 @@ test('the venue-address helper joins the three fields and drops blanks', () => {
     assert.equal(providerVenueAddress({}), null);
 });
 
-// Round six (30 Sep 2026): a trade needs to know where a job is BEFORE deciding
-// whether to take it, so the full street address is on the enquiry from the
-// start — there is no accepted-only wall. The property name is the line, the full
-// address the sub, whatever the enquiry's status.
+// Round seven (reversing round six): the owner's street address is private until
+// there is a job, so a trade sees the TOWN only until they accept, and the full
+// street address only once accepted — the same wall as the owner's phone and the
+// message thread. The third arg is `released` (contactReleased(status)).
 const jobListing = { title: 'Millburn Cottage', location: 'Kirkcudbright, DG6 4XT', street_address: '3 Mill Road', postcode: 'DG6 4XT' };
 
-test('a trade job shows the full street address, not just the town', () => {
-    assert.deepEqual(whereForTradeJob(jobListing), { line: 'Millburn Cottage', sub: '3 Mill Road, Kirkcudbright, DG6 4XT' });
+test('a trade job shows only the town until the trade accepts', () => {
+    // Pre-accept (released = false, the default): town under the name, no street.
+    assert.deepEqual(whereForTradeJob(jobListing), { line: 'Millburn Cottage', sub: 'Kirkcudbright' });
+    assert.deepEqual(whereForTradeJob(jobListing, null, false), { line: 'Millburn Cottage', sub: 'Kirkcudbright' });
+});
+
+test('a trade job releases the full street address once accepted', () => {
+    assert.deepEqual(whereForTradeJob(jobListing, null, true), { line: 'Millburn Cottage', sub: '3 Mill Road, Kirkcudbright, DG6 4XT' });
 });
 
 test('a trade job with only a town falls back to the town under the name', () => {
