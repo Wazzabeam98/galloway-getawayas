@@ -16,7 +16,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { forgetAccount } from '@/lib/signInMemory';
 import { carryStayChoice, clearAuthCookies, clearStayChoice } from '@/lib/staySignedIn';
 import { toast } from 'react-toastify';
-import { getImageUrl, formatTime } from '@/lib/utils';
+import { getImageUrl } from '@/lib/utils';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
 import NotificationsSection from '@/components/account/NotificationsSection';
@@ -176,14 +176,6 @@ export default function AccountSettings() {
         title: string;
         instant_book: boolean;
         instant_book_requires_phone: boolean;
-        min_nights: number | null;
-        max_nights: number | null;
-        advance_notice: string | null;
-        preparation_time: string | null;
-        availability_window: string | null;
-        cancellation_policy: string | null;
-        check_in_time: string | null;
-        check_out_time: string | null;
         images: string[] | null;
         stl_licence_number: string | null;
         stl_licence_expiry: string | null;
@@ -243,7 +235,7 @@ export default function AccountSettings() {
 
                 const { data: myListings } = await supabase
                     .from('listings')
-                    .select('id, title, instant_book, instant_book_requires_phone, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time, images, stl_licence_number, stl_licence_expiry, stl_licence_status')
+                    .select('id, title, instant_book, instant_book_requires_phone, images, stl_licence_number, stl_licence_expiry, stl_licence_status')
                     .eq('host_id', session.user.id)
                     .order('created_at', { ascending: true });
                 setHostListings(myListings || []);
@@ -1729,39 +1721,23 @@ export default function AccountSettings() {
                                                     listing now, which is also the only way to give two properties
                                                     different times. */}
 
+                                                {/* Stay rules used to be mirrored here as a values table, which
+                                                    read like a second place they were set — a host saw "Minimum
+                                                    nights: 1" here and "3" on the calendar and could not tell which
+                                                    governed a booking. The calendar is the single home for them, so
+                                                    this is now only a pointer: no values to mistake for a setting. */}
                                                 <div className="border-t pt-4">
-                                                    <div className="text-xs font-semibold text-slate-700 mb-2">
-                                                        Current stay rules
-                                                    </div>
-                                                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                                                        <dt className="text-slate-500">Minimum nights</dt>
-                                                        <dd className="text-slate-800">{l.min_nights || 1}</dd>
-                                                        <dt className="text-slate-500">Maximum nights</dt>
-                                                        <dd className="text-slate-800">{l.max_nights || 'No limit'}</dd>
-                                                        <dt className="text-slate-500">Advance notice</dt>
-                                                        <dd className="text-slate-800">{l.advance_notice || 'Same day'}</dd>
-                                                        <dt className="text-slate-500">Preparation time</dt>
-                                                        <dd className="text-slate-800">{l.preparation_time || 'None'}</dd>
-                                                        <dt className="text-slate-500">Booking window</dt>
-                                                        <dd className="text-slate-800">{l.availability_window || '9 months'}</dd>
-                                                        <dt className="text-slate-500">Cancellation policy</dt>
-                                                        <dd className="text-slate-800">{l.cancellation_policy || 'Moderate'}</dd>
-                                                        <dt className="text-slate-500">Check-in from</dt>
-                                                        <dd className="text-slate-800">{formatTime(l.check_in_time) || '3pm'}</dd>
-                                                        <dt className="text-slate-500">Checkout by</dt>
-                                                        <dd className="text-slate-800">{formatTime(l.check_out_time) || '11am'}</dd>
-                                                    </dl>
-                                                    <p className="text-xs text-slate-400 mt-3">
-                                                        These are set per listing so they stay in one place — edit nights, notice
-                                                        and booking window on your{' '}
+                                                    <p className="text-xs text-slate-500">
+                                                        Minimum and maximum nights, advance notice and the booking
+                                                        window are set on your{' '}
                                                         <Link href="/dashboard/calendar" className="underline hover:text-slate-700">
                                                             calendar
                                                         </Link>
-                                                        , and the cancellation policy in the{' '}
+                                                        ; check-in times and the cancellation policy in the{' '}
                                                         <Link href={`/edit-listing/${l.id}`} className="underline hover:text-slate-700">
                                                             listing editor
                                                         </Link>
-                                                        .
+                                                        . This page is just for booking permissions.
                                                     </p>
                                                 </div>
                                             </div>
