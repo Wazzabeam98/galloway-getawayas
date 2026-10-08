@@ -20,6 +20,7 @@ import AutoTextarea from '@/components/AutoTextarea';
 import DescriptionCard from '@/components/listing-editor/DescriptionCard';
 import AmenitiesCard, { AmenityGrid } from '@/components/listing-editor/AmenitiesCard';
 import PhotosEditor, { PhotosCard } from '@/components/listing-editor/PhotosEditor';
+import ExtrasEditor from '@/components/listing-editor/ExtrasEditor';
 import {
     NightlyPriceCard, WeekendPriceCard, DiscountsCard, CleaningFeeCard,
     ExtraGuestFeeCard, PetFeeCard, DamageDepositCard,
@@ -826,6 +827,7 @@ export default function EditListing() {
                                 <ExtraGuestFeeCard fee={extraGuestFee} after={extraGuestAfter} onSave={(f, a) => saveThen({ extra_guest_fee: amountOrZero(f), extra_guest_after: amountOrNull(a) ?? 1 }, () => { setExtraGuestFee(f); setExtraGuestAfter(a); })} />
                                 <PetFeeCard fee={petFee} petsAllowed={amenities.includes('Pets allowed')} onSave={(v) => saveThen({ pet_fee: amountOrZero(v) }, () => setPetFee(v))} />
                                 <DamageDepositCard deposit={damageDeposit} onSave={(v) => saveThen({ damage_deposit: amountOrZero(v) }, () => setDamageDeposit(v))} />
+                                {listingId && <ExtrasEditor listingId={listingId} />}
                             </section>
                         </PhoneSection>)}
 
