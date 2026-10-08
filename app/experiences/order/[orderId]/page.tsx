@@ -1,4 +1,6 @@
 import { redirect } from 'next/navigation';
+import SupplierVat from '@/components/receipt/SupplierVat';
+import { singleRateShape } from '@/lib/vat';
 import Link from 'next/link';
 import {
     ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle,
@@ -185,6 +187,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     if (!order || !role) redirect('/trips');
     const isBooker = role === 'booker';
     const isCompanion = role === 'companion';
+
+    // The supplier's VAT snapshot (frozen on the order when it was made), for the
+    // booker's receipt only. Null for a provider who isn't VAT registered.
+    const { data: supplierVat } = isBooker
+        ? await admin.from('service_orders').select('supplier_vat_number, supplier_vat_name, shape').eq('id', params.orderId).maybeSingle()
+        : { data: null };
 
     const [{ data: prov }, { data: listing, error: listingError }] = await Promise.all([
         // contact_phone is deliberately NOT selected any more. It is null on
@@ -1072,6 +1080,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     </details>
                                 )}
                             </div>
+                            <SupplierVat row={supplierVat} gross={singleRateShape(supplierVat?.shape) ? Math.max(0, breakdownTotal > 0 ? breakdownNet : Number(price) - amountRefunded) : null} what={singleRateShape(supplierVat?.shape) ? 'experience' : 'order'} />
                         </section>
                         )}
 
