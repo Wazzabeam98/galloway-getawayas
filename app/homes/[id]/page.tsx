@@ -33,6 +33,7 @@ import AreaExperiences from '@/components/AreaExperiences';
 import { experienceAreaForListing } from '@/lib/experienceTowns';
 import ReportListing from '@/components/ReportListing';
 import WhereYoullSleep from '@/components/WhereYoullSleep';
+import ListingExtras from '@/components/ListingExtras';
 import AboutThisPlace from '@/components/AboutThisPlace';
 import ThingsToKnow from '@/components/ThingsToKnow';
 import MeetYourHost from '@/components/MeetYourHost';
@@ -520,6 +521,19 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     // taken night already struck out — never an open month that fills up two
     // seconds later. And whether this viewer still owes the Guest Terms, so the
     // tick is there from the first paint too (null when signed out).
+    // The host's optional paid extras for this listing — active ones only, in
+    // the host's order. Read with the service role (the table is public-read
+    // anyway); passed to the booking card so it prices them exactly as checkout
+    // re-prices, and shown as an informational section below.
+    const { data: extraRows } = await adminClient()
+        .from('listing_extras')
+        .select('id, label, description, price, unit, vat_treatment, active, sort_order')
+        .eq('listing_id', home.id)
+        .eq('active', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+    const listingExtras = (extraRows || []) as any[];
+
     const [calendar, guestTermsRow] = await Promise.all([
         guestCalendar(home.id),
         viewer
@@ -847,6 +861,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
+                        {/* Optional paid extras the host offers — informational
+                            here; the guest adds and pays for them in the booking
+                            card. */}
+                        <ListingExtras extras={listingExtras} />
+
                         {Array.isArray(home.nearby) && home.nearby.length > 0 && (
                             <div className='mt-8 pt-8 border-t'>
                                 <h2 className='text-xl font-semibold mb-1'>What&apos;s nearby</h2>
@@ -941,6 +960,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             needsGuestTerms={viewerNeedsGuestTerms}
                             showScore={showScore}
                             ratingAvg={ratingAvg}
+                            extras={listingExtras}
                         />}
                     </div>
                 </div>

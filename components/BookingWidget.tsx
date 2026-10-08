@@ -17,6 +17,7 @@ import { ukDate } from '@/lib/dayKey';
 import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
 import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
+import { resolveSelection, unitLabel, type ListingExtra } from '@/lib/listingExtras';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
@@ -75,6 +76,10 @@ interface Props {
     // gate for whether a listing has enough reviews to show a score at all.
     showScore?: boolean;
     ratingAvg?: number;
+    // The host's catalogue of optional paid extras (lib/listingExtras). Loaded
+    // on the server by the listing page and passed in, so the card prices them
+    // from the same source the checkout re-prices from — never a browser figure.
+    extras?: ListingExtra[];
 }
 
 // Defined out here on purpose. A component declared inside another one is a
@@ -299,6 +304,7 @@ export default function BookingWidget({
     needsGuestTerms: serverNeedsGuestTerms,
     showScore = false,
     ratingAvg = 0,
+    extras = [],
 }: Props) {
     const [payPlan, setPayPlan] = useState<'deposit' | 'full'>('deposit');
     const supabase = createClientComponentClient();
@@ -345,6 +351,8 @@ export default function BookingWidget({
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
     const [pets, setPets] = useState(0);
+    // Chosen quantity per extra id. Priced from the catalogue, never from here.
+    const [extraQtys, setExtraQtys] = useState<Record<string, number>>({});
     const [dateRange, setDateRange] = useState<Range>({
         startDate: undefined,
         endDate: undefined,
@@ -489,6 +497,15 @@ export default function BookingWidget({
     // Priced by the shared module, which is the same code the server runs
     // before taking any money — so what the guest is shown here and what
     // they are charged cannot come apart.
+    // The host's live extras, and the guest's selection resolved against them.
+    // Both the quote below and the booking insert read the selection the same
+    // way, so what the card totals is what the checkout re-prices.
+    const activeExtras = (extras || []).filter((e) => e && e.active !== false);
+    const extrasSelection = activeExtras
+        .map((e) => ({ extra_id: e.id, qty: Math.max(0, Math.floor(Number(extraQtys[e.id]) || 0)) }))
+        .filter((s) => s.qty > 0);
+    const selectedExtras = resolveSelection(extrasSelection, activeExtras);
+
     const quote = quoteBooking(
         {
             price_per_night: pricePerNight,
@@ -509,7 +526,8 @@ export default function BookingWidget({
         adults,
         children,
         pets,
-        { newListingEligible, asOf: new Date() }
+        { newListingEligible, asOf: new Date() },
+        selectedExtras
     );
 
     const totalGuests = adults + children;
@@ -677,6 +695,10 @@ export default function BookingWidget({
                 children,
                 pets,
                 total_price: total,
+                // The guest's extras CLAIM — which extras, how many. The price
+                // is re-read from the catalogue by the checkout route, never
+                // taken from here; an empty selection writes null.
+                extras_selection: extrasSelection.length ? extrasSelection : null,
                 // Nothing is confirmed until the payment lands. The webhook
                 // moves this on once Stripe says the money arrived.
                 status: 'pending_payment',
@@ -839,9 +861,42 @@ export default function BookingWidget({
                     <span>{formatGBP(extraGuestTotal)}</span>
                 </div>
             )}
+            {quote.extras.map((e) => (
+                <div key={'extra-' + e.id} className="flex justify-between text-slate-600">
+                    <span>
+                        {e.label}
+                        {e.unit === 'night' && e.units > 1 && <span className="text-slate-400"> · {formatGBP(e.unitPrice)} × {e.units} nights{e.qty > 1 ? ' × ' + e.qty : ''}</span>}
+                        {e.unit === 'stay' && e.qty > 1 && <span className="text-slate-400"> · {formatGBP(e.unitPrice)} × {e.qty}</span>}
+                    </span>
+                    <span>{formatGBP(e.lineTotal)}</span>
+                </div>
+            ))}
             <div className="flex justify-between font-bold text-slate-900 mt-2 pt-2 border-t">
                 <span>Total</span>
                 <span>{formatGBP(total)}</span>
+            </div>
+        </div>
+    ) : null;
+
+    // The optional-extras picker, shown once dates are chosen so a per-night
+    // price reads against real nights — the way Vrbo surfaces optional fees at
+    // the final step rather than in the headline price. Priced from the host's
+    // catalogue; the guest only chooses how many.
+    const extrasBlock = nights > 0 && activeExtras.length > 0 ? (
+        <div className="border-t pt-3 mb-4">
+            <div className="text-sm font-semibold text-slate-900">Add to your stay</div>
+            <div className="mt-1">
+                {activeExtras.map((e) => (
+                    <Counter
+                        key={e.id}
+                        label={e.label}
+                        sub={formatGBP(Number(e.price)) + ' ' + unitLabel(e.unit)}
+                        value={extraQtys[e.id] || 0}
+                        onChange={(v) => setExtraQtys((q) => ({ ...q, [e.id]: v }))}
+                        min={0}
+                        max={10}
+                    />
+                ))}
             </div>
         </div>
     ) : null;
@@ -1111,6 +1166,7 @@ export default function BookingWidget({
                                 </div>
                                 <div className="flex-1 overflow-y-auto px-4 py-4">
                                     {guestsBlock}
+                                    {extrasBlock}
                                     {breakdownBlock}
                                     {payPlanBlock}
                                     {cancelBlock}
@@ -1137,6 +1193,7 @@ export default function BookingWidget({
                 {priceHeader}
                 {calendarEl}
                 {guestsBlock}
+                {extrasBlock}
                 {breakdownBlock}
                 {payPlanBlock}
                 {cancelBlock}

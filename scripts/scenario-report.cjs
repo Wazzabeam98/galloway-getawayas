@@ -53,6 +53,10 @@ const WATCHED = [
     'lib/refundSpread.ts',
     'lib/fees.ts',
     'lib/pricing.ts',
+    // Host-sold extras: the catalogue→quote mapping and validation that feed a
+    // priced line into pricing.ts and the checkout freeze. Watched so a change
+    // to how an extra is priced or resolved re-proves against the run.
+    'lib/listingExtras.ts',
     'lib/cancellation.ts',
     // "Change reservation" money: the diff pricing, the policy on a net loss of
     // nights, and the routes that quote, create and settle a change.
