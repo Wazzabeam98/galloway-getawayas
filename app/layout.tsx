@@ -78,7 +78,7 @@ const baseMetadata: Metadata = {
       'Handpicked holiday cottages and accommodation across Dumfries & Galloway. Book direct with local hosts.',
     images: [
       {
-        url: '/images/hero-1.jpg',
+        url: '/images/og-default.jpg',
         width: 1200,
         height: 630,
         alt: 'Holiday cottages in Dumfries & Galloway',
@@ -91,7 +91,7 @@ const baseMetadata: Metadata = {
     title: 'Holiday Cottages & Accommodation in Dumfries & Galloway',
     description:
       'Handpicked holiday cottages and accommodation across Dumfries & Galloway.',
-    images: ['/images/hero-1.jpg'],
+    images: ['/images/og-default.jpg'],
   },
 
   robots: {
@@ -145,7 +145,7 @@ export default function RootLayout({
       'Self catering holiday cottages and apartments across Dumfries & Galloway, Scotland.',
     url: SITE_URL,
     logo: `${SITE_URL}/icon.svg`,
-    image: `${SITE_URL}/images/hero-1.jpg`,
+    image: `${SITE_URL}/images/og-default.jpg`,
     // The registered office.
     address: {
       '@type': 'PostalAddress',
