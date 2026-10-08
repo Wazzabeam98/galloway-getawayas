@@ -20,8 +20,83 @@ import { PackageStaysProvider } from '@/components/marketplace/PackageNotice';
 import { loadStayWindows } from '@/lib/packageNotice';
 import { londonDayKey } from '@/lib/dayKey';
 import { getImageUrl } from '@/lib/utils';
+import type { MpProvider } from '@/lib/experiencesData';
+import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
 
 export const dynamic = 'force-dynamic';
+
+const SITE_URL = 'https://gallowaygetaways.co.uk';
+
+// Structured data for an experience listing — the counterpart to the cottage
+// page's VacationRental + Offer, so experiences can win the same price/rating
+// rich results. Modelled as a Product, which is what the experiences platforms
+// (GetYourGuide, Viator, Airbnb Experiences) mark a bookable thing-to-do up as:
+// Event is for a single dated happening, and our slots are rolling, recurring
+// availability rather than one concert on one night.
+//
+// The PRICE is the part that has to be honest. We publish an Offer price only
+// when it is a FIXED price AND it is the very "from" figure the page already
+// shows (p.priceFrom) — so the markup can never claim a number the page
+// doesn't. A price-on-enquiry provider, and any provider whose cheapest option
+// is a RANGE, carries NO price: the Product still earns a rating rich result,
+// but we never advertise a price we can't hold the guest to. Pounds, as a
+// number, exactly as the cottage Offer uses price_per_night.
+function experienceJsonLd(p: MpProvider, reviews: ExperienceReviewsBlock, path: string): object[] {
+    const url = SITE_URL + path;
+    const image = (Array.isArray(p.photos) && p.photos[0])
+        || (p.headshot ? getImageUrl(p.headshot) : null);
+
+    const raw = (p.description || p.what_happens || '').replace(/\s+/g, ' ').trim();
+    const where = p.based_line ? ` in ${p.based_line}` : '';
+    const description = raw
+        ? (raw.length > 300 ? raw.slice(0, 297).trimEnd() + '…' : raw)
+        : `${p.business_name} — a local experience${where}, Dumfries & Galloway. Booked and paid securely through Galloway Getaways.`;
+
+    // The cheapest priced option, and whether it is fixed — the same selection
+    // present.ts / the loader use for p.priceFrom, so a published price equals
+    // the displayed "from".
+    const priced = (p.items || []).filter((i) => (i.priceMode || 'fixed') !== 'enquiry' && i.price > 0);
+    const cheapest = priced.length
+        ? priced.reduce((a, b) => (b.price < a.price ? b : a))
+        : null;
+    const publishPrice = !p.allOnEnquiry && !!cheapest && (cheapest.priceMode || 'fixed') === 'fixed';
+
+    const product: any = {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name: p.business_name,
+        description,
+        url,
+        ...(image ? { image } : {}),
+        ...(reviews && reviews.avg != null
+            ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: reviews.avg, reviewCount: reviews.count } }
+            : {}),
+        ...(publishPrice
+            ? {
+                  offers: {
+                      '@type': 'Offer',
+                      price: p.priceFrom,
+                      priceCurrency: 'GBP',
+                      availability: 'https://schema.org/InStock',
+                      url,
+                      seller: { '@type': 'Organization', name: 'Galloway Getaways' },
+                  },
+              }
+            : {}),
+    };
+
+    const breadcrumbs = {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+            { '@type': 'ListItem', position: 1, name: 'Home', item: SITE_URL },
+            { '@type': 'ListItem', position: 2, name: 'Experiences', item: `${SITE_URL}/experiences/browse` },
+            { '@type': 'ListItem', position: 3, name: p.business_name, item: url },
+        ],
+    };
+
+    return [product, breadcrumbs];
+}
 
 // The browser tab carries the provider's name — "Loch Sauna | Galloway Getaways"
 // (the root layout appends the suffix, so the title here is the bare name).
@@ -123,11 +198,24 @@ export default async function PublicListingPage({ params }: { params: { provider
     // the package notice when the picked day falls inside one (lib/packageNotice).
     const packageStays = await loadStayWindows(admin, user?.id, londonDayKey());
 
+    // Product + BreadcrumbList structured data, injected on every live render
+    // below (made-to-order, slot, request, comes-to-you alike). Not on the
+    // paused branch above: a paused provider isn't bookable, so it should not
+    // advertise an offer.
+    const ldScripts = experienceJsonLd(p, reviews, here).map((obj, i) => (
+        <script
+            key={i}
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(obj) }}
+        />
+    ));
+
     // A made-to-order listing reads like a food-ordering site: the MENU leads the
     // page (photos, prices) and the sidebar is a BASKET, both sharing one cart.
     if (p.shape === 'made_to_order') {
         return (
             <PackageStaysProvider stays={packageStays}>
+            {ldScripts}
             {/* Only fixed-price offerings go in the orderable menu; a range or
                 price-on-enquiry item is reached through "Message the provider"
                 in the listing body (and refused server-side anyway). */}
@@ -215,6 +303,7 @@ export default async function PublicListingPage({ params }: { params: { provider
 
     return (
         <PackageStaysProvider stays={packageStays}>
+            {ldScripts}
             {isComesToYou ? <RequestBookingProvider>{body}</RequestBookingProvider> : body}
         </PackageStaysProvider>
     );
