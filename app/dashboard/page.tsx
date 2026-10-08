@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import Toast from "@/components/base/Toast";
 import TemplateGapWarning from "@/components/TemplateGapWarning";
 import ArrivalNudge from "@/components/ArrivalNudge";
+import AgreementUpdateNotice from "@/components/legal/AgreementUpdateNotice";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getImageUrl, displayName } from "@/lib/utils";
@@ -261,6 +262,10 @@ export default async function Dashboard() {
             <div className="max-w-7xl mx-auto px-6 pt-6">
                 <ArrivalNudge userId={(user && user.user && user.user.id) || ''} />
             </div>
+
+            {/* The Host Agreement, when it has been updated since this host
+                agreed (or was never agreed). Asks; never blocks. */}
+            <AgreementUpdateNotice doc="host" source="dashboard_notice" className="max-w-7xl mx-auto px-6 pt-4" />
 
             {hostNeedsPayouts && (
                 <div className="max-w-7xl mx-auto px-6 pt-4">

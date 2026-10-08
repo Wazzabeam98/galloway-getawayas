@@ -158,7 +158,8 @@ export function agreementGateHeld(): boolean {
 
 // What the signed-in account has agreed to. null while unknown (or signed out).
 export async function fetchAgreementStatus(): Promise<null | {
-    documents: Record<AgreementKey, { version: string; agreed: boolean; earlier: boolean }>;
+    // `required`: this account's role needs it (see /api/agreements).
+    documents: Record<AgreementKey, { version: string; agreed: boolean; earlier: boolean; required?: boolean }>;
     // The next document owed at all (Guest Terms first).
     next: AgreementKey | null;
     // The next ROLE agreement owed, never the Guest Terms — what the sign-in

@@ -55,6 +55,11 @@ export interface Agreement {
     lastUpdated: string;
     // The one file that holds the wording, for whoever swaps it.
     textFile: string;
+    // What changed in THIS version, in a line or two, for someone who agreed to
+    // an earlier one — the dashboard's update notice shows it above the link to
+    // the full text. Required for every version after the first (v1-…); the
+    // agreements test refuses a bump without one.
+    changeSummary: string;
 }
 
 export const AGREEMENTS: Record<AgreementKey, Agreement> = {
@@ -66,6 +71,7 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
         version: 'v2-2026-10-08',
         lastUpdated: '2026-10-08',
         textFile: 'components/legal/agreements/text/guest.ts',
+        changeSummary: 'If something official, like an evacuation or a travel restriction, stops your stay, ask your host to cancel for a full refund. Weather warnings on their own don’t count.',
     },
     host: {
         key: 'host',
@@ -75,6 +81,7 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
         version: 'v2-2026-10-08',
         lastUpdated: '2026-10-08',
         textFile: 'components/legal/agreements/HostAgreement.tsx',
+        changeSummary: 'Cancelling a confirmed booking carries a 5% fee off your next payout, except when a major disruptive event (a travel restriction, an evacuation, closed access, or a loss of power or water) stops the stay.',
     },
     experience_provider: {
         key: 'experience_provider',
@@ -86,6 +93,7 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
         version: 'v1-2026-10-03',
         lastUpdated: '2026-10-03',
         textFile: 'components/legal/agreements/text/experience-provider.ts',
+        changeSummary: '',
     },
     tradesperson: {
         key: 'tradesperson',
@@ -95,6 +103,7 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
         version: 'v1-2026-10-03',
         lastUpdated: '2026-10-03',
         textFile: 'components/legal/agreements/text/tradesperson.ts',
+        changeSummary: '',
     },
 };
 
@@ -188,6 +197,22 @@ export function nextRoleOwed(
         if (!versions.some((v) => hasAgreed(key, v))) return key;
     }
     return null;
+}
+
+// THE UPDATE NOTICE (components/legal/AgreementUpdateNotice, on the host and
+// provider dashboards). A role agreement this account needs and has not agreed
+// to at its current version — most often because the wording was bumped after
+// they agreed. Never blocks anything: the walls that matter stay where they are
+// (listing submit, provider submit); this just asks, until they agree.
+// `earlier` says whether they agreed to an older version (an update) or never
+// did (asked plainly). The Guest Terms are not here: they are asked at checkout.
+export function agreementUpdateNotice(
+    key: AgreementKey,
+    status: { agreed: boolean; earlier: boolean; required?: boolean } | null | undefined,
+): null | { earlier: boolean; summary: string } {
+    if (key === 'guest' || !status) return null;
+    if (!status.required || status.agreed) return null;
+    return { earlier: !!status.earlier, summary: status.earlier ? AGREEMENTS[key].changeSummary : '' };
 }
 
 // The version recorded for a document that counts as current, if any.

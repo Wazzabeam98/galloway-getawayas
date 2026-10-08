@@ -194,3 +194,27 @@ test('GET names the one document owed next', async () => {
     assert.equal(res2.body.next, null);
     assert.equal(res2.body.documents.guest.agreed, true);
 });
+
+/* ------------------------------------------------- the dashboard update notice */
+
+test('every agreement bumped past its first version says what changed, in a line or two', () => {
+    for (const key of A.AGREEMENT_ORDER) {
+        const a = A.AGREEMENTS[key];
+        if (/^v1-/.test(a.version)) continue;
+        assert.ok(a.changeSummary && a.changeSummary.trim().length > 0, key + ' was bumped to ' + a.version + ' with no changeSummary for the update notice');
+        assert.ok(a.changeSummary.length <= 240, key + ' changeSummary is a line or two, not the agreement');
+    }
+});
+
+test('the update notice asks only a role holder who has not agreed to the current version, and never for the Guest Terms', () => {
+    const N = A.agreementUpdateNotice;
+    assert.equal(N('host', { agreed: true, earlier: false, required: true }), null, 'agreed: nothing shown');
+    assert.equal(N('host', { agreed: false, earlier: true, required: false }), null, 'not a host: nothing shown');
+    assert.equal(N('host', null), null, 'status unknown: nothing shown');
+    assert.equal(N('guest', { agreed: false, earlier: true, required: true }), null, 'the Guest Terms are asked at checkout');
+    const update = N('host', { agreed: false, earlier: true, required: true });
+    assert.ok(update && update.earlier, 'an older version on record: shown as an update');
+    assert.equal(update.summary, A.AGREEMENTS.host.changeSummary, 'with what changed');
+    const fresh = N('tradesperson', { agreed: false, earlier: false, required: true });
+    assert.ok(fresh && !fresh.earlier && fresh.summary === '', 'never agreed: asked plainly, no "what changed"');
+});

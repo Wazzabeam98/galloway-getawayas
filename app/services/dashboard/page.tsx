@@ -14,6 +14,7 @@ import { isAwaitingConnect } from '@/lib/serviceOrders';
 import { loadHeldOrders, heldSummary } from '@/lib/heldPayouts';
 import { londonDayKey } from '@/lib/dayKey';
 import HeldPayoutsBanner from '@/components/services/HeldPayoutsBanner';
+import AgreementUpdateNotice from '@/components/legal/AgreementUpdateNotice';
 
 export const metadata = {
     // One static tab title for both audiences. The visible heading carries the
@@ -132,6 +133,10 @@ export default async function ProviderReservationsPage() {
                     </div>
                 )}
             </div>
+
+            {/* The provider's own agreement, when it has been updated since they
+                agreed. Asks; never blocks. */}
+            <AgreementUpdateNotice doc={isTrade ? 'tradesperson' : 'experience_provider'} source="dashboard_notice" className="mb-6" />
 
             {awaitingPayouts && <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />}
 
