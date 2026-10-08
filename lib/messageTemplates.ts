@@ -29,6 +29,12 @@ export interface ScopedTemplate {
     listingIds: string[];
 }
 
+// The kind for a host's own, free-timing message — one that isn't one of the
+// four fixed purposes. These do not compete for a booking the way the fixed
+// types do (see customTemplatesFor), so they are handled apart from
+// resolveTemplate / coverage, which are about "which ONE check-in message wins".
+export const CUSTOM_TYPE = 'custom';
+
 export function isCatchAll(template: ScopedTemplate): boolean {
     return !template.listingIds || template.listingIds.length === 0;
 }
@@ -91,6 +97,20 @@ export function hasScopeClash(
             && !isCatchAll(t)
             && t.listingIds.indexOf(listingId) !== -1;
     }).length > 1;
+}
+
+// Every enabled custom message that covers this listing. Unlike the four fixed
+// types there is no single winner: a host's custom messages are independent, so
+// all of them that cover the booking are candidates. Each is then gated on its
+// own timing and claimed by its own id (never by a shared type), so two custom
+// messages that both fall due for one booking both send.
+export function customTemplatesFor(
+    templates: ScopedTemplate[],
+    listingId: string
+): ScopedTemplate[] {
+    return templates.filter(function (t) {
+        return t.template_type === CUSTOM_TYPE && t.enabled && coversListing(t, listingId);
+    });
 }
 
 export type CoverageState = 'specific' | 'default' | 'none' | 'disabled';

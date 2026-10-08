@@ -146,6 +146,18 @@ export function timingFor(
         };
     }
 
+    // After the guest has left — a thank-you, a review nudge. Reuses the
+    // hours_after column (the anchor tells the two apart). Worth sending a while
+    // after, but a message that lands a fortnight on reads as an afterthought,
+    // so the window closes 14 days past check-out.
+    if (anchor === 'after_check_out') {
+        const checkOutAt = londonInstant(booking.check_out, hourOf(listing.check_out_time, 11));
+        return {
+            dueAt: new Date(checkOutAt.getTime() + (template.hours_after || 0) * 3600000),
+            staleAfter: new Date(checkOutAt.getTime() + 14 * 24 * 3600000),
+        };
+    }
+
     return null;
 }
 
