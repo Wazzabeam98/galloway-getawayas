@@ -96,6 +96,20 @@ test('a settling-in note is counted forward from the check-in time', () => {
     assert.equal(t.dueAt.toISOString(), '2026-08-20T18:00:00.000Z');
 });
 
+test('a custom after-check-out note is counted forward from the check-out time', () => {
+    // A host's own thank-you / review nudge: 24 hours after they leave. Check-out
+    // is 11am on the 24th (10:00 UTC in BST), so a day later is the 25th at 10:00.
+    const t = timingFor(
+        template({ anchor: 'after_check_out', hours_after: 24, template_type: 'custom' }),
+        booking(),
+        LISTING
+    );
+    assert.ok(t);
+    assert.equal(t.dueAt.toISOString(), '2026-08-25T10:00:00.000Z');
+    // Worth sending late, but not forever: the window closes 14 days on.
+    assert.equal(t.staleAfter.toISOString(), '2026-09-07T10:00:00.000Z');
+});
+
 test('a delayed booking-confirmation note runs from when the host accepted', () => {
     const t = timingFor(
         template({ anchor: 'booking', minutes_after: 90 }),

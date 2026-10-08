@@ -14,6 +14,8 @@ import {
     isCatchAll,
     hasScopeClash,
     coverage,
+    customTemplatesFor,
+    CUSTOM_TYPE,
 } from '../lib/messageTemplates';
 
 const tpl = (over: any = {}) => Object.assign({
@@ -173,4 +175,29 @@ test('a switched-off template reads as disabled, not as an oversight', () => {
         'disabled',
         'turning something off is a decision; having nothing is usually not'
     );
+});
+
+/* ------------------------------------------------------- custom messages */
+
+// A host's own messages are not resolved to one winner the way the four fixed
+// purposes are: each is independent, so EVERY enabled custom message that covers
+// the booking is a candidate. (Each is then gated on its own timing and claimed
+// by its own id in the cron, so two that fall due both send.)
+test('every enabled custom message covering a listing is returned, not just one', () => {
+    const a = tpl({ id: 'a', template_type: CUSTOM_TYPE, listingIds: [] });
+    const b = tpl({ id: 'b', template_type: CUSTOM_TYPE, listingIds: ['harbour'] });
+    const c = tpl({ id: 'c', template_type: CUSTOM_TYPE, listingIds: ['harbour'] });
+
+    const got = customTemplatesFor([a, b, c], 'harbour').map((t) => t.id).sort();
+    assert.deepEqual(got, ['a', 'b', 'c'], 'the catch-all and both listing-scoped ones');
+});
+
+test('custom messages are filtered by enabled, kind and scope', () => {
+    const off = tpl({ id: 'off', template_type: CUSTOM_TYPE, enabled: false, listingIds: [] });
+    const elsewhere = tpl({ id: 'elsewhere', template_type: CUSTOM_TYPE, listingIds: ['townhouse'] });
+    const preset = tpl({ id: 'preset', template_type: 'checkin_details', listingIds: [] });
+    const good = tpl({ id: 'good', template_type: CUSTOM_TYPE, listingIds: [] });
+
+    const got = customTemplatesFor([off, elsewhere, preset, good], 'harbour').map((t) => t.id);
+    assert.deepEqual(got, ['good'], 'not the disabled one, not another listing, not a fixed type');
 });
