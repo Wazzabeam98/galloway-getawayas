@@ -133,9 +133,11 @@ export const AREAS: Area[] = [
         slug: "castle-douglas",
         name: "Castle Douglas",
         townKeys: ["castledouglas"],
-        // Staged: copy written, held out of the index and sitemap until it has
-        // been checked live. Clear `hold` to publish (still needs stock).
-        hold: true,
+        // Released: copy written and checked, and it has published stock (2
+        // cottages at time of release, 08/10/2026). The index + sitemap gates
+        // still require a live listing, so this self-parks if stock ever hits
+        // zero.
+        hold: false,
         intro: [
             "Castle Douglas is Scotland’s only designated Food Town, and it earns it — three long parallel streets of butchers, bakers, delis and independent shops, with a producers’ market once a month and food fairs through the year. If you are self-catering anywhere in this part of Galloway, this is where you come to fill the fridge properly.",
             "Threave Garden is a mile out of town: sixty-four acres run by the National Trust for Scotland, where their heritage gardeners are trained, with a walled garden, glasshouses and an osprey platform. Threave Castle is a little further on, a fourteenth-century tower house on an island in the Dee that you reach by ringing a bell for the ferryman.",
