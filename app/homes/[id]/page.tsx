@@ -248,7 +248,7 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
 
     const image = home.images && home.images.length > 0
         ? getImageUrl(home.images[0])
-        : `${SITE_URL}/images/hero-1.jpg`;
+        : `${SITE_URL}/images/og-default.jpg`;
 
     // Only a published listing belongs in the index. A hidden one is
     // deliberately off the home page and out of the sitemap, but it still

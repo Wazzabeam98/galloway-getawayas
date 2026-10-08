@@ -134,10 +134,10 @@ export function ExperiencesForBusinesses() {
 
                 <div className="relative mx-auto hidden h-[300px] w-[300px] sm:block" aria-hidden="true">
                     <div className="absolute left-0 top-6 h-[240px] w-[192px] -rotate-6 overflow-hidden rounded-2xl shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                        <Image src="/images/experience-photos/sauna.jpg" alt="" fill sizes="192px" className="object-cover" />
+                        <Image src="/images/experience-photos/sauna.jpg" alt="A wood-fired sauna, one of the experiences to book in Dumfries & Galloway" fill sizes="192px" className="object-cover" />
                     </div>
                     <div className="absolute right-0 top-0 h-[240px] w-[192px] rotate-3 overflow-hidden rounded-2xl shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                        <Image src="/images/experience-photos/loaf.jpg" alt="" fill sizes="192px" className="object-cover" />
+                        <Image src="/images/experience-photos/loaf.jpg" alt="A freshly baked loaf from a local Dumfries & Galloway baker" fill sizes="192px" className="object-cover" />
                     </div>
                 </div>
             </div>

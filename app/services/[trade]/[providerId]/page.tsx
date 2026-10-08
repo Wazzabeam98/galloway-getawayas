@@ -156,7 +156,7 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                             <div className="flex items-center gap-3">
                                 {provider.headshot ? (
                                     // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={getImageUrl(provider.headshot)} alt="" className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                    <img src={getImageUrl(provider.headshot)} alt={provider.business_name || 'Provider'} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
                                 ) : (
                                     <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">
                                         {(provider.business_name || '?').slice(0, 1)}

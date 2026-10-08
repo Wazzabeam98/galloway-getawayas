@@ -139,7 +139,7 @@ function MenuCard({ it, qty, onOpen, onSet }: {
                 <div className="relative h-24 w-32 flex-none">
                     {it.image ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={it.image} alt="" loading="lazy" className="h-24 w-32 rounded-xl object-cover" />
+                        <img src={it.image} alt={it.name} loading="lazy" className="h-24 w-32 rounded-xl object-cover" />
                     ) : (
                         <span className="flex h-24 w-32 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                             <Utensils className="h-8 w-8" aria-hidden />
@@ -188,7 +188,7 @@ function ItemSheet({ it, qty, notice, onSet, onClose }: {
                 {it.image ? (
                     <div className="relative">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={it.image} alt="" className="h-48 w-full rounded-t-2xl object-cover" />
+                        <img src={it.image} alt={it.name} className="h-48 w-full rounded-t-2xl object-cover" />
                         <button type="button" onClick={onClose} aria-label="Close"
                             className="absolute right-3 top-3 rounded-full bg-white/90 p-1.5 text-slate-700 shadow hover:bg-white"><X className="h-5 w-5" /></button>
                     </div>

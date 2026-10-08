@@ -72,8 +72,8 @@ export async function generateMetadata({
            + 'Book direct with local hosts — no booking fees.';
 
     const image = listings.length && listings[0].images && listings[0].images.length
-        ? `${SITE_URL}/images/hero-1.jpg`
-        : `${SITE_URL}/images/hero-1.jpg`;
+        ? `${SITE_URL}/images/og-default.jpg`
+        : `${SITE_URL}/images/og-default.jpg`;
 
     return {
         title,
