@@ -16,6 +16,7 @@ import { anonGuestTermsMetadata } from '@/lib/agreements';
 import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import { stayProblem, prepBufferNights, prepDays, londonTodayKey } from '@/lib/stayRules';
 import { petLimit, petsProblem } from '@/lib/listingSafety';
+import { belowStripeMinimum, depositSplitChargeable, STRIPE_MIN_CHARGE_GBP } from '@/lib/stripeMinimum';
 
 export const dynamic = 'force-dynamic';
 
@@ -374,8 +375,32 @@ export async function POST(request: Request) {
         const balanceDueDate = balanceDueKey(booking.check_in);
         const depositAllowed = balanceDueDate > londonDayKey();
 
-        const useDeposit = plan === 'deposit' && depositAllowed;
-        const dueNow = useDeposit ? Math.round(total * DEPOSIT_FRACTION * 100) / 100 : total;
+        // Under Stripe's minimum there is no payment to take: refuse it here, in
+        // words, before Stripe refuses it with an error (lib/stripeMinimum).
+        if (belowStripeMinimum(total)) {
+            await logError('[stripe/checkout] stay total is below the Stripe minimum — the listing is priced too low to book', {
+                booking: booking.id,
+                listing: booking.listing_id,
+                total,
+            }, { path: 'stripe/checkout' });
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: 'This stay comes to ' + formatGBP(total) + ', which is below the '
+                        + formatGBP(STRIPE_MIN_CHARGE_GBP) + ' minimum we can take by card, so it can\u2019t be booked online. '
+                        + 'Please message the host.',
+                },
+                { status: 400 }
+            );
+        }
+
+        // A deposit whose either half would be under the minimum is taken in full
+        // instead: the balance is charged off-session 30 days out, where Stripe
+        // would refuse it with nobody there to pay another way.
+        const depositSplit = Math.round(total * DEPOSIT_FRACTION * 100) / 100;
+        const useDeposit = plan === 'deposit' && depositAllowed
+            && depositSplitChargeable(depositSplit, Math.round((total - depositSplit) * 100) / 100);
+        const dueNow = useDeposit ? depositSplit : total;
         const balance = Math.round((total - dueNow) * 100) / 100;
 
         // A deposit is only workable if the balance can be taken automatically

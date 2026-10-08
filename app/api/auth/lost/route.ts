@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { logError } from '@/lib/logError';
+import { logError, logInfo } from '@/lib/logError';
+import { lostSignInIsExpected } from '@/lib/staySignedIn';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,9 @@ export const dynamic = 'force-dynamic';
 //
 // minutesSinceSeen says which kind of loss it was: about an hour points at the
 // first token refresh, about a week at Safari's cap on script-written cookies.
+// A cookie_gone after EXPECTED_COOKIE_LOSS_MINUTES (12 hours) is the normal
+// end of a sign-in, so it is recorded as information and stays out of the
+// error list; a sooner one, and every session_refused, is still an error.
 // Called only by the middleware, which signs the request with CRON_SECRET.
 export async function POST(request: Request) {
     const secret = process.env.CRON_SECRET;
@@ -26,7 +30,8 @@ export async function POST(request: Request) {
     const kind = body && (body.kind === 'cookie_gone' || body.kind === 'session_refused') ? body.kind : null;
     if (!kind) return NextResponse.json({ ok: false }, { status: 400 });
 
-    await logError('sign-in lost: ' + kind, {
+    const record = lostSignInIsExpected(kind, body.minutesSinceSeen) ? logInfo : logError;
+    await record('sign-in lost: ' + kind, {
         session: String(body.session || '').slice(0, 8),
         lastSeenAt: body.lastSeenAt,
         minutesSinceSeen: body.minutesSinceSeen,

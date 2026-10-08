@@ -57,10 +57,12 @@ export default function ErrorRow({ row }: { row: any }) {
                                     'inline-block px-1.5 py-0.5 rounded mr-2 font-semibold ' +
                                     (row.source === 'server'
                                         ? 'bg-slate-100 text-slate-700'
+                                        : row.source === 'info'
+                                        ? 'bg-emerald-50 text-emerald-700'
                                         : 'bg-blue-50 text-blue-700')
                                 }
                             >
-                                {row.source === 'server' ? 'Server' : 'Browser'}
+                                {row.source === 'server' ? 'Server' : row.source === 'info' ? 'Info' : 'Browser'}
                             </span>
                             {row.path && <span className="mr-2">{row.path}</span>}
                             <span className={isRecent ? 'text-red-600 font-medium' : ''}>

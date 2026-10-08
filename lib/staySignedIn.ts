@@ -153,6 +153,20 @@ export function lostSignInToReport(args: {
     return null;
 }
 
+// How long a device can be away before a missing sign-in cookie is the normal
+// end of it rather than a fault. The fault this report exists for drops the
+// cookie within an hour or two (the first token refresh, 3 Oct 2026); a
+// device that comes back the next morning without it has usually had the
+// browser closed overnight, which ends a browser-session sign-in as designed.
+// So a cookie_gone after this long is recorded as information, and only a
+// sooner one is an error. session_refused is always an error.
+export const EXPECTED_COOKIE_LOSS_MINUTES = 12 * 60;
+
+export function lostSignInIsExpected(kind: LostSignIn, minutesSinceSeen: unknown): boolean {
+    const minutes = Number(minutesSinceSeen);
+    return kind === 'cookie_gone' && isFinite(minutes) && minutes >= EXPECTED_COOKIE_LOSS_MINUTES;
+}
+
 // A plain cookie line for the middleware's own cookies (gg_nostay, gg_seen).
 // maxAge undefined = ends with the browser; 0 = delete.
 export function serializeCookie(name: string, value: string, opts: { maxAge?: number; secure: boolean }): string {
