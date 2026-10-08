@@ -90,3 +90,29 @@ test('a host trade no longer needs a separate service, but still needs a coverag
     assert.doesNotMatch(sql, /raise exception 'a trade listing needs at least one service/);
     assert.match(sql, /raise exception 'a trade listing needs at least one coverage area/);
 });
+
+test('the submit wall requires the CURRENT agreement version, matching lib/agreements', () => {
+    // submit_service_provider() requires an acceptance AT the current version,
+    // not merely that one exists (Liam, 8 Oct 2026) — a wording bump forces
+    // re-acceptance server-side. The RPC is a browser call with no server route
+    // between it and lib/agreements, so the required version is carried in the
+    // function body; this keeps it in step with AGREEMENTS the way the 40 above
+    // is kept in step with MIN_DESCRIPTION. If a version bumps in lib/agreements
+    // without a new migration, this fails — two edits, never one.
+    const fs = require('fs');
+    const path = require('path');
+    const { AGREEMENTS } = require('@/lib/agreements');
+    const dir = path.join(process.cwd(), 'supabase', 'migrations');
+    const latest = fs.readdirSync(dir).filter((f: string) => fs.readFileSync(path.join(dir, f), 'utf8')
+        .includes('function "public"."submit_service_provider"')).sort().pop();
+    const sql = fs.readFileSync(path.join(dir, latest), 'utf8');
+    // The version is actually required (joined onto the existence check), not
+    // just mentioned.
+    assert.match(sql, /"version" = v_required_version/);
+    // And the carried versions are the current ones for the two documents this
+    // function gates.
+    assert.ok(sql.includes(AGREEMENTS.tradesperson.version),
+        'migration must carry the current tradesperson agreement version ' + AGREEMENTS.tradesperson.version);
+    assert.ok(sql.includes(AGREEMENTS.experience_provider.version),
+        'migration must carry the current experience_provider agreement version ' + AGREEMENTS.experience_provider.version);
+});
