@@ -4,6 +4,9 @@ import Env from '@/config/Env';
 import { logError } from '@/lib/logError';
 import { AREAS, hasCopy } from '@/config/areas';
 import { townKey } from '@/lib/places';
+import { adminClient } from '@/lib/supabaseAdmin';
+import { guestExperiencesOpen } from '@/lib/serviceOrders';
+import { loadPublicMarketplace } from '@/lib/experiencesData';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -74,6 +77,11 @@ export async function GET() {
     const staticPages: Entry[] = [
         { loc: `${SITE_URL}/`, lastmod: now, changefreq: 'daily', priority: '1.0' },
         { loc: `${SITE_URL}/services`, lastmod: now, changefreq: 'weekly', priority: '0.5' },
+        // The public experiences marketplace. A permanent page, so it is listed
+        // whether or not the section is currently taking bookings — "Coming
+        // soon" is still a real 200. The provider pages under it are listed
+        // further down, only when they actually resolve.
+        { loc: `${SITE_URL}/experiences/browse`, lastmod: now, changefreq: 'weekly', priority: '0.6' },
         { loc: `${SITE_URL}/business`, lastmod: now, changefreq: 'monthly', priority: '0.4' },
         { loc: `${SITE_URL}/contact`, lastmod: now, changefreq: 'yearly', priority: '0.4' },
         { loc: `${SITE_URL}/terms`, lastmod: now, changefreq: 'yearly', priority: '0.3' },
@@ -170,12 +178,37 @@ export async function GET() {
             priority: '0.9',
         }));
 
+        // ---------------------------------------------------------------
+        // The experience provider pages (/experiences/browse/<id>). Listed
+        // from loadPublicMarketplace — the SAME loader the browse page and the
+        // provider page use — so the sitemap offers Google exactly the pages a
+        // visitor can actually open, and can't drift from the section's own
+        // eligibility rules (approved, live, not paused). When the section is
+        // closed, or nothing is live, the loader returns no providers and none
+        // are listed; the provider URLs would 302 to /browse in that state.
+        //
+        // Wrapped on its own so an experiences hiccup still ships the cottages
+        // and area pages above it.
+        // ---------------------------------------------------------------
+        let experiencePages: Entry[] = [];
+        try {
+            const mp = await loadPublicMarketplace(adminClient(), guestExperiencesOpen());
+            experiencePages = (mp.providers || []).map((p: any) => ({
+                loc: `${SITE_URL}/experiences/browse/${p.id}`,
+                lastmod: now,
+                changefreq: 'weekly',
+                priority: '0.7',
+            }));
+        } catch (err) {
+            await logError('[sitemap] experiences omitted', err, { path: 'sitemap.xml' });
+        }
+
         // Deliberately NOT reporting an empty list. "No listings yet" is a
         // true state before launch, and this route runs once per crawler hit,
         // so reporting it would fill /admin/errors with the same row. A query
         // that FAILED is a different thing and is caught above.
         return new NextResponse(
-            render(knownPages.concat(areaPages).concat(listingPages)),
+            render(knownPages.concat(areaPages).concat(listingPages).concat(experiencePages)),
             { headers }
         );
     } catch (err) {

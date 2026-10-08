@@ -3,8 +3,37 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace } from '@/lib/experiencesData';
 import ProviderCard from '@/components/marketplace/ProviderCard';
+import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
+
+// Without this the page inherited the root layout's default title and
+// description — so this public marketplace went out to Google wearing the home
+// page's "Holiday Cottages & Accommodation" title and no canonical of its own.
+// Static, because the page's own copy (the h1, the kicker) is fixed; only the
+// providers below it change. Relative canonical/url resolve against
+// metadataBase in app/layout.tsx, as the listing page's canonical does.
+export const metadata: Metadata = {
+    title: 'Experiences & Things to Do in Dumfries & Galloway',
+    description:
+        'Book local experiences across Dumfries & Galloway — chefs, bakers, saunas, guides and classes. Booked and paid securely through Galloway Getaways, with no booking fee.',
+    alternates: { canonical: '/experiences/browse' },
+    openGraph: {
+        type: 'website',
+        locale: 'en_GB',
+        url: '/experiences/browse',
+        siteName: 'Galloway Getaways',
+        title: 'Experiences & Things to Do in Dumfries & Galloway',
+        description:
+            'Local experiences across Dumfries & Galloway — chefs, bakers, saunas, guides and classes, booked direct.',
+    },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Experiences & Things to Do in Dumfries & Galloway',
+        description:
+            'Local experiences across Dumfries & Galloway — chefs, bakers, saunas, guides and classes.',
+    },
+};
 
 // The PUBLIC experiences marketplace — anyone can browse this without logging in.
 // No booking, no stay: the against-a-cottage marketplace lives at
