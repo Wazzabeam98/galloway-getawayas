@@ -696,6 +696,30 @@ export default function CalendarPage() {
         { key: 'availability', label: 'Availability' },
     ] as const).filter((t) => t.key === 'manage' || mayEditSelected);
 
+    // The stored availability settings — the single source of truth
+    // (listings.min_nights and friends), normalised exactly as the sync effect
+    // loads them into the form. `min_nights` is what actually governs a booking:
+    // the guest booking card and the checkout route both read it through
+    // minNightsFor(), and the account "Booking permissions" page reads it too.
+    // So the number shown here is only real once it has been saved — an edit
+    // sitting unsaved in these inputs looks like the minimum but is not one,
+    // which is how the calendar could read "3" while the stored (and enforced)
+    // value was still 1. availabilityDirty drives the "not saved yet" warning
+    // below so that gap can never pass for a setting again.
+    const savedAvailability = {
+        min: String(selectedListing?.min_nights ?? 1),
+        max: selectedListing?.max_nights ? String(selectedListing.max_nights) : '',
+        notice: selectedListing?.advance_notice || 'Same day',
+        prep: selectedListing?.preparation_time || 'None',
+        window: selectedListing?.availability_window || '9 months',
+    };
+    const availabilityDirty =
+        minNightsGlobal !== savedAvailability.min ||
+        maxNightsGlobal !== savedAvailability.max ||
+        advanceNotice !== savedAvailability.notice ||
+        preparationTime !== savedAvailability.prep ||
+        availabilityWindow !== savedAvailability.window;
+
     return (
         <div className="max-w-6xl mx-auto px-6 py-10">
             <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
@@ -1181,6 +1205,11 @@ export default function CalendarPage() {
 
                     {rightTab === 'availability' && mayEditSelected && (
                         <div className="border rounded-2xl p-5 space-y-5">
+                            {availabilityDirty && (
+                                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                    Not saved yet — these take effect only when you press <strong>Save</strong>. Until then your stored settings (including the minimum nights guests can book) still apply.
+                                </div>
+                            )}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Min nights</label>
@@ -1213,7 +1242,7 @@ export default function CalendarPage() {
                             </div>
                             <button
                                 type="button"
-                                disabled={savingSettings}
+                                disabled={savingSettings || !availabilityDirty}
                                 onClick={() => saveListingSettings({
                                     min_nights: Math.max(1, Number(minNightsGlobal) || 1),
                                     max_nights: maxNightsGlobal ? Number(maxNightsGlobal) : null,
@@ -1223,7 +1252,7 @@ export default function CalendarPage() {
                                 })}
                                 className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
-                                {savingSettings ? 'Saving...' : 'Save'}
+                                {savingSettings ? 'Saving...' : availabilityDirty ? 'Save' : 'Saved'}
                             </button>
                         </div>
                     )}
