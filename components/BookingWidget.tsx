@@ -18,6 +18,8 @@ import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
 import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
 import { resolveSelection, unitLabel, type ListingExtra } from '@/lib/listingExtras';
+import { getImageUrl } from '@/lib/utils';
+import { EXTRA_CROP_ASPECT } from '@/lib/photoRules';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import AgreementTick, { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
@@ -93,6 +95,7 @@ function Counter({
     onChange,
     min = 0,
     max,
+    leading,
 }: {
     label: string;
     sub?: string;
@@ -100,12 +103,17 @@ function Counter({
     onChange: (v: number) => void;
     min?: number;
     max?: number;
+    // An optional thumbnail shown to the left of the label (a host extra's photo).
+    leading?: React.ReactNode;
 }) {
     return (
         <div className="flex items-center justify-between py-2.5">
-            <div>
-                <div className="text-sm font-medium text-slate-800">{label}</div>
-                {sub && <div className="text-xs text-slate-400">{sub}</div>}
+            <div className="flex min-w-0 items-center gap-3">
+                {leading}
+                <div className="min-w-0">
+                    <div className="text-sm font-medium text-slate-800">{label}</div>
+                    {sub && <div className="text-xs text-slate-400">{sub}</div>}
+                </div>
             </div>
             <div className="flex items-center space-x-3">
                 <button
@@ -895,6 +903,12 @@ export default function BookingWidget({
                         onChange={(v) => setExtraQtys((q) => ({ ...q, [e.id]: v }))}
                         min={0}
                         max={10}
+                        leading={e.photo ? (
+                            <div className="relative w-14 flex-none overflow-hidden rounded-lg bg-slate-100" style={{ aspectRatio: EXTRA_CROP_ASPECT }}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={getImageUrl(e.photo)} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                            </div>
+                        ) : undefined}
                     />
                 ))}
             </div>

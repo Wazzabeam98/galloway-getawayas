@@ -2,9 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Trash2, Plus } from 'lucide-react';
+import { toast } from 'react-toastify';
+import { Trash2, Plus, Image as ImageIcon, X } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave } from '@/components/listing-editor/EditorPanel';
 import { bigFieldCls } from '@/components/services/wizardKit';
+import { compressImage, readImageDimensions } from '@/lib/compressImage';
+import { photoDimensionProblem, EXTRA_CROP_ASPECT } from '@/lib/photoRules';
+import { generateRandomNumber, getImageUrl } from '@/lib/utils';
+import Env from '@/config/Env';
 import {
     extraProblem, unitLabel, vatLabel,
     EXTRA_LABEL_MAX, EXTRA_DESCRIPTION_MAX,
@@ -30,6 +35,8 @@ interface DraftRow {
     unit: ExtraUnit;
     vat_treatment: ExtraVat;
     active: boolean;
+    photo: string | null;   // the storage path, or null
+    uploading?: boolean;    // while a photo is on its way up
 }
 
 let keySeq = 0;
@@ -45,11 +52,12 @@ function toDraft(row: ListingExtra): DraftRow {
         unit: row.unit === 'night' ? 'night' : 'stay',
         vat_treatment: row.vat_treatment === 'zero' ? 'zero' : 'standard',
         active: row.active !== false,
+        photo: row.photo || null,
     };
 }
 
 function blankDraft(): DraftRow {
-    return { key: nextKey(), label: '', description: '', price: '', unit: 'stay', vat_treatment: 'standard', active: true };
+    return { key: nextKey(), label: '', description: '', price: '', unit: 'stay', vat_treatment: 'standard', active: true, photo: null };
 }
 
 export default function ExtrasEditor({ listingId }: { listingId: string }) {
@@ -62,7 +70,7 @@ export default function ExtrasEditor({ listingId }: { listingId: string }) {
     const load = async () => {
         const { data } = await supabase
             .from('listing_extras')
-            .select('id, label, description, price, unit, vat_treatment, active, sort_order')
+            .select('id, label, description, price, unit, vat_treatment, active, sort_order, photo')
             .eq('listing_id', listingId)
             .order('sort_order', { ascending: true })
             .order('created_at', { ascending: true });
@@ -84,6 +92,37 @@ export default function ExtrasEditor({ listingId }: { listingId: string }) {
         setDraft((d) => d.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
     const removeRow = (key: string) => setDraft((d) => d.filter((r) => r.key !== key));
+
+    // Upload one photo exactly as a listing photo: refuse one too small to look
+    // sharp (lib/photoRules, the same message), shrink it (lib/compressImage),
+    // then store it in the same bucket. Returns the storage path, or null (with
+    // a toast) — the row keeps whatever photo it had.
+    const uploadPhoto = async (file: File): Promise<string | null> => {
+        const size = await readImageDimensions(file);
+        if (size.width && size.height) {
+            const problem = photoDimensionProblem(size.width, size.height);
+            if (problem) { toast.error(problem, { theme: 'colored' }); return null; }
+        }
+        try {
+            const small = await compressImage(file);
+            const path = `${Date.now()}_${generateRandomNumber()}`;
+            const { data, error: upErr } = await supabase.storage
+                .from(Env.S3_BUCKET)
+                .upload(path, small, { contentType: small.type || 'image/jpeg', cacheControl: '3600', upsert: false });
+            if (upErr) throw upErr;
+            return data?.path || path;
+        } catch (e: any) {
+            toast.error('That photo didn’t upload: ' + (e?.message || 'try again'), { theme: 'colored' });
+            return null;
+        }
+    };
+
+    const onPhotoPicked = async (key: string, file?: File | null) => {
+        if (!file) return;
+        setRow(key, { uploading: true });
+        const path = await uploadPhoto(file);
+        setRow(key, path ? { photo: path, uploading: false } : { uploading: false });
+    };
 
     const save = async () => {
         setError('');
@@ -115,6 +154,7 @@ export default function ExtrasEditor({ listingId }: { listingId: string }) {
                     vat_treatment: r.vat_treatment,
                     active: r.active,
                     sort_order: i,
+                    photo: r.photo,
                 };
                 if (r.id) {
                     const { error: upErr } = await supabase.from('listing_extras').update(record).eq('id', r.id);
@@ -160,6 +200,40 @@ export default function ExtrasEditor({ listingId }: { listingId: string }) {
                     <div className="space-y-4">
                         {draft.map((r) => (
                             <div key={r.key} className="rounded-2xl border border-slate-200 p-4">
+                                {/* The photo, shown in the SAME 3:2 crop the guest
+                                    sees, so the host can see what gets cut off before
+                                    saving. Optional — an extra with no photo is fine. */}
+                                <div className="mb-3">
+                                    {r.photo ? (
+                                        <div>
+                                            <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100" style={{ aspectRatio: EXTRA_CROP_ASPECT }}>
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img src={getImageUrl(r.photo)} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRow(r.key, { photo: null })}
+                                                    aria-label="Remove photo"
+                                                    className="absolute right-2 top-2 rounded-full bg-black/55 p-1.5 text-white hover:bg-black/70"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                            <label className="mt-1 inline-block cursor-pointer text-xs font-medium text-slate-600 hover:underline">
+                                                {r.uploading ? 'Uploading…' : 'Replace photo'}
+                                                <input type="file" accept="image/png, image/jpeg" className="hidden" onChange={(e) => onPhotoPicked(r.key, e.target.files?.[0])} />
+                                            </label>
+                                        </div>
+                                    ) : (
+                                        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 hover:border-slate-400">
+                                            <ImageIcon className="h-4 w-4 flex-none" />
+                                            {r.uploading ? 'Uploading…' : 'Add a photo (optional)'}
+                                            <input type="file" accept="image/png, image/jpeg" className="hidden" onChange={(e) => onPhotoPicked(r.key, e.target.files?.[0])} />
+                                        </label>
+                                    )}
+                                    <p className="mt-1 text-xs text-slate-400">
+                                        Shown cropped to a wide 3:2. At least 1024 &times; 683 px; straight from your phone is fine &mdash; we&rsquo;ll shrink it.
+                                    </p>
+                                </div>
                                 <div className="flex items-start gap-2">
                                     <input
                                         className={bigFieldCls + ' flex-1'}

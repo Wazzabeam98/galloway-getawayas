@@ -1,4 +1,6 @@
 import { formatGBP } from '@/lib/formatMoney';
+import { getImageUrl } from '@/lib/utils';
+import { EXTRA_CROP_ASPECT } from '@/lib/photoRules';
 import { unitLabel, type ListingExtra } from '@/lib/listingExtras';
 
 // "Extras this host offers" on the listing page — a guest sees the sauna pack
@@ -20,15 +22,26 @@ export default function ListingExtras({ extras }: { extras: ListingExtra[] }) {
             <p className="text-sm text-slate-500 mb-4">Optional, and added when you book.</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {live.map((e) => (
-                    <div key={e.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="flex items-baseline justify-between gap-3">
-                            <span className="font-medium text-slate-900">{e.label}</span>
-                            <span className="flex-shrink-0 text-sm text-slate-600 tabular-nums">
-                                {formatGBP(Number(e.price))}
-                                <span className="text-slate-400"> {unitLabel(e.unit)}</span>
-                            </span>
+                    <div key={e.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        {/* The photo, when the host added one — a wide 3:2 banner,
+                            the same crop the editor previewed. No box at all when
+                            there is none, so a photo-less extra still reads right. */}
+                        {e.photo && (
+                            <div className="relative w-full bg-slate-100" style={{ aspectRatio: EXTRA_CROP_ASPECT }}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={getImageUrl(e.photo)} alt={e.label} className="absolute inset-0 h-full w-full object-cover" />
+                            </div>
+                        )}
+                        <div className="p-4">
+                            <div className="flex items-baseline justify-between gap-3">
+                                <span className="font-medium text-slate-900">{e.label}</span>
+                                <span className="flex-shrink-0 text-sm text-slate-600 tabular-nums">
+                                    {formatGBP(Number(e.price))}
+                                    <span className="text-slate-400"> {unitLabel(e.unit)}</span>
+                                </span>
+                            </div>
+                            {e.description && <p className="mt-1 text-sm text-slate-500">{e.description}</p>}
                         </div>
-                        {e.description && <p className="mt-1 text-sm text-slate-500">{e.description}</p>}
                     </div>
                 ))}
             </div>

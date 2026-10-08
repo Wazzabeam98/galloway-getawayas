@@ -534,7 +534,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     // re-prices, and shown as an informational section below.
     const { data: extraRows } = await adminClient()
         .from('listing_extras')
-        .select('id, label, description, price, unit, vat_treatment, active, sort_order')
+        .select('id, label, description, price, unit, vat_treatment, active, sort_order, photo')
         .eq('listing_id', home.id)
         .eq('active', true)
         .order('sort_order', { ascending: true })

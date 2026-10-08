@@ -42,3 +42,9 @@ export function photoDimensionProblem(width: number, height: number): string | n
 // and any future use, with no second copy to drift.
 export const GALLERY_CROP_ASPECT = '3 / 2';
 export const CARD_CROP_ASPECT = '4 / 3';
+
+// A host extra's photo (a sauna pack, a hamper) is shown at the same landscape
+// 3:2 crop as a listing photo, in both the listing-page section and the booking
+// picker — so the editor can preview the exact crop the guest will see. Aliased,
+// not a new literal, so there is still one source for the ratio.
+export const EXTRA_CROP_ASPECT = GALLERY_CROP_ASPECT;
