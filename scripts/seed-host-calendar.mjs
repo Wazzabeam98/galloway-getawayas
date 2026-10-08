@@ -1,7 +1,9 @@
 // Seeds the test project with ONE host listing laid out to show off the
 // reworked host calendar: back-to-back Airbnb stays, a one-night gap, a
 // two-night gap, an unsellable orphan run, and one of our own (direct)
-// bookings — all against a 3-night minimum.
+// bookings — all against a 3-night minimum. Two direct guests: one with a
+// profile photo and one without, so the bar's avatar and its initial
+// fallback can both be seen.
 //
 //   node scripts/seed-host-calendar.mjs           seed (resets first)
 //   node scripts/seed-host-calendar.mjs --reset    tear down and stop
@@ -15,8 +17,10 @@
 // live on it; this seed clears only that domain, so it cannot wipe another
 // seed's accounts.
 
+import fs from 'fs';
+import path from 'path';
 import {
-    loadEnv, assertTestEnvironment, supabaseClient, dayOffset,
+    loadEnv, assertTestEnvironment, supabaseClient, dayOffset, ROOT,
 } from './seed-lib.mjs';
 
 const env = loadEnv();
@@ -28,6 +32,10 @@ const log = (...a) => console.log(...a);
 const DOMAIN = 'gallowaycal.test';
 const HOST_EMAIL = 'host@' + DOMAIN;
 const GUEST_EMAIL = 'guest@' + DOMAIN;
+const GUEST2_EMAIL = 'guest2@' + DOMAIN;
+// The photo guest's avatar: one of the site's own Galloway photos (never a
+// real person's face), uploaded to the test bucket under seed-assets/.
+const AVATAR_KEY = 'seed-assets/calendar/guest-avatar.jpg';
 const HOST_PASSWORD = 'seed-host-calendar';
 // No default: the target-guard test forbids a localhost/preview URL literal in
 // any runner. Pass SITE=… to get a ready-made login link; otherwise the login
@@ -75,6 +83,25 @@ async function reset() {
 
 /* ------------------------------------------------------------------ build */
 
+async function uploadAvatar() {
+    const bytes = fs.readFileSync(path.join(ROOT, 'public', 'images', 'hero-3-web.jpg'));
+    const bucket = env.NEXT_PUBLIC_S3_BUCKET || 'listings';
+    const res = await fetch(env.NEXT_PUBLIC_SUPABASE_URL + '/storage/v1/object/' + bucket + '/' + AVATAR_KEY, {
+        method: 'POST',
+        headers: {
+            Authorization: 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY,
+            'Content-Type': 'image/jpeg',
+            'x-upsert': 'true',
+        },
+        body: bytes,
+    });
+    if (!res.ok) {
+        log('  avatar upload failed (' + res.status + ') — Rhona will show her initial instead');
+        return null;
+    }
+    return AVATAR_KEY;
+}
+
 async function createUser(email, fullName, password, profilePatch = {}) {
     const user = await db.auth('POST', '/admin/users', {
         email,
@@ -96,7 +123,10 @@ async function seed() {
     const host = await createUser(HOST_EMAIL, 'Seed Calendar Host', HOST_PASSWORD);
     // preferred_name so the direct booking's bar reads a first name (first
     // names only), not the "Guest" fallback a hidden legal name gives.
-    const guest = await createUser(GUEST_EMAIL, 'Rhona Baird', 'seed-guest-calendar', { preferred_name: 'Rhona' });
+    const avatar = await uploadAvatar();
+    const guest = await createUser(GUEST_EMAIL, 'Rhona Baird', 'seed-guest-calendar', { preferred_name: 'Rhona', avatar_url: avatar });
+    // No photo — the bar shows the initial on a soft green circle.
+    const guest2 = await createUser(GUEST2_EMAIL, 'Callum Shaw', 'seed-guest-calendar', { preferred_name: 'Callum' });
 
     const [listing] = await db.insert('listings', {
         host_id: host.id,
@@ -153,6 +183,26 @@ async function seed() {
         host_id: host.id,
         check_in: dayOffset(22),
         check_out: dayOffset(25),
+        guests: 2,
+        adults: 2,
+        total_price: 360,
+        status: 'confirmed',
+        payment_status: 'paid',
+        amount_paid: 360,
+        amount_refunded: 0,
+        commission_rate: 10,
+        paid_at: new Date().toISOString(),
+    });
+
+    // A second direct stay, for a guest with no photo, so the initial
+    // fallback sits on the calendar beside Rhona's photo.
+    await db.insert('bookings', {
+        stripe_payment_intent_id: null,
+        listing_id: listing.id,
+        guest_id: guest2.id,
+        host_id: host.id,
+        check_in: dayOffset(26),
+        check_out: dayOffset(29),
         guests: 2,
         adults: 2,
         total_price: 360,
