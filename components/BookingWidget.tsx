@@ -922,15 +922,18 @@ export default function BookingWidget({
         </div>
     ) : null;
 
-    // The optional-extras picker, shown once dates are chosen so a per-night
-    // price reads against real nights — the way Vrbo surfaces optional fees at
-    // the final step rather than in the headline price. Priced from the host's
-    // catalogue; the guest only chooses how many.
-    const extrasBlock = nights > 0 && activeExtras.length > 0 ? (
+    // The extras a guest has actually added — a basket, like the bakery's: the
+    // panel shows ONLY what's been chosen (on the cards above), each with its
+    // count and the −/+ to adjust. Choosing happens on the cards, so nothing is
+    // listed here at zero; a line appears when it's added and disappears again
+    // when it goes back to zero. Hidden entirely until dates are picked and at
+    // least one extra is on.
+    const addedExtras = activeExtras.filter((e) => (extraQtys[e.id] || 0) > 0);
+    const extrasBlock = nights > 0 && addedExtras.length > 0 ? (
         <div className="border-t pt-3 mb-4">
-            <div className="text-sm font-semibold text-slate-900">Add to your stay</div>
+            <div className="text-sm font-semibold text-slate-900">Extras on your stay</div>
             <div className="mt-1">
-                {activeExtras.map((e) => (
+                {addedExtras.map((e) => (
                     <Counter
                         key={e.id}
                         label={e.label}
