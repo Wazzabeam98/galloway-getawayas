@@ -34,6 +34,7 @@ import { experienceAreaForListing } from '@/lib/experienceTowns';
 import ReportListing from '@/components/ReportListing';
 import WhereYoullSleep from '@/components/WhereYoullSleep';
 import ListingExtras from '@/components/ListingExtras';
+import { ExtrasSelectionProvider } from '@/components/extras/ExtrasSelectionProvider';
 import AboutThisPlace from '@/components/AboutThisPlace';
 import ThingsToKnow from '@/components/ThingsToKnow';
 import MeetYourHost from '@/components/MeetYourHost';
@@ -786,6 +787,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     desktop sticky header fades in (ListingStickyHeader watches it). */}
                 <div id="sticky-sentinel" aria-hidden="true" />
 
+                <ExtrasSelectionProvider>
                 <div className='grid grid-cols-1 lg:grid-cols-3 gap-10 mt-5'>
                     <div className='order-2 lg:order-1 lg:col-span-2'>
                         <h2 className='text-xl md:text-2xl font-bold text-slate-900'>
@@ -987,6 +989,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         />}
                     </div>
                 </div>
+                </ExtrasSelectionProvider>
 
                 {/* Where the sticky booking card releases. Once this scrolls up
                     past the section bar the card is out of view, and the bar
