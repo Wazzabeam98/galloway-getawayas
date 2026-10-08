@@ -140,6 +140,25 @@ test('an accept is the only thing that hands over a phone number', () => {
     assert.deepEqual(opening, ['accepted']);
 });
 
+// The helper is only half the rule — the surface that hands a phone over has
+// to APPLY it. The trade dashboard loader did not: it set the owner's phone on
+// EVERY enquiry it mapped (including unanswered ones), so a tap-to-call button
+// leaked the number before the trade had accepted. This pins the gate to the
+// loader so that regression cannot return silently.
+test('the trade dashboard loader gates the owner phone behind an accept', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '..', '..', 'lib/providerReservations.ts'), 'utf8');
+    assert.match(
+        src, /phone:\s*contactReleased\(e\.status\)\s*\?\s*\(e\.host_phone/,
+        'lib/providerReservations.ts must gate host_phone behind contactReleased(e.status)',
+    );
+    assert.doesNotMatch(
+        src, /phone:\s*e\.host_phone\s*\|\|\s*null/,
+        'host_phone must never be handed to the trade ungated',
+    );
+});
+
 test('an open enquiry can be answered and withdrawn, a settled one cannot', () => {
     for (const status of ['sent', 'viewed']) {
         assert.equal(isOpen(status), true);
