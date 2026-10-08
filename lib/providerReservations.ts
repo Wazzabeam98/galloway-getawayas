@@ -159,21 +159,24 @@ export function whereForOrder(o: any, provider: any): WhereField | null {
 }
 
 // Where a trade job is, for the reservation card: the cottage/property name with
-// its address beneath. A trade needs the full street address to decide whether to
-// take the job, so it is shown from the first — before accepting, not only after
-// (Liam, round six: "a trade needs to know where the job is before deciding").
-// This is a job address the intended trade is entitled to, not a guest's private
-// detail, so there is no pre-accept town-only wall the way a stay withholds the
-// address until it is confirmed.
-// `areaFallback` is the area the owner named on the enquiry (area_key) — used when
-// no listing is attached, so the card never falls back to the bare placeholder
-// "the property" but shows the town the job is in.
-export function whereForTradeJob(listing: any, areaFallback?: string | null): WhereField {
+// its address beneath. Until the trade ACCEPTS they see the TOWN only; the exact
+// street address is released on acceptance, the same wall as the owner's phone
+// and the same as the message thread shows (Liam, round seven — reversing the
+// earlier "show the street from the first": a trade can judge a job from the town
+// and the description, and the owner's address is private until there is a job).
+// `released` is contactReleased(status) — true once accepted. `areaFallback` is
+// the area the owner named on the enquiry (area_key), used when no listing is
+// attached so the card shows the town rather than the bare "the property".
+export function whereForTradeJob(listing: any, areaFallback?: string | null, released?: boolean): WhereField {
     if (!listing) {
         const area = String(areaFallback || '').trim();
         return area || 'the property';
     }
     const town = townFromLocation(listing.location);
+    if (!released) {
+        // Pre-accept: town only (fail-closed — the default withholds the street).
+        return { line: listing.title || 'the property', sub: town || listing.location || null };
+    }
     const full = [listing.street_address, town, listing.postcode]
         .map((x: any) => String(x || '').trim()).filter(Boolean).join(', ') || listing.location || null;
     return { line: listing.title || 'the property', sub: full || town };
@@ -376,11 +379,10 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
     const listingIds = Array.from(new Set(relevant.map((e: any) => e.listing_id).filter(Boolean)));
     const listings: Record<string, any> = {};
     if (listingIds.length) {
-        // Read under the service role. whereForTradeJob below decides what of the
-        // address the trade is shown — today it shows the full street so they can
-        // judge the job before deciding. (The message-thread route shows only the
-        // town until acceptance; the two surfaces disagree, flagged for a decision.
-        // Whatever that decision, the owner's PHONE is gated until acceptance above.)
+        // Read under the service role; whereForTradeJob below shows only the TOWN
+        // until the trade accepts, and the full street only after — the same wall
+        // the message thread applies and the same as the owner's phone above. The
+        // private columns are read here but gated in the payload, never leaked raw.
         const { data: ls } = await admin.from('listings').select('id, title, location, images, street_address, postcode').in('id', listingIds);
         (ls || []).forEach((l: any) => { listings[l.id] = l; });
     }
@@ -439,7 +441,7 @@ async function loadTradeReservations(admin: any, provider: any, today: string, t
             photoUrl: (l && Array.isArray(l.images) && l.images[0]) ? getImageUrl(String(l.images[0])) : null,
             groupLabel: e.host_name || 'The property owner',
             partyLabel: null,
-            whereLabel: whereForTradeJob(l, e.area_key),
+            whereLabel: whereForTradeJob(l, e.area_key, contactReleased(e.status)),
             note: null,
             allergy: null,
             status,
