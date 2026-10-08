@@ -1,7 +1,7 @@
 'use client';
 
 import { PLATFORMS } from '@/lib/platforms';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
@@ -181,6 +181,15 @@ export default function CalendarPage() {
     const [selectedRes, setSelectedRes] = useState<Reservation | null>(null);
     const [resDetail, setResDetail] = useState<ReservationPanel | null>(null);
     const [resState, setResState] = useState<'idle' | 'loading' | 'error'>('idle');
+    // On a phone the date panel sits below the whole calendar, so opening it
+    // scrolled nothing into view — a tap on a short gap looked like it did
+    // nothing. Below lg it is brought into view as it opens.
+    const datePanelRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        if (!panelOpen || !datePanelRef.current) return;
+        if (typeof window === 'undefined' || !window.matchMedia('(max-width: 1023px)').matches) return;
+        datePanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, [panelOpen, selectionStart, selectionEnd]);
     const [panelBlocked, setPanelBlocked] = useState(false);
     const [panelPrice, setPanelPrice] = useState('');
     const [panelMinNights, setPanelMinNights] = useState('');
@@ -1017,7 +1026,7 @@ export default function CalendarPage() {
 
                     {rightTab === 'manage' && !selectedRes && (
                         panelOpen && selectionStart ? (
-                            <div className="border rounded-2xl p-5">
+                            <div ref={datePanelRef} className="border rounded-2xl p-5 scroll-mt-24">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="font-bold text-slate-900">
                                         {selectionEnd && selectionEnd !== selectionStart
