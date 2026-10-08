@@ -7,6 +7,7 @@ import { audienceForTrade, knownExperienceAmenities } from '@/lib/serviceProvide
 import { childrenAllowed } from '@/lib/guestAges';
 import { normaliseTime } from '@/lib/offeredTimes';
 import { refreshVenuePoint } from '@/lib/venuePoint';
+import { normaliseVatTreatment } from '@/lib/vat';
 
 export const dynamic = 'force-dynamic';
 
@@ -392,6 +393,9 @@ export async function POST(request: Request) {
                         min_people: (p.shape !== 'slot' && unit === 'person' && intOrNull(it.min_people) != null)
                             ? Math.max(1, Math.min(60, Math.floor(Number(it.min_people))))
                             : null,
+                        // VAT treatment (standard/zero/exempt), for a VAT-registered
+                        // provider's receipts. Anything unrecognised is standard.
+                        vat_treatment: normaliseVatTreatment(it.vat_treatment),
                         sort_order: i, updated_at: nowIso,
                     };
                     if (it.id && existingIds.has(it.id)) {

@@ -22,16 +22,35 @@
 // the price already paid into net + VAT + total (vatBreakdown below), so a
 // business guest can reclaim it; the gross never changes.
 //
-// The 20% split is only printed where 20% is the rate: a stay, and an experience
-// or session. FOOD (a made-to-order order — cakes, fish, a hamper) is mostly
-// zero-rated and sometimes mixed, so a food receipt names the supplier and their
-// VAT number but prints no split; the guest asks the supplier for a VAT invoice.
-// And nothing is split once nothing is kept (a fully refunded booking).
+// The 20% split is only printed where 20% is the rate. A stay is standard-rated.
+// An experience provider sets each offering's treatment themselves (standard,
+// zero-rated or exempt — food is often zero-rated, lessons can be exempt), and
+// it is frozen onto the order as supplier_vat_treatment. We never guess it from
+// the category. Zero-rated, exempt or a cart that mixes them names the supplier
+// and their VAT number with no split. Nothing is split once nothing is kept.
 export const UK_VAT_RATE = 0.20;
 
-// The shapes whose price is a single standard-rated supply.
-export function singleRateShape(shape: string | null | undefined): boolean {
-    return shape !== 'made_to_order';
+export type VatTreatment = 'standard' | 'zero' | 'exempt';
+export const VAT_TREATMENTS: { value: VatTreatment; label: string }[] = [
+    { value: 'standard', label: 'Standard rate (20%)' },
+    { value: 'zero', label: 'Zero-rated (0%)' },
+    { value: 'exempt', label: 'Exempt from VAT' },
+];
+
+// What an offering's treatment is stored as: anything unrecognised is standard,
+// the default, so the save route never stores a value the database refuses.
+export function normaliseVatTreatment(raw: unknown): VatTreatment {
+    return raw === 'zero' || raw === 'exempt' ? raw : 'standard';
+}
+
+// The receipt's one line for a supply with no 20% split. Null for standard (the
+// split is shown instead). A null snapshot treatment (a stay, or an order from
+// before treatments existed) is standard.
+export function noSplitLine(treatment: string | null | undefined, supplierName: string): string | null {
+    if (treatment === 'zero') return 'Zero-rated for VAT: no VAT is included in this price.';
+    if (treatment === 'exempt') return 'Exempt from VAT: no VAT is included in this price.';
+    if (treatment === 'mixed') return 'Your order mixes VAT rates. For a VAT invoice, ask ' + supplierName + '.';
+    return null;
 }
 
 // Split a VAT-inclusive gross into the net and the VAT within it. VAT is gross −
@@ -119,14 +138,17 @@ export function formatVatNumber(stored: string | null | undefined): string {
     return v.replace(/^(GB|XI)/, '$1 ');
 }
 
+export type SupplierSnapshot = { supplier_vat_number?: string | null; supplier_vat_name?: string | null; supplier_vat_treatment?: string | null };
+
 // The supplier block on a receipt, from the snapshot frozen on the booking or
-// order — null (show nothing) unless both halves are there.
-export function supplierFromSnapshot(row: { supplier_vat_number?: string | null; supplier_vat_name?: string | null } | null | undefined):
-    { name: string; vatNumber: string } | null {
+// order — null (show nothing) unless both halves are there. `noSplit` is the
+// line shown instead of the 20% split, or null when the split applies.
+export function supplierFromSnapshot(row: SupplierSnapshot | null | undefined):
+    { name: string; vatNumber: string; noSplit: string | null } | null {
     const number = row && row.supplier_vat_number ? String(row.supplier_vat_number) : '';
     const name = row && row.supplier_vat_name ? String(row.supplier_vat_name).trim() : '';
     if (!number || !name) return null;
-    return { name, vatNumber: formatVatNumber(number) };
+    return { name, vatNumber: formatVatNumber(number), noSplit: noSplitLine(row && row.supplier_vat_treatment, name) };
 }
 
 function escapeHtml(value: string): string {
@@ -137,12 +159,10 @@ function escapeHtml(value: string): string {
 // The supplier block for a receipt email, from the snapshot plus the gross the
 // guest paid. '' — nothing at all — when the supplier isn't VAT registered. The
 // price already includes VAT, so this only breaks `gross` into net + VAT @20% +
-// total so a business guest can reclaim it; nothing is added. A null gross (a
-// food order) or nothing kept prints the supplier and number with no split.
-export function supplierVatHtml(
-    row: { supplier_vat_number?: string | null; supplier_vat_name?: string | null } | null | undefined,
-    gross: number | string | null,
-): string {
+// total so a business guest can reclaim it; nothing is added. A zero-rated,
+// exempt or mixed supply, or nothing kept, prints the supplier and number with
+// no split.
+export function supplierVatHtml(row: SupplierSnapshot | null | undefined, gross: number | string): string {
     const supplier = supplierFromSnapshot(row);
     if (!supplier) return '';
     const head = '<div style="margin:16px 0 0;padding:14px 16px;border:1px solid #e5e7eb;border-radius:10px;">'
@@ -150,11 +170,10 @@ export function supplierVatHtml(
         + escapeHtml(supplier.name) + '</strong> &middot; VAT number ' + escapeHtml(supplier.vatNumber) + '</div>';
     const foot = '<div style="margin-top:8px;font-size:13px;color:#6b7280;">Galloway Getaways takes payment on their behalf.</div>'
         + '</div>';
-    if (gross == null || !(Number(gross) > 0)) {
+    if (supplier.noSplit || !(Number(gross) > 0)) {
         return head
-            + (gross == null
-                ? '<div style="margin-top:8px;font-size:12px;color:#9ca3af;">Prices include any VAT due. For a VAT invoice, ask '
-                    + escapeHtml(supplier.name) + '.</div>'
+            + (supplier.noSplit
+                ? '<div style="margin-top:8px;font-size:12px;color:#9ca3af;">' + escapeHtml(supplier.noSplit) + '</div>'
                 : '')
             + foot;
     }

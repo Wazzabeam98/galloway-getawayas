@@ -229,7 +229,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             expires_at: expiryFrom(nowIso),
             created_at: nowIso,
         })
-        .select('id, supplier_vat_number, supplier_vat_name')
+        .select('id, supplier_vat_number, supplier_vat_name, supplier_vat_treatment')
         .single();
 
     if (orderErr) {
@@ -294,7 +294,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
                     + linesHtml
                     + '<p style="margin:0 0 16px;font-size:16px;">Total paid: <strong>' + escapeHtml(totalStr) + '</strong>.</p>'
                     + allergyCallout(md.allergy) + noteCallout(md.note)
-                    + supplierVatHtml(order, null),
+                    + supplierVatHtml(order, Number(cs.amount_total || 0) / 100),
                     'You’re receiving this because you booked through Galloway Getaways.',
                     undefined, NEUTRAL_SUBTITLE));
             }
