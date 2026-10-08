@@ -16,6 +16,7 @@ import {
 } from '@/lib/stayRules';
 import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
 import { firstName, getImageUrl } from "@/lib/utils";
+import { ukDate } from '@/lib/dayKey';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 
@@ -23,9 +24,17 @@ import { tradeLabel } from '@/lib/serviceProviders';
 // one is ours", distinct from every imported channel's colour.
 const DIRECT_COLOUR = '#334155';
 
-// The diagonal wash on a night the host cannot sell (a gap too short to book).
-const ORPHAN_HATCH =
-    'repeating-linear-gradient(45deg, rgba(180,83,9,0.12) 0, rgba(180,83,9,0.12) 4px, transparent 4px, transparent 9px)';
+// Nights the minimum stay leaves unbookable — a gap too short to meet it and
+// not closed on both sides, so no stay can ever include them. Marked, as
+// Airbnb marks them, rather than left looking like ordinary free nights.
+// The colour is a muted violet: Liam first asked for black, but that sits too
+// close to the slate of "Booked direct", so violet was chosen to stand clearly
+// apart from both that and Airbnb's pink/coral. Drawn as a soft diagonal wash
+// (deliberately not an icon), so it reads as "a special, unavailable state"
+// rather than another booking.
+const MIN_STAY_COLOUR = '#7c3aed'; // violet-600
+const MIN_STAY_HATCH =
+    'repeating-linear-gradient(45deg, rgba(124,58,237,0.16) 0, rgba(124,58,237,0.16) 4px, transparent 4px, transparent 9px)';
 
 // A platform's colour, lightened towards white so a whole month of bars reads
 // as calm rather than a wall of saturated blocks — Airbnb's bars are soft too.
@@ -59,6 +68,15 @@ function dowFromKey(key: string): number {
 function keyLabel(key: string, fmt: string): string {
     const [y, m, d] = key.split('-').map(Number);
     return format(new Date(y, m - 1, d), fmt);
+}
+
+// A selected range, compact, for naming it on each control — "12–14 Oct" within
+// one month, "28 Sep – 2 Oct" across two, "14 Oct" for a single day. Built from
+// the day-key parts (never toISOString), British day-before-month order.
+function rangeLabel(start: string, end: string | null): string {
+    if (!end || end === start) return keyLabel(start, 'd MMM');
+    if (start.slice(0, 7) === end.slice(0, 7)) return `${dayNumber(start)}–${keyLabel(end, 'd MMM')}`;
+    return `${keyLabel(start, 'd MMM')} – ${keyLabel(end, 'd MMM')}`;
 }
 
 interface Listing {
@@ -445,7 +463,10 @@ export default function CalendarPage() {
     // nights they cannot.
     const monthSummary = useMemo(() => {
         const channels: Record<string, { name: string; colour: string }> = {};
-        let sold = 0, blocked = 0, sellable = 0, cannotSell = 0, inMonth = 0;
+        // Every night of the month lands in exactly one of these, so the four
+        // always add up to the month's length — the old count dropped past free
+        // nights, so a 31-day month could read "19 booked, 11 to sell" (30).
+        let sold = 0, blocked = 0, sellable = 0, minStay = 0, inMonth = 0;
         weeks.forEach((row) => row.forEach((key) => {
             if (key.slice(0, 7) !== monthKey) return;
             inMonth = inMonth + 1;
@@ -460,12 +481,14 @@ export default function CalendarPage() {
                 return;
             }
             if (overrides[key]?.is_blocked) { blocked = blocked + 1; return; }
-            if (key < todayKey) return; // a past free night is gone, not for sale
-            if (unsellable.has(key)) { cannotSell = cannotSell + 1; return; }
+            // The minimum stay leaves this night unbookable (unsellable only ever
+            // holds future nights, so a past free night falls through to "to
+            // sell" — it was free, and it keeps the four buckets summing).
+            if (unsellable.has(key)) { minStay = minStay + 1; return; }
             sellable = sellable + 1;
         }));
         return {
-            sold, blocked, sellable, cannotSell,
+            sold, blocked, sellable, minStay,
             channels: Object.keys(channels).map((k) => channels[k]),
             occupancy: inMonth ? Math.round((sold / inMonth) * 100) : 0,
         };
@@ -673,6 +696,30 @@ export default function CalendarPage() {
         { key: 'availability', label: 'Availability' },
     ] as const).filter((t) => t.key === 'manage' || mayEditSelected);
 
+    // The stored availability settings — the single source of truth
+    // (listings.min_nights and friends), normalised exactly as the sync effect
+    // loads them into the form. `min_nights` is what actually governs a booking:
+    // the guest booking card and the checkout route both read it through
+    // minNightsFor(), and the account "Booking permissions" page reads it too.
+    // So the number shown here is only real once it has been saved — an edit
+    // sitting unsaved in these inputs looks like the minimum but is not one,
+    // which is how the calendar could read "3" while the stored (and enforced)
+    // value was still 1. availabilityDirty drives the "not saved yet" warning
+    // below so that gap can never pass for a setting again.
+    const savedAvailability = {
+        min: String(selectedListing?.min_nights ?? 1),
+        max: selectedListing?.max_nights ? String(selectedListing.max_nights) : '',
+        notice: selectedListing?.advance_notice || 'Same day',
+        prep: selectedListing?.preparation_time || 'None',
+        window: selectedListing?.availability_window || '9 months',
+    };
+    const availabilityDirty =
+        minNightsGlobal !== savedAvailability.min ||
+        maxNightsGlobal !== savedAvailability.max ||
+        advanceNotice !== savedAvailability.notice ||
+        preparationTime !== savedAvailability.prep ||
+        availabilityWindow !== savedAvailability.window;
+
     return (
         <div className="max-w-6xl mx-auto px-6 py-10">
             <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
@@ -746,7 +793,7 @@ export default function CalendarPage() {
                                                     clickable ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default',
                                                     selected ? 'z-10 ring-2 ring-inset ring-slate-900' : '',
                                                 ].join(' ')}
-                                                style={orphan ? { backgroundImage: ORPHAN_HATCH } : undefined}
+                                                style={orphan ? { backgroundImage: MIN_STAY_HATCH } : undefined}
                                             >
                                                 <span className={[
                                                     'text-xs font-medium',
@@ -760,8 +807,8 @@ export default function CalendarPage() {
                                                     blockedDay ? (
                                                         <span className="absolute bottom-1 left-1.5 text-[9px] text-slate-400">Blocked</span>
                                                     ) : orphan ? (
-                                                        <span className="absolute bottom-1 left-1.5 text-[9px] font-medium text-amber-700">
-                                                            Can’t sell<span className="sr-only"> — a gap too short to book</span>
+                                                        <span className="absolute bottom-1 left-1.5 text-[9px] font-medium text-violet-700">
+                                                            Min. stay<span className="sr-only"> — minimum stay, a gap too short to book</span>
                                                         </span>
                                                     ) : (!isPast && inMonth) ? (
                                                         <span className="absolute bottom-1 left-1.5 text-[10px] font-medium text-slate-500">£{price}</span>
@@ -886,8 +933,8 @@ export default function CalendarPage() {
                             <div className="text-xs text-slate-500">
                                 {monthSummary.sold} booked
                                 {', ' + monthSummary.sellable + ' to sell'}
-                                {monthSummary.cannotSell > 0
-                                    ? ', ' + monthSummary.cannotSell + ' can’t be sold'
+                                {monthSummary.minStay > 0
+                                    ? ', ' + monthSummary.minStay + ' on minimum stay'
                                     : ''}
                                 {monthSummary.blocked > 0
                                     ? ', ' + monthSummary.blocked + ' blocked'
@@ -907,9 +954,9 @@ export default function CalendarPage() {
                                 </div>
                             ))}
 
-                            {monthSummary.cannotSell > 0 && (
+                            {monthSummary.minStay > 0 && (
                                 <div className="flex items-center gap-1.5">
-                                    <span className="w-4 h-3 rounded-sm border border-amber-300" style={{ backgroundImage: ORPHAN_HATCH }} /> Can’t be sold
+                                    <span className="w-4 h-3 rounded-sm border" style={{ backgroundImage: MIN_STAY_HATCH, borderColor: MIN_STAY_COLOUR }} /> Minimum stay
                                 </div>
                             )}
                             <div className="flex items-center gap-1.5">
@@ -939,17 +986,27 @@ export default function CalendarPage() {
                     {rightTab === 'manage' && (
                         panelOpen && selectionStart ? (
                             <div className="border rounded-2xl p-5">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="font-bold text-slate-900">
-                                        {selectionEnd && selectionEnd !== selectionStart
-                                            ? `${keyLabel(selectionStart, 'd MMM')} – ${keyLabel(selectionEnd, 'd MMM')}`
-                                            : keyLabel(selectionStart, 'd MMM yyyy')}
-                                    </h3>
-                                    <button type="button" onClick={closePanel}><X className="w-4 h-4 text-slate-400" /></button>
+                                {/* The dates this panel is about, named at the top (from → to, our
+                                    usual DD/MM/YYYY) as Airbnb does, so the controls below are never
+                                    ambiguous about which nights they change. */}
+                                <div className="flex items-start justify-between mb-4">
+                                    <div className="grid grid-cols-2 gap-x-6">
+                                        <div>
+                                            <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">From</span>
+                                            <span className="text-sm font-semibold text-slate-900">{ukDate(selectionStart)}</span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">To</span>
+                                            <span className="text-sm font-semibold text-slate-900">{ukDate(selectionEnd || selectionStart)}</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" onClick={closePanel} aria-label="Close"><X className="w-4 h-4 text-slate-400" /></button>
                                 </div>
 
                                 <div className="flex items-center justify-between mb-4 p-3 border rounded-xl">
-                                    <span className="text-sm font-medium text-slate-800">Block these dates</span>
+                                    <span className="text-sm font-medium text-slate-800">
+                                        Block these dates <span className="font-normal text-slate-400">({rangeLabel(selectionStart, selectionEnd)})</span>
+                                    </span>
                                     <button
                                         type="button"
                                         onClick={() => setPanelBlocked(!panelBlocked)}
@@ -959,7 +1016,9 @@ export default function CalendarPage() {
                                     </button>
                                 </div>
 
-                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Custom price</label>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                                    Nightly price <span className="normal-case font-medium text-slate-400">({rangeLabel(selectionStart, selectionEnd)})</span>
+                                </label>
                                 <input
                                     type="number"
                                     value={panelPrice}
@@ -968,7 +1027,9 @@ export default function CalendarPage() {
                                     className="w-full p-2.5 border rounded-lg text-sm mb-4"
                                 />
 
-                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Minimum stay override</label>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                                    Minimum stay <span className="normal-case font-medium text-slate-400">({rangeLabel(selectionStart, selectionEnd)})</span>
+                                </label>
                                 <input
                                     type="number"
                                     min={1}
@@ -1144,6 +1205,11 @@ export default function CalendarPage() {
 
                     {rightTab === 'availability' && mayEditSelected && (
                         <div className="border rounded-2xl p-5 space-y-5">
+                            {availabilityDirty && (
+                                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                    Not saved yet — these take effect only when you press <strong>Save</strong>. Until then your stored settings (including the minimum nights guests can book) still apply.
+                                </div>
+                            )}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Min nights</label>
@@ -1176,7 +1242,7 @@ export default function CalendarPage() {
                             </div>
                             <button
                                 type="button"
-                                disabled={savingSettings}
+                                disabled={savingSettings || !availabilityDirty}
                                 onClick={() => saveListingSettings({
                                     min_nights: Math.max(1, Number(minNightsGlobal) || 1),
                                     max_nights: maxNightsGlobal ? Number(maxNightsGlobal) : null,
@@ -1186,7 +1252,7 @@ export default function CalendarPage() {
                                 })}
                                 className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
-                                {savingSettings ? 'Saving...' : 'Save'}
+                                {savingSettings ? 'Saving...' : availabilityDirty ? 'Save' : 'Saved'}
                             </button>
                         </div>
                     )}
