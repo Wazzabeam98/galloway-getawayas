@@ -83,12 +83,15 @@ test('written, and with somewhere to stay, is publishable', () => {
 
 /* ------------------------------------------------------- shipping unwritten */
 
-test('only Kirkcudbright is released — every other written area is still held', () => {
+test('only Kirkcudbright and Castle Douglas are released — every other written area is still held', () => {
     // The copy is written for all ten towns; each carries `hold: true` and stays
     // out of the index and the sitemap until it is deliberately released.
-    // Kirkcudbright is the first one off hold: its copy was checked live (its
+    // Kirkcudbright was the first off hold: its copy was checked live (its
     // attractions verified — the Cocoabean Company at Twynholm now stands in for
     // the closed Cream o' Galloway visitor centre), so it is publishable.
+    // Castle Douglas is the second (released 08/10/2026): the food town, with
+    // Threave Garden/Castle and Carlingwark Loch — all open — and two published
+    // cottages, so it clears the "real content + stock" bar.
     //
     // WHEN YOU CLEAR ANOTHER HOLD, this test fails and names the town. Read
     // AREA-BRIEF.md, check its attractions are still open, and add the slug to
@@ -98,8 +101,8 @@ test('only Kirkcudbright is released — every other written area is still held'
         .map((a) => a.slug);
 
     assert.deepEqual(
-        readyToPublish, ['kirkcudbright'],
-        'The set of written, released areas changed. Expected exactly Kirkcudbright.\n'
+        readyToPublish, ['kirkcudbright', 'castle-douglas'],
+        'The set of written, released areas changed. Expected Kirkcudbright and Castle Douglas.\n'
         + 'Now released: ' + readyToPublish.join(', ')
         + '\n\nIf you meant to release another town, add its slug here. If not, restore hold: true.'
     );
