@@ -1,7 +1,7 @@
 'use client';
 
 import { PLATFORMS } from '@/lib/platforms';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
@@ -14,7 +14,11 @@ import {
     latestCheckOutKey, londonTodayKey, addDaysKey, nightsBetweenKeys,
     unsellableNights,
 } from '@/lib/stayRules';
-import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, MessageSquare, Phone, Wrench, X } from 'lucide-react';
+import Link from 'next/link';
+import ManageReservationSheet from '@/components/dashboard/reservation/ManageReservationSheet';
+import type { ReservationPanel } from '@/lib/hostReservation';
+import { shortGapAt, shortGapWords } from '@/lib/shortGap';
 import { firstName, getImageUrl } from "@/lib/utils";
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
@@ -87,6 +91,7 @@ interface Override {
 }
 
 interface Booking {
+    id: string;
     check_in: string;
     check_out: string;
     guest_id: string;
@@ -123,6 +128,8 @@ interface Reservation {
     platform: string | null; // null = our own (direct) booking
     label: string;
     kind: 'direct' | 'channel';
+    // Our own bookings only: the booking, for the reservation panel.
+    bookingId?: string;
     // Our own bookings only: the guest's photo (null = draw their initial).
     // An imported stay carries no guest at all — the iCal feed has no name or
     // photo — so it never gets one.
@@ -168,6 +175,21 @@ export default function CalendarPage() {
     const [selectionStart, setSelectionStart] = useState<string | null>(null);
     const [selectionEnd, setSelectionEnd] = useState<string | null>(null);
     const [panelOpen, setPanelOpen] = useState(false);
+    // The reservation whose bar was clicked, shown in the right-hand panel (a
+    // full-screen sheet on a phone). `resDetail` is our own booking's detail
+    // from /api/host/reservations/[id]; an imported stay has none to fetch.
+    const [selectedRes, setSelectedRes] = useState<Reservation | null>(null);
+    const [resDetail, setResDetail] = useState<ReservationPanel | null>(null);
+    const [resState, setResState] = useState<'idle' | 'loading' | 'error'>('idle');
+    // On a phone the date panel sits below the whole calendar, so opening it
+    // scrolled nothing into view — a tap on a short gap looked like it did
+    // nothing. Below lg it is brought into view as it opens.
+    const datePanelRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        if (!panelOpen || !datePanelRef.current) return;
+        if (typeof window === 'undefined' || !window.matchMedia('(max-width: 1023px)').matches) return;
+        datePanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, [panelOpen, selectionStart, selectionEnd]);
     const [panelBlocked, setPanelBlocked] = useState(false);
     const [panelPrice, setPanelPrice] = useState('');
     const [panelMinNights, setPanelMinNights] = useState('');
@@ -253,6 +275,9 @@ export default function CalendarPage() {
 
     useEffect(() => {
         if (!selectedListingId) return;
+        // A reservation from the last listing must not stay open over this one.
+        setSelectedRes(null);
+        setResDetail(null);
 
         let live = true;
         const loadCalendarData = async () => {
@@ -265,7 +290,7 @@ export default function CalendarPage() {
                     .eq('listing_id', selectedListingId),
                 supabase
                     .from('bookings')
-                    .select('check_in, check_out, guest_id')
+                    .select('id, check_in, check_out, guest_id')
                     .eq('listing_id', selectedListingId)
                     .eq('status', 'confirmed'),
                 // Accepted, planned work the host asked a tradesman for on this
@@ -377,6 +402,7 @@ export default function CalendarPage() {
             start: String(b.check_in).slice(0, 10),
             end: String(b.check_out).slice(0, 10),
             platform: null,
+            bookingId: b.id,
             label: guestNames[b.guest_id] || 'Guest',
             kind: 'direct',
             avatarUrl: guestAvatars[b.guest_id] ?? null,
@@ -399,7 +425,7 @@ export default function CalendarPage() {
     // whole. The booking card and checkout enforce the matching rule
     // (lib/stayRules), so what is marked unsellable here is exactly what a guest
     // would be refused.
-    const { takenByNight, unsellable } = useMemo(() => {
+    const { takenByNight, unsellable, unavailable } = useMemo(() => {
         const taken: Record<string, Reservation> = {};
         const ranges: { start: string; end: string }[] = [];
         reservations.forEach((r) => {
@@ -428,7 +454,7 @@ export default function CalendarPage() {
             for (let k = from; k <= to; k = addDaysKey(k, 1)) ordered.push(k);
             unsell = unsellableNights(ordered, unavail, (key) => minNightsFor(selectedListing, minOv, key));
         }
-        return { takenByNight: taken, unsellable: unsell };
+        return { takenByNight: taken, unsellable: unsell, unavailable: unavail };
     }, [reservations, overrides, selectedListing, todayKey]);
 
     const dayPriceFor = (key: string) => {
@@ -491,9 +517,42 @@ export default function CalendarPage() {
         return key >= lo && key <= hi;
     };
 
+    // The minimum for a stay checking in on `key`, overrides included — the
+    // same figure the short-gap marking used.
+    const minForKey = (key: string) => {
+        if (!selectedListing) return 1;
+        const minOv: Record<string, number> = {};
+        Object.keys(overrides).forEach((k) => {
+            const m = overrides[k].min_nights_override;
+            if (m) minOv[k] = Number(m);
+        });
+        return minNightsFor(selectedListing, minOv, key);
+    };
+
+    const openRange = (start: string, end: string) => {
+        setSelectionStart(start);
+        setSelectionEnd(end);
+        const existing = overrides[start];
+        setPanelBlocked(existing?.is_blocked || false);
+        setPanelPrice(existing?.price_override ? String(existing.price_override) : '');
+        setPanelMinNights(existing?.min_nights_override ? String(existing.min_nights_override) : '');
+        setPanelOpen(true);
+        setRightTab('manage');
+    };
+
     const handleDayClick = (key: string) => {
         if (key < todayKey) return;
         if (takenByNight[key]) return;
+        setSelectedRes(null);
+
+        // A short-gap night opens the whole gap at once, so the panel can say
+        // why nobody can book it — and a minimum-stay change made there lands
+        // on the gap's first night, which is the one the rule reads.
+        const gap = shortGapAt(key, unsellable, unavailable, minForKey);
+        if (gap && (!selectionStart || selectionEnd)) {
+            openRange(gap.start, gap.end);
+            return;
+        }
 
         if (!selectionStart || selectionEnd) {
             setSelectionStart(key);
@@ -503,16 +562,28 @@ export default function CalendarPage() {
 
         const start = key < selectionStart ? key : selectionStart;
         const end = key < selectionStart ? selectionStart : key;
-        setSelectionStart(start);
-        setSelectionEnd(end);
-
-        const existing = overrides[start];
-        setPanelBlocked(existing?.is_blocked || false);
-        setPanelPrice(existing?.price_override ? String(existing.price_override) : '');
-        setPanelMinNights(existing?.min_nights_override ? String(existing.min_nights_override) : '');
-        setPanelOpen(true);
-        setRightTab('manage');
+        openRange(start, end);
     };
+
+    // A bar was clicked: show that reservation in the panel, as Airbnb does.
+    const openReservation = async (res: Reservation) => {
+        closePanel();
+        setRightTab('manage');
+        setSelectedRes(res);
+        setResDetail(null);
+        if (res.kind !== 'direct' || !res.bookingId) { setResState('idle'); return; }
+        setResState('loading');
+        try {
+            const r = await fetch('/api/host/reservations/' + res.bookingId);
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok || !data.ok) { setResState('error'); return; }
+            setResDetail(data.reservation);
+            setResState('idle');
+        } catch {
+            setResState('error');
+        }
+    };
+    const closeReservation = () => { setSelectedRes(null); setResDetail(null); setResState('idle'); };
 
     const closePanel = () => {
         setPanelOpen(false);
@@ -760,8 +831,11 @@ export default function CalendarPage() {
                                                     blockedDay ? (
                                                         <span className="absolute bottom-1 left-1.5 text-[9px] text-slate-400">Blocked</span>
                                                     ) : orphan ? (
+                                                        // Not "Can't sell": beside "Blocked" that read as
+                                                        // something the host had done. It is a gap too
+                                                        // short for anyone to book — the panel says why.
                                                         <span className="absolute bottom-1 left-1.5 text-[9px] font-medium text-amber-700">
-                                                            Can’t sell<span className="sr-only"> — a gap too short to book</span>
+                                                            Short gap<span className="sr-only"> — too few nights for anyone to book</span>
                                                         </span>
                                                     ) : (!isPast && inMonth) ? (
                                                         <span className="absolute bottom-1 left-1.5 text-[10px] font-medium text-slate-500">£{price}</span>
@@ -798,11 +872,16 @@ export default function CalendarPage() {
                                                 : (PLATFORMS[res.platform as string] || PLATFORMS.other).colour;
                                             const fill = soften(colour, 0.78);
                                             const fg = textOn(fill);
+                                            const isOpen = !!selectedRes && selectedRes.start === res.start
+                                                && selectedRes.end === res.end && selectedRes.label === res.label;
 
                                             return (
-                                                <div
+                                                <button
+                                                    type="button"
                                                     key={'r' + ri}
-                                                    className="absolute flex items-center overflow-hidden rounded-md px-2 text-[11px] font-medium shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+                                                    onClick={() => openReservation(res)}
+                                                    aria-label={res.label + ', ' + keyLabel(res.start, 'd MMM') + ' to ' + keyLabel(res.end, 'd MMM')}
+                                                    className={`pointer-events-auto absolute flex items-center overflow-hidden rounded-md px-2 text-left text-[11px] font-medium shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 ${isOpen ? 'ring-2 ring-slate-900' : ''}`}
                                                     style={{
                                                         top: '2.55rem',
                                                         height: '1.65rem',
@@ -840,7 +919,7 @@ export default function CalendarPage() {
                                                         )
                                                     )}
                                                     <span className="truncate">{res.label}</span>
-                                                </div>
+                                                </button>
                                             );
                                         })}
                                     </div>
@@ -887,7 +966,7 @@ export default function CalendarPage() {
                                 {monthSummary.sold} booked
                                 {', ' + monthSummary.sellable + ' to sell'}
                                 {monthSummary.cannotSell > 0
-                                    ? ', ' + monthSummary.cannotSell + ' can’t be sold'
+                                    ? ', ' + monthSummary.cannotSell + ' in short gaps'
                                     : ''}
                                 {monthSummary.blocked > 0
                                     ? ', ' + monthSummary.blocked + ' blocked'
@@ -909,7 +988,7 @@ export default function CalendarPage() {
 
                             {monthSummary.cannotSell > 0 && (
                                 <div className="flex items-center gap-1.5">
-                                    <span className="w-4 h-3 rounded-sm border border-amber-300" style={{ backgroundImage: ORPHAN_HATCH }} /> Can’t be sold
+                                    <span className="w-4 h-3 rounded-sm border border-amber-300" style={{ backgroundImage: ORPHAN_HATCH }} /> Short gap, too few nights to book
                                 </div>
                             )}
                             <div className="flex items-center gap-1.5">
@@ -918,7 +997,7 @@ export default function CalendarPage() {
                         </div>
                     </div>
 
-                    <p className="text-xs text-slate-400 mt-3">Click a free date, then another, to set a price, a minimum stay or to block those nights.</p>
+                    <p className="text-xs text-slate-400 mt-3">Click a free date, then another, to set a price, a minimum stay or to block those nights. Click a booking to see it.</p>
                 </div>
 
                 {/* Right column: tabs + panel */}
@@ -936,9 +1015,18 @@ export default function CalendarPage() {
                         ))}
                     </div>
 
-                    {rightTab === 'manage' && (
+                    {rightTab === 'manage' && selectedRes && (
+                        <ReservationSide
+                            res={selectedRes}
+                            detail={resDetail}
+                            state={resState}
+                            onClose={closeReservation}
+                        />
+                    )}
+
+                    {rightTab === 'manage' && !selectedRes && (
                         panelOpen && selectionStart ? (
-                            <div className="border rounded-2xl p-5">
+                            <div ref={datePanelRef} className="border rounded-2xl p-5 scroll-mt-24">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="font-bold text-slate-900">
                                         {selectionEnd && selectionEnd !== selectionStart
@@ -947,6 +1035,22 @@ export default function CalendarPage() {
                                     </h3>
                                     <button type="button" onClick={closePanel}><X className="w-4 h-4 text-slate-400" /></button>
                                 </div>
+
+                                {/* A short gap selected: say why nobody can book it, so
+                                    it never reads as something the host blocked. */}
+                                {(() => {
+                                    const gapKey = selectedKeys().find((k) => unsellable.has(k) && !overrides[k]?.is_blocked);
+                                    const gap = gapKey ? shortGapAt(gapKey, unsellable, unavailable, minForKey) : null;
+                                    if (!gap) return null;
+                                    const words = shortGapWords(gap);
+                                    return (
+                                        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+                                            <div className="text-sm font-semibold text-amber-900">{words.title}</div>
+                                            <p className="mt-1 text-[13px] leading-snug text-amber-900/90">{words.why}</p>
+                                            <p className="mt-2 text-[13px] leading-snug font-medium text-amber-900">{words.fix}</p>
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="flex items-center justify-between mb-4 p-3 border rounded-xl">
                                     <span className="text-sm font-medium text-slate-800">Block these dates</span>
@@ -1192,6 +1296,143 @@ export default function CalendarPage() {
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+// The reservation behind a clicked bar, in the right-hand panel on a desktop
+// and as a full-screen sheet on a phone (where the panel would otherwise sit
+// far below the calendar) — Airbnb's reservation panel. Ours shows the guest,
+// the stay, the money, the phone once released, the thread and the same
+// Manage-reservation actions as the booking page; an imported stay shows the
+// dates and says the rest is with the platform it came from.
+function ReservationSide({
+    res, detail, state, onClose,
+}: {
+    res: Reservation;
+    detail: ReservationPanel | null;
+    state: 'idle' | 'loading' | 'error';
+    onClose: () => void;
+}) {
+    const nights = nightsBetweenKeys(res.start, res.end);
+    const dates = keyLabel(res.start, 'EEE d MMM') + ' – ' + keyLabel(res.end, 'EEE d MMM');
+    const nightsLine = nights + (nights === 1 ? ' night' : ' nights');
+    const platform = res.kind === 'channel' ? (PLATFORMS[res.platform as string] || PLATFORMS.other) : null;
+    const d = detail && detail.detail;
+
+    const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+        <div className="flex items-start justify-between gap-4 py-3">
+            <div className="text-sm text-slate-500">{label}</div>
+            <div className="text-right text-sm font-medium text-slate-900">{children}</div>
+        </div>
+    );
+
+    return (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-white px-5 pb-10 pt-4 lg:static lg:z-auto lg:overflow-visible lg:rounded-2xl lg:border lg:p-5">
+            <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {platform ? 'Reserved on ' + platform.name : 'Reservation'}
+                </span>
+                <button type="button" onClick={onClose} aria-label="Close" className="-mr-2 rounded-full p-2 hover:bg-slate-100">
+                    <X className="h-5 w-5 text-slate-500" />
+                </button>
+            </div>
+
+            {res.kind === 'direct' ? (
+                <>
+                    <div className="mt-3 flex items-center gap-3">
+                        {(detail?.avatarUrl || res.avatarUrl) ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={(detail?.avatarUrl || res.avatarUrl) as string} alt="" className="h-14 w-14 flex-none rounded-full object-cover" />
+                        ) : (
+                            <span className="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-emerald-50 text-xl font-semibold text-emerald-700">
+                                {res.label.slice(0, 1).toUpperCase()}
+                            </span>
+                        )}
+                        <div className="min-w-0">
+                            <h3 className="truncate text-lg font-bold text-slate-900">{detail ? detail.heading : res.label}</h3>
+                            {detail && <div className="text-sm text-slate-500">{detail.statusLabel}</div>}
+                        </div>
+                    </div>
+
+                    <div className="mt-4 divide-y divide-slate-100 border-y border-slate-100">
+                        <Row label="Dates"><div>{dates}</div><div className="text-[13px] font-normal text-slate-500">{nightsLine}</div></Row>
+                        {d && <Row label="Guests">{d.party}</Row>}
+                        {d && d.money && (
+                            <Row label="Guest paid">
+                                <div>{d.money.total}</div>
+                                <div className="text-[13px] font-normal text-slate-500">
+                                    {d.money.stage}{d.money.refunded ? ' · ' + d.money.refunded + ' refunded' : ''}
+                                </div>
+                            </Row>
+                        )}
+                        {d && (d.phone || d.phoneNote) && (
+                            <Row label="Phone">
+                                {d.phone
+                                    ? <a href={'tel:' + d.phone} className="underline underline-offset-2">{d.phone}</a>
+                                    : <span className="font-normal text-slate-500">{d.phoneNote}</span>}
+                            </Row>
+                        )}
+                        {d && <Row label="Confirmation"><span className="font-mono tracking-wide">{d.confirmation}</span></Row>}
+                    </div>
+
+                    {state === 'loading' && <p className="mt-4 text-sm text-slate-400 animate-pulse">Loading the booking…</p>}
+                    {state === 'error' && <p className="mt-4 text-sm text-rose-600">Couldn’t load this booking. Try again in a moment.</p>}
+                    {detail && !d && (
+                        <p className="mt-4 text-sm text-slate-500">The booking details are with the owner — you can see the dates here.</p>
+                    )}
+
+                    {d && (
+                        <div className="mt-5 space-y-3">
+                            {d.openChange && (
+                                <a href={'/reservations/change/' + d.openChange.id} className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left transition hover:border-emerald-300">
+                                    <span className="flex-1 text-sm font-semibold text-emerald-900">
+                                        {d.openChange.initiated_by === 'guest'
+                                            ? (d.openChange.status === 'pending' ? 'Your guest requested a change — review it' : 'Change approved — waiting on the guest’s payment')
+                                            : (d.openChange.status === 'awaiting_guest_payment' ? 'Change sent — waiting on the guest’s payment' : 'You proposed a change — waiting on the guest')}
+                                    </span>
+                                    <span className="text-[13px] font-semibold text-emerald-700">Review</span>
+                                </a>
+                            )}
+                            {d.messagesHref && (
+                                <Link href={d.messagesHref} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                                    <MessageSquare className="h-4 w-4" /> Message {detail!.guestFirst}
+                                </Link>
+                            )}
+                            {d.phone && (
+                                <a href={'tel:' + d.phone} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-900">
+                                    <Phone className="h-4 w-4" /> Call
+                                </a>
+                            )}
+                            <ManageReservationSheet {...d.manage} />
+                            <Link href={d.bookingHref} className="block text-center text-sm font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                                Open the full reservation
+                            </Link>
+                        </div>
+                    )}
+                </>
+            ) : (
+                <>
+                    <h3 className="mt-3 text-lg font-bold text-slate-900">{platform!.name} guest</h3>
+                    <div className="mt-4 divide-y divide-slate-100 border-y border-slate-100">
+                        <Row label="Dates"><div>{dates}</div><div className="text-[13px] font-normal text-slate-500">{nightsLine}</div></Row>
+                    </div>
+                    <p className="mt-4 text-sm leading-relaxed text-slate-600">
+                        {platform!.name}’s calendar sync only sends us the dates. The guest’s name,
+                        their party, what they paid and your messages with them are all on {platform!.name}.
+                    </p>
+                    {platform!.key === 'airbnb' && (
+                        <a
+                            href="https://www.airbnb.co.uk/hosting/reservations"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-900"
+                        >
+                            Open your Airbnb reservations <ExternalLink className="h-4 w-4" />
+                        </a>
+                    )}
+                </>
+            )}
         </div>
     );
 }

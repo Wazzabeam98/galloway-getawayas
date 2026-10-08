@@ -24,6 +24,7 @@ import {
     ChevronRight,
 } from "lucide-react";
 import ReservationHeader from "@/components/dashboard/reservation/ReservationHeader";
+import { askToCancelDraft as askToCancelDraftFor, paymentStage as paymentStageWords } from "@/lib/hostReservation";
 import { revealSecret } from '@/lib/listingSecrets';
 
 // One booking, in full.
@@ -370,35 +371,21 @@ export default async function BookingDetail({ params }: { params: { id: string }
         ? (guest?.phone || null)
         : null;
 
-    // Prefills the message box rather than sending anything. The host adds
-    // the reason and presses send — a stay called off in the guest's name
-    // without them reading it first is not something to automate.
-    //
-    // One paragraph, no line breaks, and short. The composer on the other end
-    // is a single-line <input>, which silently drops newlines: a draft written
-    // in paragraphs arrived with its sentences run together, and only the
-    // first sixty characters are visible while the host reads it back. It also
-    // has to be sendable exactly as it stands, because a bracketed 'fill this
-    // in' note is one distracted press away from reaching the guest.
-    const shortDate = (value: string) => ukDate(value);
-
-    const askToCancelDraft =
-        'Hi ' + firstName + ', I’m very sorry — I’ve run into a problem with '
-        + (listing?.title || 'the property')
-        + ' and I don’t think I can host you for '
-        + shortDate(booking.check_in) + ' to ' + shortDate(booking.check_out)
-        + ' as planned. If you cancel from Your trips you’d be refunded '
-        + money(guestWouldGet) + '. Do let me know and I’ll help however I can.';
+    // Prefills the message box rather than sending anything — shared with the
+    // calendar's reservation panel (lib/hostReservation), which offers the same
+    // ask-to-cancel from the same words.
+    const askToCancelDraft = askToCancelDraftFor({
+        guestFirst: firstName,
+        listingTitle: listing?.title,
+        checkIn: booking.check_in,
+        checkOut: booking.check_out,
+        guestWouldGet,
+    });
 
     // Five values, not three. 'refunded' and 'partially_refunded' both used to
     // fall through to 'Nothing paid yet', which told a host their guest had
     // never paid for a stay that had been paid for and refunded.
-    const paymentStage =
-        booking.payment_status === 'paid' ? 'Everything paid'
-            : booking.payment_status === 'deposit_paid' ? 'Deposit paid, balance outstanding'
-                : booking.payment_status === 'refunded' ? 'Paid, then refunded in full'
-                    : booking.payment_status === 'partially_refunded' ? 'Paid, then partly refunded'
-                        : 'Nothing paid yet';
+    const paymentStage = paymentStageWords(booking.payment_status);
 
     const whoCancelled =
         booking.cancelled_by_role === 'host'
