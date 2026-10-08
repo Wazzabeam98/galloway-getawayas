@@ -814,6 +814,7 @@ export default function EditListing() {
                                 <h2 className="text-xl font-bold text-slate-900">Pricing &amp; fees</h2>
                                 <NightlyPriceCard price={price} feePercent={HOST_FEE_PERCENT} onSave={(v) => saveThen({ price_per_night: amountOrNull(v) ?? 0 }, () => setPrice(v))} />
                                 <WeekendPriceCard weekendPrice={weekendPrice} onSave={(v) => saveThen({ weekend_price: amountOrNull(v) }, () => setWeekendPrice(v))} />
+                                {listingId && <ExtrasEditor listingId={listingId} />}
                                 <DiscountsCard
                                     discounts={{ newListingPromo, lastMinute: lastMinuteDiscount, weekly: weeklyDiscount, monthly: monthlyDiscount }}
                                     onSave={(d) => saveThen({ new_listing_promo: d.newListingPromo, last_minute_discount: d.lastMinute, weekly_discount: d.weekly, monthly_discount: d.monthly }, () => { setNewListingPromo(d.newListingPromo); setLastMinuteDiscount(d.lastMinute); setWeeklyDiscount(d.weekly); setMonthlyDiscount(d.monthly); })}
@@ -822,7 +823,6 @@ export default function EditListing() {
                                 <ExtraGuestFeeCard fee={extraGuestFee} after={extraGuestAfter} onSave={(f, a) => saveThen({ extra_guest_fee: amountOrZero(f), extra_guest_after: amountOrNull(a) ?? 1 }, () => { setExtraGuestFee(f); setExtraGuestAfter(a); })} />
                                 <PetFeeCard fee={petFee} petsAllowed={amenities.includes('Pets allowed')} onSave={(v) => saveThen({ pet_fee: amountOrZero(v) }, () => setPetFee(v))} />
                                 <DamageDepositCard deposit={damageDeposit} onSave={(v) => saveThen({ damage_deposit: amountOrZero(v) }, () => setDamageDeposit(v))} />
-                                {listingId && <ExtrasEditor listingId={listingId} />}
                             </section>
                         </PhoneSection>)}
 
