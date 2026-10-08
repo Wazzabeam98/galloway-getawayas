@@ -48,7 +48,7 @@ export type SecretView =
     | 'before' | 'after' | 'preview';
 
 const WORDS: Record<'before' | 'after' | 'preview', { door: string; wifi: string }> = {
-    before: { door: '[shown here 3 days before you arrive]', wifi: '[shown here 3 days before you arrive]' },
+    before: { door: '[shown here closer to your arrival]', wifi: '[shown here closer to your arrival]' },
     after: { door: '[no longer shown]', wifi: '[no longer shown]' },
     preview: { door: '[door code]', wifi: '[wifi password]' },
 };

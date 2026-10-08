@@ -3384,11 +3384,14 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     of each screen on a phone), the same for a guest and a trade. */}
                 <div className="shrink-0 border-b border-slate-100 px-4 sm:px-8">
                     <div className="flex h-16 items-center justify-between gap-3">
-                        {/* Guests keep Back top-left; a trade's Back lives in the
-                            footer (both its buttons at the bottom), so a spacer here
-                            keeps the brand centred. */}
-                        {isGuest ? (
-                            (position > 1 || openGroup) ? (
+                        {/* Back top-left, Airbnb's place for it on a phone. Guests
+                            keep it here at every width. A trade's Back is here only
+                            on a phone; from sm up it sits in the footer beside Next
+                            (both its buttons at the bottom) and a spacer here keeps
+                            the brand centred. Never in both places at once. Two
+                            hosts missed it at the foot on a phone. */}
+                        <span className={isGuest ? 'contents' : 'contents sm:hidden'}>
+                            {(position > 1 || openGroup) ? (
                                 <button type="button" onClick={goBack} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
                                     <ChevronLeft className="w-5 h-5" /> Back
                                 </button>
@@ -3396,10 +3399,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                 <Link href="/business" className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
                                     <ChevronLeft className="w-5 h-5" /> Back
                                 </Link>
-                            )
-                        ) : (
-                            <span className="w-9" aria-hidden />
-                        )}
+                            )}
+                        </span>
+                        {!isGuest && <span className="hidden sm:block w-9" aria-hidden />}
                         <span className="text-sm font-bold tracking-tight text-slate-900">Galloway Getaways</span>
                         <Link href="/business" aria-label="Close" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition">
                             <X className="w-5 h-5" />
@@ -6430,18 +6432,23 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     Fixed to the bottom of the modal rather than sitting under
                     the content, so on a phone the way forward is under your
                     thumb instead of below the fold. */}
-                <div className="shrink-0 border-t border-slate-200 bg-white px-4 sm:px-6 py-3 flex items-center gap-3">
+                {/* A trade's step one advances on the card and has no Next, so
+                    on a phone (Back now top-left) the footer would be an empty
+                    strip: it is left out there. */}
+                <div className={'shrink-0 border-t border-slate-200 bg-white px-4 sm:px-6 py-3 items-center gap-3 '
+                    + (!isGuest && step === 'trade' && !stepMissing && !stepIsOptional ? 'hidden sm:flex' : 'flex')}>
                     {/* Back keeps everything. It is a state change and never a
                         route change: routing would remount this component and
                         take every field with it, which is the bug that makes
                         people distrust a stepped form. */}
                     {/* For a guest, Back lives top-left in the takeover bar, so
-                        the footer carries only the way on. A trade keeps Back here. */}
+                        the footer carries only the way on. A trade keeps Back here
+                        from sm up; on a phone it is top-left like the guest's. */}
                     {!isGuest && ((position > 1 || openGroup) ? (
                         <button
                             type="button"
                             onClick={goBack}
-                            className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-4 sm:px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition"
+                            className="hidden shrink-0 sm:inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-4 sm:px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition"
                         >
                             <ChevronLeft className="w-4 h-4" />
                             Back
@@ -6449,7 +6456,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     ) : (
                         <Link
                             href="/business"
-                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition"
+                            className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition"
                         >
                             <ChevronLeft className="w-4 h-4" />
                             Back

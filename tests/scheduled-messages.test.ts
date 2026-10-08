@@ -544,7 +544,10 @@ test('a check-in message is stored with a placeholder: never the code, sealed or
         templates: [codeTemplate], scopes: [],
         bookings: [arrivingSoon('b1', 'harbour'), arrivingSoon('b2', 'harbour')],
         listings: [harbour],
-        codes: [{ listing_id: 'harbour', code: sealSecret('4821', { table: 'listing_access_codes', id: 'harbour' }) }],
+        // A 3-day release window, so this two-days-out booking is inside it and
+        // the code-bearing message goes rather than waiting (the default 24h
+        // would hold it — that behaviour has its own test below).
+        codes: [{ listing_id: 'harbour', code: sealSecret('4821', { table: 'listing_access_codes', id: 'harbour' }), release_hours: 72 }],
         overrides: [{ booking_id: 'b2', code: sealSecret('9073', { table: 'booking_access_codes', id: 'b2' }) }],
     });
     await route.GET(new Request('http://example.invalid/x', { headers: { authorization: 'Bearer test-secret' } }));
@@ -585,8 +588,21 @@ test('a sealed code this key cannot open is treated as no code: held, never sent
 test('a code stored before encryption still counts: the message goes, with a placeholder', withSecretsKey(async () => {
     const { route, messages } = loadScopedRun({
         templates: [codeTemplate], scopes: [], bookings: [arrivingSoon('b1', 'harbour')], listings: [harbour],
-        codes: [{ listing_id: 'harbour', code: '1234' }],
+        // 3-day release window so this two-days-out booking is inside it.
+        codes: [{ listing_id: 'harbour', code: '1234', release_hours: 72 }],
     });
     await route.GET(new Request('http://example.invalid/x', { headers: { authorization: 'Bearer test-secret' } }));
     assert.equal(messages[0].body, 'The lockbox code is {{gg.door_code}}.');
+}));
+
+test('the code waits for the listing’s release window: the default 24h holds a two-days-out code', withSecretsKey(async () => {
+    const { route, messages } = loadScopedRun({
+        templates: [codeTemplate], scopes: [], bookings: [arrivingSoon('b1', 'harbour')], listings: [harbour],
+        // No release_hours, so the 24h default. Two days out is outside it, so the
+        // code-bearing message is held — the same moment the guest's reservation
+        // card is still hiding the code, because both read this one window.
+        codes: [{ listing_id: 'harbour', code: '1234' }],
+    });
+    await route.GET(new Request('http://example.invalid/x', { headers: { authorization: 'Bearer test-secret' } }));
+    assert.equal(messages.filter((m) => /lockbox code is/.test(m.body)).length, 0, 'held until the window opens');
 }));

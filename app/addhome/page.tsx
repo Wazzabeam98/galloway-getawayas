@@ -752,6 +752,28 @@ export default function AddHome() {
 
         return (
             <div className="max-w-3xl mx-auto px-6 py-10 w-full">
+                {/* On a phone, Back sits top-left in a bar that stays put as the
+                    page scrolls, as on Airbnb; Next stays at the foot. Two hosts
+                    missed Back at the bottom left. From sm up Back stays at the
+                    foot beside Next, so it is only ever in one place. */}
+                <div className="sm:hidden sticky top-0 z-30 -mx-6 -mt-10 mb-6 flex h-14 items-center border-b border-slate-100 bg-white px-3">
+                    <button
+                        type="button"
+                        onClick={goBack}
+                        className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition"
+                    >
+                        <ChevronLeftIcon className="w-5 h-5" /> Back
+                    </button>
+                    {/* Save sits top-right on a phone, Airbnb's "Save & exit",
+                        and leaves the brand row below so it is in one place. */}
+                    <button
+                        onClick={saveDraft}
+                        disabled={savingDraft}
+                        className="ml-auto px-3 text-sm font-semibold underline text-slate-600 hover:text-black disabled:opacity-50"
+                    >
+                        {savingDraft ? 'Saving...' : 'Save & finish later'}
+                    </button>
+                </div>
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-2xl font-extrabold text-emerald-800">Galloway Getaways</h1>
                     <div className="flex items-center gap-4">
@@ -764,7 +786,7 @@ export default function AddHome() {
                         <button
                             onClick={saveDraft}
                             disabled={savingDraft}
-                            className="text-sm font-semibold underline text-slate-600 hover:text-black disabled:opacity-50"
+                            className="hidden sm:inline text-sm font-semibold underline text-slate-600 hover:text-black disabled:opacity-50"
                         >
                             {savingDraft ? 'Saving...' : 'Save & finish later'}
                         </button>
@@ -1327,14 +1349,14 @@ export default function AddHome() {
                         <button
                             type="button"
                             onClick={goBack}
-                            className="flex items-center text-sm font-semibold text-slate-700 hover:text-black"
+                            className="hidden sm:flex items-center text-sm font-semibold text-slate-700 hover:text-black"
                         >
                             <ChevronLeftIcon className="w-4 h-4 mr-1" /> Back
                         </button>
                         <button
                             type="button"
                             onClick={goNext}
-                            className="px-8 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-xl transition"
+                            className="ml-auto px-8 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-xl transition"
                         >
                             Next
                         </button>
@@ -1347,7 +1369,7 @@ export default function AddHome() {
                     <button
                         type="button"
                         onClick={goBack}
-                        className="flex items-center text-sm font-semibold text-slate-700 hover:text-black mt-6"
+                        className="hidden sm:flex items-center text-sm font-semibold text-slate-700 hover:text-black mt-6"
                     >
                         <ChevronLeftIcon className="w-4 h-4 mr-1" /> Back
                     </button>

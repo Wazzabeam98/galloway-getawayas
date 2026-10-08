@@ -104,6 +104,25 @@ export function roomsFromBedroomCount(bedrooms: number): Room[] {
     return rooms;
 }
 
+// What the editor writes to the listing when the host saves the rooms: the
+// cleaned room list (beds with a zero count dropped; a common space with no
+// beds dropped, but a bedroom with no beds kept) and the bedroom count derived
+// from it. Whatever the host leaves is stored as-is — removing the last bed,
+// emptying a room, or a studio with no bedrooms all persist.
+//
+// This is the one place that guarantees an emptied layout survives a save. A
+// guard here once wrote the listing's PREVIOUS arrangements (and old bedroom
+// count) back whenever no beds were left, so a host who removed the last bed
+// saw it save and then watched the old layout reappear on reload — the empty
+// arrangements never reached the row, and an unchanged bedroom count made
+// roomsFromBedroomCount rebuild the rooms. The host's answer is the one to keep.
+export function sleepingPatch(rooms: Room[]): { rooms: Room[]; bedrooms: number } {
+    const clean = (rooms || [])
+        .map((r) => ({ ...r, beds: (r.beds || []).filter((b) => b && b.count > 0) }))
+        .filter((r) => r.kind === 'bedroom' || r.beds.length > 0);
+    return { rooms: clean, bedrooms: deriveCounts(clean).bedrooms };
+}
+
 // The display label for a room — its own name if it has one, else a numbered
 // fallback so a blank never reaches the page.
 export function roomLabel(room: Room, indexAmongBedrooms: number): string {

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { KeyRound, Lock, Hash, Users, MapPin, DoorOpen } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import { bigFieldCls } from '@/components/services/wizardKit';
-import StaleDoorCode, { useDoorCode } from '@/components/LockboxCode';
+import StaleDoorCode, { useDoorCode, DoorCodeRelease } from '@/components/LockboxCode';
 import { methodNeedsCode, codeLabelFor, checkInMethodTitle, isSelfCheckIn } from '@/lib/checkInMethods';
 
 const CHECKIN_METHODS: { label: string; icon: any; note: string }[] = [
@@ -78,6 +78,7 @@ export default function CheckInMethodCard({ listingId, method, onChange }: {
                                                     className={bigFieldCls + ' bg-white sm:w-56'}
                                                 />
                                             )}
+                                            <DoorCodeRelease door={door} />
                                         </div>
                                     )}
                                 </div>

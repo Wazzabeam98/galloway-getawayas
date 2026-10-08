@@ -8,7 +8,7 @@ import { firstName, getImageUrl, formatTime } from '@/lib/utils';
 import { groupLabel, cancellationWords } from '@/lib/bookingDisplay';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukDate, ukWeekday, daysBetweenKeys } from '@/lib/dayKey';
-import { stayCountdown, arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
+import { stayCountdown, arrivalSecretsWindowOpen, normaliseReleaseHours, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { rateFor, netOfFee } from '@/lib/fees';
 import { formatGBP } from '@/lib/formatMoney';
@@ -181,8 +181,18 @@ export async function GET(
     // only on a paid, confirmed stay (an unpaid row costs nothing to create) and
     // only inside the arrival window — the same two gates the arrival page draws.
     const hostSecrets = isHost || (isCoHost && !!(await checkListing(uid, booking.listing_id, 'can_listing')));
+    // For a guest, the window is the host's per-listing choice (default 24h).
+    // Read without the code — release_hours sits on the code's row — so the
+    // window is judged before any secret is fetched, and only when a guest
+    // might qualify (a host never needs it).
+    let releaseHours = DEFAULT_CODE_RELEASE_HOURS;
+    if (isGuest && bookingReleasesPrivateData(booking)) {
+        const { data: releaseRow } = await admin
+            .from('listing_access_codes').select('release_hours').eq('listing_id', booking.listing_id).maybeSingle();
+        releaseHours = releaseRow ? normaliseReleaseHours((releaseRow as any).release_hours) : DEFAULT_CODE_RELEASE_HOURS;
+    }
     const guestSecrets = isGuest && bookingReleasesPrivateData(booking)
-        && arrivalSecretsWindowOpen({ check_in: booking.check_in, check_out: booking.check_out }, new Date());
+        && arrivalSecretsWindowOpen({ check_in: booking.check_in, check_out: booking.check_out }, new Date(), releaseHours, listing && listing.check_in_time);
     let arrival: { doorCode: string | null; wifiName: string | null; wifiPassword: string | null } | null = null;
     if (hostSecrets || guestSecrets) {
         const [{ data: arr }, { data: code }, { data: override }] = await Promise.all([
