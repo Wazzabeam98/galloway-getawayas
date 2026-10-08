@@ -1044,7 +1044,7 @@ export default function CalendarPage() {
                                     if (!gap) return null;
                                     const words = shortGapWords(gap);
                                     return (
-                                        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5" style={{ backgroundImage: ORPHAN_HATCH }}>
+                                        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
                                             <div className="text-sm font-semibold text-amber-900">{words.title}</div>
                                             <p className="mt-1 text-[13px] leading-snug text-amber-900/90">{words.why}</p>
                                             <p className="mt-2 text-[13px] leading-snug font-medium text-amber-900">{words.fix}</p>
