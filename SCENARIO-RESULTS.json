@@ -1,7 +1,7 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-10-08T09:51:39.348Z",
+      "ranAt": "2026-10-08T12:24:00.645Z",
       "target": "http://localhost:3470",
       "passed": 7,
       "failed": 0,
@@ -52,9 +52,9 @@
       ]
     },
     "refund": {
-      "ranAt": "2026-10-08T09:52:50.389Z",
+      "ranAt": "2026-10-08T12:25:16.516Z",
       "target": "http://localhost:3470",
-      "passed": 8,
+      "passed": 9,
       "failed": 0,
       "untestable": 0,
       "scenarios": [
@@ -67,6 +67,12 @@
         {
           "number": "13",
           "title": "Host cancels a confirmed booking — full refund, 5% fee, dates released",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "13m",
+          "title": "Host cancels for a major disruptive event — full refund, no 5% fee, recorded",
           "status": "passed",
           "failedChecks": []
         },
@@ -109,7 +115,7 @@
       ]
     },
     "balance": {
-      "ranAt": "2026-10-08T09:53:47.849Z",
+      "ranAt": "2026-10-08T12:26:15.938Z",
       "target": "http://localhost:3470",
       "passed": 8,
       "failed": 0,
@@ -166,7 +172,7 @@
       ]
     },
     "crosscutting": {
-      "ranAt": "2026-10-08T09:56:29.886Z",
+      "ranAt": "2026-10-08T12:29:13.495Z",
       "target": "http://localhost:3470",
       "passed": 8,
       "failed": 0,
@@ -223,7 +229,7 @@
       ]
     },
     "change": {
-      "ranAt": "2026-10-08T09:54:54.132Z",
+      "ranAt": "2026-10-08T12:27:24.559Z",
       "target": "http://localhost:3470",
       "passed": 6,
       "failed": 0,
@@ -268,11 +274,11 @@
       ]
     }
   },
-  "updatedAt": "2026-10-08T09:56:29.886Z",
+  "updatedAt": "2026-10-08T12:29:13.495Z",
   "fingerprint": {
     "app/api/cron/host-payouts/route.ts": "de591d905b0a68ac",
     "app/api/cron/balance-charges/route.ts": "15cd14065f417fa9",
-    "app/api/stripe/refund/route.ts": "3834afda9bbcdfa6",
+    "app/api/stripe/refund/route.ts": "189f3f06a360bb47",
     "app/api/stripe/checkout/route.ts": "dda7b2fb3678e92a",
     "app/api/stripe/webhook/route.ts": "4a4dc680a309d950",
     "lib/settlePaidBooking.ts": "f5d3bbdf63ab5afe",
@@ -299,9 +305,9 @@
     "app/api/bookings/resolutions/route.ts": "da1da258081f142f",
     "app/api/bookings/resolutions/respond/route.ts": "907c8533d6489e58",
     "app/api/bookings/resolutions/host-decide/route.ts": "aec631c035c6c142",
-    "scripts/seed-payments.mjs": "2e36d2a79fbab313",
+    "scripts/seed-payments.mjs": "dead0e969e5137c9",
     "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
-    "scripts/refund-scenarios.mjs": "e26d179dc89d7a68",
+    "scripts/refund-scenarios.mjs": "c03406bef347436c",
     "scripts/balance-scenarios.mjs": "cd9d045653faf651",
     "scripts/change-scenarios.mjs": "fedc558161c3c6fe",
     "scripts/crosscutting-scenarios.mjs": "24d89c436a1a18b5"
