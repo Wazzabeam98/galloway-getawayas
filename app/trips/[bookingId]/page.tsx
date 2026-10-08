@@ -13,7 +13,7 @@ import { formatGBP } from '@/lib/formatMoney';
 import { publicArea } from '@/lib/places';
 import { partyLabel, confirmationNumber, cancellationWords } from '@/lib/bookingDisplay';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
-import { liveForGuestCard, stayCountdown, upcomingUntilCheckout, arrivalSecretsWindowOpen } from '@/lib/bookingWindows';
+import { liveForGuestCard, stayCountdown, upcomingUntilCheckout, arrivalSecretsWindowOpen, normaliseReleaseHours, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
 import { checkoutTaskLabels } from '@/lib/listingSafety';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadBookingSeats } from '@/lib/groupSeats';
@@ -173,11 +173,14 @@ export default async function StayReservationPage({ params }: { params: { bookin
     let googleDir: string | null = null, appleDir: string | null = null;
     let what3words: string | null = null, arrivalDirections: string | null = null;
     let hasCode = false, hasWifi = false;
+    // The host's per-listing release window (default 24h). Governs when the card
+    // reveals the way in, and the same number the check-in message uses.
+    let releaseHours = DEFAULT_CODE_RELEASE_HOURS;
     let hostPhone: string | null = null;
     if (entitled && listing) {
         const [{ data: arr }, { data: codes }] = await Promise.all([
             admin.from('listing_arrival').select('what3words, arrival_directions, wifi_name').eq('listing_id', listing.id).maybeSingle(),
-            admin.from('listing_access_codes').select('listing_id').eq('listing_id', listing.id).maybeSingle(),
+            admin.from('listing_access_codes').select('listing_id, release_hours').eq('listing_id', listing.id).maybeSingle(),
         ]);
         addressLines = [listing.street_address, [listing.postcode, listing.location].filter(Boolean).join(', ')].filter(Boolean) as string[];
         addressString = [listing.street_address, listing.postcode, listing.location].filter(Boolean).join(', ') || null;
@@ -190,6 +193,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
         arrivalDirections = (arr as any)?.arrival_directions || null;
         hasWifi = !!(arr as any)?.wifi_name;
         hasCode = !!codes;
+        releaseHours = codes ? normaliseReleaseHours((codes as any).release_hours) : DEFAULT_CODE_RELEASE_HOURS;
         hostPhone = (hostProfile && hostProfile.phone) || null;
     }
 
@@ -273,7 +277,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
 
     const countdown = live ? stayCountdown(booking, now) : null;
     const phase = countdown?.phase ?? null;
-    const withinWindow = !!countdown && arrivalSecretsWindowOpen(booking, now);
+    const withinWindow = !!countdown && arrivalSecretsWindowOpen(booking, now, releaseHours, (listing as any)?.check_in_time);
     const phaseChip = phase === 'during' && String(booking.check_out).slice(0, 10) === londonDayKey(now) ? 'You check out today'
         : phase === 'during' ? 'You’re here'
         : phase === 'today' ? 'You arrive today'

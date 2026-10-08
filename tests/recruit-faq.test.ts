@@ -21,7 +21,6 @@ const { CONFIRM_WINDOW_HOURS } = require('../lib/serviceOrders');
 const { TRIAL_MONTHS, SUBSCRIPTION_MONTHLY, COMING_SOON_TRADES, DEFAULT_SERVICE_COMMISSION } = require('../lib/serviceProviders');
 const { GRACE_DAYS } = require('../lib/serviceSubscription');
 const { URGENCY_LEVELS } = require('../lib/serviceEnquiries');
-const { ARRIVAL_SECRETS_LEAD_DAYS } = require('../lib/bookingWindows');
 const { BALANCE_DAYS_BEFORE_CHECKIN } = require('../lib/balanceDue');
 
 const answer = (aud: string, q: string): string => {
@@ -55,7 +54,11 @@ test('host: commission, payouts, deposit, balance, door code', () => {
     assert.match(pay, /25% deposit/);
     assert.match(pay, new RegExp(BALANCE_DAYS_BEFORE_CHECKIN + ' days before arrival'));
     assert.match(read('app/api/cron/balance-charges/route.ts'), /MAX_ATTEMPTS = 3;[\s\S]*MAX_ATTEMPTS_AUTHENTICATION = 7;/);
-    assert.match(answer('host', 'Is my address public?'), new RegExp('from ' + ARRIVAL_SECRETS_LEAD_DAYS + ' days before arrival'));
+    // The door code is released on the host's own schedule now, defaulting to
+    // 24 hours — no fixed "three days" claim.
+    const addr = answer('host', 'Is my address public?');
+    assert.match(addr, /defaults to 24 hours/);
+    assert.doesNotMatch(addr, /3 days before arrival|three days before arrival/);
 });
 
 test('host: the four cancellation policies are exactly the code’s', () => {

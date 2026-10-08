@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { logError } from '@/lib/logError';
 import { revealSecret, sealSecret } from '@/lib/listingSecrets';
+import { normaliseReleaseHours, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
 
         const { data } = await adminClient()
             .from('listing_access_codes')
-            .select('code, updated_at')
+            .select('code, updated_at, release_hours')
             .eq('listing_id', listingId)
             .maybeSingle();
 
@@ -56,6 +57,9 @@ export async function GET(request: Request) {
             ok: true,
             code: code || '',
             updated_at: (data && data.updated_at) || null,
+            // The host's own release window; a listing with no code yet answers
+            // with the default so the control has something to show.
+            release_hours: data ? normaliseReleaseHours(data.release_hours) : DEFAULT_CODE_RELEASE_HOURS,
         });
     } catch (err: any) {
         await logError('[listings/access-code GET] ' + ((err && err.message) || 'failed'), err, {
@@ -70,6 +74,10 @@ export async function POST(request: Request) {
         const body = await request.json().catch(function () { return {}; });
         const listingId: string = (body && body.listing) || '';
         const code: string = String((body && body.code) || '').trim();
+        // The release window is the host's choice; the SAME rule the browser
+        // applies runs here too, so a value the UI would not offer can never
+        // reach the row by another route. Anything off the list becomes 24.
+        const releaseHours = normaliseReleaseHours(body && body.release_hours);
 
         const check = await permitted(listingId);
         if (check.error) {
@@ -102,6 +110,8 @@ export async function POST(request: Request) {
                     // Encrypted before it is stored: a copy of the database
                     // shows ciphertext, never the code.
                     code: sealSecret(code, { table: 'listing_access_codes', id: listingId }),
+                    // When the code is handed over — the host's security to set.
+                    release_hours: releaseHours,
                     updated_at: new Date().toISOString(),
                     // A door code is a credential. Being able to say who set
                     // it, and when, is part of being able to answer for it.
@@ -117,7 +127,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Could not save the code' }, { status: 500 });
         }
 
-        return NextResponse.json({ ok: true, code: code });
+        return NextResponse.json({ ok: true, code: code, release_hours: releaseHours });
     } catch (err: any) {
         await logError('[listings/access-code POST] ' + ((err && err.message) || 'failed'), err, {
             path: 'listings/access-code',

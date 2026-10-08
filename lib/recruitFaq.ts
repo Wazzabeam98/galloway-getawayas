@@ -65,7 +65,7 @@ const HOST: FaqItem[] = [
     {
         q: 'Is my address public?',
         a: [
-            'No. The map shows the rough area only. Guests get the exact address and directions once their booking is confirmed and paid, and the door code and wifi password from 3 days before arrival.',
+            'No. The map shows the rough area only. Guests get the exact address and directions once their booking is confirmed and paid, and the door code and wifi password close to arrival — you choose how far ahead, from 12 hours up to a week, and it defaults to 24 hours.',
         ],
     },
     {
