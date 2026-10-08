@@ -151,6 +151,19 @@ const ADVANCE_NOTICE_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '7 days
 const PREP_TIME_OPTIONS = ['None', '1 day', '2 days', '3 days'];
 const AVAILABILITY_WINDOW_OPTIONS = ['3 months', '6 months', '9 months', '12 months', 'All future dates'];
 
+// Shown on a listing-settings tab (Pricing, Fees, Availability) whenever its
+// form holds an edit that has not been saved. One note, used by all three, so a
+// typed-but-unsaved value — a 3-night minimum, a new price, a cleaning fee —
+// can never pass for the setting that actually governs a booking. `extra` says
+// what still applies in the meantime.
+function UnsavedNote({ extra }: { extra?: string }) {
+    return (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Not saved yet — these take effect only when you press <strong>Save</strong>.{extra ? ' ' + extra : ''}
+        </div>
+    );
+}
+
 export default function CalendarPage() {
     const supabase = createClientComponentClient();
     const [loading, setLoading] = useState(true);
@@ -720,6 +733,20 @@ export default function CalendarPage() {
         preparationTime !== savedAvailability.prep ||
         availabilityWindow !== savedAvailability.window;
 
+    // The same unsaved-edit trap on the Pricing and Fees tabs — the form holds
+    // local state until Save, so a typed price or fee can sit there looking set.
+    // Normalised exactly as the sync effect loads each field from the listing.
+    const pricingDirty =
+        basePrice !== String(selectedListing?.price_per_night ?? '') ||
+        weekendPrice !== (selectedListing?.weekend_price ? String(selectedListing.weekend_price) : '');
+    const feesDirty =
+        cleaningFee !== String(selectedListing?.cleaning_fee ?? 0) ||
+        petFee !== String(selectedListing?.pet_fee ?? 0) ||
+        extraGuestFee !== String(selectedListing?.extra_guest_fee ?? 0) ||
+        extraGuestAfter !== String(selectedListing?.extra_guest_after ?? 1) ||
+        extraGuestPeriod !== (selectedListing?.extra_guest_period || 'night') ||
+        damageDeposit !== String(selectedListing?.damage_deposit ?? 0);
+
     return (
         <div className="max-w-6xl mx-auto px-6 py-10">
             <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
@@ -1065,6 +1092,9 @@ export default function CalendarPage() {
 
                     {rightTab === 'pricing' && mayEditSelected && (
                         <div className="border rounded-2xl p-5 space-y-5">
+                            {pricingDirty && (
+                                <UnsavedNote extra="Until then your saved prices still apply." />
+                            )}
                             <p className="text-xs text-slate-500">These apply to all nights, unless overridden by a specific date.</p>
                             <div>
                                 <label className="block text-sm font-semibold text-slate-800 mb-1">Base price</label>
@@ -1083,20 +1113,23 @@ export default function CalendarPage() {
                             </div>
                             <button
                                 type="button"
-                                disabled={savingSettings}
+                                disabled={savingSettings || !pricingDirty}
                                 onClick={() => saveListingSettings({
                                     price_per_night: Number(basePrice) || 0,
                                     weekend_price: weekendPrice ? Number(weekendPrice) : null,
                                 })}
                                 className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
-                                {savingSettings ? 'Saving...' : 'Save'}
+                                {savingSettings ? 'Saving...' : pricingDirty ? 'Save' : 'Saved'}
                             </button>
                         </div>
                     )}
 
                     {rightTab === 'fees' && mayEditSelected && (
                         <div className="border rounded-2xl p-5 space-y-5">
+                            {feesDirty && (
+                                <UnsavedNote extra="Until then your saved fees still apply." />
+                            )}
                             <div>
                                 <label className="block text-sm font-semibold text-slate-800 mb-1">Cleaning fee</label>
                                 <p className="text-xs text-slate-400 mb-1">Charged once per stay</p>
@@ -1187,7 +1220,7 @@ export default function CalendarPage() {
                             </div>
                             <button
                                 type="button"
-                                disabled={savingSettings}
+                                disabled={savingSettings || !feesDirty}
                                 onClick={() => saveListingSettings({
                                     cleaning_fee: Number(cleaningFee) || 0,
                                     pet_fee: Number(petFee) || 0,
@@ -1198,7 +1231,7 @@ export default function CalendarPage() {
                                 })}
                                 className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
-                                {savingSettings ? 'Saving...' : 'Save'}
+                                {savingSettings ? 'Saving...' : feesDirty ? 'Save' : 'Saved'}
                             </button>
                         </div>
                     )}
@@ -1206,9 +1239,7 @@ export default function CalendarPage() {
                     {rightTab === 'availability' && mayEditSelected && (
                         <div className="border rounded-2xl p-5 space-y-5">
                             {availabilityDirty && (
-                                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                    Not saved yet — these take effect only when you press <strong>Save</strong>. Until then your stored settings (including the minimum nights guests can book) still apply.
-                                </div>
+                                <UnsavedNote extra="Until then your stored settings (including the minimum nights guests can book) still apply." />
                             )}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
