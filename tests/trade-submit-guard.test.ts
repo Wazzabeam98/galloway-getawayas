@@ -76,3 +76,17 @@ test('the database wall and this one use the same minimum', () => {
     const sql = fs.readFileSync(path.join(dir, latest), 'utf8');
     assert.match(sql, new RegExp("v_audience = 'guest' and char_length\\(btrim\\(coalesce\\(v_description, ''\\)\\)\\) < " + MIN_DESCRIPTION));
 });
+
+test('a host trade no longer needs a separate service, but still needs a coverage area', () => {
+    // The trade a provider picks on the first screen IS what they do, so the
+    // submit wall dropped the "needs at least one service" raise (Liam, 8 Oct
+    // 2026). The coverage-area raise stays. Asserted on the latest definition.
+    const fs = require('fs');
+    const path = require('path');
+    const dir = path.join(process.cwd(), 'supabase', 'migrations');
+    const latest = fs.readdirSync(dir).filter((f: string) => fs.readFileSync(path.join(dir, f), 'utf8')
+        .includes('function "public"."submit_service_provider"')).sort().pop();
+    const sql = fs.readFileSync(path.join(dir, latest), 'utf8');
+    assert.doesNotMatch(sql, /raise exception 'a trade listing needs at least one service/);
+    assert.match(sql, /raise exception 'a trade listing needs at least one coverage area/);
+});
