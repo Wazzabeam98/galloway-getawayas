@@ -37,7 +37,7 @@ import { rateFor } from '@/lib/fees';
 import { listingLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import SleepingArrangementsEditor from '@/components/SleepingArrangementsEditor';
-import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, type Room } from '@/lib/sleeping';
+import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, sleepingPatch, type Room } from '@/lib/sleeping';
 import { publishProblems } from '@/lib/listingRules';
 import { amountForBox, amountOrNull, amountOrZero } from '@/lib/amountInput';
 import { CalendarSyncCard } from '@/components/IcalFeeds';
@@ -488,20 +488,15 @@ export default function EditListing() {
     };
 
     // The bed total is the host's own number (the rooms are placed against it);
-    // the bedroom count is derived from the rooms. A bedroom with no beds still
-    // counts as a room; a common space with no beds is dropped. When no beds
-    // are placed at all, the counts and arrangements the listing had are kept
-    // rather than zeroed.
+    // the bedroom count is derived from the rooms. sleepingPatch cleans the rooms
+    // and derives the bedroom count, and writes whatever the host left — an
+    // emptied layout persists rather than being replaced by the old one.
     const saveSleeping = (rooms: Room[]) => {
-        const cleanRooms: Room[] = rooms
-            .map((r) => ({ ...r, beds: r.beds.filter((b) => b.count > 0) }))
-            .filter((r) => r.kind === 'bedroom' || r.beds.length > 0);
-        const derived = deriveCounts(cleanRooms);
-        const hasSleeping = derived.beds > 0;
+        const { rooms: cleanRooms, bedrooms: nextBedrooms } = sleepingPatch(rooms);
         return saveThen({
-            sleeping_arrangements: hasSleeping ? cleanRooms : (original?.sleeping_arrangements ?? []),
-            bedrooms: hasSleeping ? derived.bedrooms : bedrooms,
-        }, () => { setSleeping(rooms); if (hasSleeping) setBedrooms(derived.bedrooms); });
+            sleeping_arrangements: cleanRooms,
+            bedrooms: nextBedrooms,
+        }, () => { setSleeping(cleanRooms); setBedrooms(nextBedrooms); });
     };
 
     if (loading) {
