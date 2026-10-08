@@ -16,7 +16,8 @@ import { agreementProblem, versionForTick } from '@/lib/agreements';
 import PropertyTypePicker from '@/components/PropertyTypePicker';
 import { addressLineLabel, isSiteType } from '@/lib/propertyTypes';
 import Env from '@/config/Env';
-import { compressImage } from '@/lib/compressImage';
+import { compressImage, readImageDimensions } from '@/lib/compressImage';
+import { photoDimensionProblem, GALLERY_CROP_ASPECT, CARD_CROP_ASPECT } from '@/lib/photoRules';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { DEFAULT_COMMISSION_PERCENT, feeAmount, netOfFee } from '@/lib/fees';
@@ -451,7 +452,20 @@ export default function AddHome() {
 
         // Each photo is shrunk, then uploaded straight away, so it is saved with
         // the draft from this moment on.
+        let tooSmall = 0;
         for (const file of files) {
+            // Refuse a photo that is too small to look sharp before it is
+            // compressed or uploaded (lib/photoRules). A size we can't read
+            // (0 \u00d7 0) is let through rather than blocked on a reader quirk.
+            const size = await readImageDimensions(file);
+            if (size.width && size.height) {
+                const problem = photoDimensionProblem(size.width, size.height);
+                if (problem) {
+                    tooSmall += 1;
+                    setFormError(problem);
+                    continue;
+                }
+            }
             let ready: File;
             try {
                 ready = await compressImage(file);
@@ -470,6 +484,12 @@ export default function AddHome() {
             }
             const saved = up.path;
             setPhotos((prev) => [...prev, { path: saved, url: getImageUrl(saved) }]);
+        }
+
+        // One combined line when several were too small, rather than flashing
+        // each in turn — the single-photo case keeps its exact message above.
+        if (tooSmall > 1) {
+            setFormError(tooSmall + ' photos were too small to look sharp (they need to be at least 1024 × 683 pixels) and weren’t added.');
         }
 
         setProcessingPhotos(false);
@@ -983,8 +1003,7 @@ export default function AddHome() {
                 {step === 6 && (
                     <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Add photos of your place</h2>
-                        <p className="text-slate-600 mb-2">Add at least {NEW_LISTING_MIN_PHOTOS} to go live, then click the star on your favourite to make it the cover photo guests see first.</p>
-                        <p className="text-xs text-slate-400 mb-8">Drag photos to reorder them — the order here is the order guests see them in.</p>
+                        <p className="text-sm text-slate-500 mb-8">Add at least {NEW_LISTING_MIN_PHOTOS}. They’re shown cropped to fill, as below — drag to reorder, and star your cover (it leads your listing and your search card).</p>
 
                         {photos.length > 0 && (
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
@@ -1006,7 +1025,8 @@ export default function AddHome() {
                                             setDraggedIndex(null);
                                             setDragOverIndex(null);
                                         }}
-                                        className={`relative h-40 rounded-2xl overflow-hidden border-2 group cursor-grab active:cursor-grabbing transition ${
+                                        style={{ aspectRatio: GALLERY_CROP_ASPECT }}
+                                        className={`relative rounded-2xl overflow-hidden border-2 group cursor-grab active:cursor-grabbing transition ${
                                             i === coverIndex ? 'border-emerald-700' : 'border-slate-200'
                                         } ${dragOverIndex === i ? 'ring-2 ring-slate-900 scale-95' : ''} ${
                                             draggedIndex === i ? 'opacity-40' : ''
@@ -1043,6 +1063,21 @@ export default function AddHome() {
                                         )}
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {/* The search-result card shows the COVER photo only, and
+                            crops it squarer than the gallery — so the host sees
+                            that one crop too, for the cover alone. */}
+                        {photos.length > 0 && photos[coverIndex] && (
+                            <div className="mb-4 flex items-center gap-3">
+                                <div
+                                    className="w-24 flex-none rounded-xl overflow-hidden border border-slate-200 bg-slate-100"
+                                    style={{ aspectRatio: CARD_CROP_ASPECT }}
+                                >
+                                    <img src={photos[coverIndex].url} alt="Search card preview" className="w-full h-full object-cover" />
+                                </div>
+                                <p className="text-xs text-slate-400">How your cover looks on a search result card.</p>
                             </div>
                         )}
 

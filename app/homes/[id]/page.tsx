@@ -446,6 +446,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     // separate decision from this one.
     const PUBLICLY_VISIBLE = ['published', 'hidden'];
 
+    // The owner previewing their own not-yet-published listing: they fall through
+    // and see the real guest page (so they can judge their photos' crops), with a
+    // quiet banner saying it's a preview guests can't see yet. Anyone else gets
+    // the "not published" notice. RLS already lets only the owner/co-host/booked
+    // guest read a pending or draft row, so a stranger never reaches here anyway.
+    let isOwnerPreview = false;
     if (PUBLICLY_VISIBLE.indexOf(home.status) === -1) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user?.id !== home.host_id) {
@@ -457,6 +463,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 </div>
             );
         }
+        isOwnerPreview = true;
     }
 
     const bookable = isListingBookable(home);
@@ -645,6 +652,22 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
             />
+            {/* The owner is previewing their own listing before it's live — one
+                quiet bar so they know this is the real guest page and that guests
+                can't see it yet. */}
+            {isOwnerPreview && (
+                <div className='mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900'>
+                    <span>
+                        <span className='font-semibold'>Preview</span> — this is exactly how guests will see your listing.{' '}
+                        {home.status === 'pending_review'
+                            ? 'It’s waiting for approval, so no one else can see it yet.'
+                            : 'It’s still a draft, so no one else can see it yet.'}
+                    </span>
+                    <Link href='/dashboard' className='font-semibold underline underline-offset-2 hover:text-sky-950'>
+                        Back to your listings
+                    </Link>
+                </div>
+            )}
             <div className='mt-4'>
                 {showArea && area && (
                     <nav aria-label="Breadcrumb" className='mb-3 -my-1.5 flex flex-wrap items-center text-sm text-slate-500'>
