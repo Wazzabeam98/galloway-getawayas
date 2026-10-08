@@ -16,7 +16,7 @@ import {
     checkInFallbackBody,
 } from '@/lib/scheduledMessages';
 import type { BookingLike } from '@/lib/scheduledMessages';
-import { resolveTemplate } from '@/lib/messageTemplates';
+import { resolveTemplate, customTemplatesFor, CUSTOM_TYPE } from '@/lib/messageTemplates';
 import type { ScopedTemplate } from '@/lib/messageTemplates';
 
 export const dynamic = 'force-dynamic';
@@ -459,130 +459,149 @@ export async function GET(request: Request) {
         const releaseFor = (b: BookingLike) =>
             releaseByListing[b.listing_id] ?? DEFAULT_CODE_RELEASE_HOURS;
 
-        // Booking first, then type — so exactly one template is chosen per
-        // type per booking, by the shared rule, instead of every matching
-        // template getting a turn.
+        // Deliver one template to one booking, claiming under `claimKey`. Pulled
+        // out so a preset (claimed by its template_type) and a host's own custom
+        // message (claimed by its id, so several of them don't collide on one
+        // shared type) go through the EXACT same gates, secret handling and
+        // claim-before-send — one path, so the two cannot drift. Bumps the run
+        // counters itself.
+        const deliver = async (booking: BookingLike, listing: any, template: ScopedTemplate, claimKey: string) => {
+            if (!isDue(timingFor(template, booking, listing), now)) return;
+
+            // The door code only travels inside the arrival window — the same
+            // window the arrival page and the guest's card reveal it in, which is
+            // the host's per-listing setting (default 24h). A message timed
+            // earlier that carries {lockbox_code} waits, unclaimed, and goes out
+            // on the first run once the window opens, rather than handing a code
+            // out early. The card and the message share this one window, so they
+            // cannot disagree about when the code appears.
+            if (usesLockboxCode(template.body)
+                && !arrivalSecretsWindowOpen(booking, now, releaseFor(booking), listing.check_in_time)) {
+                return;
+            }
+
+            // Held back rather than sent wrong.
+            //
+            // Checked before the claim on purpose. Claiming and then refusing to
+            // send would mark it done for ever, and the guest would never get
+            // their code even once somebody noticed and filled it in. Left
+            // unclaimed, the next run after the code is set sends it — late, but
+            // sent.
+            if (needsLockboxCode(template.body, codeFor(booking))) {
+                await logError(
+                    'scheduled-messages: held back ' + template.template_type
+                        + ' for booking ' + booking.id
+                        + ' — the template asks for a door code and '
+                        + (listing.title || booking.listing_id) + ' has none set',
+                    null,
+                    { path: '/api/cron/scheduled-messages' }
+                );
+                failed++;
+                return;
+            }
+
+            // Claim it. The unique constraint on (booking_id, template_type) is
+            // what makes this safe: two runs racing, or one run retried, and only
+            // one insert survives. For a custom message the claim key is the
+            // template's id, so a host's several custom messages each claim
+            // independently instead of fighting over one shared type.
+            const { error: claimError } = await admin
+                .from('sent_scheduled_messages')
+                .insert({
+                    booking_id: booking.id,
+                    template_type: claimKey,
+                });
+
+            if (claimError) {
+                // 23505 is the unique violation — already sent, which is the
+                // system working, not a fault.
+                if (String((claimError as any).code) !== '23505') {
+                    await logError(
+                        'scheduled-messages: could not claim ' + template.template_type
+                            + ' for booking ' + booking.id,
+                        claimError,
+                        { path: '/api/cron/scheduled-messages' }
+                    );
+                    failed++;
+                } else {
+                    skipped++;
+                }
+                return;
+            }
+
+            const guest = guestById[booking.guest_id];
+            const fullName = displayName(guest, 'there');
+            const firstName = fullName.split(' ')[0] || 'there';
+
+            // The code goes in as a placeholder, never the value
+            // (lib/messageSecrets), and so does any copy of the code or the wifi
+            // password the host typed into the template itself.
+            const body = tokeniseSecrets(fillPlaceholders(template.body, {
+                guestName: firstName,
+                listing: listing.title || 'your stay',
+                checkIn: formatDate(booking.check_in),
+                checkOut: formatDate(booking.check_out),
+                lockboxCode: codeFor(booking) ? DOOR_TOKEN : null,
+            }), {
+                codes: [codeByBooking[booking.id], codeByListing[booking.listing_id]],
+                wifi: wifiByListing[booking.listing_id],
+            });
+
+            const { error: messageError } = await admin.from('messages').insert({
+                booking_id: booking.id,
+                sender_id: booking.host_id,
+                recipient_id: booking.guest_id,
+                body: body,
+                automated: true, // a scheduled template send, not typed by the host
+            });
+
+            if (messageError) {
+                // The claim is already down, so leaving it would mean this
+                // message never sends. Release it so the next run tries again — a
+                // duplicate is possible only if the message actually did land,
+                // which this error says it did not.
+                await admin
+                    .from('sent_scheduled_messages')
+                    .delete()
+                    .eq('booking_id', booking.id)
+                    .eq('template_type', claimKey);
+
+                await logError(
+                    'scheduled-messages: claimed but could not send '
+                        + template.template_type + ' for booking ' + booking.id,
+                    messageError,
+                    { path: '/api/cron/scheduled-messages' }
+                );
+                failed++;
+                return;
+            }
+
+            sent++;
+        };
+
+        // The fixed types, resolved one-per-type per booking by the shared rule.
+        // Custom messages are excluded here and handled below — they do not
+        // compete for a booking the way the four purposes do.
+        const presetTypes = templateTypes.filter((t) => t !== CUSTOM_TYPE);
+
+        // Booking first, then type — so exactly one template is chosen per fixed
+        // type per booking, instead of every matching template getting a turn.
         for (const booking of bookings as BookingLike[]) {
             const listing = listingById[booking.listing_id];
             if (!listing) continue;
 
-            for (const templateType of templateTypes) {
-                const mine = live.filter((t) => t.user_id === booking.host_id);
+            const mine = live.filter((t) => t.user_id === booking.host_id);
+
+            for (const templateType of presetTypes) {
                 const template = resolveTemplate(mine, templateType, booking.listing_id);
                 if (!template) continue;
+                await deliver(booking, listing, template, template.template_type);
+            }
 
-                if (!isDue(timingFor(template, booking, listing), now)) {
-                    continue;
-                }
-
-                // The door code only travels inside the arrival window — the
-                // same window the arrival page and the guest's card reveal it
-                // in, which is the host's per-listing setting (default 24h). A
-                // check-in message timed earlier that carries {lockbox_code}
-                // waits, unclaimed, and goes out on the first run once the
-                // window opens, rather than handing a code out early. The card
-                // and the message share this one window, so they cannot
-                // disagree about when the code appears.
-                if (usesLockboxCode(template.body)
-                    && !arrivalSecretsWindowOpen(booking, now, releaseFor(booking), listing.check_in_time)) {
-                    continue;
-                }
-
-                // Held back rather than sent wrong.
-                //
-                // Checked before the claim on purpose. Claiming and then
-                // refusing to send would mark it done for ever, and the guest
-                // would never get their code even once somebody noticed and
-                // filled it in. Left unclaimed, the next run after the code is
-                // set sends it — late, but sent.
-                if (needsLockboxCode(template.body, codeFor(booking))) {
-                    await logError(
-                        'scheduled-messages: held back ' + template.template_type
-                            + ' for booking ' + booking.id
-                            + ' — the template asks for a door code and '
-                            + (listing.title || booking.listing_id) + ' has none set',
-                        null,
-                        { path: '/api/cron/scheduled-messages' }
-                    );
-                    failed++;
-                    continue;
-                }
-
-                // Claim it. The unique constraint on (booking_id,
-                // template_type) is what makes this safe: two runs racing, or
-                // one run retried, and only one insert survives.
-                const { error: claimError } = await admin
-                    .from('sent_scheduled_messages')
-                    .insert({
-                        booking_id: booking.id,
-                        template_type: template.template_type,
-                    });
-
-                if (claimError) {
-                    // 23505 is the unique violation — already sent, which is
-                    // the system working, not a fault.
-                    if (String((claimError as any).code) !== '23505') {
-                        await logError(
-                            'scheduled-messages: could not claim ' + template.template_type
-                                + ' for booking ' + booking.id,
-                            claimError,
-                            { path: '/api/cron/scheduled-messages' }
-                        );
-                        failed++;
-                    } else {
-                        skipped++;
-                    }
-                    continue;
-                }
-
-                const guest = guestById[booking.guest_id];
-                const fullName = displayName(guest, 'there');
-                const firstName = fullName.split(' ')[0] || 'there';
-
-                // The code goes in as a placeholder, never the value
-                // (lib/messageSecrets), and so does any copy of the code or the
-                // wifi password the host typed into the template itself.
-                const body = tokeniseSecrets(fillPlaceholders(template.body, {
-                    guestName: firstName,
-                    listing: listing.title || 'your stay',
-                    checkIn: formatDate(booking.check_in),
-                    checkOut: formatDate(booking.check_out),
-                    lockboxCode: codeFor(booking) ? DOOR_TOKEN : null,
-                }), {
-                    codes: [codeByBooking[booking.id], codeByListing[booking.listing_id]],
-                    wifi: wifiByListing[booking.listing_id],
-                });
-
-                const { error: messageError } = await admin.from('messages').insert({
-                    booking_id: booking.id,
-                    sender_id: booking.host_id,
-                    recipient_id: booking.guest_id,
-                    body: body,
-                    automated: true, // a scheduled template send, not typed by the host
-                });
-
-                if (messageError) {
-                    // The claim is already down, so leaving it would mean this
-                    // message never sends. Release it so the next run tries
-                    // again — a duplicate is possible only if the message
-                    // actually did land, which this error says it did not.
-                    await admin
-                        .from('sent_scheduled_messages')
-                        .delete()
-                        .eq('booking_id', booking.id)
-                        .eq('template_type', template.template_type);
-
-                    await logError(
-                        'scheduled-messages: claimed but could not send '
-                            + template.template_type + ' for booking ' + booking.id,
-                        messageError,
-                        { path: '/api/cron/scheduled-messages' }
-                    );
-                    failed++;
-                    continue;
-                }
-
-                sent++;
+            // The host's own custom messages: every one that covers this listing,
+            // each on its own timing, each claimed by its own id.
+            for (const template of customTemplatesFor(mine, booking.listing_id)) {
+                await deliver(booking, listing, template, template.id);
             }
         }
 

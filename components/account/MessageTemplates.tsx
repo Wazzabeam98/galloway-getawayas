@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { Clock, Copy, Trash2, Plus, Home } from 'lucide-react';
 import TemplateCoverage from '@/components/account/TemplateCoverage';
 import { TEMPLATE_TYPES, templateDefFor } from '@/lib/templateTypes';
+import { CUSTOM_TYPE } from '@/lib/messageTemplates';
 
 // Scheduled messages.
 //
@@ -21,28 +22,77 @@ import { TEMPLATE_TYPES, templateDefFor } from '@/lib/templateTypes';
 // properties it applies to, and duplicating one and changing the property is
 // the normal way to work.
 
-// Turns a stored schedule into the sentence shown on the button.
+// Turns a stored schedule into the sentence shown on the button. Shared by the
+// four fixed types and a host's own custom messages, so it reads any anchor and
+// any offset — and renders a round number of hours as days where that is how a
+// host would say it ("1 day before check-out", not "24 hours").
 function describeSchedule(t: { anchor: string; minutes_after: number; days_offset: number; send_hour: number; hours_after: number; hours_before: number }): string {
     const hh = (h: number) => (h < 10 ? `0${h}:00` : `${h}:00`);
+    const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    // A span given in hours, said in days when it divides cleanly.
+    const span = (hours: number) => (hours >= 24 && hours % 24 === 0) ? unit(hours / 24, 'day') : unit(hours, 'hour');
+
     if (!t.anchor || t.anchor === 'none') return 'Not scheduled';
     if (t.anchor === 'booking') {
-        if (!t.minutes_after) return 'As soon as you accept';
-        if (t.minutes_after === 60) return '1 hour after booking confirmed';
-        if (t.minutes_after % 60 === 0) return `${t.minutes_after / 60} hours after booking confirmed`;
-        return `${t.minutes_after} minutes after booking confirmed`;
+        const m = t.minutes_after || 0;
+        if (!m) return 'As soon as you accept';
+        if (m % 1440 === 0) return `${unit(m / 1440, 'day')} after booking confirmed`;
+        if (m % 60 === 0) return `${unit(m / 60, 'hour')} after booking confirmed`;
+        return `${unit(m, 'minute')} after booking confirmed`;
     }
-    if (t.anchor === 'before_check_out') {
-        if (t.hours_before === 1) return '1 hour before check-out';
-        return `${t.hours_before} hours before check-out`;
-    }
-    if (t.anchor === 'after_check_in') {
-        if (t.hours_after === 1) return '1 hour after check-in';
-        return `${t.hours_after} hours after check-in`;
-    }
+    if (t.anchor === 'after_check_in') return `${span(t.hours_after || 0)} after check-in`;
+    if (t.anchor === 'after_check_out') return `${span(t.hours_after || 0)} after check-out`;
+    if (t.anchor === 'before_check_out') return `${span(t.hours_before || 0)} before check-out`;
+
     const when = t.anchor === 'check_in' ? 'check-in' : 'check-out';
-    if (t.days_offset === 0) return `On the day of ${when} at ${hh(t.send_hour)}`;
-    if (t.days_offset === 1) return `1 day before ${when} at ${hh(t.send_hour)}`;
-    return `${t.days_offset} days before ${when} at ${hh(t.send_hour)}`;
+    if ((t.days_offset || 0) === 0) return `On the day of ${when} at ${hh(t.send_hour)}`;
+    return `${unit(t.days_offset, 'day')} before ${when} at ${hh(t.send_hour)}`;
+}
+
+// A host's own message is scheduled by picking a trigger from the guest journey
+// and a free amount of time from it — not one of the fixed presets the four
+// purposes use. These are the triggers; the editor shows the right unit for each.
+const CUSTOM_TRIGGERS: { anchor: string; label: string; units: ('minutes' | 'hours' | 'days')[]; timeOfDay: boolean }[] = [
+    { anchor: 'booking',          label: 'After you accept the booking', units: ['minutes', 'hours', 'days'], timeOfDay: false },
+    { anchor: 'check_in',         label: 'Before check-in',              units: ['days'],                     timeOfDay: true },
+    { anchor: 'after_check_in',   label: 'After check-in',               units: ['hours', 'days'],            timeOfDay: false },
+    { anchor: 'before_check_out', label: 'Before check-out',             units: ['hours', 'days'],            timeOfDay: false },
+    { anchor: 'after_check_out',  label: 'After check-out',              units: ['hours', 'days'],            timeOfDay: false },
+];
+
+type Unit = 'minutes' | 'hours' | 'days';
+
+// The amount + unit a stored custom schedule reads back as, for the editor.
+function amountUnitOf(d: { anchor: string; minutes_after: number; days_offset: number; hours_after: number; hours_before: number }): { amount: number; unit: Unit } {
+    if (d.anchor === 'booking') {
+        const m = d.minutes_after || 0;
+        if (m && m % 1440 === 0) return { amount: m / 1440, unit: 'days' };
+        if (m && m % 60 === 0) return { amount: m / 60, unit: 'hours' };
+        return { amount: m, unit: 'minutes' };
+    }
+    if (d.anchor === 'check_in' || d.anchor === 'check_out') {
+        return { amount: d.days_offset || 0, unit: 'days' };
+    }
+    const h = d.anchor === 'before_check_out' ? (d.hours_before || 0) : (d.hours_after || 0);
+    if (h && h % 24 === 0) return { amount: h / 24, unit: 'days' };
+    return { amount: h, unit: 'hours' };
+}
+
+// Turn a trigger + amount + unit (+ time of day) into the offset columns. The
+// engine reads these; this is the only place the custom editor writes them.
+function scheduleColumns(anchor: string, amount: number, unit: Unit, sendHour: number): Partial<Template> {
+    const n = Math.max(0, Math.round(amount || 0));
+    const base = { anchor, minutes_after: 0, days_offset: 0, send_hour: sendHour, hours_after: 0, hours_before: 0 };
+    if (anchor === 'booking') {
+        return { ...base, minutes_after: unit === 'days' ? n * 1440 : unit === 'hours' ? n * 60 : n };
+    }
+    if (anchor === 'check_in') {
+        return { ...base, days_offset: n };
+    }
+    const hours = unit === 'days' ? n * 24 : n;
+    if (anchor === 'before_check_out') return { ...base, hours_before: hours };
+    // after_check_in / after_check_out
+    return { ...base, hours_after: hours };
 }
 
 interface Preset {
@@ -96,6 +146,16 @@ const PLACEHOLDERS = [
 // True only if the host has written something beyond the stock greeting.
 function hasRealContent(body: string): boolean {
     return body.split(GREETING).join('').trim().length > 0;
+}
+
+// The example shown in an empty custom message — a nudge, not one of the four
+// purposes.
+const CUSTOM_PLACEHOLDER = "A note of your own — a welcome pack, local tips, a mid-stay check, a thank-you after they leave. Use {guest_name} and {listing} and they're filled in for each guest.";
+
+// The fallback label when a host leaves a message unnamed. A custom message has
+// no fixed purpose to borrow a name from, so it gets a neutral one.
+function defaultName(type: string): string {
+    return type === CUSTOM_TYPE ? 'Your message' : templateDefFor(type).label;
 }
 
 
@@ -356,7 +416,7 @@ export default function MessageTemplates() {
         const { error } = await supabase
             .from('message_templates')
             .update({
-                name: (next.name || '').trim() || defOf(next.template_type).label,
+                name: (next.name || '').trim() || defaultName(next.template_type),
                 body: next.body,
                 enabled: next.enabled,
                 anchor: next.anchor,
@@ -381,21 +441,32 @@ export default function MessageTemplates() {
         setAdding(false);
         setBusyId('new');
 
-        const def = defOf(type);
+        const isCustom = type === CUSTOM_TYPE;
+        const def = isCustom ? null : defOf(type);
+        // A custom message starts a couple of hours after check-in — a real,
+        // editable schedule rather than "not scheduled", so the host adjusts one
+        // thing rather than setting it from nothing.
+        const anchor = isCustom
+            ? 'after_check_in'
+            : def!.family === 'booking' ? 'booking'
+            : def!.family === 'settled' ? 'after_check_in'
+            : def!.family === 'checkout' ? 'before_check_out'
+            : 'check_in';
+
         const { data, error } = await supabase
             .from('message_templates')
             .insert({
                 user_id: userId,
                 template_type: type,
-                name: def.label,
+                name: defaultName(type),
                 body: GREETING,
                 enabled: false,
-                anchor: def.family === 'booking' ? 'booking' : def.family === 'settled' ? 'after_check_in' : def.family === 'checkout' ? 'before_check_out' : 'check_in',
-                days_offset: def.defaultOffset,
+                anchor,
+                days_offset: isCustom ? 0 : def!.defaultOffset,
                 send_hour: 9,
                 minutes_after: 0,
-                hours_after: 0,
-                hours_before: def.family === 'checkout' ? 18 : 0,
+                hours_after: isCustom ? 2 : 0,
+                hours_before: !isCustom && def!.family === 'checkout' ? 18 : 0,
                 // Still written for now: the old code is briefly still
                 // deployed and reads it. Scope proper lives in the join table.
                 listing_ids: [],
@@ -425,8 +496,10 @@ export default function MessageTemplates() {
                 user_id: userId,
                 template_type: source.template_type,
                 // Named properly once it is scoped — see saveScope. Until
-                // then it must not read as a second copy of the original.
-                name: defOf(source.template_type).label + ' (copy)',
+                // then it must not read as a second copy of the original. A
+                // custom message keeps the host's own name, which saveScope
+                // leaves alone.
+                name: (source.template_type === CUSTOM_TYPE ? source.name : defOf(source.template_type).label) + ' (copy)',
                 body: source.body,
                 enabled: false,
                 anchor: source.anchor,
@@ -578,6 +651,133 @@ export default function MessageTemplates() {
             .sort((a, b) => String(a.created_at || '') < String(b.created_at || '') ? -1 : 1),
     }));
 
+    // A host's own messages — any number, each with its own trigger and timing.
+    const customItems = rows
+        .filter((r) => r.template_type === CUSTOM_TYPE)
+        .sort((a, b) => String(a.created_at || '') < String(b.created_at || '') ? -1 : 1);
+
+    // One card, used by the four fixed groups and by the host's own messages.
+    // A plain function, not a nested component, so the parent re-rendering on a
+    // keystroke never remounts the body textarea and drops the caret.
+    const renderCard = (tpl: Template, bodyPlaceholder: string, namePlaceholder: string) => {
+        const busy = busyId === tpl.id;
+        return (
+            <div key={tpl.id} className="border rounded-xl p-4">
+                <input
+                    type="text"
+                    value={tpl.name}
+                    onChange={(e) => patchLocal(tpl.id, { name: e.target.value })}
+                    onBlur={() => save(tpl.id)}
+                    placeholder={namePlaceholder}
+                    aria-label="A name for this message — just for you, never shown to a guest"
+                    title="Just for you — a guest never sees this name"
+                    className="w-full font-semibold text-slate-900 bg-transparent border-0 border-b border-transparent hover:border-slate-200 focus:border-slate-900 focus:outline-none mb-3 px-0 py-1"
+                />
+
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                    <button
+                        type="button"
+                        onClick={() => { setDraftListingIds(tpl.listingIds); setListingsFor(tpl.id); }}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 border rounded-lg text-sm font-medium text-slate-800 hover:border-slate-900"
+                    >
+                        <Home className="w-3.5 h-3.5 text-slate-500" />
+                        {scopeLabel(tpl)}
+                    </button>
+
+                    <div className="flex items-center gap-1 ml-auto">
+                        <button
+                            type="button"
+                            title="Duplicate"
+                            onClick={() => duplicate(tpl.id)}
+                            disabled={busy}
+                            className="p-2 text-slate-500 hover:text-slate-900 disabled:opacity-40"
+                        >
+                            <Copy className="w-4 h-4" />
+                        </button>
+                        <button
+                            type="button"
+                            title="Delete"
+                            onClick={() => remove(tpl.id)}
+                            disabled={busy}
+                            className="p-2 text-slate-500 hover:text-red-600 disabled:opacity-40"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => save(tpl.id, { enabled: !tpl.enabled })}
+                            disabled={busy}
+                            className={`ml-1 px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                                tpl.enabled
+                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                    : 'bg-slate-50 border-slate-200 text-slate-500'
+                            }`}
+                        >
+                            {tpl.enabled ? 'On' : 'Off'}
+                        </button>
+                    </div>
+                </div>
+
+                <HighlightedTemplate
+                    value={tpl.body}
+                    onChange={(next, caret) => {
+                        patchLocal(tpl.id, { body: next });
+                        caretRefs.current[tpl.id] = caret;
+                    }}
+                    onCaret={(caret) => { caretRefs.current[tpl.id] = caret; }}
+                    innerRef={(el) => { boxRefs.current[tpl.id] = el; }}
+                    placeholder={bodyPlaceholder}
+                />
+
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-xs text-slate-400 mr-1">Filled in when it sends:</span>
+                    {PLACEHOLDERS.map((ph) => (
+                        <button
+                            key={ph.token}
+                            type="button"
+                            onClick={() => insertPlaceholder(tpl.id, ph.token)}
+                            title={ph.label}
+                            className="text-xs px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700"
+                        >
+                            {ph.token}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    <button
+                        type="button"
+                        onClick={() => { setScheduleFor(tpl.id); setDraftSchedule(tpl); }}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm text-slate-700 hover:border-slate-900"
+                    >
+                        <Clock className="w-3.5 h-3.5" />
+                        {describeSchedule(tpl)}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => save(tpl.id)}
+                        disabled={busy}
+                        className="ml-auto px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40"
+                    >
+                        {busy ? 'Saving...' : 'Save'}
+                    </button>
+                </div>
+
+                {tpl.enabled && !hasRealContent(tpl.body) && (
+                    <p className="text-xs text-amber-600 mt-3">
+                        Switched on but nothing written, so nothing will be sent.
+                    </p>
+                )}
+                {tpl.enabled && hasRealContent(tpl.body) && tpl.anchor === 'none' && (
+                    <p className="text-xs text-amber-600 mt-3">
+                        Switched on but not scheduled, so nothing will be sent. Pick a time.
+                    </p>
+                )}
+            </div>
+        );
+    };
+
     // Roughly the shape of what is about to arrive, so the rest of the
     // Messaging section does not slide up the page when it does.
     if (loading) {
@@ -597,11 +797,7 @@ export default function MessageTemplates() {
                 <div>
                     <h3 className="text-base font-bold text-slate-900 mb-1">Scheduled messages</h3>
                     <p className="text-xs text-slate-500 max-w-xl">
-                        Written once, sent automatically at the right moment. Anything highlighted in
-                        blue is swapped for the real thing when the message goes out. A message can
-                        cover all your properties, or just some &mdash; so a place with a different
-                        door and a different lockbox can have its own. The name at the top of each
-                        is for this list only; a guest never sees it.
+                        Written once, sent automatically at the right moment.
                     </p>
                 </div>
 
@@ -627,6 +823,15 @@ export default function MessageTemplates() {
                                     <div className="text-xs text-slate-500">{def.hint}</div>
                                 </button>
                             ))}
+                            <div className="my-1 border-t" />
+                            <button
+                                type="button"
+                                onClick={() => add(CUSTOM_TYPE)}
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100"
+                            >
+                                <div className="text-sm font-medium text-slate-900">Your own message</div>
+                                <div className="text-xs text-slate-500">Write your own, and choose exactly when it sends.</div>
+                            </button>
                         </div>
                     )}
                 </div>
@@ -652,126 +857,44 @@ export default function MessageTemplates() {
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {items.map((tpl) => {
-                                    const busy = busyId === tpl.id;
-                                    return (
-                                        <div key={tpl.id} className="border rounded-xl p-4">
-                                            <input
-                                                type="text"
-                                                value={tpl.name}
-                                                onChange={(e) => patchLocal(tpl.id, { name: e.target.value })}
-                                                onBlur={() => save(tpl.id)}
-                                                placeholder={def.label}
-                                                aria-label="Name for your own list"
-                                                className="w-full font-semibold text-slate-900 bg-transparent border-0 border-b border-transparent hover:border-slate-200 focus:border-slate-900 focus:outline-none mb-3 px-0 py-1"
-                                            />
-
-                                            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setDraftListingIds(tpl.listingIds); setListingsFor(tpl.id); }}
-                                                    className="inline-flex items-center gap-2 px-3 py-1.5 border rounded-lg text-sm font-medium text-slate-800 hover:border-slate-900"
-                                                >
-                                                    <Home className="w-3.5 h-3.5 text-slate-500" />
-                                                    {scopeLabel(tpl)}
-                                                </button>
-
-                                                <div className="flex items-center gap-1 ml-auto">
-                                                    <button
-                                                        type="button"
-                                                        title="Duplicate"
-                                                        onClick={() => duplicate(tpl.id)}
-                                                        disabled={busy}
-                                                        className="p-2 text-slate-500 hover:text-slate-900 disabled:opacity-40"
-                                                    >
-                                                        <Copy className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        title="Delete"
-                                                        onClick={() => remove(tpl.id)}
-                                                        disabled={busy}
-                                                        className="p-2 text-slate-500 hover:text-red-600 disabled:opacity-40"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => save(tpl.id, { enabled: !tpl.enabled })}
-                                                        disabled={busy}
-                                                        className={`ml-1 px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
-                                                            tpl.enabled
-                                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                                                : 'bg-slate-50 border-slate-200 text-slate-500'
-                                                        }`}
-                                                    >
-                                                        {tpl.enabled ? 'On' : 'Off'}
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            <HighlightedTemplate
-                                                value={tpl.body}
-                                                onChange={(next, caret) => {
-                                                    patchLocal(tpl.id, { body: next });
-                                                    caretRefs.current[tpl.id] = caret;
-                                                }}
-                                                onCaret={(caret) => { caretRefs.current[tpl.id] = caret; }}
-                                                innerRef={(el) => { boxRefs.current[tpl.id] = el; }}
-                                                placeholder={def.placeholder}
-                                            />
-
-                                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                                {PLACEHOLDERS.map((ph) => (
-                                                    <button
-                                                        key={ph.token}
-                                                        type="button"
-                                                        onClick={() => insertPlaceholder(tpl.id, ph.token)}
-                                                        title={ph.label}
-                                                        className="text-xs px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700"
-                                                    >
-                                                        {ph.token}
-                                                    </button>
-                                                ))}
-                                            </div>
-
-                                            <div className="flex items-center gap-2 mt-3 flex-wrap">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setScheduleFor(tpl.id); setDraftSchedule(tpl); }}
-                                                    className="inline-flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm text-slate-700 hover:border-slate-900"
-                                                >
-                                                    <Clock className="w-3.5 h-3.5" />
-                                                    {describeSchedule(tpl)}
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() => save(tpl.id)}
-                                                    disabled={busy}
-                                                    className="ml-auto px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40"
-                                                >
-                                                    {busy ? 'Saving...' : 'Save'}
-                                                </button>
-                                            </div>
-
-                                            {tpl.enabled && !hasRealContent(tpl.body) && (
-                                                <p className="text-xs text-amber-600 mt-3">
-                                                    Switched on but nothing written, so nothing will be sent.
-                                                </p>
-                                            )}
-                                            {tpl.enabled && hasRealContent(tpl.body) && tpl.anchor === 'none' && (
-                                                <p className="text-xs text-amber-600 mt-3">
-                                                    Switched on but not scheduled, so nothing will be sent. Pick a time.
-                                                </p>
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                                {items.map((tpl) => renderCard(tpl, def.placeholder, def.label))}
                             </div>
                         )}
                     </div>
                 ))}
+
+                {/* The host's own messages — any trigger, any timing, as many
+                    as they like. Kept out of the coverage grid above, which is
+                    about the four purposes a stay needs covered. */}
+                <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
+                        Your own messages
+                    </div>
+                    {customItems.length === 0 ? (
+                        <div className="border border-dashed rounded-xl p-4 text-sm text-slate-500">
+                            Write your own — a welcome pack, a mid-stay check, a thank-you after
+                            checkout — and choose exactly when it sends.{' '}
+                            <button
+                                type="button"
+                                onClick={() => add(CUSTOM_TYPE)}
+                                className="font-semibold text-slate-900 underline"
+                            >
+                                Create one
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {customItems.map((tpl) => renderCard(tpl, CUSTOM_PLACEHOLDER, 'Name this message'))}
+                            <button
+                                type="button"
+                                onClick={() => add(CUSTOM_TYPE)}
+                                className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900 hover:text-black"
+                            >
+                                <Plus className="w-4 h-4" /> Create another
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
             <TemplateCoverage key={coverageKey} />
@@ -830,33 +953,140 @@ export default function MessageTemplates() {
                     <div className="bg-white rounded-2xl p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
                         <h4 className="font-bold text-slate-900 mb-4">When should this send?</h4>
 
-                        <div className="space-y-2">
-                            {SCHEDULE_PRESETS.filter((preset) => {
-                                const def = defOf(rowOf(scheduleFor)?.template_type || '');
-                                return preset.family === 'both' || preset.family === def.family;
-                            }).map((preset) => {
-                                const on =
-                                    draftSchedule.anchor === preset.values.anchor &&
-                                    (draftSchedule.minutes_after || 0) === preset.values.minutes_after &&
-                                    (draftSchedule.days_offset || 0) === preset.values.days_offset &&
-                                    (draftSchedule.send_hour || 0) === preset.values.send_hour &&
-                                    (draftSchedule.hours_after || 0) === preset.values.hours_after &&
-                                    (draftSchedule.hours_before || 0) === preset.values.hours_before;
-
+                        {rowOf(scheduleFor)?.template_type === CUSTOM_TYPE ? (
+                            // A host's own message: pick a trigger from the guest
+                            // journey and a free amount of time from it.
+                            (() => {
+                                const anchor = draftSchedule.anchor && draftSchedule.anchor !== 'none'
+                                    ? draftSchedule.anchor
+                                    : 'after_check_in';
+                                const trig = CUSTOM_TRIGGERS.filter((t) => t.anchor === anchor)[0] || CUSTOM_TRIGGERS[0];
+                                const au = amountUnitOf({
+                                    anchor,
+                                    minutes_after: draftSchedule.minutes_after || 0,
+                                    days_offset: draftSchedule.days_offset || 0,
+                                    hours_after: draftSchedule.hours_after || 0,
+                                    hours_before: draftSchedule.hours_before || 0,
+                                });
+                                const sendHour = draftSchedule.send_hour ?? 9;
+                                const CUSTOM_DEFAULTS: Record<string, { amount: number; unit: Unit }> = {
+                                    booking: { amount: 0, unit: 'minutes' },
+                                    check_in: { amount: 2, unit: 'days' },
+                                    after_check_in: { amount: 2, unit: 'hours' },
+                                    before_check_out: { amount: 12, unit: 'hours' },
+                                    after_check_out: { amount: 1, unit: 'days' },
+                                };
+                                // Caps that keep a custom timing inside the windows the
+                                // cron actually looks at, so nothing a host can set here
+                                // silently never sends: booking-anchored within the
+                                // 7-day confirmed-at sweep, stay-anchored within the
+                                // ±40-day stay-dates sweep.
+                                const maxFor = (a: string, u: Unit): number => {
+                                    if (a === 'booking') return u === 'days' ? 6 : u === 'hours' ? 144 : 8640;
+                                    if (a === 'check_in') return 30;
+                                    return u === 'days' ? 14 : 336;
+                                };
+                                const setWhen = (a: string, amt: number, u: Unit, hour: number) =>
+                                    setDraftSchedule(Object.assign({}, draftSchedule,
+                                        scheduleColumns(a, Math.min(Math.max(0, amt || 0), maxFor(a, u)), u, hour)));
+                                const selectCls = 'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none';
                                 return (
-                                    <button
-                                        key={preset.label}
-                                        type="button"
-                                        onClick={() => setDraftSchedule(Object.assign({}, draftSchedule, preset.values))}
-                                        className={`w-full text-left px-4 py-2.5 rounded-xl border text-sm ${
-                                            on ? 'border-slate-900 bg-slate-50 font-semibold' : 'border-slate-200 hover:border-slate-400'
-                                        }`}
-                                    >
-                                        {preset.label}
-                                    </button>
+                                    <div className="space-y-4">
+                                        <label className="block">
+                                            <span className="block text-xs font-medium text-slate-500 mb-1">Trigger</span>
+                                            <select
+                                                value={anchor}
+                                                onChange={(e) => {
+                                                    const a = e.target.value;
+                                                    const d = CUSTOM_DEFAULTS[a] || { amount: 1, unit: 'hours' as Unit };
+                                                    setWhen(a, d.amount, d.unit, sendHour);
+                                                }}
+                                                className={`${selectCls} w-full`}
+                                            >
+                                                {CUSTOM_TRIGGERS.map((t) => (
+                                                    <option key={t.anchor} value={t.anchor}>{t.label}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+
+                                        <div className="flex items-end gap-2 flex-wrap">
+                                            <label className="block">
+                                                <span className="block text-xs font-medium text-slate-500 mb-1">How long</span>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={maxFor(anchor, au.unit)}
+                                                    value={au.amount}
+                                                    onChange={(e) => setWhen(anchor, Number(e.target.value), au.unit, sendHour)}
+                                                    className={`${selectCls} w-24`}
+                                                />
+                                            </label>
+
+                                            {trig.units.length > 1 ? (
+                                                <select
+                                                    value={au.unit}
+                                                    onChange={(e) => setWhen(anchor, au.amount, e.target.value as Unit, sendHour)}
+                                                    className={selectCls}
+                                                >
+                                                    {trig.units.map((u) => (
+                                                        <option key={u} value={u}>{u}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <span className="px-1 py-2 text-sm text-slate-600">{trig.units[0]}</span>
+                                            )}
+
+                                            {trig.timeOfDay && (
+                                                <label className="block">
+                                                    <span className="block text-xs font-medium text-slate-500 mb-1">At</span>
+                                                    <select
+                                                        value={sendHour}
+                                                        onChange={(e) => setWhen(anchor, au.amount, au.unit, Number(e.target.value))}
+                                                        className={selectCls}
+                                                    >
+                                                        {HOURS.map((h) => (
+                                                            <option key={h} value={h}>{h < 10 ? `0${h}:00` : `${h}:00`}</option>
+                                                        ))}
+                                                    </select>
+                                                </label>
+                                            )}
+                                        </div>
+
+                                        <p className="text-sm text-slate-600">
+                                            Sends <span className="font-semibold">{describeSchedule(Object.assign({ anchor, minutes_after: 0, days_offset: 0, send_hour: sendHour, hours_after: 0, hours_before: 0 }, draftSchedule) as any).toLowerCase()}</span>.
+                                        </p>
+                                    </div>
                                 );
-                            })}
-                        </div>
+                            })()
+                        ) : (
+                            <div className="space-y-2">
+                                {SCHEDULE_PRESETS.filter((preset) => {
+                                    const def = defOf(rowOf(scheduleFor)?.template_type || '');
+                                    return preset.family === 'both' || preset.family === def.family;
+                                }).map((preset) => {
+                                    const on =
+                                        draftSchedule.anchor === preset.values.anchor &&
+                                        (draftSchedule.minutes_after || 0) === preset.values.minutes_after &&
+                                        (draftSchedule.days_offset || 0) === preset.values.days_offset &&
+                                        (draftSchedule.send_hour || 0) === preset.values.send_hour &&
+                                        (draftSchedule.hours_after || 0) === preset.values.hours_after &&
+                                        (draftSchedule.hours_before || 0) === preset.values.hours_before;
+
+                                    return (
+                                        <button
+                                            key={preset.label}
+                                            type="button"
+                                            onClick={() => setDraftSchedule(Object.assign({}, draftSchedule, preset.values))}
+                                            className={`w-full text-left px-4 py-2.5 rounded-xl border text-sm ${
+                                                on ? 'border-slate-900 bg-slate-50 font-semibold' : 'border-slate-200 hover:border-slate-400'
+                                            }`}
+                                        >
+                                            {preset.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
 
                         <div className="flex justify-end gap-2 mt-5">
                             <button type="button" onClick={() => setScheduleFor(null)} className="px-4 py-2 text-sm font-semibold text-slate-600">

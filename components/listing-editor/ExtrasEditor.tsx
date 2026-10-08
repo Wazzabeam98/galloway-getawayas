@@ -153,6 +153,9 @@ function PriceCard({ extra, save }: { extra: ListingExtra; save: (patch: Partial
                     <div className="mx-auto mt-8 w-full max-w-xs">
                         <ChoiceTiles options={UNIT_OPTIONS} value={c.draft.unit} onChange={(v) => c.setDraft({ ...c.draft, unit: v as ExtraUnit })} />
                     </div>
+                    <p className="mx-auto mt-6 max-w-xs text-center text-xs text-slate-500">
+                        You keep the full price — we take no commission. Refunded on the same terms as the stay if the guest cancels.
+                    </p>
                 </EditorPanel>
             )}
         </>
@@ -354,6 +357,9 @@ function AddExtraWizard({ supabase, onClose, onAdd }: {
                     <div className="mx-auto mt-8 w-full max-w-xs">
                         <ChoiceTiles options={UNIT_OPTIONS} value={d.unit} onChange={(v) => set({ unit: v as ExtraUnit })} />
                     </div>
+                    <p className="mx-auto mt-6 max-w-xs text-center text-xs text-slate-500">
+                        You keep the full price — we take no commission. Refunded on the same terms as the stay if the guest cancels.
+                    </p>
                 </div>
             )}
             {key === 'describe' && (
@@ -463,10 +469,8 @@ export default function ExtrasEditor({ listingId }: { listingId: string }) {
             {open && (
                 <EditorPanel title="Extras" onClose={() => setOpen(false)}>
                     <p className="mb-4 text-sm text-slate-500">
-                        Optional paid extras a guest can add when they book — a sauna pack, a
-                        hamper, late checkout. They&rsquo;re added to the stay and paid out with
-                        it, and we take no commission on them. If a guest cancels, an extra is
-                        refunded on the same terms as the stay.
+                        Optional paid extras a guest adds to their booking — a sauna pack, a
+                        hamper, late checkout.
                     </p>
 
                     <div className="space-y-3">
