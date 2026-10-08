@@ -63,8 +63,8 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
         title: 'Guest Terms',
         audience: 'Everyone with an account — guests, hosts, providers and tradespeople.',
         path: '/terms/guests',
-        version: 'v1-2026-10-03',
-        lastUpdated: '2026-10-03',
+        version: 'v2-2026-10-08',
+        lastUpdated: '2026-10-08',
         textFile: 'components/legal/agreements/text/guest.ts',
     },
     host: {
@@ -72,8 +72,8 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
         title: 'Host Agreement',
         audience: 'Hosts who list a holiday let.',
         path: '/terms/hosts',
-        version: 'v1-2026-10-03',
-        lastUpdated: '2026-10-03',
+        version: 'v2-2026-10-08',
+        lastUpdated: '2026-10-08',
         textFile: 'components/legal/agreements/HostAgreement.tsx',
     },
     experience_provider: {

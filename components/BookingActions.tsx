@@ -45,6 +45,9 @@ export default function BookingActions({
     // the main action; a part refund is a deliberate second choice.
     const [partial, setPartial] = useState(false);
     const [panelError, setPanelError] = useState('');
+    // The host's say-so that a major disruptive event stops this stay — no 5%
+    // fee (the cancellation policy and Host Agreement; /api/stripe/refund).
+    const [majorEvent, setMajorEvent] = useState(false);
 
     const refundable = Math.round((Number(amountPaid) - Number(amountRefunded)) * 100) / 100;
     const penalty = Math.round(Number(totalPrice) * 0.05 * 100) / 100;
@@ -223,7 +226,11 @@ export default function BookingActions({
                 const res = await fetch('/api/stripe/refund', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bookingId: bookingId, reason: status }),
+                    body: JSON.stringify({
+                        bookingId: bookingId,
+                        reason: status,
+                        majorDisruptiveEvent: status === 'cancelled' && majorEvent,
+                    }),
                 });
                 const data = await res.json();
                 refunded = !!(data && data.ok);
@@ -304,7 +311,28 @@ export default function BookingActions({
                         They&apos;ll be refunded the full {formatGBP(refundable)} they have paid,
                         whatever your cancellation policy says, and the dates go back on sale.
                     </p>
-                    {penalty > 0 && (
+                    <label className="mt-3 flex items-start gap-3 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={majorEvent}
+                            onChange={(e) => setMajorEvent(e.target.checked)}
+                            className="mt-0.5 h-5 w-5 flex-none rounded border-red-300 accent-red-700"
+                        />
+                        <span className="text-sm text-red-900">
+                            <span className="font-semibold">A major disruptive event stops this stay</span>
+                            <span className="block text-xs text-red-800 mt-0.5">
+                                A government travel restriction, an evacuation, police or the council
+                                closing access to the property, or a widespread loss of power or water
+                                there. A weather warning on its own doesn&apos;t count.{' '}
+                                <a href="/cancellation-policy#major-disruptive-events" target="_blank" rel="noreferrer" className="underline">How this works</a>
+                            </span>
+                        </span>
+                    </label>
+                    {majorEvent ? (
+                        <p className="text-sm text-red-800 mt-2">
+                            No cancellation fee. You won&apos;t be paid for these dates.
+                        </p>
+                    ) : penalty > 0 && (
                         <p className="text-sm text-red-800 mt-2">
                             A cancellation fee of <strong>{formatGBP(penalty)}</strong> (5% of the
                             booking) will be taken off your next payout.
@@ -326,7 +354,7 @@ export default function BookingActions({
                         </button>
                         <button
                             type="button"
-                            onClick={() => setPanel('none')}
+                            onClick={() => { setPanel('none'); setMajorEvent(false); }}
                             className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
                         >
                             Keep the booking

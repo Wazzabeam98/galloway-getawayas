@@ -33,7 +33,8 @@ import { loadEnv, supabaseClient, TEST_PROJECT_REF } from './seed-lib.mjs';
 const SEED_DOMAIN = 'gallowaytrade.test';
 const LIAM_EMAIL = 'liamworrall18@hotmail.com';
 const PASSWORD = 'walk-the-trade-2026';
-const AGREEMENT_VERSION = 'v1-2026-10-03'; // keep in sync with AGREEMENTS in lib/agreements.ts
+const AGREEMENT_VERSION = 'v1-2026-10-03'; // tradesperson — keep in sync with AGREEMENTS in lib/agreements.ts
+const GUEST_TERMS_VERSION = 'v2-2026-10-08'; // guest — likewise
 
 const env = loadEnv();
 if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.NEXT_PUBLIC_SUPABASE_URL.includes(TEST_PROJECT_REF)) {
@@ -236,7 +237,7 @@ async function seedOne(t, liam, listings, photoKeys) {
     // account matches a real signed-up trade and would pass the submit wall.
     await db.insert('agreement_acceptances', [
         { user_id: owner, document: 'tradesperson', version: AGREEMENT_VERSION, accepted_at: now.toISOString(), source: 'seed' },
-        { user_id: owner, document: 'guest', version: AGREEMENT_VERSION, accepted_at: now.toISOString(), source: 'seed' },
+        { user_id: owner, document: 'guest', version: GUEST_TERMS_VERSION, accepted_at: now.toISOString(), source: 'seed' },
     ]);
 
     await db.insert('service_areas', t.areas.map((a) => ({ provider_id: provider.id, ...a })));

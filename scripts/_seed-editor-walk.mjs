@@ -56,7 +56,7 @@ async function seedTrades(now) {
             callout_waived: true, does_scheduled: true, declarations: {},
         }]);
         await db.insert('service_areas', [{ provider_id: provider.id, label: 'The Stewartry', centre_lat: 0, centre_lng: 0, radius_miles: 0 }]);
-        await db.insert('agreement_acceptances', ['tradesperson', 'guest'].map((document) => ({ user_id: owner, document, version: 'v1-2026-10-03', accepted_at: now, source: 'seed' })));
+        await db.insert('agreement_acceptances', [['tradesperson', 'v1-2026-10-03'], ['guest', 'v2-2026-10-08']].map(([document, version]) => ({ user_id: owner, document, version, accepted_at: now, source: 'seed' })));
     }
 }
 
@@ -88,7 +88,7 @@ async function main() {
         ? (await db.auth('PUT', '/admin/users/' + existing.id, { password: HOST_PW, email_confirm: true }), existing.id)
         : (await db.auth('POST', '/admin/users', { email: HOST_EMAIL, password: HOST_PW, email_confirm: true })).id;
     const now = new Date().toISOString();
-    const version = 'v1-2026-10-03';
+    const version = 'v2-2026-10-08'; // host and guest, as in lib/agreements.ts
     await db.update('profiles', '?id=eq.' + hostId, { full_name: 'Morag', host_terms_version: version, host_terms_agreed_at: now });
     // Agreements already on record, so the walk starts in the editor, not on the agreement prompt.
     await db.remove('agreement_acceptances', '?user_id=eq.' + hostId);

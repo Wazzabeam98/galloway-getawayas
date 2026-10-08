@@ -514,6 +514,13 @@ async function main() {
         check_in: dayOffset(40), check_out: dayOffset(43),
     });
 
+    // 13m — confirmed, and the host cancels for a major disruptive event (an
+    // evacuation, say). Full refund, and NO 5% fee.
+    const s13m = await createBooking(listingReady, guest, hostReady, {
+        label: 's13m', total_price: 600, amount_paid: 600,
+        check_in: dayOffset(140), check_out: dayOffset(143),
+    });
+
     // 14 — goodwill money back, stay still happening, host still paid the
     // remainder. Checked in already so the payout run will take it.
     const s14 = await createBooking(listingReady, guest, hostReady, {
@@ -777,7 +784,7 @@ async function main() {
             s01: s01.id, s02: s02.id, s04: s04.id, s05: s05.id, s06: s06.id,
             s25: s25.id, s26: s26.id, s27a: s27a.id, s27b: s27b.id, s28: s28.id, slost: slost.id,
             s03: s03.id, s07: s07.id, s11: s11.id, s29: s29.id,
-            s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id, s31: s31.id,
+            s12: s12.id, s13: s13.id, s13m: s13m.id, s14: s14.id, s15: s15.id, s16: s16.id, s31: s31.id,
             s32: raceBookings[0].id, s33: raceBookings[1].id, s34: raceBookings[2].id,
             s17: s17.id, s18: s18.id,
             s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id,

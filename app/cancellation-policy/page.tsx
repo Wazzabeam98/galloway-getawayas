@@ -12,7 +12,7 @@ export default function CancellationPolicyPage() {
     return (
         <div className="max-w-3xl mx-auto px-6 py-12">
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Cancellation &amp; Refund Policy</h1>
-            <p className="text-sm text-slate-500 mb-10">Last updated 28 September 2026</p>
+            <p className="text-sm text-slate-500 mb-10">Last updated 08/10/2026</p>
 
             <div className="prose prose-slate max-w-none">
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">How it works</h2>
@@ -82,12 +82,28 @@ export default function CancellationPolicyPage() {
                     cancellation and any refund for a job are matters between you and the tradesperson.
                 </p>
 
-                <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">Circumstances outside anyone&apos;s control</h2>
+                <h2 id="major-disruptive-events" className="text-xl font-bold text-slate-900 mt-8 mb-3 scroll-mt-24">Major disruptive events</h2>
+                <p className="text-slate-700 mb-3">
+                    A major disruptive event is something official that stops a stay going ahead. Only
+                    these count:
+                </p>
+                <ul className="text-slate-700 space-y-2 mb-4 list-disc pl-5">
+                    <li>a government travel restriction that stops you travelling to or staying at the property</li>
+                    <li>an evacuation of the property or the area around it</li>
+                    <li>police or the council closing access to the property</li>
+                    <li>a widespread loss of power or water at the property</li>
+                </ul>
                 <p className="text-slate-700 mb-4">
-                    If a stay cannot go ahead because of something neither you nor the host could
-                    reasonably control — severe weather, a government restriction, or damage making the
-                    property unsafe — contact us. We will review the circumstances and may offer a full
-                    refund regardless of the policy on the listing.
+                    If one of these stops your stay, message your host and ask them to cancel. When your
+                    host cancels for a major disruptive event, you get back everything you have paid, and
+                    your host pays no cancellation fee.
+                </p>
+                <p className="text-slate-700 mb-4">
+                    <strong>Weather warnings don&apos;t count on their own</strong>, whatever their
+                    colour, red included. Winter weather is something to expect in Dumfries &amp;
+                    Galloway, so a booking affected by it follows the listing&apos;s cancellation policy.
+                    Your host can choose to give back more than the policy does. Any extra refund is up to
+                    them and comes out of their payout.
                 </p>
 
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">How to cancel</h2>

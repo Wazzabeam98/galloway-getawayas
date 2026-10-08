@@ -166,6 +166,29 @@ async function main() {
         round2(Number(after13.balance_amount || 0)) === 0, String(after13.balance_amount));
     await assertAgreesWithStripe(bookings.s13);
 
+    /* ---- 13m ---- */
+
+    scenario('13m', 'Host cancels for a major disruptive event — full refund, no 5% fee, recorded');
+
+    const owed13mBefore = round2(Number((await profileOf(users.hostReady)).payout_balance_owed));
+    const res13m = await post('/api/stripe/refund', host, { bookingId: bookings.s13m, reason: 'cancelled', majorDisruptiveEvent: true });
+    console.log('   refund → ' + res13m.status + ' ' + JSON.stringify(res13m.body).slice(0, 140));
+
+    const after13m = await booking(bookings.s13m);
+    check('the guest got everything back', round2(Number(after13m.amount_refunded)) === 600,
+        '£' + after13m.amount_refunded);
+    check('the booking is cancelled, dates released', after13m.status === 'cancelled', after13m.status);
+    const owed13mAfter = round2(Number((await profileOf(users.hostReady)).payout_balance_owed));
+    check('no 5% fee against the host',
+        owed13mAfter === owed13mBefore, '£' + owed13mBefore + ' → £' + owed13mAfter);
+    check('no penalty row was written',
+        !(await payoutsFor(bookings.s13m)).some((r) => r.kind === 'penalty'));
+    check('the host\'s say-so is recorded on the booking', after13m.cancelled_for_major_event === true,
+        String(after13m.cancelled_for_major_event));
+    check('scenario 13 (no event ticked) still recorded the fee and no event',
+        after13.cancelled_for_major_event === false, String(after13.cancelled_for_major_event));
+    await assertAgreesWithStripe(bookings.s13m);
+
     /* ---- 14 ---- */
 
     scenario(14, 'Host gives partial goodwill money back — stay stands, host still paid the rest');
