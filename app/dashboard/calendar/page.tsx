@@ -15,7 +15,7 @@ import {
     unsellableNights,
 } from '@/lib/stayRules';
 import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
-import { firstName } from "@/lib/utils";
+import { firstName, getImageUrl } from "@/lib/utils";
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 
@@ -123,6 +123,10 @@ interface Reservation {
     platform: string | null; // null = our own (direct) booking
     label: string;
     kind: 'direct' | 'channel';
+    // Our own bookings only: the guest's photo (null = draw their initial).
+    // An imported stay carries no guest at all — the iCal feed has no name or
+    // photo — so it never gets one.
+    avatarUrl?: string | null;
 }
 
 const ADVANCE_NOTICE_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '7 days'];
@@ -145,6 +149,7 @@ export default function CalendarPage() {
     // Dates taken on other platforms, as ranges, from the imported calendars.
     const [channelEvents, setChannelEvents] = useState<ChannelEvent[]>([]);
     const [guestNames, setGuestNames] = useState<Record<string, string>>({});
+    const [guestAvatars, setGuestAvatars] = useState<Record<string, string | null>>({});
     // Which listing the bookings/blocks/synced nights above belong to. Until it
     // matches the selected listing the month is not drawn — an empty map would
     // show every night as open at the base price, then fill in, which reads as
@@ -325,11 +330,18 @@ export default function CalendarPage() {
             if (guestIds.length > 0) {
                 const { data: profiles } = await supabase
                     .from('profiles')
-                    .select('id, full_name, preferred_name, show_full_name')
+                    .select('id, full_name, preferred_name, show_full_name, avatar_url')
                     .in('id', guestIds);
                 const names: Record<string, string> = {};
-                (profiles || []).forEach((p) => { names[p.id] = firstName(p, 'Guest'); });
-                if (live) setGuestNames(names);
+                const avatars: Record<string, string | null> = {};
+                (profiles || []).forEach((p) => {
+                    names[p.id] = firstName(p, 'Guest');
+                    avatars[p.id] = p.avatar_url ? getImageUrl(String(p.avatar_url)) : null;
+                });
+                if (live) {
+                    setGuestNames(names);
+                    setGuestAvatars(avatars);
+                }
             }
             if (live) setCalendarFor(selectedListingId);
         };
@@ -367,6 +379,7 @@ export default function CalendarPage() {
             platform: null,
             label: guestNames[b.guest_id] || 'Guest',
             kind: 'direct',
+            avatarUrl: guestAvatars[b.guest_id] ?? null,
         }));
         channelEvents.forEach((e) => out.push({
             start: e.start,
@@ -376,7 +389,7 @@ export default function CalendarPage() {
             kind: 'channel',
         }));
         return out;
-    }, [bookings, channelEvents, guestNames]);
+    }, [bookings, channelEvents, guestNames, guestAvatars]);
 
     // The per-night reservation lookup, the full unavailable-night set (taken +
     // host-blocked + preparation time), and the nights that cannot be sold at
@@ -803,6 +816,29 @@ export default function CalendarPage() {
                                                         borderBottomRightRadius: rightOpen ? 0 : undefined,
                                                     }}
                                                 >
+                                                    {/* Airbnb's mark of a guest: their photo, round, at the
+                                                        start of the stay — only on the row the stay begins
+                                                        in, not where it carries over from last week. Ours
+                                                        only; an imported stay has no guest to show. Small
+                                                        enough that a one-night bar on a phone keeps room
+                                                        for the first letters of the name. */}
+                                                    {res.kind === 'direct' && !leftOpen && (
+                                                        res.avatarUrl ? (
+                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                            <img
+                                                                src={res.avatarUrl}
+                                                                alt=""
+                                                                className="-ml-1 mr-1.5 h-[18px] w-[18px] shrink-0 rounded-full object-cover sm:h-5 sm:w-5"
+                                                            />
+                                                        ) : (
+                                                            <span
+                                                                aria-hidden="true"
+                                                                className="-ml-1 mr-1.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[10px] font-semibold text-emerald-700 sm:h-5 sm:w-5"
+                                                            >
+                                                                {res.label.slice(0, 1).toUpperCase()}
+                                                            </span>
+                                                        )
+                                                    )}
                                                     <span className="truncate">{res.label}</span>
                                                 </div>
                                             );
