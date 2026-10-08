@@ -179,11 +179,23 @@ export async function POST(request: Request) {
         // for finding it in Stripe, never for acting on.
         let claimed: any = null;
         try { claimed = JSON.parse(rawBody); } catch { /* not even JSON */ }
+        // A connected-account event (it names an `account`) is signed with the
+        // Connect destination's own secret, which belongs in
+        // STRIPE_WEBHOOK_SECRET_2. Seven account.updated events from 2 Oct 2026
+        // were refused because only the platform secret was set — so the log now
+        // says which destination's secret is missing rather than leaving it to
+        // be worked out.
+        const connectEvent = !!(claimed && claimed.account);
         await logError('[webhook] a Stripe event failed its signature check and was refused', {
             signature_present: !!signature,
             secrets_configured: secrets.length,
             claimed_event_id: (claimed && claimed.id) || null,
             claimed_event_type: (claimed && claimed.type) || null,
+            claimed_account: (claimed && claimed.account) || null,
+            claimed_livemode: claimed ? claimed.livemode === true : null,
+            likely_cause: connectEvent
+                ? 'connected-account event: STRIPE_WEBHOOK_SECRET_2 must be the signing secret of the Stripe destination listening to "Connected accounts"'
+                : 'platform event: STRIPE_WEBHOOK_SECRET must be the signing secret of the Stripe destination listening to "Your account"',
         }, { path: 'stripe/webhook' });
         return NextResponse.json({ ok: false }, { status: 400 });
     }

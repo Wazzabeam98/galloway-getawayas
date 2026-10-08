@@ -76,6 +76,16 @@ exists.
 - **`manifest.json` is written last**, listing every file and its size. Its
   presence means the snapshot finished; a run that died halfway leaves photos but
   no manifest, and a restore knows not to trust that day.
+- **Every run proves itself.** After the copy it lists `storage/<day>/` back
+  from R2 and checks every file is there at the size Supabase reported, plus the
+  manifest. A run only counts as done when that read-back agrees.
+- **A failure is loud.** A failed run (or `BACKUP_S3_*` going missing) emails the
+  directors that morning (`DISPUTES_ALERT_EMAIL`, the same alias as the money
+  alerts) as well as landing in /admin/errors. Each run stamps `cron_runs`
+  (`storage-backup`), and the 08:00 error digest alerts if the last run failed or
+  there has been none for 26 hours — so the job silently stopping is caught too.
+  (Added 8 Oct 2026, after the store refused every run for over a fortnight from
+  21 Sep with only a row in the error list to show for it.)
 
 ### Restoring photos
 
@@ -89,11 +99,25 @@ the file count and total size against the manifest.
 ```bash
 curl -s -H "authorization: Bearer $CRON_SECRET" \
   https://<prod-domain>/api/cron/storage-backup | jq
-# => { "ok": true, "day": "…", "copied": <n>, "bytes": <n> }
+# => { "ok": true, "day": "…", "copied": <n>, "bytes": <n>,
+#      "verified": { "filesInBucket": <n+1>, "manifestFiles": <n> },
+#      "snapshotDays": ["2026-…", …] }
 ```
 
-Then confirm `storage/<day>/manifest.json` exists in R2 and its `fileCount`
-matches the live bucket.
+`verified` is the read-back from R2 (files plus the manifest); `snapshotDays` is
+every night that has a snapshot in the bucket.
+
+### If it fails with AccessDenied / Unauthorized / SignatureDoesNotMatch
+
+The R2 API token on Vercel no longer matches one Cloudflare accepts — it was
+rolled, deleted, or re-created with a narrower scope. In Cloudflare: **R2 →
+Manage R2 API Tokens** (top right of the R2 overview) → **Create API token** →
+permission **Object Read & Write**, **Apply to specific buckets only** →
+`galloway-backups` → Create. Copy the **Access Key ID** (32 characters) and
+**Secret Access Key** (64) into Vercel → Settings → Environment Variables →
+Production as `BACKUP_S3_ACCESS_KEY_ID` / `BACKUP_S3_SECRET_ACCESS_KEY`, redeploy,
+then run the curl above. The response's `config` shows the key lengths (never the
+values), which is the quickest check that the paste landed whole.
 
 ---
 

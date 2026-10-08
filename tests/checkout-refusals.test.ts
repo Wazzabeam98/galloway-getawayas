@@ -537,3 +537,46 @@ test('dates that are not a stay are refused', async () => {
     assert.match(res.body.error, /valid stay/);
     assert.equal(stripeCalls.length, 0);
 });
+
+// --- Stripe's £0.30 minimum ------------------------------------------------
+//
+// 22 August 2026: Stripe refused to open a payment page because the total was
+// under £0.30. Only a listing priced at pennies gets there, but the route says
+// so itself now, before anything is sent to Stripe (lib/stripeMinimum).
+
+test('a stay under Stripe\'s £0.30 minimum is refused in words, before Stripe', async () => {
+    // 5p a night for three nights: 15p.
+    const { route, stripeCalls, updates } = load({
+        listing: listingRow({ price_per_night: 0.05 }),
+        booking: bookingRow({ total_price: 0.15 }),
+    });
+    const res: any = await route.POST(post({ bookingId: 'b-1', plan: 'full' }));
+
+    assert.equal(res.status, 400);
+    assert.equal(res.body.ok, false);
+    assert.match(res.body.error, /£0\.15.*below the £0\.30 minimum/);
+    assert.equal(stripeCalls.length, 0, 'NOTHING was sent to Stripe');
+    assert.equal(updates.length, 0, 'and the booking row is not moved on');
+});
+
+test('a deposit that would leave a half under the minimum is taken in full', async () => {
+    // Far enough out that a deposit is offered (balance due 30 days before).
+    // 30p a night, three nights: 90p. A quarter is 23p — under the minimum —
+    // so the whole 90p is taken now and there is no balance to fail later.
+    const far = { check_in: '2027-03-01', check_out: '2027-03-04' };
+    const small = load({
+        listing: listingRow({ price_per_night: 0.3 }),
+        booking: bookingRow({ ...far, total_price: 0.9 }),
+    });
+    const a: any = await small.route.POST(post({ bookingId: 'b-1', plan: 'deposit' }));
+    assert.equal(a.status, 200);
+    assert.equal(small.stripeCalls[0].body.line_items[0].price_data.unit_amount, 90);
+    assert.equal(small.stripeCalls[0].body.metadata.kind, 'full');
+
+    // £300: the ordinary deposit is untouched.
+    const normal = load({ booking: bookingRow({ ...far, total_price: 300 }) });
+    const b: any = await normal.route.POST(post({ bookingId: 'b-1', plan: 'deposit' }));
+    assert.equal(b.status, 200);
+    assert.equal(normal.stripeCalls[0].body.line_items[0].price_data.unit_amount, 7500);
+    assert.equal(normal.stripeCalls[0].body.metadata.kind, 'deposit');
+});

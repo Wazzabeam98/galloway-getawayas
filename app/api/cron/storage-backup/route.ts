@@ -5,10 +5,32 @@ import {
     backupStore,
     assertReachable,
     putObject,
+    listObjects,
+    listSnapshotDays,
     describeS3Error,
     backupConfigSummary,
     type BackupStore,
 } from '@/lib/backupStore';
+import { verifySnapshot, BACKUP_JOB } from '@/lib/backupVerify';
+import { recordCronRun } from '@/lib/cronHeartbeat';
+import { alertDirectorsNow } from '@/lib/moneyAlert';
+
+// A failed backup is not allowed to be quiet. It failed every night from 21
+// September 2026 for over a fortnight and the only trace was a row in the error
+// list, so now a failure emails the directors the same morning, and the run is
+// stamped in cron_runs so the daily digest also notices if it stops running.
+async function shout(day: string | null, detail: string): Promise<void> {
+    await logError('storage-backup failed', detail, { path: '/api/cron/storage-backup' });
+    await recordCronRun(BACKUP_JOB, false, detail.slice(0, 500));
+    await alertDirectorsNow({
+        headline: 'Last night\u2019s photo backup FAILED',
+        lines: [
+            'The nightly copy of every listing photo to Cloudflare R2 did not complete, so there is no off-Supabase copy for today.',
+            'If it says AccessDenied, Unauthorized or SignatureDoesNotMatch, the R2 API token on Vercel (BACKUP_S3_*) has been changed, rolled or deleted — see docs/BACKUP-AND-RESTORE.md.',
+        ],
+        facts: { day: day || '', error: detail.slice(0, 400) },
+    });
+}
 
 export const dynamic = 'force-dynamic';
 // The whole of both buckets is a few dozen files and tens of megabytes, so a
@@ -104,13 +126,11 @@ export async function GET(request: Request) {
 
     const store = backupStore();
     if (!store) {
-        // Not a failure: the code is live but the destination is not wired yet.
-        // Say so plainly so a monitoring glance can tell "off" from "broken".
-        return NextResponse.json({
-            ok: false,
-            configured: false,
-            error: 'Backup store not configured (BACKUP_S3_* env vars unset)',
-        });
+        // The store has been wired since 21 September 2026, so losing its
+        // variables now means no backup is being taken — a failure, and said so.
+        const detail = 'Backup store not configured (BACKUP_S3_* env vars unset)';
+        await shout(null, detail);
+        return NextResponse.json({ ok: false, configured: false, error: detail }, { status: 500 });
     }
 
     const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
@@ -166,10 +186,37 @@ export async function GET(request: Request) {
             'application/json',
         );
 
-        return NextResponse.json({ ok: true, day, copied, bytes, config: backupConfigSummary() });
+        // PROVE IT. Read the day's snapshot back from the bucket and check every
+        // file is there at the size Supabase reported. Uploads that did not
+        // throw are not the same as photos in the bucket.
+        let held: Map<string, number>;
+        try {
+            held = await listObjects(store, `storage/${day}/`);
+        } catch (e: any) {
+            throw new Error(`could not read the snapshot back to verify it: ${describeS3Error(e)}`);
+        }
+        const problems = verifySnapshot(day, manifest, held);
+        if (problems.length) throw new Error(`snapshot did not verify: ${problems.join('; ')}`);
+
+        // Which nights have a snapshot — the history at a glance in the response.
+        let snapshotDays: string[] = [];
+        try {
+            snapshotDays = await listSnapshotDays(store);
+        } catch { /* the day's own proof above is what matters */ }
+
+        await recordCronRun(BACKUP_JOB, true, `${copied} files, ${bytes} bytes, verified`);
+        return NextResponse.json({
+            ok: true,
+            day,
+            copied,
+            bytes,
+            verified: { filesInBucket: held.size, manifestFiles: manifest.length },
+            snapshotDays,
+            config: backupConfigSummary(),
+        });
     } catch (e: any) {
         const detail = e?.message ? `${e.message} :: ${describeS3Error(e)}` : describeS3Error(e);
-        await logError('storage-backup failed', detail, { path: '/api/cron/storage-backup' });
+        await shout(day, detail);
         // The config summary carries no secret values — only the shape of the
         // config and the credential lengths — so it is safe in the response and
         // is exactly what a stuck auth failure needs to be diagnosed.
