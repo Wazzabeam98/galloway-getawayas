@@ -535,8 +535,8 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
 //     categories, a come-to-me/travel fork (g_slot_where) before it;
 //   - a WHEN section (slots only): g_slot_length (weekly hours moved to the
 //     listing editor's Availability section, so they are no longer a wizard step);
-//   - the PRICING section: g_slot_basis, g_capacity, and — per person only —
-//     g_slot_min, before g_menu.
+//   - the PRICING section: g_slot_basis, g_capacity, then g_menu. (The per-person
+//     minimum screen was removed at sign-up, Liam 9 Oct 2026.)
 // `expertise` is true for every slot category except the sauna, which skips the
 // years and expertise screens.
 const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean; perItemDuration?: boolean; mixed?: boolean } = {}) => {
@@ -558,12 +558,9 @@ const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boole
     // one-at-a-time in its own sub-flow — but keeps the capacity for its classes.
     if (!opts.perItemDuration && !opts.mixed) keys.push('g_slot_basis');
     if (!opts.perItemDuration) keys.push('g_capacity');
-    // The per-person minimum: a fixed-basis per-person slot (perPerson), OR a
-    // come-to-me mixed slot — whose classes can be shared, so the minimum is the
-    // twin of the capacity above. A travelling mixed slot sells only private
-    // sessions and drops both (the perItemDuration/travelling cases never reach
-    // this helper with mixed set — those are asserted directly via stepApplies).
-    if (opts.perPerson || opts.mixed) keys.push('g_slot_min');
+    // The per-person minimum screen was removed at sign-up (Liam, 9 Oct 2026), so
+    // no slot flow carries g_slot_min any more. perPerson/mixed are kept as options
+    // only for the length/capacity/basis branching above.
     keys.push('g_menu', 'g_expect', 'finish');
     return keys;
 };
@@ -582,7 +579,7 @@ test('a potter (slot, fixed come-to-me) walks the location + When split, no fork
     assert.equal(stepApplies('g_slot_hours', 'guest', ctx), false, 'weekly hours moved to the listing editor — not asked at sign-up');
     assert.equal(stepApplies('g_slot_basis', 'guest', ctx), false, 'a mixed slot decides shared-vs-1:1 per item, not a provider basis');
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a mixed slot keeps a capacity for its classes');
-    assert.equal(stepApplies('g_slot_min', 'guest', ctx), true, 'a come-to-me mixed slot keeps a minimum — its classes can be shared');
+    assert.ok(!gkeys(ctx).includes('g_slot_min'), 'the per-person minimum screen was removed at sign-up');
 });
 
 test('the come-to-me / travel fork is asked only for yoga, massage and painting', () => {
@@ -611,7 +608,7 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     assert.equal(stepApplies('g_slot_basis', 'guest', mixed), false, 'a mixed slot has no provider basis — each item chooses shared vs 1:1');
     assert.equal(stepApplies('g_slot_length', 'guest', mixed), true, 'a mixed slot keeps a provider length for its classes');
     assert.equal(stepApplies('g_capacity', 'guest', mixed), true, 'a mixed slot keeps a capacity for its classes');
-    assert.equal(stepApplies('g_slot_min', 'guest', mixed), true, 'a come-to-me mixed slot keeps a minimum for its shared classes');
+    assert.ok(!gkeys(mixed).includes('g_slot_min'), 'the per-person minimum screen was removed at sign-up');
     for (const cat of ['tastings', 'cooking', 'sauna', 'pottery', 'workshops', 'outdoors', 'water']) {
         const ctx = { group: 'x', category: cat, shape: 'slot' };
         assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, cat + ' defaults, no fork');
@@ -627,45 +624,40 @@ test('a TRAVELLING mixed provider drops the session-length and capacity screens'
     const comeToMe = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'collection' };
     assert.equal(stepApplies('g_slot_length', 'guest', comeToMe), true, 'come-to-me keeps the class length');
     assert.equal(stepApplies('g_capacity', 'guest', comeToMe), true, 'come-to-me keeps the class capacity');
-    assert.equal(stepApplies('g_slot_min', 'guest', comeToMe), true, 'come-to-me keeps the class minimum (capacity’s twin)');
+    assert.ok(!gkeys(comeToMe).includes('g_slot_min'), 'the per-person minimum screen was removed at sign-up');
     // Travels to the guest: every item is a private session with its own length,
     // and nobody joins a class in someone's cottage — so both screens drop, the
     // same way the shared-vs-private question does.
     const travels = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'delivery' };
     assert.equal(stepApplies('g_slot_length', 'guest', travels), false, 'a traveller sets the length per private session');
     assert.equal(stepApplies('g_capacity', 'guest', travels), false, 'a traveller declares no class capacity');
-    assert.equal(stepApplies('g_slot_min', 'guest', travels), false, 'a traveller sells only private sessions, so no minimum');
+    assert.ok(!gkeys(travels).includes('g_slot_min'), 'the per-person minimum screen was removed at sign-up');
     assert.equal(stepApplies('g_slot_hours', 'guest', travels), false, 'weekly hours moved to the listing editor — not asked at sign-up');
     // The traveller rule is mixed-only — a non-mixed slot is unaffected.
     const tastingTravels = { group: 'food', category: 'tastings', shape: 'slot', fulfilment: 'delivery' };
     assert.equal(stepApplies('g_capacity', 'guest', tastingTravels), true, 'the traveller rule is mixed-only');
 });
 
-test('the per-person minimum screen exists for a shared slot or a come-to-me mixed slot', () => {
-    // A fixed-basis slot's minimum is keyed off its provider slotOffer. A MIXED
-    // slot has no provider basis (slotOffer stays null), so its minimum is keyed
-    // off the category + direction instead: a come-to-me mixed slot can run a
-    // shared class, so it keeps the minimum (see the mixed/travelling tests
-    // above); this test covers the fixed-basis path and the non-slot exclusions.
+test('the per-person minimum screen is gone from every slot flow', () => {
+    // The minimum-people screen was removed at sign-up (Liam, 9 Oct 2026): Airbnb
+    // has no such setting and ours misled (the heading implied a session total
+    // while it applied per booking). No shape, basis or direction brings it back.
     const shared = { group: 'food', category: 'tastings', shape: 'slot', slotOffer: 'shared' };
     const priv = { group: 'wellness', category: 'sauna', shape: 'slot', slotOffer: 'private' };
     const unanswered = { group: 'food', category: 'tastings', shape: 'slot' };
-    // Per person: … g_capacity → g_slot_min → g_menu.
-    assert.equal(stepApplies('g_slot_min', 'guest', shared), true, 'per person has a minimum');
+    // A per-person slot now goes straight g_capacity → g_menu, no minimum between.
+    assert.ok(!gkeys(shared).includes('g_slot_min'), 'per person no longer has a minimum screen');
     assert.deepEqual(gkeys(shared), slotFlow({ perPerson: true }));
-    // Whole group: one booking whatever the head count, so no minimum screen.
-    assert.equal(stepApplies('g_slot_min', 'guest', priv), false, 'private/whole-group has no minimum');
-    // Not yet answered: the basis screen comes first, so the minimum stays out
-    // until the answer is per person.
-    assert.equal(stepApplies('g_slot_min', 'guest', unanswered), false, 'null basis hides the minimum');
-    // The basis and the minimum are slot-only — a chef and a cake maker never
-    // see either.
+    assert.ok(!gkeys(priv).includes('g_slot_min'), 'private/whole-group has no minimum screen');
+    assert.ok(!gkeys(unanswered).includes('g_slot_min'), 'no minimum screen whatever the basis');
+    // The basis is still slot-only — a chef and a cake maker never see it, and the
+    // minimum is gone for them too.
     for (const nonSlot of [
         { group: 'food', category: 'chef', shape: 'comes_to_you', slotOffer: 'shared' },
         { group: 'food', category: 'food_order', shape: 'made_to_order', slotOffer: 'shared' },
     ]) {
         assert.equal(stepApplies('g_slot_basis', 'guest', nonSlot), false, 'non-slot has no basis screen');
-        assert.equal(stepApplies('g_slot_min', 'guest', nonSlot), false, 'non-slot has no minimum screen');
+        assert.ok(!gkeys(nonSlot).includes('g_slot_min'), 'non-slot has no minimum screen');
     }
 });
 

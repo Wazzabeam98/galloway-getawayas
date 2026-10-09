@@ -2939,18 +2939,8 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'menu', message: GUEST_SCREEN_COPY.menuRequiredGate });
     }
 
-    // A shared table's minimum can't exceed its capacity ceiling: a session that
-    // needs at least four but seats at most two could never be booked. Only a
-    // shared table has a minimum (a private hire is one booking whatever the head
-    // count), so the rule is gated on the offering including shared. A minimum of
-    // 1 (or blank) is no minimum and never trips this.
-    if (draft.audience === 'guest' && draft.shape === 'slot' && (draft.slotOffer === 'shared' || draft.slotOffer === 'both')) {
-        const min = Number(draft.slotMinPeople);
-        const cap = Number(draft.slotCapacity);
-        if (Number.isFinite(min) && min > 1 && Number.isFinite(cap) && cap >= 1 && min > cap) {
-            problems.push({ field: 'slot_min', message: GUEST_SCREEN_COPY.slotMinOverCapacity });
-        }
-    }
+    // The per-person minimum was removed at sign-up (Liam, 9 Oct 2026), so there is
+    // no longer a min ≤ capacity rule to check here — the wizard always writes 1.
 
     for (const problem of pricingProblems(draft)) problems.push(problem);
     for (const problem of extrasProblems(draft)) problems.push(problem);

@@ -45,7 +45,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'business' | 'b_area'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -74,7 +74,7 @@ const GUEST_STEP_KEYS: StepKey[] = [
     // a listed key). It is retired for guests too, by its case returning false and
     // by its removal from the When section rail; it is never shown, but it must
     // remain listed here or it leaks into host flows.
-    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu', 'g_title', 'g_expect',
+    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_menu', 'g_title', 'g_expect',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -86,10 +86,7 @@ export interface StepContext {
     shape?: string | null;
     // What a slot provider offers: 'private' (the whole session for one group),
     // 'shared' (several people join, per person), 'both' (either — each time sold
-    // as whichever books first), null = not yet answered. The per-person MINIMUM
-    // screen (g_slot_min) exists only when a SHARED table is offered ('shared' or
-    // 'both') — a whole-group flat price is one booking regardless of head count,
-    // so a minimum-people rule is meaningless for private-only. Carried into the
+    // as whichever books first), null = not yet answered. Carried into the
     // context so the step model can add or drop that one screen, the same way
     // shape adds or drops g_capacity.
     slotOffer?: 'private' | 'shared' | 'both' | null;
@@ -188,11 +185,6 @@ const ALL_STEPS: Step[] = [
     // the schedule; its own screen now, one question.
     { key: 'g_slot_basis', label: 'Basis', title: GUEST_SCREEN_COPY.slotBasisQuestion },
     { key: 'g_capacity', label: 'Guests', title: 'How many guests?' },
-    // Per-person slots only: the smallest group a single booking may be. Its own
-    // stepper screen (like years/guests), default 1 = no minimum. Sits between
-    // the ceiling (g_capacity) and the price, so a host sets "up to N, at least
-    // M" as one thought. Dropped entirely for a private/whole-group slot.
-    { key: 'g_slot_min', label: 'Minimum', title: GUEST_SCREEN_COPY.slotMinQuestion },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
     // g_title (the listing's name) used to sit HERE, first in the Details section
     // near the end. It moved to the top of the About-you section (see above) so a
@@ -317,23 +309,6 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
                 return shape === 'slot' && !slotDurationPerItem(ctx.category) && !slotMixedDuration(ctx.category);
             case 'g_capacity':
                 return shape === 'comes_to_you' || (shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx));
-            // The per-person minimum — a slot that is priced per person (the
-            // shared answer). A private/whole-group slot is one booking whatever
-            // the head count, so it has no minimum-people rule and no screen.
-            //
-            // For a fixed-basis slot that answer is the provider-level slotOffer;
-            // null (not yet answered) hides it too — the basis screen comes first.
-            // A MIXED provider (yoga, pottery, painting) answers shared-vs-private
-            // PER ITEM, so slotOffer is never set — but a come-to-me mixed provider
-            // can still run a shared class (which is exactly why its capacity screen
-            // is shown), and that class needs a minimum. The minimum is capacity's
-            // twin, so it must appear on the same path. A TRAVELLING mixed provider
-            // sells only private sessions, so it correctly keeps no minimum.
-            case 'g_slot_min':
-                return shape === 'slot' && (
-                    ctx.slotOffer === 'shared' || ctx.slotOffer === 'both'
-                    || (slotMixedDuration(ctx.category) && !travellingMixedSlot(ctx))
-                );
             // The booking-shape question — only for a category that never declared
             // one ("something else"). A real sub-type settled its shape at the
             // picker, so it never sees this. Sits before the location step, which
@@ -454,7 +429,7 @@ const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     // A made-to-order's notice period is its When.
     { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_notice', 'g_slot_length'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
-    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu'] },
+    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_capacity', 'g_menu'] },
     { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
     // Finish is now a single screen: the account, with one responsibility
     // confirmation folded in above submit. The old checks and contact steps that
@@ -612,7 +587,6 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_shape: [],
     g_slot_basis: [],
     g_capacity: [],
-    g_slot_min: [],
     g_menu: [],
     g_title: [],
     g_expect: [],
@@ -645,10 +619,6 @@ const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     // there rather than back on the location screen.
     g_area: ['areas', 'fulfilment', 'collection_address'],
     g_slot_hours: ['availability'],
-    // The per-person minimum must not exceed the capacity ceiling; that problem
-    // belongs to the minimum screen, so a greyed Next and "go to first problem"
-    // both land here.
-    g_slot_min: ['slot_min'],
     // The priced-item requirement belongs to the pricing step, so a greyed Next
     // and "go to first problem" both land here.
     g_menu: ['menu'],
