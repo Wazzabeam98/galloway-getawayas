@@ -16,7 +16,7 @@ import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
 import { buildStreetAddress } from '@/lib/address';
-import { OFFERED_UNITS, unitLabel } from '@/lib/serviceOrders';
+import { UNIT_NAME, UNIT_HINT, chargeUnitsFor, unitChoices, unitPer, priceQuestion } from '@/lib/pricingUnits';
 import { slotOfferingFromUnits, type SlotOffering } from '@/lib/serviceSlots';
 import { stepHeadings } from '@/lib/experienceSteps';
 import Env from '@/config/Env';
@@ -454,12 +454,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         name: string;
         description: string;
         price: string;
-        // How it's priced: 'fixed' (a single price, the default), 'range' (price =
-        // from, priceMax = to) or 'enquiry' (price on enquiry, no figure). Only a
-        // fixed offering is instant-booked.
-        priceMode?: string;
-        priceMax?: string;
-        // 'flat' | 'person' | 'night' | 'hour' | 'ticket' | 'item'.
+        // How it's charged — lib/pricingUnits: 'person' | 'flat' (per group) |
+        // 'event' | 'item'; legacy 'night' | 'hour' | 'ticket' still load.
         unit: string;
         // The item's own photo, a storage path. The gallery is per item now.
         image: string | null;
@@ -488,10 +484,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // unit choice. An "Add another option" item leaves this false and is asked.
     const [unitLocked, setUnitLocked] = useState(false);
     const [payoutOpen, setPayoutOpen] = useState(false);
-    // The pricing-basis picker (the "How this is priced" sub-flow), opened from a
-    // row on the price step — the last native <select> on this flow, replaced with
-    // the coverage-picker pattern so it reads like the rest of the screen.
-    const [unitPickerOpen, setUnitPickerOpen] = useState(false);
 
     // The section rail collapses to an icon-only strip, Airbnb-style. Kept in
     // state so it stays as you move between screens (steps are the same mounted
@@ -633,6 +625,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // they had (one flat item → 'private', one per-person item → 'shared'), never
     // silently upgraded to 'both'.
     const [slotOffer, setSlotOffer] = useState<SlotOffering | null>(null);
+    // Comes-to-you only (g_charge): how they charge — any of 'person', 'flat'
+    // (per group), 'event', 'item'. Each offering then picks one of these, and
+    // capacity is asked only when it includes per person or per group. Derived
+    // from the item units for a returning provider.
+    const [chargeUnits, setChargeUnits] = useState<string[]>([]);
     // Maximum guests — the group size. Asked on its own screen in the Pricing
     // section (g_capacity). For a slot it is written to the slot_capacity column
     // (a shared slot sells that many seats via sessionCapacity; a private slot
@@ -876,7 +873,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // The menu, if they have one. Loaded in the order they set.
                     const { data: itemRows } = await supabase
                         .from('service_provider_items')
-                        .select('id, name, description, price, price_mode, price_max, unit, image, sort_order, created_at, duration_minutes, fulfilment')
+                        .select('id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment')
                         .eq('provider_id', existing.id)
                         .order('sort_order', { ascending: true })
                         .order('created_at', { ascending: true });
@@ -886,8 +883,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             name: r.name || '',
                             description: r.description || '',
                             price: r.price === null || r.price === undefined ? '' : String(r.price),
-                            priceMode: (['fixed', 'range', 'enquiry'].indexOf(String(r.price_mode)) !== -1 ? String(r.price_mode) : 'fixed'),
-                            priceMax: r.price_max === null || r.price_max === undefined ? '' : String(r.price_max),
                             unit: r.unit || 'flat',
                             image: r.image || null,
                             duration: r.duration_minutes === null || r.duration_minutes === undefined ? '' : String(r.duration_minutes),
@@ -940,6 +935,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // that item is — 'private' or 'shared' — never flipped.
                     if (ex.shape === 'slot') {
                         setSlotOffer(slotOfferingFromUnits((itemRows || []).map((r: any) => r.unit)));
+                    }
+                    if (ex.shape === 'comes_to_you') {
+                        const offered = chargeUnitsFor('comes_to_you') as string[];
+                        setChargeUnits(offered.filter((u) => (itemRows || []).some((r: any) => String(r.unit) === u)));
                     }
                     if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
                         // The category key is persisted now (guest_details.category),
@@ -1266,6 +1265,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             if (d.collectionPostcode) setCollectionPostcode(d.collectionPostcode);
             if (d.slotOffer) setSlotOffer(d.slotOffer);
             else if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotOffer(d.slotPrivate === true ? 'private' : 'shared');
+            if (Array.isArray(d.chargeUnits)) setChargeUnits(d.chargeUnits.map(String));
             if (d.maxGuests) setMaxGuests(d.maxGuests);
             if (d.capacityNA) setCapacityNA(true);
             if (d.slotLength) setSlotLength(d.slotLength);
@@ -1329,7 +1329,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             const restoreTrade = d.trade || tradeFromUrl;
             const restoreCtx: StepContext | undefined =
                 audienceForTrade(restoreTrade) === 'guest'
-                    ? { category: d.guestCategory, shape: d.shape, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null), fulfilment: d.fulfilment }
+                    ? { category: d.guestCategory, shape: d.shape, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null), fulfilment: d.fulfilment, chargeUnits: Array.isArray(d.chargeUnits) ? d.chargeUnits : null }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
@@ -1423,7 +1423,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // no price is not persisted — a guidance shape the host has
                     // opened but not priced writes nothing to the draft, so an
                     // abandoned one is never restored (the stepper rule).
-                    items: shape === 'slot' ? items.filter((r) => (r.priceMode || 'fixed') === 'enquiry' || Number(r.price) > 0) : items,
+                    items: shape === 'slot' ? items.filter((r) => Number(r.price) > 0) : items,
                     providerName, headshot, dietaryNote, dietaryOptions,
                     // The Airbnb-shaped content answers.
                     yearsDoing, listingTitle, professionalTitle, qualifications, recognition,
@@ -1436,7 +1436,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // address is the provider's own, in their own browser's draft
                     // — never shared, and it's a private column server-side.
                     fulfilment, collectionStreet, collectionTown, collectionPostcode,
-                    slotOffer, maxGuests, capacityNA, slotLength, schedule,
+                    slotOffer, chargeUnits, maxGuests, capacityNA, slotLength, schedule,
                     // The checks they've ticked so far.
                     declarations,
                 })
@@ -1456,7 +1456,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         whatToExpect, phases,
         guestGroup, guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
-        slotOffer, maxGuests, capacityNA, slotLength, schedule,
+        slotOffer, chargeUnits, maxGuests, capacityNA, slotLength, schedule,
         declarations,
     ]);
 
@@ -1932,12 +1932,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // made-to-order fork: a screenful of large ChoiceCards and nothing else, so
     // they centre vertically on desktop the same way, and by the same three
     // coordinated pieces (panel, fieldset, section). Mobile keeps its stack.
-    const guestSlotChoice = isGuest && shape === 'slot' && (step === 'g_slot_basis' || step === 'g_slot_where');
+    const guestSlotChoice = isGuest && ((shape === 'slot' && (step === 'g_slot_basis' || step === 'g_slot_where')) || step === 'g_charge');
     // group falls back to the category's own group, so a restored draft (which
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
         isGuest
-            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, slotOffer, fulfilment }
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, slotOffer, fulfilment, chargeUnits }
             : undefined;
 
     const problemFor = (field: string) => {
@@ -2079,6 +2079,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             // than leaving a greyed button with no reason.
             : step === 'g_slot_basis' && slotOffer === null
             ? GUEST_SCREEN_COPY.slotBasisGate
+            : step === 'g_charge' && chargeUnits.length === 0
+            ? GUEST_SCREEN_COPY.chargeGate
             // The come-to-me / travel fork, same rule.
             : step === 'g_slot_where' && !fulfilment
             ? GUEST_SCREEN_COPY.slotWhereGate
@@ -3227,27 +3229,17 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             const isTimed = (unit: string) => (slotPerItem || slotMixed) && String(unit) === 'flat';
             const valid = items
                 .map((it, i) => {
-                    // The pricing shape, validated the same way the save route does:
-                    // a fixed price, a range (from > 0 and a larger to) or on enquiry
-                    // (price 0). A broken range falls back to a fixed price.
-                    const rawMode = String(it.priceMode || 'fixed');
-                    let priceMode = ['fixed', 'range', 'enquiry'].indexOf(rawMode) !== -1 ? rawMode : 'fixed';
+                    // A fixed price (ranges and price on enquiry were dropped, 9 Oct
+                    // 2026): price_mode/price_max are no longer written, so a new
+                    // row takes the column default ('fixed').
                     const typed = String(it.price || '').trim() !== '' ? Number(it.price) : 0;
-                    let price = typed > 0 ? typed : 0;
-                    let priceMax: number | null = null;
-                    if (priceMode === 'enquiry') { price = 0; }
-                    else if (priceMode === 'range') {
-                        const to = Number(it.priceMax);
-                        if (price > 0 && to > price) priceMax = to; else priceMode = 'fixed';
-                    } else { priceMode = 'fixed'; }
+                    const price = typed > 0 ? typed : 0;
                     return {
                         id: it.id,
                         provider_id: id,
                         name: String(it.name || '').trim(),
                         description: String(it.description || '').trim() || null,
                         price,
-                        price_mode: priceMode,
-                        price_max: priceMax,
                         // A travelling item is always private (flat), whatever the row
                         // carries — nobody joins a class in someone else's cottage.
                         unit: shape === 'slot'
@@ -3262,7 +3254,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         active: true,
                     };
                 })
-                .filter((r) => r.name && (r.price_mode === 'enquiry' || r.price > 0));
+                .filter((r) => r.name && r.price > 0);
 
             // ALL-OR-NOTHING for the per-treatment shape: a massage treatment
             // without a length must never reach the database, or it would fall back
@@ -3628,7 +3620,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         have no section, so it shows nothing there. */}
                     {currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_where' || step === 'g_slot_length' || step === 'g_title') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_charge' || step === 'g_slot_where' || step === 'g_slot_length' || step === 'g_title') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
@@ -3656,7 +3648,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'g_notice' || step === 'g_shape') ? 'mb-2 text-center'
+                            + ((step === 'g_notice' || step === 'g_shape' || step === 'g_charge') ? 'mb-2 text-center'
                                 : (step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_slot_basis' || step === 'g_slot_where' || step === 'g_title') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
                                    Airbnb) with a tight gap so "Add at least 3 photos."
@@ -3691,9 +3683,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     )}
                     {/* The two pickers-with-a-why carry a line under the heading,
                         the same pairing as the capacity and minimum screens. */}
-                    {isGuest && (step === 'g_shape' || step === 'g_notice') && (
+                    {isGuest && (step === 'g_shape' || step === 'g_notice' || step === 'g_charge') && (
                         <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
-                            {step === 'g_shape' ? GUEST_SCREEN_COPY.shapeSubtext : GUEST_SCREEN_COPY.noticeSubtext}
+                            {step === 'g_shape' ? GUEST_SCREEN_COPY.shapeSubtext : step === 'g_charge' ? GUEST_SCREEN_COPY.chargeSubtext : GUEST_SCREEN_COPY.noticeSubtext}
                         </p>
                     )}
                     {/* Max guests renders its heading here, at the top, exactly
@@ -4360,17 +4352,22 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // (session vs person) as a step in the sub-flow. private/shared
                     // stay a single item whose unit is derived, never asked.
                     const slotBoth = isSlot && slotOffer === 'both';
-                    const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null, duration: '' };
+                    // The units a non-slot offering may use: a made-to-order menu is
+                    // per item; a "something else" provider uses the ones they ticked
+                    // on g_charge; a named comes-to-you category (a chef) chooses per
+                    // offering from all four, as before. A slot's unit comes from the
+                    // private/shared answer, not from here.
+                    const askedCharge = guestNeedsShapeChoice(guestCategory) && chargeUnits.length > 0;
+                    const allowedUnits: string[] = shape === 'made_to_order'
+                        ? (chargeUnitsFor('made_to_order') as string[])
+                        : (askedCharge ? chargeUnits : (chargeUnitsFor(shape) as string[]));
+                    const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: isSlot ? 'flat' : (allowedUnits[0] || 'flat'), image: null as string | null, duration: '' };
 
-                    const UNIT_WORD: Record<string, string> = GUEST_SCREEN_COPY.priceUnitLabels;
-                    const unitWord = (r: { unit: string }) => isSlot
-                        ? (String(r.unit) === 'person' ? 'per person' : 'for the session')
-                        : (UNIT_WORD[r.unit || 'flat'] || '');
-                    const rowSummary = (r: { price: string; unit: string; duration?: string; priceMode?: string; priceMax?: string }) => {
+                    // "per person", "per group", "per event" — the unit as the
+                    // provider chose it (lib/pricingUnits), never "for the session".
+                    const unitWord = (r: { unit: string }) => unitPer(shape === 'made_to_order' ? 'item' : (r.unit || 'flat'));
+                    const rowSummary = (r: { price: string; unit: string; duration?: string }) => {
                         const p = String(r.price || '').trim();
-                        const rmode = r.priceMode || 'fixed';
-                        if (rmode === 'enquiry') return 'Price on enquiry';
-                        if (rmode === 'range' && p !== '' && Number(p) > 0 && Number(r.priceMax) > Number(p)) return '£' + p + '–£' + String(r.priceMax);
                         if (!(p !== '' && Number(p) > 0)) return GUEST_SCREEN_COPY.menuRowPrompt;
                         // For a treatment, the length is the useful qualifier ("£60 ·
                         // 60 min"), not a per-person/session unit that never varies.
@@ -4387,11 +4384,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // thing', 'Per person') has a name from the start, so keying the tick off
                     // the name alone showed it as done while it still read "Name it
                     // and set a price". This is the completeness the row displays.
-                    const isRowComplete = (r: { name: string; price: string; priceMode?: string; priceMax?: string }) => {
+                    const isRowComplete = (r: { name: string; price: string }) => {
                         if (String(r.name || '').trim() === '') return false;
-                        const rmode = r.priceMode || 'fixed';
-                        if (rmode === 'enquiry') return true;
-                        if (rmode === 'range') return Number(r.price) > 0 && Number(r.priceMax) > Number(r.price);
                         return Number(r.price) > 0;
                     };
 
@@ -4418,7 +4412,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     const extraRows = items.map((r, i) => ({ r, i })).filter(({ i }) => !usedIdx.has(i));
 
                     const rows = items;
-                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'priceMode' | 'priceMax' | 'unit' | 'duration' | 'fulfilment', val: string) =>
+                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit' | 'duration' | 'fulfilment', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
                     const openEdit = (i: number) => { setMenuIndex(i); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
@@ -4439,10 +4433,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // draft as before (its final save drops it).
                     const closeItem = () => {
                         setItems((prev) => prev.filter((r) => {
-                            // An offering is worth keeping if it's priced (fixed/range)
-                            // or on enquiry; a slot drops a bare priceless row.
-                            const priced = (r.priceMode || 'fixed') === 'enquiry' || Number(r.price) > 0;
-                            return isSlot ? priced : (String(r.name || '').trim() !== '' || String(r.price || '').trim() !== '' || (r.priceMode || 'fixed') === 'enquiry');
+                            // A slot drops a bare priceless row; a full menu keeps a
+                            // named-but-unpriced draft (its final save drops it).
+                            const priced = Number(r.price) > 0;
+                            return isSlot ? priced : (String(r.name || '').trim() !== '' || String(r.price || '').trim() !== '');
                         }));
                         setMenuIndex(null); setUnitLocked(false);
                     };
@@ -4451,14 +4445,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     const it = menuIndex !== null ? items[menuIndex] : null;
                     const nameFilled = !!it && String(it.name || '').trim() !== '';
                     const priceNum = it ? (Number(it.price) || 0) : 0;
-                    // Complete by mode: a fixed price > 0, a range (from > 0 and a
-                    // larger to), or price-on-enquiry (nothing to fill).
-                    const pmodeNow = it ? (it.priceMode || 'fixed') : 'fixed';
-                    const priceFilled = pmodeNow === 'enquiry'
-                        ? true
-                        : pmodeNow === 'range'
-                            ? (priceNum > 0 && Number(it?.priceMax) > priceNum)
-                            : priceNum > 0;
+                    const priceFilled = priceNum > 0;
                     // PER-ITEM LOCATION. A provider who answered 'both' to "where does
                     // it happen?" (fulfilment === 'both') sets each item's location in
                     // its own sub-flow. So `travels` becomes a per-ITEM fact here — a
@@ -4487,14 +4474,20 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // A 'both' provider is asked the item's LOCATION right after its
                     // name — before booked/duration, which depend on whether it travels.
                     const locStep: Array<'location'> = locationPerItem ? ['location'] : [];
+                    // The unit is asked BEFORE the price (9 Oct 2026), so the price
+                    // question can name it — "How much per person?". A non-slot
+                    // offering gets the unit step when the provider charges more
+                    // than one way (or the row is on a legacy unit).
+                    const itemUnitChoices = it ? unitChoices(allowedUnits, String(it.unit || '')) : allowedUnits;
+                    const menuUnitStep = !isSlot && shape !== 'made_to_order' && itemUnitChoices.length > 1;
                     const stepKinds: Array<'name' | 'location' | 'booked' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = forcedOneToOneItem
                         ? ['name', ...locStep, 'duration', 'price', 'desc', 'photo']
                         : mixedChoiceItem
                             ? (mixedTimed
                                 ? ['name', ...locStep, 'booked', 'duration', 'price', 'desc', 'photo']
                                 : ['name', ...locStep, 'booked', 'price', 'desc', 'photo'])
-                            : (slotBoth && !unitLocked)
-                                ? ['name', 'price', 'unit', 'desc', 'photo']
+                            : ((slotBoth && !unitLocked) || menuUnitStep)
+                                ? ['name', 'unit', 'price', 'desc', 'photo']
                                 : ['name', ...locStep, 'price', 'desc', 'photo'];
                     const LAST = stepKinds.length - 1;
                     const stepKind = stepKinds[menuStep] ?? 'name';
@@ -4601,7 +4594,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                             : stepKind === 'location' ? GUEST_SCREEN_COPY.menuLocationTitle
                                             : stepKind === 'booked' ? GUEST_SCREEN_COPY.menuBookedTitle
                                             : stepKind === 'duration' ? 'How long is it?'
-                                                : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
+                                                : stepKind === 'price' ? priceQuestion(it.unit, forcedOneToOneItem || mixedTimed)
                                                     : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
                                                         : stepKind === 'desc' ? GUEST_SCREEN_COPY.menuDescTitle
                                                             : GUEST_SCREEN_COPY.menuPhotoTitle
@@ -4729,110 +4722,17 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                         </div>
                                     )}
                                     {stepKind === 'price' && (() => {
-                                        const pmode = it.priceMode || 'fixed';
                                         return (
                                         <div>
-                                            {/* How it's priced — one price, a range, or on
-                                                enquiry. A range and on-enquiry offering isn't
-                                                instant-booked; the guest messages for a price. */}
-                                            <div className="mx-auto grid max-w-md grid-cols-3 gap-2" role="radiogroup" aria-label="How it’s priced">
-                                                {[['fixed', 'One price'], ['range', 'A range'], ['enquiry', 'On enquiry']].map(([v, l]) => (
-                                                    <button key={v} type="button" role="radio" aria-checked={pmode === v}
-                                                        onClick={() => setField(menuIndex, 'priceMode', v)}
-                                                        className={'rounded-xl border-2 px-3 py-2 text-sm font-semibold transition '
-                                                            + (pmode === v ? 'border-emerald-600 bg-emerald-50/60 text-slate-900' : 'border-slate-200 text-slate-600 hover:border-slate-300')}>
-                                                        {l}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                            <div className="mt-8">
-                                            {pmode === 'enquiry' ? (
-                                                <p className="mx-auto max-w-md text-center text-sm text-slate-500 [text-wrap:balance]">
-                                                    You’ll agree the price with the guest when they message you. Guests see “Price on enquiry”.
-                                                </p>
-                                            ) : pmode === 'range' ? (
-                                                <div className="flex items-end justify-center gap-4">
-                                                    {([['price', 'From'], ['priceMax', 'To']] as const).map(([field, label]) => (
-                                                        <label key={field} className="flex flex-col items-center gap-1">
-                                                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-                                                            <span className="flex items-center gap-1 rounded-xl border-2 border-slate-200 px-3 py-2 focus-within:border-emerald-600">
-                                                                <span className="text-xl font-bold text-slate-400">£</span>
-                                                                <input type="text" inputMode="decimal" autoComplete="off"
-                                                                    value={field === 'price' ? it.price : (it.priceMax || '')}
-                                                                    onChange={(e) => setField(menuIndex, field, e.target.value)}
-                                                                    className="w-20 bg-transparent text-center text-2xl font-extrabold tabular-nums text-slate-900 placeholder:text-slate-300 focus:outline-none" placeholder="0" />
-                                                            </span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                            /* A big numeral you TYPE into — the £ at its
-                                               baseline, Airbnb's price register. */
+                                            {/* A big numeral you TYPE into — the £ at its
+                                                baseline, Airbnb's price register. The unit
+                                                was settled before this screen (the
+                                                charging answer, or the unit step), and the
+                                                question names it: "How much per person?". */}
                                             <BigAmountInput value={it.price}
                                                 onChange={(v) => setField(menuIndex, 'price', v)}
                                                 placeholder={GUEST_SCREEN_COPY.menuPricePlaceholder}
-                                                ariaLabel={GUEST_SCREEN_COPY.menuPriceTitle} />
-                                            )}
-                                            </div>
-                                            {pmode !== 'enquiry' && (<>
-                                            {/* Price type — the same options and the same
-                                                model as before, but no native <select>: a
-                                                current-choice HubRow that opens a sub-flow of
-                                                selectable rows, matching the coverage picker.
-                                                A private/shared slot derives it from the
-                                                answer and just states the basis; a 'both' slot
-                                                asks it on its own step next, so nothing here. */}
-                                            <div className="mt-8">
-                                                {isSlot ? (
-                                                    slotBoth
-                                                        ? null
-                                                        : unitWord(it)
-                                                            ? <p className="text-center text-sm text-slate-500">Priced {unitWord(it)}</p>
-                                                            : null
-                                                ) : (
-                                                    <>
-                                                        <div className="mx-auto max-w-sm">
-                                                            <HubRow
-                                                                filled
-                                                                label={GUEST_SCREEN_COPY.menuPriceTypeLabel}
-                                                                prompt=""
-                                                                summary={UNIT_WORD[it.unit || 'flat']}
-                                                                onOpen={() => setUnitPickerOpen(true)}
-                                                            />
-                                                        </div>
-                                                        <SubFlowModal
-                                                            open={unitPickerOpen}
-                                                            title={GUEST_SCREEN_COPY.menuPriceTypeTitle}
-                                                            onClose={() => setUnitPickerOpen(false)}
-                                                            saveLabel={GUEST_SCREEN_COPY.save}
-                                                        >
-                                                            <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuPriceTypeLabel} className="mx-auto w-full max-w-md space-y-2">
-                                                                {((OFFERED_UNITS as string[]).includes(it.unit || 'flat') ? (OFFERED_UNITS as string[]) : [...(OFFERED_UNITS as string[]), (it.unit || 'flat')]).map((u) => {
-                                                                    const on = (it.unit || 'flat') === u;
-                                                                    return (
-                                                                        <button
-                                                                            key={u}
-                                                                            type="button"
-                                                                            role="radio"
-                                                                            aria-checked={on}
-                                                                            onClick={() => { setField(menuIndex, 'unit', u); setUnitPickerOpen(false); }}
-                                                                            className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition '
-                                                                                + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
-                                                                        >
-                                                                            <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-full border transition '
-                                                                                + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
-                                                                                <Check className="h-4 w-4" strokeWidth={3} />
-                                                                            </span>
-                                                                            <span className="font-semibold text-slate-900">{UNIT_WORD[u]}</span>
-                                                                        </button>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        </SubFlowModal>
-                                                    </>
-                                                )}
-                                            </div>
-                                            </>)}
+                                                ariaLabel={priceQuestion(it.unit, forcedOneToOneItem || mixedTimed)} />
                                             {/* The payout, presented the way Airbnb's is:
                                                 a quiet "You keep £X" line, calm by default,
                                                 the maths only when the chevron is tapped. */}
@@ -4841,7 +4741,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                                     <button type="button" onClick={() => setPayoutOpen((o) => !o)}
                                                         aria-expanded={payoutOpen}
                                                         className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-800">
-                                                        {GUEST_SCREEN_COPY.payoutKeepLine} £{keep.toFixed(2)}
+                                                        {GUEST_SCREEN_COPY.payoutKeepLine} £{keep.toFixed(2)}{(forcedOneToOneItem || mixedTimed) ? '' : ' ' + unitWord(it)}
                                                         <ChevronDown className={'h-4 w-4 transition-transform ' + (payoutOpen ? 'rotate-180' : '')} />
                                                     </button>
                                                     {payoutOpen && (
@@ -4872,10 +4772,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                         gate on this screen. */}
                                     {stepKind === 'unit' && (
                                         <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuSlotUnitTitle} className="mx-auto w-full max-w-md space-y-3">
-                                            {([
-                                                ['flat', GUEST_SCREEN_COPY.menuSlotUnitFlat, GUEST_SCREEN_COPY.menuSlotUnitFlatHint],
-                                                ['person', GUEST_SCREEN_COPY.menuSlotUnitPerson, GUEST_SCREEN_COPY.menuSlotUnitPersonHint],
-                                            ] as const).map(([u, label, hint]) => {
+                                            {(isSlot
+                                                ? ([
+                                                    ['flat', GUEST_SCREEN_COPY.menuSlotUnitFlat, GUEST_SCREEN_COPY.menuSlotUnitFlatHint],
+                                                    ['person', GUEST_SCREEN_COPY.menuSlotUnitPerson, GUEST_SCREEN_COPY.menuSlotUnitPersonHint],
+                                                ] as Array<[string, string, string]>)
+                                                : itemUnitChoices.map((u) => [u, UNIT_NAME[u] || u, UNIT_HINT[u] || ''] as [string, string, string])
+                                            ).map(([u, label, hint]) => {
                                                 const on = String(it.unit) === u;
                                                 return (
                                                     <button
@@ -5054,6 +4957,22 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             { v: 'both', t: GUEST_SCREEN_COPY.slotBasisBothLabel, d: GUEST_SCREEN_COPY.slotBasisBothHint },
                         ] as const).map((o) => (
                             <ChoiceCard key={o.v} selected={slotOffer === o.v} onSelect={() => applyOffer(o.v)} title={o.t} hint={o.d} />
+                        ))}
+                    </div>
+                </section>
+                )}
+
+                {/* HOW A COMES-TO-YOU PROVIDER CHARGES — any of the four, before
+                    capacity and the price (9 Oct 2026). Per event and per item
+                    need no capacity, so a provider who ticks only those skips it.
+                    Each offering on the price screen then uses one of these. */}
+                {onStep('g_charge') && isGuest && (
+                <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-2xl md:mx-auto">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {(chargeUnitsFor('comes_to_you') as string[]).map((u) => (
+                            <ChoiceCard key={u} selected={chargeUnits.includes(u)}
+                                onSelect={() => setChargeUnits((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : (chargeUnitsFor('comes_to_you') as string[]).filter((x) => x === u || prev.includes(x))))}
+                                title={UNIT_NAME[u]} hint={UNIT_HINT[u]} />
                         ))}
                     </div>
                 </section>
@@ -6290,7 +6209,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 const catLabel = guestCategoryByKey(guestCategory)?.label || GUEST_SCREEN_COPY.finishSummaryCategory;
                 const priceVal = (items || [])
                     .filter((i) => String(i.price || '').trim())
-                    .map((i) => '£' + String(i.price).trim() + (unitLabel(i.unit) ? ' ' + unitLabel(i.unit) : ''))
+                    .map((i) => '£' + String(i.price).trim() + (Number(i.duration) > 0 ? '' : ' ' + unitPer(i.unit)))
                     .join(', ') || '—';
                 // A guest's areas hold the region label in `town` (set from
                 // GUEST_REGIONS when a region is picked), so read that directly.
@@ -6645,6 +6564,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             // The pricing basis must be answered before moving on —
                             // it sets the unit and decides the next screen.
                             : step === 'g_slot_basis' ? slotOffer === null
+                            // How a comes-to-you provider charges — at least one.
+                            : step === 'g_charge' ? chargeUnits.length === 0
                             // The come-to-me / travel fork sets the location screen.
                             : step === 'g_slot_where' ? !fulfilment
                             // A 'both' slot must have BOTH products priced, or a

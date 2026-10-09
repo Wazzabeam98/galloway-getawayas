@@ -17,7 +17,7 @@ import { isFillingUp, spotsLeftLabel } from '@/lib/spotsLeft';
 import { timeRange24 } from '@/lib/timeRange';
 import type { AddressParts } from '@/components/address/AddressLookup';
 
-export interface DialogItem { id: string; name: string; price: number; priceMode?: string; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; duration_minutes?: number | null; }
+export interface DialogItem { id: string; name: string; price: number; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; duration_minutes?: number | null; }
 export interface DialogOpenSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 export interface DialogDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 
@@ -89,7 +89,7 @@ export default function BookingDialog({
     // Only FIXED-price options are bookable here; a range or price-on-enquiry
     // offering has no settled price to charge and is reached through "Message the
     // provider" in the listing body instead (and refused server-side anyway).
-    const orderedItems = useMemo(() => items.filter((i) => (i.priceMode || 'fixed') === 'fixed').sort((a, b) => a.price - b.price), [items]);
+    const orderedItems = useMemo(() => [...items].sort((a, b) => a.price - b.price), [items]);
     const [itemId, setItemId] = useState<string>(orderedItems[0]?.id || '');
     // The Guest Terms tick, when this guest still owes them — the Book button is
     // held until it is ticked (the panel records the acceptance before the order).
@@ -289,7 +289,7 @@ export default function BookingDialog({
     };
 
     const lineTotal = item ? (perPerson ? item.price * people : item.price) : 0;
-    const priceEach = item ? itemPriceLabel(item.price, item.unit) : '';
+    const priceEach = item ? itemPriceLabel(item.price, item.unit, (item.duration_minutes ?? 0) > 0) : '';
 
     const submit = () => {
         if (!selected || !item) return;
@@ -344,7 +344,7 @@ export default function BookingDialog({
                                         {orderedItems.map((it) => (
                                             <button key={it.id} type="button" onClick={() => { setItemId(it.id); setSelKey(null); }}
                                                 className={`rounded-full border px-3 py-1.5 text-sm font-medium ${itemId === it.id ? 'border-emerald-600 bg-emerald-700 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
-                                                {it.name} · {itemPriceLabel(it.price, it.unit)}
+                                                {it.name} · {itemPriceLabel(it.price, it.unit, (it.duration_minutes ?? 0) > 0)}
                                             </button>
                                         ))}
                                     </div>

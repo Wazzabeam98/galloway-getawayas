@@ -6,55 +6,37 @@ import type { MpProvider, MpItem } from '@/lib/experiencesData';
 import { extraGuestsLine, hasExtraGuests } from '@/lib/extraGuests';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { durationWords } from '@/lib/durationWords';
+import { guestUnitSuffix } from '@/lib/pricingUnits';
 
-const UNIT_SUFFIX: Record<string, string> = {
-    person: ' / guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '', event: ' / event',
-};
+// A timed one-price offering (a massage, a private session with its own length)
+// reads by its length, not "/ group" — see guestUnitSuffix.
+const isTimed = (item: { duration_minutes?: number | null }): boolean => item.duration_minutes != null && item.duration_minutes > 0;
 
 /** A money figure, "£45" or "£45.50". */
 function money(n: number): string {
     return '£' + (Number.isInteger(n) ? String(n) : n.toFixed(2));
 }
 
-/** Only a FIXED offering is instant-bookable; a range or price-on-enquiry
- *  offering routes the guest to "Message the provider". */
-export function itemIsBookable(item: MpItem): boolean {
-    return (item.priceMode || 'fixed') === 'fixed';
-}
-
-/** The per-offering price as the guest reads it, by mode: a single "£45",
- *  a range "£475–£675", or "Price on enquiry". The unit suffix ("/ guest")
- *  rides along for fixed and range. */
+/** The per-offering price as the guest reads it: "£30 / guest", "£220 / group",
+ *  "£475 / event", or a plain "£60" for a timed treatment. Only a fixed price is
+ *  ever listed (ranges and price on enquiry were dropped, 9 Oct 2026). */
 export function itemPriceDisplay(item: MpItem): string {
-    const mode = item.priceMode || 'fixed';
-    const suffix = UNIT_SUFFIX[item.unit] || '';
-    if (mode === 'enquiry') return 'Price on enquiry';
-    if (mode === 'range' && item.priceMax != null && item.priceMax > item.price) {
-        return money(item.price) + '–' + money(item.priceMax) + suffix;
-    }
-    return money(item.price) + suffix;
+    return money(item.price) + guestUnitSuffix(item.unit, isTimed(item));
 }
 
-/** "£45", "from £18", "from £20 / guest", or "Price on enquiry" — the card's
- *  price line. Skips price-on-enquiry offerings when picking the cheapest; shows
- *  "Price on enquiry" only when there is nothing priced at all. */
+/** "£45", "from £18", "from £20 / guest" — the card's price line. */
 export function fromPriceLabel(p: MpProvider): string {
-    if (p.allOnEnquiry) return 'Price on enquiry';
-    const priced = p.items.filter((i) => (i.priceMode || 'fixed') !== 'enquiry' && i.price > 0);
-    const cheapest = [...priced].sort((a, b) => a.price - b.price)[0];
-    const suffix = cheapest ? (UNIT_SUFFIX[cheapest.unit] || '') : '';
-    // "from" when there is more than one priced option, or a price-on-enquiry
-    // option sits alongside — either way the one figure isn't the whole story.
-    const more = priced.length > 1 || p.items.some((i) => (i.priceMode || 'fixed') === 'enquiry');
-    return (more ? 'from ' + money(p.priceFrom) : money(p.priceFrom)) + suffix;
+    const cheapest = [...p.items].sort((a, b) => a.price - b.price)[0];
+    const suffix = cheapest ? guestUnitSuffix(cheapest.unit, isTimed(cheapest)) : '';
+    return (p.items.length > 1 ? 'from ' + money(p.priceFrom) : money(p.priceFrom)) + suffix;
 }
 
 /** The headline price split so the unit can be set smaller and grey, Airbnb-style:
  *  money "£15" as the figure, per "/ guest" as quiet subtext (empty for a flat
  *  price). The caller adds any "From " prefix. */
-export function priceParts(price: number, unit: string): { money: string; per: string } {
+export function priceParts(price: number, unit: string, timed = false): { money: string; per: string } {
     const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));
-    return { money, per: (UNIT_SUFFIX[unit] || '').trim() };
+    return { money, per: guestUnitSuffix(unit, timed).trim() };
 }
 
 /** The one-line cancellation policy for the booking panel, where Airbnb shows it:
@@ -146,9 +128,9 @@ export function whereLine(p: MpProvider): string | null {
 }
 
 /** The per-item price as the guest reads it on a listing: "£30 / guest", "£45". */
-export function itemPriceLabel(price: number, unit: string): string {
+export function itemPriceLabel(price: number, unit: string, timed = false): string {
     const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));
-    return money + (UNIT_SUFFIX[unit] || '');
+    return money + guestUnitSuffix(unit, timed);
 }
 
 /** The per-item price line, with extra-guests pricing when a flat item has it:
@@ -160,7 +142,7 @@ export function itemPriceLineFor(item: MpItem, minAge: number | null | undefined
         included_guests: item.includedGuests, extra_adult_fee: item.extraAdultFee,
         extra_child_fee: item.extraChildFee, max_party: item.maxParty,
     }, minAge);
-    return line || itemPriceLabel(item.price, item.unit);
+    return line || itemPriceLabel(item.price, item.unit, isTimed(item));
 }
 
 /** The extra-guests detail as a subline beneath an item name (the base price
@@ -272,14 +254,6 @@ export function capacityLabel(capacity: number | null | undefined): string | nul
     if (n <= 0) return null;
     if (n === 1) return 'One person at a time';
     return 'Up to ' + n + ' people';
-}
-
-/** The full "per person / per night" phrase for prose. Empty for flat. */
-export function unitPhrase(unit: string): string {
-    const map: Record<string, string> = {
-        person: 'per person', night: 'per night', hour: 'per hour', ticket: 'per ticket', item: 'per item', flat: '', event: 'per event',
-    };
-    return map[unit] || '';
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

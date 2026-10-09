@@ -35,6 +35,7 @@ import {
     slotMixedDuration,
 } from '@/lib/serviceProviders';
 import { GUEST_SCREEN_COPY } from '@/lib/strings';
+import { needsCapacity } from '@/lib/pricingUnits';
 
 // The host trades keep 'trade' | 'business' | 'credentials' | 'prices' |
 // 'finish'. The guest experience used to collapse ALL of its application into
@@ -45,7 +46,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'business' | 'b_area'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_charge' | 'g_capacity' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -74,7 +75,7 @@ const GUEST_STEP_KEYS: StepKey[] = [
     // a listed key). It is retired for guests too, by its case returning false and
     // by its removal from the When section rail; it is never shown, but it must
     // remain listed here or it leaks into host flows.
-    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_menu', 'g_title', 'g_expect',
+    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_charge', 'g_capacity', 'g_menu', 'g_title', 'g_expect',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -99,6 +100,11 @@ export interface StepContext {
     // step model can derive that, rather than the wizard hiding the screen while
     // still asking underneath.
     fulfilment?: string | null;
+    // How a "something else" comes-to-you provider charges (g_charge): any of 'person', 'flat'
+    // (per group), 'event', 'item'. Carried so the capacity screen can drop for a
+    // provider who charges only per event or per item — a bouncy castle has no
+    // maximum group. Absent/empty = not yet answered (capacity stays).
+    chargeUnits?: string[] | null;
 }
 
 export interface Step {
@@ -184,6 +190,12 @@ const ALL_STEPS: Step[] = [
     // all, so it comes before both. Lifted off g_area, where it used to crowd
     // the schedule; its own screen now, one question.
     { key: 'g_slot_basis', label: 'Basis', title: GUEST_SCREEN_COPY.slotBasisQuestion },
+    // "Something else" only (a category with no inferred shape) that comes to
+    // the guest, the first screen of Pricing: how they charge — per person, per
+    // group, per event, per item (any of them). Asked BEFORE capacity, which only
+    // a per-person or per-group provider needs. The named categories infer their
+    // shape and units already and are never asked (Liam, 9 Oct 2026).
+    { key: 'g_charge', label: 'Charging', title: GUEST_SCREEN_COPY.chargeQuestion },
     { key: 'g_capacity', label: 'Guests', title: 'How many guests?' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
     // g_title (the listing's name) used to sit HERE, first in the Details section
@@ -307,8 +319,14 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // capacity is meaningless and drops — same as pure one-at-a-time.
             case 'g_slot_basis':
                 return shape === 'slot' && !slotDurationPerItem(ctx.category) && !slotMixedDuration(ctx.category);
+            case 'g_charge':
+                return shape === 'comes_to_you' && guestNeedsShapeChoice(ctx.category);
+            // Capacity, for a comes-to-you provider: always for a named category
+            // (unchanged); for "something else" only when they charge per person
+            // or per group (needsCapacity) — per event / per item has none.
             case 'g_capacity':
-                return shape === 'comes_to_you' || (shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx));
+                return (shape === 'comes_to_you' && (!guestNeedsShapeChoice(ctx.category) || needsCapacity(ctx.chargeUnits)))
+                    || (shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx));
             // The booking-shape question — only for a category that never declared
             // one ("something else"). A real sub-type settled its shape at the
             // picker, so it never sees this. Sits before the location step, which
@@ -429,7 +447,7 @@ const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     // A made-to-order's notice period is its When.
     { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_notice', 'g_slot_length'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
-    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_capacity', 'g_menu'] },
+    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_charge', 'g_capacity', 'g_menu'] },
     { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
     // Finish is now a single screen: the account, with one responsibility
     // confirmation folded in above submit. The old checks and contact steps that
@@ -586,6 +604,7 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_about: [],
     g_shape: [],
     g_slot_basis: [],
+    g_charge: [],
     g_capacity: [],
     g_menu: [],
     g_title: [],

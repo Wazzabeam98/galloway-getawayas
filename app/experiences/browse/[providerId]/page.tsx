@@ -52,14 +52,14 @@ function experienceJsonLd(p: MpProvider, reviews: ExperienceReviewsBlock, path: 
         ? (raw.length > 300 ? raw.slice(0, 297).trimEnd() + '…' : raw)
         : `${p.business_name} — a local experience${where}, Dumfries & Galloway. Booked and paid securely through Galloway Getaways.`;
 
-    // The cheapest priced option, and whether it is fixed — the same selection
-    // present.ts / the loader use for p.priceFrom, so a published price equals
-    // the displayed "from".
-    const priced = (p.items || []).filter((i) => (i.priceMode || 'fixed') !== 'enquiry' && i.price > 0);
+    // The cheapest option — the same selection the loader uses for p.priceFrom,
+    // so a published price equals the displayed "from". Every listed offering
+    // has a fixed price.
+    const priced = (p.items || []).filter((i) => i.price > 0);
     const cheapest = priced.length
         ? priced.reduce((a, b) => (b.price < a.price ? b : a))
         : null;
-    const publishPrice = !p.allOnEnquiry && !!cheapest && (cheapest.priceMode || 'fixed') === 'fixed';
+    const publishPrice = !!cheapest;
 
     const product: any = {
         '@context': 'https://schema.org',
@@ -219,7 +219,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             {/* Only fixed-price offerings go in the orderable menu; a range or
                 price-on-enquiry item is reached through "Message the provider"
                 in the listing body (and refused server-side anyway). */}
-            <FoodCartProvider items={p.items.filter((i) => (i.priceMode || 'fixed') === 'fixed')}>
+            <FoodCartProvider items={p.items}>
                 <ExperienceListingBody
                     p={p}
                     backHref="/experiences/browse"
@@ -296,7 +296,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             sticky
             responsiveness={responsiveness}
             reportable
-            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} providerId={p.id} providerName={p.business_name} /> : undefined}
+            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
             reviews={reviews}
         />
     );

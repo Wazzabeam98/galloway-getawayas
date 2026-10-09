@@ -59,7 +59,7 @@ export default async function ListingPage(
             <PackageStaysProvider stays={packageStays}>
             {/* Fixed-price offerings only in the orderable menu; range / price-on-
                 enquiry items are reached through "Message the provider". */}
-            <FoodCartProvider items={p.items.filter((i) => (i.priceMode || 'fixed') === 'fixed')}>
+            <FoodCartProvider items={p.items}>
                 <ExperienceListingBody
                     p={p}
                     backHref={`/experiences/${params.bookingId}`}
@@ -84,7 +84,7 @@ export default async function ListingPage(
             backHref={`/experiences/${params.bookingId}`}
             backLabel="All experiences"
             reviews={reviews}
-            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} providerId={p.id} providerName={p.business_name} /> : undefined}
+            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
             panel={
                 <BookingPanel
                     bookingId={params.bookingId}

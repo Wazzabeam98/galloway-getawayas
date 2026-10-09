@@ -8,7 +8,7 @@ import DatePreview from '@/components/marketplace/DatePreview';
 import { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { AGREEMENTS } from '@/lib/agreements';
 
-interface PanelItem { id: string; name: string; price: number; priceMode?: string; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
+interface PanelItem { id: string; name: string; price: number; duration_minutes?: number | null; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 interface PanelDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 
@@ -64,13 +64,12 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
     }, [anonymous]);
 
     const declaredSessions = provider.declaredSessions || [];
-    // The cheapest PRICED option, per-person where that's the unit — "From £15 /
-    // guest". Price-on-enquiry offerings carry no figure, so they're skipped (a 0
-    // would otherwise read as "From £0"); a range's from-price counts.
-    const pricedItems = provider.items.filter((i) => (i.priceMode || 'fixed') !== 'enquiry' && i.price > 0);
+    // The cheapest option, with the unit the provider chose — "From £15 / guest",
+    // "£475 / event"; a timed treatment reads plainly.
+    const pricedItems = provider.items.filter((i) => i.price > 0);
     const cheapest = pricedItems.length ? pricedItems.reduce((a, b) => (a.price <= b.price ? a : b)) : null;
-    const parts = cheapest ? priceParts(cheapest.price, cheapest.unit) : null;
-    const showFrom = pricedItems.length > 1 || pricedItems.length < provider.items.length;
+    const parts = cheapest ? priceParts(cheapest.price, cheapest.unit, (cheapest.duration_minutes ?? 0) > 0) : null;
+    const showFrom = pricedItems.length > 1;
     const cancel = cancellationBadge(provider.cancellationHours, provider.noRefund);
     const hasAnything = provider.sessions.length > 0 || declaredSessions.length > 0;
 
