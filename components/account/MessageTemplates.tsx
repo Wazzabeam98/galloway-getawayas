@@ -334,6 +334,11 @@ export default function MessageTemplates() {
     const [adding, setAdding] = useState(false);
     const [scheduleFor, setScheduleFor] = useState<string | null>(null);
     const [listingsFor, setListingsFor] = useState<string | null>(null);
+    // The message being edited in the big sheet. A freshly added or duplicated
+    // message opens here, focused, rather than appearing as a card at the very
+    // bottom of a long page where nothing tells the host it worked.
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const nameInputRef = useRef<HTMLInputElement | null>(null);
     const [draftSchedule, setDraftSchedule] = useState<Partial<Template>>({});
     const [draftListingIds, setDraftListingIds] = useState<string[]>([]);
     // Bumped after any change so the coverage grid re-reads rather than
@@ -398,6 +403,20 @@ export default function MessageTemplates() {
         load();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // When the edit sheet opens, land the cursor in the name field — but only on
+    // a fine pointer. Focusing a field on mount zooms iOS Safari in even at 16px
+    // (see lib/viewport / the auth panel), so on a touch screen the sheet opens
+    // unfocused and the host taps in.
+    useEffect(() => {
+        if (!editingId) return;
+        if (typeof window !== 'undefined'
+            && window.matchMedia
+            && window.matchMedia('(pointer: coarse)').matches) return;
+        // After the sheet has painted.
+        const id = window.setTimeout(() => nameInputRef.current?.focus(), 0);
+        return () => window.clearTimeout(id);
+    }, [editingId]);
 
     const patchLocal = (id: string, patch: Partial<Template>) => {
         setRows((prev) => prev.map((r) => (r.id === id ? Object.assign({}, r, patch) : r)));
@@ -479,6 +498,8 @@ export default function MessageTemplates() {
 
         setRows((prev) => prev.concat([{ ...(data as any), listingIds: [] }]));
         setCoverageKey((k) => k + 1);
+        // Open it in the sheet, focused — not as a card at the bottom of the page.
+        setEditingId((data as any).id);
     };
 
     // Duplicating and changing the property is how a host with three cottages
@@ -518,6 +539,8 @@ export default function MessageTemplates() {
 
         setRows((prev) => prev.concat([{ ...(data as any), listingIds: [] }]));
         setCoverageKey((k) => k + 1);
+        // Open the copy in the sheet too, so it isn't lost at the foot of the page.
+        setEditingId((data as any).id);
         toast.success('Copied. Choose its properties, then switch it on.', { theme: 'colored' });
     };
 
@@ -659,11 +682,12 @@ export default function MessageTemplates() {
     // One card, used by the four fixed groups and by the host's own messages.
     // A plain function, not a nested component, so the parent re-rendering on a
     // keystroke never remounts the body textarea and drops the caret.
-    const renderCard = (tpl: Template, bodyPlaceholder: string, namePlaceholder: string) => {
+    const renderCard = (tpl: Template, bodyPlaceholder: string, namePlaceholder: string, inModal = false) => {
         const busy = busyId === tpl.id;
         return (
-            <div key={tpl.id} className="border rounded-xl p-4">
+            <div key={tpl.id} className={inModal ? '' : 'border rounded-xl p-4'}>
                 <input
+                    ref={inModal ? nameInputRef : undefined}
                     type="text"
                     value={tpl.name}
                     onChange={(e) => patchLocal(tpl.id, { name: e.target.value })}
@@ -754,14 +778,18 @@ export default function MessageTemplates() {
                         {describeSchedule(tpl)}
                     </button>
 
-                    <button
-                        type="button"
-                        onClick={() => save(tpl.id)}
-                        disabled={busy}
-                        className="ml-auto px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40"
-                    >
-                        {busy ? 'Saving...' : 'Save'}
-                    </button>
+                    {/* In the sheet, the footer's "Done" saves and closes, so
+                        this inline Save would be a second, confusing button. */}
+                    {!inModal && (
+                        <button
+                            type="button"
+                            onClick={() => save(tpl.id)}
+                            disabled={busy}
+                            className="ml-auto px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40"
+                        >
+                            {busy ? 'Saving...' : 'Save'}
+                        </button>
+                    )}
                 </div>
 
                 {tpl.enabled && !hasRealContent(tpl.body) && (
@@ -857,7 +885,7 @@ export default function MessageTemplates() {
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {items.map((tpl) => renderCard(tpl, def.placeholder, def.label))}
+                                {items.filter((tpl) => tpl.id !== editingId).map((tpl) => renderCard(tpl, def.placeholder, def.label))}
                             </div>
                         )}
                     </div>
@@ -884,7 +912,7 @@ export default function MessageTemplates() {
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {customItems.map((tpl) => renderCard(tpl, CUSTOM_PLACEHOLDER, 'Name this message'))}
+                            {customItems.filter((tpl) => tpl.id !== editingId).map((tpl) => renderCard(tpl, CUSTOM_PLACEHOLDER, 'Name this message'))}
                             <button
                                 type="button"
                                 onClick={() => add(CUSTOM_TYPE)}
@@ -898,6 +926,49 @@ export default function MessageTemplates() {
             </div>
 
             <TemplateCoverage key={coverageKey} />
+
+            {/* The message editor, as a sheet. A freshly added or duplicated
+                message opens here, focused, so it never lands unseen at the
+                bottom of the page. The scope and schedule modals below open on
+                top of it (z-50 over this z-40). Closing saves — the body is the
+                one field without its own save. A bottom sheet on a phone, a
+                centred dialog on a wider screen, like the rest of the editors. */}
+            {editingId && (() => {
+                const row = rowOf(editingId);
+                if (!row) return null;
+                const isCustom = row.template_type === CUSTOM_TYPE;
+                const close = () => { if (editingId) save(editingId); setEditingId(null); };
+                return (
+                    <div className="fixed inset-0 bg-black/40 z-40 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={close}>
+                        <div
+                            className="bg-white w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl max-h-[92dvh] overflow-y-auto"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="sticky top-0 z-10 bg-white border-b px-5 py-3 flex items-center justify-between gap-3">
+                                <h4 className="font-bold text-slate-900">
+                                    {isCustom ? 'Your message' : defOf(row.template_type).label}
+                                </h4>
+                                <button
+                                    type="button"
+                                    onClick={close}
+                                    disabled={busyId === editingId}
+                                    className="px-4 py-1.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40"
+                                >
+                                    {busyId === editingId ? 'Saving...' : 'Done'}
+                                </button>
+                            </div>
+                            <div className="p-5">
+                                {renderCard(
+                                    row,
+                                    isCustom ? CUSTOM_PLACEHOLDER : defOf(row.template_type).placeholder,
+                                    isCustom ? 'Name this message' : defOf(row.template_type).label,
+                                    true
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Which properties this message covers. */}
             {listingsFor && (
