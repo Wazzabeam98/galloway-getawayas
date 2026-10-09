@@ -8,6 +8,7 @@ import { childrenAllowed } from '@/lib/guestAges';
 import { normaliseTime } from '@/lib/offeredTimes';
 import { refreshVenuePoint } from '@/lib/venuePoint';
 import { normaliseVatTreatment } from '@/lib/vat';
+import { normaliseUnit } from '@/lib/serviceOrders';
 
 export const dynamic = 'force-dynamic';
 
@@ -321,33 +322,23 @@ export async function POST(request: Request) {
                 for (let i = 0; i < incoming.length; i++) {
                     const it = incoming[i];
                     const name = String(it.name || '').trim();
-                    // The pricing shape, validated server-side (the client is never
-                    // trusted): a fixed price > 0, a range (from > 0 and to > from),
-                    // or price-on-enquiry (no figure). A range that doesn't hold up
-                    // falls back to a fixed price; a non-fixed row with no valid
-                    // price still survives only when it's genuinely on enquiry.
-                    const rawMode = String(it.price_mode || 'fixed');
-                    let priceMode = ['fixed', 'range', 'enquiry'].indexOf(rawMode) !== -1 ? rawMode : 'fixed';
-                    let price = Number(it.price) > 0 ? Number(it.price) : 0;
-                    let priceMax: number | null = null;
-                    if (priceMode === 'enquiry') {
-                        price = 0;
-                    } else if (priceMode === 'range') {
-                        const to = Number(it.price_max);
-                        if (price > 0 && to > price) priceMax = to;
-                        else priceMode = 'fixed'; // a broken range is just a fixed price
-                    } else {
-                        priceMode = 'fixed';
-                    }
-                    // Keep a named row that is either priced (fixed/range) or on
-                    // enquiry; drop a blank / priceless non-enquiry row.
+                    // A fixed price, validated server-side (the client is never
+                    // trusted). Ranges and price on enquiry were dropped (9 Oct
+                    // 2026): price_mode/price_max are no longer written, so a new
+                    // row takes the column default ('fixed'). A named row with no
+                    // price is dropped.
+                    const price = Number(it.price) > 0 ? Number(it.price) : 0;
                     if (!name) continue;
-                    if (priceMode !== 'enquiry' && !(price > 0)) continue;
+                    if (!(price > 0)) continue;
                     const itemFulfilment = perItemLocation
                         ? (String(it.fulfilment) === 'delivery' ? 'delivery' : 'collection')
                         : null;
+                    // A slot is only ever per person (a seat) or per group (a
+                    // private hire) — the seat machinery knows no other unit.
+                    const rawUnit = normaliseUnit(it.unit);
                     const unit = (perItemLocation && itemFulfilment === 'delivery')
-                        ? 'flat' : String(it.unit || 'flat');
+                        ? 'flat'
+                        : (p.shape === 'slot' ? (rawUnit === 'person' ? 'person' : 'flat') : rawUnit);
                     // Per-item capacity — only a per-person item carries its own; a
                     // whole-session (flat) item is one booking whatever the head
                     // count. Blank/0 = null = inherit the provider default, the
@@ -363,7 +354,6 @@ export async function POST(request: Request) {
                     const kidsOk = childrenAllowed(p.guest_details && (p.guest_details as any).min_age != null ? Number((p.guest_details as any).min_age) : null);
                     const row: any = {
                         name, description: strOrNull(it.description), price,
-                        price_mode: priceMode, price_max: priceMax,
                         unit,
                         image: strOrNull(it.image),
                         duration_minutes: (it.duration_minutes == null || it.duration_minutes === '')

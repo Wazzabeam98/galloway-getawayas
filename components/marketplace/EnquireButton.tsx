@@ -3,12 +3,11 @@
 import { useState } from 'react';
 import { MessageSquare, X } from 'lucide-react';
 
-// "Message the provider" for a range or price-on-enquiry offering — the path that
-// stops a POA price being a dead end. It shows the "final price is agreed with
-// the provider" note and a button that opens a small compose dialog; sending
-// POSTs to /api/experiences/enquiry, which writes the enquiry and emails the
-// provider. The price text itself is shown by the caller (itemPriceDisplay), so
-// this slots into each panel's own layout.
+// "Message the provider" — a general contact route on the experience listing
+// (kept when ranges and price on enquiry were dropped, 9 Oct 2026). A button that
+// opens a small compose dialog; sending POSTs to /api/experiences/enquiry, which
+// writes the enquiry and emails the provider. An item is optional — the listing's
+// button sends none.
 export default function EnquireButton({
     providerId,
     providerName,
@@ -53,11 +52,10 @@ export default function EnquireButton({
 
     return (
         <>
-            <p className="text-xs text-slate-500">Final price is agreed with the provider.</p>
             <button
                 type="button"
                 onClick={() => { setOpen(true); setDone(false); setError(''); }}
-                className={'mt-2 inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-900 bg-white font-semibold text-slate-900 transition hover:bg-slate-50 '
+                className={'inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-900 bg-white font-semibold text-slate-900 transition hover:bg-slate-50 '
                     + (compact ? 'px-3 py-1.5 text-sm' : 'px-4 py-2 text-sm')}
             >
                 <MessageSquare className="h-4 w-4" aria-hidden />
@@ -79,7 +77,7 @@ export default function EnquireButton({
                         {done ? (
                             <div className="px-5 py-6">
                                 <p className="text-sm text-slate-700">
-                                    Sent — {providerName} will be in touch about a price.
+                                    Sent — {providerName} will reply by email.
                                 </p>
                                 <div className="mt-5 flex justify-end">
                                     <button type="button" onClick={() => setOpen(false)}
@@ -98,7 +96,7 @@ export default function EnquireButton({
                                     onChange={(e) => setMessage(e.target.value.slice(0, 2000))}
                                     rows={4}
                                     autoFocus
-                                    placeholder="Tell them your dates and group size, and ask for a price."
+                                    placeholder="Ask about dates, your group, or anything else you’d like to know."
                                     className="w-full rounded-2xl border-2 border-slate-200 p-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:outline-none"
                                 />
                                 {error && <p className="mt-2 text-sm font-medium text-amber-700">{error}</p>}

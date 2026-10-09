@@ -202,11 +202,11 @@ export async function POST(request: Request) {
             for (const w of wanted) {
                 const it = byId.get(w.id);
                 if (!it || it.active !== true || !(Number(it.price) > 0)) return NextResponse.json({ ok: false, error: 'One of those items isn’t available.' }, { status: 400 });
-                // A range or price-on-enquiry offering is never ordered — its price
-                // is agreed with the provider first. The from-price of a range is a
-                // real number and would pass the price>0 check above, so refuse it
-                // on its mode, not its figure.
-                if (it.price_mode && it.price_mode !== 'fixed') return NextResponse.json({ ok: false, error: 'The price for one of those is agreed with the provider — message them for a quote.' }, { status: 400 });
+                // Only a fixed price is ever ordered. An older range row stores its
+                // from-price as price, which would pass the price>0 check above, so
+                // refuse it on its mode, not its figure (ranges and price on
+                // enquiry were dropped, 9 Oct 2026).
+                if (it.price_mode && it.price_mode !== 'fixed') return NextResponse.json({ ok: false, error: 'One of those items isn’t available.' }, { status: 400 });
                 const up = Number(it.price);
                 const lineTotal = Math.round(up * w.qty * 100) / 100;
                 lines.push({ item_id: it.id, name: it.name, unit: normaliseUnit(it.unit), qty: w.qty, unit_price: up, line_total: lineTotal, is_custom: !!it.is_custom });
@@ -346,15 +346,17 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: true, url: checkoutC.url, instant: !hasCustom, requested: hasCustom });
         }
 
-        // The item is the source of the price. Active and priced, or it is not
-        // for sale — the same gate the menu applies, enforced here too.
+        // The item is the source of the price. Active, priced and FIXED, or it is
+        // not for sale — the same gate the menu applies, enforced here too. An
+        // older range row stores its "from" figure as price, so without the mode
+        // check it could be bought at that figure (ranges were dropped, 9 Oct 2026).
         const { data: item } = await admin
             .from('service_provider_items')
-            .select('id, provider_id, name, description, price, active, unit, fulfilment, included_guests, extra_adult_fee, extra_child_fee, max_party, min_people')
+            .select('id, provider_id, name, description, price, price_mode, active, unit, fulfilment, included_guests, extra_adult_fee, extra_child_fee, max_party, min_people')
             .eq('id', itemId)
             .maybeSingle();
 
-        if (!item || item.active !== true || !(Number(item.price) > 0)) {
+        if (!item || item.active !== true || !(Number(item.price) > 0) || (item.price_mode || 'fixed') !== 'fixed') {
             return NextResponse.json({ ok: false, error: 'That item isn’t available.' }, { status: 400 });
         }
 
