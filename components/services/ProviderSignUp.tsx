@@ -17,7 +17,7 @@ import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
 import { buildStreetAddress } from '@/lib/address';
 import { OFFERED_UNITS, unitLabel } from '@/lib/serviceOrders';
-import { slotOfferingFromUnits, offeringHasShared, type SlotOffering } from '@/lib/serviceSlots';
+import { slotOfferingFromUnits, type SlotOffering } from '@/lib/serviceSlots';
 import Env from '@/config/Env';
 import {
     skillKey,
@@ -308,6 +308,17 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // not lose it. A saved record wins once it loads — except when they have
     // just come back through "change", where the new pick is the point.
     const tradeFromUrl = String(params.get('trade') || '');
+    // A deliberate "come back to my draft" signal. A guest experience starts FRESH
+    // every time (Liam, 9 Oct 2026) — a half-filled browser draft used to restore
+    // silently on a plain open, skipping the opening pages so someone starting a
+    // guest experience never saw "How do guests book it?". The browser draft now
+    // comes back for a guest ONLY when a link carries ?resume=1 (a drafts list or a
+    // "save for later" link), never on a normal start. A returning provider's SAVED
+    // record (a DB row) is a separate thing and still resumes as before; this gate
+    // is only for the anonymous/in-progress browser draft. Trades are unchanged —
+    // they keep the on-site belt-and-braces restore (a tradesman filling this in
+    // between jobs).
+    const resumeRequested = params.get('resume') === '1';
     const supabase = createClientComponentClient();
 
     const [loading, setLoading] = useState(true);
@@ -612,12 +623,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // stores the shown value on an untouched pass, like the years screen.
     const [maxGuests, setMaxGuests] = useState('');
     const [slotLength, setSlotLength] = useState('');
-    // Per-person slots only: the smallest group a single booking may be
-    // (slot_min_people). Airbnb-style — the guest books and pays for at least
-    // this many. Blank/1 means no minimum. Its own stepper screen (g_slot_min),
-    // shown only for a shared slot; the booking route is the real gate, this is
-    // the convenience floor. Loaded from slot_min_people on return.
-    const [slotMinPeople, setSlotMinPeople] = useState('');
+    // The per-person minimum screen was removed at sign-up (Liam, 9 Oct 2026):
+    // Airbnb has no minimum-people setting, and ours misled. The wizard now always
+    // writes slot_min_people = 1 (no minimum); the column, the listing editor's
+    // control and the booking route's guard are untouched.
     // Choosing the offering (re)shapes the slot's item list to match: a private
     // hire is one flat item, a shared table one per-person item, 'both' is one of
     // each. Existing rows are kept BY UNIT, so a price already entered survives a
@@ -907,12 +916,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // that item is — 'private' or 'shared' — never flipped.
                     if (ex.shape === 'slot') {
                         setSlotOffer(slotOfferingFromUnits((itemRows || []).map((r: any) => r.unit)));
-                        // The per-person minimum, only meaningful for a shared
-                        // slot. Load it back so a returning host edits what they
-                        // set; 1 (or unset) reads as no minimum.
-                        if (ex.slot_min_people !== null && ex.slot_min_people !== undefined && Number(ex.slot_min_people) > 1) {
-                            setSlotMinPeople(String(ex.slot_min_people));
-                        }
                     }
                     if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
                         // The category key is persisted now (guest_details.category),
@@ -1150,17 +1153,21 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // what you filled in last time" before they had filled in anything.
         if (!chosen) return;
 
-        // The guest experience sign-up now keeps a browser draft too (Liam, 7 Oct
-        // 2026 — "save each step as it's completed so a provider who leaves or
-        // loses the page comes back where they were"). This reverses the 5 Oct
-        // decision that guests always open fresh: the new requirement is exactly
-        // the opposite, and the drag-and-drop guard above means losing the page is
-        // no longer common, but a draft is the belt-and-braces for when it still
-        // happens. The host path below (one restore, gated on filledIn, with the
-        // "we kept your details" state) is reused as-is — the guest fields are
-        // already serialised by the persist effect, they were only being skipped.
-        // Once a DB row exists (providerId) the database is the copy that counts
-        // and this draft is ignored, so "Save and finish later" is unaffected.
+        // A GUEST experience starts fresh (Liam, 9 Oct 2026). The browser draft is
+        // still written on every step, but it only comes BACK when a link asks for
+        // it (?resume=1 — a drafts list or a "save for later" link). On a plain
+        // start it is left alone, so someone beginning a guest experience always
+        // sees the opening pages, "How do guests book it?" among them, rather than
+        // being dropped silently back into a half-filled draft. A saved DB record is
+        // a separate path and still resumes; this is only the in-browser draft.
+        //
+        // Trades keep the belt-and-braces restore unconditionally (Liam, 7 Oct 2026
+        // — a tradesman filling this in between jobs comes back where he was): the
+        // drag-and-drop guard above handles the lost-page case, and the host path
+        // below (one restore, gated on filledIn) is reused as-is. Once a DB row
+        // exists (providerId) the database is the copy that counts and this draft is
+        // ignored, so "Save and finish later" is unaffected.
+        if (audienceForTrade(tradeFromUrl) === 'guest' && !resumeRequested) return;
 
         try {
             const raw = window.localStorage.getItem(draftKey(tradeFromUrl));
@@ -1222,7 +1229,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             else if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotOffer(d.slotPrivate === true ? 'private' : 'shared');
             if (d.maxGuests) setMaxGuests(d.maxGuests);
             if (d.slotLength) setSlotLength(d.slotLength);
-            if (d.slotMinPeople) setSlotMinPeople(d.slotMinPeople);
             if (Array.isArray(d.schedule)) setSchedule(d.schedule);
 
             // Whether there is anything in here worth calling kept work.
@@ -1390,7 +1396,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // address is the provider's own, in their own browser's draft
                     // — never shared, and it's a private column server-side.
                     fulfilment, collectionStreet, collectionTown, collectionPostcode,
-                    slotOffer, maxGuests, slotLength, slotMinPeople, schedule,
+                    slotOffer, maxGuests, slotLength, schedule,
                     // The checks they've ticked so far.
                     declarations,
                 })
@@ -1410,7 +1416,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         whatToExpect,
         guestGroup, guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
-        slotOffer, maxGuests, slotLength, slotMinPeople, schedule,
+        slotOffer, maxGuests, slotLength, schedule,
         declarations,
     ]);
 
@@ -1433,11 +1439,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const slotOfferEffective = shape === 'slot' && slotMixedDuration(guestCategory)
         ? slotOfferingFromUnits((items || []).map((i) => String(i.unit)))
         : slotOffer;
-
-    // A come-to-me mixed provider may run a shared class, so it is asked the
-    // minimum (its capacity's twin). Its screen is offered before any item
-    // exists, so the gate is the category + direction, not the item units.
-    const slotMixedComeToMe = shape === 'slot' && slotMixedDuration(guestCategory) && fulfilment !== 'delivery';
 
     const problems = submitProblems({
         business_name: businessName,
@@ -1469,13 +1470,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         covered_bands: coveredBands,
         shape,
         scheduleCount: schedule.length,
-        // The slot pricing basis and its two group numbers, so the min ≤ capacity
-        // rule can be checked. slotMinPeople blank reads as no minimum. The
-        // effective offering (derived from item units for a mixed provider) so a
-        // mixed shared class is covered by the rule, not just a fixed-basis one.
+        // The slot pricing basis and capacity ceiling, used by the pricing checks.
+        // The effective offering is derived from item units for a mixed provider.
         slotOffer: slotOfferEffective,
         slotCapacity: maxGuests,
-        slotMinPeople,
         // Items priced above zero — the marketplace lists only priced providers,
         // so a guest listing needs at least one to be bookable.
         pricedItemCount: (items || []).filter((i) => Number(String(i.price ?? '').trim()) > 0).length,
@@ -2248,7 +2246,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         setMenuIndex(null);
         setSlotOffer(null);
         setMaxGuests('');
-        setSlotMinPeople('');
         setSlotLength('');
         setSchedule([]);
         setLeadTimeDays('');
@@ -2679,11 +2676,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             // records it but still sells whole). Written from the one maxGuests
             // state, so it can never disagree with the jsonb copy below.
             slot_capacity: slotPerItem ? 1 : travellingMixed ? null : (isSlot ? (num(maxGuests, 1) ?? 1) : null),
-            // The per-person minimum — a real number only for a shared/per-person
-            // slot; a private/flat slot is one booking whatever the head count, so
-            // it stores 1 (no minimum). Floored at 1 to satisfy the column's
-            // check; the min ≤ capacity rule is enforced before send (submitProblems).
-            slot_min_people: (isSlot && offeringHasShared(slotOfferEffective)) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
+            // The per-person minimum is no longer collected at sign-up (Liam, 9 Oct
+            // 2026), so the wizard always writes 1 (no minimum). The column stays,
+            // and the listing editor still carries a minimum control for later.
+            slot_min_people: 1,
             ...fulfilmentFields,
             declarations: acceptance,
         };
@@ -3524,7 +3520,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                than sitting high with a void. g_you is SHARED, so a
                                host trade now gets exactly the guest's centred years
                                layout. */
-                            : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')
+                            : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_length')
                                 ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
                                 : step === 'finish'
                                     /* Finish is a review step: the rail and its
@@ -3551,7 +3547,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         have no section, so it shows nothing there. */}
                     {currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length' || step === 'g_title') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_where' || step === 'g_slot_length' || step === 'g_title') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
@@ -3577,7 +3573,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             {stepMeta.title}
                         </h1>
                     )}
-                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
+                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
                             + ((step === 'g_notice' || step === 'g_shape') ? 'mb-2 text-center'
                                 : (step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_slot_basis' || step === 'g_slot_where' || step === 'g_title') ? 'mb-10 text-center'
@@ -3604,7 +3600,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                             ? GUEST_SCREEN_COPY.slotPlaceHeadingBoth
                                             : fulfilment === 'delivery'
                                             ? GUEST_SCREEN_COPY.slotPlaceHeadingTravel
-                                            : (slotIsMeetingPoint(guestCategory) || guestCategory === 'other')
+                                            : slotIsMeetingPoint(guestCategory)
                                                 ? GUEST_SCREEN_COPY.slotPlaceHeadingMeeting
                                                 : GUEST_SCREEN_COPY.slotPlaceHeadingPremises)
                                     : step === 'g_photos'
@@ -3631,19 +3627,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             </h1>
                             <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
                                 {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacitySubtextTravel : GUEST_SCREEN_COPY.capacitySubtextVenue}
-                            </p>
-                        </>
-                    )}
-                    {/* The minimum screen renders its heading+subtext here, at the
-                        top like g_capacity, so the question and its explanation sit
-                        above the big centred stepper rather than below it. */}
-                    {isGuest && step === 'g_slot_min' && (
-                        <>
-                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center mb-2">
-                                {GUEST_SCREEN_COPY.slotMinQuestion}
-                            </h1>
-                            <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
-                                {GUEST_SCREEN_COPY.slotMinSubtext}
                             </p>
                         </>
                     )}
@@ -4006,7 +3989,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
-                + (step === 'g_you' || (isGuest && (step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')) ? ' flex-1 flex flex-col' : '')
+                + (step === 'g_you' || (isGuest && (step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_length')) ? ' flex-1 flex flex-col' : '')
                 /* Same fill on the made-to-order fork and the slot choice forks,
                    but desktop only — mobile keeps its natural top-down stack. */
                 + (guestMtoArea || guestSlotChoice ? ' sm:flex-1 sm:flex sm:flex-col' : '')}>
@@ -5008,17 +4991,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 </section>
                 )}
 
-                {/* THE PER-PERSON MINIMUM — shared slots only. The smallest group
-                    a single booking may be, a big stepper like guests/years. The
-                    ceiling (g_capacity) is the max above it, so the stepper caps
-                    there; default 1 = no minimum. The route is the real gate —
-                    this is the convenience floor. */}
-                {onStep('g_slot_min') && isGuest && shape === 'slot' && (offeringHasShared(slotOffer) || slotMixedComeToMe) && (
-                <section className="flex-1 flex flex-col items-center justify-center">
-                    <NumberStepper value={slotMinPeople} onChange={setSlotMinPeople} min={1} max={Math.max(1, parseInt(maxGuests, 10) || CAPACITY_DEFAULT_SLOT)} suggestion={1} size="lg" solid suffix={GUEST_SCREEN_COPY.slotMinSuffix} />
-                </section>
-                )}
-
                 {/* THE LISTING'S NAME — what the experience is called. The h1 a
                     guest reads, written to business_name. One centred field, like
                     the years/guests openers; the professional title (a credential)
@@ -5811,8 +5783,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         // and a gap so it reads as two questions, not one form.
                         const bothPlaces = showRegions && showCollection;
                         // Slot copy forks on premises vs meeting point (outdoors,
-                        // water) — data identical, wording only.
-                        const slotMeeting = shape === 'slot' && (slotIsMeetingPoint(guestCategory) || guestCategory === 'other');
+                        // water) — data identical, wording only. "Something else"
+                        // ('other') reads as a premises address, not a meeting point
+                        // (Liam, 9 Oct 2026), matching the heading above.
+                        const slotMeeting = shape === 'slot' && slotIsMeetingPoint(guestCategory);
                         // The manual boxes are hidden behind the lookup until they're
                         // wanted: the provider asks to type it by hand, a lookup fills
                         // or fails, or a returning provider already has an address.

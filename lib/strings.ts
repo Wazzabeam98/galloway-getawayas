@@ -141,10 +141,13 @@ export const GUEST_SCREEN_COPY = {
     // person booking a six-seat sauna, so a shared session needs the real ceiling.
     // The subtext says it's the listing default and each offering can set its own
     // exact number (service_provider_items.capacity overrides it).
-    capacityHeadingTravel: 'How many people can you take at once?',
-    capacitySubtextTravel: 'The most you’ll take at one time. It’s your default — each offering can set its own exact number.',
-    capacityHeadingVenue: 'How many people can you take at once?',
-    capacitySubtextVenue: 'The most you’ll take in one session. It’s your default — each offering can set its own exact number.',
+    // "Maximum capacity" covers both meanings in one word (Liam, 9 Oct 2026): the
+    // largest private group you'll take, and the number of places in a shared
+    // session — so the one heading serves both shapes.
+    capacityHeadingTravel: 'What’s your maximum capacity?',
+    capacitySubtextTravel: 'The most people you can take in one session. Each offering can set its own number.',
+    capacityHeadingVenue: 'What’s your maximum capacity?',
+    capacitySubtextVenue: 'The most people you can take in one session. Each offering can set its own number.',
     capacitySuffix: 'guests',
 
     // The slot pricing-basis screen (g_slot_basis) — how a booking works: one
@@ -171,16 +174,12 @@ export const GUEST_SCREEN_COPY = {
     slotBasisSharedHint: 'Several separate bookings share the same time, each priced per person, up to a number you set.',
     slotBasisBothLabel: 'Offer both',
     slotBasisBothHint: 'Let guests choose — book the whole thing, or take a single place.',
-    // The per-person minimum screen (g_slot_min) — shared slots only. The
-    // smallest group a single booking may be, Airbnb-style: the guest books and
-    // pays for at least this many. Default 1 means no minimum.
-    slotMinQuestion: 'What’s the smallest group you’ll run a session for?',
-    slotMinSubtext: 'A single booking must be at least this many people. Leave it at one if a session will run for anyone.',
-    slotMinSuffix: 'people',
-    // Raised when the minimum is set above the capacity ceiling — an
-    // unsatisfiable session that could never be booked. Shown on the minimum
-    // screen; the number is filled in by the form.
-    slotMinOverCapacity: 'The minimum can’t be more than the most a session holds.',
+    // The per-person minimum screen (g_slot_min) was removed at sign-up (Liam,
+    // 9 Oct 2026): Airbnb has no minimum-people setting, and ours misled — the
+    // heading implied a session total while it applied per booking, so two people
+    // booking separately could never satisfy a minimum of two. The slot_min_people
+    // column stays (defaulting to 1 = no minimum); the listing editor still carries
+    // a minimum control and the booking route still honours a stored value.
 
     // The price screen (g_menu) — rebuilt as a hub: a centred question, then each
     // priced thing as a borderless row (name + price + thumbnail), an add row at
@@ -352,7 +351,7 @@ export const GUEST_SCREEN_COPY = {
     // abstract format is easier to recognise from a familiar case.
     shapeQuestion: 'How do guests book it?',
     shapeSubtext: 'This decides what we ask next.',
-    shapeSlotLabel: 'At set times',
+    shapeSlotLabel: 'Book a slot',
     shapeSlotHint: 'Guests book a time and join you — a tour, class, tasting or session.',
     shapeMadeLabel: 'Made to order',
     shapeMadeHint: 'You make something and they collect it, or you deliver — a hamper, cake or gift.',
@@ -477,9 +476,10 @@ export const GUEST_SCREEN_COPY = {
     // decent listing) but the gate stays at one photo — the ask and the gate are
     // deliberately different, so this line is NOT wired to the Next gate.
     photosHeading: 'Add photos of your experience',
-    // The gate is one photo, so "at least 3" overstated it. Airbnb's guidance
-    // (help article 3024): real photos of people doing it, no text or logos.
-    photosAsk: 'Three or more works best — real photos of the place, the activity and you. No logos or text.',
+    // Cut right down to Airbnb's own wording (Liam, 9 Oct 2026). The gate stays at
+    // one photo — the ask and the gate are deliberately different, so this line is
+    // NOT wired to the Next gate.
+    photosAsk: 'Add 3 photos',
     // Shown above the editable grid once photos exist. Order and cover are the
     // same thing on the guest side — the first photo is the cover — so the line
     // says exactly that; dragging to the front is how you set it.

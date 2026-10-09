@@ -89,7 +89,6 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
     const [partialBlocks, setPartialBlocks] = useState<Array<{ id: string; date: string; start: string; end: string }>>([]);
     const [declaredSessions, setDeclaredSessions] = useState<DeclaredSession[]>([]);
     const [slotDefaults, setSlotDefaults] = useState<{ duration: number; capacity: number }>({ duration: 60, capacity: 1 });
-    const [slotMin, setSlotMin] = useState(1);
     const [items, setItems] = useState<Array<{ unit: string; capacity: number | null; min_people: number | null; active: boolean; price: number }>>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -130,7 +129,7 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
                 setBlocks(d.blocks || []); setAvailability(d.availability || []); setHasHours((d.availability || []).length > 0);
                 setDeclaredSessions(d.declaredSessions || []);
                 const dur = Number(d.slot_length_minutes) || 60, cap = Number(d.slot_capacity) || 1;
-                setSlotDefaults({ duration: dur, capacity: cap }); setSlotMin(Number(d.slot_min_people) || 1); setItems(d.items || []);
+                setSlotDefaults({ duration: dur, capacity: cap }); setItems(d.items || []);
                 setDDur((v) => v === 60 ? dur : v); setDCap((v) => v === 1 ? cap : v);
             }
         } catch { setLoadFailed(true); }
@@ -182,7 +181,9 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
     // to the provider default when no item resolves one.
     const pricedItems = items.filter((it) => it.active && it.price > 0);
     const itemCaps = pricedItems
-        .map((it) => Number(seatConfig(it.capacity, it.min_people, { slot_capacity: slotDefaults.capacity, slot_min_people: slotMin }).slot_capacity) || 0)
+        // Only the resolved capacity is read here; the per-person minimum plays no
+        // part in the host's diary (removed from the journey, Liam 9 Oct 2026).
+        .map((it) => Number(seatConfig(it.capacity, it.min_people, { slot_capacity: slotDefaults.capacity, slot_min_people: null }).slot_capacity) || 0)
         .filter((c) => c > 0);
     const freeCapacity = (itemCaps.length ? Math.max(...itemCaps) : slotDefaults.capacity) || null;
     // Whether an open slot sells SEATS (a per-person item exists) or is a

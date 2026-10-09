@@ -73,34 +73,19 @@ test('a travelling slot requires a region, not an address', () => {
     assert.equal(has(ok, 'areas'), false);
 });
 
-// --- the per-person slot minimum ≤ capacity --------------------------------
+// --- the per-person slot minimum was removed at sign-up --------------------
 //
-// The wizard's stepper caps the minimum at the capacity, but the rule is
-// enforced in submitProblems too, so a crafted/edited draft can't send a
-// minimum a session could never satisfy. Only a per-person slot has a minimum
-// (a shared table); a private hire is one booking whatever
-// the head count, so the rule never applies to it. A minimum of 1 is no minimum.
+// The minimum-people screen and its min ≤ capacity rule were removed from
+// sign-up (Liam, 9 Oct 2026): Airbnb has no such setting and ours misled. The
+// wizard now always writes slot_min_people = 1, so submitProblems no longer
+// raises a 'slot_min' problem whatever a crafted draft carries.
 const slot = (over: any) => ({ trade: 'guest', audience: 'guest', shape: 'slot', slotOffer: 'shared', areaCount: 1, scheduleCount: 1, pricedItemCount: 1, ...over });
 
-test('a per-person minimum above the capacity is a problem', () => {
-    assert.equal(has(slot({ slotCapacity: 4, slotMinPeople: 6 }), 'slot_min'), true, 'min 6 with room for 4 is unbookable');
-    // At or below the ceiling is fine.
-    assert.equal(has(slot({ slotCapacity: 6, slotMinPeople: 6 }), 'slot_min'), false, 'min equal to capacity is allowed');
-    assert.equal(has(slot({ slotCapacity: 8, slotMinPeople: 4 }), 'slot_min'), false, 'min below capacity is allowed');
-});
-
-test('a minimum of 1 (or blank) is no minimum and never trips the rule', () => {
-    assert.equal(has(slot({ slotCapacity: 4, slotMinPeople: 1 }), 'slot_min'), false);
-    assert.equal(has(slot({ slotCapacity: 4, slotMinPeople: '' }), 'slot_min'), false);
+test('a stray minimum above the capacity is no longer a problem', () => {
+    assert.equal(has(slot({ slotCapacity: 4, slotMinPeople: 6 }), 'slot_min'), false, 'the minimum rule is gone');
+    assert.equal(has(slot({ slotCapacity: 6, slotMinPeople: 6 }), 'slot_min'), false);
+    assert.equal(has(slot({ slotOffer: 'private', slotCapacity: 2, slotMinPeople: 6 }), 'slot_min'), false, 'private slot never had the rule');
     assert.equal(has(slot({ slotCapacity: 4 }), 'slot_min'), false, 'no minimum set at all');
-});
-
-test('the minimum rule applies only to a per-person slot', () => {
-    // A private/whole-group slot: one booking whatever the head count, so a
-    // stray high slotMinPeople must not be treated as a rule.
-    assert.equal(has(slot({ slotOffer: 'private', slotCapacity: 2, slotMinPeople: 6 }), 'slot_min'), false, 'private slot has no minimum rule');
-    // A made-to-order product isn't a slot at all.
-    assert.equal(has({ trade: 'guest', audience: 'guest', shape: 'made_to_order', slotOffer: 'shared', slotCapacity: 2, slotMinPeople: 6, fulfilment: 'delivery', areaCount: 1, pricedItemCount: 1 }, 'slot_min'), false, 'made-to-order has no minimum rule');
 });
 
 // --- the overwrite safety (the case to prove, not reason about) ------------

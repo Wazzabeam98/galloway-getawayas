@@ -33,7 +33,7 @@ export default async function ProviderListingPage() {
         .select('id, owner_id, business_name, trade, custom_label, stripe_mcc, audience, status, shape, description, '
             + 'photos, headshot, logo, dietary_note, guest_details, fulfilment, delivery_fee, delivery_radius_miles, '
             + 'collection_street, collection_town, collection_postcode, '
-            + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, '
+            + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, '
             + 'venue_lat, venue_lng, show_precise_location, '
             + 'lead_time_days, cancellation_window_hours, owner_paused, admin_hidden_at, vat_registered')
         .eq('owner_id', user.id)
@@ -99,7 +99,6 @@ export default async function ProviderListingPage() {
                 slot_length_minutes: provider.slot_length_minutes ?? null,
                 slot_turnaround_minutes: provider.slot_turnaround_minutes ?? 0,
                 slot_capacity: provider.slot_capacity ?? null,
-                slot_min_people: provider.slot_min_people ?? 1,
                 // Max group size for a non-slot shape (a chef, a baker) rides in
                 // guest_details.max_guests — a slot's is the slot_capacity column
                 // above. The editor's Booking section reads whichever the shape uses.

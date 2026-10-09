@@ -51,7 +51,7 @@ export interface EditorProvider {
     collection_street: string; collection_town: string; collection_postcode: string;
     venue_lat: number | null; venue_lng: number | null; show_precise_location: boolean;
     slot_length_minutes: number | null; slot_turnaround_minutes: number;
-    slot_capacity: number | null; slot_min_people: number; max_guests: number | null;
+    slot_capacity: number | null; max_guests: number | null;
     lead_time_days: number; cancellation_window_hours: number; booking_horizon_days: number;
     offered_times: string[];
     professional_title: string; years_experience: string; qualifications: string; recognition: string;
