@@ -150,7 +150,12 @@ async function complete(
         return backHome(origin, message)
     }
 
-    return NextResponse.redirect(new URL(next, origin))
+    // 303, not the default 307. The interstitial's button POSTs here, and a 307
+    // keeps the method, so the browser then POSTed the form to the page itself —
+    // which a page treats as a form submission and never answers: the sign-in had
+    // worked, but the screen hung on "Loading" until it timed out. 303 means
+    // "now GET this", the page loads normally.
+    return NextResponse.redirect(new URL(next, origin), 303)
 }
 
 export async function GET(request: NextRequest) {

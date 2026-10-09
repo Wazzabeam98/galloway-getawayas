@@ -26,7 +26,10 @@ const LoginModel = React.forwardRef<HTMLButtonElement, Props>(function LoginMode
 ) {
     const open = (e: React.MouseEvent<HTMLButtonElement>) => {
         onClick?.(e);
-        openAuthPanel(next);
+        // The account menu's Log in is the general way in, so it lands a host
+        // or provider on their working side (app/auth/land). The button variant
+        // is a task on the page — book, review, accept — and stays put.
+        openAuthPanel(next, { land: variant === 'menu' });
     };
 
     // variant="button" is a full-width primary button, for where signing in is

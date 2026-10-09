@@ -17,6 +17,9 @@ interface Props {
     // Called just before leaving for Google — the panel records the "stay
     // signed in" choice here, since the code screen never runs for Google.
     onStart?: () => void;
+    // Where to land once signed in, when the panel was given one (a trip
+    // invite, or the landing step after a menu sign-in). Otherwise this page.
+    next?: string | null;
 }
 
 /**
@@ -27,7 +30,7 @@ interface Props {
  * behaves the same in both — they had drifted into two different buttons with
  * two different logos.
  */
-export default function GoogleButton({ divider, compact = false, onStart }: Props) {
+export default function GoogleButton({ divider, compact = false, onStart, next }: Props) {
     const supabase = createClientComponentClient();
     const [enabled, setEnabled] = useState(false);
 
@@ -59,7 +62,7 @@ export default function GoogleButton({ divider, compact = false, onStart }: Prop
         //
         // safeNext in the callback rejects anything that is not one of our own
         // paths, so this cannot become an open redirect.
-        const here = window.location.pathname + window.location.search;
+        const here = next || (window.location.pathname + window.location.search);
 
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',

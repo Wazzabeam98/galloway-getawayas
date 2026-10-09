@@ -8,6 +8,8 @@ import Logo from '@/components/base/Logo';
 import ModeSwitch from '@/components/base/ModeSwitch';
 import { displayName as resolveName, getImageUrl } from '@/lib/utils';
 import RememberAccount from '@/components/auth/RememberAccount';
+import { NO_WORK_SIDE, resolveWorkMode, WorkSide } from '@/lib/workMode';
+import { readWorkSide } from '@/lib/workSide';
 
 const Navbar = async () => {
     const cookieStore = cookies();
@@ -21,6 +23,7 @@ const Navbar = async () => {
     let hasCompletedStay = false;
     let isProvider = false;
     let providerAudience: string | null = null;
+    let side: WorkSide = NO_WORK_SIDE;
 
     if (data?.session?.user) {
         const { data: profile } = await supabase
@@ -39,15 +42,13 @@ const Navbar = async () => {
         avatarUrl = profile?.avatar_url || null;
         isAdmin = profile?.is_admin === true;
 
-        // You're a host if you actually have a listing — drafts count, since
-        // you're mid-way through becoming one. Deriving it this way means it
-        // can never fall out of step with reality.
-        const { count } = await supabase
-            .from('listings')
-            .select('id', { count: 'exact', head: true })
-            .eq('host_id', data.session.user.id);
-
-        isHost = (count || 0) > 0;
+        // What they can work as — a host (any listing, drafts included, shows
+        // the switch), an approved host, an approved provider (lib/workSide).
+        const read = await readWorkSide(supabase, data.session.user.id);
+        side = read;
+        isHost = read.isHost;
+        isProvider = read.isProvider;
+        providerAudience = read.providerAudience;
 
         // The passport is made of finished stays, so it is empty until there
         // is one. Same rule the passport page itself uses — a confirmed
@@ -62,40 +63,13 @@ const Navbar = async () => {
             .lt('check_out', today);
 
         hasCompletedStay = (stays || 0) > 0;
-
-        // You run a service business if you own an approved provider. RLS lets
-        // an owner read their own row whatever its state; we only light the
-        // menu link once it is live, so it never leads to a page that would
-        // just bounce a draft back to the wizard. We also read the AUDIENCE, so
-        // the menu can show a guest-experience provider their own sections
-        // (a Calendar and Earnings) rather than a tradesman's Enquiries.
-        const { data: providerRow } = await supabase
-            .from('service_providers')
-            .select('audience')
-            .eq('owner_id', data.session.user.id)
-            .eq('status', 'approved')
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-        isProvider = !!providerRow;
-        providerAudience = (providerRow && providerRow.audience) || null;
     }
 
-    // The one gg_mode cookie carries the travelling/working split for everyone
-    // who has two sides. A host defaults to travel until they choose otherwise;
-    // a pure provider (no listing of their own) defaults to their providing side,
-    // because that is where sign-in lands them (LoginModel) and where their work
-    // is. An explicit choice in the cookie always wins over either default.
-    const modeCookie = cookieStore.get('gg_mode')?.value;
-    const mode: 'host' | 'travel' =
-        modeCookie === 'host'
-            ? 'host'
-            : modeCookie === 'travel'
-            ? 'travel'
-            : isProvider && !isHost
-            ? 'host'
-            : 'travel';
+    // The one gg_mode cookie remembers the side they were last on, for everyone
+    // with two sides; never having chosen, an approved host or provider is on
+    // their working side and everyone else is travelling. Same rule as the
+    // homepage and the landing step after sign-in (lib/workMode).
+    const mode = resolveWorkMode(cookieStore.get('gg_mode')?.value, side);
 
     // Experiences are a public destination once the feature is live — anyone can
     // browse, signed in or not — so the link is shown to everyone, gated only on
