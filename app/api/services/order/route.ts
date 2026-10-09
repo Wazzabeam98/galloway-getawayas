@@ -76,6 +76,9 @@ export async function POST(request: Request) {
         // browser sends what the guest typed; it is validated against the item's
         // unit below, never trusted as the multiplier on its own.
         const requestedQuantity: unknown = body && body.quantity;
+        // 'group' books a PER-PERSON offering whole, at its group price (one
+        // offering priced two ways). Absent = as the offering is priced.
+        const bookAsGroup: boolean = !!(body && body.bookAs === 'group');
         const bookingId: string = body && body.bookingId;
         const serviceDate: string = body && body.serviceDate;
         // The chosen time (HH:MM) — validated against the provider's offered times
@@ -352,7 +355,7 @@ export async function POST(request: Request) {
         // check it could be bought at that figure (ranges were dropped, 9 Oct 2026).
         const { data: item } = await admin
             .from('service_provider_items')
-            .select('id, provider_id, name, description, price, price_mode, active, unit, fulfilment, included_guests, extra_adult_fee, extra_child_fee, max_party, min_people')
+            .select('id, provider_id, name, description, price, price_mode, group_price, active, unit, fulfilment, included_guests, extra_adult_fee, extra_child_fee, max_party, min_people')
             .eq('id', itemId)
             .maybeSingle();
 
@@ -365,7 +368,13 @@ export async function POST(request: Request) {
         // number from one up to the cap. Out of range is refused, not clamped:
         // charging for the cap when someone typed past it would be a surprise on
         // their card, and a genuinely large order is a phone call.
-        const unit = normaliseUnit(item.unit);
+        // A group booking needs a per-person offering that HAS a group price, and
+        // is then one whole-group booking at that price — unit 'flat', quantity 1
+        // — snapshotted that way so every later step treats it as a group hire.
+        if (bookAsGroup && !(normaliseUnit(item.unit) === 'person' && Number(item.group_price) > 0)) {
+            return NextResponse.json({ ok: false, error: 'That item isn’t available.' }, { status: 400 });
+        }
+        const unit = bookAsGroup ? 'flat' : normaliseUnit(item.unit);
         const quantity = orderQuantity(unit, unitMultiplies(unit) ? requestedQuantity : 1);
         if (quantity === null) {
             return NextResponse.json(
@@ -377,7 +386,7 @@ export async function POST(request: Request) {
                 { status: 400 }
             );
         }
-        const unitPrice = Number(item.price);
+        const unitPrice = bookAsGroup ? Number(item.group_price) : Number(item.price);
 
         const { data: provider } = await admin
             .from('service_providers')
@@ -579,7 +588,7 @@ export async function POST(request: Request) {
         const pricing = priceOrder(provider, { bandPrice: total }, []);
 
         const business = (provider.business_name || 'Your experience');
-        const itemName = (item.name || business);
+        const itemName = (item.name || business) + (bookAsGroup ? ' — whole group' : '');
         // What the checkout line reads: "Celebration cake × 3 people". The bare
         // item name for a flat price or a quantity of one.
         const lineName = quantity > 1

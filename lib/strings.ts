@@ -273,6 +273,15 @@ export const GUEST_SCREEN_COPY = {
     // case falls to menuRequiredGate.
     menuSlotBothGatePrivate: 'Set a price for the whole-thing booking to carry on.',
     menuSlotBothGateShared: 'Set a price for the individual places to carry on.',
+    // One offering, two prices (9 Oct 2026): 'Offer both' is ONE offering with a
+    // price per person AND a price for one group to book the whole session — the
+    // provider never creates the experience twice.
+    menuSlotBothGateGroup: 'Add a price for the whole group to carry on — that’s what lets guests book it privately.',
+    menuSlotBothRowLabel: 'A place each, or the whole session',
+    menuSlotBothRowHint: 'One offering with two prices: per person, and for one group to book it all.',
+    menuGroupTitle: 'How much for the whole group?',
+    menuGroupNoteBoth: 'One group books the whole session and pays this in full however many come, up to your maximum. No one else can join.',
+    menuGroupNoteOptional: 'Optional. Set it and one group can book it all at this price, however many come, up to your maximum. Leave it blank for places only.',
     menuDescTitle: 'Add a short description',
     menuDescPlaceholder: 'e.g. About an hour, all kit included, hot drink after.',
     menuPhotoTitle: 'Add a photo',

@@ -454,6 +454,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         name: string;
         description: string;
         price: string;
+        // A per-person offering's price for one group to book it whole — one
+        // offering priced two ways. '' / absent = places only.
+        groupPrice?: string;
         // How it's charged — lib/pricingUnits: 'person' | 'flat' (per group) |
         // 'event' | 'item'; legacy 'night' | 'hour' | 'ticket' still load.
         unit: string;
@@ -873,7 +876,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // The menu, if they have one. Loaded in the order they set.
                     const { data: itemRows } = await supabase
                         .from('service_provider_items')
-                        .select('id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment')
+                        .select('id, name, description, price, group_price, unit, image, sort_order, created_at, duration_minutes, fulfilment')
                         .eq('provider_id', existing.id)
                         .order('sort_order', { ascending: true })
                         .order('created_at', { ascending: true });
@@ -883,6 +886,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             name: r.name || '',
                             description: r.description || '',
                             price: r.price === null || r.price === undefined ? '' : String(r.price),
+                            groupPrice: r.group_price === null || r.group_price === undefined ? '' : String(r.group_price),
                             unit: r.unit || 'flat',
                             image: r.image || null,
                             duration: r.duration_minutes === null || r.duration_minutes === undefined ? '' : String(r.duration_minutes),
@@ -934,7 +938,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // one item and no stored offering, and loads as exactly what
                     // that item is — 'private' or 'shared' — never flipped.
                     if (ex.shape === 'slot') {
-                        setSlotOffer(slotOfferingFromUnits((itemRows || []).map((r: any) => r.unit)));
+                        // A per-person offering with a group price IS 'both' — one
+                        // offering priced two ways.
+                        const twoPrices = (itemRows || []).some((r: any) => r.unit === 'person' && Number(r.group_price) > 0);
+                        setSlotOffer(twoPrices ? 'both' : slotOfferingFromUnits((itemRows || []).map((r: any) => r.unit)));
                     }
                     if (ex.shape === 'comes_to_you') {
                         const offered = chargeUnitsFor('comes_to_you') as string[];
@@ -1935,6 +1942,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const guestSlotChoice = isGuest && ((shape === 'slot' && (step === 'g_slot_basis' || step === 'g_slot_where')) || step === 'g_charge');
     // group falls back to the category's own group, so a restored draft (which
     // saves the category, not the group) still resolves its steps correctly.
+    // An 'Offer both' slot is priced both ways: a per-person offering that also
+    // carries a group price — or, for a provider who set up before that, a
+    // per-person offering AND a separate whole-thing one. Next waits for either,
+    // or a host who chose both quietly ships only one way to book.
+    const slotBothPriced = items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0 && Number(r.groupPrice) > 0)
+        || (items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
+            && items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0));
     const stepCtx: StepContext | undefined =
         isGuest
             ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, slotOffer, fulfilment, chargeUnits }
@@ -2088,14 +2102,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             // or it quietly ships only one. Next is greyed until both — say which
             // is missing rather than leaving it unexplained. (No price at all falls
             // to the menu's own required-item gate.)
-            : step === 'g_menu' && shape === 'slot' && slotOffer === 'both'
-                && !(items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
-                    && items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0))
+            : step === 'g_menu' && shape === 'slot' && slotOffer === 'both' && !slotBothPriced
             ? (!items.some((r) => Number(r.price) > 0)
                 ? GUEST_SCREEN_COPY.menuRequiredGate
-                : items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
-                    ? GUEST_SCREEN_COPY.menuSlotBothGateShared
-                    : GUEST_SCREEN_COPY.menuSlotBothGatePrivate)
+                : GUEST_SCREEN_COPY.menuSlotBothGateGroup)
             // The 'both' place screen carries two answers. When BOTH are still
             // empty the footer named only the areas (the first problem), so the
             // address looked optional — name both. If just one is missing this
@@ -3240,6 +3250,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         name: String(it.name || '').trim(),
                         description: String(it.description || '').trim() || null,
                         price,
+                        // One offering, two prices: a per-person row may carry a
+                        // group price; every other row writes null.
+                        group_price: (String(it.unit) === 'person' && Number(it.groupPrice) > 0) ? Number(it.groupPrice) : null,
                         // A travelling item is always private (flat), whatever the row
                         // carries — nobody joins a class in someone else's cottage.
                         unit: shape === 'slot'
@@ -4366,7 +4379,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // "per person", "per group", "per event" — the unit as the
                     // provider chose it (lib/pricingUnits), never "for the session".
                     const unitWord = (r: { unit: string }) => unitPer(shape === 'made_to_order' ? 'item' : (r.unit || 'flat'));
-                    const rowSummary = (r: { price: string; unit: string; duration?: string }) => {
+                    const rowSummary = (r: { price: string; unit: string; duration?: string; groupPrice?: string }) => {
                         const p = String(r.price || '').trim();
                         if (!(p !== '' && Number(p) > 0)) return GUEST_SCREEN_COPY.menuRowPrompt;
                         // For a treatment, the length is the useful qualifier ("£60 ·
@@ -4377,7 +4390,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         const qualifier = timedRow
                             ? (Number(r.duration) > 0 ? durationLabel(Number(r.duration)) : '')
                             : unitWord(r);
-                        return '£' + p + (qualifier ? ' · ' + qualifier : '');
+                        const group = String(r.unit) === 'person' && Number(r.groupPrice) > 0 ? ' · £' + String(r.groupPrice) + ' per group' : '';
+                        return '£' + p + (qualifier ? (timedRow ? ' · ' : ' ') + qualifier : '') + group;
                     };
                     // An item is done only when it has BOTH a name and a real price —
                     // the tick has to mean that. A seeded 'both' row ('For the whole
@@ -4395,12 +4409,16 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // never a blank list. private/shared show only their one shape;
                     // 'both' shows both. A shape the host has already priced shows
                     // their real item; guidance never appears over real data.
-                    const offerUnits: string[] = slotOffer === 'private' ? ['flat']
-                        : slotOffer === 'shared' ? ['person']
-                            : ['flat', 'person'];
+                    // 'both' is ONE per-person offering that also carries a price for
+                    // the whole group (9 Oct 2026) — not two offerings to set up. An
+                    // older 'both' provider's separate whole-thing row still shows,
+                    // as an extra row below.
+                    const offerUnits: string[] = slotOffer === 'private' ? ['flat'] : ['person'];
                     const shapeMeta: Record<string, { label: string; hint: string }> = {
                         flat: { label: GUEST_SCREEN_COPY.menuSlotUnitFlat, hint: GUEST_SCREEN_COPY.menuSlotUnitFlatHint },
-                        person: { label: GUEST_SCREEN_COPY.menuSlotUnitPerson, hint: GUEST_SCREEN_COPY.menuSlotUnitPersonHint },
+                        person: slotOffer === 'both'
+                            ? { label: GUEST_SCREEN_COPY.menuSlotBothRowLabel, hint: GUEST_SCREEN_COPY.menuSlotBothRowHint }
+                            : { label: GUEST_SCREEN_COPY.menuSlotUnitPerson, hint: GUEST_SCREEN_COPY.menuSlotUnitPersonHint },
                     };
                     const shapeRows = offerUnits.map((unit) => {
                         const index = items.findIndex((r) => String(r.unit) === unit);
@@ -4412,7 +4430,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     const extraRows = items.map((r, i) => ({ r, i })).filter(({ i }) => !usedIdx.has(i));
 
                     const rows = items;
-                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit' | 'duration' | 'fulfilment', val: string) =>
+                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'groupPrice' | 'unit' | 'duration' | 'fulfilment', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
                     const openEdit = (i: number) => { setMenuIndex(i); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
@@ -4480,7 +4498,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // than one way (or the row is on a legacy unit).
                     const itemUnitChoices = it ? unitChoices(allowedUnits, String(it.unit || '')) : allowedUnits;
                     const menuUnitStep = !isSlot && shape !== 'made_to_order' && itemUnitChoices.length > 1;
-                    const stepKinds: Array<'name' | 'location' | 'booked' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = forcedOneToOneItem
+                    // ONE OFFERING, TWO PRICES: a per-person offering is also asked a
+                    // price for the whole group — required in spirit for 'both' (the
+                    // Next gate checks one exists), optional for "something else"
+                    // that ticked per group too.
+                    const groupStep = !!it && String(it.unit) === 'person' && !forcedOneToOneItem && !mixedChoiceItem
+                        && (slotBoth || (askedCharge && chargeUnits.includes('flat')));
+                    const stepKindsBase: Array<'name' | 'location' | 'booked' | 'duration' | 'price' | 'group' | 'unit' | 'desc' | 'photo'> = forcedOneToOneItem
                         ? ['name', ...locStep, 'duration', 'price', 'desc', 'photo']
                         : mixedChoiceItem
                             ? (mixedTimed
@@ -4489,6 +4513,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             : ((slotBoth && !unitLocked) || menuUnitStep)
                                 ? ['name', 'unit', 'price', 'desc', 'photo']
                                 : ['name', ...locStep, 'price', 'desc', 'photo'];
+                    const stepKinds = groupStep
+                        ? stepKindsBase.flatMap((k) => (k === 'price' ? ['price', 'group'] as const : [k]))
+                        : stepKindsBase;
                     const LAST = stepKinds.length - 1;
                     const stepKind = stepKinds[menuStep] ?? 'name';
                     const durationFilled = !!it && (Number(it.duration) || 0) > 0;
@@ -4595,6 +4622,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                             : stepKind === 'booked' ? GUEST_SCREEN_COPY.menuBookedTitle
                                             : stepKind === 'duration' ? 'How long is it?'
                                                 : stepKind === 'price' ? priceQuestion(it.unit, forcedOneToOneItem || mixedTimed)
+                                                    : stepKind === 'group' ? GUEST_SCREEN_COPY.menuGroupTitle
                                                     : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
                                                         : stepKind === 'desc' ? GUEST_SCREEN_COPY.menuDescTitle
                                                             : GUEST_SCREEN_COPY.menuPhotoTitle
@@ -4801,6 +4829,25 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                                     </button>
                                                 );
                                             })}
+                                        </div>
+                                    )}
+                                    {/* THE GROUP PRICE — one offering, two prices. The
+                                        same big numeral as the price, and what the
+                                        provider keeps for a group booking. */}
+                                    {stepKind === 'group' && (
+                                        <div>
+                                            <BigAmountInput value={it.groupPrice || ''}
+                                                onChange={(v) => setField(menuIndex, 'groupPrice', v)}
+                                                placeholder="120"
+                                                ariaLabel={GUEST_SCREEN_COPY.menuGroupTitle} />
+                                            <p className="mx-auto mt-6 max-w-md text-center text-sm text-slate-500 [text-wrap:balance]">
+                                                {slotBoth ? GUEST_SCREEN_COPY.menuGroupNoteBoth : GUEST_SCREEN_COPY.menuGroupNoteOptional}
+                                            </p>
+                                            {Number(it.groupPrice) > 0 && (
+                                                <p className="mt-4 text-center text-sm font-medium text-slate-600">
+                                                    {GUEST_SCREEN_COPY.payoutKeepLine} £{Math.max(0, Number(it.groupPrice) - serviceCommission(Number(it.groupPrice), DEFAULT_SERVICE_COMMISSION)).toFixed(2)} per group
+                                                </p>
+                                            )}
                                         </div>
                                     )}
                                     {stepKind === 'desc' && (
@@ -6571,8 +6618,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             // A 'both' slot must have BOTH products priced, or a
                             // host who chose both quietly ships only one.
                             : step === 'g_menu' && shape === 'slot' && slotOffer === 'both'
-                                ? !(items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
-                                    && items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0))
+                                ? !slotBothPriced
                             : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
                             : stepProblems.length > 0
                         );

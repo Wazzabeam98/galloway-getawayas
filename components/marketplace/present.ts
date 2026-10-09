@@ -21,7 +21,37 @@ function money(n: number): string {
  *  "£475 / event", or a plain "£60" for a timed treatment. Only a fixed price is
  *  ever listed (ranges and price on enquiry were dropped, 9 Oct 2026). */
 export function itemPriceDisplay(item: MpItem): string {
-    return money(item.price) + guestUnitSuffix(item.unit, isTimed(item));
+    const base = money(item.price) + guestUnitSuffix(item.unit, isTimed(item));
+    // One offering priced two ways: "£18 / guest · £90 / group".
+    return item.groupPrice ? base + ' · ' + money(item.groupPrice) + ' / group' : base;
+}
+
+// ONE OFFERING, TWO PRICES. A per-person offering with a group price can be
+// booked a place each or whole by one group. The booking dialogs choose between
+// OPTIONS, so such an offering becomes two: itself, and a whole-group option —
+// unit 'flat' (a private hire, so availability, head count and the summary all
+// follow the existing whole-session rules) at the group price. The option id
+// carries a suffix; optionTarget turns it back into what the routes are sent:
+// the real item id plus bookAs 'group'. The server re-derives the price from the
+// item; nothing here is trusted.
+const GROUP_OPTION = '~group';
+
+export function bookingOptions<T extends { id: string; name: string; price: number; unit: string; groupPrice?: number | null; minPeople?: number | null }>(items: T[]): T[] {
+    const out: T[] = [];
+    for (const it of items) {
+        out.push(it);
+        if (it.unit === 'person' && Number(it.groupPrice) > 0) {
+            out.push({ ...it, id: it.id + GROUP_OPTION, name: it.name + ' — whole group', unit: 'flat', price: Number(it.groupPrice), groupPrice: null, minPeople: null });
+        }
+    }
+    return out;
+}
+
+/** The real item and booking mode behind a dialog option id. */
+export function optionTarget(optionId: string): { itemId: string; bookAs?: 'group' } {
+    return optionId.endsWith(GROUP_OPTION)
+        ? { itemId: optionId.slice(0, -GROUP_OPTION.length), bookAs: 'group' }
+        : { itemId: optionId };
 }
 
 /** "£45", "from £18", "from £20 / guest" — the card's price line. */
