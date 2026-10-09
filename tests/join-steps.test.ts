@@ -498,12 +498,39 @@ const withCapacity = (keys: string[]) => {
     return out;
 };
 
+// A comes-to-you provider is asked how they charge (g_charge) before capacity —
+// the unit comes first (9 Oct 2026).
+const withCharge = (keys: string[]) => {
+    const out = keys.slice();
+    out.splice(out.indexOf('g_capacity'), 0, 'g_charge');
+    return out;
+};
+
 test('a chef (food, comes to them) walks the flow, with a capacity step, and never sees the business step', () => {
     const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
-    assert.deepEqual(gkeys(ctx), withCapacity(TEN));
+    assert.deepEqual(gkeys(ctx), withCharge(withCapacity(TEN)));
     // The old "how do guests get it?" screen is gone — the shape is inferred.
     assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a chef sets a largest group');
+});
+
+test('how they charge is asked of a comes-to-you provider only, and decides capacity', () => {
+    const travel = { group: 'food', category: 'chef', shape: 'comes_to_you' };
+    assert.equal(stepApplies('g_charge', 'guest', travel), true, 'comes to you: asked how they charge');
+    for (const other of [
+        { group: 'food', category: 'food_order', shape: 'made_to_order' },
+        { group: 'outdoors', category: 'outdoors', shape: 'slot' },
+        { group: 'wellness', category: 'massage', shape: 'slot' },
+    ]) {
+        assert.equal(stepApplies('g_charge', 'guest', other), false, other.category + ' is not asked (made to order is per item; a slot answers per person/per group)');
+    }
+    // A bouncy castle is per event however many come — no capacity question.
+    assert.equal(stepApplies('g_capacity', 'guest', { ...travel, chargeUnits: ['event'] }), false, 'per event only: no capacity');
+    assert.equal(stepApplies('g_capacity', 'guest', { ...travel, chargeUnits: ['item'] }), false, 'per item only: no capacity');
+    assert.equal(stepApplies('g_capacity', 'guest', { ...travel, chargeUnits: ['event', 'item'] }), false, 'per event and per item: no capacity');
+    assert.equal(stepApplies('g_capacity', 'guest', { ...travel, chargeUnits: ['event', 'person'] }), true, 'per person needs a capacity');
+    assert.equal(stepApplies('g_capacity', 'guest', { ...travel, chargeUnits: ['flat'] }), true, 'per group needs a capacity');
+    assert.equal(stepApplies('g_capacity', 'guest', { ...travel, chargeUnits: [] }), true, 'not yet answered: capacity stays');
 });
 
 test('a cake maker (made to order) gets the years and expertise screens too', () => {
@@ -796,8 +823,8 @@ test('the guest flow is six named sections, in Airbnb order', () => {
     // About you opens with the name, then the years screen and the expertise hub;
     // every other content section is a single screen; Finish gathers the wrap-up.
     assert.deepEqual(secs.find((s: any) => s.key === 'about').steps, ['g_title', 'g_you', 'g_creds']);
-    // Pricing leads with the capacity step, then the priced offerings.
-    assert.deepEqual(secs.find((s: any) => s.key === 'pricing').steps, ['g_capacity', 'g_menu']);
+    // Pricing leads with how they charge, then capacity, then the priced offerings.
+    assert.deepEqual(secs.find((s: any) => s.key === 'pricing').steps, ['g_charge', 'g_capacity', 'g_menu']);
     // Finish is now a single screen — the checks and contact steps that used to
     // share it are gone (checks folded to one box on the finish screen; contact
     // removed, the account address is the contact address).

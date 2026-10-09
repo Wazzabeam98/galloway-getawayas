@@ -171,14 +171,22 @@ export const GUEST_SCREEN_COPY = {
     // /'shared'/'both' are the logic and stay in code.
     // Not "How do guests book it?" — that is the "Something else" format
     // question now (shapeQuestion), and two screens asking it read as a bug.
-    slotBasisQuestion: 'Private or shared sessions?',
-    slotBasisGate: 'Choose private, shared or both to carry on.',
-    slotBasisPrivateLabel: 'One group takes the whole thing',
-    slotBasisPrivateHint: 'A private booking — that group has it to themselves and no one else can join. One price for the whole thing.',
-    slotBasisSharedLabel: 'People book individual places',
-    slotBasisSharedHint: 'Several separate bookings share the same time, each priced per person, up to a number you set.',
-    slotBasisBothLabel: 'Offer both',
-    slotBasisBothHint: 'Let guests choose — book the whole thing, or take a single place.',
+    // Asked as the UNIT (9 Oct 2026): per person (shared places) or per group
+    // (one group takes the whole session) — the same answer, named as what the
+    // provider charges for, so the price that follows is "How much per person?".
+    slotBasisQuestion: 'How do you charge?',
+    slotBasisGate: 'Choose per person, per group or both to carry on.',
+    slotBasisPrivateLabel: 'Per group',
+    slotBasisPrivateHint: 'One group books the whole session — no one else can join. One price for the group.',
+    slotBasisSharedLabel: 'Per person',
+    slotBasisSharedHint: 'Guests book individual places at the same time, each paying per person, up to a number you set.',
+    slotBasisBothLabel: 'Both',
+    slotBasisBothHint: 'Let guests choose — take a place each, or book the whole session for their group.',
+    // The comes-to-you unit screen (g_charge): any of the four, before capacity
+    // and the price. Each offering then picks one of the ticked units.
+    chargeQuestion: 'How do you charge?',
+    chargeSubtext: 'Choose all that apply — each thing you offer then uses one of these.',
+    chargeGate: 'Choose at least one way you charge to carry on.',
     // The per-person minimum screen (g_slot_min) was removed at sign-up (Liam,
     // 9 Oct 2026): Airbnb has no minimum-people setting, and ours misled — the
     // heading implied a session total while it applied per booking, so two people
@@ -234,27 +242,13 @@ export const GUEST_SCREEN_COPY = {
     menuPricePlaceholder: '45',        // the big numeral's placeholder — an example price
     menuPriceTypeLabel: 'How this is priced',   // the current-choice row on the price step
     menuPriceTypeTitle: 'How is this priced?',  // the basis picker's heading
-    // The pricing bases. The labels live here so the wording is changed in one
-    // place; the keys are the logic and stay in code. 'flat'/'person'/'event'/
-    // 'item' are what a new offering is offered (see OFFERED_UNITS); 'night'/
-    // 'hour'/'ticket' are legacy — still labelled so an existing offering reads
-    // right, but no longer offered.
-    priceUnitLabels: {
-        flat: 'Whole session',
-        person: 'Per person',
-        event: 'Per event',
-        item: 'Per item',
-        night: 'Per night',
-        hour: 'Per hour',
-        ticket: 'Per ticket',
-    } as Record<string, string>,
     // SLOT 'offer both' only: the unit is chosen per item, as its own step in the
     // sub-flow. A private-only slot is flat and a shared-only slot is per person —
     // both derived, never asked — so these two are the only choices, and only when
     // the provider offers both. 'flat' = a private hire (the whole session, one
     // booking), 'person' = a seat at a shared table.
-    menuSlotUnitTitle: 'How is this priced?',
-    menuSlotUnitFlat: 'For the whole thing',
+    menuSlotUnitTitle: 'How do you charge for it?',
+    menuSlotUnitFlat: 'Per group',
     menuSlotUnitFlatHint: 'One price for a private booking — one group has it to themselves.',
     menuSlotUnitPerson: 'Per person',
     menuSlotUnitPersonHint: 'A price each — guests book individual places, up to the number you set.',

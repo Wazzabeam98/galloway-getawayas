@@ -14,18 +14,12 @@ import { offeredTimes } from '@/lib/offeredTimes';
 import { venueMapPoint } from '@/lib/venuePoint';
 import { shiftDayKey, londonDayKey } from '@/lib/dayKey';
 
-// How an offering is priced. 'fixed' is the single price (today's behaviour, the
-// default); 'range' is a from–to (price = from, priceMax = to), shown as a range;
-// 'enquiry' is price-on-enquiry, no figure up front. Only 'fixed' is
-// instant-bookable — range and enquiry route the guest to "Message the provider"
-// and are refused server-side by the booking routes.
-export type PriceMode = 'fixed' | 'range' | 'enquiry';
+// Only a FIXED price is listed (9 Oct 2026). Ranges and price on enquiry were
+// dropped; price_mode/price_max stay on the table but are no longer written, and
+// any older row that isn't fixed is simply not listed (the loader filters it).
 
 export interface MpItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
-    // The pricing shape, and the top of a range (null unless priceMode === 'range').
-    priceMode: PriceMode;
-    priceMax: number | null;
     // The per-treatment length in minutes (massage: 30/45/60/90), or null for a
     // single-length category (sauna, a class), where the provider's slot length is
     // used. When any item carries one, the times a guest sees depend on the item.
@@ -186,14 +180,8 @@ export interface MpProvider {
     // Made-to-order (and any delivering provider): a flat delivery fee added once
     // to a delivery order. 0/null when they charge nothing or don't deliver.
     deliveryFee: number;
-    // The lowest price across the FIXED and RANGE offerings (a range contributes
-    // its from-price). 0 when every offering is price-on-enquiry — read
-    // allOnEnquiry, not priceFrom, to decide the headline in that case.
+    // The lowest price across the provider's listed offerings.
     priceFrom: number;
-    // True when the provider has no fixed or range offering — everything is price
-    // on enquiry — so the card and panel show "Price on enquiry" instead of a
-    // "from £0" that a 0 priceFrom would produce.
-    allOnEnquiry: boolean;
     // A slot provider's per-person vs whole-slot reading comes off the item unit.
     items: MpItem[];
     // Slots only: the next bookable sessions in the stay (future, seats left).
@@ -410,10 +398,10 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label, centre_lat, centre_lng').in('provider_id', ids),
-        admin.from('service_provider_items').select('id, provider_id, name, description, price, price_mode, price_max, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category')
-            // A fixed or range offering has a real price (> 0); a price-on-enquiry
-            // one has none, so keep it on its mode instead, or it would vanish.
-            .in('provider_id', ids).eq('active', true).or('price.gt.0,price_mode.eq.enquiry')
+        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category')
+            // Listed only with a real, fixed price — an older range or
+            // price-on-enquiry row is not shown (the modes were dropped).
+            .in('provider_id', ids).eq('active', true).gt('price', 0).eq('price_mode', 'fixed')
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
         admin.from('slot_blocks').select('provider_id, blocked_date').in('provider_id', ids),
@@ -455,9 +443,10 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
         if (!(isLiveToGuests(pausedId ? { ...p, owner_paused: false, admin_hidden_at: null } : p) && mccForProvider(p))) continue;
         const items = (itemsBy[p.id] || []).map((it: any) => ({
             id: it.id, name: it.name, description: it.description, price: Number(it.price),
-            priceMode: (['fixed', 'range', 'enquiry'].indexOf(String(it.price_mode)) !== -1 ? it.price_mode : 'fixed') as PriceMode,
-            priceMax: it.price_max == null ? null : Number(it.price_max),
-            unit: normaliseUnit(it.unit), image: it.image ? getImageUrl(it.image) : null,
+            // A made-to-order menu is per item, whatever an older row stored
+            // (the cart charges qty × price either way) — so a cake never reads
+            // "£18 / group".
+            unit: shapeOf(p) === 'made_to_order' ? 'item' : normaliseUnit(it.unit), image: it.image ? getImageUrl(it.image) : null,
             duration_minutes: it.duration_minutes == null ? null : Number(it.duration_minutes),
             fulfilment: it.fulfilment || null,
             capacity: it.capacity == null ? null : Number(it.capacity),
@@ -613,17 +602,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             shape,
             fulfilment: p.fulfilment || null,
             deliveryFee: Number(p.delivery_fee) || 0,
-            // Lowest price across the FIXED and RANGE offerings (a range's from
-            // price counts); price-on-enquiry offerings carry no figure, so they
-            // are skipped — otherwise a 0-priced POA row would make "from £0".
-            // allOnEnquiry carries the "nothing has a price" case to the card.
-            ...(() => {
-                const priced = items.filter((i: MpItem) => i.priceMode !== 'enquiry' && i.price > 0);
-                return {
-                    priceFrom: priced.length ? Math.min(...priced.map((i: MpItem) => i.price)) : 0,
-                    allOnEnquiry: priced.length === 0,
-                };
-            })(),
+            priceFrom: Math.min(...items.map((i: MpItem) => i.price)),
             items,
             sessions,
             declaredSessions,

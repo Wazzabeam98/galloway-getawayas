@@ -190,13 +190,12 @@ export async function POST(request: Request) {
             : await itemQuery.order('sort_order', { ascending: true }).limit(1).maybeSingle();
         if (!item) return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
 
-        // Only a FIXED-price offering is instant-booked. A range or
-        // price-on-enquiry offering has no settled figure to charge — its price
-        // is agreed with the provider first — so refuse it here, not only in the
-        // UI: a range item's from-price is a real number and would otherwise pass
-        // the .gt('price', 0) filter above and be charged the minimum.
+        // Only a FIXED price is ever booked. An older range row stores its
+        // from-price as price, which would pass the .gt('price', 0) filter above
+        // and be charged the minimum, so refuse it on its mode (ranges and price
+        // on enquiry were dropped, 9 Oct 2026).
         if (item.price_mode && item.price_mode !== 'fixed') {
-            return NextResponse.json({ ok: false, error: 'The price for this is agreed with the provider — message them for a quote.' }, { status: 400 });
+            return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
         }
 
         const unit = normaliseUnit(item.unit);

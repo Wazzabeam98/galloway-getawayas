@@ -1,5 +1,5 @@
 import type { ReviewContent as Content } from '@/lib/serviceProviders';
-import { GUEST_SCREEN_COPY } from '@/lib/strings';
+import { UNIT_NAME } from '@/lib/pricingUnits';
 
 // What a guest listing actually contains — the menu with prices and the written
 // answers — rendered once for both the claimed review row and the unclaimed
@@ -11,7 +11,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // than reading blank.
 
 function unitLabel(unit: string): string {
-    return (GUEST_SCREEN_COPY.priceUnitLabels as Record<string, string>)[unit] || '';
+    return UNIT_NAME[unit] || '';
 }
 
 function agreedDate(iso: string): string {

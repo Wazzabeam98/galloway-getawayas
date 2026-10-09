@@ -7,7 +7,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { getImageUrl } from '@/lib/utils';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
 import { stepHeadings } from '@/lib/experienceSteps';
-import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
+import { slotAsksWhereFork, slotDurationPerItem, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
 import AutoTextarea from '@/components/AutoTextarea';
 import { cleanAmountInput, amountForBox } from '@/lib/amountInput';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
@@ -20,6 +20,7 @@ import { NumberStepper, BigTextInput, ChoiceTiles, wizardAreaCls } from './wizar
 import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
 import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
 import { AddItemFlow, ItemDetailCard, rowFromItem, uploadImage, priceRowValid, type MenuRow, type ItemCtx } from './ExperienceItemEditor';
+import { chargeUnitsFor, needsCapacity } from '@/lib/pricingUnits';
 import { SinglePhotoSheet } from './SinglePhotoSheet';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { savePaused, TakenDownBanner } from '@/components/services/ListingPauseControl';
@@ -44,6 +45,7 @@ import {
 export interface EditorProvider {
     id: string; shape: string; isSlot: boolean; isFood: boolean;
     vat_registered: boolean;
+    commission_rate: number;
     business_name: string; category_label: string; category: string; description: string;
     status: string; owner_paused: boolean; admin_hidden: boolean;
     photos: string[]; headshot: string | null; logo: string | null;
@@ -734,7 +736,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const menuPayload = (rows: MenuRow[]) => ({
         items: rows.map((r) => ({
             id: r.id, name: r.name, description: r.description, price: r.price,
-            price_mode: r.priceMode, price_max: r.priceMax,
             unit: r.unit, image: r.image,
             duration_minutes: r.duration, fulfilment: r.fulfilment, active: r.active,
             capacity: r.capacity, min_people: r.minPeople, included_guests: r.includedGuests,
@@ -755,10 +756,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [picked, setPicked] = useState<Set<number>>(new Set());
     const [confirmBulk, setConfirmBulk] = useState(false);
     const [bulkBusy, setBulkBusy] = useState(false);
-    // Only a FIXED offering is instant-bookable; a range or price-on-enquiry one
-    // is reached through "Message the provider", so it doesn't count toward the
-    // "keep at least one bookable" guard.
-    const bookable = (r: MenuRow) => r.active && !!r.name.trim() && (r.priceMode || 'fixed') === 'fixed' && Number(r.price) > 0;
+    const bookable = (r: MenuRow) => r.active && !!r.name.trim() && Number(r.price) > 0;
     const keptRows = menu.filter((_, j) => !picked.has(j));
     const bulkRefusal = keptRows.length === 0
         ? 'You can’t delete every offering — guests would have nothing to book. Keep at least one.'
@@ -814,7 +812,16 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const togglePaused = () => { setPausedTo(!paused); };
 
     const headings = stepHeadings(p.shape, fulfilment);
-    const itemCtx: ItemCtx = { isSlot: p.isSlot, shape: p.shape, fulfilment, minAge, maxGuests, supabase, vatRegistered: p.vat_registered };
+    // The one-at-a-time treatment shape (massage) has one unit and is never asked.
+    const timed = p.isSlot && slotDurationPerItem(p.category);
+    const itemCtx: ItemCtx = {
+        isSlot: p.isSlot, shape: p.shape, fulfilment, minAge, maxGuests, supabase, vatRegistered: p.vat_registered,
+        timed, units: chargeUnitsFor(p.shape, { timed }), commissionRate: p.commission_rate,
+    };
+    // A maximum capacity only means something when an offering is priced per
+    // person or per group. A provider charging only per event (a bouncy castle)
+    // or per item isn't asked for one. A slot always keeps it — it sizes sessions.
+    const showCapacity = p.isSlot || needsCapacity(menu.filter((r) => r.active).map((r) => r.unit));
 
     const missing: string[] = [];
     if (!headshot) missing.push('a photo of yourself');
@@ -852,9 +859,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
             : <div className="space-y-4">{heading}{children}</div>;
     };
 
-    // A showable offering: a fixed price, a complete range, or price-on-enquiry.
-    // A listing with any of these appears to guests (an enquiry offering shows
-    // "Message the provider"); only with none does it stay hidden.
+    // A showable offering: a name and a price.
     const hasPricedItem = menu.some((r) => r.active && r.name.trim() && priceRowValid(r));
 
     return (
@@ -910,8 +915,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             onSave={(v) => runThen('happens', happensPayload({ whatToExpect: v }), () => setWhatToExpect(v))} />
                         <FlowCard phases={phases} headings={headings}
                             onSave={(ph) => runThen('happens', happensPayload({ phases: ph }), () => setPhases(ph))} />
-                        <MaxCapacityCard isSlot={p.isSlot} value={maxGuests}
-                            onSave={(v) => runThen('booking', bookingPayload({ maxGuests: v }), () => setMaxGuests(v))} />
+                        {showCapacity && (
+                            <MaxCapacityCard isSlot={p.isSlot} value={maxGuests}
+                                onSave={(v) => runThen('booking', bookingPayload({ maxGuests: v }), () => setMaxGuests(v))} />
+                        )}
                     </>))}
 
                     {sec('photos', (

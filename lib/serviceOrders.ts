@@ -320,15 +320,10 @@ export type OrderUnit = 'flat' | 'person' | 'night' | 'hour' | 'ticket' | 'item'
 
 export const ORDER_UNITS: OrderUnit[] = ['flat', 'person', 'night', 'hour', 'ticket', 'item', 'event'];
 
-// The units a NEW offering may be given, in the order the picker shows them —
-// the four that suit an experience or a service: a price per guest, one price
-// for the whole session, one price for the whole event, or a price per item.
-// 'night'/'hour'/'ticket' are LEGACY: still understood and still shown on any
-// offering already priced that way (a cottage is per night; these units came
-// from the trades directory), but no longer offered — "per night" on an oyster
-// shucking read as nonsense. A row already on a legacy unit keeps it (the picker
-// adds it back as its own tile) until the provider changes it.
-export const OFFERED_UNITS: OrderUnit[] = ['person', 'flat', 'event', 'item'];
+// Which of these a NEW offering may be given, and what each is called, lives in
+// lib/pricingUnits (chargeUnitsFor / UNIT_NAME). 'night' and 'ticket' are legacy:
+// still understood and still shown on any offering already priced that way, but
+// no longer offered.
 
 /** A fat-finger guard, not a business rule. Tune freely; it is the one cap. */
 export const MAX_ORDER_QUANTITY = 50;

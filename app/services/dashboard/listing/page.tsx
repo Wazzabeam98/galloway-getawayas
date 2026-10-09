@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { audienceForTrade } from '@/lib/serviceProviders';
+import { audienceForTrade, commissionRateFor } from '@/lib/serviceProviders';
 import { isFoodProvider } from '@/lib/serviceOrders';
 import { shapeOf } from '@/lib/serviceSlots';
 import ProviderListingEditor from '@/components/services/ProviderListingEditor';
@@ -35,7 +35,7 @@ export default async function ProviderListingPage() {
             + 'collection_street, collection_town, collection_postcode, '
             + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, '
             + 'venue_lat, venue_lng, show_precise_location, '
-            + 'lead_time_days, cancellation_window_hours, owner_paused, admin_hidden_at, vat_registered')
+            + 'lead_time_days, cancellation_window_hours, owner_paused, admin_hidden_at, vat_registered, plan, commission_rate')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -72,6 +72,9 @@ export default async function ProviderListingPage() {
                 isSlot,
                 isFood: isFoodProvider(provider),
                 vat_registered: provider.vat_registered === true,
+                // The rate their orders are actually charged at, for the editor's
+                // "You keep" line — the same function the order uses.
+                commission_rate: commissionRateFor(provider),
                 business_name: provider.business_name || '',
                 category_label: provider.custom_label || '',
                 // The picked category KEY (guest_details.category) — what the
