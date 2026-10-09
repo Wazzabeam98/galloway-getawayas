@@ -177,7 +177,7 @@ export const GUEST_SCREEN_COPY = {
     slotBasisQuestion: 'How do you charge?',
     slotBasisGate: 'Choose per person, per group or both to carry on.',
     slotBasisPrivateLabel: 'Per group',
-    slotBasisPrivateHint: 'One group books the whole session — no one else can join. One price for the group.',
+    slotBasisPrivateHint: 'One group books the whole session and pays the full price however many come, up to your maximum. No one else can join.',
     slotBasisSharedLabel: 'Per person',
     slotBasisSharedHint: 'Guests book individual places at the same time, each paying per person, up to a number you set.',
     slotBasisBothLabel: 'Both',
@@ -249,7 +249,7 @@ export const GUEST_SCREEN_COPY = {
     // booking), 'person' = a seat at a shared table.
     menuSlotUnitTitle: 'How do you charge for it?',
     menuSlotUnitFlat: 'Per group',
-    menuSlotUnitFlatHint: 'One price for a private booking — one group has it to themselves.',
+    menuSlotUnitFlatHint: 'One price for the whole group, paid in full however many come, up to your maximum.',
     menuSlotUnitPerson: 'Per person',
     menuSlotUnitPersonHint: 'A price each — guests book individual places, up to the number you set.',
     // The mixed shape's per-item choice (yoga, pottery, painting): what the host

@@ -43,7 +43,9 @@ export const UNIT_NAME: Record<string, string> = {
 // The one-line meaning under each tile.
 export const UNIT_HINT: Record<string, string> = {
     person: 'A price for each guest.',
-    flat: 'One price for the group, up to a number you set.',
+    // Said plainly (Liam, 9 Oct 2026): six people booking a ten-person group
+    // pay the full group price — it doesn't shrink for a smaller party.
+    flat: 'One price for the whole group, paid in full however many come, up to your maximum.',
     event: 'One price for the event, however many people come.',
     item: 'A price for each one a guest orders.',
     hour: 'A price for each hour a guest books.',
