@@ -15,10 +15,15 @@ const { PLATFORMS, platformFromUrl } = require('@/lib/platforms');
 test('every listed platform keeps its own colour, by key', () => {
     assert.equal(PLATFORMS.airbnb.colour, '#FF5A5F');
     assert.equal(PLATFORMS.booking.colour, '#003580');
-    assert.equal(PLATFORMS.vrbo.colour, '#0F5B99');
-    assert.equal(PLATFORMS.google.colour, '#4285F4');
+    assert.equal(PLATFORMS.vrbo.colour, '#DB2777');
+    assert.equal(PLATFORMS.google.colour, '#FBBC04');
     assert.equal(PLATFORMS.hospitable.colour, '#7C3AED');
     assert.equal(PLATFORMS.other.colour, '#475569');
+
+    // Every colour is distinct — no two platforms share one (the three blues
+    // used to be so close after softening they read as the same colour).
+    const colours = Object.values(PLATFORMS).map((p: any) => p.colour);
+    assert.equal(new Set(colours).size, colours.length, 'platform colours must all differ');
 });
 
 test('platformFromUrl maps each feed to its own platform (not grey "other")', () => {

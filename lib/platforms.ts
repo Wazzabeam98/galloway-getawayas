@@ -20,9 +20,17 @@ export interface Platform {
 
 export const PLATFORMS: Record<string, Platform> = {
     airbnb: { key: 'airbnb', name: 'Airbnb', colour: '#FF5A5F' },
+    // Booking.com, Vrbo and Google are all blue brands, and once the calendar
+    // softens a bar ~78% towards white those blues collapse into one another —
+    // Booking vs Vrbo rendered at ΔE 3 (invisible), all three within ΔE ~3–8.
+    // Booking keeps the blue, since of the three it is the one whose identity IS
+    // that blue. Vrbo and Google move to distinct hues so a host can actually
+    // tell their channels apart: Google takes its own brand yellow, and Vrbo a
+    // pink — a departure from its blue, for the same reason Hospitable took
+    // purple — which pulls Booking↔Vrbo to ΔE ~19.
     booking: { key: 'booking', name: 'Booking.com', colour: '#003580' },
-    vrbo: { key: 'vrbo', name: 'Vrbo', colour: '#0F5B99' },
-    google: { key: 'google', name: 'Google Calendar', colour: '#4285F4' },
+    vrbo: { key: 'vrbo', name: 'Vrbo', colour: '#DB2777' },
+    google: { key: 'google', name: 'Google Calendar', colour: '#FBBC04' },
     // Hospitable's own brand is a raspberry pink, which on the calendar sits
     // right on top of Airbnb's coral once the bars are softened — the one thing
     // channel colours exist to avoid. So it takes a purple instead, a nod to
