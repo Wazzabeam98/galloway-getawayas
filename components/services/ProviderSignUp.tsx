@@ -4353,12 +4353,14 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // stay a single item whose unit is derived, never asked.
                     const slotBoth = isSlot && slotOffer === 'both';
                     // The units a non-slot offering may use: a made-to-order menu is
-                    // per item; a comes-to-you provider uses the ones they ticked on
-                    // g_charge (all four if they somehow skipped it). A slot's unit
-                    // comes from the private/shared answer, not from here.
+                    // per item; a "something else" provider uses the ones they ticked
+                    // on g_charge; a named comes-to-you category (a chef) chooses per
+                    // offering from all four, as before. A slot's unit comes from the
+                    // private/shared answer, not from here.
+                    const askedCharge = guestNeedsShapeChoice(guestCategory) && chargeUnits.length > 0;
                     const allowedUnits: string[] = shape === 'made_to_order'
                         ? (chargeUnitsFor('made_to_order') as string[])
-                        : (chargeUnits.length ? chargeUnits : (chargeUnitsFor(shape) as string[]));
+                        : (askedCharge ? chargeUnits : (chargeUnitsFor(shape) as string[]));
                     const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: isSlot ? 'flat' : (allowedUnits[0] || 'flat'), image: null as string | null, duration: '' };
 
                     // "per person", "per group", "per event" — the unit as the

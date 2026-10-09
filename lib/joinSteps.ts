@@ -100,7 +100,7 @@ export interface StepContext {
     // step model can derive that, rather than the wizard hiding the screen while
     // still asking underneath.
     fulfilment?: string | null;
-    // How a comes-to-you provider charges (g_charge): any of 'person', 'flat'
+    // How a "something else" comes-to-you provider charges (g_charge): any of 'person', 'flat'
     // (per group), 'event', 'item'. Carried so the capacity screen can drop for a
     // provider who charges only per event or per item — a bouncy castle has no
     // maximum group. Absent/empty = not yet answered (capacity stays).
@@ -190,10 +190,11 @@ const ALL_STEPS: Step[] = [
     // all, so it comes before both. Lifted off g_area, where it used to crowd
     // the schedule; its own screen now, one question.
     { key: 'g_slot_basis', label: 'Basis', title: GUEST_SCREEN_COPY.slotBasisQuestion },
-    // Comes-to-you only, the first screen of Pricing: how they charge — per
-    // person, per group, per event, per item (any of them). The unit is asked
-    // BEFORE the price and before capacity, which only a per-person or per-group
-    // provider needs.
+    // "Something else" only (a category with no inferred shape) that comes to
+    // the guest, the first screen of Pricing: how they charge — per person, per
+    // group, per event, per item (any of them). Asked BEFORE capacity, which only
+    // a per-person or per-group provider needs. The named categories infer their
+    // shape and units already and are never asked (Liam, 9 Oct 2026).
     { key: 'g_charge', label: 'Charging', title: GUEST_SCREEN_COPY.chargeQuestion },
     { key: 'g_capacity', label: 'Guests', title: 'How many guests?' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
@@ -319,11 +320,12 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             case 'g_slot_basis':
                 return shape === 'slot' && !slotDurationPerItem(ctx.category) && !slotMixedDuration(ctx.category);
             case 'g_charge':
-                return shape === 'comes_to_you';
-            // A comes-to-you provider is asked capacity only when they charge per
-            // person or per group (needsCapacity); per event / per item has none.
+                return shape === 'comes_to_you' && guestNeedsShapeChoice(ctx.category);
+            // Capacity, for a comes-to-you provider: always for a named category
+            // (unchanged); for "something else" only when they charge per person
+            // or per group (needsCapacity) — per event / per item has none.
             case 'g_capacity':
-                return (shape === 'comes_to_you' && needsCapacity(ctx.chargeUnits))
+                return (shape === 'comes_to_you' && (!guestNeedsShapeChoice(ctx.category) || needsCapacity(ctx.chargeUnits)))
                     || (shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx));
             // The booking-shape question — only for a category that never declared
             // one ("something else"). A real sub-type settled its shape at the
