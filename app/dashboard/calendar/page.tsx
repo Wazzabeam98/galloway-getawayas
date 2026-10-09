@@ -20,21 +20,21 @@ import { ukDate } from '@/lib/dayKey';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 
-// Our own bookings have no platform colour, so they get a neutral slate — "this
+// Our own bookings have no platform colour, so they get emerald green — "this
 // one is ours", distinct from every imported channel's colour.
-const DIRECT_COLOUR = '#334155';
+const DIRECT_COLOUR = '#059669'; // emerald-600
 
 // Nights the minimum stay leaves unbookable — a gap too short to meet it and
 // not closed on both sides, so no stay can ever include them. Marked, as
 // Airbnb marks them, rather than left looking like ordinary free nights.
-// The colour is a muted violet: Liam first asked for black, but that sits too
-// close to the slate of "Booked direct", so violet was chosen to stand clearly
-// apart from both that and Airbnb's pink/coral. Drawn as a soft diagonal wash
-// (deliberately not an icon), so it reads as "a special, unavailable state"
-// rather than another booking.
-const MIN_STAY_COLOUR = '#7c3aed'; // violet-600
+// Black: Liam always wanted black, and now that a direct booking is emerald
+// (not dark slate) there is nothing dark for it to collide with, so it reads
+// cleanly against the pink, blue and green of the bars. Drawn as a soft
+// diagonal wash (deliberately not an icon), so it reads as "a special,
+// unavailable state" rather than another booking.
+const MIN_STAY_COLOUR = '#0f172a'; // slate-900 (black)
 const MIN_STAY_HATCH =
-    'repeating-linear-gradient(45deg, rgba(124,58,237,0.16) 0, rgba(124,58,237,0.16) 4px, transparent 4px, transparent 9px)';
+    'repeating-linear-gradient(45deg, rgba(15,23,42,0.18) 0, rgba(15,23,42,0.18) 4px, transparent 4px, transparent 9px)';
 
 // A platform's colour, lightened towards white so a whole month of bars reads
 // as calm rather than a wall of saturated blocks — Airbnb's bars are soft too.
@@ -834,7 +834,7 @@ export default function CalendarPage() {
                                                     blockedDay ? (
                                                         <span className="absolute bottom-1 left-1.5 text-[9px] text-slate-400">Blocked</span>
                                                     ) : orphan ? (
-                                                        <span className="absolute bottom-1 left-1.5 text-[9px] font-medium text-violet-700">
+                                                        <span className="absolute bottom-1 left-1.5 text-[9px] font-medium text-slate-900">
                                                             Min. stay<span className="sr-only"> — minimum stay, a gap too short to book</span>
                                                         </span>
                                                     ) : (!isPast && inMonth) ? (
