@@ -6,12 +6,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import Env from '@/config/Env';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage } from '@/lib/compressImage';
-import { childrenAllowed } from '@/lib/guestAges';
 import { cleanAmountInput, amountForBox } from '@/lib/amountInput';
 import AutoTextarea from '@/components/AutoTextarea';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
 import { NumberStepper, ChoiceCard, ChoiceTiles, WizardShell, BigAmountInput, BigTextInput, durationLabel, wizardAreaCls } from './wizardKit';
-import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
+import { SheetFooter, useCardSheet } from './editorSheet';
 import { ImageIcon, Image as ImageIconLucide, User, Users, CalendarDays, Package, Trash2, Check } from 'lucide-react';
 import { UNIT_NAME, UNIT_HINT, unitChoices, unitPer, priceQuestion } from '@/lib/pricingUnits';
 import { serviceCommission } from '@/lib/pricing';
@@ -23,7 +22,7 @@ import { VAT_TREATMENTS, normaliseVatTreatment } from '@/lib/vat';
 // raised cards, one per detail). ProviderListingEditor owns the array and its
 // save; these only produce / edit one MenuRow and hand it back.
 
-export type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string; vatTreatment: string };
+export type MenuRow = { id?: string; name: string; description: string; price: string; groupPrice: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string; vatTreatment: string };
 
 // vatRegistered: the provider is VAT registered, so each offering shows its VAT treatment card.
 // units: the charge units this provider's offerings may use (lib/pricingUnits);
@@ -31,9 +30,10 @@ export type MenuRow = { id?: string; name: string; description: string; price: s
 // priced by its length; commissionRate: their real rate, for "You keep".
 export type ItemCtx = { isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number; supabase: SupabaseClient; vatRegistered?: boolean; units: string[]; timed: boolean; commissionRate: number };
 
-export function rowFromItem(it: { id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null; vat_treatment?: string | null }): MenuRow {
+export function rowFromItem(it: { id: string; name: string; description: string; price: number; group_price?: number | null; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null; vat_treatment?: string | null }): MenuRow {
     return {
         id: it.id, name: it.name, description: it.description, price: amountForBox(it.price),
+        groupPrice: amountForBox(it.group_price ?? null),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
         fulfilment: it.fulfilment, active: it.active,
         capacity: it.capacity != null ? String(it.capacity) : '',
@@ -49,7 +49,7 @@ export function rowFromItem(it: { id: string; name: string; description: string;
 }
 
 export function newRow(isSlot: boolean, fulfilment: string, unit: string): MenuRow {
-    return { name: '', description: '', price: '', unit, image: null,
+    return { name: '', description: '', price: '', groupPrice: '', unit, image: null,
         duration: isSlot ? '60' : '', fulfilment: (isSlot && fulfilment === 'both') ? 'collection' : null, active: true,
         capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '',
         isCustom: false, ingredients: '', allergens: '', category: '', vatTreatment: 'standard' };
@@ -65,6 +65,7 @@ function priceWords(price: string, unit: string, timed: boolean): string {
 export function itemSummary(r: MenuRow, isSlot: boolean, timed = false, shape = ''): string {
     const bits: string[] = [];
     bits.push(priceWords(r.price, shape === 'made_to_order' ? 'item' : r.unit, timed));
+    if (r.unit === 'person' && Number(r.groupPrice) > 0) bits.push(`£${r.groupPrice} per group`);
     if (isSlot && r.duration) bits.push(durationLabel(Number(r.duration)));
     if (!r.active) bits.push('hidden');
     return bits.join(' · ');
@@ -121,9 +122,35 @@ export function KeepLine({ price, unit, timed, rate }: { price: string; unit: st
     );
 }
 
-function PriceChoice({ ctx, price, unit, onPrice, onUnit, units = true, autoFocus }: {
-    ctx: ItemCtx; price: string; unit: string;
-    onPrice: (v: string) => void; onUnit: (u: string) => void;
+// ONE OFFERING, TWO PRICES (Liam, 9 Oct 2026). A per-person offering can also be
+// booked whole by one group at a group price — a sauna round at £18 a person, or
+// the whole barrel for £90 — so the provider never creates the experience twice.
+// Optional: blank means places only. Not for a timed treatment or a food menu.
+export const offersGroupPrice = (ctx: ItemCtx, unit: string): boolean =>
+    unit === 'person' && !ctx.timed && ctx.shape !== 'made_to_order';
+
+function GroupPriceField({ ctx, value, onChange }: { ctx: ItemCtx; value: string; onChange: (v: string) => void }) {
+    return (
+        <div className="space-y-3 rounded-2xl border border-slate-200 p-4">
+            <div>
+                <p className="font-semibold text-slate-900">{ctx.isSlot ? 'Can one group book the whole session?' : 'Can one group book it all?'}</p>
+                <p className="mt-0.5 text-sm text-slate-600">Set a group price and guests can choose: a place each, or the whole thing for their group. The group pays it in full however many come, up to your maximum. Leave it blank for places only.</p>
+            </div>
+            <label className="flex items-center gap-2">
+                <span className="text-lg font-bold text-slate-500">£</span>
+                <input type="text" inputMode="decimal" autoComplete="off" placeholder="—" aria-label="Group price" value={value}
+                    onChange={(e) => onChange(cleanAmountInput(e.target.value))}
+                    className="w-32 rounded-2xl border-2 border-slate-200 px-4 py-3 text-base text-slate-900 focus:border-emerald-600 focus:outline-none" />
+                <span className="text-sm text-slate-500">per group</span>
+            </label>
+            <KeepLine price={value} unit="flat" timed={false} rate={ctx.commissionRate} />
+        </div>
+    );
+}
+
+function PriceChoice({ ctx, price, unit, groupPrice, onPrice, onUnit, onGroupPrice, units = true, autoFocus }: {
+    ctx: ItemCtx; price: string; unit: string; groupPrice?: string;
+    onPrice: (v: string) => void; onUnit: (u: string) => void; onGroupPrice?: (v: string) => void;
     units?: boolean; autoFocus?: boolean;
 }) {
     // A food menu is per item and a treatment is priced by its length — neither
@@ -138,6 +165,9 @@ function PriceChoice({ ctx, price, unit, onPrice, onUnit, units = true, autoFocu
                     onChange={(v) => onPrice(cleanAmountInput(v))} />
             </div>
             <KeepLine price={price} unit={unit} timed={ctx.timed} rate={ctx.commissionRate} />
+            {units && onGroupPrice && offersGroupPrice(ctx, unit) && (
+                <GroupPriceField ctx={ctx} value={groupPrice || ''} onChange={onGroupPrice} />
+            )}
         </div>
     );
 }
@@ -201,12 +231,13 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
     const [busy, setBusy] = useState(false);
     const set = (patch: Partial<MenuRow>) => setR((cur) => ({ ...cur, ...patch }));
 
-    type StepKey = 'name' | 'unit' | 'photo' | 'price' | 'duration' | 'capacity' | 'party' | 'describe' | 'review';
+    type StepKey = 'name' | 'unit' | 'photo' | 'price' | 'group' | 'duration' | 'capacity' | 'party' | 'describe' | 'review';
     // Name, then how it's charged (only when there's a choice), then the price —
     // asked per that unit — then duration, capacity, description and photo.
     const steps: StepKey[] = ['name'];
     if (!ctx.timed && ctx.units.length > 1) steps.push('unit');
     steps.push('price');
+    if (offersGroupPrice(ctx, r.unit)) steps.push('group');
     if (ctx.isSlot) steps.push('duration');
     if (r.unit === 'person') steps.push(ctx.isSlot ? 'capacity' : 'party');
     steps.push('describe', 'photo', 'review');
@@ -228,7 +259,7 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
     };
     const back = safeIdx === 0 ? undefined : () => setIdx(safeIdx - 1);
 
-    const titles: Record<StepKey, string> = { ...STEP_QUESTIONS, unit: 'How do you charge for it?', price: priceQuestion(r.unit, ctx.timed), review: 'Review your offering' };
+    const titles: Record<StepKey, string> = { ...STEP_QUESTIONS, unit: 'How do you charge for it?', price: priceQuestion(r.unit, ctx.timed), group: 'A price for the whole group?', review: 'Review your offering' };
 
     return (
         <WizardShell step={safeIdx + 1} total={steps.length} title={titles[key]}
@@ -252,6 +283,10 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
                     <BigAmountInput value={r.price} numeric={false} autoFocus ariaLabel="Price" onChange={(v) => set({ price: cleanAmountInput(v) })} />
                     <KeepLine price={r.price} unit={r.unit} timed={ctx.timed} rate={ctx.commissionRate} />
                 </div>
+            )}
+
+            {key === 'group' && (
+                <div className="mx-auto w-full max-w-md"><GroupPriceField ctx={ctx} value={r.groupPrice} onChange={(v) => set({ groupPrice: v })} /></div>
             )}
 
             {key === 'duration' && (
@@ -330,9 +365,11 @@ function NameCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow) => unkno
 }
 
 function PriceCard({ ctx, row, perItemLocation, onSave }: { ctx: ItemCtx; row: MenuRow; perItemLocation: boolean; onSave: (r: MenuRow) => unknown }) {
-    const c = useCardSheet({ price: row.price, unit: row.unit, fulfilment: row.fulfilment }, (d) => onSave({ ...row, ...d }));
+    const c = useCardSheet({ price: row.price, groupPrice: row.groupPrice, unit: row.unit, fulfilment: row.fulfilment }, (d) => onSave({ ...row, ...d }));
     const travelled = perItemLocation && c.draft.fulfilment === 'delivery';
-    const priceSummary = row.price ? priceWords(row.price, ctx.shape === 'made_to_order' ? 'item' : row.unit, ctx.timed) : 'Add a price';
+    const priceSummary = row.price
+        ? priceWords(row.price, ctx.shape === 'made_to_order' ? 'item' : row.unit, ctx.timed) + (row.unit === 'person' && Number(row.groupPrice) > 0 ? ` · £${row.groupPrice} per group` : '')
+        : 'Add a price';
     return (
         <>
             <EditorCard title="Price" summary={priceSummary} onClick={c.start} />
@@ -345,8 +382,9 @@ function PriceCard({ ctx, row, perItemLocation, onSave }: { ctx: ItemCtx; row: M
                                 options={[{ value: 'collection', label: 'At my place' }, { value: 'delivery', label: 'I travel to them' }]} />
                         )}
                         <div className="py-4">
-                            <PriceChoice ctx={ctx} price={c.draft.price} unit={c.draft.unit} units={!travelled}
-                                onPrice={(v) => c.setDraft({ ...c.draft, price: v })} onUnit={(u) => c.setDraft({ ...c.draft, unit: u })} />
+                            <PriceChoice ctx={ctx} price={c.draft.price} unit={c.draft.unit} groupPrice={c.draft.groupPrice} units={!travelled}
+                                onPrice={(v) => c.setDraft({ ...c.draft, price: v })} onUnit={(u) => c.setDraft({ ...c.draft, unit: u })}
+                                onGroupPrice={(v) => c.setDraft({ ...c.draft, groupPrice: v })} />
                         </div>
                     </div>
                 </EditorPanel>
@@ -423,8 +461,10 @@ function VatTreatmentCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow) 
     );
 }
 
-// Extra-guest pricing (whole-session), standard/custom, menu section and
-// ingredients kept as cards so nothing that affects booking becomes uneditable.
+// Standard/custom, menu section and ingredients kept as cards so nothing that
+// affects booking becomes uneditable. (The extra-guest pricing card was removed,
+// 9 Oct 2026: a group price covers everyone up to the maximum, and no live
+// offering used it.)
 function StandardCustomCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow) => unknown }) {
     const c = useCardSheet(row.isCustom, (v) => onSave({ ...row, isCustom: v }));
     return (
@@ -434,30 +474,6 @@ function StandardCustomCard({ row, onSave }: { row: MenuRow; onSave: (r: MenuRow
                 <EditorPanel title="Can guests book it straight away?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <ChoiceTiles value={c.draft ? 'custom' : 'standard'} onChange={(v) => c.setDraft(v === 'custom')}
                         options={[{ value: 'standard', label: 'Standard', hint: 'Books instantly' }, { value: 'custom', label: 'Custom', hint: 'You approve first' }]} />
-                </EditorPanel>
-            )}
-        </>
-    );
-}
-
-function ExtraGuestsCard({ row, minAge, onSave }: { row: MenuRow; minAge: string; onSave: (r: MenuRow) => unknown }) {
-    const c = useCardSheet({ includedGuests: row.includedGuests, extraAdultFee: row.extraAdultFee, extraChildFee: row.extraChildFee, maxParty: row.maxParty },
-        (d) => onSave({ ...row, ...d }));
-    const summary = row.includedGuests ? `Includes ${row.includedGuests}, +£${row.extraAdultFee || 0}/adult` : 'One flat price';
-    return (
-        <>
-            <EditorCard title="Extra guest pricing" summary={summary} onClick={c.start} />
-            {c.open && (
-                <EditorPanel title="Do extra guests pay more?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
-                    <div className="space-y-5">
-                        <Field label="Guests included"><input className="w-28 rounded-2xl border-2 border-slate-200 px-4 py-3 text-base text-slate-900 focus:border-emerald-600 focus:outline-none" type="text" inputMode="numeric" placeholder="—" value={c.draft.includedGuests} onChange={(e) => c.setDraft({ ...c.draft, includedGuests: cleanAmountInput(e.target.value, false) })} /></Field>
-                        <Field label="Price per extra adult"><div className="flex items-center gap-1"><span className="text-base text-slate-700">£</span><input className="w-28 rounded-2xl border-2 border-slate-200 px-4 py-3 text-base text-slate-900 focus:border-emerald-600 focus:outline-none" type="text" inputMode="decimal" placeholder="0" value={c.draft.extraAdultFee} onChange={(e) => c.setDraft({ ...c.draft, extraAdultFee: cleanAmountInput(e.target.value) })} /></div></Field>
-                        {childrenAllowed(Number(minAge) || null) && (
-                            <Field label="Price per extra child"><div className="flex items-center gap-1"><span className="text-base text-slate-700">£</span><input className="w-28 rounded-2xl border-2 border-slate-200 px-4 py-3 text-base text-slate-900 focus:border-emerald-600 focus:outline-none" type="text" inputMode="decimal" placeholder="0" value={c.draft.extraChildFee} onChange={(e) => c.setDraft({ ...c.draft, extraChildFee: cleanAmountInput(e.target.value) })} /></div></Field>
-                        )}
-                        <Field label="Maximum group size"><input className="w-28 rounded-2xl border-2 border-slate-200 px-4 py-3 text-base text-slate-900 focus:border-emerald-600 focus:outline-none" type="text" inputMode="numeric" placeholder="—" value={c.draft.maxParty} onChange={(e) => c.setDraft({ ...c.draft, maxParty: cleanAmountInput(e.target.value, false) })} /></Field>
-                        <p className="text-sm text-slate-600">Leave blank for one flat price. The price never drops below the base.</p>
-                    </div>
                 </EditorPanel>
             )}
         </>
@@ -510,7 +526,6 @@ export function ItemDetailCard({ ctx, row, onSave, onDelete, selecting, selected
                             <StepperCard title="Smallest party" question={STEP_QUESTIONS.party} summary={partySummary} value={row.minPeople} suggestion={1} suffix="guests" min={1}
                                 onSave={(v) => onSave({ ...row, minPeople: v })} />
                         )}
-                        {row.unit === 'flat' && <ExtraGuestsCard row={row} minAge={ctx.minAge} onSave={onSave} />}
                         <TextDetailCard title="Description" question={STEP_QUESTIONS.describe} placeholder="A line or two a guest reads before booking." value={row.description} empty="Add a description" onSave={(v) => onSave({ ...row, description: v })} />
                         {ctx.shape === 'made_to_order' && <StandardCustomCard row={row} onSave={onSave} />}
                         {ctx.shape === 'made_to_order' && <TextDetailCard title="Menu section" question="Which part of your menu is it in?" placeholder="e.g. Cakes" value={row.category} empty="None" onSave={(v) => onSave({ ...row, category: v })} />}

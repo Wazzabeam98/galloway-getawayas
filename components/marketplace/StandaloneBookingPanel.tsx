@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { priceParts, cancellationBadge } from '@/components/marketplace/present';
+import { priceParts, cancellationBadge, bookingOptions, optionTarget } from '@/components/marketplace/present';
 import BookingDialog, { type BookArgs } from '@/components/marketplace/BookingDialog';
 import DatePreview from '@/components/marketplace/DatePreview';
 import { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { AGREEMENTS } from '@/lib/agreements';
 
-interface PanelItem { id: string; name: string; price: number; duration_minutes?: number | null; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
+interface PanelItem { id: string; name: string; price: number; groupPrice?: number | null; duration_minutes?: number | null; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 interface PanelDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 
@@ -92,7 +92,7 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
             const res = await fetch('/api/services/slots/book', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    providerId: provider.id, itemId: args.itemId, sessionDate: args.date, sessionTime: args.time,
+                    providerId: provider.id, ...optionTarget(args.itemId), sessionDate: args.date, sessionTime: args.time,
                     quantity: args.quantity, attendees: args.attendees,
                     adults: args.adults, children: args.children,
                     serviceAddress: args.serviceAddress, allergy: args.allergy,
@@ -173,7 +173,7 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
                 <BookingDialog
                     slotLength={provider.slotLength}
                     who={provider.who}
-                    items={provider.items}
+                    items={bookingOptions(provider.items)}
                     sessions={provider.sessions}
                     declaredSessions={declaredSessions}
                     providerCapacity={provider.slotCapacity}

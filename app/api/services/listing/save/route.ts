@@ -352,8 +352,14 @@ export async function POST(request: Request) {
                     // are non-negative money; the price never drops below the base.
                     const includedGuests = unit === 'flat' ? intOrNull(it.included_guests) : null;
                     const kidsOk = childrenAllowed(p.guest_details && (p.guest_details as any).min_age != null ? Number((p.guest_details as any).min_age) : null);
+                    // One offering, two prices: a per-person offering may carry a
+                    // price for one group to book it whole. Kept only on a
+                    // per-person row; null on anything else. (The editor no longer
+                    // sends extra-guest pricing — its card was removed — so the
+                    // included_guests/extra fees below save as null.)
+                    const groupPrice = unit === 'person' && Number(it.group_price) > 0 ? Number(it.group_price) : null;
                     const row: any = {
-                        name, description: strOrNull(it.description), price,
+                        name, description: strOrNull(it.description), price, group_price: groupPrice,
                         unit,
                         image: strOrNull(it.image),
                         duration_minutes: (it.duration_minutes == null || it.duration_minutes === '')

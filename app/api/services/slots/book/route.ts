@@ -69,6 +69,10 @@ export async function POST(request: Request) {
         // products), where we fall back to their one item.
         const requestedItemId: string = body && body.itemId;
         const requestedQuantity: unknown = body && body.quantity;
+        // 'group' books a PER-PERSON offering whole, at its group price — one
+        // offering priced two ways (a place each, or the whole session for one
+        // group). Absent = book it as the offering is priced.
+        const bookAsGroup: boolean = !!(body && body.bookAs === 'group');
         const note: string = (body && body.note ? String(body.note) : '').slice(0, 500);
         // The allergy field, separate from note — see the order route. A slot
         // auto-confirms, so this is the guest's one chance to state it up front.
@@ -181,7 +185,7 @@ export async function POST(request: Request) {
         // private/shared — derives from this row, never from the browser.
         const itemQuery = admin
             .from('service_provider_items')
-            .select('id, name, description, price, price_mode, unit, active, duration_minutes, fulfilment, capacity, min_people')
+            .select('id, name, description, price, price_mode, group_price, unit, active, duration_minutes, fulfilment, capacity, min_people')
             .eq('provider_id', provider.id)
             .eq('active', true)
             .gt('price', 0);
@@ -198,7 +202,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
         }
 
-        const unit = normaliseUnit(item.unit);
+        // A group booking needs a per-person offering that HAS a group price; it
+        // is then a whole-session hire in every respect — unit 'flat', one
+        // booking, the session closed to others — at that price. Everything
+        // below reads `unit`, so the private-hire rules apply unchanged.
+        if (bookAsGroup && !(normaliseUnit(item.unit) === 'person' && Number(item.group_price) > 0)) {
+            return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
+        }
+        const unit = bookAsGroup ? 'flat' : normaliseUnit(item.unit);
 
         // The seats and minimum for THIS item — its own when set, else the
         // provider's (the phased fallback). Every seat read below goes through
@@ -537,11 +548,11 @@ export async function POST(request: Request) {
             if (s) await admin.from('slot_sessions').update({ seats_taken: Math.max(0, s.seats_taken - quantity) }).eq('id', sessionRow.id);
         };
 
-        const unitPrice = Number(item.price);
+        const unitPrice = bookAsGroup ? Number(item.group_price) : Number(item.price);
         const total = orderTotal(unitPrice, quantity);
         const pricing = priceOrder(provider, { bandPrice: total }, []);
         const business = provider.business_name || 'Your experience';
-        const itemName = item.name || business;
+        const itemName = (item.name || business) + (bookAsGroup ? ' — whole group' : '');
         const nowIso = new Date().toISOString();
 
         // A TRAVELLING session freezes the DESTINATION address onto the order —
