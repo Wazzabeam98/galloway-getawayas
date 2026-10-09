@@ -21,13 +21,14 @@
 // "reductions refund nothing".
 
 import { shapeOf, freeCancelDeadline, guestMayCancelFree } from './serviceSlots';
-import { normaliseUnit, unitMultiplies, servesExistingBookings } from './serviceOrders';
+import { pricedPerHead, servesExistingBookings } from './serviceOrders';
 
-// Per-group pricing = a flat unit: one price whatever the head count, so a count
-// change only has to respect capacity. Every other unit multiplies by quantity,
-// so a count change moves money.
+// Per-group pricing = the price does not follow the head count: a flat or event
+// price, and also per hour / per item (9 Oct 2026), which multiply by hours or
+// items, never by people. So a count change only has to respect capacity. Only
+// a per-head unit (per person) moves money when the party changes.
 export function perGroupPricing(unit: string | null | undefined): boolean {
-    return !unitMultiplies(normaliseUnit(unit));
+    return !pricedPerHead(unit);
 }
 
 // The free-cancellation state for a change: `free` while inside the window (any

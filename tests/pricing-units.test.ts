@@ -14,7 +14,7 @@ import { unitMultiplies, orderQuantity } from '../lib/serviceOrders';
 test('each shape is offered the units that fit how it is booked', () => {
     assert.deepEqual(chargeUnitsFor('slot'), ['person', 'flat'], 'a group session: a place each, or the whole session');
     assert.deepEqual(chargeUnitsFor('slot', { timed: true }), ['flat'], 'a massage: one price for a set length, never asked');
-    assert.deepEqual(chargeUnitsFor('comes_to_you'), ['person', 'flat', 'event', 'item']);
+    assert.deepEqual(chargeUnitsFor('comes_to_you'), ['person', 'flat', 'event', 'item', 'hour'], 'per hour is comes-to-you only');
     assert.deepEqual(chargeUnitsFor('made_to_order'), ['item'], 'a food menu is per item, never asked');
 });
 
@@ -47,6 +47,7 @@ test('a maximum capacity is asked only of per-person or per-group pricing', () =
     assert.equal(needsCapacity(['event']), false);
     assert.equal(needsCapacity(['item']), false);
     assert.equal(needsCapacity(['event', 'item']), false);
+    assert.equal(needsCapacity(['hour']), false, 'a dog walker by the hour has no capacity');
     assert.equal(needsCapacity(['person']), true);
     assert.equal(needsCapacity(['flat', 'event']), true);
     assert.equal(needsCapacity([]), true, 'nothing chosen yet is never read as "skip it"');
@@ -108,4 +109,44 @@ test('both booking routes take a group booking only from a per-person offering w
         assert.match(src, /const unit = bookAsGroup \? 'flat' : normaliseUnit\(item\.unit\)/, f + ' books the group whole (flat)');
         assert.match(src, /const unitPrice = bookAsGroup \? Number\(item\.group_price\) : Number\(item\.price\)/, f + ' charges the group price, read from the item');
     }
+});
+
+// PER HOUR (9 Oct 2026): multiplies by the hours the guest picks, never by people.
+import { pricedPerHead, pricedByQuantity, orderTotal } from '../lib/serviceOrders';
+import { perGroupPricing } from '../lib/orderChange';
+
+test('per hour and per item multiply by a quantity, never by the party', () => {
+    assert.equal(pricedPerHead('person'), true);
+    for (const u of ['hour', 'item']) {
+        assert.equal(pricedPerHead(u), false, u + ' is not per head');
+        assert.equal(pricedByQuantity(u), true, u + ' is priced by a quantity the guest picks');
+        assert.equal(unitMultiplies(u), true, u + ' still multiplies');
+    }
+    for (const u of ['flat', 'event']) assert.equal(pricedByQuantity(u), false);
+    // Three people booking a two-hour walk at £20 an hour pay £40, not £60 or £120.
+    assert.equal(orderTotal(20, 2), 40);
+});
+
+test('changing the head count never re-prices an hourly or per-item booking', () => {
+    assert.equal(perGroupPricing('person'), false, 'per person: more people, more money');
+    assert.equal(perGroupPricing('hour'), true, 'per hour: the party is not the price');
+    assert.equal(perGroupPricing('item'), true);
+    assert.equal(perGroupPricing('flat'), true);
+    assert.equal(perGroupPricing('event'), true);
+});
+
+test('the request route and dialog price an hourly booking by hours, with its minimum', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const ROOT = path.join(__dirname, '..', '..');
+    const order = fs.readFileSync(path.join(ROOT, 'app/api/services/order/route.ts'), 'utf8');
+    assert.match(order, /\.select\('[^']*min_hours[^']*'\)/, 'the route reads the minimum hours');
+    assert.match(order, /if \(quantity < minHours\)/, 'fewer than the minimum is refused');
+    assert.match(order, /pricedPerHead\(unit\) && quantity > cap/, 'only a per-head booking is capped by the party size');
+    assert.doesNotMatch(order, /unitMultiplies\(unit\) && quantity > cap/, 'hours are never capped by how many are staying');
+    const dialog = fs.readFileSync(path.join(ROOT, 'components/marketplace/RequestBooking.tsx'), 'utf8');
+    assert.match(dialog, /if \(pricedPerHead\(it\.unit\)\) return orderTotal\(it\.price, Math\.max\(1, adults/, 'per person: price × heads');
+    assert.match(dialog, /if \(pricedByQuantity\(it\.unit\)\) return orderTotal\(it\.price, Math\.max\(itemMinQuantity\(it\), Math\.floor\(quantity\)/, 'per hour: price × hours picked, at least the minimum');
+    const panel = fs.readFileSync(path.join(ROOT, 'components/marketplace/BookingPanel.tsx'), 'utf8');
+    assert.match(panel, /byQuantity \? Math\.max\(1, args\.quantity\)/, 'the panel sends the hours picked as the quantity');
 });

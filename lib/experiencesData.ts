@@ -24,6 +24,8 @@ export interface MpItem {
     // the whole booking) — one offering priced two ways. Null when it is sold per
     // person only, and always null on any other unit.
     groupPrice: number | null;
+    // An hourly offering's fewest bookable hours (null = one).
+    minHours: number | null;
     // The per-treatment length in minutes (massage: 30/45/60/90), or null for a
     // single-length category (sauna, a class), where the provider's slot length is
     // used. When any item carries one, the times a guest sees depend on the item.
@@ -402,7 +404,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label, centre_lat, centre_lng').in('provider_id', ids),
-        admin.from('service_provider_items').select('id, provider_id, name, description, price, group_price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category')
+        admin.from('service_provider_items').select('id, provider_id, name, description, price, group_price, min_hours, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category')
             // Listed only with a real, fixed price — an older range or
             // price-on-enquiry row is not shown (the modes were dropped).
             .in('provider_id', ids).eq('active', true).gt('price', 0).eq('price_mode', 'fixed')
@@ -448,6 +450,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
         const items = (itemsBy[p.id] || []).map((it: any) => ({
             id: it.id, name: it.name, description: it.description, price: Number(it.price),
             groupPrice: normaliseUnit(it.unit) === 'person' && Number(it.group_price) > 0 ? Number(it.group_price) : null,
+            minHours: normaliseUnit(it.unit) === 'hour' && Number(it.min_hours) > 0 ? Number(it.min_hours) : null,
             // A made-to-order menu is per item, whatever an older row stored
             // (the cart charges qty × price either way) — so a cake never reads
             // "£18 / group".
