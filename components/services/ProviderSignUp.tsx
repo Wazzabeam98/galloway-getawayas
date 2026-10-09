@@ -18,6 +18,7 @@ import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
 import { buildStreetAddress } from '@/lib/address';
 import { OFFERED_UNITS, unitLabel } from '@/lib/serviceOrders';
 import { slotOfferingFromUnits, type SlotOffering } from '@/lib/serviceSlots';
+import { stepHeadings } from '@/lib/experienceSteps';
 import Env from '@/config/Env';
 import {
     skillKey,
@@ -385,10 +386,18 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             : 'trade'
     );
 
-    // Which steps they have pressed Next on. Errors on a step nobody has
-    // reached yet stay hidden: a form that turns red before it has been
-    // touched reads as broken rather than as helpful.
+    // Which steps they have pressed Next on. Drives the section rail's done/active
+    // state and the "jump to first problem" sweep.
     const [visited, setVisited] = useState<StepKey[]>([]);
+
+    // Which steps the person has actually INTERACTED with (Liam, 9 Oct 2026). A
+    // step's "what's missing" message — and its inline errors — show only once it
+    // has been touched and is still incomplete, never on arrival: nobody is told
+    // off before they have started. A step is marked touched on the first pointer
+    // or key interaction within its panel (see the panel handler) and on a Next
+    // press. Separate from `visited`, which a resumed draft sets ahead of any
+    // interaction — a resumed step still opens quiet until it is touched.
+    const [touchedSteps, setTouchedSteps] = useState<StepKey[]>([]);
 
     // The maintenance group opened on step one. Not a step of its own -- it is
     // the same question, narrowed -- so Back from here returns to the trade
@@ -533,7 +542,16 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const [listingTitle, setListingTitle] = useState('');
     const [qualifications, setQualifications] = useState('');
     const [recognition, setRecognition] = useState('');
+    // The optional free-text under the three steps (parking, access, what to
+    // bring) — saved to guest_details.what_to_expect and shown as a short
+    // paragraph above the numbered flow on the listing. This is the field the old
+    // single "What happens" box wrote; it is kept as the OPTIONAL extra now.
     const [whatToExpect, setWhatToExpect] = useState('');
+    // The three-step flow (Arrival/During/Finish, by position) — the same flow the
+    // listing editor collects, so a real provider gets numbered steps like a seed
+    // (Liam, 9 Oct 2026). Saved to guest_details.itinerary by position; the
+    // headings come from the shape (stepHeadings), not stored here.
+    const [phases, setPhases] = useState<[string, string, string]>(['', '', '']);
     // Which Details (g_expect) sub-flow is open — one field at a time, borderless,
     // like the rest of the flow: 'expect' for What happens, 'dietary' (food only).
     const [detailModal, setDetailModal] = useState<'expect' | 'dietary' | null>(null);
@@ -622,6 +640,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // guest_details jsonb. Blank until set; the stepper shows a low default and
     // stores the shown value on an untouched pass, like the years screen.
     const [maxGuests, setMaxGuests] = useState('');
+    // "Not applicable" on the capacity screen — a one-at-a-time provider (a
+    // photographer, a dog walker) takes one booking whatever the head count, so the
+    // counter doesn't apply (Liam, 9 Oct 2026). Offered for a comes-to-you shape,
+    // where a booking holds the whole date; a slot sells seats, so it always needs a
+    // number. When ticked, max_guests is saved as null (no ceiling).
+    const [capacityNA, setCapacityNA] = useState(false);
     const [slotLength, setSlotLength] = useState('');
     // The per-person minimum screen was removed at sign-up (Liam, 9 Oct 2026):
     // Airbnb has no minimum-people setting, and ours misled. The wizard now always
@@ -954,12 +978,26 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         if (gd.qualifications) setQualifications(String(gd.qualifications));
                         if (gd.recognition) setRecognition(String(gd.recognition));
                         if (gd.what_to_expect) setWhatToExpect(String(gd.what_to_expect));
+                        // The three-step flow, by position — a returning provider
+                        // edits the steps they wrote rather than a blank set.
+                        if (Array.isArray(gd.itinerary)) {
+                            const rows = gd.itinerary as Array<{ detail?: string | null }>;
+                            setPhases([
+                                String((rows[0] && rows[0].detail) || ''),
+                                String((rows[1] && rows[1].detail) || ''),
+                                String((rows[2] && rows[2].detail) || ''),
+                            ]);
+                        }
                         if (Array.isArray(gd.dietary_options)) setDietaryOptions(gd.dietary_options as string[]);
                         // Max guests for a comes-to-you chef rides here (a slot's
                         // is loaded from slot_capacity above). Only set it when the
                         // column didn't already provide it, so a slot keeps its
-                        // authoritative value.
-                        if (ex.shape !== 'slot' && gd.max_guests) setMaxGuests(String(gd.max_guests));
+                        // authoritative value. A comes-to-you row saved with no
+                        // max_guests is a "Not applicable" one — reflect the tick.
+                        if (ex.shape !== 'slot') {
+                            if (gd.max_guests) setMaxGuests(String(gd.max_guests));
+                            else if (ex.shape === 'comes_to_you') setCapacityNA(true);
+                        }
                     }
 
                     // A slot's weekly hours and days off.
@@ -1209,6 +1247,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             if (d.qualifications) setQualifications(d.qualifications);
             if (d.recognition) setRecognition(d.recognition);
             if (d.whatToExpect) setWhatToExpect(d.whatToExpect);
+            if (Array.isArray(d.phases)) setPhases([String(d.phases[0] || ''), String(d.phases[1] || ''), String(d.phases[2] || '')]);
             // The category, shape and its fields. Set before the filledIn check
             // so a guest who picked a category but typed nothing still lands past
             // the picker rather than being asked to choose it again.
@@ -1228,6 +1267,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             if (d.slotOffer) setSlotOffer(d.slotOffer);
             else if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotOffer(d.slotPrivate === true ? 'private' : 'shared');
             if (d.maxGuests) setMaxGuests(d.maxGuests);
+            if (d.capacityNA) setCapacityNA(true);
             if (d.slotLength) setSlotLength(d.slotLength);
             if (Array.isArray(d.schedule)) setSchedule(d.schedule);
 
@@ -1387,7 +1427,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     providerName, headshot, dietaryNote, dietaryOptions,
                     // The Airbnb-shaped content answers.
                     yearsDoing, listingTitle, professionalTitle, qualifications, recognition,
-                    whatToExpect,
+                    whatToExpect, phases,
                     // The category (and the group above it, so the sub-type screen
                     // still has its cards after a reload), the inferred shape and
                     // its own fields.
@@ -1396,7 +1436,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // address is the provider's own, in their own browser's draft
                     // — never shared, and it's a private column server-side.
                     fulfilment, collectionStreet, collectionTown, collectionPostcode,
-                    slotOffer, maxGuests, slotLength, schedule,
+                    slotOffer, maxGuests, capacityNA, slotLength, schedule,
                     // The checks they've ticked so far.
                     declarations,
                 })
@@ -1413,10 +1453,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         photos, logo, buildingType, panes,
         items, providerName, headshot, dietaryNote, dietaryOptions,
         yearsDoing, listingTitle, professionalTitle, qualifications, recognition,
-        whatToExpect,
+        whatToExpect, phases,
         guestGroup, guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
-        slotOffer, maxGuests, slotLength, schedule,
+        slotOffer, maxGuests, capacityNA, slotLength, schedule,
         declarations,
     ]);
 
@@ -1443,11 +1483,16 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const problems = submitProblems({
         business_name: businessName,
         trade,
-        // A guest's description IS "What happens" (g_expect). Nothing else in the
-        // guest flow writes `description`, so checking that field alone held every
-        // new provider on a Send for review that did nothing. A returning
-        // provider's stored description still counts until they write one.
-        description: audienceForTrade(trade) === 'guest' ? (whatToExpect.trim() || description) : description,
+        // A guest's "What happens" (g_expect) is the three-step flow now (Liam, 9
+        // Oct 2026), so the step's required gate reads the FLOW, not the optional
+        // box — a listing must carry at least one step. The joined step detail feeds
+        // the 'description' field the gate already owns (mapped to g_expect), so the
+        // message lands on the right screen. A returning provider's stored
+        // description still counts until they write steps. The optional box
+        // (whatToExpect) is deliberately NOT part of this gate.
+        description: audienceForTrade(trade) === 'guest'
+            ? (phases.map((p) => p.trim()).filter(Boolean).join('. ') || description)
+            : description,
         // The host expertise hub's required field — its Next gate and the submit
         // gate both read the professional title now, in place of a description.
         professional_title: professionalTitle,
@@ -1897,7 +1942,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
 
     const problemFor = (field: string) => {
         const where = stepForField(field, stepCtx);
-        const shown = touchedSubmit || (where !== null && visited.indexOf(where) !== -1);
+        // Shown once that step has been INTERACTED with (or on a send attempt) —
+        // never on arrival, and never on a resumed step before it is touched.
+        const shown = touchedSubmit || (where !== null && touchedSteps.indexOf(where) !== -1);
         return shown ? (problems.filter((p) => p.field === field)[0] || null) : null;
     };
 
@@ -1959,7 +2006,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 return `From £${Math.min(...priced)}`;
             }
             case 'details':
-                return (whatToExpect.trim() || dietaryNote.trim()) ? 'Added' : '';
+                return (phases.some((p) => p.trim()) || whatToExpect.trim() || dietaryNote.trim()) ? 'Added' : '';
             case 'finish':
                 return contactEmail.trim();
             default:
@@ -2078,6 +2125,17 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const markVisited = (key: StepKey) =>
         setVisited((prev) => (prev.indexOf(key) === -1 ? prev.concat([key]) : prev));
 
+    // Mark a step interacted-with, so its "what's missing" message may show. Called
+    // from the panel's first pointer/key interaction and on a Next press.
+    const markTouched = (key: StepKey) =>
+        setTouchedSteps((prev) => (prev.indexOf(key) === -1 ? prev.concat([key]) : prev));
+
+    // The first interaction inside the step's panel counts as "started". Attached
+    // to the scrollable body (capture), so a click on a card, a field focus or a
+    // keypress marks the current step touched — but Back/Next in the footer, which
+    // sit outside this element, do not.
+    const onPanelInteract = () => { if (step !== 'finish') markTouched(step); };
+
     // The top of the panel, not the top of the page. On a phone the modal is
     // the whole screen and its body is what scrolls, so scrolling the window
     // would move nothing and leave somebody halfway down the next step.
@@ -2123,6 +2181,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
 
     const goNext = () => {
         markVisited(step);
+        // A Next press counts as interaction, so a refused step shows its reason.
+        markTouched(step);
 
         // Refused. markVisited above is what reveals the reasons beside their
         // fields; this is what makes sure one of them is actually on screen.
@@ -2246,6 +2306,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         setMenuIndex(null);
         setSlotOffer(null);
         setMaxGuests('');
+        setCapacityNA(false);
         setSlotLength('');
         setSchedule([]);
         setLeadTimeDays('');
@@ -2266,6 +2327,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         setQualifications('');
         setRecognition('');
         setWhatToExpect('');
+        setPhases(['', '', '']);
         setDietaryNote('');
         setDietaryOptions([]);
         clearShapeDependentAnswers();
@@ -2688,7 +2750,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // The Airbnb-shaped content answers, written to the guest_details jsonb
     // column (not spread into the row like guestProviderFields). Empty stays null
     // so the stored object is clean.
-    const guestContentFields = (): Record<string, string | string[] | null> => {
+    const guestContentFields = (): Record<string, any> => {
         const t = (v: string) => (String(v || '').trim() || null);
         // A host trade now fills the SAME About-you hub as a guest — a years
         // count, a professional title, qualifications and endorsements — so its
@@ -2714,15 +2776,24 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             professional_title: t(professionalTitle),
             qualifications: t(qualifications),
             recognition: t(recognition),
+            // The optional free-text under the three steps (parking, access, what to
+            // bring) — rendered as a short paragraph above the numbered flow.
             what_to_expect: t(whatToExpect),
+            // The three-step flow, by position — the same shape the listing editor
+            // writes (happensPayload). Titles come from the shape's headings; the
+            // provider's detail fills each. An empty phase keeps its heading but
+            // blank detail, and experienceSteps drops it on display.
+            itinerary: stepHeadings(shape, fulfilment).map((h, i) => ({ title: h.title, detail: (phases[i] || '').trim() })),
             // What the food provider can cater for, as ticks. An array of keys
             // (DIETARY_OPTIONS), or null when nothing is ticked — the caveats
             // live in the dietary_note column, not here. Empty stays null so a
             // blank answer still reads as "hasn't said" on the listing.
             dietary_options: dietaryOptions.length ? dietaryOptions : null,
             // Max guests rides here for every category that has it (a slot ALSO
-            // writes slot_capacity, from the same state, so the two agree).
-            max_guests: t(maxGuests),
+            // writes slot_capacity, from the same state, so the two agree). Null
+            // when "Not applicable" is ticked — a one-at-a-time provider has no
+            // ceiling (comes-to-you only; a slot always has a number).
+            max_guests: capacityNA ? null : t(maxGuests),
         };
     };
 
@@ -2735,7 +2806,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // empty at submit; the fallbacks are belt-and-braces. A guest keeps its own
     // description (the "what to expect" field feeds it as before).
     const contentDescription = (): string => {
-        if (audienceForTrade(trade) === 'guest') return whatToExpect.trim() || description.trim();
+        if (audienceForTrade(trade) === 'guest') {
+            // The optional paragraph, else the flow steps joined (the "what happens"
+            // is the flow now), else whatever was stored. The column is NOT NULL and
+            // the shop card reads it, so it must never be empty — the flow gate makes
+            // sure at least one step exists at submit.
+            return whatToExpect.trim()
+                || phases.map((p) => p.trim()).filter(Boolean).join('. ')
+                || description.trim();
+        }
         const parts = [professionalTitle.trim(), qualifications.trim()].filter(Boolean);
         return parts.join('. ') || businessName.trim() || 'Local trade';
     };
@@ -3535,7 +3614,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                        desktop, like the steppers. */
                                     : (guestMtoArea || guestSlotChoice)
                                         ? 'max-w-2xl py-10 sm:py-12 sm:flex sm:flex-col'
-                                        : 'max-w-2xl py-10 sm:py-12')}>
+                                        : 'max-w-2xl py-10 sm:py-12')}
+                    onPointerDownCapture={onPanelInteract}
+                    onKeyDownCapture={onPanelInteract}>
                     {/* One big question a screen. The picker screens (group,
                         sub-type) and the years opener centre it — over the cards
                         for the pickers, over the big stepper for the years, both
@@ -4986,8 +5067,31 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         It's the listing default; each offering can set its own exact
                         capacity in the editor. max is high so a large catering group
                         can say its real number (the old 60 broke for bigger groups).
-                        You can type the number or step to it. */}
-                    <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={300} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
+                        You can type the number or step to it.
+                        Dimmed and inert when "Not applicable" is ticked — a one-at-a-
+                        time provider has no ceiling to set. */}
+                    <div className={capacityNA ? 'opacity-40 pointer-events-none select-none' : ''} aria-hidden={capacityNA}>
+                        <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={300} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
+                    </div>
+                    {/* "Not applicable" — a comes-to-you provider who takes one
+                        booking at a time (a photographer, a dog walker). A slot sells
+                        seats, so it always needs a number and never sees this. */}
+                    {shape === 'comes_to_you' && (
+                        <button
+                            type="button"
+                            role="checkbox"
+                            aria-checked={capacityNA}
+                            onClick={() => setCapacityNA((v) => !v)}
+                            className={'mt-10 flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                + (capacityNA ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                        >
+                            <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
+                                + (capacityNA ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                <Check className="h-4 w-4" strokeWidth={3} />
+                            </span>
+                            <span className="font-medium text-slate-900">{GUEST_SCREEN_COPY.capacityNALabel}</span>
+                        </button>
+                    )}
                 </section>
                 )}
 
@@ -5023,8 +5127,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     were cut — the item description and price already carry them.
                     All optional; none blocks a booking. */}
                 {onStep('g_expect') && isGuest && (() => {
-                    const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
-                    const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
                     const isFoodCat = guestCategoryIsFood(guestCategory);
                     const toggleDietary = (k: string) => setDietaryOptions((prev) =>
                         prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
@@ -5035,14 +5137,24 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         ? dietaryLabels.join(', ') + (dietaryNote.trim() ? ' · note added' : '')
                         : dietaryNote.trim();
                     const dietaryFilled = dietaryLabels.length > 0 || dietaryNote.trim() !== '';
+                    // The three-step flow: headings from the shape (Arrival/During/
+                    // Finish, or Order/Made/Collect for a made-to-order), the provider
+                    // fills the detail. The row is "filled" once a step or the
+                    // optional box has content; its summary counts the steps written.
+                    const expectHeadings = stepHeadings(shape, fulfilment);
+                    const flowCount = phases.filter((p) => p.trim()).length;
+                    const expectFilled = flowCount > 0 || whatToExpect.trim() !== '';
+                    const expectSummary = flowCount
+                        ? `${flowCount} ${flowCount === 1 ? 'step' : 'steps'}`
+                        : whatToExpect.trim();
                     return (
                     <section className="mb-8 md:max-w-xl md:mx-auto">
                         <div className="mt-6 space-y-6">
                             <HubRow
-                                filled={whatToExpect.trim() !== ''}
+                                filled={expectFilled}
                                 label={GUEST_SCREEN_COPY.expectRowLabel}
                                 prompt={GUEST_SCREEN_COPY.expectRowPrompt}
-                                summary={whatToExpect.trim()}
+                                summary={expectSummary}
                                 onOpen={() => setDetailModal('expect')}
                             />
                             {isFoodCat && (
@@ -5057,7 +5169,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             )}
                         </div>
 
-                        {/* ---- What happens: one borderless field. ---- */}
+                        {/* ---- What happens: the three-step flow (the same shape the
+                            listing editor collects), plus an optional free-text box
+                            for anything that isn't a step. ---- */}
                         <SubFlowModal
                             open={detailModal === 'expect'}
                             title={GUEST_SCREEN_COPY.expectModalTitle}
@@ -5065,14 +5179,38 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             saveLabel={GUEST_SCREEN_COPY.save}
                             note={GUEST_SCREEN_COPY.expectModalNote}
                         >
-                            <div className={fieldWrap}>
-                                <textarea
-                                    value={whatToExpect}
-                                    onChange={(e) => setWhatToExpect(e.target.value)}
-                                    rows={4}
-                                    placeholder={GUEST_SCREEN_COPY.expectExamples[guestCategory] ?? GUEST_SCREEN_COPY.expectExampleFallback}
-                                    className={bigArea}
-                                />
+                            <div className="space-y-5 text-left">
+                                {expectHeadings.map((h, i) => (
+                                    <div key={h.title} className="flex gap-3">
+                                        <div className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-emerald-700 text-xs font-bold text-white">{i + 1}</div>
+                                        <div className="flex-1">
+                                            <div className="text-base font-semibold text-slate-900">{h.title}</div>
+                                            <textarea
+                                                value={phases[i]}
+                                                onChange={(e) => setPhases((prev) => { const next = [...prev] as [string, string, string]; next[i] = e.target.value; return next; })}
+                                                rows={2}
+                                                placeholder={GUEST_SCREEN_COPY.expectFlowPlaceholders[i]}
+                                                aria-label={h.title}
+                                                className="mt-1 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-[15px] leading-relaxed text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                                {/* The optional extra — anything that isn't a step
+                                    (parking, access, what to bring). Saved to
+                                    what_to_expect; shown as a short paragraph above the
+                                    numbered flow on the listing. */}
+                                <div className="pt-2">
+                                    <label className="mb-1 block text-sm font-semibold text-slate-900">{GUEST_SCREEN_COPY.expectExtraLabel}</label>
+                                    <textarea
+                                        value={whatToExpect}
+                                        onChange={(e) => setWhatToExpect(e.target.value)}
+                                        rows={2}
+                                        placeholder={GUEST_SCREEN_COPY.expectExtraPrompt}
+                                        aria-label={GUEST_SCREEN_COPY.expectExtraLabel}
+                                        className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-[15px] leading-relaxed text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none"
+                                    />
+                                </div>
                             </div>
                         </SubFlowModal>
 
@@ -6201,7 +6339,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 ] as [string, string | null][]).filter((e): e is [string, string] => e[1] != null);
                 const wrote: [string, string][] = ([
                     [GUEST_SCREEN_COPY.finishWroteTitle, professionalTitle.trim()],
-                    [GUEST_SCREEN_COPY.finishWroteExpect, whatToExpect.trim()],
+                    // "What happens" is the flow now; show the steps, else the box.
+                    [GUEST_SCREEN_COPY.finishWroteExpect, phases.map((p) => p.trim()).filter(Boolean).join(' · ') || whatToExpect.trim()],
                     [GUEST_SCREEN_COPY.finishWroteQuals, qualifications.trim()],
                     [GUEST_SCREEN_COPY.finishWroteDietary, dietaryNote.trim()],
                 ] as [string, string][]).filter(([, v]) => v);
@@ -6452,11 +6591,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         </button>
                     )}
 
-                    {/* A required guest step says exactly what is missing beside
-                        the greyed Next; a skippable one says so. Either way the
-                        Next is never a silent dead end and a skippable screen is
-                        never mistaken for one she must fill. */}
-                    {stepMissing && (
+                    {/* A required step says what is missing beside the greyed Next
+                        — but only once it has been touched (Liam, 9 Oct 2026), so a
+                        fresh or resumed step opens quiet rather than telling someone
+                        off before they have started. The greyed Next is the on-
+                        arrival signal; this explains it once they engage. A
+                        skippable step still says so straight away (below). */}
+                    {stepMissing && (touchedSubmit || touchedSteps.indexOf(step) !== -1) && (
                         <p className="text-sm font-medium text-amber-700 pr-1">{stepMissing}</p>
                     )}
                     {stepIsOptional && (
@@ -6523,7 +6664,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             if (step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
                             // Max guests: an untouched pass stores the shown default
                             // (the big counter is solid), a loaded value is kept.
-                            if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));
+                            if (isGuest && step === 'g_capacity' && !capacityNA && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));
                             // Same for the notice screen: an untouched pass stores
                             // the shown suggestion (2 days).
                             if (isGuest && step === 'g_notice' && !leadTimeDays.trim()) setLeadTimeDays('2');

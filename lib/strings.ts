@@ -149,6 +149,11 @@ export const GUEST_SCREEN_COPY = {
     capacityHeadingVenue: 'What’s your maximum capacity?',
     capacitySubtextVenue: 'The most people you can take in one session. Each offering can set its own number.',
     capacitySuffix: 'guests',
+    // Some one-at-a-time providers (a photographer, a dog walker) take one booking
+    // regardless of head count, so the counter doesn't apply (Liam, 9 Oct 2026).
+    // Ticking this takes the ceiling off — shown for a comes-to-you shape, where a
+    // booking holds the date; a slot sells seats, so it always needs a number.
+    capacityNALabel: 'Not applicable — I take one booking at a time',
 
     // The slot pricing-basis screen (g_slot_basis) — how a booking works: one
     // group takes the whole thing (a private booking, one flat price) vs several
@@ -290,28 +295,27 @@ export const GUEST_SCREEN_COPY = {
     // dietary is food-only and shown too (What's included / What a guest brings
     // were cut — the item description and price already cover them).
     expectRowLabel: 'What happens',
-    expectRowPrompt: 'Walk a guest through it, start to finish',
+    expectRowPrompt: 'Walk a guest through it, step by step',
     expectModalTitle: 'What happens?',
-    // Required now (it is the listing's description and what the review reads).
-    expectModalNote: 'A few sentences, start to finish: where you meet, what you do together, and what’s included. Guests read this before they book.',
-    expectGate: 'Say what happens — a sentence or two at least.',
-    // "What happens" is a real example too, by category — same reasoning as
-    // menuNameExamples. Fallback for "other"/unknown reads as guidance.
-    expectExamples: {
-        chef: 'I arrive at 6, cook three courses while you relax, serve at the table and clear everything away by 9.',
-        food_order: 'Order two days ahead and collect from Gatehouse, or I’ll drop it to where you’re staying on the morning.',
-        tastings: 'We sit down for six drams over about ninety minutes; I talk you through each, with water and oatcakes between.',
-        cooking: 'Over two hours we make a sourdough loaf from scratch — mix, shape and bake — and you take yours home.',
-        outdoors: 'We meet at the car park at 10, walk about four miles over easy ground, stop for a flask halfway, back by 1.',
-        water: 'We kit you out and cover the basics on the beach, then paddle the bay for about two hours.',
-        massage: 'A short health form and a chat about what you’re after, then a full hour on the table with time to come round.',
-        sauna: 'A two-hour slot for up to six: wood-fired sauna by the water, cold-water dips between rounds, towels and changing space provided.',
-        yoga: 'A 75-minute class for all levels; mats and props provided, just bring something warm for the end.',
-        pottery: 'Two hours at the wheel getting you throwing your first pots; I trim, fire and post them on to you after.',
-        painting: 'A relaxed afternoon sketching the coast in watercolour; all materials provided, no experience needed.',
-        workshops: 'Over ninety minutes you make two candles to take home; I bring everything, you pick the scents.',
-    } as Record<string, string>,
-    expectExampleFallback: 'We meet at the slipway at 7, swim for about forty minutes with me beside you, then warm up on the beach with a hot drink.',
+    // Three steps now, the same flow as the listing editor (Liam, 9 Oct 2026):
+    // every real provider was getting one plain paragraph while only seeded ones
+    // had numbered steps. The provider writes the detail under each; the headings
+    // (Arrival · During · Finish, or Order · Made to order · Collection/Delivery
+    // for a made-to-order) come from the shape.
+    expectModalNote: 'Walk a guest through it in three short steps. They see these as a numbered flow on your listing.',
+    // The three step placeholders, by position — the same prompts the editor uses.
+    expectFlowPlaceholders: [
+        'Where to meet, how to find you, what to expect first.',
+        'The heart of it — what you’ll actually do together.',
+        'How it wraps up — and anything to do after.',
+    ] as string[],
+    // The optional free-text box under the steps, for anything that isn't a step
+    // (parking, access, what to bring). Shown as a short paragraph above the
+    // numbered flow on the listing (guest_details.what_to_expect).
+    expectExtraLabel: 'Anything else (optional)',
+    expectExtraPrompt: 'Anything that isn’t a step — parking, access, what to bring.',
+    // Gate: at least one step filled, so a listing never ships without a flow.
+    expectGate: 'Add at least one step to say what happens.',
     dietaryRowLabel: 'Dietary',
     dietaryRowPrompt: 'What you can cater for',
     dietaryModalTitle: 'What can you cater for?',
