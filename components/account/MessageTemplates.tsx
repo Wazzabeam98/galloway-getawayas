@@ -1168,7 +1168,20 @@ export default function MessageTemplates() {
                                 onClick={() => {
                                     const id = scheduleFor;
                                     setScheduleFor(null);
-                                    if (id) save(id, draftSchedule);
+                                    // ONLY the schedule columns — never the whole
+                                    // draftSchedule. It snapshots the row (name,
+                                    // body) when the picker opens, so writing it
+                                    // back would overwrite a name or body the host
+                                    // edited after opening it (the sheet makes
+                                    // "set the time, then write it" the usual order).
+                                    if (id) save(id, {
+                                        anchor: draftSchedule.anchor,
+                                        minutes_after: draftSchedule.minutes_after,
+                                        days_offset: draftSchedule.days_offset,
+                                        send_hour: draftSchedule.send_hour,
+                                        hours_after: draftSchedule.hours_after,
+                                        hours_before: draftSchedule.hours_before,
+                                    });
                                 }}
                                 className="px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg"
                             >
