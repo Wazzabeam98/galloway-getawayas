@@ -4,7 +4,7 @@
 
 import type { MpProvider, MpItem } from '@/lib/experiencesData';
 import { extraGuestsLine, hasExtraGuests } from '@/lib/extraGuests';
-import { unitMultiplies } from '@/lib/serviceOrders';
+import { unitMultiplies, pricedPerHead } from '@/lib/serviceOrders';
 import { durationWords } from '@/lib/durationWords';
 import { guestUnitSuffix } from '@/lib/pricingUnits';
 
@@ -201,7 +201,8 @@ export function itemExtrasSubline(item: MpItem, minAge: number | null | undefine
 // in, so every option still shows an upper limit. Null for a plain flat price
 // with no per-head notion of a party.
 export function itemGuestRange(item: MpItem, providerMax?: number | null): string | null {
-    const perPerson = unitMultiplies(item.unit);
+    // A guest range only where the price is per head — never per hour or per item.
+    const perPerson = pricedPerHead(item.unit);
     const extra = hasExtraGuests({
         unit: item.unit, price: item.price,
         included_guests: item.includedGuests, extra_adult_fee: item.extraAdultFee,

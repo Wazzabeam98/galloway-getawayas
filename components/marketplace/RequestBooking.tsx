@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X, Minus, Plus, Calendar, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react';
 import { formatGBP } from '@/lib/formatMoney';
-import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
+import { orderTotal, MAX_ORDER_QUANTITY, pricedPerHead, pricedByQuantity, quantityQuestion, unitNoun } from '@/lib/serviceOrders';
 import { hasExtraGuests, partyPrice, partyCeiling, extraGuestsLine } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
 import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
@@ -20,6 +20,8 @@ import type { AddressParts } from '@/components/address/AddressLookup';
 export interface RequestItem {
     id: string; name: string; description: string | null; price: number; unit: string;
     minPeople?: number | null;
+    // An hourly offering's fewest bookable hours (null = one).
+    minHours?: number | null;
     includedGuests?: number | null; extraAdultFee?: number | null; extraChildFee?: number | null; maxParty?: number | null;
 }
 
@@ -40,19 +42,27 @@ function egOf(it: RequestItem | null) {
 // the current item and the current adults/children.
 //   • extra-guests item → base for the included heads, per-head fees beyond it
 //   • per-person item   → unit price × heads
-//   • flat item         → the flat price (heads don't apply)
-export function requestPrice(it: RequestItem | null, adults: number, children: number, minAge: number | null | undefined): number {
+//   • per-hour/per-item → unit price × the hours/items picked (never × heads)
+//   • flat/event item   → the one price (heads don't apply)
+export function requestPrice(it: RequestItem | null, adults: number, children: number, minAge: number | null | undefined, quantity = 1): number {
     if (!it) return 0;
     const eg = egOf(it);
     if (eg && hasExtraGuests(eg)) return partyPrice(eg as any, adults, childrenAllowed(minAge) ? children : 0, minAge ?? null);
-    if (unitMultiplies(it.unit)) return orderTotal(it.price, Math.max(1, adults + (childrenAllowed(minAge) ? children : 0)));
+    if (pricedPerHead(it.unit)) return orderTotal(it.price, Math.max(1, adults + (childrenAllowed(minAge) ? children : 0)));
+    if (pricedByQuantity(it.unit)) return orderTotal(it.price, Math.max(itemMinQuantity(it), Math.floor(quantity) || 1));
     return it.price;
 }
 
 // The smallest party this item takes — the provider's per-item minimum (min_people),
 // floored at one. Used to hold the stepper and to show "Minimum N guests".
 export function itemMinPeople(it: RequestItem | null): number {
-    return it && unitMultiplies(it.unit) ? Math.max(1, Number(it.minPeople ?? 1) || 1) : 1;
+    return it && pricedPerHead(it.unit) ? Math.max(1, Number(it.minPeople ?? 1) || 1) : 1;
+}
+
+// The fewest hours (or items) a quantity-priced item can be booked for: an hourly
+// offering's own minimum, else one.
+export function itemMinQuantity(it: RequestItem | null): number {
+    return it && it.unit === 'hour' ? Math.max(1, Number(it.minHours ?? 1) || 1) : 1;
 }
 
 // A guest stepper row, at module scope so it keeps its identity across the
@@ -85,6 +95,8 @@ export interface RequestBookArgs {
     // The party as a split; the caller derives the money fields it sends from the
     // item's own kind so the request matches the total shown.
     adults: number; children: number;
+    // Hours or items picked, for a per-hour / per-item offering (else 1).
+    quantity: number;
     address: string; allergy: string;
 }
 
@@ -162,7 +174,13 @@ export function RequestBookingDialog({
     const item = ordered.find((i) => i.id === itemId) || ordered[0] || null;
     const eg = egOf(item);
     const isExtra = !!eg && hasExtraGuests(eg);
-    const perPerson = !!item && unitMultiplies(item.unit);
+    const perPerson = !!item && pricedPerHead(item.unit);
+    // Per hour / per item: the guest picks how many hours or items, and the party
+    // size never enters the price.
+    const byQuantity = !!item && !isExtra && pricedByQuantity(item.unit);
+    const minQty = itemMinQuantity(item);
+    const [qty, setQty] = useState<number>(1);
+    useEffect(() => { setQty((q) => Math.max(q, minQty)); }, [minQty]);
     const showGuests = isExtra || perPerson;
     const minPeople = itemMinPeople(item);
     const people = adults + (kidsOk ? children : 0);
@@ -182,7 +200,7 @@ export function RequestBookingDialog({
             : Infinity;
     const incDisabled = Number.isFinite(partyCap) && people >= (partyCap as number);
 
-    const total = requestPrice(item, adults, kidsOk ? children : 0, minAge ?? null);
+    const total = requestPrice(item, adults, kidsOk ? children : 0, minAge ?? null, qty);
     const egText = eg ? extraGuestsLine(eg as any, minAge ?? null) : null;
     const priceEach = item ? itemPriceLabel(item.price, item.unit) : '';
 
@@ -205,11 +223,14 @@ export function RequestBookingDialog({
         } else if (perPerson) {
             const heads = Math.max(1, people);
             lines.push({ label: item.name + ' · ' + heads + ' ' + (heads === 1 ? 'place' : 'places'), amount: total });
+        } else if (byQuantity) {
+            const noun = unitNoun(item.unit);
+            lines.push({ label: item.name + ' · ' + qty + ' ' + noun + (qty === 1 ? '' : 's'), amount: total });
         } else {
             lines.push({ label: item.name, amount: total });
         }
         return lines;
-    }, [item, isExtra, perPerson, adults, children, kidsOk, people, total]);
+    }, [item, isExtra, perPerson, byQuantity, qty, adults, children, kidsOk, people, total]);
 
     const today = londonDayKey();
     const tomorrow = shiftDayKey(today, 1);
@@ -281,7 +302,7 @@ export function RequestBookingDialog({
     const step1Done = !!item && !!date && !!time;
     const submit = () => {
         if (!canBook || !item) return;
-        onBook({ itemId: item.id, date, time, adults, children: kidsOk ? children : 0, address: address.trim(), allergy: allergy.trim() });
+        onBook({ itemId: item.id, date, time, adults, children: kidsOk ? children : 0, quantity: byQuantity ? qty : 1, address: address.trim(), allergy: allergy.trim() });
     };
 
     return (
@@ -354,6 +375,20 @@ export function RequestBookingDialog({
                                                 </button>
                                             ))}
                                         </div>
+                                    </div>
+                                )}
+                                {/* PER HOUR / PER ITEM — how many, priced by that and never
+                                    by the party. "How many hours?" with the provider's
+                                    minimum as the floor. */}
+                                {byQuantity && item && (
+                                    <div className="mb-3">
+                                        <div className="mb-1 flex items-center justify-between">
+                                            <div className="text-sm font-semibold text-slate-900">{quantityQuestion(item.unit)}</div>
+                                            <div className="text-sm text-slate-500">{qty} {unitNoun(item.unit)}{qty === 1 ? '' : 's'}</div>
+                                        </div>
+                                        <GuestRow label={unitNoun(item.unit).charAt(0).toUpperCase() + unitNoun(item.unit).slice(1) + 's'} sub=""
+                                            value={qty} floor={minQty} incDisabled={qty >= (item.unit === 'hour' ? 24 : MAX_ORDER_QUANTITY)} onChange={setQty} />
+                                        {minQty > 1 && <div className="mt-1 text-xs text-slate-400">Minimum {minQty} {unitNoun(item.unit)}s.</div>}
                                     </div>
                                 )}
                                 {showGuests && (

@@ -53,6 +53,11 @@ export default function ChooseMenu({ items, minAge, providerMax }: {
                                     </p>
                                 ) : null}
                                 {fee ? <p className="mt-0.5 text-xs text-slate-500">{fee}</p> : null}
+                                {it.unit === 'hour' && (it.minHours ?? 0) > 1 ? (
+                                    <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+                                        <Clock className="h-3.5 w-3.5 flex-none" aria-hidden />Minimum {it.minHours} hours
+                                    </p>
+                                ) : null}
                                 {dur ? (
                                     <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
                                         <Clock className="h-3.5 w-3.5 flex-none" aria-hidden />{dur}
