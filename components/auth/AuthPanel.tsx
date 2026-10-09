@@ -58,8 +58,16 @@ export const OPEN_AUTH_PANEL = 'gg:open-auth-panel';
 // Open the panel from anywhere. `next` is where to go once signed in; without
 // it the page reloads in place (which keeps a listing's dates — they live in
 // its URL, see lib/bookingDraftParams).
-export function openAuthPanel(next?: string | null) {
-    window.dispatchEvent(new CustomEvent(OPEN_AUTH_PANEL, { detail: { next: next || null } }));
+//
+// `land` is the account menu's general "Log in": once signed in, go through the
+// landing step (app/auth/land), which puts an approved host or provider back on
+// the side they were last on — their dashboard, unless they had switched to
+// travelling — as Airbnb does. A sign-in started from a task on the page (the
+// booking box, a review link) does not pass it and stays where it was.
+export function openAuthPanel(next?: string | null, opts: { land?: boolean } = {}) {
+    let to = next || null;
+    if (!to && opts.land) to = '/auth/land?from=' + encodeURIComponent(window.location.pathname + window.location.search);
+    window.dispatchEvent(new CustomEvent(OPEN_AUTH_PANEL, { detail: { next: to } }));
 }
 
 type Screen = 'welcome' | 'start' | 'code' | 'details';
@@ -288,21 +296,9 @@ export default function AuthPanelHost() {
     // Signed in. Where to now?
     const finish = async (s: any) => {
         clearPending();
+        // `next` is either an explicit destination or, from the account menu,
+        // the landing step that puts a host or provider on their working side.
         if (next) { window.location.href = next; return; }
-        // A tradesman or experience provider signing in is not looking for a
-        // cottage: land an approved provider on their dashboard, as before.
-        try {
-            const { data: provider } = await supabase
-                .from('service_providers')
-                .select('id')
-                .eq('owner_id', s.user.id)
-                .eq('status', 'approved')
-                .limit(1)
-                .maybeSingle();
-            if (provider) { window.location.href = '/services/dashboard'; return; }
-        } catch {
-            // Never let the provider check block a sign-in.
-        }
         window.location.reload();
     };
 
@@ -507,6 +503,7 @@ export default function AuthPanelHost() {
                         </form>
                         <GoogleButton
                             compact
+                            next={next}
                             onStart={() => { recordStayChoice(stay); if (!stay) forgetAccount(); }}
                             divider={
                                 <div className="my-6 flex items-center gap-3 text-xs text-slate-500">

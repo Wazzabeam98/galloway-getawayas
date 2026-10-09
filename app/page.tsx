@@ -22,6 +22,8 @@ import TownsCarousel from '@/components/TownsCarousel';
 import { AREAS, hasCopy } from '@/config/areas';
 import fs from 'fs';
 import path from 'path';
+import { resolveWorkMode } from '@/lib/workMode';
+import { readWorkSide } from '@/lib/workSide';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,10 +116,11 @@ export default async function HomePage({
     const cookieStore = cookies();
     const supabase = createServerComponentClient({ cookies });
 
-    // Same cookie the navbar reads, so the page agrees with the mode switch.
-    // Anyone who hasn't chosen is a traveller.
-    const mode: 'host' | 'travel' =
-        cookieStore.get('gg_mode')?.value === 'host' ? 'host' : 'travel';
+    // Same rule the navbar reads, so the page agrees with the mode switch: the
+    // side they were last on, or — never having chosen — hosting for an
+    // approved host or provider and travelling for everyone else (lib/workMode).
+    const { data: { user: viewer } } = await supabase.auth.getUser();
+    const mode = resolveWorkMode(cookieStore.get('gg_mode')?.value, await readWorkSide(supabase, viewer?.id));
 
     // What the hero's search button put in the URL. Every part is optional —
     // a bare `/` still means "show me everything".
@@ -152,8 +155,7 @@ export default async function HomePage({
     // Nothing for a signed-out visitor or in hosting mode.
     const upcomingExperiences: Promise<Upcoming[]> = mode === 'host'
         ? Promise.resolve([])
-        : supabase.auth.getUser()
-            .then(({ data: { user } }): Promise<{ upcoming: any[] }> => (user ? guestExperienceLists(user.id) : Promise.resolve({ upcoming: [] })))
+        : (viewer ? guestExperienceLists(viewer.id) : Promise.resolve({ upcoming: [] as any[] }))
             .then((d: any) => (d && d.upcoming) || [])
             .catch(() => []);
 
