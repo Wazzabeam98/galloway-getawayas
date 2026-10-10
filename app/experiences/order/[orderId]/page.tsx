@@ -801,9 +801,8 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     a made-to-order product (a cake) is not something
                                     they DO, so it keeps the neutral heading. */}
                                 <h2 className="text-lg font-semibold text-slate-900">{order.shape === 'made_to_order' ? 'About this experience' : 'What you’ll do'}</h2>
-                                {experienceBlurb && (
-                                    <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{experienceBlurb}</p>
-                                )}
+                                {/* Numbered steps first, then the note below (Liam, 9 Oct
+                                    2026), matching the public listing. */}
                                 {steps.length > 0 && (
                                     <ol className="mt-4 space-y-4">
                                         {steps.map((step, i) => (
@@ -818,6 +817,9 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                             </li>
                                         ))}
                                     </ol>
+                                )}
+                                {experienceBlurb && (
+                                    <p className={(steps.length > 0 ? 'mt-5' : 'mt-2') + ' whitespace-pre-line text-sm leading-relaxed text-slate-700'}>{experienceBlurb}</p>
                                 )}
                             </section>
                         )}

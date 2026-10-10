@@ -106,11 +106,19 @@ export default function ExperienceListingBody({
         ? p.professional_title.trim()
         : null;
 
-    // The intro under the title. Since 5 Oct 2026 a new provider's description IS
-    // their "What happens" text (the sign-up's one description), so showing both
-    // printed the same paragraph twice. When they match, it shows once, under
-    // "What happens"; an older listing with a separate description keeps both.
-    const intro = p.description && p.description.trim() !== String(p.what_happens || '').trim()
+    // The intro under the title. A new provider's description is DERIVED from
+    // their "What happens" — the optional note (what_happens) when they wrote one,
+    // otherwise the three-step flow joined (Liam, 9 Oct 2026) — so showing the
+    // intro as well would print the same words twice. It is suppressed when the
+    // description matches EITHER the note OR the joined flow; an older listing with
+    // a genuinely separate description still shows it.
+    const flowText = Array.isArray(p.itinerary)
+        ? p.itinerary.map((r: { detail?: string | null }) => String(r?.detail || '').trim()).filter(Boolean).join('. ')
+        : '';
+    const descTrimmed = (p.description || '').trim();
+    const intro = descTrimmed
+        && descTrimmed !== String(p.what_happens || '').trim()
+        && descTrimmed !== flowText
         ? p.description
         : null;
 
@@ -362,9 +370,6 @@ export default function ExperienceListingBody({
                         {(() => { const steps = experienceSteps(p.shape, p.fulfilment, p.itinerary); return (p.what_happens || steps.length > 0) ? (
                             <section className="mt-8 border-t border-slate-200 pt-8">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">What happens</h2>
-                                {p.what_happens ? (
-                                    <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
-                                ) : null}
                                 {steps.length > 0 ? (
                                     // Numbered steps, Airbnb-style — a filled numeral, the step's
                                     // label in bold, then the detail. `experienceSteps` has already
@@ -383,6 +388,13 @@ export default function ExperienceListingBody({
                                             </li>
                                         ))}
                                     </ol>
+                                ) : null}
+                                {/* The optional note sits BELOW the numbered steps (Liam, 9 Oct
+                                    2026) — anything that isn't a step (parking, access). More
+                                    air above it when steps precede it; directly under the
+                                    heading when there are none. */}
+                                {p.what_happens ? (
+                                    <p className={(steps.length > 0 ? 'mt-6' : 'mt-3') + ' whitespace-pre-line text-[15px] leading-relaxed text-slate-700'}>{p.what_happens}</p>
                                 ) : null}
                             </section>
                         ) : null; })()}
