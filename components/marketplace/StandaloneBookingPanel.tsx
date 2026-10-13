@@ -5,8 +5,14 @@ import { createPortal } from 'react-dom';
 import { priceParts, cancellationBadge, bookingOptions, optionTarget } from '@/components/marketplace/present';
 import BookingDialog, { type BookArgs } from '@/components/marketplace/BookingDialog';
 import DatePreview from '@/components/marketplace/DatePreview';
+import MonthCalendar from '@/components/marketplace/MonthCalendar';
 import { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
 import { AGREEMENTS } from '@/lib/agreements';
+
+// Stable references for the empty calendar, so MonthCalendar isn't handed a new
+// Set/function every render.
+const EMPTY_DAYS: Set<string> = new Set();
+const noop = () => {};
 
 interface PanelItem { id: string; name: string; price: number; groupPrice?: number | null; duration_minutes?: number | null; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
@@ -25,6 +31,10 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
         declaredSessions?: PanelDeclared[];
         cancellationHours?: number | null; noRefund?: boolean | null;
         minAge?: number | null;
+        // Whether the provider has ever opened any times. False for a brand-new
+        // set-times venue that has released nothing — the panel then says "no dates
+        // released yet" rather than "none available just now".
+        everScheduled?: boolean;
     };
     // signedIn tells us whether this is an anonymous checkout; signInNext is kept
     // for compatibility with the host page.
@@ -72,6 +82,26 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
     const showFrom = pricedItems.length > 1;
     const cancel = cancellationBadge(provider.cancellationHours, provider.noRefund);
     const hasAnything = provider.sessions.length > 0 || declaredSessions.length > 0;
+
+    // Nothing to book. A set-times venue that has never opened times reads "no
+    // dates released yet" (the provider hasn't published a timetable); one that has
+    // opened times but has none free in the window reads "none available just now".
+    // Either way we keep the listing on the site and show the shared calendar in
+    // its empty state — one clear line, not a wall of greyed-out days — with no way
+    // to start a booking, the way a published cottage with no open nights stays up.
+    const neverReleased = provider.everScheduled === false;
+    const emptyLabel = neverReleased ? 'No dates have been released yet.' : 'No dates available just now.';
+    const emptyNote = neverReleased
+        ? `${provider.who} hasn’t opened any dates to book yet — check back soon.`
+        : 'There’s nothing free to book right now — check back soon.';
+
+    // The empty calendar, shared by the desktop card and the phone sheet.
+    const noDates = (
+        <div className="mt-4">
+            <MonthCalendar availableDays={EMPTY_DAYS} selected={null} onSelect={noop} emptyLabel={emptyLabel} />
+            <p className="mt-1 text-sm text-slate-500">{emptyNote}</p>
+        </div>
+    );
 
     async function book(args: BookArgs) {
         setBusy(true); setError(null);
@@ -125,24 +155,28 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
                         )}
                         <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
                     </div>
-                    <button type="button" onClick={() => setOpen(true)} disabled={!hasAnything}
-                        className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
-                        {hasAnything ? 'Show dates' : 'No times'}
-                    </button>
+                    {hasAnything && (
+                        <button type="button" onClick={() => setOpen(true)}
+                            className="flex-none rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800">
+                            Show dates
+                        </button>
+                    )}
                 </div>
 
-                {/* The next few available dates, right in the panel. */}
-                <DatePreview
-                    items={provider.items}
-                    sessions={provider.sessions}
-                    declaredSessions={declaredSessions}
-                    providerCapacity={provider.slotCapacity}
-                    providerMinPeople={provider.minPeople}
-                    slotLength={provider.slotLength}
-                    busy={busy}
-                    onPickDay={(d) => openOn(d)}
-                    onShowAll={() => openOn(null)}
-                />
+                {hasAnything ? (
+                    /* The next few available dates, right in the panel. */
+                    <DatePreview
+                        items={provider.items}
+                        sessions={provider.sessions}
+                        declaredSessions={declaredSessions}
+                        providerCapacity={provider.slotCapacity}
+                        providerMinPeople={provider.minPeople}
+                        slotLength={provider.slotLength}
+                        busy={busy}
+                        onPickDay={(d) => openOn(d)}
+                        onShowAll={() => openOn(null)}
+                    />
+                ) : noDates}
 
                 {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
             </div>
@@ -162,10 +196,14 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
                         ) : null}
                         <p className={`text-xs font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>
                     </div>
-                    <button type="button" onClick={() => setOpen(true)} disabled={!hasAnything}
-                        className="w-full rounded-lg bg-emerald-700 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-                        {hasAnything ? 'Check availability' : 'No times'}
-                    </button>
+                    {hasAnything ? (
+                        <button type="button" onClick={() => setOpen(true)}
+                            className="w-full rounded-lg bg-emerald-700 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800">
+                            Check availability
+                        </button>
+                    ) : (
+                        <p className="rounded-lg bg-slate-50 py-3 text-center text-sm font-medium text-slate-600">{emptyLabel}</p>
+                    )}
                 </div>, document.body,
             )}
 

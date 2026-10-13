@@ -11,13 +11,17 @@ import { toast } from 'react-toastify';
 //
 // For a trade with a card on file, the take-down also cancels their £20
 // subscription, so the confirm says so before the press rather than after.
-export default function AdminProviderTakedown({ id, name, ownerName, isTrade, hasSubscription, hidden }: {
+export default function AdminProviderTakedown({ id, name, ownerName, isTrade, hasSubscription, hidden, liveNote }: {
     id: string;
     name: string;
     ownerName: string;
     isTrade: boolean;
     hasSubscription: boolean;
     hidden: boolean;
+    // For an approved provider that still isn't on the marketplace — no times
+    // released, or no priced item. Shown instead of the plain "On the site.", so
+    // the line reflects what a guest sees rather than only whether we hid it.
+    liveNote?: string | null;
 }) {
     const router = useRouter();
     const [open, setOpen] = useState(false);
@@ -53,8 +57,10 @@ export default function AdminProviderTakedown({ id, name, ownerName, isTrade, ha
 
     return (
         <div className="mt-4 border-t border-slate-100 pt-4 flex items-center justify-between gap-3">
-            <p className="text-xs text-slate-500">
-                {hidden ? 'Taken down by an admin — not on the site.' : 'On the site.'}
+            <p className={`text-xs ${!hidden && liveNote ? 'text-amber-700' : 'text-slate-500'}`}>
+                {hidden
+                    ? 'Taken down by an admin — not on the site.'
+                    : liveNote || 'On the site.'}
             </p>
             <button
                 type="button"

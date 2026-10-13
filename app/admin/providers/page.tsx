@@ -52,7 +52,7 @@ export default async function AdminProviders() {
     // are silently piling up.
     const { data: providers, error } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil, callout_fee, hourly_rate, callout_waived, trial_ends_at, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, stripe_mcc, custom_label, category_assigned_at, exclusive_per_date, shape, guest_details, declarations, dietary_note, owner_paused, admin_hidden_at, stripe_subscription_id')
+        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil, callout_fee, hourly_rate, callout_waived, trial_ends_at, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, stripe_mcc, custom_label, category_assigned_at, exclusive_per_date, shape, fulfilment, collection_street, collection_town, collection_postcode, guest_details, declarations, dietary_note, owner_paused, admin_hidden_at, stripe_subscription_id')
         .order('submitted_at', { ascending: false, nullsFirst: false });
 
     // WHO HAS PROVED THEY CAN READ THEIR EMAIL.
@@ -162,12 +162,45 @@ export default async function AdminProviders() {
     const itemRows = rows.length
         ? (await admin
               .from('service_provider_items')
-              .select('provider_id, name, description, price, unit, sort_order, active')
+              .select('provider_id, name, description, price, unit, sort_order, active, price_mode')
               .in('provider_id', rows.map((r: any) => r.id))
               .order('sort_order', { ascending: true })).data || []
         : [];
     const itemsFor = (id: string) =>
         itemRows.filter((it: any) => it.provider_id === id && it.active !== false);
+
+    // WHETHER AN APPROVED PROVIDER IS ACTUALLY ON THE MARKETPLACE.
+    //
+    // Approval alone used to be reported as "On the site.", but the loader drops
+    // a guest provider with no priced item — and, for a set-times one, with no
+    // dates released. Those sit "approved" yet invisible, which is the exact gap
+    // that hid the sauna. Work the reason out here, the same two gates the
+    // marketplace loader applies (a fixed-price item; and, for a slot, an opened
+    // weekly template or a declared session), so the status line can say it.
+    const slotIds = rows.filter((r: any) => r.audience === 'guest' && r.shape === 'slot').map((r: any) => r.id);
+    const scheduledIds = new Set<string>();
+    if (slotIds.length) {
+        const [{ data: avail }, { data: declared }] = await Promise.all([
+            admin.from('slot_availability').select('provider_id').in('provider_id', slotIds),
+            admin.from('slot_sessions').select('provider_id').in('provider_id', slotIds).eq('declared', true),
+        ]);
+        for (const r of avail || []) scheduledIds.add(r.provider_id);
+        for (const r of declared || []) scheduledIds.add(r.provider_id);
+    }
+    // Null when the provider is genuinely live; otherwise the plain-English reason
+    // a guest can't see or book it despite approval. Take-downs (owner_paused, an
+    // admin hide) are said by the take-down line itself, so they return null here.
+    const liveNoteFor = (p: any): string | null => {
+        if (p.audience !== 'guest' || p.status !== 'approved') return null;
+        if (p.owner_paused || p.admin_hidden_at) return null;
+        const hasPricedItem = itemsFor(p.id).some((it: any) =>
+            Number(it.price) > 0 && (it.price_mode == null || it.price_mode === 'fixed'));
+        if (!hasPricedItem) return 'On the site once it has a priced thing to book — the menu is empty.';
+        if (p.shape === 'slot' && !scheduledIds.has(p.id)) {
+            return 'Approved, but not bookable yet — no dates released. The provider sets their opening times.';
+        }
+        return null;
+    };
 
     // A guest covers named regions, not a radius, so the "· N mi" that reads
     // right for a tradesman's town would be a meaningless "· 0 mi" for them.
@@ -279,6 +312,7 @@ export default async function AdminProviders() {
             photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
             registrations={regsFor(p.id)}
             blockers={blockersFor(p)}
+            liveNote={liveNoteFor(p)}
             emailVerified={verified.has(p.owner_id) ? verified.get(p.owner_id) : null}
             skills={skillsFor(p.id).map((skill: any) => ({
                 ...skill,

@@ -67,7 +67,13 @@ export default function ProviderCard({ p, href }: { p: MpProvider; href: string 
                         <span className="text-base font-semibold">{fromPriceLabel(p)}</span>
                     </div>
                     {p.shape === 'slot' ? (
-                        <span className="text-xs text-slate-500">{nextSessionLabel(p)}</span>
+                        // The next bookable time, or — when none — a quiet cue so the
+                        // card never ends on a blank. A brand-new venue that hasn't
+                        // opened its timetable reads "Dates coming soon"; one that is
+                        // just full for now reads "No dates just now".
+                        <span className="text-xs text-slate-500">
+                            {nextSessionLabel(p) || (p.everScheduled ? 'No dates just now' : 'Dates coming soon')}
+                        </span>
                     ) : (
                         <span className="text-xs font-medium text-emerald-700 opacity-0 transition group-hover:opacity-100">View →</span>
                     )}
