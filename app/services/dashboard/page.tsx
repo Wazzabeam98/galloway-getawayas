@@ -11,6 +11,7 @@ import { ukDateTime } from '@/lib/dayKey';
 import ProviderUpcoming from '@/components/services/ProviderUpcoming';
 import { loadProviderReservations } from '@/lib/providerReservations';
 import { isAwaitingConnect } from '@/lib/serviceOrders';
+import { shapeOf } from '@/lib/serviceSlots';
 import { loadHeldOrders, heldSummary } from '@/lib/heldPayouts';
 import { londonDayKey } from '@/lib/dayKey';
 import HeldPayoutsBanner from '@/components/services/HeldPayoutsBanner';
@@ -42,7 +43,7 @@ export default async function ProviderReservationsPage() {
 
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, status, plan, stripe_payouts_enabled, stripe_account_id, trial_ends_at, fulfilment, photos, cancellation_window_hours, guest_details, collection_street, collection_town, collection_postcode')
+        .select('id, business_name, trade, audience, status, plan, stripe_payouts_enabled, stripe_account_id, trial_ends_at, fulfilment, photos, cancellation_window_hours, guest_details, collection_street, collection_town, collection_postcode, shape')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -106,6 +107,22 @@ export default async function ProviderReservationsPage() {
     const awaitingPayouts = !isTrade && isAwaitingConnect(provider);
     const held = awaitingPayouts ? heldSummary(await loadHeldOrders(admin, [provider.id]).catch(() => []), londonDayKey()) : null;
 
+    // A set-times (slot) experience is on the site the moment it is approved, but a
+    // guest can't book anything until it has opened some times — a weekly template
+    // or a declared session. Approval doesn't ask for them (nor does sign-up), so a
+    // provider can sit "live" with an empty timetable and never know why no booking
+    // comes. Say it plainly, with a link to set them. Checked only for a slot guest
+    // provider; a chef or a baker books by request and has no timetable to open.
+    const isSlot = !isTrade && shapeOf(provider) === 'slot';
+    let needsTimes = false;
+    if (isSlot) {
+        const [{ count: hoursCount }, { count: declaredCount }] = await Promise.all([
+            admin.from('slot_availability').select('provider_id', { count: 'exact', head: true }).eq('provider_id', provider.id),
+            admin.from('slot_sessions').select('provider_id', { count: 'exact', head: true }).eq('provider_id', provider.id).eq('declared', true),
+        ]);
+        needsTimes = (hoursCount || 0) === 0 && (declaredCount || 0) === 0;
+    }
+
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-24">
             <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
@@ -139,6 +156,24 @@ export default async function ProviderReservationsPage() {
             <AgreementUpdateNotice doc={isTrade ? 'tradesperson' : 'experience_provider'} source="dashboard_notice" className="mb-6" />
 
             {awaitingPayouts && <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />}
+
+            {/* Live, but nothing to book: a set-times experience with no times opened.
+                Said plainly, because "approved" reads as "done" and the empty
+                timetable is invisible from here otherwise. */}
+            {needsTimes && (
+                <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-5">
+                    <h2 className="text-base font-bold text-amber-900">Guests can’t book yet</h2>
+                    <p className="mt-1 text-sm text-amber-900">
+                        You’re approved and on the site, but you haven’t opened any times — so guests see
+                        “no dates released yet” and can’t book anything. Set your opening times and your
+                        dates go live.
+                    </p>
+                    <Link href="/services/dashboard/calendar"
+                        className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950">
+                        Set your opening times
+                    </Link>
+                </div>
+            )}
 
             {!isTrade && enquiries.length > 0 && (
                 <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5">

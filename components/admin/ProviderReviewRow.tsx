@@ -32,6 +32,7 @@ export default function ProviderReviewRow({
     blockers,
     skills,
     emailVerified,
+    liveNote,
 }: {
     provider: any;
     areas: string[];
@@ -50,6 +51,11 @@ export default function ProviderReviewRow({
     // the same function the decision route refuses on, so the button being
     // disabled and the route saying no can never disagree.
     blockers?: string[];
+    // For an APPROVED provider that isn't actually on the marketplace — a slot
+    // with no times released, or a menu with no priced item. Null when it is
+    // genuinely live. Shown in place of the plain "On the site.", so the status
+    // reflects what a guest sees, not just whether we've taken it down.
+    liveNote?: string | null;
 }) {
     const router = useRouter();
     const [busy, setBusy] = useState(false);
@@ -237,6 +243,18 @@ export default function ProviderReviewRow({
     // Set by the page, and only for the group that has edits outstanding.
     const changed: string[] = provider.changedFields || [];
     const hasChanges = changed.length > 0;
+
+    // Where this one is. A travelling provider (a comes-to-you chef, a delivery
+    // maker) covers regions — "Covers The Stewartry". A guest experience at ONE
+    // place (a sauna, a studio) has no coverage to give: its address IS its
+    // location, so it reads "Based at …", not the old, alarming "Covers nowhere".
+    // Trades always cover regions, so this only re-words a guest row.
+    const isGuest = provider.audience === 'guest';
+    const travels = provider.shape === 'comes_to_you' || provider.fulfilment === 'delivery';
+    const fixedPlace = isGuest && !travels;
+    const venueAddress = [provider.collection_street, provider.collection_town, provider.collection_postcode]
+        .map((s: any) => (s ? String(s).trim() : '')).filter(Boolean).join(', ')
+        || (provider.based_line ? String(provider.based_line).trim() : '');
 
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -496,10 +514,17 @@ export default function ProviderReviewRow({
                         )}
                     </dd>
                 </div>
-                <div className="flex gap-2">
-                    <dt className="text-slate-500 shrink-0">Covers</dt>
-                    <dd className="text-slate-900">{areas.length ? areas.join(', ') : <span className="text-rose-700">nowhere</span>}</dd>
-                </div>
+                {fixedPlace ? (
+                    <div className="flex gap-2">
+                        <dt className="text-slate-500 shrink-0">Based at</dt>
+                        <dd className="text-slate-900">{venueAddress || <span className="text-rose-700">no address set</span>}</dd>
+                    </div>
+                ) : (
+                    <div className="flex gap-2">
+                        <dt className="text-slate-500 shrink-0">Covers</dt>
+                        <dd className="text-slate-900">{areas.length ? areas.join(', ') : <span className="text-rose-700">nowhere</span>}</dd>
+                    </div>
+                )}
                 <div className="flex gap-2">
                     <dt className="text-slate-500 shrink-0">Contact</dt>
                     <dd className="text-slate-900 truncate">{provider.contact_email}{provider.contact_phone ? ' · ' + provider.contact_phone : ''}</dd>
@@ -802,6 +827,7 @@ export default function ProviderReviewRow({
                     isTrade={provider.audience !== 'guest'}
                     hasSubscription={!!provider.stripe_subscription_id}
                     hidden={!!provider.admin_hidden_at}
+                    liveNote={liveNote}
                 />
             )}
         </div>

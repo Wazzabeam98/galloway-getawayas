@@ -202,6 +202,12 @@ export interface MpProvider {
     // per-person option on a FRESH time (no row yet) via the shared helper. 0 when
     // not a slot or unset.
     slotCapacity: number;
+    // A set-times provider that has opened at least one weekly hour or declared
+    // one dated session. False only for a brand-new slot venue that has released
+    // nothing yet — the card and booking panel then say "no dates released yet"
+    // rather than the "none available just now" an opened-but-empty one gets.
+    // Always true for a non-slot shape.
+    everScheduled: boolean;
     // The per-treatment shape: true when any item carries its own duration, so the
     // panel generates the grid from the chosen treatment's length rather than one
     // provider number. False for sauna/class/tasting — the fixed-grid shape.
@@ -365,7 +371,10 @@ export async function loadPublicMarketplace(
     if (!open) return { open: false, stay: null, listing: null, providers: [] };
     const fromKey = londonDayKey(new Date());
     const toKey = shiftDayKey(fromKey, Math.max(1, horizonDays));
-    const providers = await shapeProviders(admin, fromKey, toKey);
+    // showUnscheduled: the public browse keeps a set-times provider that has
+    // opened no times yet (it shows a "no dates released" calendar, nothing to
+    // book). The against-a-stay path below does not pass it.
+    const providers = await shapeProviders(admin, fromKey, toKey, undefined, true);
     return { open: true, stay: null, listing: null, providers };
 }
 
@@ -376,11 +385,20 @@ export async function loadPublicMarketplace(
  * stay, a listing or a guest, so the two callers can't drift apart on
  * eligibility, pricing, seat availability or privacy.
  */
-async function shapeProviders(admin: any, fromKey: string, toKey: string, pausedId?: string): Promise<MpProvider[]> {
+async function shapeProviders(admin: any, fromKey: string, toKey: string, pausedId?: string, showUnscheduled = false): Promise<MpProvider[]> {
     // pausedId: shape that ONE provider, and only if the single thing keeping it
     // off the marketplace is a take-down — its own pause, or ours
     // (admin_hidden_at) — for loadPausedProvider. Every other gate — approved,
     // an MCC — still applies exactly as for a live one.
+    //
+    // showUnscheduled: the standalone browse keeps a set-times provider that has
+    // released no times — the same way a published cottage with no open nights
+    // stays on the site rather than vanishing (isListingBookable: visibility is
+    // approval, availability is the calendar, and the two are independent). Its
+    // card and page show a "no dates released yet" calendar and offer nothing to
+    // book. The against-a-stay path leaves it false: a trip page is asking "what
+    // can I book for THESE nights", so a provider with nothing bookable in the
+    // window is still dropped there, exactly as before.
     let query = admin
         .from('service_providers')
         .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at, venue_lat, venue_lng, show_precise_location')
@@ -476,6 +494,9 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
         let sessions: MpSession[] = [];
         let declaredSessions: MpDeclaredSession[] = [];
         let providerPartialBlocks: PartialBlock[] = [];
+        // Non-slot shapes don't have a release-dates notion — they're always
+        // "scheduled" as far as the empty-state wording is concerned.
+        let everScheduled = true;
         if (shape === 'slot') {
             // The pinned seat row for a (date,time), if anyone has booked it. A
             // fresh time has none and is open to any option. Whichever option
@@ -554,10 +575,20 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
                 }))
                 .sort((a: any, b: any) => (a.date + a.time < b.date + b.time ? -1 : 1));
 
-            // Shown when there's something to book — an open-hours session OR a
-            // declared one. A declared-only provider (empty weekly template) is
-            // dropped by the old open-hours-only check; keep it if it has a session.
-            if (!sessions.length && !declaredSessions.length) continue;
+            // Has the provider opened ANY times at all — a weekly template, or a
+            // declared dated session (past or future, booked or not)? This is the
+            // difference between "no dates released yet" (never opened: a brand-new
+            // set-times venue like a sauna) and "no dates available just now"
+            // (opened, but nothing bookable in this window). The card and panel read
+            // it to word the empty state truthfully.
+            everScheduled = (availBy[p.id] || []).length > 0
+                || (sessBy[p.id] || []).some((s: any) => s.declared);
+
+            // Dropped only on the against-a-stay path, where a provider with nothing
+            // bookable in the stay window is noise. On the standalone browse
+            // (showUnscheduled) it stays — visible but with nothing to book — the way
+            // a published cottage with no open nights stays on the site.
+            if (!showUnscheduled && !sessions.length && !declaredSessions.length) continue;
         }
 
         const tenure = providerTenure(p.created_at);
@@ -619,6 +650,10 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             // whose items[0] happens to be the flat one).
             minPeople: shape === 'slot' ? Math.max(1, Number(p.slot_min_people) || 1) : 1,
             slotCapacity: shape === 'slot' ? Math.max(0, Number(p.slot_capacity) || 0) : 0,
+            // Whether this set-times provider has ever opened any times (see above).
+            // The card and panel use it with the (empty) session list to tell "no
+            // dates released yet" apart from "none available just now".
+            everScheduled,
             perItemDurations: shape === 'slot' ? perItemDurations : false,
             turnaround: shape === 'slot' ? turnaround : 0,
             // Opening hours + day-off blocks are carried for a slot AND for a
