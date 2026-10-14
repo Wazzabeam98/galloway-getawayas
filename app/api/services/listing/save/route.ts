@@ -358,8 +358,11 @@ export async function POST(request: Request) {
                     // sends extra-guest pricing — its card was removed — so the
                     // included_guests/extra fees below save as null.)
                     const groupPrice = unit === 'person' && Number(it.group_price) > 0 ? Number(it.group_price) : null;
+                    // Per hour: the fewest bookable hours (1–24), only on an hourly row.
+                    const minHours = unit === 'hour' && intOrNull(it.min_hours) != null
+                        ? Math.max(1, Math.min(24, Math.floor(Number(it.min_hours)))) : null;
                     const row: any = {
-                        name, description: strOrNull(it.description), price, group_price: groupPrice,
+                        name, description: strOrNull(it.description), price, group_price: groupPrice, min_hours: minHours,
                         unit,
                         image: strOrNull(it.image),
                         duration_minutes: (it.duration_minutes == null || it.duration_minutes === '')

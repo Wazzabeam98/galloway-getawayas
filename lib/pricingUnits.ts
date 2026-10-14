@@ -9,7 +9,8 @@
 //                         pop-up bar is per event however many turn up, so a
 //                         per-event provider is never asked for a capacity.
 //   item    Per item    — a price for each one.
-//   hour    Per hour    — comes-to-you only (stage two; not offered yet).
+//   hour    Per hour    — comes-to-you only; multiplies by the HOURS the guest
+//                         picks (never by people), with an optional minimum.
 //
 // Ranges and price on enquiry were dropped (9 Oct 2026). price_mode/price_max
 // stay on the table but are no longer written; only a fixed price is listed.
@@ -19,7 +20,8 @@
 //     seat machinery knows only those two;
 //   - a timed one-at-a-time treatment (massage): not asked — one price for a set
 //     length, shown as "£60 · 1 hr";
-//   - comes to you (chef, oysters, guide): per person, per group, per event, per item;
+//   - comes to you (chef, oysters, guide, dog walker): per person, per group,
+//     per event, per item, per hour;
 //   - made to order (food): per item, not asked.
 //
 // Pure: no database, no React, so the wizard, the editor, the save route and the
@@ -63,7 +65,7 @@ export function unitPer(unit: string | null | undefined): string {
 export function chargeUnitsFor(shape: string | null | undefined, opts: { timed?: boolean } = {}): ChargeUnit[] {
     if (shape === 'slot') return opts.timed ? ['flat'] : ['person', 'flat'];
     if (shape === 'made_to_order') return ['item'];
-    return ['person', 'flat', 'event', 'item'];
+    return ['person', 'flat', 'event', 'item', 'hour'];
 }
 
 /** The picker's choices for one offering: the shape's units, plus the row's own
@@ -75,8 +77,8 @@ export function unitChoices(allowed: string[], current: string | null | undefine
 }
 
 /** Whether a provider charging these ways needs a maximum capacity at all. Per
- *  person and per group do (how many places / how big a group); per event and
- *  per item don't — the price is the same however many come. Nothing chosen yet
+ *  person and per group do (how many places / how big a group); per event, per
+ *  item and per hour don't — the price is the same however many come. Nothing chosen yet
  *  reads as yes, so the question isn't skipped by accident. */
 export function needsCapacity(units: string[] | null | undefined): boolean {
     if (!units || !units.length) return true;

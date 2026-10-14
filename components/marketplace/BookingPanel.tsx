@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { unitMultiplies } from '@/lib/serviceOrders';
+import { unitMultiplies, pricedPerHead, pricedByQuantity } from '@/lib/serviceOrders';
 import { hasExtraGuests } from '@/lib/extraGuests';
 import { generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
 import { dateLabel, priceParts, cancellationBadge, bookingOptions, optionTarget } from '@/components/marketplace/present';
@@ -279,7 +279,9 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
         const target = optionTarget(it.id);
         const eg = { unit: it.unit, price: it.price, included_guests: it.includedGuests ?? null, extra_adult_fee: it.extraAdultFee ?? null, extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null };
         const isExtra = hasExtraGuests(eg);
-        const perPerson = unitMultiplies(it.unit);
+        const perPerson = pricedPerHead(it.unit);
+        // Per hour / per item: the hours or items picked — never the party.
+        const byQuantity = pricedByQuantity(it.unit);
         const kids = childrenAllowed(provider.minAge ?? null) ? args.children : 0;
         setBusy(true); setError(null);
         const gt = await guestTermsForOrder();
@@ -291,7 +293,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                     itemId: target.itemId, bookAs: target.bookAs, bookingId, serviceDate: args.date, serviceTime: args.time,
                     ...(isExtra
                         ? { adults: Math.max(1, args.adults), children: kids }
-                        : { quantity: perPerson ? Math.max(1, args.adults + kids) : 1 }),
+                        : { quantity: perPerson ? Math.max(1, args.adults + kids) : byQuantity ? Math.max(1, args.quantity) : 1 }),
                     serviceAddress: needsAddress ? args.address : undefined,
                     allergy: provider.isFood ? args.allergy : '',
                     ...gt,

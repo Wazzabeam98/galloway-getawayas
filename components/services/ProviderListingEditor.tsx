@@ -63,7 +63,7 @@ export interface EditorProvider {
     amenities: string[];
     dietary_options: string[];
     areas: string[];
-    items: Array<{ id: string; name: string; description: string; price: number; group_price?: number | null; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null; vat_treatment?: string | null }>;
+    items: Array<{ id: string; name: string; description: string; price: number; group_price?: number | null; min_hours?: number | null; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null; vat_treatment?: string | null }>;
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
@@ -735,7 +735,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
     const menuPayload = (rows: MenuRow[]) => ({
         items: rows.map((r) => ({
-            id: r.id, name: r.name, description: r.description, price: r.price, group_price: r.groupPrice,
+            id: r.id, name: r.name, description: r.description, price: r.price, group_price: r.groupPrice, min_hours: r.minHours,
             unit: r.unit, image: r.image,
             duration_minutes: r.duration, fulfilment: r.fulfilment, active: r.active,
             capacity: r.capacity, min_people: r.minPeople,

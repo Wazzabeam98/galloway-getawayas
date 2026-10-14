@@ -457,6 +457,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // A per-person offering's price for one group to book it whole — one
         // offering priced two ways. '' / absent = places only.
         groupPrice?: string;
+        // An hourly offering's fewest bookable hours. '' / absent = one.
+        minHours?: string;
         // How it's charged — lib/pricingUnits: 'person' | 'flat' (per group) |
         // 'event' | 'item'; legacy 'night' | 'hour' | 'ticket' still load.
         unit: string;
@@ -876,7 +878,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // The menu, if they have one. Loaded in the order they set.
                     const { data: itemRows } = await supabase
                         .from('service_provider_items')
-                        .select('id, name, description, price, group_price, unit, image, sort_order, created_at, duration_minutes, fulfilment')
+                        .select('id, name, description, price, group_price, min_hours, unit, image, sort_order, created_at, duration_minutes, fulfilment')
                         .eq('provider_id', existing.id)
                         .order('sort_order', { ascending: true })
                         .order('created_at', { ascending: true });
@@ -887,6 +889,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             description: r.description || '',
                             price: r.price === null || r.price === undefined ? '' : String(r.price),
                             groupPrice: r.group_price === null || r.group_price === undefined ? '' : String(r.group_price),
+                            minHours: r.min_hours === null || r.min_hours === undefined ? '' : String(r.min_hours),
                             unit: r.unit || 'flat',
                             image: r.image || null,
                             duration: r.duration_minutes === null || r.duration_minutes === undefined ? '' : String(r.duration_minutes),
@@ -3253,6 +3256,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         // One offering, two prices: a per-person row may carry a
                         // group price; every other row writes null.
                         group_price: (String(it.unit) === 'person' && Number(it.groupPrice) > 0) ? Number(it.groupPrice) : null,
+                        // Per hour: the fewest bookable hours, only on an hourly row.
+                        min_hours: (String(it.unit) === 'hour' && Number(it.minHours) > 0) ? Math.max(1, Math.min(24, Math.floor(Number(it.minHours)))) : null,
                         // A travelling item is always private (flat), whatever the row
                         // carries — nobody joins a class in someone else's cottage.
                         unit: shape === 'slot'
@@ -4430,7 +4435,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     const extraRows = items.map((r, i) => ({ r, i })).filter(({ i }) => !usedIdx.has(i));
 
                     const rows = items;
-                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'groupPrice' | 'unit' | 'duration' | 'fulfilment', val: string) =>
+                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'groupPrice' | 'minHours' | 'unit' | 'duration' | 'fulfilment', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
                     const openEdit = (i: number) => { setMenuIndex(i); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
@@ -4504,7 +4509,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // that ticked per group too.
                     const groupStep = !!it && String(it.unit) === 'person' && !forcedOneToOneItem && !mixedChoiceItem
                         && (slotBoth || (askedCharge && chargeUnits.includes('flat')));
-                    const stepKindsBase: Array<'name' | 'location' | 'booked' | 'duration' | 'price' | 'group' | 'unit' | 'desc' | 'photo'> = forcedOneToOneItem
+                    const stepKindsBase: Array<'name' | 'location' | 'booked' | 'duration' | 'price' | 'group' | 'hours' | 'unit' | 'desc' | 'photo'> = forcedOneToOneItem
                         ? ['name', ...locStep, 'duration', 'price', 'desc', 'photo']
                         : mixedChoiceItem
                             ? (mixedTimed
@@ -4513,8 +4518,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             : ((slotBoth && !unitLocked) || menuUnitStep)
                                 ? ['name', 'unit', 'price', 'desc', 'photo']
                                 : ['name', ...locStep, 'price', 'desc', 'photo'];
-                    const stepKinds = groupStep
-                        ? stepKindsBase.flatMap((k) => (k === 'price' ? ['price', 'group'] as const : [k]))
+                    // Per hour: after the price, the fewest hours someone can book.
+                    const hoursStep = !!it && String(it.unit) === 'hour';
+                    const stepKinds = (groupStep || hoursStep)
+                        ? stepKindsBase.flatMap((k) => (k === 'price' ? (groupStep ? ['price', 'group'] as const : ['price', 'hours'] as const) : [k]))
                         : stepKindsBase;
                     const LAST = stepKinds.length - 1;
                     const stepKind = stepKinds[menuStep] ?? 'name';
@@ -4623,6 +4630,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                             : stepKind === 'duration' ? 'How long is it?'
                                                 : stepKind === 'price' ? priceQuestion(it.unit, forcedOneToOneItem || mixedTimed)
                                                     : stepKind === 'group' ? GUEST_SCREEN_COPY.menuGroupTitle
+                                                    : stepKind === 'hours' ? GUEST_SCREEN_COPY.menuHoursTitle
                                                     : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
                                                         : stepKind === 'desc' ? GUEST_SCREEN_COPY.menuDescTitle
                                                             : GUEST_SCREEN_COPY.menuPhotoTitle
@@ -4850,6 +4858,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                             )}
                                         </div>
                                     )}
+                                    {/* PER HOUR — the fewest hours a guest can book.
+                                        Untouched, one hour is fine. */}
+                                    {stepKind === 'hours' && (
+                                        <div className="flex flex-col items-center">
+                                            <NumberStepper value={it.minHours || ''} onChange={(v: string) => setField(menuIndex, 'minHours', v)}
+                                                min={1} max={24} suggestion={1} size="lg" suffix="hours" />
+                                            <p className="mt-4 text-center text-sm text-slate-500">{GUEST_SCREEN_COPY.menuHoursNote}</p>
+                                        </div>
+                                    )}
                                     {stepKind === 'desc' && (
                                         <div className={fieldWrap}>
                                             <textarea
@@ -5015,7 +5032,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     Each offering on the price screen then uses one of these. */}
                 {onStep('g_charge') && isGuest && (
                 <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-2xl md:mx-auto">
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         {(chargeUnitsFor('comes_to_you') as string[]).map((u) => (
                             <ChoiceCard key={u} selected={chargeUnits.includes(u)}
                                 onSelect={() => setChargeUnits((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : (chargeUnitsFor('comes_to_you') as string[]).filter((x) => x === u || prev.includes(x))))}

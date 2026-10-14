@@ -280,6 +280,9 @@ export const GUEST_SCREEN_COPY = {
     menuSlotBothRowLabel: 'A place each, or the whole session',
     menuSlotBothRowHint: 'One offering with two prices: per person, and for one group to book it all.',
     menuGroupTitle: 'How much for the whole group?',
+    // Per hour (9 Oct 2026): the fewest hours a guest can book an hourly offering.
+    menuHoursTitle: 'What’s the fewest hours someone can book?',
+    menuHoursNote: 'Guests choose how many hours, from this up. The price is per hour, whatever the number of people.',
     menuGroupNoteBoth: 'One group books the whole session and pays this in full however many come, up to your maximum. No one else can join.',
     menuGroupNoteOptional: 'Optional. Set it and one group can book it all at this price, however many come, up to your maximum. Leave it blank for places only.',
     menuDescTitle: 'Add a short description',
