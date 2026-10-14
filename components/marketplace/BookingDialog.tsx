@@ -209,7 +209,21 @@ export default function BookingDialog({
     // private booking). The steppers cap at this, so a guest can't pick more than a
     // session can hold, and we say why instead of silently allowing an un-bookable
     // number.
-    const bookableMax = offerings.reduce((m, o) => { const a = availOf(o); return a.possible ? Math.max(m, a.seatsLeft) : m; }, 0);
+    // A PRIVATE booking is one booking of the whole session, so its "seats left" is
+    // 1 — but the group itself can be up to the session's capacity, which is what
+    // the route caps attendees at (the declared row's, else the item/provider's,
+    // else 20 standalone). Reading seatsLeft here capped every private party at
+    // one guest ("Up to 1 guest"), contradicting "up to your maximum".
+    const privatePartyMax = (o: Offering): number => {
+        if (o.kind === 'declared') return o.row ? Number(o.row.capacity) || 1 : 1;
+        const pool = seatConfig(item?.capacity ?? null, null, { slot_capacity: providerCapacity, slot_min_people: providerMinPeople });
+        return Number(pool.slot_capacity) > 0 ? Number(pool.slot_capacity) : 20;
+    };
+    const bookableMax = offerings.reduce((m, o) => {
+        const a = availOf(o);
+        if (!a.possible) return m;
+        return Math.max(m, perPerson ? a.seatsLeft : privatePartyMax(o));
+    }, 0);
     const cap = Math.min(MAX_ORDER_QUANTITY, bookableMax > 0 ? bookableMax : MAX_ORDER_QUANTITY);
     const capLimited = bookableMax > 0 && bookableMax < MAX_ORDER_QUANTITY;
     // Scarcity only when it's real (lib/spotsLeft.ts): every time a guest could

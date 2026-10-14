@@ -9,7 +9,7 @@ import { childrenAllowed } from '@/lib/guestAges';
 import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
 import PackageNotice from '@/components/marketplace/PackageNotice';
 import { prettyTime } from '@/lib/offeredTimes';
-import { itemPriceLabel, dateLabel, dayHeadingLabel, monthYearLabel } from '@/components/marketplace/present';
+import { itemPriceLabel, dateLabel, dayHeadingLabel, monthYearLabel, optionTarget } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { hasUkPostcode } from '@/lib/postcode';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
@@ -322,7 +322,22 @@ export function RequestBookingDialog({
                                     guest chose it on the listing. When nothing was
                                     locked (a legacy open with no choice) the full
                                     option list still shows. */}
-                                {lockedItemId && item && (
+                                {/* A locked offering priced two ways (a place each, or the
+                                    whole group) still lets the guest choose how to book it. */}
+                                {lockedItemId && ordered.filter((i) => optionTarget(i.id).itemId === lockedItemId).length > 1 && (
+                                    <div className="mb-3">
+                                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">How do you want to book?</div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {ordered.filter((i) => optionTarget(i.id).itemId === lockedItemId).map((it) => (
+                                                <button key={it.id} type="button" onClick={() => setItemId(it.id)}
+                                                    className={`rounded-full border px-3 py-1.5 text-sm font-medium ${itemId === it.id ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                    {optionTarget(it.id).bookAs ? 'The whole group' : 'A place each'} · {itemPriceLabel(it.price, it.unit)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {lockedItemId && item && ordered.filter((i) => optionTarget(i.id).itemId === lockedItemId).length < 2 && (
                                     <div className="mb-3">
                                         <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Option</div>
                                         <div className="text-sm font-semibold text-slate-900">{item.name} · {itemPriceLabel(item.price, item.unit)}</div>

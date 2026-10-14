@@ -79,3 +79,33 @@ test('every route that sells an offering refuses a price that is not fixed', () 
     const loader = read('lib/experiencesData.ts');
     assert.match(loader, /\.eq\('price_mode', 'fixed'\)/, 'the marketplace lists fixed prices only');
 });
+
+// ONE OFFERING, TWO PRICES (9 Oct 2026). A per-person offering with a group price
+// is booked a place each or whole by one group — the provider sets it up once.
+import { bookingOptions, optionTarget } from '../components/marketplace/present';
+
+test('a per-person offering with a group price offers a whole-group option', () => {
+    const sauna = { id: 's1', name: 'Sauna round', price: 18, unit: 'person', groupPrice: 90, minPeople: 2 };
+    const walk = { id: 'w1', name: 'Guided walk', price: 25, unit: 'person', groupPrice: null, minPeople: null };
+    const hire = { id: 'h1', name: 'Boat hire', price: 300, unit: 'flat', groupPrice: null, minPeople: null };
+    const opts = bookingOptions([sauna, walk, hire]);
+    assert.deepEqual(opts.map((o) => o.id), ['s1', 's1~group', 'w1', 'h1'], 'only the offering with a group price gains a second option');
+    const group = opts.find((o) => o.id === 's1~group')!;
+    assert.equal(group.unit, 'flat', 'the whole-group option is a one-price booking — the private-hire rules apply');
+    assert.equal(group.price, 90, 'at the group price');
+    assert.equal(group.minPeople, null, 'a per-person minimum never applies to the whole group');
+    assert.deepEqual(optionTarget('s1~group'), { itemId: 's1', bookAs: 'group' }, 'the route is sent the real offering and the mode');
+    assert.deepEqual(optionTarget('s1'), { itemId: 's1' });
+});
+
+test('both booking routes take a group booking only from a per-person offering with a group price, at that price', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const ROOT = path.join(__dirname, '..', '..');
+    for (const f of ['app/api/services/slots/book/route.ts', 'app/api/services/order/route.ts']) {
+        const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+        assert.match(src, /bookAsGroup && !\(normaliseUnit\(item\.unit\) === 'person' && Number\(item\.group_price\) > 0\)/, f + ' refuses a group booking without a group price');
+        assert.match(src, /const unit = bookAsGroup \? 'flat' : normaliseUnit\(item\.unit\)/, f + ' books the group whole (flat)');
+        assert.match(src, /const unitPrice = bookAsGroup \? Number\(item\.group_price\) : Number\(item\.price\)/, f + ' charges the group price, read from the item');
+    }
+});

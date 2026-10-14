@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { hasExtraGuests } from '@/lib/extraGuests';
 import { generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
-import { dateLabel, priceParts, cancellationBadge } from '@/components/marketplace/present';
+import { dateLabel, priceParts, cancellationBadge, bookingOptions, optionTarget } from '@/components/marketplace/present';
 import { childrenAllowed } from '@/lib/guestAges';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { CalendarDays } from 'lucide-react';
@@ -18,6 +18,7 @@ import { AGREEMENTS } from '@/lib/agreements';
 
 interface PanelItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
+    groupPrice?: number | null;
     duration_minutes?: number | null;
     fulfilment?: string | null;
     capacity: number | null;
@@ -165,9 +166,12 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
         for (const b of provider.bookedBlocks || []) m.set(b.date + ' ' + b.time, { capacity: b.capacity, seats_taken: b.seats_taken, private: b.private });
         return m;
     }, [provider.bookedBlocks]);
+    // What the booking dialogs choose between: each offering, plus a whole-group
+    // option for a per-person offering that has a group price.
+    const options = useMemo(() => bookingOptions(provider.items), [provider.items]);
     const sessionsForItem = useCallback((selItemId: string): DialogOpenSession[] => {
         if (!provider.perItemDurations) return provider.sessions;
-        const item = provider.items.find((i) => i.id === selItemId);
+        const item = provider.items.find((i) => i.id === optionTarget(selItemId).itemId);
         if (!item) return [];
         const dur = resolvedDuration(item, { slot_length_minutes: provider.slotLength });
         const turn = Math.max(0, provider.turnaround || 0);
@@ -187,7 +191,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
             const res = await fetch('/api/services/slots/book', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    providerId: provider.id, itemId: args.itemId, bookingId, sessionDate: args.date, sessionTime: args.time,
+                    providerId: provider.id, ...optionTarget(args.itemId), bookingId, sessionDate: args.date, sessionTime: args.time,
                     quantity: args.quantity, attendees: args.attendees,
                     adults: args.adults, children: args.children, allergy: args.allergy,
                     ...gt,
@@ -269,8 +273,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
     // dialog showed: extra-guests → adults/children; per-person → a head count as
     // quantity; flat → one.
     async function bookRequest(args: RequestBookArgs) {
-        const it = provider.items.find((i) => i.id === args.itemId);
+        // The chosen OPTION — a whole-group option reads as one flat booking.
+        const it = options.find((i) => i.id === args.itemId);
         if (!it) { setError('Pick one first.'); return; }
+        const target = optionTarget(it.id);
         const eg = { unit: it.unit, price: it.price, included_guests: it.includedGuests ?? null, extra_adult_fee: it.extraAdultFee ?? null, extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null };
         const isExtra = hasExtraGuests(eg);
         const perPerson = unitMultiplies(it.unit);
@@ -282,7 +288,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
             const res = await fetch('/api/services/order', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    itemId: it.id, bookingId, serviceDate: args.date, serviceTime: args.time,
+                    itemId: target.itemId, bookAs: target.bookAs, bookingId, serviceDate: args.date, serviceTime: args.time,
                     ...(isExtra
                         ? { adults: Math.max(1, args.adults), children: kids }
                         : { quantity: perPerson ? Math.max(1, args.adults + kids) : 1 }),
@@ -364,7 +370,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                     <BookingDialog
                         slotLength={provider.slotLength}
                         who={provider.who}
-                        items={provider.items}
+                        items={options}
                         sessions={provider.sessions}
                         sessionsForItem={provider.perItemDurations ? sessionsForItem : undefined}
                         declaredSessions={declaredSessions}
@@ -444,7 +450,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
             {open && (
                 <RequestBookingDialog
                     who={provider.who}
-                    items={provider.items}
+                    items={options}
                     minAge={provider.minAge}
                     isFood={provider.isFood}
                     needsAddress={needsAddress}
