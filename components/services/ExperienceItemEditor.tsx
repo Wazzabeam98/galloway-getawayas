@@ -11,7 +11,7 @@ import AutoTextarea from '@/components/AutoTextarea';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
 import { NumberStepper, ChoiceCard, ChoiceTiles, WizardShell, BigAmountInput, BigTextInput, durationLabel, wizardAreaCls } from './wizardKit';
 import { SheetFooter, useCardSheet } from './editorSheet';
-import { ImageIcon, Image as ImageIconLucide, User, Users, CalendarDays, Package, Trash2, Check } from 'lucide-react';
+import { ImageIcon, Image as ImageIconLucide, User, Users, CalendarDays, Package, Trash2, Check, Clock } from 'lucide-react';
 import { UNIT_NAME, UNIT_HINT, unitChoices, unitPer, priceQuestion } from '@/lib/pricingUnits';
 import { serviceCommission } from '@/lib/pricing';
 import { SinglePhotoSheet, ConfirmRemove } from './SinglePhotoSheet';
@@ -22,7 +22,7 @@ import { VAT_TREATMENTS, normaliseVatTreatment } from '@/lib/vat';
 // raised cards, one per detail). ProviderListingEditor owns the array and its
 // save; these only produce / edit one MenuRow and hand it back.
 
-export type MenuRow = { id?: string; name: string; description: string; price: string; groupPrice: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string; vatTreatment: string };
+export type MenuRow = { id?: string; name: string; description: string; price: string; groupPrice: string; minHours: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string; category: string; vatTreatment: string };
 
 // vatRegistered: the provider is VAT registered, so each offering shows its VAT treatment card.
 // units: the charge units this provider's offerings may use (lib/pricingUnits);
@@ -30,10 +30,11 @@ export type MenuRow = { id?: string; name: string; description: string; price: s
 // priced by its length; commissionRate: their real rate, for "You keep".
 export type ItemCtx = { isSlot: boolean; shape: string; fulfilment: string; minAge: string; maxGuests: number; supabase: SupabaseClient; vatRegistered?: boolean; units: string[]; timed: boolean; commissionRate: number };
 
-export function rowFromItem(it: { id: string; name: string; description: string; price: number; group_price?: number | null; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null; vat_treatment?: string | null }): MenuRow {
+export function rowFromItem(it: { id: string; name: string; description: string; price: number; group_price?: number | null; min_hours?: number | null; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null; included_guests?: number | null; extra_adult_fee?: number | null; extra_child_fee?: number | null; max_party?: number | null; is_custom?: boolean; ingredients?: string | null; allergens?: string | null; category?: string | null; vat_treatment?: string | null }): MenuRow {
     return {
         id: it.id, name: it.name, description: it.description, price: amountForBox(it.price),
         groupPrice: amountForBox(it.group_price ?? null),
+        minHours: it.min_hours != null ? String(it.min_hours) : '',
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
         fulfilment: it.fulfilment, active: it.active,
         capacity: it.capacity != null ? String(it.capacity) : '',
@@ -49,7 +50,7 @@ export function rowFromItem(it: { id: string; name: string; description: string;
 }
 
 export function newRow(isSlot: boolean, fulfilment: string, unit: string): MenuRow {
-    return { name: '', description: '', price: '', groupPrice: '', unit, image: null,
+    return { name: '', description: '', price: '', groupPrice: '', minHours: '', unit, image: null,
         duration: isSlot ? '60' : '', fulfilment: (isSlot && fulfilment === 'both') ? 'collection' : null, active: true,
         capacity: '', minPeople: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '',
         isCustom: false, ingredients: '', allergens: '', category: '', vatTreatment: 'standard' };
@@ -66,6 +67,7 @@ export function itemSummary(r: MenuRow, isSlot: boolean, timed = false, shape = 
     const bits: string[] = [];
     bits.push(priceWords(r.price, shape === 'made_to_order' ? 'item' : r.unit, timed));
     if (r.unit === 'person' && Number(r.groupPrice) > 0) bits.push(`£${r.groupPrice} per group`);
+    if (r.unit === 'hour' && Number(r.minHours) > 1) bits.push(`minimum ${r.minHours} hours`);
     if (isSlot && r.duration) bits.push(durationLabel(Number(r.duration)));
     if (!r.active) bits.push('hidden');
     return bits.join(' · ');
@@ -93,7 +95,7 @@ export async function uploadImage(supabase: SupabaseClient, file: File, prefix: 
 // unit); a row already on a legacy unit keeps it as its own tile so it is never
 // silently changed. `units: false` hides them (a travelling offering is always
 // one price for the booking).
-const unitIcon = (v: string) => (v === 'person' ? User : v === 'flat' ? Users : v === 'event' ? CalendarDays : v === 'item' ? Package : undefined);
+const unitIcon = (v: string) => (v === 'person' ? User : v === 'flat' ? Users : v === 'event' ? CalendarDays : v === 'item' ? Package : v === 'hour' ? Clock : undefined);
 
 function UnitTiles({ ctx, unit, onUnit }: { ctx: ItemCtx; unit: string; onUnit: (u: string) => void }) {
     const choices = unitChoices(ctx.units, unit);
@@ -223,6 +225,7 @@ const STEP_QUESTIONS = {
     name: 'What’s it called?', photo: 'Add a photo', price: 'How much is it?',
     duration: 'How long does it last?', capacity: 'How many people can it take?',
     party: 'What’s the smallest party?', describe: 'Describe it',
+    hours: 'What’s the fewest hours someone can book?',
 } as const;
 
 export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: () => void; onAdd: (row: MenuRow) => unknown }) {
@@ -231,13 +234,14 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
     const [busy, setBusy] = useState(false);
     const set = (patch: Partial<MenuRow>) => setR((cur) => ({ ...cur, ...patch }));
 
-    type StepKey = 'name' | 'unit' | 'photo' | 'price' | 'group' | 'duration' | 'capacity' | 'party' | 'describe' | 'review';
+    type StepKey = 'name' | 'unit' | 'photo' | 'price' | 'group' | 'hours' | 'duration' | 'capacity' | 'party' | 'describe' | 'review';
     // Name, then how it's charged (only when there's a choice), then the price —
     // asked per that unit — then duration, capacity, description and photo.
     const steps: StepKey[] = ['name'];
     if (!ctx.timed && ctx.units.length > 1) steps.push('unit');
     steps.push('price');
     if (offersGroupPrice(ctx, r.unit)) steps.push('group');
+    if (r.unit === 'hour') steps.push('hours');
     if (ctx.isSlot) steps.push('duration');
     if (r.unit === 'person') steps.push(ctx.isSlot ? 'capacity' : 'party');
     steps.push('describe', 'photo', 'review');
@@ -259,7 +263,7 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
     };
     const back = safeIdx === 0 ? undefined : () => setIdx(safeIdx - 1);
 
-    const titles: Record<StepKey, string> = { ...STEP_QUESTIONS, unit: 'How do you charge for it?', price: priceQuestion(r.unit, ctx.timed), group: 'A price for the whole group?', review: 'Review your offering' };
+    const titles: Record<StepKey, string> = { ...STEP_QUESTIONS, unit: 'How do you charge for it?', price: priceQuestion(r.unit, ctx.timed), group: 'A price for the whole group?', hours: STEP_QUESTIONS.hours, review: 'Review your offering' };
 
     return (
         <WizardShell step={safeIdx + 1} total={steps.length} title={titles[key]}
@@ -287,6 +291,13 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
 
             {key === 'group' && (
                 <div className="mx-auto w-full max-w-md"><GroupPriceField ctx={ctx} value={r.groupPrice} onChange={(v) => set({ groupPrice: v })} /></div>
+            )}
+
+            {key === 'hours' && (
+                <div className="flex flex-col items-center gap-3">
+                    <NumberStepper value={r.minHours} onChange={(v) => set({ minHours: v })} min={1} max={24} suggestion={1} size="lg" solid suffix="hours" />
+                    <p className="text-sm text-slate-500">Guests book at least this many. Blank means one hour is fine.</p>
+                </div>
             )}
 
             {key === 'duration' && (
@@ -521,6 +532,10 @@ export function ItemDetailCard({ ctx, row, onSave, onDelete, selecting, selected
                         {ctx.isSlot && perPerson && (
                             <StepperCard title="Capacity" question={STEP_QUESTIONS.capacity} summary={capSummary} value={row.capacity} suggestion={ctx.maxGuests} suffix="people" min={1}
                                 onSave={(v) => onSave({ ...row, capacity: v })} />
+                        )}
+                        {row.unit === 'hour' && (
+                            <StepperCard title="Minimum hours" question={STEP_QUESTIONS.hours} summary={row.minHours ? `${row.minHours} hours` : 'One hour is fine'} value={row.minHours} suggestion={1} suffix="hours" min={1}
+                                onSave={(v) => onSave({ ...row, minHours: v })} />
                         )}
                         {!ctx.isSlot && perPerson && (
                             <StepperCard title="Smallest party" question={STEP_QUESTIONS.party} summary={partySummary} value={row.minPeople} suggestion={1} suffix="guests" min={1}

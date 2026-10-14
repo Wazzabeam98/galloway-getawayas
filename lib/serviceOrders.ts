@@ -341,6 +341,22 @@ export function unitMultiplies(unit: string | null | undefined): boolean {
     return u !== 'flat' && u !== 'event';
 }
 
+/** Priced PER HEAD: the quantity is the number of people. Per person (and the
+ *  legacy per ticket). These are the units a party size, a per-person minimum
+ *  and a head-count change apply to. */
+export function pricedPerHead(unit: string | null | undefined): boolean {
+    const u = normaliseUnit(unit);
+    return u === 'person' || u === 'ticket';
+}
+
+/** Priced by a QUANTITY the guest picks that is not people: hours (a dog walker,
+ *  a guide), items, nights. The party size never multiplies these (Liam, 9 Oct
+ *  2026) — three people booking a two-hour walk pay for two hours. */
+export function pricedByQuantity(unit: string | null | undefined): boolean {
+    const u = normaliseUnit(unit);
+    return u === 'hour' || u === 'item' || u === 'night';
+}
+
 /** The word for one of them, singular. 'flat' and 'event' have none — they are
  *  charged once, not counted. */
 export function unitNoun(unit: string | null | undefined): string {
