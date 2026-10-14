@@ -6,7 +6,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
 import {
     isLiveToGuests, priceOrder, guestExperiencesOpen, exclusivePerDate,
-    normaliseUnit, unitMultiplies, unitNoun, orderQuantity, orderTotal, MAX_ORDER_QUANTITY,
+    normaliseUnit, unitMultiplies, unitNoun, orderQuantity, orderTotal, MAX_ORDER_QUANTITY, pricedPerHead,
 } from '@/lib/serviceOrders';
 import { heldChargeMetadata, heldChargeSeller } from '@/lib/experienceFunds';
 import { dateFromKey, dateKey } from '@/lib/pricing';
@@ -355,7 +355,7 @@ export async function POST(request: Request) {
         // check it could be bought at that figure (ranges were dropped, 9 Oct 2026).
         const { data: item } = await admin
             .from('service_provider_items')
-            .select('id, provider_id, name, description, price, price_mode, group_price, active, unit, fulfilment, included_guests, extra_adult_fee, extra_child_fee, max_party, min_people')
+            .select('id, provider_id, name, description, price, price_mode, group_price, min_hours, active, unit, fulfilment, included_guests, extra_adult_fee, extra_child_fee, max_party, min_people')
             .eq('id', itemId)
             .maybeSingle();
 
@@ -426,11 +426,24 @@ export async function POST(request: Request) {
             // The item's smallest party (min_people). A private chef set to a
             // minimum of two can't be booked for one — refused here, not only held
             // out of the stepper.
-            const floor = unitMultiplies(unit) ? Math.max(1, Number((item as any).min_people) || 1) : 1;
-            if (unitMultiplies(unit) && quantity < floor) {
+            // The party floor and ceiling apply only where the quantity IS the
+            // party (per person). Per hour / per item multiply by hours or items
+            // the guest picks; people never enter the price (9 Oct 2026).
+            const floor = pricedPerHead(unit) ? Math.max(1, Number((item as any).min_people) || 1) : 1;
+            if (pricedPerHead(unit) && quantity < floor) {
                 return NextResponse.json({ ok: false, error: 'This experience takes a minimum of ' + floor + ' guests.' }, { status: 400 });
             }
-            if (unitMultiplies(unit) && quantity > cap) {
+            // An hourly offering's own minimum (min_hours), and a day at most.
+            if (unit === 'hour') {
+                const minHours = Math.max(1, Number((item as any).min_hours) || 1);
+                if (quantity < minHours) {
+                    return NextResponse.json({ ok: false, error: 'This is booked for a minimum of ' + minHours + ' hours.' }, { status: 400 });
+                }
+                if (quantity > 24) {
+                    return NextResponse.json({ ok: false, error: 'Book up to 24 hours at a time. For longer, message the provider.' }, { status: 400 });
+                }
+            }
+            if (pricedPerHead(unit) && quantity > cap) {
                 return NextResponse.json({ ok: false, error: standalone ? ('That’s more than this experience takes (up to ' + cap + ').') : ('That’s more than the ' + cap + ' staying — book for your party size.') }, { status: 400 });
             }
             total = orderTotal(unitPrice, quantity);
@@ -622,7 +635,7 @@ export async function POST(request: Request) {
             // For an extra-guests item the party IS the priced head count; record
             // it (and its split) so the webhook writes the real party, not the
             // whole-stay number.
-            guests: String(hasExtraGuests(item) ? (Math.max(1, reqAdults || 1) + (childrenAllowed(minAge) ? reqChildrenRaw : 0)) : (standalone ? (unitMultiplies(unit) ? quantity : '') : (booking.guests ?? ''))),
+            guests: String(hasExtraGuests(item) ? (Math.max(1, reqAdults || 1) + (childrenAllowed(minAge) ? reqChildrenRaw : 0)) : (standalone ? (pricedPerHead(unit) ? quantity : '') : (booking.guests ?? ''))),
             adults: hasExtraGuests(item) ? String(Math.max(1, reqAdults || 1)) : '',
             children: hasExtraGuests(item) ? String(childrenAllowed(minAge) ? reqChildrenRaw : 0) : '',
             commission_rate: String(pricing.commissionRate),

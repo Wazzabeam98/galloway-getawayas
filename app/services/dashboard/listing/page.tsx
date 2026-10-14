@@ -55,7 +55,7 @@ export default async function ProviderListingPage() {
     const isSlot = shapeOf(provider) === 'slot';
     const [{ data: areas }, { data: items }, { data: avail }] = await Promise.all([
         admin.from('service_areas').select('label').eq('provider_id', provider.id).order('created_at', { ascending: true }),
-        admin.from('service_provider_items').select('id, name, description, price, group_price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category, vat_treatment')
+        admin.from('service_provider_items').select('id, name, description, price, group_price, min_hours, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category, vat_treatment')
             .eq('provider_id', provider.id).order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         isSlot
             ? admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id).order('day_of_week', { ascending: true })
@@ -129,6 +129,7 @@ export default async function ProviderListingPage() {
                     id: it.id, name: it.name || '', description: it.description || '',
                     price: Number(it.price), unit: it.unit || 'flat',
                     group_price: it.group_price != null ? Number(it.group_price) : null,
+                    min_hours: it.min_hours != null ? Number(it.min_hours) : null,
                     image: it.image || null,
                     duration_minutes: it.duration_minutes ?? null,
                     fulfilment: it.fulfilment || null,
