@@ -124,9 +124,12 @@ export default function ExperienceListingBody({
 
     const years = yearsLabel(p.yearsExperience);
     const hasAbout = Boolean(years || p.qualifications || p.recognition);
-    // The host's first name for the MeetYourHost card; "your host" when they show
-    // no name (never a bare surname — byline is already first-name-only).
-    const hostFirstName = p.byline ? capitializeFirst(p.byline) : 'your host';
+    // The name on the "Meet your host" card: the host's first name if they show
+    // one, else the business/experience name — a provider always has one ("Sauna
+    // at the Sea") — never an invented "your host" (which rendered a fake name and
+    // a "y" avatar initial). Empty only if BOTH are blank, and MeetYourHost then
+    // shows no name or avatar rather than faking one.
+    const hostFirstName = p.byline ? capitializeFirst(p.byline) : (p.business_name || '').trim();
     // The provider's trade credentials MeetYourHost has no slot for (their years in
     // the trade, training, recognition) — kept beneath the card so they aren't lost.
     const hasCredentials = Boolean(years || p.qualifications || p.recognition);
@@ -247,9 +250,13 @@ export default function ExperienceListingBody({
                                         </span>
                                     )}
                                     <div className="min-w-0">
-                                        <h2 className="text-lg md:text-xl font-bold text-slate-900">
-                                            {p.byline ? 'Hosted by ' + p.byline : 'Your host'}
-                                        </h2>
+                                        {/* The host's name, or the business name as a provider always
+                                            has one; no name at all drops the line rather than faking one. */}
+                                        {hostFirstName ? (
+                                            <h2 className="text-lg md:text-xl font-bold text-slate-900">
+                                                Hosted by {hostFirstName}
+                                            </h2>
+                                        ) : null}
                                         {years ? <p className="text-sm text-slate-500">{years}</p> : null}
                                     </div>
                                     <span className="ml-auto flex-none inline-flex items-center gap-1 self-start rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-600/15">

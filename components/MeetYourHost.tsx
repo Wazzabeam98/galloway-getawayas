@@ -41,6 +41,13 @@ export default function MeetYourHost({
     responseRatePercent: number;
     typicalLabel: string;
 }) {
+    // A host with no name at all: show no name and no initial rather than a
+    // fabricated one. `hostNoun` stands in for the name in the verified sentences
+    // ("This host is a verified host"), capitalised or not to fit the sentence.
+    const hasName = (firstName || '').trim().length > 0;
+    const hostNoun = hasName ? firstName : 'this host';
+    const HostNoun = hasName ? firstName : 'This host';
+
     const Avatar = ({ url, name, size }: { url: string | null; name: string; size: number }) => (
         <div
             className="rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center font-semibold flex-shrink-0"
@@ -106,16 +113,21 @@ export default function MeetYourHost({
                     <div className="w-full rounded-2xl border border-slate-200 bg-white shadow-[0_6px_16px_rgba(0,0,0,0.12)] p-6 lg:py-4">
                         <div className="flex items-center gap-5 lg:gap-10">
                             <div className="flex flex-col items-center text-center lg:flex-1">
-                                <div className="relative">
-                                    <Avatar url={avatarUrl} name={firstName} size={104} />
-                                    {verified && (
-                                        <span className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-white">
-                                            <BadgeCheck className="h-7 w-7 fill-emerald-600 text-white" />
-                                        </span>
-                                    )}
-                                </div>
-                                <div className="mt-3 text-2xl font-bold text-slate-900">{firstName}</div>
-                                <div className="text-xs font-medium text-slate-500">Host</div>
+                                {/* No name AND no photo means there is nothing real to show —
+                                    render neither rather than an invented name or initial. The
+                                    avatar still shows when there's a photo but no name. */}
+                                {(hasName || avatarUrl) && (
+                                    <div className="relative">
+                                        <Avatar url={avatarUrl} name={firstName} size={104} />
+                                        {verified && (
+                                            <span className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-white">
+                                                <BadgeCheck className="h-7 w-7 fill-emerald-600 text-white" />
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                                {hasName && <div className="mt-3 text-2xl font-bold text-slate-900">{firstName}</div>}
+                                {hasName && <div className="text-xs font-medium text-slate-500">Host</div>}
                             </div>
 
                             {stats.length > 0 && (
@@ -173,10 +185,10 @@ export default function MeetYourHost({
                         <div>
                             <h3 className="flex items-center gap-2 font-semibold text-slate-900">
                                 <BadgeCheck className="h-5 w-5 text-emerald-700" />
-                                {firstName} is a verified host
+                                {HostNoun} is a verified host
                             </h3>
                             <p className="mt-1 text-sm text-slate-600">
-                                Stripe has confirmed {firstName}&apos;s identity, so you know who you&apos;re
+                                Stripe has confirmed {hostNoun}&apos;s identity, so you know who you&apos;re
                                 booking with before you pay.
                             </p>
                         </div>
