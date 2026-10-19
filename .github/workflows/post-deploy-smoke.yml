@@ -1,0 +1,67 @@
+# The post-deploy smoke check, run by a machine after every production deploy.
+#
+# WHY THIS EXISTS. On 19 October 2026 a migration granted a new listings column
+# to signed-in users only; the public listing page reads it as the logged-out
+# `anon` role, so every listing page 404'd for signed-out visitors for about two
+# hours — past a green build, green tests and a successful deploy. Nothing a
+# signed-in developer does reproduces it. This loads the site as a stranger, right
+# after it ships, and emails the owner if anything a stranger lands on is broken.
+#
+# WHEN IT RUNS. On `deployment_status` — Vercel's GitHub integration posts one
+# for every deployment — filtered to a SUCCESSFUL PRODUCTION deployment, so a
+# preview deploy does not trigger it. Also on demand (workflow_dispatch) to
+# re-check after a fix.
+#
+# WHAT IT NEEDS (repository secrets; the check still runs and still fails the job
+# red without them — they only enable the email):
+#   RESEND_API_KEY     a Resend API key (the same provider the app sends with).
+#   SMOKE_ALERT_EMAIL  who to email on failure — Liam's address, comma-separated
+#                      for several. (ACCOUNTS_ALERT_EMAIL / ALERT_EMAIL also work.)
+#
+# The check talks only over HTTP as a logged-out visitor — see scripts/smoke-public.mjs.
+
+name: post-deploy-smoke
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      smoke_url:
+        description: 'Site to check (leave as is for production). Point it at a path that does not exist to force a failure and test the alert email.'
+        required: false
+        default: 'https://gallowaygetaways.co.uk'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Only a SUCCESSFUL PRODUCTION deployment — never a preview, never a pending
+    # or failed one. workflow_dispatch has no deployment_status, so let it through.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       startsWith(github.event.deployment_status.environment, 'Production'))
+
+    env:
+      # The live site as a stranger sees it. Overridable for a manual re-check.
+      SMOKE_URL: ${{ github.event.inputs.smoke_url || 'https://gallowaygetaways.co.uk' }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      SMOKE_ALERT_EMAIL: ${{ secrets.SMOKE_ALERT_EMAIL }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      # No dependencies: the check uses only Node's built-in fetch. A failure
+      # exits non-zero, which fails this job red AND (if the secrets are set)
+      # emails the owner.
+      - name: Smoke-check the live site as a logged-out visitor
+        run: node scripts/smoke-public.mjs

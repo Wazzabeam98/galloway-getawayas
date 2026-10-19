@@ -25,6 +25,12 @@ on:
     - cron: '0 6 1 1,4,7,10 *'
   # And on demand, to prove it or to re-run after a fix.
   workflow_dispatch:
+    inputs:
+      alert_test:
+        description: 'Only send a test alert email (no dump, no restore, nothing recorded)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -52,8 +58,10 @@ jobs:
     env:
       SOURCE_DB_URL: ${{ secrets.RESTORE_DRILL_DB_URL }}
       TARGET_DB_URL: postgresql://postgres:drill@127.0.0.1:5432/restore_drill
-      RESEND_API_KEY: ${{ secrets.RESTORE_DRILL_RESEND_KEY }}
-      ALERT_EMAIL: ${{ secrets.RESTORE_DRILL_ALERT_EMAIL }}
+      # The drill's own secrets if set, else the shared ones every alert uses.
+      RESEND_API_KEY: ${{ secrets.RESTORE_DRILL_RESEND_KEY || secrets.RESEND_API_KEY }}
+      ALERT_EMAIL: ${{ secrets.RESTORE_DRILL_ALERT_EMAIL || secrets.ALERT_EMAIL }}
+      ALERT_TEST: ${{ github.event.inputs.alert_test == 'true' && '1' || '' }}
       DRILL_TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -67,6 +75,7 @@ jobs:
       # Production runs Postgres 17, and a v16 pg_dump refuses a v17 server, so
       # the runner needs the v17 client explicitly — ubuntu ships an older one.
       - name: Install PostgreSQL 17 client
+        if: env.ALERT_TEST != '1'
         run: |
           sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
@@ -74,6 +83,7 @@ jobs:
           sudo apt-get install -y postgresql-client-17
 
       - name: Check the drill role secret is set
+        if: env.ALERT_TEST != '1'
         run: |
           if [ -z "$SOURCE_DB_URL" ]; then
             echo "RESTORE_DRILL_DB_URL is not set — add it as a repository secret (see docs/BACKUP-AND-RESTORE.md)."
@@ -81,9 +91,11 @@ jobs:
           fi
 
       - name: Create the throwaway database
+        if: env.ALERT_TEST != '1'
         run: psql "postgresql://postgres:drill@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "create database restore_drill"
 
       - name: Dump production application data (read-only)
+        if: env.ALERT_TEST != '1'
         run: |
           pg_dump "$SOURCE_DB_URL" \
             --format=custom --no-owner --no-acl \
@@ -95,11 +107,13 @@ jobs:
       # don't exist in a bare Postgres. That is expected and is NOT the drill's
       # verdict — the verify step is. So we record the fact and carry on.
       - name: Restore into the throwaway
+        if: env.ALERT_TEST != '1'
         run: |
           pg_restore --no-owner --no-acl --dbname="$TARGET_DB_URL" prod.dump \
             || echo "pg_restore reported ignored errors (expected: Supabase auth/role policies, btree_gist)"
 
       - name: Verify every table and the listings content hash
+        if: env.ALERT_TEST != '1'
         run: node scripts/restore-drill-verify.mjs
 
       # Record on production and email — either way. always() so a FAILED verify
