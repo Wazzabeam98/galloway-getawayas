@@ -60,6 +60,21 @@ so and carry on with other work.
 - First names only.
 - Mirror every client-side validation rule as a server-side check, through one
   shared helper.
+- **When a change lets a new kind of user reach a page or action** (a co-host,
+  staff, an admin, a guest who wasn't allowed before), check and update the
+  database security policies behind **every write that page makes**, not just
+  the route that serves it, and **test the save as that user**, not just the
+  page view. A page can open fine for them while every save behind it is still
+  refused by a row policy written for the owner alone. Find each browser write
+  (`supabase.from(…).insert/update/upsert/delete` in the page and its
+  components), read the live policy on that table, and make it ask
+  `has_listing_permission(listing, permission)` (which mirrors `lib/access`
+  `checkListing`) with the permission the action needs, or move the write
+  behind a route that checks the shared helper. (Jamie, a full-access co-host,
+  19 October 2026: #435 and #439 let co-hosts into the host pages, and saving a
+  calendar price failed with "new row violates row-level security policy for
+  table calendar_overrides", as did extras, iCal feeds, booking messages,
+  accepting a request and review replies. Fixed in #440.)
 - Don't stop to check with Liam between steps: find out, fix it, walk it, and
   report at the end.
 - When you hand Liam a migration to apply (one that needs `--destructive`, or
