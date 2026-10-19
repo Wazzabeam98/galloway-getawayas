@@ -6,6 +6,7 @@ import Toast from "@/components/base/Toast";
 import TemplateGapWarning from "@/components/TemplateGapWarning";
 import ArrivalNudge from "@/components/ArrivalNudge";
 import AgreementUpdateNotice from "@/components/legal/AgreementUpdateNotice";
+import PushPrompt from "@/components/pwa/PushPrompt";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getImageUrl, displayName } from "@/lib/utils";
@@ -269,6 +270,10 @@ export default async function Dashboard() {
             {/* The Host Agreement, when it has been updated since this host
                 agreed (or was never agreed). Asks; never blocks. */}
             <AgreementUpdateNotice doc="host" source="dashboard_notice" className="max-w-7xl mx-auto px-6 pt-4" />
+
+            {/* Push notifications for new bookings and messages. Only offered,
+                never asked on load: the browser's prompt opens from the button. */}
+            {owned.length > 0 && <PushPrompt context="host" className="max-w-7xl mx-auto px-6 pt-4" />}
 
             {hostNeedsPayouts && (
                 <div className="max-w-7xl mx-auto px-6 pt-4">
