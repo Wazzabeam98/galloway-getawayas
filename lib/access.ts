@@ -25,13 +25,10 @@ export interface ListingAccess {
 
 // Every listing this person can act on, and what they may do with each.
 //
-// An owner can do everything. A co-host can do what they were given. Staff see
+// An owner can do everything. A co-host can do what they were given. A co-host
+// given EVERY permission is "full access" — treated as the owner for everything
+// except the three things the owner keeps (see `isFullAccess` below). Staff see
 // arrival and departure dates and nothing else.
-//
-// Some things are never delegated, whatever the permissions say: cancelling a
-// confirmed booking, refunding a guest, changing payout details, deleting or
-// hiding a listing, and inviting other people. Those check ownership directly
-// rather than coming through here.
 export async function accessibleListings(userId: string): Promise<ListingAccess[]> {
     if (!userId) return [];
 
@@ -147,7 +144,9 @@ export async function checkListing(
     };
 }
 
-// Ownership, for the things that are never delegated.
+// Ownership, for the three things an owner never hands over, whatever else they
+// grant: their payout bank details, deleting the listing, and who the primary
+// owner is. Everything else a full-access co-host may do too (see below).
 export async function ownsListing(userId: string, listingId: string): Promise<boolean> {
     if (!userId || !listingId) return false;
 
@@ -160,6 +159,82 @@ export async function ownsListing(userId: string, listingId: string): Promise<bo
         .maybeSingle();
 
     return !!data && data.host_id === userId;
+}
+
+// A full-access co-host — one the owner ticked every permission for — is the
+// owner's equal, as a 50/50 partner would be. The owner keeps only their payout
+// bank details, deleting the listing, and the primary-owner seat; a full-access
+// co-host shares everything else, including cancelling, refunding, requesting
+// money, publishing and managing the other co-hosts. This mirrors Airbnb's "full
+// access" tier. An owner is trivially full access.
+export function isFullAccess(a: ListingAccess): boolean {
+    return (
+        a.isOwner ||
+        (a.can_calendar && a.can_messages && a.can_bookings && a.can_listing && a.can_earnings)
+    );
+}
+
+// The access row for one listing with no particular permission required — the
+// owner, or any active co-host/staff grant — or null. Callers read the flags
+// they need (or pass it to isFullAccess). This is the raw lookup behind
+// checkListing; checkListing adds the per-permission gate on top.
+export async function listingAccessFor(userId: string, listingId: string): Promise<ListingAccess | null> {
+    if (!userId || !listingId) return null;
+
+    const admin = adminClient();
+
+    const { data: listing } = await admin
+        .from('listings')
+        .select('id, host_id')
+        .eq('id', listingId)
+        .maybeSingle();
+
+    if (!listing) return null;
+
+    if (listing.host_id === userId) {
+        return {
+            listingId,
+            accessId: null,
+            isOwner: true,
+            role: 'owner',
+            can_calendar: true,
+            can_messages: true,
+            can_bookings: true,
+            can_listing: true,
+            can_earnings: true,
+        };
+    }
+
+    const { data: access } = await admin
+        .from('listing_access')
+        .select('id, role, can_calendar, can_messages, can_bookings, can_listing, can_earnings')
+        .eq('listing_id', listingId)
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle();
+
+    if (!access) return null;
+
+    return {
+        listingId,
+        accessId: access.id,
+        isOwner: false,
+        role: access.role === 'staff' ? 'staff' : 'co_host',
+        can_calendar: !!access.can_calendar,
+        can_messages: !!access.can_messages,
+        can_bookings: !!access.can_bookings,
+        can_listing: !!access.can_listing,
+        can_earnings: !!access.can_earnings,
+    };
+}
+
+// Owner-equivalent for one listing: the owner, or a full-access co-host. Null
+// when neither. The actions a full-access co-host shares with the owner —
+// cancelling, refunding, requesting money, publishing, managing co-hosts —
+// authorise through here. The three the owner keeps use ownsListing instead.
+export async function ownerOrFullAccess(userId: string, listingId: string): Promise<ListingAccess | null> {
+    const a = await listingAccessFor(userId, listingId);
+    return a && isFullAccess(a) ? a : null;
 }
 
 

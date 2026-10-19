@@ -41,6 +41,7 @@ import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, sleepingPat
 import { publishProblems } from '@/lib/listingRules';
 import { amountForBox, amountOrNull, amountOrZero } from '@/lib/amountInput';
 import { CalendarSyncCard } from '@/components/IcalFeeds';
+import LeaveListingBtn from '@/components/LeaveListingBtn';
 import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
@@ -878,6 +879,19 @@ export default function EditListing() {
                                     Worth fixing anyway — a listing with nothing filled in loses
                                     bookings to one that has.
                                 </p>
+                            </div>
+                        )}
+
+                        {/* Leaving a listing you co-host lives here, in the
+                            listing's own settings, rather than on a dashboard
+                            card — the owner's listings have no such button. */}
+                        {isCoHost && (
+                            <div className="mt-10 border-t border-slate-200 pt-6">
+                                <h2 className="text-lg font-bold text-slate-900 mb-1">Co-hosting</h2>
+                                <p className="text-sm text-slate-500 mb-4">
+                                    You help the owner with this listing. You can step away whenever you like.
+                                </p>
+                                <LeaveListingBtn listingId={listingId} title={title || 'this listing'} />
                             </div>
                         )}
 

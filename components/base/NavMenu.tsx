@@ -25,6 +25,7 @@ const NavMenu = ({
     experiencesOpen = false,
     isHost = false,
     ownsAny = true,
+    isFullAccessSomewhere = true,
     hostPerms = ALL_HOST_PERMS,
     isAdmin = false,
     mode = 'travel',
@@ -42,6 +43,9 @@ const NavMenu = ({
     // co-host never sees them, whatever else they were given. Defaults true so
     // an owner is the safe fallback if a caller forgets to pass it.
     ownsAny?: boolean;
+    // Owns a listing, or co-hosts one with every permission ticked. A full-access
+    // co-host is the owner's equal, so they get the owner-only Co-hosts section.
+    isFullAccessSomewhere?: boolean;
     // What they may do, rolled up across every listing. An owner has all of it;
     // a co-host sees a section only where the owner granted it. Defaults to the
     // full set for the same reason as ownsAny.
@@ -119,9 +123,10 @@ const NavMenu = ({
                                         lands somewhere. Each section below shows
                                         only where they may act: a co-host sees
                                         exactly what the owner gave them, nothing
-                                        more. Reviews and Co-hosts are an owner's
-                                        own — one is their guests, the other hands
-                                        out access, which is never delegated. */}
+                                        more. Reviews comes with the messages
+                                        permission; Co-hosts is for the owner and
+                                        any full-access co-host (the owner's equal),
+                                        the people who may hand out access. */}
                                     <li className={itemClass}>
                                         <Link href='/dashboard'>Listings</Link>
                                     </li>
@@ -135,7 +140,7 @@ const NavMenu = ({
                                             <Link href='/dashboard/calendar'>Calendar</Link>
                                         </li>
                                     )}
-                                    {ownsAny && (
+                                    {hostPerms.can_messages && (
                                         <li className={itemClass}>
                                             <Link href='/dashboard/reviews'>Reviews</Link>
                                         </li>
@@ -145,7 +150,7 @@ const NavMenu = ({
                                             <Link href='/dashboard/earnings'>Earnings</Link>
                                         </li>
                                     )}
-                                    {ownsAny && (
+                                    {isFullAccessSomewhere && (
                                         <li className={itemClass}>
                                             <Link href='/dashboard/people'>Co-hosts</Link>
                                         </li>

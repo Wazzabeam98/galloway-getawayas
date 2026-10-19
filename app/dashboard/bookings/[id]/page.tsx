@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { formatGBP } from "@/lib/formatMoney";
 import Link from "next/link";
 import { adminClient } from "@/lib/supabaseAdmin";
-import { checkListing, accessibleListings } from "@/lib/access";
+import { checkListing, accessibleListings, isFullAccess } from "@/lib/access";
 import { getImageUrl, capitializeFirst, firstName as firstNameOf, greetingName } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
 import { formatUk, refundDue, policyOf, freeCancelUntilKey } from "@/lib/cancellation";
@@ -96,11 +96,12 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const access = await checkListing(uid, booking.listing_id, 'can_bookings');
     if (!access) notFound();
 
-    // Cancelling, declining and refunding are never delegated, whatever else
-    // somebody has been given. The routes behind them answer 403 to anyone who
-    // is not the host_id, so a co-host is shown the booking without the
-    // buttons that would fail.
-    const isOwner = access.isOwner;
+    // Cancelling, declining, refunding and requesting money ride with full
+    // access: the owner, or a co-host the owner ticked every permission for. A
+    // partial co-host is shown the booking without the buttons their grant does
+    // not cover — and the routes behind those buttons check the same thing, so a
+    // forged request is refused too.
+    const isOwnerEquivalent = isFullAccess(access);
     const showMoney = access.can_earnings;
 
     const { data: listing } = await admin
@@ -488,7 +489,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
         : { showMoney, total: '', nightsLabel: '', working: undefined, rows: [] };
 
     // The ask-to-cancel draft is the same one this screen has always offered.
-    const askToCancelHref = (isOwner && booking.status === 'confirmed' && !ended)
+    const askToCancelHref = (isOwnerEquivalent && booking.status === 'confirmed' && !ended)
         ? '/messages?b=' + booking.id + '&draft=' + encodeURIComponent(askToCancelDraft)
         : null;
 
@@ -643,7 +644,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
                         <ManageReservationSheet
                             bookingId={booking.id}
                             status={booking.status}
-                            isOwner={isOwner}
+                            isOwnerEquivalent={isOwnerEquivalent}
                             ended={ended}
                             started={started}
                             phone={phone}

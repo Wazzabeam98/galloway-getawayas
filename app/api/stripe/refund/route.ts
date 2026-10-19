@@ -1,5 +1,6 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { ownerOrFullAccess } from '@/lib/access';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
@@ -51,7 +52,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
         }
 
-        const isHost = booking.host_id === user.id;
+        // The host side is the owner or a full-access co-host — the same people
+        // who may refund without cancelling. The owner is recognised from the
+        // booking already fetched, before the extra read. The guest is still only
+        // themselves.
+        const isHost = booking.host_id === user.id || !!(await ownerOrFullAccess(user.id, booking.listing_id));
         const isGuest = booking.guest_id === user.id;
 
         if (!isHost && !isGuest) {

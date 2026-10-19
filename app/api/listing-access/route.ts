@@ -8,17 +8,46 @@ import { displayName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
-// Only the owner of a listing may hand out access to it. A co-host cannot
-// invite further people, however much else they can do.
-async function ownsListing(admin: any, listingId: string, userId: string) {
-    const { data } = await admin
+// Who may manage a listing's co-hosts: the owner, or a full-access co-host (the
+// owner's equal). Returns the listing and whether the caller is the owner —
+// callers use `isOwner` for the one thing a co-host still can't do, mint another
+// full-access co-host. Null when the caller is neither.
+async function manageAuth(admin: any, listingId: string, userId: string): Promise<{ listing: any; isOwner: boolean } | null> {
+    const { data: listing } = await admin
         .from('listings')
         .select('id, title, host_id')
         .eq('id', listingId)
         .maybeSingle();
 
-    if (!data || data.host_id !== userId) return null;
-    return data;
+    if (!listing) return null;
+    if (listing.host_id === userId) return { listing, isOwner: true };
+
+    const { data: access } = await admin
+        .from('listing_access')
+        .select('can_calendar, can_messages, can_bookings, can_listing, can_earnings')
+        .eq('listing_id', listingId)
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .eq('role', 'co_host')
+        .maybeSingle();
+
+    const full =
+        !!access &&
+        access.can_calendar &&
+        access.can_messages &&
+        access.can_bookings &&
+        access.can_listing &&
+        access.can_earnings;
+
+    return full ? { listing, isOwner: false } : null;
+}
+
+// Every permission ticked — an owner-equal grant. Only the owner may create one:
+// a full-access co-host managing co-hosts may add and adjust helpers, but cannot
+// mint another of their own kind. (Airbnb draws the same line; it also keeps
+// uncontrolled escalation of who can move the owner's money out of reach.)
+function isFullGrant(p: { can_calendar: boolean; can_messages: boolean; can_bookings: boolean; can_listing: boolean; can_earnings: boolean }): boolean {
+    return p.can_calendar && p.can_messages && p.can_bookings && p.can_listing && p.can_earnings;
 }
 
 export async function POST(request: Request) {
@@ -59,10 +88,11 @@ export async function POST(request: Request) {
                 );
             }
 
-            const listing = await ownsListing(admin, listingId, user.id);
-            if (!listing) {
+            const auth = await manageAuth(admin, listingId, user.id);
+            if (!auth) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
             }
+            const listing = auth.listing;
 
             // Whether it's their own address or someone else's, the owner of a
             // listing already has everything a co-host could be given.
@@ -90,6 +120,15 @@ export async function POST(request: Request) {
                 return NextResponse.json(
                     { ok: false, error: 'Choose at least one thing they can do.' },
                     { status: 400 }
+                );
+            }
+
+            // A full-access co-host may add helpers, but only the owner may hand
+            // out full access — their own level — so it cannot spread on its own.
+            if (!auth.isOwner && isFullGrant(permissions)) {
+                return NextResponse.json(
+                    { ok: false, error: 'Only the owner can give a co-host full access.' },
+                    { status: 403 }
                 );
             }
 
@@ -160,20 +199,31 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
 
-            const listing = await ownsListing(admin, row.listing_id, user.id);
-            if (!listing) {
+            const auth = await manageAuth(admin, row.listing_id, user.id);
+            if (!auth) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
+            }
+
+            const nextPerms = {
+                can_calendar: !!body.can_calendar,
+                can_messages: !!body.can_messages,
+                can_bookings: !!body.can_bookings,
+                can_listing: !!body.can_listing,
+                can_earnings: !!body.can_earnings,
+            };
+
+            // Same line as invite: a co-host manager may not raise anyone to full
+            // access — only the owner mints an owner-equal.
+            if (!auth.isOwner && isFullGrant(nextPerms)) {
+                return NextResponse.json(
+                    { ok: false, error: 'Only the owner can give a co-host full access.' },
+                    { status: 403 }
+                );
             }
 
             await admin
                 .from('listing_access')
-                .update({
-                    can_calendar: !!body.can_calendar,
-                    can_messages: !!body.can_messages,
-                    can_bookings: !!body.can_bookings,
-                    can_listing: !!body.can_listing,
-                    can_earnings: !!body.can_earnings,
-                })
+                .update(nextPerms)
                 .eq('id', accessId);
 
             return NextResponse.json({ ok: true });
@@ -193,8 +243,8 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
 
-            const listing = await ownsListing(admin, row.listing_id, user.id);
-            if (!listing) {
+            const auth = await manageAuth(admin, row.listing_id, user.id);
+            if (!auth) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
             }
 
@@ -208,13 +258,20 @@ export async function POST(request: Request) {
 
         // ---- Step away from a property you help with ------------------------
         if (action === 'leave') {
+            // Leave by the grant id, or — now that leaving lives in the listing's
+            // own settings rather than on a dashboard card — by the listing id,
+            // resolving the caller's own active grant on it.
             const accessId: string = body.accessId;
+            const listingId: string = body.listingId;
 
-            const { data: row } = await admin
+            const query = admin
                 .from('listing_access')
                 .select('id, listing_id, user_id, email')
-                .eq('id', accessId)
-                .maybeSingle();
+                .eq('user_id', user.id)
+                .eq('status', 'active');
+            const { data: row } = accessId
+                ? await query.eq('id', accessId).maybeSingle()
+                : await query.eq('listing_id', listingId).maybeSingle();
 
             if (!row || row.user_id !== user.id) {
                 return NextResponse.json({ ok: false, error: 'Not yours to leave' }, { status: 403 });
@@ -223,7 +280,7 @@ export async function POST(request: Request) {
             await admin
                 .from('listing_access')
                 .update({ status: 'revoked' })
-                .eq('id', accessId);
+                .eq('id', row.id);
 
             // The owner needs to know they've lost a pair of hands.
             const { data: listing } = await admin

@@ -2,7 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-import { checkListing } from '@/lib/access';
+import { checkListing, ownerOrFullAccess } from '@/lib/access';
 import { contactNumberVisible } from '@/lib/stayWindow';
 import { firstName, getImageUrl, formatTime, hostByline } from '@/lib/utils';
 import { groupLabel, cancellationWords } from '@/lib/bookingDisplay';
@@ -83,6 +83,11 @@ export async function GET(
     if (!isGuest && !isHost && !isCompanion && !isCoHost) {
         return NextResponse.json({ ok: false, error: 'Not permitted' }, { status: 403 });
     }
+
+    // Owner-equivalent on this listing: the owner, or a full-access co-host. The
+    // reservation pop-up's owner tools (cancel, refund, request money) open for
+    // these; a plainer co-host sees the thread without them.
+    const ownerEquivalent = isHost || (isCoHost && !!(await ownerOrFullAccess(uid, booking.listing_id)));
 
     const { data: listing } = await admin
         .from('listings')
@@ -336,6 +341,7 @@ export async function GET(
     return NextResponse.json({
         ok: true,
         role: isGuest ? 'guest' : isHost ? 'host' : isCoHost ? 'co_host' : 'companion',
+        ownerEquivalent,
         header,
         reservation,
         canSeePhone: phoneAllowed,
