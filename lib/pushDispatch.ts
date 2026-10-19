@@ -182,12 +182,12 @@ export type Special = (admin: any, row: any) => Promise<RowOutcome | null>;
 /** Deliver these rows (or every pending one). Never throws. */
 export async function drainOutbox(
     admin: any,
-    opts: { dedupeKeys?: string[]; send?: Sender; special?: Special; now?: Date } = {},
+    opts: { dedupeKeys?: string[]; userId?: string; kind?: string; send?: Sender; special?: Special; now?: Date } = {},
 ): Promise<{ claimed: number; sent: number; skipped: number; failed: number }> {
     const tally = { claimed: 0, sent: 0, skipped: 0, failed: 0 };
     try {
         const now = opts.now || new Date();
-        if (!opts.dedupeKeys) {
+        if (!opts.dedupeKeys && !opts.userId) {
             // Housekeeping: a run that died mid-row, and rows nobody needs now.
             await admin.from('push_outbox')
                 .update({ status: 'failed', done_at: now.toISOString(), result: { error: 'abandoned mid-send' } })
@@ -200,6 +200,8 @@ export async function drainOutbox(
 
         let q = admin.from('push_outbox').select('id').eq('status', 'pending').order('created_at', { ascending: true }).limit(BATCH);
         if (opts.dedupeKeys) q = q.in('dedupe_key', opts.dedupeKeys);
+        if (opts.userId) q = q.eq('user_id', opts.userId);
+        if (opts.kind) q = q.eq('kind', opts.kind);
         const { data: pending } = await q;
 
         for (const p of pending || []) {

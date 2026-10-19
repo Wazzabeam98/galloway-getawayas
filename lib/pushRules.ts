@@ -196,7 +196,6 @@ export const RULES: Rule[] = [
     { kind: 'exp.enquiry.provider', match: R('^New enquiry from (.+)$'), category: 'reservations', title: 'New enquiry from $1', body: 'They have a question before booking. Tap to reply.' },
     { kind: 'exp.invited', match: R('^(.+) has invited you to an experience$'), category: 'reservations', title: 'You\u2019re invited', body: '$1 invited you to an experience.' },
     { kind: 'exp.refunded.provider', match: R('^A booking was refunded: (.+)$'), category: 'payments', title: 'Booking refunded', body: 'A booking on $1 was refunded.' },
-    { kind: 'message.order', match: R('^New message about your booking$'), category: 'messages', title: 'New message', body: 'About your booking. Tap to read it.' },
     // ------------------------------------------------ trades
     { kind: 'trade.enquiry_urgent.trade', match: R('^URGENT—a property owner in (.+?) needs you now'), category: 'reservations', title: 'Urgent job in $1', body: 'A property owner needs you now. Tap to reply.' },
     { kind: 'trade.enquiry.trade', match: R('^New enquiry—(.+?), (.+?) \\('), category: 'reservations', title: 'New enquiry: $1', body: 'A property owner in $2 needs you. Tap to reply.' },
@@ -212,7 +211,6 @@ export const RULES: Rule[] = [
     { kind: 'trade.called_off.trade', match: R('^A job has been called off \\('), category: 'reservations', title: 'Job called off', body: 'The owner cancelled the job.' },
     { kind: 'trade.guest_clash.host', match: R('^The new day for your (.+) has a guest in the cottage'), category: 'reservations', title: 'Guest in on the new day', body: 'The new day for your $1 clashes with a stay.', cohost: 'can_calendar' },
     { kind: 'trade.job_tomorrow.trade', match: R('^Reminder—a job tomorrow \\('), category: 'reminders', title: 'Job tomorrow', body: 'You have a job tomorrow. Tap for the details.' },
-    { kind: 'message.enquiry', match: R('^New message about (.+)$'), category: 'messages', title: 'New message', body: 'About $1. Tap to read it.' },
     { kind: 'trade.subscription', match: R('^(Your free period has started|A month left of your free listing|Time to add a card|A week left of your free listing|Your free period ends tomorrow|Your listing comes down in a few days)—(.+)$'), category: 'listings', title: '$1', body: '$2. Tap to manage your subscription.' },
     { kind: 'trade.payment_failed', match: R('^Your Galloway Getaways payment didn’t go through'), category: 'payments', title: 'Subscription payment failed', body: 'Update your card to keep your listing up.' },
     { kind: 'provider.verify', match: R('^Finish listing (.+) on Galloway Getaways$'), category: 'listings', title: 'Finish your listing', body: 'Tap to finish listing $1.' },
@@ -232,6 +230,15 @@ export const RULES: Rule[] = [
     { kind: 'admin.report', match: R('^(Listing|Trade|Experience) reported—(.+)$'), category: 'admin', title: '$1 reported', body: '$2' },
 ];
 
+// Emails whose push is recorded elsewhere, so the email itself must not push
+// too. Every message gets its push from the messages table
+// (20261019172656_message_push_trigger), which also covers the messages that
+// are never emailed (scheduled check-in messages, door-code updates).
+export const NO_PUSH: RegExp[] = [
+    /^New message from /i,
+    /^New message about /i,
+];
+
 function fill(t: Rule['title'], m: RegExpMatchArray, subject: string): string {
     if (typeof t === 'function') return t(m, subject);
     return t.replace(/\$(\d)/g, (_x, n) => (m[Number(n)] || '').trim());
@@ -241,6 +248,7 @@ function fill(t: Rule['title'], m: RegExpMatchArray, subject: string): string {
 export function pushForEmail(subject: string, html: string): PushSpec | null {
     const clean = cleanSubject(subject);
     if (!clean) return null;
+    if (NO_PUSH.some((re) => re.test(clean))) return null;
     const url = emailLink(html);
     for (const rule of RULES) {
         const m = clean.match(rule.match);

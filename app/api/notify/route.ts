@@ -25,10 +25,8 @@ import {
 import { guestBookedEmail } from '@/lib/bookingEmails';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { formatGBPAmount } from '@/lib/formatMoney';
-import { queuePush } from '@/lib/pushOutbox';
 import { drainOutbox } from '@/lib/pushDispatch';
 import { checkListing } from '@/lib/access';
-import { messagePush } from '@/lib/pushMessages';
 
 export const dynamic = 'force-dynamic';
 
@@ -304,20 +302,12 @@ export async function POST(request: Request) {
             const senderFirstRaw = await otherFirstNameFor(admin, uid, 'Someone');
             const rawPreview = String((body && body.preview) || '').slice(0, 180);
 
-            // The push is its own switch (Messages, under push in account
-            // settings), so it goes whether or not message EMAILS are switched
-            // off. Recorded, then delivered straight away — this is a message,
-            // not payment code — and always after the email. Never the text:
-            // a message can hold a door code.
-            const pushIt = async () => {
-                const key = await queuePush(messagePush({
-                    bookingId: booking.id,
-                    recipientId,
-                    senderFirst: senderFirstRaw,
-                    senderRole: hostSide ? 'host' : 'guest',
-                }), admin);
-                if (key) await drainOutbox(admin, { dedupeKeys: [key] });
-            };
+            // The push for this message was recorded by the messages table
+            // itself (20261019172656 — sender's name and role, never the text).
+            // Deliver it now rather than at the job's next minute: this is a
+            // message, not payment code. Its own switch (Messages, under push),
+            // so it goes whether or not message EMAILS are switched off.
+            const pushIt = () => drainOutbox(admin, { userId: recipientId, kind: 'message.new' });
 
             const allowed = await wants(admin, recipientId, 'new_message');
             if (!allowed) {
@@ -351,7 +341,6 @@ export async function POST(request: Request) {
                     : undefined
             );
 
-            // false: the push for this one was recorded above, with the role.
             await sendEmail(to, 'New message from ' + senderFirst + ' \u2014 Galloway Getaways', html, false);
             await pushIt();
             return NextResponse.json({ ok: true });

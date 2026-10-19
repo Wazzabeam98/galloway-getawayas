@@ -146,6 +146,17 @@ test('a message push never carries the message', () => {
     }
 });
 
+test('message emails never push themselves: the messages table records one push per message', () => {
+    assert.equal(pushForEmail('New message from Sam \u2014 Galloway Getaways', ''), null);
+    assert.equal(pushForEmail('New message about your booking', ''), null);
+    assert.equal(pushForEmail('New message about GG-1234', ''), null);
+    const sql = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20261019172656_message_push_trigger.sql'), 'utf8');
+    assert.match(sql, /'message:' \|\| new\.id/, 'one push per message, by its id');
+    assert.match(sql, /'New message from your ' \|\| sender_role/, 'the role, never the body');
+    assert.doesNotMatch(sql.replace(/--.*$/gm, ''), /new\.body/, 'the text of a message is never read');
+    assert.match(sql, /exception when others then[\s\S]{0,90}?null;/);
+});
+
 test('the outbox row is cleaned on the way in', () => {
     const row = outboxRow({ dedupeKey: 'k', kind: 'x', category: 'messages', title: 'Code 1234', body: 'b', url: '//evil.example' });
     assert.equal(row.url, '/');
