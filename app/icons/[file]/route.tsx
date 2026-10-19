@@ -6,13 +6,14 @@
 // keeps them. Change the goose in app/icon.svg and every icon follows.
 //
 //   icon-192.png, icon-512.png   the favicon as it is, rounded square
-//   maskable-512.png             full-bleed, goose inside Android's safe circle
+//   maskable-512.png             Android only: full-bleed, goose 64% wide, centred
 //   apple-touch-icon.png         180px, full-bleed (iOS rounds the corners)
 //   badge-96.png                 white goose on transparent, for the status bar
 
 import { ImageResponse } from 'next/server';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { maskableSvg } from '@/lib/maskableIcon';
 
 export const runtime = 'nodejs';
 
@@ -31,7 +32,9 @@ function full(scale: number) {
 const VARIANTS: Record<string, Variant> = {
     'icon-192.png': { size: 192, svg: (source) => source },
     'icon-512.png': { size: 512, svg: (source) => source },
-    'maskable-512.png': { size: 512, svg: full(0.78) },
+    // Android only (the manifest's purpose: "maskable" entry): the goose at
+    // 64% of the tile's width, centred — lib/maskableIcon.
+    'maskable-512.png': { size: 512, svg: (source) => maskableSvg(source).svg },
     'apple-touch-icon.png': { size: 180, svg: full(0.9) },
     'badge-96.png': {
         size: 96,
