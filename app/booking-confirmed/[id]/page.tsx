@@ -8,6 +8,7 @@ import { ukDate } from '@/lib/dayKey';
 import { publicArea } from '@/lib/places';
 import { formatGBP } from '@/lib/formatMoney';
 import { recoverBookingPayment } from '@/lib/bookingPaymentReconcile';
+import BookingPlacedPush from '@/components/pwa/BookingPlacedPush';
 
 export const dynamic = 'force-dynamic';
 
@@ -188,6 +189,8 @@ export default async function BookingConfirmed({
                     );
                 })()}
             </div>
+
+            <BookingPlacedPush bookingId={booking.id} />
 
             <div className="mt-8 text-center space-y-3">
                 <Link
