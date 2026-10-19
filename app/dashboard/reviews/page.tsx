@@ -45,8 +45,11 @@ export default function HostReviewsPage() {
                 .then((r) => (r.ok ? r.json() : { listings: [] }))
                 .catch(() => ({ listings: [] }));
             const accessibleIds: string[] = (mine.listings || []).map((l: any) => l.id);
-            const owned = new Set<string>((mine.listings || []).filter((l: any) => l.isOwner).map((l: any) => l.id));
-            setOwnedListingIds(owned);
+            // Who may reply: the owner, or a co-host with the messages
+            // permission — the same rule the reviews row policy applies
+            // (has_listing_permission … 'can_messages'). That is everyone this
+            // list was fetched for.
+            setOwnedListingIds(new Set<string>(accessibleIds));
 
             const { data: aboutMe } = accessibleIds.length
                 ? await supabase

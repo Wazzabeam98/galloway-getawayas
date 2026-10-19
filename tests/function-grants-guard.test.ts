@@ -26,6 +26,14 @@ const ROOT = path.resolve(__dirname, '..', '..');
 
 type Role = 'anon' | 'authenticated';
 const ALLOWED: Record<string, { roles: Role[]; reason: string }> = {
+    'has_listing_permission(uuid,text)': {
+        roles: ['authenticated'],
+        reason: 'co-host row policies (calendar_overrides, listing_ical_feeds, listing_extras, bookings, reviews) — mirrors lib/access checkListing; answers only about auth.uid()',
+    },
+    'has_booking_permission(uuid,text)': {
+        roles: ['authenticated'],
+        reason: 'booking message-thread row policies for co-hosts with messages; answers only about auth.uid()',
+    },
     'may_read_listing(uuid,uuid)': {
         roles: ['anon', 'authenticated'],
         reason: 'listings_readable SELECT policy applies to every role (public listing pages); answers only about auth.uid()',
@@ -66,11 +74,26 @@ test('every allowed function carries a reason and at least one role', () => {
     }
 });
 
+// The lock migration and every migration after it that grants EXECUTE by hand:
+// the allowlist must match all of them together, so a later function joins the
+// list the way the header says (an ALLOWED entry) and its grant is still held
+// to it.
+const LOCK = '20261004133346_lock_definer_function_grants.sql';
+const GRANTS_SQL = fs.readdirSync(path.join(ROOT, 'supabase/migrations'))
+    .filter((f: string) => f >= LOCK && f.endsWith('.sql'))
+    .sort()
+    .map((f: string) => fs.readFileSync(path.join(ROOT, 'supabase/migrations', f), 'utf8'))
+    .join('\n');
+
 test('the migration grants back exactly the allowlist, by role', () => {
-    const grants = [...MIGRATION.matchAll(/grant execute on function public\.([a-z_]+)\(([^)]*)\)\s+to ([a-z_, ]+);/g)]
+    const grants = [...GRANTS_SQL.matchAll(/grant execute on function public\.([a-z_]+)\(([^)]*)\)\s+to ([a-z_, ]+);/g)]
         .map((m) => ({ fn: m[1] + '(' + m[2].replace(/\s+/g, '') + ')', roles: m[3].split(',').map((r) => r.trim()) }));
     const granted: Record<string, string[]> = {};
-    for (const g of grants) granted[g.fn] = g.roles.filter((r) => r === 'anon' || r === 'authenticated');
+    for (const g of grants) {
+        const browser = g.roles.filter((r) => r === 'anon' || r === 'authenticated');
+        // A grant to service_role alone is not a browser grant.
+        if (browser.length) granted[g.fn] = Array.from(new Set((granted[g.fn] || []).concat(browser)));
+    }
     assert.deepEqual(
         Object.keys(granted).sort(), Object.keys(ALLOWED).sort(),
         'the migration and the allowlist must name the same functions');
