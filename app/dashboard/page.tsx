@@ -227,6 +227,13 @@ export default async function Dashboard() {
     const accessIdOf = (listingId: string) =>
         access.find((a) => a.listingId === listingId && !a.isOwner)?.accessId || null;
 
+    // A co-host opens the editor only where the owner gave them can_listing;
+    // otherwise their card goes to the guest-facing page, the same view anyone
+    // gets. The editor and its save route check this again on the server — this
+    // only decides where the card points.
+    const canEditOf = (listingId: string) =>
+        access.find((a) => a.listingId === listingId && !a.isOwner)?.can_listing === true;
+
     // Every status a host owns has to land in one of these, or the listing
     // simply is not on their dashboard. 'pending_review' belongs with the live
     // ones rather than with drafts: the host has finished it and there is
@@ -374,7 +381,7 @@ export default async function Dashboard() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                             {helping.map((item) => (
                                 <div key={item.id} className="relative group">
-                                    <Link href={`/homes/${item.id}`} className="block">
+                                    <Link href={canEditOf(item.id) ? `/edit-listing/${item.id}` : `/homes/${item.id}`} className="block">
                                         <div className="w-full h-56 rounded-2xl overflow-hidden bg-slate-200 relative">
                                             {item.images && item.images.length > 0 ? (
                                                 <img
@@ -431,7 +438,7 @@ export default async function Dashboard() {
                     </div>
                 )}
 
-                {published.length === 0 && drafts.length === 0 && (
+                {published.length === 0 && drafts.length === 0 && helping.length === 0 && (
                     <div className="text-center py-20 bg-white rounded-2xl border border-slate-200">
                         <h3 className="text-lg font-semibold text-slate-800">No listings yet</h3>
                         <p className="text-slate-500 mt-1 mb-5">Add your first property to start taking bookings.</p>

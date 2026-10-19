@@ -16,6 +16,7 @@ import MenuUnreadDot from './MenuUnreadDot'
 import BookingsLink from './BookingsLink'
 import RequestsLink from './RequestsLink'
 import OwnerToolsLink from './OwnerToolsLink'
+import { ALL_HOST_PERMS, HostPerms } from '@/lib/workMode'
 
 const itemClass = 'hover:bg-slate-200 rounded-md p-2 cursor-pointer';
 
@@ -23,6 +24,8 @@ const NavMenu = ({
     session,
     experiencesOpen = false,
     isHost = false,
+    ownsAny = true,
+    hostPerms = ALL_HOST_PERMS,
     isAdmin = false,
     mode = 'travel',
     hasCompletedStay = false,
@@ -34,6 +37,15 @@ const NavMenu = ({
     session: object | undefined;
     experiencesOpen?: boolean;
     isHost?: boolean;
+    // Owns at least one listing. The owner-only sections — Reviews, and the
+    // Co-hosts page that hands out access — show only to an owner; a pure
+    // co-host never sees them, whatever else they were given. Defaults true so
+    // an owner is the safe fallback if a caller forgets to pass it.
+    ownsAny?: boolean;
+    // What they may do, rolled up across every listing. An owner has all of it;
+    // a co-host sees a section only where the owner granted it. Defaults to the
+    // full set for the same reason as ownsAny.
+    hostPerms?: HostPerms;
     isAdmin?: boolean;
     mode?: 'host' | 'travel';
     hasCompletedStay?: boolean;
@@ -102,27 +114,47 @@ const NavMenu = ({
                         <>
                             {hostView ? (
                                 <>
+                                    {/* The hub where their properties live — their
+                                        own and any they help with — so every host
+                                        lands somewhere. Each section below shows
+                                        only where they may act: a co-host sees
+                                        exactly what the owner gave them, nothing
+                                        more. Reviews and Co-hosts are an owner's
+                                        own — one is their guests, the other hands
+                                        out access, which is never delegated. */}
                                     <li className={itemClass}>
                                         <Link href='/dashboard'>Listings</Link>
                                     </li>
-                                    <li className={itemClass}>
-                                        <BookingsLink />
-                                    </li>
-                                    <li className={itemClass}>
-                                        <Link href='/dashboard/calendar'>Calendar</Link>
-                                    </li>
-                                    <li className={itemClass}>
-                                        <Link href='/dashboard/reviews'>Reviews</Link>
-                                    </li>
-                                    <li className={itemClass}>
-                                        <Link href='/dashboard/earnings'>Earnings</Link>
-                                    </li>
-                                    <li className={itemClass}>
-                                        <Link href='/dashboard/people'>Co-hosts</Link>
-                                    </li>
-                                    <li className={itemClass}>
-                                        <MessagesLink />
-                                    </li>
+                                    {hostPerms.can_bookings && (
+                                        <li className={itemClass}>
+                                            <BookingsLink />
+                                        </li>
+                                    )}
+                                    {hostPerms.can_calendar && (
+                                        <li className={itemClass}>
+                                            <Link href='/dashboard/calendar'>Calendar</Link>
+                                        </li>
+                                    )}
+                                    {ownsAny && (
+                                        <li className={itemClass}>
+                                            <Link href='/dashboard/reviews'>Reviews</Link>
+                                        </li>
+                                    )}
+                                    {hostPerms.can_earnings && (
+                                        <li className={itemClass}>
+                                            <Link href='/dashboard/earnings'>Earnings</Link>
+                                        </li>
+                                    )}
+                                    {ownsAny && (
+                                        <li className={itemClass}>
+                                            <Link href='/dashboard/people'>Co-hosts</Link>
+                                        </li>
+                                    )}
+                                    {hostPerms.can_messages && (
+                                        <li className={itemClass}>
+                                            <MessagesLink />
+                                        </li>
+                                    )}
                                     {/* No "Services" or "Your trips" here: like
                                         Airbnb's hosting menu, this is the host's
                                         work. Services live in the site footer,
@@ -210,8 +242,9 @@ const NavMenu = ({
                                     {/* Renders its own <li> only when something is
                                         waiting — wrapping it in a <li> here left an
                                         empty, hoverable phantom row the rest of the
-                                        time. */}
-                                    {isHost && <BookingsLink onlyWhenWaiting />}
+                                        time. Only for someone who answers bookings:
+                                        a co-host without that grant has none to see. */}
+                                    {hostPerms.can_bookings && <BookingsLink onlyWhenWaiting />}
                                 </>
                             )}
 

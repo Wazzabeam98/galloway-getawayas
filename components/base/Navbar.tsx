@@ -8,7 +8,7 @@ import Logo from '@/components/base/Logo';
 import ModeSwitch from '@/components/base/ModeSwitch';
 import { displayName as resolveName, getImageUrl, greetingName } from '@/lib/utils';
 import RememberAccount from '@/components/auth/RememberAccount';
-import { NO_WORK_SIDE, resolveWorkMode, WorkSide } from '@/lib/workMode';
+import { HostPerms, NO_HOST_PERMS, NO_WORK_SIDE, resolveWorkMode, WorkSide } from '@/lib/workMode';
 import { readWorkSide } from '@/lib/workSide';
 
 const Navbar = async () => {
@@ -24,6 +24,10 @@ const Navbar = async () => {
     let isProvider = false;
     let providerAudience: string | null = null;
     let side: WorkSide = NO_WORK_SIDE;
+    // Whether they own any listing (owner-only menu sections), and the roll-up of
+    // what they may do across every listing (co-host sections respect the grant).
+    let ownsAny = false;
+    let hostPerms: HostPerms = NO_HOST_PERMS;
 
     if (data?.session?.user) {
         const { data: profile } = await supabase
@@ -45,6 +49,8 @@ const Navbar = async () => {
         isHost = read.isHost;
         isProvider = read.isProvider;
         providerAudience = read.providerAudience;
+        ownsAny = read.ownsAny;
+        hostPerms = read.hostPerms;
 
         // The passport is made of finished stays, so it is empty until there
         // is one. Same rule the passport page itself uses — a confirmed
@@ -134,6 +140,8 @@ const Navbar = async () => {
                         session={data?.session?.user}
                         experiencesOpen={experiencesOpen}
                         isHost={isHost}
+                        ownsAny={ownsAny}
+                        hostPerms={hostPerms}
                         isAdmin={isAdmin}
                         mode={mode}
                         hasCompletedStay={hasCompletedStay}
