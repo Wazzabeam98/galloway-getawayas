@@ -153,6 +153,9 @@ export const RULES: Rule[] = [
     { kind: 'payout.setup.host', match: R('^Your guest arrives (.+?)—add a payout method'), category: 'listings', title: 'Add a payout method', body: 'Your guest arrives $1. Add your bank details so we can pay you.' },
     { kind: 'payout.setup.provider', match: R('^You have a booking—set up payouts'), category: 'listings', title: 'Set up payouts', body: 'You have a booking. Set up payouts so we can pay you.' },
     { kind: 'payout.setup.provider', match: R('^(.+) is waiting for you—set up payouts'), category: 'listings', title: 'Money waiting for you', body: '$1 is waiting. Set up payouts to receive it.' },
+    { kind: 'stay.chargeback.host', match: R('^A guest’s bank has disputed a payment—(.+)$'), category: 'payments', title: 'Payment disputed', body: '$1. The guest\u2019s bank has questioned a payment. We\u2019re handling it.', cohost: 'can_earnings' },
+    { kind: 'stay.chargeback_closed.host', match: R('^(The disputed payment was settled in our favour|The disputed payment went the guest’s way|The payment dispute has closed)—(.+)$'), category: 'payments', title: 'Payment dispute closed', body: '$2. Tap to see the outcome.', cohost: 'can_earnings' },
+    { kind: 'stay.money_declined.host', match: R('^Your guest declined your request for £'), category: 'payments', title: 'Your guest declined $1', body: 'We\u2019ll look at it and be in touch.', cohost: 'can_earnings' },
     // ------------------------------------------------ holiday lets: other
     { kind: 'calendar.sync_failed', match: R('^One of your calendars has stopped syncing$'), category: 'listings', title: 'Calendar sync stopped', body: 'An imported calendar isn\u2019t syncing. Check it to avoid double bookings.', cohost: 'can_calendar' },
     { kind: 'review.request.guest', match: R('^How was your stay at (.+)\\?$'), category: 'reviews', title: 'How was your stay?', body: 'Leave a review for $1.' },
@@ -164,6 +167,8 @@ export const RULES: Rule[] = [
     { kind: 'cohost.accepted', match: R('^(.+) has accepted your invitation$'), category: 'listings', title: '$1 is now a co-host', body: 'They can help with your listing now.' },
     { kind: 'listing.approved', match: R('^(.+) is live on Galloway Getaways$'), category: 'listings', title: 'Your listing is live!', body: '$1 is now on Galloway Getaways.' },
     { kind: 'listing.sent_back', match: R('^A few things to change on (.+)$'), category: 'listings', title: 'Your listing needs a few changes', body: 'We\u2019ve sent $1 back with notes.' },
+    { kind: 'account.deactivated', match: R('^Your account has been deactivated$'), category: 'account', title: 'Your account has been deactivated', body: 'If you didn\u2019t do this, reply to our email.' },
+    { kind: 'account.suspended', match: R('^Your account has been suspended$'), category: 'account', title: 'Your account has been suspended', body: 'If you think this is a mistake, reply to our email.' },
     { kind: 'account.reactivated', match: R('^Your account is active again$'), category: 'account', title: 'Your account is active again', body: 'Welcome back.' },
     // ------------------------------------------------ experiences
     { kind: 'exp.booked.provider', match: R('^A new booking—allergy noted'), category: 'reservations', title: 'New booking \u2014 allergy noted', body: 'Read the guest\u2019s note before the day.' },
@@ -196,6 +201,12 @@ export const RULES: Rule[] = [
     { kind: 'exp.enquiry.provider', match: R('^New enquiry from (.+)$'), category: 'reservations', title: 'New enquiry from $1', body: 'They have a question before booking. Tap to reply.' },
     { kind: 'exp.invited', match: R('^(.+) has invited you to an experience$'), category: 'reservations', title: 'You\u2019re invited', body: '$1 invited you to an experience.' },
     { kind: 'exp.refunded.provider', match: R('^A booking was refunded: (.+)$'), category: 'payments', title: 'Booking refunded', body: 'A booking on $1 was refunded.' },
+    { kind: 'exp.lapsed.guest', match: R('^Your request to (.+) has expired$'), category: 'reservations', title: 'Request expired', body: '$1 didn\u2019t reply in time. You haven\u2019t been charged.' },
+    { kind: 'exp.lapsed.provider', match: R('^A booking request expired$'), category: 'reservations', title: 'Request expired', body: 'A guest\u2019s request lapsed before you answered.' },
+    { kind: 'exp.date_change_lapsed.guest', match: R('^Your date change request expired$'), category: 'reservations', title: 'Date change expired', body: 'Your booking stays on its original date.' },
+    { kind: 'exp.date_change_lapsed.guest', match: R('^The new date (.+) suggested has expired$'), category: 'reservations', title: 'Suggested date expired', body: 'Your booking with $1 stays on its original date.' },
+    { kind: 'exp.date_change_lapsed.provider', match: R('^A guest’s date change request expired$'), category: 'reservations', title: 'Date change expired', body: 'The booking stays on its original date.' },
+    { kind: 'exp.date_change_lapsed.provider', match: R('^Your suggested date expired$'), category: 'reservations', title: 'Suggested date expired', body: 'The booking stays on its original date.' },
     // ------------------------------------------------ trades
     { kind: 'trade.enquiry_urgent.trade', match: R('^URGENT—a property owner in (.+?) needs you now'), category: 'reservations', title: 'Urgent job in $1', body: 'A property owner needs you now. Tap to reply.' },
     { kind: 'trade.enquiry.trade', match: R('^New enquiry—(.+?), (.+?) \\('), category: 'reservations', title: 'New enquiry: $1', body: 'A property owner in $2 needs you. Tap to reply.' },
