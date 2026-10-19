@@ -89,6 +89,11 @@ const tools = [
         blurb: 'The latest reviews of stays and experiences. Take one down if it needs it, or put it back.',
     },
     {
+        href: '/admin/notifications',
+        title: 'Push notifications',
+        blurb: 'Send a test of each notification to your own phone, to check they arrive.',
+    },
+    {
         href: '/admin/errors',
         title: 'Errors',
         blurb: 'Anything that broke, whether or not anyone told us.',
