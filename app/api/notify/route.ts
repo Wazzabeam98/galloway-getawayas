@@ -25,6 +25,9 @@ import {
 import { guestBookedEmail } from '@/lib/bookingEmails';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { formatGBPAmount } from '@/lib/formatMoney';
+import { pushToUser } from '@/lib/push';
+import { hostNewBookingPush, guestConfirmedPush, newMessagePush } from '@/lib/pushMessages';
+import { withinLimits } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,6 +92,23 @@ export async function POST(request: Request) {
     let notificationBookingId: string | null = null;
 
     try {
+        const body = await request.json();
+        const type: string = body && body.type;
+        const bookingId: string = body && body.bookingId;
+        notificationType = type || null;
+        notificationBookingId = bookingId || null;
+
+        // A paid booking has just landed: push the host (and an Instant-Book
+        // guest). Asked for by the guest's own return to /booking-confirmed,
+        // because the emails for this moment are sent from inside payment
+        // settlement, and a push must never be sent from there. No sign-in:
+        // like that page, the booking id is the key — coming back from Stripe
+        // a phone sometimes drops the cookie. Nothing is revealed to the
+        // caller, and each booking can push once, ever.
+        if (type === 'booking_placed' && bookingId) {
+            return await bookingPlaced(bookingId);
+        }
+
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession() — getSession() trusts an unsigned
         // cookie, so a forged one impersonates any user. getUser() verifies
@@ -98,12 +118,6 @@ export async function POST(request: Request) {
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
-
-        const body = await request.json();
-        const type: string = body && body.type;
-        const bookingId: string = body && body.bookingId;
-        notificationType = type || null;
-        notificationBookingId = bookingId || null;
 
         if (!type || !bookingId) {
             return NextResponse.json({ ok: false, error: 'Missing type or bookingId' }, { status: 400 });
@@ -232,6 +246,13 @@ export async function POST(request: Request) {
                     nonRefundable: (booking as any).non_refundable === true,
                 });
                 await sendEmail(to, mail.subject, mail.html);
+                // After the email, never instead of it; pushToUser never throws.
+                await pushToUser(admin, booking.guest_id, guestConfirmedPush({
+                    bookingId: booking.id,
+                    listingTitle: (listing && listing.title) || 'your stay',
+                    checkIn: booking.check_in,
+                    checkOut: booking.check_out,
+                }));
                 return NextResponse.json({ ok: true });
             }
 
@@ -283,16 +304,28 @@ export async function POST(request: Request) {
         if (type === 'new_message') {
             const recipientId = booking.guest_id === uid ? booking.host_id : booking.guest_id;
 
+            const senderFirstRaw = await otherFirstNameFor(admin, uid, 'Someone');
+            const rawPreview = String((body && body.preview) || '').slice(0, 180);
+
+            // The push is its own opt-in (the person said yes on this device),
+            // so it goes whether or not message EMAILS are switched off — and
+            // always after the email, never in its way.
+            const pushIt = () => pushToUser(admin, recipientId, newMessagePush({
+                bookingId: booking.id,
+                senderFirst: senderFirstRaw,
+                preview: rawPreview,
+            }));
+
             const allowed = await wants(admin, recipientId, 'new_message');
             if (!allowed) {
+                await pushIt();
                 return NextResponse.json({ ok: true, skipped: 'opted out' });
             }
 
             const to = await emailFor(admin, recipientId);
             const recipientFirst = escapeHtml(await ownFirstNameFor(admin, recipientId, 'there'));
-            const senderFirst = escapeHtml(await otherFirstNameFor(admin, uid, 'Someone'));
+            const senderFirst = escapeHtml(senderFirstRaw);
 
-            const rawPreview = String((body && body.preview) || '').slice(0, 180);
             const preview = escapeHtml(rawPreview) + (rawPreview.length >= 180 ? '&hellip;' : '');
 
             const { data: prefs } = await admin
@@ -316,6 +349,7 @@ export async function POST(request: Request) {
             );
 
             await sendEmail(to, 'New message from ' + senderFirst + ' \u2014 Galloway Getaways', html);
+            await pushIt();
             return NextResponse.json({ ok: true });
         }
 
@@ -343,4 +377,56 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ ok: false }, { status: 200 });
     }
+}
+
+// The push for a booking that has just been paid for. Pushes only — the emails
+// for this moment were already sent by settlement (lib/settlePaidBooking).
+async function bookingPlaced(bookingId: string) {
+    const admin = adminClient();
+    const { data: booking } = await admin
+        .from('bookings')
+        .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, amount_paid, created_at')
+        .eq('id', bookingId)
+        .maybeSingle();
+
+    const paid = !!booking && (booking.payment_status === 'paid'
+        || booking.payment_status === 'deposit_paid'
+        || Number(booking.amount_paid || 0) > 0);
+    const live = !!booking && (booking.status === 'confirmed' || booking.status === 'pending');
+    const fresh = !!booking && Date.now() - new Date(booking.created_at).getTime() < 3 * 24 * 60 * 60 * 1000;
+    if (!booking || !paid || !live || !fresh || !booking.host_id) {
+        return NextResponse.json({ ok: true, skipped: 'nothing to push' });
+    }
+
+    // Once per booking, however often the confirmation page is reloaded.
+    const once = await withinLimits([
+        { bucket: 'push:booking-placed', key: booking.id, max: 1, windowMinutes: 60 * 24 * 30 },
+    ], new Date(), admin);
+    if (!once.ok) return NextResponse.json({ ok: true, skipped: 'already pushed' });
+
+    const { data: listing } = await admin
+        .from('listings')
+        .select('title')
+        .eq('id', booking.listing_id)
+        .maybeSingle();
+    const listingTitle = (listing && listing.title) || 'your listing';
+    const instant = booking.status === 'confirmed';
+
+    await pushToUser(admin, booking.host_id, hostNewBookingPush({
+        bookingId: booking.id,
+        guestFirst: await otherFirstNameFor(admin, booking.guest_id, 'A guest'),
+        listingTitle,
+        checkIn: booking.check_in,
+        checkOut: booking.check_out,
+        instant,
+    }));
+    if (instant) {
+        await pushToUser(admin, booking.guest_id, guestConfirmedPush({
+            bookingId: booking.id,
+            listingTitle,
+            checkIn: booking.check_in,
+            checkOut: booking.check_out,
+        }));
+    }
+    return NextResponse.json({ ok: true });
 }

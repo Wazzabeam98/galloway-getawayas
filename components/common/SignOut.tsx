@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { signOutThisDevice } from '@/lib/staySignedIn'
+import { forgetPushOnThisDevice } from '@/lib/pushClient'
 
 
 const SignOut = () => {
@@ -26,6 +27,9 @@ const SignOut = () => {
         // This device only — never the person's other devices — and the
         // cookie goes whatever the server answers. The next sign-in on this
         // device chooses again whether to stay. See lib/staySignedIn.
+        // Push first, while still signed in: this phone stops getting this
+        // account's notifications.
+        await forgetPushOnThisDevice();
         await signOutThisDevice(supabase);
 
         // A FULL-DOCUMENT navigation, not router.push('/') + router.refresh().

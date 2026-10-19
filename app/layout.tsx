@@ -13,6 +13,7 @@ import Toast from '@/components/base/Toast';
 import AuthPanelHost from '@/components/auth/AuthPanel';
 import FinishSignUpGate from '@/components/auth/FinishSignUpGate';
 import KeepSignedIn from '@/components/auth/KeepSignedIn';
+import PwaSetup from '@/components/pwa/PwaSetup';
 import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import { COMPANY } from '@/config/company';
@@ -52,6 +53,14 @@ const baseMetadata: Metadata = {
   description:
     'Book holiday cottages and accommodation across Dumfries & Galloway. Book direct with the people who own them — no booking fee, ever.',
 
+  // Added to an iPhone's Home Screen, it opens as an app with no Safari bars.
+  // The manifest (app/manifest.ts) says the same to everything else. The
+  // status bar stays the ordinary light one, so nothing slides under it.
+  appleWebApp: {
+    capable: true,
+    title: 'Galloway Getaways',
+    statusBarStyle: 'default',
+  },
   // Tells search engines which address is the real one, so the www and
   // vercel.app versions don't compete with this one.
   metadataBase: new URL(SITE_URL),
@@ -170,6 +179,12 @@ export default function RootLayout({
 
   return (
     <html lang="en-GB" className={roboto.variable}>
+      {/* The iPhone Home Screen icon, drawn from the goose (app/icons/[file]).
+          A link here rather than metadata `icons`, which the file-based
+          favicon (app/icon.svg) would override. */}
+      <head>
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+      </head>
       <body className="bg-white text-slate-900 antialiased">
         <script
           type="application/ld+json"
@@ -195,6 +210,9 @@ export default function RootLayout({
         {/* Keeps a sign-in alive for a year (or until the browser closes, if
             that was the choice) — lib/staySignedIn. */}
         <KeepSignedIn />
+        {/* The installable app: service worker, the one-time Add to Home
+            Screen hint on phones, and keeping push tied to this account. */}
+        <PwaSetup />
         {/* Vercel Web Analytics — privacy-friendly visitor and page-view trends.
             It only reports once deployed on Vercel with Analytics switched on for
             the project; locally it no-ops. */}

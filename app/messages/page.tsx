@@ -16,6 +16,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { hasSecretTokens } from '@/lib/messageSecrets';
+import PushPrompt from '@/components/pwa/PushPrompt';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
 // A conversation's identity is now "kind:id" — booking, enquiry or order — so the
@@ -60,6 +61,10 @@ export default function MessagesInboxPage() {
 
     const [text, setText] = useState('');
     const [sending, setSending] = useState(false);
+    // Sending a message is one of the moments notifications are offered: the
+    // card appears above the composer after the first send (PushPrompt decides
+    // whether there is anything to ask).
+    const [askPush, setAskPush] = useState(false);
     const [quickReplies, setQuickReplies] = useState<any[]>([]);
     const [showQuick, setShowQuick] = useState(false);
 
@@ -503,6 +508,7 @@ export default function MessagesInboxPage() {
             // Email the other person, if they have message alerts on — the route
             // decides that, this just asks.
             notify('new_message', id, outgoing);
+            setAskPush(true);
         } else {
             // Enquiry and order threads send through their own route, which owns
             // the insert, the recipient and the new-message email.
@@ -760,6 +766,7 @@ export default function MessagesInboxPage() {
                             </div>
                         )}
 
+                        {askPush && <PushPrompt context="message" className="mb-2" />}
                         <div className="flex items-end gap-2">
                             {quickReplies.length > 0 && (
                                 <button
@@ -1199,6 +1206,7 @@ export default function MessagesInboxPage() {
                                         </div>
                                     )}
 
+                                    {askPush && <PushPrompt context="message" className="mb-2" />}
                                     <div className="flex items-end gap-2">
                                         {quickReplies.length > 0 && (
                                             <button

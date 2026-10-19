@@ -1,0 +1,33 @@
+<!doctype html>
+<!--
+  Shown by the service worker (public/sw.js) only when a page cannot be
+  reached at all. Deliberately a plain file with nothing in it about anyone:
+  no header, no account, no prices — a cached copy of a real page could show
+  somebody's signed-in details or an old price.
+-->
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>You're offline | Galloway Getaways</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; color: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { min-height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; padding: 24px; box-sizing: border-box; }
+  img { width: 64px; height: 64px; border-radius: 14px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { color: #475569; margin: 0 0 24px; max-width: 320px; line-height: 1.5; }
+  button { background: #047857; color: #fff; border: 0; border-radius: 12px;
+    padding: 12px 20px; font-size: 15px; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <img src="/icons/icon-192.png" alt="">
+  <h1>You&rsquo;re offline</h1>
+  <p>Galloway Getaways needs a connection. Check your signal or Wi&#8209;Fi and try again.</p>
+  <button type="button" onclick="location.reload()">Try again</button>
+</main>
+</body>
+</html>
