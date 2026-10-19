@@ -20,25 +20,27 @@ import {
     pushSupported,
 } from '@/lib/pushClient';
 
-type Context = 'booking' | 'message' | 'host';
+type Context = 'booking' | 'message' | 'host' | 'settings';
 
 const WHY: Record<Context, string> = {
     booking: 'Get a notification when your host confirms or messages you.',
     message: 'Get a notification when they reply.',
     host: 'Get a notification the moment a booking or message comes in.',
+    settings: 'Notifications aren\u2019t on for this device yet.',
 };
 
-export default function PushPrompt({ context, className }: { context: Context; className?: string }) {
+// `always`: account settings shows the offer even after "Not now" elsewhere.
+export default function PushPrompt({ context, className, always }: { context: Context; className?: string; always?: boolean }) {
     const [mode, setMode] = useState<'hidden' | 'ask' | 'ios' | 'done'>('hidden');
     const [busy, setBusy] = useState(false);
 
     useEffect(() => {
         if (needsHomeScreenFirst()) {
             // Only worth saying if push is set up on the site at all.
-            if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && !askDismissed('ios')) setMode('ios');
+            if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && (always || !askDismissed('ios'))) setMode('ios');
             return;
         }
-        if (askDismissed()) return;
+        if (askDismissed() && !always) return;
         if (pushSupported() && permission() === 'default') setMode('ask');
     }, []);
 

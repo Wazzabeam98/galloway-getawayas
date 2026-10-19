@@ -105,6 +105,14 @@ export default function AccountSettings() {
     const [session, setSession] = useState<any>(null);
     const [email, setEmail] = useState('');
     const [activeSection, setActiveSection] = useState('personal');
+    // A link (a push notification, an email) can open a section directly:
+    // /account?section=security. Read once, on arrival.
+    useEffect(() => {
+        try {
+            const wanted = new URLSearchParams(window.location.search).get('section');
+            if (wanted && SECTIONS.some((x) => x.key === wanted)) setActiveSection(wanted);
+        } catch { /* stays on the first section */ }
+    }, []);
 
     const [profile, setProfile] = useState<{ full_name: string; preferred_name: string; phone: string; residential_address: string }>({
         full_name: '',

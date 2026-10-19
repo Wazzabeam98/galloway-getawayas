@@ -1,6 +1,6 @@
 // Sends one test push notification to the signed-in admin's own devices, and
 // says what the push service answered. Used by the button on
-// /admin/notifications, which calls it once per type, ten seconds apart.
+// /admin/notifications, which calls it once per push type (lib/pushCatalogue).
 //
 // Admins only, and only ever to the caller's own subscriptions — the user id
 // comes from the verified session, never from the request. Reads
@@ -13,7 +13,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { isAdmin } from '@/lib/adminAudit';
 import { pushToUserReport } from '@/lib/push';
-import { isTestPushKind, testPush } from '@/lib/pushTest';
+import { catalogueTestPush } from '@/lib/pushCatalogue';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,11 +27,11 @@ export async function POST(request: Request) {
 
     let body: any = null;
     try { body = await request.json(); } catch { /* checked below */ }
-    const kind = body && body.kind;
-    if (!isTestPushKind(kind)) {
+    const msg = typeof (body && body.id) === 'string' ? catalogueTestPush(body.id) : null;
+    if (!msg) {
         return NextResponse.json({ ok: false, error: 'Unknown test' }, { status: 400 });
     }
 
-    const report = await pushToUserReport(adminClient(), user.id, testPush(kind));
+    const report = await pushToUserReport(adminClient(), user.id, msg);
     return NextResponse.json({ ok: true, report });
 }

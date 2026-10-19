@@ -60,3 +60,29 @@ export function newMessagePush(input: {
         tag: 'message-' + input.bookingId,
     };
 }
+
+/**
+ * A new message, as recorded in the push outbox. The sender's name and their
+ * role — never the text: any message can carry a door code or the wifi.
+ */
+export function messagePush(input: {
+    bookingId?: string | null;
+    threadPath?: string;
+    recipientId: string;
+    senderFirst: string;
+    senderRole: 'host' | 'guest' | 'provider' | 'tradesperson';
+    messageId?: string;
+}) {
+    const path = input.threadPath || '/messages/' + input.bookingId;
+    return {
+        dedupeKey: 'message:' + (input.messageId || (input.bookingId || path) + ':' + input.recipientId + ':' + Date.now()),
+        kind: 'message.new',
+        category: 'messages' as const,
+        userId: input.recipientId,
+        title: input.senderFirst || 'New message',
+        body: 'New message from your ' + input.senderRole,
+        url: path,
+        // A guest's message to a host also reaches co-hosts who handle messages.
+        context: input.bookingId ? { booking_id: input.bookingId, cohost: 'can_messages' } : {},
+    };
+}

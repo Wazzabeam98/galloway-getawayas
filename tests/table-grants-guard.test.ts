@@ -32,6 +32,16 @@ const SERVICE_ROLE_ONLY: ServiceOnly[] = [
         migration: '20261019145415_push_subscriptions.sql',
         reason: 'endpoint + keys are enough to push to that person\'s phone; written by /api/push/subscribe, read by lib/push.ts, both with the service role',
     },
+    {
+        table: 'push_outbox',
+        migration: '20261019170805_push_outbox_and_push_preferences.sql',
+        reason: 'who is pushed and when, for every event on the site; written by the email layer and database triggers, sent and read only by the push job with the service role',
+    },
+    {
+        table: 'payout_destinations_seen',
+        migration: '20261019170805_push_outbox_and_push_preferences.sql',
+        reason: 'a fingerprint of each connected account\'s payout destination, for the payout-details-changed alert; read and written only by the push job',
+    },
 ];
 
 const code = (sql: string) => sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');

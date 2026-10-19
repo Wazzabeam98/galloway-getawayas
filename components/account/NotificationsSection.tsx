@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import { Mail, MessageCircle, CalendarCheck, Star, Megaphone, Check } from 'lucide-react';
+import PushSettings from './PushSettings';
 
 interface Prefs {
     new_message: boolean;
@@ -139,10 +140,14 @@ export default function NotificationsSection() {
         <div>
             <h2 className="text-2xl font-bold text-slate-900 mb-1">Notifications</h2>
             <p className="text-slate-500 text-sm mb-8">
-                Choose what we email you about. We send to{' '}
+                Choose what we email you about, and what we send to your phone. Emails go to{' '}
                 <span className="font-medium text-slate-700">{email || 'your account email'}</span>.
             </p>
 
+            <div className="flex items-center gap-2 mb-4">
+                <Mail className="w-5 h-5 text-slate-400" />
+                <h3 className="text-lg font-semibold text-slate-900">Email</h3>
+            </div>
             <div className="border rounded-2xl divide-y">
                 {OPTIONAL.map(({ key, label, description, icon: Icon }) => {
                     const on = prefs[key];
@@ -173,6 +178,8 @@ export default function NotificationsSection() {
                     );
                 })}
             </div>
+
+            <PushSettings />
 
             <div className="mt-8 border rounded-2xl p-5 bg-slate-50">
                 <div className="flex gap-3.5">
