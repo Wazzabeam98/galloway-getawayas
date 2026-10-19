@@ -323,6 +323,14 @@ export async function POST(request: Request) {
         // with — so a stay search calls free and a stay checkout calls taken
         // cannot come apart.
         (icalFeeds || []).forEach(function (feed: any, i: number) {
+            // A feed we couldn't reach live — unreachable, or too slow for the 3s
+            // cap — falls back to its last successful sync. A slow or failing feed
+            // must never block a real booking on its own, so this is the fallback,
+            // not a refusal; logged so a feed that's quietly been failing is
+            // visible rather than silently serving stale availability at payment.
+            if (liveEvents[i] === null) {
+                console.log('[checkout] ical live re-fetch failed, using last sync', booking.listing_id, feed.id);
+            }
             const events = liveEvents[i] !== null ? liveEvents[i] : feed.events;
             blockedNightsFromEvents(events).forEach(function (night: string) {
                 blockedDates[night] = true;

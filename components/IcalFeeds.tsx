@@ -48,6 +48,23 @@ const SITES = [
     },
 ];
 
+// "Last synced" as Airbnb shows it on a connected calendar — a relative time, not
+// a date, so it reads at a glance ("Synced 3 minutes ago"). A plain relative
+// string, not the DD/MM/YYYY calendar formatter, which is for actual dates.
+function syncedAgo(iso: string | null): string {
+    if (!iso) return '';
+    const then = new Date(iso).getTime();
+    if (!then) return '';
+    const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (secs < 60) return 'just now';
+    const mins = Math.round(secs / 60);
+    if (mins < 60) return mins + (mins === 1 ? ' minute ago' : ' minutes ago');
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+    const days = Math.round(hours / 24);
+    return days + (days === 1 ? ' day ago' : ' days ago');
+}
+
 // Calendar sync as a card like the rest of the editor: the linked calendars on
 // the card, the steps behind it in one full screen. Each linked calendar saves
 // (and is removed) on its own, so the screen has no Save — the X closes it.
@@ -84,6 +101,7 @@ export default function IcalFeeds({ listingId, exportUrl, onFeeds, large = false
     const [site, setSite] = useState(SITES[0]);
     const [url, setUrl] = useState('');
     const [saving, setSaving] = useState(false);
+    const [syncing, setSyncing] = useState(false);
 
     const load = async () => {
         const { data } = await supabase
@@ -152,6 +170,36 @@ export default function IcalFeeds({ listingId, exportUrl, onFeeds, large = false
         // The calendar appearing under Connected is the confirmation.
         setUrl('');
         load();
+    };
+
+    // Fetch every linked calendar for this listing right now, rather than waiting
+    // for the next automatic run. The fetching and parsing can only happen on the
+    // server (the browser can't be trusted to reach an arbitrary feed, and the
+    // write needs the service role), so this calls the sync route and then reloads
+    // the rows to show the fresh "Last synced" times and any new errors.
+    const syncNow = async () => {
+        setSyncing(true);
+        try {
+            const res = await fetch('/api/listings/ical-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listingId }),
+            });
+            const data = await res.json().catch(() => null);
+
+            if (!res.ok || !data || !data.ok) {
+                toast.error((data && data.error) || 'Couldn’t sync just now — try again in a moment.', { theme: 'colored' });
+            } else if (data.synced === 0 && data.failed > 0) {
+                toast.error('Couldn’t reach those calendars — check the links below.', { theme: 'colored' });
+            } else {
+                toast.success('Calendars synced', { theme: 'colored', autoClose: 1500 });
+            }
+        } catch {
+            toast.error('Couldn’t sync just now — try again in a moment.', { theme: 'colored' });
+        } finally {
+            setSyncing(false);
+            load();
+        }
     };
 
     const remove = async (id: string) => {
@@ -229,7 +277,16 @@ export default function IcalFeeds({ listingId, exportUrl, onFeeds, large = false
 
             {!loading && feeds.length > 0 && (
                 <div className="mt-8">
-                    <h3 className="mb-2 text-sm font-semibold text-slate-800">Connected</h3>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <h3 className="text-sm font-semibold text-slate-800">Connected</h3>
+                        {/* Airbnb refreshes automatically every few hours and lets a
+                            host refresh sooner; we sync every 15 minutes and this is
+                            that same "do it now". */}
+                        <button type="button" onClick={syncNow} disabled={syncing}
+                            className="flex-none rounded-full border px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-500 disabled:opacity-50">
+                            {syncing ? 'Syncing…' : 'Sync now'}
+                        </button>
+                    </div>
                     <div className="space-y-2">
                         {feeds.map((f) => (
                             <div key={f.id} className="flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5">
@@ -241,7 +298,14 @@ export default function IcalFeeds({ listingId, exportUrl, onFeeds, large = false
                                             Couldn&apos;t reach it{f.last_error ? ' — ' + f.last_error : ''}
                                         </div>
                                     )}
-                                    {f.last_status === 'ok' && <div className="mt-0.5 text-xs text-emerald-700">Syncing</div>}
+                                    {f.last_status === 'ok' && (
+                                        <div className="mt-0.5 text-xs text-emerald-700">
+                                            {f.last_synced_at ? 'Synced ' + syncedAgo(f.last_synced_at) : 'Syncing'}
+                                        </div>
+                                    )}
+                                    {!f.last_status && (
+                                        <div className="mt-0.5 text-xs text-slate-400">Waiting for first sync</div>
+                                    )}
                                 </div>
                                 <button type="button" onClick={() => remove(f.id)} title="Remove this calendar"
                                     aria-label={`Remove ${f.label || 'calendar'}`}
