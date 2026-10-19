@@ -118,7 +118,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, total_price, status, amount_paid, amount_refunded, balance_amount, balance_due_date, supplier_vat_number, supplier_vat_name')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, total_price, status, amount_paid, amount_refunded, balance_amount, balance_due_date, cancellation_policy, cancellation_custom_days, non_refundable, supplier_vat_number, supplier_vat_name')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -229,8 +229,11 @@ export async function POST(request: Request) {
                     // cards, and never a day early under BST.
                     freeCancelUntil: cancellationPosition({
                         checkIn: booking.check_in,
-                        policy: listing && listing.cancellation_policy,
+                        policy: (booking as any).cancellation_policy,
+                        customDays: (booking as any).cancellation_custom_days,
+                        nonRefundable: (booking as any).non_refundable === true,
                     }).freeUntilKey,
+                    nonRefundable: (booking as any).non_refundable === true,
                 });
                 await sendEmail(to, mail.subject, mail.html);
                 return NextResponse.json({ ok: true });

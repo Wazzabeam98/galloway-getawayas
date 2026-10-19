@@ -47,6 +47,7 @@ const PLATFORM_ONLY: Record<string, string> = {
     min_nights: 'editor via service route', max_nights: 'editor via service route',
     advance_notice: 'editor via service route', preparation_time: 'editor via service route',
     availability_window: 'editor via service route', cancellation_policy: 'editor via service route',
+    cancellation_custom_days: 'editor via service route',
     non_refundable_option: 'editor via service route', additional_rules: 'editor via service route',
     events_allowed: 'editor via service route', smoking_allowed: 'editor via service route',
     commercial_photography_allowed: 'editor via service route', nearby: 'editor via service route',

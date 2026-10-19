@@ -12,6 +12,7 @@ import {
 import { checkListing } from '@/lib/access';
 import { isAdmin, recordAdminAction, cleanReason, REMOVED_BUCKET } from '@/lib/adminAudit';
 import { fromRow, newProblems } from '@/lib/listingRules';
+import { cancelDaysProblem } from '@/lib/cancellation';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,6 +130,22 @@ export async function POST(request: Request) {
         // "Show the precise location" is a yes/no and nothing else — anything
         // but a literal true is off, the safe direction for a privacy setting.
         if ('show_precise_location' in safe) safe.show_precise_location = safe.show_precise_location === true;
+
+        // The Custom cancellation policy's one number, validated server-side with
+        // the SAME shared rule the editor uses (lib/cancellation.cancelDaysProblem)
+        // — a client validation mirrored, never rewritten. Checked against the
+        // RESULTING policy so a patch that switches to Custom, or changes the day
+        // count on a listing already Custom, both have to be a whole number 1–365.
+        const resultingPolicy = 'cancellation_policy' in safe ? safe.cancellation_policy : before.cancellation_policy;
+        if (resultingPolicy === 'Custom') {
+            const resultingDays = 'cancellation_custom_days' in safe
+                ? safe.cancellation_custom_days
+                : before.cancellation_custom_days;
+            const problem = cancelDaysProblem(resultingDays);
+            if (problem) return NextResponse.json({ ok: false, error: problem }, { status: 400 });
+            // Store it as the whole number it validated as, never a string.
+            if ('cancellation_custom_days' in safe) safe.cancellation_custom_days = Math.round(Number(safe.cancellation_custom_days));
+        }
 
         if (Object.keys(safe).length === 0) {
             return NextResponse.json({ ok: false, error: 'Nothing to save.' }, { status: 400 });

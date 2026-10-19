@@ -15,12 +15,14 @@ import CancelBookingConfirm from '@/components/CancelBookingConfirm';
 // The row class is passed in (the same ROW token the page's other action rows
 // use) so this cannot drift into a second row style.
 export default function StayCancelRow({
-    bookingId, checkIn, policy, amountPaid, amountRefunded, cleaningFee, orders = [],
+    bookingId, checkIn, policy, customDays, nonRefundable, amountPaid, amountRefunded, cleaningFee, orders = [],
     className, panelClassName,
 }: {
     bookingId: string;
     checkIn: string;
     policy: string | null | undefined;
+    customDays?: number | null;
+    nonRefundable?: boolean;
     amountPaid: number | null | undefined;
     amountRefunded: number | null | undefined;
     cleaningFee?: number | null;
@@ -43,6 +45,8 @@ export default function StayCancelRow({
                         bookingId={bookingId}
                         checkIn={checkIn}
                         policy={policy}
+                        customDays={customDays}
+                        nonRefundable={nonRefundable}
                         amountPaid={amountPaid}
                         amountRefunded={amountRefunded}
                         cleaningFee={cleaningFee}

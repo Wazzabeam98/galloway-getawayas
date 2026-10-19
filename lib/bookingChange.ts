@@ -90,9 +90,14 @@ export function decreaseRefundFraction(
     checkIn: string,
     policy: string | null | undefined,
     now?: Date,
+    customDays?: number | null,
+    nonRefundable?: boolean,
 ): number {
     if (initiatedBy === 'host') return 1;
-    return refundFraction(checkIn, policy, now);
+    // A non-refundable booking gives nothing back on the nights a guest drops,
+    // the same bargain a full cancellation follows.
+    if (nonRefundable) return 0;
+    return refundFraction(checkIn, policy, now, customDays);
 }
 
 // The balance still owed after a change (and after any refund it triggered):

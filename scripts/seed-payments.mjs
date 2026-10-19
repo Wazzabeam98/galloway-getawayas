@@ -325,6 +325,15 @@ async function createBooking(listing, guest, host, patch = {}) {
         amount_paid: 500,
         amount_refunded: 0,
         commission_rate: 10,
+        // The cancellation terms are stamped on the booking at checkout and read
+        // from there by every refund path — so a seeded booking carries them too,
+        // inherited from its listing exactly as checkout would. A scenario that
+        // wants a non-refundable or Custom booking overrides via patch.
+        cancellation_policy: listing.cancellation_policy || 'Moderate',
+        cancellation_custom_days: (listing.cancellation_policy === 'Custom')
+            ? (listing.cancellation_custom_days ?? 30)
+            : null,
+        non_refundable: false,
         paid_at: new Date().toISOString(),
         ...patch,
     });
@@ -492,8 +501,9 @@ async function main() {
 
     /* -------------------------------------------------- refunds, 12-18 */
 
-    // Each of these needs its own listing, because the cancellation tier that
-    // decides the refund lives on the listing, not the booking.
+    // Each of these needs its own listing with its own cancellation tier. The
+    // tier is set on the listing here and createBooking stamps it onto the
+    // booking, mirroring checkout — the refund paths read the booking's stamp.
     const listingFlexible = await createListing(hostReady, 'Flexible cottage', {
         commission_rate: 10, cancellation_policy: 'Flexible',
     });

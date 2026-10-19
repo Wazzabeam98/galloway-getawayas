@@ -220,8 +220,15 @@ export async function GET(
     if (pets > 0) extras.push('+' + pets + (pets === 1 ? ' pet' : ' pets'));
 
     // Cancellation: the tier name, and the free-until date only while it is free.
-    const cw = cancellationWords(listing && listing.cancellation_policy);
-    const pos = cancellationPosition({ checkIn: ciKey, policy: (listing && listing.cancellation_policy) || null });
+    // Read from the terms STAMPED on the booking, not the listing's current
+    // policy — the stay was agreed under these.
+    const cw = cancellationWords(booking.cancellation_policy, booking.cancellation_custom_days);
+    const pos = cancellationPosition({
+        checkIn: ciKey,
+        policy: booking.cancellation_policy || null,
+        customDays: booking.cancellation_custom_days,
+        nonRefundable: booking.non_refundable === true,
+    });
     const freeUntil = pos.kind === 'free' && pos.freeUntilKey ? ukDate(pos.freeUntilKey) : null;
 
     // Money, viewer-aware and computed server-side. Host: what the guest paid, our
@@ -355,8 +362,10 @@ export async function GET(
             status: booking.status,
             created_at: booking.created_at,
             // free_cancel_until is no longer sent: the pane computes the
-            // cancellation position live from check_in + the listing's policy.
-            cancellation_policy: listing && listing.cancellation_policy,
+            // cancellation position live from check_in + the stamped policy.
+            cancellation_policy: booking.cancellation_policy,
+            cancellation_custom_days: booking.cancellation_custom_days,
+            non_refundable: booking.non_refundable === true,
             total_price: showMoney ? booking.total_price : null,
             amount_paid: showMoney ? booking.amount_paid : null,
             // Fed to the Manage-reservation flows: the refund figure the host's

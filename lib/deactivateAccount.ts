@@ -96,7 +96,7 @@ export async function cancelOwnUpcomingTrips(
 
     const { data: trips, error } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, host_id, check_in, check_out, status, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
+        .select('id, listing_id, guest_id, host_id, check_in, check_out, status, amount_paid, amount_refunded, cleaning_fee, cancellation_policy, cancellation_custom_days, non_refundable, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
         .eq('guest_id', uid)
         .in('status', ['pending', 'confirmed'])
         .gt('check_in', today);
@@ -108,7 +108,7 @@ export async function cancelOwnUpcomingTrips(
 
         const { data: listing } = await admin
             .from('listings')
-            .select('title, cancellation_policy')
+            .select('title')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
@@ -119,7 +119,7 @@ export async function cancelOwnUpcomingTrips(
         // Same rule as the guest-cancel route: a request the host has not yet
         // confirmed ('pending') is withdrawn with everything back, whatever the
         // dates; a confirmed stay follows the one shared policy in
-        // lib/cancellation.ts.
+        // lib/cancellation.ts, from the terms STAMPED on the booking.
         const amount = booking.status === 'pending'
             ? refundable
             : refundDue({
@@ -127,7 +127,9 @@ export async function cancelOwnUpcomingTrips(
                 alreadyRefunded: alreadyRefunded,
                 cleaningFee: booking.cleaning_fee,
                 checkIn: booking.check_in,
-                policy: listing && listing.cancellation_policy,
+                policy: booking.cancellation_policy,
+                customDays: booking.cancellation_custom_days,
+                nonRefundable: !!booking.non_refundable,
             });
 
         // The money goes back BEFORE the booking changes.

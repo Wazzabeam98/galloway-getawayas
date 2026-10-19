@@ -38,7 +38,7 @@ export default async function UpcomingTrip() {
     // checked out yesterday survived the filter and showed as "-3 days to go".
     const { data: bookings } = await supabase
         .from('bookings')
-        .select('id, listing_id, check_in, check_out, status, payment_status, guests, adults, children, pets, amount_paid, amount_refunded, cleaning_fee')
+        .select('id, listing_id, check_in, check_out, status, payment_status, guests, adults, children, pets, amount_paid, amount_refunded, cleaning_fee, cancellation_policy, cancellation_custom_days, non_refundable')
         .eq('guest_id', auth.session.user.id)
         .in('status', ['confirmed', 'pending'])
         .order('check_in', { ascending: true })
@@ -134,7 +134,10 @@ export default async function UpcomingTrip() {
     // would be a poke rather than a reassurance.
     const cancel = cancellationPosition({
         checkIn: booking.check_in,
-        policy: listing.cancellation_policy,
+        // The terms stamped on the booking, not the listing's current policy.
+        policy: (booking as any).cancellation_policy,
+        customDays: (booking as any).cancellation_custom_days,
+        nonRefundable: (booking as any).non_refundable === true,
         amountPaid: booking.amount_paid,
         alreadyRefunded: booking.amount_refunded,
         cleaningFee: (booking as any).cleaning_fee,
@@ -240,7 +243,9 @@ export default async function UpcomingTrip() {
         <HomeCancelPanel
             bookingId={booking.id}
             checkIn={booking.check_in}
-            policy={listing.cancellation_policy}
+            policy={(booking as any).cancellation_policy}
+            customDays={(booking as any).cancellation_custom_days}
+            nonRefundable={(booking as any).non_refundable === true}
             amountPaid={booking.amount_paid}
             amountRefunded={booking.amount_refunded}
             cleaningFee={(booking as any).cleaning_fee}

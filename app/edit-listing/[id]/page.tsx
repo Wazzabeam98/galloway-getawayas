@@ -132,6 +132,9 @@ const SECTIONS = [
 ];
 
 const CANCELLATION_POLICIES = [
+    // Custom first: it is the site default, so a new host meets it at the top and
+    // the editor shows it is already set (to 30 days) rather than looking unchosen.
+    { key: 'Custom', bullets: [] as string[] },
     { key: 'Flexible', bullets: ['Full refund up to 1 day before check-in', '50% refund inside 1 day of check-in'] },
     { key: 'Moderate', bullets: ['Full refund up to 5 days before check-in', '50% refund inside 5 days of check-in'] },
     { key: 'Limited', bullets: ['Full refund up to 14 days before check-in', '50% refund 7–14 days before', 'No refund inside 7 days'] },
@@ -243,7 +246,8 @@ export default function EditListing() {
     const [checkoutTasks, setCheckoutTasks] = useState<string[]>([]);
     const [checkoutNote, setCheckoutNote] = useState('');
     const [guestSafety, setGuestSafety] = useState<GuestSafety>({});
-    const [cancellationPolicy, setCancellationPolicy] = useState('Moderate');
+    const [cancellationPolicy, setCancellationPolicy] = useState('Custom');
+    const [cancellationCustomDays, setCancellationCustomDays] = useState(30);
     const [nonRefundableOption, setNonRefundableOption] = useState(false);
     // Booking settings gathered in one place (were scattered or, for instant
     // book, only on the Account page). Defaults are unchanged — an empty fee is
@@ -366,7 +370,8 @@ export default function EditListing() {
             setCheckoutTasks(Array.isArray(listing.checkout_tasks) ? listing.checkout_tasks : []);
             setCheckoutNote(listing.checkout_note || '');
             setGuestSafety(listing.guest_safety && typeof listing.guest_safety === 'object' ? listing.guest_safety : {});
-            setCancellationPolicy(listing.cancellation_policy || 'Moderate');
+            setCancellationPolicy(listing.cancellation_policy || 'Custom');
+            setCancellationCustomDays(Number(listing.cancellation_custom_days) || 30);
             setNonRefundableOption(listing.non_refundable_option ?? false);
             setCleaningFee(amountForBox(listing.cleaning_fee));
             setPetFee(amountForBox(listing.pet_fee));
@@ -837,8 +842,9 @@ export default function EditListing() {
                                 <CancellationPolicyCard
                                     policies={CANCELLATION_POLICIES}
                                     policy={cancellationPolicy}
+                                    customDays={cancellationCustomDays}
                                     nonRefundable={nonRefundableOption}
-                                    onSave={(pol, nr) => saveThen({ cancellation_policy: pol, non_refundable_option: nr }, () => { setCancellationPolicy(pol); setNonRefundableOption(nr); })}
+                                    onSave={(pol, nr, days) => saveThen({ cancellation_policy: pol, cancellation_custom_days: days, non_refundable_option: nr }, () => { setCancellationPolicy(pol); setCancellationCustomDays(days); setNonRefundableOption(nr); })}
                                 />
                             </section>
                         </PhoneSection>)}

@@ -12,17 +12,18 @@ export default function CancellationPolicyPage() {
     return (
         <div className="max-w-3xl mx-auto px-6 py-12">
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Cancellation &amp; Refund Policy</h1>
-            <p className="text-sm text-slate-500 mb-10">Last updated 08/10/2026</p>
+            <p className="text-sm text-slate-500 mb-10">Last updated 19/10/2026</p>
 
             <div className="prose prose-slate max-w-none">
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">How it works</h2>
                 <p className="text-slate-700 mb-4">
-                    Every property on Galloway Getaways has one of four cancellation policies, chosen by
-                    the host. You can see which one applies before you book, and the date your free
-                    cancellation period ends is shown on your booking confirmation.
+                    Every property on Galloway Getaways has a cancellation policy, chosen by the host. It
+                    is one of the four standard policies below, or a <strong>Custom</strong> policy where
+                    the host sets their own number of days. You can see which one applies before you book,
+                    and the date your free cancellation period ends is shown on your booking confirmation.
                 </p>
 
-                <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">The four policies</h2>
+                <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">The standard policies</h2>
                 <div className="not-prose border rounded-2xl divide-y mb-6">
                     {TIERS.map((tier) => (
                         <div key={tier.name} className="p-5">
@@ -35,11 +36,22 @@ export default function CancellationPolicyPage() {
                     ))}
                 </div>
 
+                <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">Custom</h2>
+                <p className="text-slate-700 mb-4">
+                    A host can instead set a Custom policy with a single number of days: a full refund if
+                    you cancel more than that many days before check-in, and no refund within that number
+                    of days. There is no part-refund in between. The host&apos;s number of days is shown
+                    on the listing before you book, so you always know where the cut-off falls — for
+                    example, &ldquo;Full refund if you cancel more than 30 days before check-in. No refund
+                    within 30 days.&rdquo;
+                </p>
+
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">What is and isn&apos;t refunded</h2>
                 <ul className="text-slate-700 space-y-2 mb-4 list-disc pl-5">
                     <li>
-                        <strong>Cleaning fees</strong> are always refunded in full, whenever you cancel,
-                        because the clean does not take place.
+                        <strong>Cleaning fees</strong> come back in full whenever you cancel under any of
+                        the policies above, because the clean does not take place. The one exception is a
+                        non-refundable booking (below), where nothing is refunded.
                     </li>
                     <li>
                         <strong>We don&apos;t keep anything out of your refund.</strong> There is no guest
@@ -54,9 +66,15 @@ export default function CancellationPolicyPage() {
 
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">Non-refundable bookings</h2>
                 <p className="text-slate-700 mb-4">
-                    Some hosts offer a discounted rate in exchange for a non-refundable booking. Where you
-                    choose that option, it is made clear before you pay, and no refund is available if you
-                    cancel.
+                    Some hosts offer a cheaper, non-refundable rate alongside the standard one. Where a host
+                    offers it, you choose at checkout: the standard rate, which follows the host&apos;s
+                    cancellation policy above, or the non-refundable rate, which is about 10% less.
+                </p>
+                <p className="text-slate-700 mb-4">
+                    If you choose the non-refundable rate, you pay less now but get <strong>no refund at
+                    all</strong> if you cancel — not the stay, and not the cleaning fee. If your host
+                    cancels, or a major disruptive event stops your stay, you still get everything back.
+                    Your choice is shown before you pay and recorded on your booking.
                 </p>
 
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">If the host cancels</h2>

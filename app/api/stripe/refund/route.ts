@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, total_price, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_payment_intent_id, payout_transfer_id, payout_amount')
+            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, total_price, amount_paid, amount_refunded, cleaning_fee, cancellation_policy, cancellation_custom_days, non_refundable, stripe_payment_intent_id, balance_payment_intent_id, payout_transfer_id, payout_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -116,17 +116,11 @@ export async function POST(request: Request) {
         // the tier exists for, so the policy decides how much comes back.
         const hostCancelling = !(isGuest && !isHost);
 
-        let policy: string | null = null;
-        if (!hostCancelling) {
-            const { data: listing } = await admin
-                .from('listings')
-                .select('cancellation_policy')
-                .eq('id', booking.listing_id)
-                .maybeSingle();
-
-            policy = (listing && listing.cancellation_policy) || null;
-        }
-
+        // The terms are read from the BOOKING, not the listing: they were stamped
+        // at checkout and must not move if the host has changed their policy
+        // since. A host cancelling returns everything regardless, so the stamp
+        // only decides a guest cancel.
+        //
         // One rule, in lib/cancellation.ts, shared with /api/bookings/cancel,
         // the balance job and the two screens that show a guest or a host what
         // a cancellation would return. It was written out separately in each
@@ -137,7 +131,9 @@ export async function POST(request: Request) {
             alreadyRefunded: alreadyRefunded,
             cleaningFee: booking.cleaning_fee,
             checkIn: booking.check_in,
-            policy: policy,
+            policy: booking.cancellation_policy,
+            customDays: booking.cancellation_custom_days,
+            nonRefundable: !!booking.non_refundable,
             hostCancelling: hostCancelling,
         });
 

@@ -889,6 +889,8 @@ export default function MessagesInboxPage() {
                                     bookingId={thread.booking.id}
                                     checkIn={thread.booking.check_in}
                                     policy={thread.booking.cancellation_policy}
+                                    customDays={thread.booking.cancellation_custom_days}
+                                    nonRefundable={thread.booking.non_refundable === true}
                                     amountPaid={thread.booking.amount_paid}
                                     amountRefunded={thread.booking.amount_refunded}
                                     cleaningFee={thread.booking.cleaning_fee}

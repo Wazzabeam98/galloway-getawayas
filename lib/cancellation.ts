@@ -5,25 +5,89 @@
 
 import { londonDayKey, shiftDayKey, ukDate, daysBetweenKeys } from './dayKey';
 
-export type PolicyKey = 'Flexible' | 'Moderate' | 'Limited' | 'Firm';
+export type PolicyKey = 'Flexible' | 'Moderate' | 'Limited' | 'Firm' | 'Custom';
+
+// The four fixed tiers. 'Custom' is not here because its one number is set per
+// listing and stamped per booking, not fixed in this table — ruleFor() builds
+// its rule from that number.
+export type FixedPolicyKey = 'Flexible' | 'Moderate' | 'Limited' | 'Firm';
 
 interface PolicyRule {
     fullRefundDaysBefore: number;   // full refund up to this many days before check-in
     halfRefundDaysBefore: number;   // 50% refund down to this many days before
 }
 
-const RULES: Record<PolicyKey, PolicyRule> = {
+const RULES: Record<FixedPolicyKey, PolicyRule> = {
     Flexible: { fullRefundDaysBefore: 1, halfRefundDaysBefore: 0 },
     Moderate: { fullRefundDaysBefore: 5, halfRefundDaysBefore: 0 },
     Limited: { fullRefundDaysBefore: 14, halfRefundDaysBefore: 7 },
     Firm: { fullRefundDaysBefore: 30, halfRefundDaysBefore: 7 },
 };
 
+// Custom: the host sets ONE whole number of days. Full refund up to that many
+// days before check-in, nothing within it — no half-refund band, which is why
+// both thresholds are the same number (refundFraction returns 1 at or beyond it
+// and 0 inside it, with the 0.5 branch never reached). The bounds are the one
+// place the "1 to 365" rule lives; the editor and the save route both ask
+// cancelDaysProblem() so the client and the server can never disagree.
+export const CUSTOM_MIN_DAYS = 1;
+export const CUSTOM_MAX_DAYS = 365;
+
+// What a brand-new listing gets, and what an existing listing that never had a
+// policy chosen is moved to: Custom with this many days (no refund within 30
+// days of check-in).
+export const DEFAULT_CUSTOM_DAYS = 30;
+
 export function policyOf(value: string | null | undefined): PolicyKey {
-    if (value === 'Flexible' || value === 'Moderate' || value === 'Limited' || value === 'Firm') {
+    if (
+        value === 'Flexible' || value === 'Moderate' || value === 'Limited'
+        || value === 'Firm' || value === 'Custom'
+    ) {
         return value;
     }
     return 'Moderate';
+}
+
+// The shared validator for a Custom policy's day count. Returns a guest/host-
+// readable problem string, or null when the value is a whole number in range.
+// One function, called by the listing editor (client) and /api/listings/save
+// (server), the way lib/stayRules is — a rule mirrored, never rewritten.
+export function cancelDaysProblem(value: unknown): string | null {
+    if (value === null || value === undefined || value === '') {
+        return 'Enter the number of days before check-in that cancellations stop being refundable.';
+    }
+    const n = Number(value);
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+        return 'The number of days must be a whole number.';
+    }
+    if (n < CUSTOM_MIN_DAYS || n > CUSTOM_MAX_DAYS) {
+        return 'The number of days must be between ' + CUSTOM_MIN_DAYS + ' and ' + CUSTOM_MAX_DAYS + '.';
+    }
+    return null;
+}
+
+// A Custom policy's day count, coerced to a whole number in range. Falls back to
+// the default rather than throwing, so a refund can always be worked out even if
+// a stamped value is somehow missing or out of range — the conservative
+// direction (30 days is stricter on the guest than, say, a stray 0 would be, and
+// a refund is never computed against nonsense).
+export function customDaysOf(value: unknown): number {
+    const n = Math.round(Number(value));
+    if (!Number.isFinite(n) || n < CUSTOM_MIN_DAYS || n > CUSTOM_MAX_DAYS) {
+        return DEFAULT_CUSTOM_DAYS;
+    }
+    return n;
+}
+
+// The refund rule for a policy. For the four fixed tiers it is the row in RULES;
+// for Custom it is built from the stamped day count — full up to that many days
+// before check-in, nothing inside it.
+function ruleFor(policy: PolicyKey, customDays?: number | null): PolicyRule {
+    if (policy === 'Custom') {
+        const d = customDaysOf(customDays);
+        return { fullRefundDaysBefore: d, halfRefundDaysBefore: d };
+    }
+    return RULES[policy];
 }
 
 // The last day (inclusive) a guest can cancel and get everything back, as a
@@ -41,14 +105,22 @@ function checkInKey(checkIn: string | Date): string {
         : `${checkIn.getFullYear()}-${String(checkIn.getMonth() + 1).padStart(2, '0')}-${String(checkIn.getDate()).padStart(2, '0')}`;
 }
 
-export function freeCancelUntilKey(checkIn: string | Date, policy: string | null | undefined): string {
-    return shiftDayKey(checkInKey(checkIn), -RULES[policyOf(policy)].fullRefundDaysBefore);
+export function freeCancelUntilKey(
+    checkIn: string | Date,
+    policy: string | null | undefined,
+    customDays?: number | null
+): string {
+    return shiftDayKey(checkInKey(checkIn), -ruleFor(policyOf(policy), customDays).fullRefundDaysBefore);
 }
 
 // The same day as a Date anchored at UTC midnight, so it stands for one calendar
 // day and nothing else. For callers that still compare or format a Date.
-export function freeCancelUntil(checkIn: string | Date, policy: string | null | undefined): Date {
-    return new Date(freeCancelUntilKey(checkIn, policy) + 'T00:00:00.000Z');
+export function freeCancelUntil(
+    checkIn: string | Date,
+    policy: string | null | undefined,
+    customDays?: number | null
+): Date {
+    return new Date(freeCancelUntilKey(checkIn, policy, customDays) + 'T00:00:00.000Z');
 }
 
 // What proportion of what they've paid comes back, cancelling today.
@@ -63,9 +135,10 @@ export function freeCancelUntil(checkIn: string | Date, policy: string | null | 
 export function refundFraction(
     checkIn: string | Date,
     policy: string | null | undefined,
-    on?: Date
+    on?: Date,
+    customDays?: number | null
 ): number {
-    const rule = RULES[policyOf(policy)];
+    const rule = ruleFor(policyOf(policy), customDays);
     const daysBefore = daysBetweenKeys(londonDayKey(on || new Date()), checkInKey(checkIn));
 
     if (daysBefore >= rule.fullRefundDaysBefore) return 1;
@@ -98,12 +171,28 @@ export interface CancellationSummary {
 export function cancellationSummary(
     checkIn: string | Date | null | undefined,
     policy: string | null | undefined,
-    on?: Date
+    on?: Date,
+    customDays?: number | null,
+    nonRefundable?: boolean
 ): CancellationSummary | null {
     if (!checkIn) return null;
 
+    // A non-refundable booking has no free window and no tier: the guest took
+    // 10% off in exchange for keeping nothing back. Said plainly, with no
+    // cleaning-fee caveat — on a non-refundable booking the cleaning fee does
+    // not come back either (see refundDue).
+    if (nonRefundable) {
+        return {
+            kind: 'none',
+            headline: 'Non-refundable',
+            detail:
+                'You chose the non-refundable price, so if you cancel you won’t get '
+                + 'a refund. A host cancellation still returns everything.',
+        };
+    }
+
     const key = policyOf(policy);
-    const untilKey = freeCancelUntilKey(checkIn, policy);
+    const untilKey = freeCancelUntilKey(checkIn, policy, customDays);
     const todayKey = londonDayKey(on || new Date());
 
     // Inclusive: the last free day is itself still free — a full refund still
@@ -118,7 +207,7 @@ export function cancellationSummary(
         };
     }
 
-    const fraction = refundFraction(checkIn, policy, on);
+    const fraction = refundFraction(checkIn, policy, on, customDays);
 
     // Both of these used to describe the fraction alone, which is no longer
     // the whole rule: the cleaning fee comes back whatever the tier says. A
@@ -202,6 +291,18 @@ export interface RefundInput {
     checkIn: string | Date;
     policy: string | null | undefined;
     /**
+     * A Custom policy's stamped day count. Ignored for the four fixed tiers.
+     */
+    customDays?: number | null;
+    /**
+     * The guest chose the non-refundable price (10% off) at checkout, stamped
+     * on the booking. A guest cancelling then gets nothing back — not even the
+     * cleaning fee — which is the bargain they accepted. A host cancellation
+     * (hostCancelling) still returns everything, so this is read only for a
+     * guest cancel.
+     */
+    nonRefundable?: boolean;
+    /**
      * A host calling a stay off, or declining one, returns everything whatever
      * the tier says — the tier exists for a guest changing their mind.
      */
@@ -222,6 +323,13 @@ export function refundDue(input: RefundInput): number {
     // still held goes back.
     if (input.hostCancelling) return refundable;
 
+    // The guest took the non-refundable price. They keep the 10% they saved;
+    // they get nothing back on a cancellation, the cleaning fee included. This
+    // sits above the tier and the cleaning-fee rule on purpose — it is the whole
+    // point of the cheaper rate, and it is the one case where the cleaning fee
+    // does NOT come back (every refundable tier still returns it in full below).
+    if (input.nonRefundable) return 0;
+
     // The cleaning fee comes back once, not once per refund. An earlier
     // partial refund is treated as having returned it first, which is the
     // conservative direction — it can never be handed over twice, and a
@@ -241,7 +349,7 @@ export function refundDue(input: RefundInput): number {
     // arithmetic instead of by a second clamp nothing can tell is working.
     const cleaning = Math.min(cleaningStillOwed, refundable);
 
-    const fraction = refundFraction(input.checkIn, input.policy, input.on);
+    const fraction = refundFraction(input.checkIn, input.policy, input.on, input.customDays);
     const rest = round2(refundable - cleaning);
 
     return round2(cleaning + rest * fraction);
