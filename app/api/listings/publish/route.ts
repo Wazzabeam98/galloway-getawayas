@@ -7,6 +7,7 @@ import { coordinatePatchFor } from '@/lib/postcodeGeocode';
 import { addressBlockerForPublish, NEW_LISTING_MIN_PHOTOS } from '@/lib/listingRules';
 import { HOST_TERMS_VERSION, hasAgreedToCurrentTerms, termsProblem } from '@/lib/hostTerms';
 import { recordAcceptance } from '@/lib/agreementRecords';
+import { needsPersonName } from '@/lib/personName';
 
 export const dynamic = 'force-dynamic';
 
@@ -103,6 +104,21 @@ export async function POST(request: Request) {
         if (!everPublished && photoCount < NEW_LISTING_MIN_PHOTOS) {
             return NextResponse.json(
                 { ok: false, error: `Add at least ${NEW_LISTING_MIN_PHOTOS} photos before your listing can go live — you have ${photoCount}.` },
+                { status: 400 }
+            );
+        }
+
+        // THE HOST'S NAME. Guests see "Hosted by" and a first name; an account
+        // with no first and last name cannot publish (the wizard asks first,
+        // this is the server holding the line — lib/personName).
+        const { data: owner } = await admin
+            .from('profiles')
+            .select('first_name, last_name')
+            .eq('id', user.id)
+            .maybeSingle();
+        if (needsPersonName(owner)) {
+            return NextResponse.json(
+                { ok: false, needsName: true, error: 'Add your first and last name before your listing goes live.' },
                 { status: 400 }
             );
         }

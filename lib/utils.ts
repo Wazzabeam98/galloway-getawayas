@@ -39,6 +39,8 @@ export function capitializeFirst(data: string): string {
 // legal name they asked us to hide.
 export interface NameProfile {
   full_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   preferred_name?: string | null;
   show_full_name?: boolean | null;
 }
@@ -55,7 +57,13 @@ export function displayName(
   // Older rows may not have the column set; treat missing as "on",
   // which is how the site behaved before this setting existed.
   const legalAllowed = profile.show_full_name !== false;
-  const legal = (profile.full_name || "").trim();
+  // The first and last name from Finish signing up (lib/personName) when the
+  // account has them; the older single full_name otherwise, shown whole — for
+  // an account that typed a business name there, the business name in full.
+  const first = (profile.first_name || "").trim();
+  const legal = first
+    ? (first + " " + (profile.last_name || "").trim()).trim()
+    : (profile.full_name || "").trim();
 
   if (legalAllowed && legal) return legal;
   return fallback;
@@ -99,12 +107,64 @@ export function backfillName(existingFullName: string | null | undefined, typed:
 // It sits on top of displayName, so every promise that makes still holds: a
 // preferred name wins, and the switch turned OFF with no preferred name yields
 // the bare fallback ("Guest"/"Host"), never a shortened legal name.
+//
+// The first name is the account's own first_name — never the first word of a
+// longer string. Splitting full_name is how "The Dark Sky Dome" was shown as
+// "Hosted by The" (19 Oct 2026). When the row carries first_name (the caller
+// selected it) and it is empty, there IS no first name: the fallback comes
+// back whole, and a caller with a business name shows that in full instead.
+// Only a row that never selected the column at all falls through to the old
+// split, so a missed select degrades to yesterday's behaviour rather than to
+// a blank; every profile select in the app now asks for first_name.
 export function firstName(
   profile: NameProfile | null | undefined,
   fallback: string = "User"
 ): string {
+  if (profile && Object.prototype.hasOwnProperty.call(profile, "first_name")) {
+    const preferred = (profile.preferred_name || "").trim();
+    if (preferred) return preferred;
+    if (profile.show_full_name === false) return fallback;
+    return (profile.first_name || "").trim() || fallback;
+  }
   const shown = displayName(profile, fallback);
   return shown.trim().split(" ")[0] || fallback;
+}
+
+// The name a guest sees in "Hosted by …" for someone with no first name on
+// their account yet: their trading name, else the business name the caller
+// has (an experience's), else whatever single name the account holds, shown
+// WHOLE — "Hosted by The Dark Sky Dome", never "Hosted by The". A host with
+// a first name gets that, as before.
+export function hostByline(
+  profile: (NameProfile & { trading_name?: string | null }) | null | undefined,
+  businessName: string | null | undefined,
+  fallback: string
+): string {
+  const first = firstName(profile, "");
+  if (first) return first;
+  return (profile?.trading_name || "").trim()
+    || (businessName || "").trim()
+    || displayName(profile, "")
+    || fallback;
+}
+
+// The name to greet someone by in a message to THEM ("Hi Morag"): their
+// preferred name, else their own first name, else the fallback ("there"). The
+// privacy switch doesn't apply — it is their own name, sent to them. Never the
+// first word of full_name: an account named "The Dark Sky Dome" is greeted
+// "Hi there", not "Hi The". A row that didn't select first_name falls back to
+// the old split, the same as firstName above.
+export function greetingName(
+  profile: NameProfile | null | undefined,
+  fallback: string = "there"
+): string {
+  if (!profile) return fallback;
+  const preferred = (profile.preferred_name || "").trim();
+  if (preferred) return preferred;
+  if (Object.prototype.hasOwnProperty.call(profile, "first_name")) {
+    return (profile.first_name || "").trim() || fallback;
+  }
+  return (profile.full_name || "").trim().split(/\s+/)[0] || fallback;
 }
 
 // The same person, named on an ADMIN screen.

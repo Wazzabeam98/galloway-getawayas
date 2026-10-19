@@ -60,7 +60,7 @@ export default async function AdminExperienceOrders({ searchParams }: { searchPa
 
     const guestIds = Array.from(new Set(orders.map((o: any) => o.guest_id).filter(Boolean)));
     const { data: people } = guestIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', guestIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name').in('id', guestIds)
         : { data: [] };
     const nameById: Record<string, string> = {};
     (people || []).forEach((p: any) => { nameById[p.id] = adminName(p, ''); });
@@ -77,7 +77,7 @@ export default async function AdminExperienceOrders({ searchParams }: { searchPa
     (refunds || []).forEach((r: any) => { (refundsByOrder[r.order_id] = refundsByOrder[r.order_id] || []).push(r); });
     const adminIds = Array.from(new Set((refunds || []).map((r: any) => r.admin_id)));
     const { data: admins } = adminIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', adminIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name').in('id', adminIds)
         : { data: [] };
     const adminById: Record<string, string> = {};
     (admins || []).forEach((p: any) => { adminById[p.id] = adminName(p, 'An admin'); });

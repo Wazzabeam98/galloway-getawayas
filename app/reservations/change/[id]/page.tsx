@@ -44,7 +44,7 @@ export default async function ChangeRequestPage({ params }: { params: { id: stri
 
     const { data: listing } = booking ? await admin.from('listings').select('title').eq('id', booking.listing_id).maybeSingle() : { data: null };
     const otherId = viewer === 'guest' ? chg.host_id : chg.guest_id;
-    const { data: other } = await admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', otherId).maybeSingle();
+    const { data: other } = await admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', otherId).maybeSingle();
     const otherReal = displayName(other, '');
     const otherFirst = otherReal ? capitializeFirst(otherReal.split(' ')[0]) : (viewer === 'guest' ? 'Your host' : 'Your guest');
     const stayName = (listing && listing.title) || 'the stay';

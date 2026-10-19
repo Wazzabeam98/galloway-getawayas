@@ -1,4 +1,5 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { greetingName } from '@/lib/utils';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
@@ -209,7 +210,7 @@ async function tellTheHost(
     try {
         const { data: host } = await admin
             .from('profiles')
-            .select('email, full_name, preferred_name, stripe_payouts_enabled')
+            .select('email, full_name, first_name, last_name, preferred_name, stripe_payouts_enabled')
             .eq('id', listing.host_id)
             .maybeSingle();
 
@@ -217,7 +218,7 @@ async function tellTheHost(
         if (!to) return false;
 
         const name = escapeHtml(
-            String((host.preferred_name || host.full_name || '')).split(' ')[0] || 'there'
+            greetingName(host, 'there')
         );
         const title = escapeHtml(listing.title || 'your property');
 

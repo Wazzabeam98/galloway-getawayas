@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import ModeSwitch from '@/components/base/ModeSwitch';
-import { displayName as resolveName, getImageUrl } from '@/lib/utils';
+import { displayName as resolveName, getImageUrl, greetingName } from '@/lib/utils';
 import RememberAccount from '@/components/auth/RememberAccount';
 import { NO_WORK_SIDE, resolveWorkMode, WorkSide } from '@/lib/workMode';
 import { readWorkSide } from '@/lib/workSide';
@@ -28,17 +28,13 @@ const Navbar = async () => {
     if (data?.session?.user) {
         const { data: profile } = await supabase
             .from('profiles')
-            .select('full_name, preferred_name, avatar_url, is_admin')
+            .select('full_name, first_name, last_name, preferred_name, avatar_url, is_admin')
             .eq('id', data.session.user.id)
             .single();
 
         // Your own name — always your real one. The privacy setting governs
         // what OTHER people see about you, not what you see about yourself.
-        const rawName =
-            profile?.preferred_name ||
-            profile?.full_name ||
-            data.session.user.email?.split('@')[0];
-        firstName = rawName ? rawName.split(' ')[0] : null;
+        firstName = greetingName(profile, '') || data.session.user.email?.split('@')[0] || null;
         avatarUrl = profile?.avatar_url || null;
         isAdmin = profile?.is_admin === true;
 

@@ -75,7 +75,7 @@ export default async function AdminListings() {
     const hostIds = Array.from(new Set(rows.map((l) => l.host_id)));
 
     const { data: hosts } = hostIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', hostIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name').in('id', hostIds)
         : { data: [] };
 
     const hostName: Record<string, string> = {};

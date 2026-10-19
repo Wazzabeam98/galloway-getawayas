@@ -7,6 +7,8 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { tradeLabel } from '@/lib/serviceProviders';
 import { firstName } from '@/lib/utils';
+import { needsPersonName } from '@/lib/personName';
+import AddNameButton from '@/components/auth/AddNameButton';
 import { ukDateTime } from '@/lib/dayKey';
 import ProviderUpcoming from '@/components/services/ProviderUpcoming';
 import { loadProviderReservations } from '@/lib/providerReservations';
@@ -86,7 +88,7 @@ export default async function ProviderReservationsPage() {
     const enquiries = enquiryRows || [];
     const enquiryGuestIds = Array.from(new Set(enquiries.map((e: any) => e.guest_id).filter(Boolean)));
     const { data: enquiryGuests } = enquiryGuestIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', enquiryGuestIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name').in('id', enquiryGuestIds)
         : { data: [] as any[] };
     const enquiryGuestName: Record<string, string> = {};
     for (const g of enquiryGuests || []) enquiryGuestName[g.id] = firstName(g, 'A guest');
@@ -123,6 +125,11 @@ export default async function ProviderReservationsPage() {
         needsTimes = (hoursCount || 0) === 0 && (declaredCount || 0) === 0;
     }
 
+    // Live (approved) with no first and last name on the account: guests see
+    // the business name where the host's first name belongs. Ask for it.
+    const { data: ownName } = await admin.from('profiles').select('first_name, last_name').eq('id', user.id).maybeSingle();
+    const ownerNeedsName = needsPersonName(ownName);
+
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-24">
             <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
@@ -154,6 +161,20 @@ export default async function ProviderReservationsPage() {
             {/* The provider's own agreement, when it has been updated since they
                 agreed. Asks; never blocks. */}
             <AgreementUpdateNotice doc={isTrade ? 'tradesperson' : 'experience_provider'} source="dashboard_notice" className="mb-6" />
+
+            {ownerNeedsName && (
+                <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                        <h2 className="text-base font-bold text-amber-900">Add your name</h2>
+                        <p className="mt-1 text-sm text-amber-900">
+                            {provider.business_name || 'Your listing'} is live, but guests can’t see who’s hosting. Add your first and last name so they know who they’re booking with.
+                        </p>
+                    </div>
+                    <AddNameButton className="flex-none self-start sm:self-auto rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950">
+                        Add your name
+                    </AddNameButton>
+                </div>
+            )}
 
             {awaitingPayouts && <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />}
 

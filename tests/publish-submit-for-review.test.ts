@@ -22,14 +22,17 @@ const ROUTE = '@/app/api/listings/publish/route';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { HOST_TERMS_VERSION } = require('../lib/hostTerms');
 
-function loadPublish({ status, payoutsEnabled = false, termsVersion = null }: { status: string; payoutsEnabled?: boolean; termsVersion?: string | null }) {
+function loadPublish({ status, payoutsEnabled = false, termsVersion = null, named = true }: { status: string; payoutsEnabled?: boolean; termsVersion?: string | null; named?: boolean }) {
     const updates: any[] = [];
     const listing = {
         id: 'l-1', host_id: HOST, title: 'Heron Cottage', price_per_night: 120, status,
         images: ['a', 'b', 'c', 'd', 'e'],
         street_address: '1 Harbour Row', postcode: 'DG6 4JG', latitude: 54.8, longitude: -4.05,
     };
-    const profile = { stripe_payouts_enabled: payoutsEnabled, host_terms_version: termsVersion };
+    const profile = {
+        stripe_payouts_enabled: payoutsEnabled, host_terms_version: termsVersion,
+        first_name: named ? 'Morag' : null, last_name: named ? 'MacLellan' : null,
+    };
 
     const admin: any = {
         from(table: string) {
@@ -141,4 +144,15 @@ test('an already-published listing is left alone', async () => {
     const { route } = loadPublish({ status: 'published' });
     const res = await route.POST(post());
     assert.equal(res.body.ok, true);
+});
+
+// The host's first and last name are required to publish (lib/personName,
+// 19 Oct 2026): guests see "Hosted by" and a first name. The wizard asks
+// first; this is the server holding the line.
+test('a host with no first and last name cannot publish, and nothing changes', async () => {
+    const { route, updates } = loadPublish({ status: 'draft', termsVersion: HOST_TERMS_VERSION, named: false });
+    const res = await route.POST(post());
+    assert.equal(res.status, 400);
+    assert.equal(res.body.needsName, true);
+    assert.equal(updates.length, 0);
 });

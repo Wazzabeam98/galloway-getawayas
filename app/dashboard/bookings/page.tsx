@@ -53,7 +53,7 @@ export default async function BookingsPage() {
         : { data: [] };
 
     const { data: guests } = guestIds.length
-        ? await admin.from("profiles").select("id, full_name, preferred_name, show_full_name").in("id", guestIds)
+        ? await admin.from("profiles").select("id, full_name, first_name, last_name, preferred_name, show_full_name").in("id", guestIds)
         : { data: [] };
 
     // Build plain objects (not Maps) since only serializable data can cross

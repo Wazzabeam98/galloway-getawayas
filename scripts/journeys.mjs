@@ -120,6 +120,10 @@ async function ensureUser(email, { isAdmin = false } = {}) {
             id: user.id,
             email,
             full_name: isAdmin ? 'Auto Admin' : 'Auto Guest',
+            // A provider can't submit without a first and last name
+            // (20261019153817), and this user submits one.
+            first_name: 'Auto',
+            last_name: isAdmin ? 'Admin' : 'Guest',
             is_admin: isAdmin,
             is_host: false,
         }),

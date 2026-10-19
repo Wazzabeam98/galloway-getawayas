@@ -275,7 +275,7 @@ test('the name stored on an experience order is the masked one', () => {
         'service_orders.guest_name is no longer written through displayName'
     );
     assert.ok(
-        src.indexOf("'id, full_name, preferred_name, show_full_name, phone, email'") !== -1,
+        src.indexOf("'id, full_name, first_name, last_name, preferred_name, show_full_name, phone, email'") !== -1,
         'the guest lookup behind guest_name no longer selects show_full_name'
     );
 });

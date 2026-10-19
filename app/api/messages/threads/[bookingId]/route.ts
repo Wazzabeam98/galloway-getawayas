@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { contactNumberVisible } from '@/lib/stayWindow';
-import { firstName, getImageUrl, formatTime } from '@/lib/utils';
+import { firstName, getImageUrl, formatTime, hostByline } from '@/lib/utils';
 import { groupLabel, cancellationWords } from '@/lib/bookingDisplay';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukDate, ukWeekday, daysBetweenKeys } from '@/lib/dayKey';
@@ -96,7 +96,7 @@ export async function GET(
 
     const { data: otherProfile } = await admin
         .from('profile_private')
-        .select('id, full_name, preferred_name, show_full_name, phone, avatar_url')
+        .select('id, full_name, first_name, last_name, preferred_name, show_full_name, phone, avatar_url')
         .eq('id', otherId)
         .maybeSingle();
 
@@ -142,16 +142,16 @@ export async function GET(
     // a counterparty is never shown a surname). The guest is who the party is
     // about; the owner is who hosts it.
     const [{ data: guestPublic }, { data: ownerPublic }] = await Promise.all([
-        admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', booking.guest_id).maybeSingle(),
+        admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name, avatar_url').eq('id', booking.guest_id).maybeSingle(),
         listing && listing.host_id
-            ? admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', listing.host_id).maybeSingle()
+            ? admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name, avatar_url').eq('id', listing.host_id).maybeSingle()
             : Promise.resolve({ data: null }),
     ]);
     const guestFirst = firstName(guestPublic, 'Guest');
     const guestAvatar = guestPublic && guestPublic.avatar_url ? getImageUrl(String(guestPublic.avatar_url)) : null;
     // A real first name where the host has one; a plain fallback otherwise (never
     // "your", which is what splitting "your host" on the space would leave).
-    const ownerFirst = firstName(ownerPublic, '') || 'your host';
+    const ownerFirst = hostByline(ownerPublic, null, 'your host');
     const ownerAvatar = ownerPublic && ownerPublic.avatar_url ? getImageUrl(String(ownerPublic.avatar_url)) : null;
     const listingPhoto = listing && Array.isArray(listing.images) && listing.images[0]
         ? getImageUrl(String(listing.images[0])) : null;

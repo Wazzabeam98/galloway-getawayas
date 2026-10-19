@@ -19,7 +19,7 @@ export async function providerFirstName(admin: any, providerId: string, fallback
         const ownerId = prov && prov.owner_id;
         if (!ownerId) return fallback;
         const { data: pr } = await admin
-            .from('profiles').select('full_name, preferred_name, show_full_name').eq('id', ownerId).maybeSingle();
+            .from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', ownerId).maybeSingle();
         return firstName(pr || null, '') || fallback;
     } catch {
         return fallback;
@@ -43,7 +43,7 @@ export async function providerFirstNames(admin: any, providerIds: string[]): Pro
         }
         if (!ownerIds.length) return {};
         const { data: profiles } = await admin
-            .from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', Array.from(new Set(ownerIds)));
+            .from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name').in('id', Array.from(new Set(ownerIds)));
         const profileById: Record<string, any> = {};
         for (const pr of profiles || []) profileById[pr.id] = pr;
         const out: Record<string, string> = {};

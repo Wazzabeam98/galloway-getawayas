@@ -19,7 +19,7 @@ async function withProfiles(admin: any, seats: any[]): Promise<LoadedSeats> {
     if (ids.length) {
         const { data: profRows } = await admin
             .from('profiles')
-            .select('id, avatar_url, full_name, preferred_name, show_full_name')
+            .select('id, avatar_url, full_name, first_name, last_name, preferred_name, show_full_name')
             .in('id', ids);
         (profRows || []).forEach((p: any) => { profiles[p.id] = p; });
     }

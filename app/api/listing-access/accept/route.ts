@@ -89,7 +89,7 @@ export async function POST(request: Request) {
             // unprofessionally. Fall back to the email only if they have no name.
             const { data: accepterProfile } = await admin
                 .from('profiles')
-                .select('full_name, preferred_name, show_full_name')
+                .select('full_name, first_name, last_name, preferred_name, show_full_name')
                 .eq('id', user.id)
                 .maybeSingle();
             const accepterName = displayName(accepterProfile, invite.email || 'Someone');

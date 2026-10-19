@@ -34,7 +34,7 @@ export default async function AdminReviews({ searchParams }: { searchParams?: { 
     const providerIds = Array.from(new Set(rows.map((r) => r.provider_id).filter(Boolean)));
 
     const [{ data: profs }, { data: listings }, { data: providers }] = await Promise.all([
-        reviewerIds.length ? admin.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds) : Promise.resolve({ data: [] }),
+        reviewerIds.length ? admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name').in('id', reviewerIds) : Promise.resolve({ data: [] }),
         listingIds.length ? admin.from('listings').select('id, title').in('id', listingIds) : Promise.resolve({ data: [] }),
         providerIds.length ? admin.from('service_providers').select('id, business_name').in('id', providerIds) : Promise.resolve({ data: [] }),
     ]);

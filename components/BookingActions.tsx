@@ -162,7 +162,7 @@ export default function BookingActions({
 
             const { data: guest } = await supabase
                 .from('profiles')
-                .select('full_name, preferred_name, show_full_name')
+                .select('full_name, first_name, last_name, preferred_name, show_full_name')
                 .eq('id', booking.guest_id)
                 .single();
 

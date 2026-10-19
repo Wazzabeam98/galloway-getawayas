@@ -51,7 +51,7 @@ export default async function AdminListingReports() {
 
     const reporterIds = Array.from(new Set(reports.map((r: any) => r.reporter_id).filter(Boolean)));
     const { data: reporters } = reporterIds.length
-        ? await admin.from('profile_private').select('id, full_name, preferred_name, show_full_name').in('id', reporterIds)
+        ? await admin.from('profile_private').select('id, full_name, first_name, last_name, preferred_name, show_full_name').in('id', reporterIds)
         : { data: [] };
     const reporterById: Record<string, any> = {};
     (reporters || []).forEach((p: any) => { reporterById[p.id] = p; });

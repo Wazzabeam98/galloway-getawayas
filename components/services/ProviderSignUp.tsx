@@ -26,6 +26,7 @@ import {
     wouldCreateNew,
 } from '@/lib/serviceSkills';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
+import { requireName } from '@/components/auth/FinishSignUpGate';
 import RecruitFaq from '@/components/business/RecruitFaq';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 import {
@@ -1178,6 +1179,16 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         });
         return () => sub.subscription.unsubscribe();
     }, [supabase]);
+
+    // An account with no first and last name is asked for them before anything
+    // else in this wizard (components/auth/FinishSignUpGate) — never as a step
+    // of the wizard itself. That includes the moment the code step signs a new
+    // account in: the session lands here before EmailFirstStep's own name
+    // screen can show, which is how provider accounts ended up nameless.
+    const signedInId = (session && session.user && session.user.id) || null;
+    useEffect(() => {
+        if (signedInId) requireName();
+    }, [signedInId]);
 
     // Kept in the browser rather than on a server: there is no owner yet, so
     // there is no row to put it in, and a table of anonymous half-applications
@@ -2844,7 +2855,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) return '';
         const { data: prof } = await supabase.from('profiles')
-            .select('full_name, preferred_name, show_full_name').eq('id', session.user.id).maybeSingle();
+            .select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', session.user.id).maybeSingle();
         return firstName(prof ? (prof as any) : null, '');
     };
 
@@ -3023,6 +3034,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 // to stop. Say plainly what's missing (the function's own words)
                 // AND open the step that owns it so the fix is in front of them.
                 const m = String(error.message || '');
+                // No first and last name on the account (the database refuses
+                // the submit — 20261019153817): ask for it there and then.
+                if (/first and last name/i.test(m)) {
+                    const named = await requireName();
+                    toast.info(named ? 'Thanks — now send it for review again.' : m, { theme: 'colored' });
+                    return;
+                }
                 const field =
                     /coverage area/i.test(m) ? 'areas'
                         : /way to price|price the job/i.test(m) ? 'hourly_rate'

@@ -36,7 +36,7 @@ export default async function ResolutionPage({ params }: { params: { id: string 
 
     const { data: booking } = await admin.from('bookings').select('listing_id').eq('id', res.booking_id).maybeSingle();
     const { data: listing } = booking ? await admin.from('listings').select('title').eq('id', booking.listing_id).maybeSingle() : { data: null };
-    const { data: host } = await admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', res.host_id).maybeSingle();
+    const { data: host } = await admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', res.host_id).maybeSingle();
     const { data: attachments } = await admin.from('booking_resolution_attachments').select('id, content_type').eq('resolution_id', res.id);
 
     // A real first name when the host has one; otherwise a natural fallback that

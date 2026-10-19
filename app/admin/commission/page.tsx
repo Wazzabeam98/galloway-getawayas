@@ -50,7 +50,7 @@ export default async function CommissionAdmin() {
     if (hostIds.length) {
         const { data: hosts } = await admin
             .from('profiles')
-            .select('id, full_name, preferred_name, show_full_name')
+            .select('id, full_name, first_name, last_name, preferred_name, show_full_name')
             .in('id', hostIds);
 
         (hosts || []).forEach((h: any) => {

@@ -11,6 +11,7 @@ import { ToastContainer } from 'react-toastify';
 import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
 import AuthPanelHost from '@/components/auth/AuthPanel';
+import FinishSignUpGate from '@/components/auth/FinishSignUpGate';
 import KeepSignedIn from '@/components/auth/KeepSignedIn';
 import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
@@ -188,6 +189,9 @@ export default function RootLayout({
         {/* The one Log in or sign up panel. Every "Log in" button on the site
             opens this (components/auth/LoginModel → openAuthPanel). */}
         <AuthPanelHost />
+        {/* Finish signing up: first and last name, unskippable, for a new
+            account that got past the panel without one (Google, a closed tab). */}
+        <FinishSignUpGate />
         {/* Keeps a sign-in alive for a year (or until the browser closes, if
             that was the choice) — lib/staySignedIn. */}
         <KeepSignedIn />
