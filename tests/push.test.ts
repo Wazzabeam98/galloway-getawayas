@@ -124,3 +124,51 @@ test('the notification route pushes only after the email it goes with', () => {
     const message = src.slice(src.indexOf("type === 'new_message'"));
     assert.ok(message.indexOf("sendEmail(to, 'New message from") < message.lastIndexOf('await pushIt()'), 'message: email first');
 });
+
+/* ------------------------------------------------ admin test notifications */
+
+test('the three test pushes use the real wording, say TEST, and open the admin page', () => {
+    const { testPush, TEST_PUSH_KINDS } = require('../lib/pushTest');
+    assert.deepEqual([...TEST_PUSH_KINDS], ['new_booking', 'new_message', 'booking_confirmed']);
+    const booking = testPush('new_booking');
+    assert.equal(booking.title, 'TEST New booking');
+    assert.match(booking.body, /^Morag booked Rowan Cottage \(test\), 11\/12\/2026 – 14\/12\/2026$/);
+    assert.equal(testPush('new_message').title, 'TEST Callum');
+    assert.equal(testPush('booking_confirmed').title, 'TEST You’re booked');
+    for (const k of TEST_PUSH_KINDS) {
+        const m = testPush(k);
+        assert.equal(m.url, '/admin/notifications');
+        assert.equal(m.tag, 'test-' + k, 'separate tags, so the three stack rather than replace each other');
+    }
+});
+
+test('the report says what each device did', async () => {
+    const { pushToUserReport } = require('../lib/push');
+    const { admin, deleted } = fakeAdmin([
+        { endpoint: 'https://web.push.apple.com/ok', p256dh: 'a', auth: 'b' },
+        { endpoint: 'https://web.push.apple.com/gone', p256dh: 'a', auth: 'b' },
+        { endpoint: 'https://web.push.apple.com/bad', p256dh: 'a', auth: 'b' },
+    ]);
+    const r = await pushToUserReport(admin, 'u1', { title: 't', body: 'b', url: '/' }, async (sub: any) => {
+        if (sub.endpoint.endsWith('gone')) { const e: any = new Error('Gone'); e.statusCode = 410; throw e; }
+        if (sub.endpoint.endsWith('bad')) { const e: any = new Error('x'); e.statusCode = 403; e.body = 'BadJwtToken'; throw e; }
+    });
+    assert.deepEqual([r.devices, r.accepted, r.gone, r.failed], [3, 1, 1, 1]);
+    assert.match(r.errors[0], /403 BadJwtToken/);
+    assert.deepEqual(deleted, ['https://web.push.apple.com/gone']);
+});
+
+test('the test route is admins only, pushes only to the caller, and touches no booking, message or payment data', () => {
+    const strip = (s: string) => s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const route = strip(fs.readFileSync(path.join(ROOT, 'app/api/admin/push-test/route.ts'), 'utf8'));
+    assert.match(route, /getUser\(\)/);
+    assert.match(route, /isAdmin\(user\.id\)/);
+    assert.match(route, /pushToUserReport\(adminClient\(\), user\.id,/, 'the recipient is the verified caller');
+    assert.doesNotMatch(route, /body\.(userId|user_id)/, 'never a recipient from the request');
+    const page = strip(fs.readFileSync(path.join(ROOT, 'app/admin/notifications/page.tsx'), 'utf8'));
+    assert.match(page, /requireAdmin\(\)/);
+    for (const f of ['app/api/admin/push-test/route.ts', 'lib/pushTest.ts', 'app/admin/notifications/PushTestButton.tsx']) {
+        const src = strip(fs.readFileSync(path.join(ROOT, f), 'utf8'));
+        assert.doesNotMatch(src, /from\(\s*'(bookings|messages|payments|payouts|service_orders)'/, f);
+    }
+});
