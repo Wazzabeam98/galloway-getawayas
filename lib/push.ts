@@ -100,6 +100,21 @@ function webPushSender(): Sender {
     );
 }
 
+export type PushReport = {
+    /** False when the VAPID keys are not set, so nothing was tried. */
+    configured: boolean;
+    /** Devices this person has turned notifications on for. */
+    devices: number;
+    /** The push service took it. */
+    accepted: number;
+    /** The push service said the device is gone (404/410); its row was removed. */
+    gone: number;
+    /** Refused or unreachable for any other reason. */
+    failed: number;
+    /** What the push service said when it refused, one line each. */
+    errors: string[];
+};
+
 /**
  * Push to every device this person has turned notifications on for.
  * Returns how many accepted it. Never throws.
@@ -110,9 +125,20 @@ export async function pushToUser(
     msg: PushMessage,
     send?: Sender,
 ): Promise<number> {
+    return (await pushToUserReport(admin, userId, msg, send)).accepted;
+}
+
+/** The same, saying what happened on each device. Never throws. */
+export async function pushToUserReport(
+    admin: any,
+    userId: string | null | undefined,
+    msg: PushMessage,
+    send?: Sender,
+): Promise<PushReport> {
+    const report: PushReport = { configured: true, devices: 0, accepted: 0, gone: 0, failed: 0, errors: [] };
     try {
-        if (!userId) return 0;
-        if (!send && !pushConfigured()) return 0;
+        if (!userId) return report;
+        if (!send && !pushConfigured()) return { ...report, configured: false };
         const sender = send || webPushSender();
 
         const { data: subs, error } = await admin
@@ -120,22 +146,25 @@ export async function pushToUser(
             .select('endpoint, p256dh, auth')
             .eq('user_id', userId);
         if (error) throw error;
-        if (!subs || subs.length === 0) return 0;
+        if (!subs || subs.length === 0) return report;
+        report.devices = subs.length;
 
         const payload = pushPayload(msg);
-        let delivered = 0;
         let failure: any = null;
 
         await Promise.all(subs.map(async (sub: StoredSubscription) => {
             try {
                 await withTimeout(sender(sub, payload), SEND_TIMEOUT_MS + 1000);
-                delivered++;
+                report.accepted++;
             } catch (err: any) {
                 const status = err && err.statusCode;
                 if (status === 404 || status === 410) {
                     // The device is gone for good. Forget it.
+                    report.gone++;
                     await admin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
                 } else {
+                    report.failed++;
+                    report.errors.push(((status ? status + ' ' : '') + (err && (err.body || err.message) || String(err))).toString().trim().slice(0, 200));
                     failure = failure || err;
                 }
             }
@@ -147,12 +176,14 @@ export async function pushToUser(
                 error: (failure.body || failure.message || String(failure)).toString().slice(0, 300),
             }, { path: 'lib/push', userId });
         }
-        return delivered;
+        return report;
     } catch (err: any) {
         await logError('[push] could not send push notifications', {
             error: (err && err.message) || String(err),
         }, { path: 'lib/push', userId: userId || undefined });
-        return 0;
+        report.failed = Math.max(report.failed, 1);
+        report.errors.push((err && err.message) || String(err));
+        return report;
     }
 }
 
