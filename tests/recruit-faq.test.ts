@@ -47,8 +47,8 @@ test('nothing internal leaks: no staff names, no unbuilt promises, no unbacked c
 
 test('host: commission, payouts, deposit, balance, door code', () => {
     assert.match(answer('host', 'What does it cost me?'), new RegExp(DEFAULT_COMMISSION_PERCENT + '% commission'));
-    assert.match(read('vercel.json'), /"0 \*\/3 \* \* \*"/, 'calendar import runs every three hours');
-    assert.match(answer('host', 'Can I stay on Airbnb and Booking.com too?'), /every three hours/);
+    assert.match(read('vercel.json'), /"\*\/15 \* \* \* \*"/, 'calendar import runs every 15 minutes');
+    assert.match(answer('host', 'Can I stay on Airbnb and Booking.com too?'), /every 15 minutes/);
     assert.match(read('app/api/stripe/checkout/route.ts'), /DEPOSIT_FRACTION = 0\.25/);
     const pay = answer('host', 'How do guests pay?');
     assert.match(pay, /25% deposit/);

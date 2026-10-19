@@ -57,6 +57,10 @@ test('the host alert differs for an instant booking and for a request', () => {
     assert.match(instant.subject, /^New booking —/);
     assert.match(instant.html, /booked [^.]*instantly/);
     assert.match(instant.html, /View the booking/);
+    // A confirmed booking reminds the host that other sites lag, so they can
+    // block the dates there for a stay that's soon.
+    assert.match(instant.html, /Other sites can take a few hours/);
+    assert.match(instant.html, /block these dates/);
 
     const request = emails.hostNewBookingEmail({
         hostFirst: 'Liam', guestFirst: 'Morag', listingTitle: 'Harbour Cottage',
@@ -66,6 +70,9 @@ test('the host alert differs for an instant booking and for a request', () => {
     assert.match(request.subject, /^New booking request —/);
     assert.match(request.html, /confirm or decline/);
     assert.match(request.html, /Review this request/);
+    // An unconfirmed request must NOT tell the host to block the dates
+    // elsewhere — the stay might still be declined.
+    assert.ok(!/Other sites can take a few hours/.test(request.html), 'no block-elsewhere nudge until confirmed');
 });
 
 // ---------------------------------------------------------------------------

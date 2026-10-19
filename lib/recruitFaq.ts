@@ -37,7 +37,7 @@ const HOST: FaqItem[] = [
     {
         q: 'Can I stay on Airbnb and Booking.com too?',
         a: [
-            'Yes. We check your other calendars every three hours and block any dates booked there. Our calendar feed is always up to date, but how often Airbnb or Booking.com read it is up to them.',
+            'Yes. We check your other calendars every 15 minutes and block any dates booked there, and we check again the moment a guest pays — so you won’t be double-booked here. Our calendar feed is always up to date, but how often Airbnb or Booking.com read it is up to them.',
         ],
     },
     {
