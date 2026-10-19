@@ -27,6 +27,7 @@
     "app/api/stripe/webhook/route.ts",
     "app/api/stripe/checkout/route.ts",
     "app/api/notify/route.ts",
+    "app/api/listings/calendar/route.ts",
     "app/api/cron/scheduled-messages/route.ts",
     "app/api/listings/access-code/route.ts",
     "app/api/admin/providers/route.ts",

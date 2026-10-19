@@ -17,6 +17,7 @@ import {
 import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
 import { firstName, getImageUrl } from "@/lib/utils";
 import { ukDate } from '@/lib/dayKey';
+import { checkOverridePatch } from '@/lib/calendarOverrides';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 
@@ -567,30 +568,41 @@ export default function CalendarPage() {
         return out;
     };
 
+    // Saved through /api/listings/calendar, which checks the caller with the
+    // shared access helper (owner, or a co-host with calendar permission) —
+    // not straight into calendar_overrides, whose row-level policy only knows
+    // owners and refused co-hosts (and signed-out requests) with a database
+    // error. The same check (lib/calendarOverrides) runs here first and on
+    // the server.
     const saveOverrides = async () => {
         if (!selectionStart) return;
 
+        const checked = checkOverridePatch({
+            dates: selectedKeys(),
+            is_blocked: panelBlocked,
+            price_override: panelPrice,
+            min_nights_override: panelMinNights,
+        });
+        if (!checked.ok) {
+            toast.error((checked as { error: string }).error, { theme: 'colored' });
+            return;
+        }
+
         setSaving(true);
         try {
-            const rows = selectedKeys().map((k) => ({
-                listing_id: selectedListingId,
-                date: k,
-                is_blocked: panelBlocked,
-                price_override: panelPrice ? Number(panelPrice) : null,
-                min_nights_override: panelMinNights ? Number(panelMinNights) : null,
-            }));
-
-            const { error } = await supabase
-                .from('calendar_overrides')
-                .upsert(rows, { onConflict: 'listing_id,date' });
-
-            if (error) {
-                toast.error(error.message, { theme: 'colored' });
+            const res = await fetch('/api/listings/calendar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listingId: selectedListingId, ...(checked as { patch: object }).patch }),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data || !data.ok) {
+                toast.error((data && data.error) || 'Could not save.', { theme: 'colored' });
                 return;
             }
 
             const map = { ...overrides };
-            rows.forEach((r) => { map[r.date] = r as Override; });
+            (data.rows || []).forEach((r: any) => { map[r.date] = r as Override; });
             setOverrides(map);
 
             toast.success('Calendar updated.', { theme: 'colored' });
@@ -607,15 +619,21 @@ export default function CalendarPage() {
         const dateStrs = selectedKeys();
 
         setSaving(true);
-        const { error } = await supabase
-            .from('calendar_overrides')
-            .delete()
-            .eq('listing_id', selectedListingId)
-            .in('date', dateStrs);
+        let data: any = null;
+        let ok = false;
+        try {
+            const res = await fetch('/api/listings/calendar', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listingId: selectedListingId, dates: dateStrs }),
+            });
+            data = await res.json().catch(() => null);
+            ok = res.ok && !!data && data.ok;
+        } catch { /* reported below */ }
         setSaving(false);
 
-        if (error) {
-            toast.error(error.message, { theme: 'colored' });
+        if (!ok) {
+            toast.error((data && data.error) || 'Could not reset those dates.', { theme: 'colored' });
             return;
         }
 

@@ -4,6 +4,8 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { checkListing } from '@/lib/access';
 import { guestCalendar } from '@/lib/availability';
+import { checkOverridePatch, checkOverrideDates } from '@/lib/calendarOverrides';
+import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,4 +44,85 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(await guestCalendar(listingId));
+}
+
+// ----------------------------------------------------------------------------
+// POST and DELETE: the calendar's Manage dates panel. Save a nightly price, a
+// minimum stay or a block for a run of dates (POST), or reset them to the
+// listing's defaults (DELETE).
+//
+// WHY A ROUTE. The panel used to write calendar_overrides straight from the
+// browser, guarded only by a row-level policy that knows one person: the
+// listing's owner. A co-host the owner had given the calendar to was refused
+// with "new row violates row-level security policy" every time, and so was an
+// owner whose sign-in had lapsed in the browser — the request arrived signed
+// out, and the database said the same thing. Here the caller is checked with
+// getUser() and the shared helper (lib/access checkListing, 'can_calendar'):
+// the owner, or a co-host holding calendar permission, and nobody else. The
+// listing's status doesn't matter — hidden, paused, pending or live, its
+// people can manage its calendar; only what guests see depends on it.
+
+const SIGNED_OUT = 'Your sign-in has expired. Please log in again and try once more.';
+
+async function allowed(listingId: unknown): Promise<{ error: NextResponse; user?: undefined } | { error?: undefined; user: { id: string } }> {
+    const supabase = createRouteHandlerClient({ cookies });
+    // getUser(), not getSession(): the cookie alone is not proof.
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: NextResponse.json({ ok: false, error: SIGNED_OUT }, { status: 401 }) };
+    if (typeof listingId !== 'string' || !listingId) {
+        return { error: NextResponse.json({ ok: false, error: 'Missing listing' }, { status: 400 }) };
+    }
+    const access = await checkListing(user.id, listingId, 'can_calendar');
+    if (!access) {
+        return { error: NextResponse.json({ ok: false, error: 'You don’t have permission to change this calendar.' }, { status: 403 }) };
+    }
+    return { user };
+}
+
+export async function POST(request: Request) {
+    let body: any = null;
+    try { body = await request.json(); } catch { /* checked below */ }
+    const gate = await allowed(body && body.listingId);
+    if (gate.error || !gate.user) return gate.error as NextResponse;
+
+    const checked = checkOverridePatch(body);
+    if (!checked.ok) return NextResponse.json({ ok: false, error: (checked as { error: string }).error }, { status: 400 });
+    const p = (checked as { patch: import('@/lib/calendarOverrides').OverridePatch }).patch;
+
+    const rows = p.dates.map((date) => ({
+        listing_id: body.listingId,
+        date,
+        is_blocked: p.is_blocked,
+        price_override: p.price_override,
+        min_nights_override: p.min_nights_override,
+    }));
+    const { error } = await adminClient()
+        .from('calendar_overrides')
+        .upsert(rows, { onConflict: 'listing_id,date' });
+    if (error) {
+        await logError('[calendar] could not save calendar dates', error, { path: 'api/listings/calendar', userId: gate.user.id });
+        return NextResponse.json({ ok: false, error: 'Those dates couldn’t be saved. Please try again.' }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, rows });
+}
+
+export async function DELETE(request: Request) {
+    let body: any = null;
+    try { body = await request.json(); } catch { /* checked below */ }
+    const gate = await allowed(body && body.listingId);
+    if (gate.error || !gate.user) return gate.error as NextResponse;
+
+    const checked = checkOverrideDates(body);
+    if (!checked.ok) return NextResponse.json({ ok: false, error: (checked as { error: string }).error }, { status: 400 });
+
+    const { error } = await adminClient()
+        .from('calendar_overrides')
+        .delete()
+        .eq('listing_id', body.listingId)
+        .in('date', (checked as { dates: string[] }).dates);
+    if (error) {
+        await logError('[calendar] could not reset calendar dates', error, { path: 'api/listings/calendar', userId: gate.user.id });
+        return NextResponse.json({ ok: false, error: 'Those dates couldn’t be reset. Please try again.' }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
 }
