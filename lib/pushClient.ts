@@ -4,10 +4,13 @@
 // made, a message sent, the host dashboard) — never on page load. Browsers
 // punish sites that ask unprompted, and Safari refuses outright without a tap.
 
-// Remembered per device. The iPhone "add to Home Screen first" note has its own
-// key, so reading it in Safari doesn't stop the real question being asked once
-// the Home Screen app is opened.
-const ASKED_KEY = { ask: 'gg-push-ask-dismissed', ios: 'gg-push-ios-explained' };
+// Remembered per device. "Not now" is remembered with WHEN it was said: the
+// question comes back after a booking or a message, but never within a week of
+// the last "Not now" (Airbnb's rhythm). The first-open card in the installed
+// app is shown once per device (FIRST_RUN_KEY).
+const ASK_KEY = 'gg-push-ask-dismissed-at';
+const FIRST_RUN_KEY = 'gg-push-first-run-done';
+export const ASK_AGAIN_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 function hasWindow(): boolean {
     return typeof window !== 'undefined' && typeof navigator !== 'undefined';
@@ -45,12 +48,52 @@ export function permission(): NotificationPermission | 'unsupported' {
     return pushSupported() ? Notification.permission : 'unsupported';
 }
 
-export function askDismissed(kind: 'ask' | 'ios' = 'ask'): boolean {
-    try { return localStorage.getItem(ASKED_KEY[kind]) === '1'; } catch { return false; }
+/** True while a "Not now" from the last week still stands. */
+export function askDismissed(now: number = Date.now()): boolean {
+    try {
+        const at = Number(localStorage.getItem(ASK_KEY) || 0);
+        return at > 0 && now - at < ASK_AGAIN_AFTER_MS;
+    } catch { return false; }
 }
 
-export function dismissAsk(kind: 'ask' | 'ios' = 'ask'): void {
-    try { localStorage.setItem(ASKED_KEY[kind], '1'); } catch { /* private mode */ }
+/** "Not now": don't ask again for a week. */
+export function dismissAsk(now: number = Date.now()): void {
+    try { localStorage.setItem(ASK_KEY, String(now)); } catch { /* private mode */ }
+}
+
+/** The installed app's first-open card has been shown on this device. */
+export function firstRunDone(): boolean {
+    try { return localStorage.getItem(FIRST_RUN_KEY) === '1'; } catch { return true; }
+}
+
+export function markFirstRunDone(): void {
+    try { localStorage.setItem(FIRST_RUN_KEY, '1'); } catch { /* private mode */ }
+}
+
+/** The installed app's first-open card: whether to show it now. */
+export function shouldAskOnFirstRun(state: {
+    standalone: boolean;
+    supported: boolean;
+    permission: string;
+    signedIn: boolean;
+    firstRunDone: boolean;
+    snoozed: boolean;
+    path: string;
+}): boolean {
+    return state.standalone
+        && state.supported
+        && state.permission === 'default'
+        && state.signedIn
+        && !state.firstRunDone
+        && !state.snoozed
+        && !state.path.startsWith('/auth');
+}
+
+/** Safari itself on an iPhone — the only iPhone browser whose Share sheet can add to the Home Screen reliably; not Chrome, Firefox or an app's built-in browser (Instagram, Facebook, Gmail). */
+export function isIOSSafari(): boolean {
+    if (!hasWindow()) return false;
+    const ua = navigator.userAgent || '';
+    return /\b(iPhone|iPod)\b/.test(ua) && /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\/|FBAN|FBAV|Instagram|Line\/|Snapchat|LinkedInApp/.test(ua);
 }
 
 function keyBytes(base64url: string): Uint8Array {
