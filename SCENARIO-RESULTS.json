@@ -1,7 +1,7 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-10-19T11:00:37.001Z",
+      "ranAt": "2026-10-19T13:29:18.891Z",
       "target": "http://localhost:3000",
       "passed": 7,
       "failed": 0,
@@ -52,9 +52,9 @@
       ]
     },
     "refund": {
-      "ranAt": "2026-10-19T11:01:51.576Z",
+      "ranAt": "2026-10-19T13:30:55.829Z",
       "target": "http://localhost:3000",
-      "passed": 9,
+      "passed": 14,
       "failed": 0,
       "untestable": 0,
       "scenarios": [
@@ -107,6 +107,36 @@
           "failedChecks": []
         },
         {
+          "number": "C1",
+          "title": "Guest cancels a Custom stay OUTSIDE the 30-day cut-off — full refund",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "C2",
+          "title": "Guest cancels a Custom stay INSIDE the 30-day cut-off — only the cleaning fee",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "C3",
+          "title": "Guest cancels a Custom deposit+balance stay OUTSIDE the cut-off — full £800 across both charges",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "C4",
+          "title": "Guest cancels a Custom deposit+balance stay INSIDE the cut-off — only the cleaning fee",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "NR1",
+          "title": "Guest cancels a non-refundable booking — nothing comes back",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
           "number": "14c",
           "title": "Three simultaneous refunds on one booking are all recorded, not lost",
           "status": "passed",
@@ -115,7 +145,7 @@
       ]
     },
     "balance": {
-      "ranAt": "2026-10-19T11:02:50.326Z",
+      "ranAt": "2026-10-19T13:32:05.781Z",
       "target": "http://localhost:3000",
       "passed": 8,
       "failed": 0,
@@ -172,7 +202,7 @@
       ]
     },
     "crosscutting": {
-      "ranAt": "2026-10-19T11:05:37.510Z",
+      "ranAt": "2026-10-19T13:35:22.482Z",
       "target": "http://localhost:3000",
       "passed": 8,
       "failed": 0,
@@ -229,7 +259,7 @@
       ]
     },
     "change": {
-      "ranAt": "2026-10-19T11:03:57.772Z",
+      "ranAt": "2026-10-19T13:33:25.907Z",
       "target": "http://localhost:3000",
       "passed": 6,
       "failed": 0,
@@ -274,7 +304,7 @@
       ]
     }
   },
-  "updatedAt": "2026-10-19T11:05:37.510Z",
+  "updatedAt": "2026-10-19T13:35:22.482Z",
   "fingerprint": {
     "app/api/cron/host-payouts/route.ts": "7ff2eef70b87f9f2",
     "app/api/cron/balance-charges/route.ts": "eb255e3a22b807e5",
@@ -306,9 +336,9 @@
     "app/api/bookings/resolutions/route.ts": "da1da258081f142f",
     "app/api/bookings/resolutions/respond/route.ts": "907c8533d6489e58",
     "app/api/bookings/resolutions/host-decide/route.ts": "aec631c035c6c142",
-    "scripts/seed-payments.mjs": "2b85fe60cd284411",
+    "scripts/seed-payments.mjs": "68c3c58ae3ed9a96",
     "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
-    "scripts/refund-scenarios.mjs": "c03406bef347436c",
+    "scripts/refund-scenarios.mjs": "2987b8ae8bc5b75b",
     "scripts/balance-scenarios.mjs": "cd9d045653faf651",
     "scripts/change-scenarios.mjs": "fedc558161c3c6fe",
     "scripts/crosscutting-scenarios.mjs": "24d89c436a1a18b5"
