@@ -81,6 +81,14 @@ jobs:
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
+          # Installing v17 is not enough: the runner's preinstalled v16 tools
+          # still win on PATH (19 Oct 2026: "pg_dump version: 16.15" against a
+          # 17.6 server). Put v17's bin first for every later step.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Show the client version in use
+        if: env.ALERT_TEST != '1'
+        run: pg_dump --version
 
       - name: Check the drill role secret is set
         if: env.ALERT_TEST != '1'
