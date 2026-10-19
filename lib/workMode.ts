@@ -21,6 +21,37 @@ export type WorkSide = {
 
 export const NO_WORK_SIDE: WorkSide = { isHost: false, isApprovedHost: false, isProvider: false };
 
+// What a host may do, rolled up across every listing they can act on. An owner
+// may do everything on their own listing; a co-host may do what each owner gave
+// them, and this is the OR of those grants — the menu shows a section when they
+// have it on at least one property. The five keys are the ones the owner hands
+// out (components/PeopleManager); cancelling, refunds, payout details, deleting
+// a listing and inviting other co-hosts are never delegated and are not here —
+// those stay with whoever owns a listing (see `ownsAny`).
+export type HostPerms = {
+    can_calendar: boolean;
+    can_messages: boolean;
+    can_bookings: boolean;
+    can_listing: boolean;
+    can_earnings: boolean;
+};
+
+export const NO_HOST_PERMS: HostPerms = {
+    can_calendar: false,
+    can_messages: false,
+    can_bookings: false,
+    can_listing: false,
+    can_earnings: false,
+};
+
+export const ALL_HOST_PERMS: HostPerms = {
+    can_calendar: true,
+    can_messages: true,
+    can_bookings: true,
+    can_listing: true,
+    can_earnings: true,
+};
+
 // Listing statuses that mean an owner approved it. A hidden listing was live
 // and has been taken down for now; its host is still a host.
 export const APPROVED_LISTING_STATUSES = ['published', 'hidden'];
