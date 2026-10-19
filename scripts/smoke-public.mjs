@@ -197,7 +197,12 @@ async function emailOwner() {
             }),
         });
         if (!res.ok) console.error('smoke: email failed:', res.status, await res.text());
-        else console.error('smoke: emailed ' + recipients.join(', '));
+        else {
+            // Resend's message id — proof it was accepted, and what to look up
+            // in the Resend dashboard if it never arrives.
+            const sent = await res.json().catch(() => ({}));
+            console.error('smoke: emailed ' + recipients.join(', ') + ' — Resend accepted it, id ' + (sent.id || '(none returned)'));
+        }
     } catch (err) {
         console.error('smoke: email threw (failing open):', (err && err.message) || err);
     }

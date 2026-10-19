@@ -25,6 +25,11 @@ name: post-deploy-smoke
 on:
   deployment_status:
   workflow_dispatch:
+    inputs:
+      smoke_url:
+        description: 'Site to check (leave as is for production). Point it at a path that does not exist to force a failure and test the alert email.'
+        required: false
+        default: 'https://gallowaygetaways.co.uk'
 
 permissions:
   contents: read
@@ -42,9 +47,10 @@ jobs:
 
     env:
       # The live site as a stranger sees it. Overridable for a manual re-check.
-      SMOKE_URL: https://gallowaygetaways.co.uk
+      SMOKE_URL: ${{ github.event.inputs.smoke_url || 'https://gallowaygetaways.co.uk' }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       SMOKE_ALERT_EMAIL: ${{ secrets.SMOKE_ALERT_EMAIL }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
     steps:

@@ -20,9 +20,23 @@ const SOURCE = process.env.SOURCE_DB_URL;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const ALERT_EMAIL = process.env.ALERT_EMAIL;
 const RUN_URL = process.env.RUN_URL || '';
+// A manual "alert_test" run: no drill happened, so nothing is recorded on
+// production and the email says plainly it is a test of the alert itself.
+const ALERT_TEST = process.env.ALERT_TEST === '1';
 
 let r;
-try {
+if (ALERT_TEST) {
+    r = {
+        status: 'test',
+        trigger: 'manual',
+        runAt: new Date().toISOString(),
+        tablesChecked: null,
+        mismatches: [],
+        listingsHashMatch: null,
+        pgVersions: null,
+        detail: 'This is a test of the restore drill alert email. No backup was dumped or restored, and nothing was recorded. If you are reading this, the drill can reach you.',
+    };
+} else try {
     r = JSON.parse(fs.readFileSync('restore-drill-result.json', 'utf8'));
 } catch {
     // The verify step should always leave a result file; if it somehow did not,
@@ -41,7 +55,9 @@ try {
 }
 
 // --- 1. Record on production -------------------------------------------------
-if (!SOURCE) {
+if (ALERT_TEST) {
+    console.log('report: alert test — not recording a run');
+} else if (!SOURCE) {
     console.error('report: SOURCE_DB_URL not set — cannot record the run');
 } else {
     // Build the INSERT with dollar-quoted literals rather than psql's :'var'
@@ -73,9 +89,11 @@ async function email() {
         return;
     }
     const passed = r.status === 'pass';
-    const subject = passed
-        ? `Restore drill passed — ${r.tablesChecked} tables verified`
-        : 'Restore drill FAILED — action needed';
+    const subject = r.status === 'test'
+        ? 'Restore drill alert test — this email works'
+        : passed
+            ? `Restore drill passed — ${r.tablesChecked} tables verified`
+            : 'Restore drill FAILED — action needed';
 
     const mismatchRows = (r.mismatches || [])
         .map((m) => `<tr><td style="padding:4px 10px 4px 0;">${m.table}</td>` +
@@ -85,8 +103,8 @@ async function email() {
 
     const html =
         `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;">` +
-        `<h2 style="color:${passed ? '#047857' : '#b91c1c'};margin:0 0 12px;">` +
-        `${passed ? 'Restore drill passed' : 'Restore drill FAILED'}</h2>` +
+        `<h2 style="color:${passed || r.status === 'test' ? '#047857' : '#b91c1c'};margin:0 0 12px;">` +
+        `${r.status === 'test' ? 'Restore drill alert test' : passed ? 'Restore drill passed' : 'Restore drill FAILED'}</h2>` +
         `<p style="margin:0 0 12px;font-size:15px;color:#334155;">${r.detail || ''}</p>` +
         `<table style="border-collapse:collapse;font-size:14px;color:#334155;margin:0 0 12px;">` +
         `<tr><td style="padding:2px 12px 2px 0;color:#64748b;">When</td><td>${r.runAt}</td></tr>` +
@@ -117,7 +135,8 @@ async function email() {
     if (!res.ok) {
         console.error('report: email failed:', res.status, await res.text());
     } else {
-        console.log('report: emailed', to.join(', '));
+        const sent = await res.json().catch(() => ({}));
+        console.log('report: emailed', to.join(', '), '— Resend accepted it, id', sent.id || '(none returned)');
     }
 }
 
