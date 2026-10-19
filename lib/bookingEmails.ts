@@ -264,9 +264,17 @@ export function hostNewBookingEmail(input: HostNewBookingInput): { subject: stri
         ? guestFirst + ' has booked ' + listingTitle + ' instantly. The dates are already confirmed and blocked out on your calendar.'
         : guestFirst + ' would like to book ' + listingTitle + '. Have a look and confirm or decline — until you do, the dates are held but not confirmed.';
 
+    // Only once the booking is actually confirmed (Instant Book). A request isn't
+    // confirmed until the host accepts, so telling them to block the dates
+    // elsewhere now would be wrong — the stay might still be declined.
+    const otherSites = input.instant
+        ? '<p style="margin:16px 0 0;">Other sites can take a few hours to pick this up, so if the stay is in the next few days, block these dates on Airbnb and anywhere else you list to be safe.</p>'
+        : '';
+
     const html = emailLayout(
         '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">' + heading + '</h1>' +
         '<p style="margin:0;">Hi ' + hostFirst + ' &mdash; ' + intro + '</p>' +
+        otherSites +
         detailRows([
             { label: 'Property', value: listingTitle },
             { label: 'Guest', value: guestFirst },

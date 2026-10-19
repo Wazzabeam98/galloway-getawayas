@@ -1,7 +1,7 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
-import { fetchIcalText } from '@/lib/feedFetch';
+import { syncOneFeed, mapWithConcurrency } from '@/lib/icalSync';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -10,23 +10,10 @@ export const maxDuration = 60;
 // the other platform being briefly unavailable and isn't worth an email.
 const ALERT_AFTER = 3;
 
-function parseICS(text: string): { start: string; end: string }[] {
-    const events: { start: string; end: string }[] = [];
-    const blocks = text.split('BEGIN:VEVENT').slice(1);
-
-    for (const block of blocks) {
-        const startMatch = block.match(/DTSTART[^:]*:(\d{8})/);
-        const endMatch = block.match(/DTEND[^:]*:(\d{8})/);
-        if (!startMatch || !endMatch) continue;
-
-        const toISO = (raw: string) =>
-            raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8);
-
-        events.push({ start: toISO(startMatch[1]), end: toISO(endMatch[1]) });
-    }
-
-    return events;
-}
+// How many feeds to fetch at once. The fetch+parse+write of one feed now lives in
+// lib/icalSync (syncOneFeed), so this route is only the schedule, the batching
+// and the host failure-alert ladder.
+const CONCURRENCY = 8;
 
 export async function GET(request: Request) {
     const secret = process.env.CRON_SECRET;
@@ -43,100 +30,70 @@ export async function GET(request: Request) {
         .from('listing_ical_feeds')
         .select('id, listing_id, url, label, failure_count, alerted_at');
 
+    // Each feed fetched concurrently (capped), so the run is the length of its
+    // slowest feed rather than the sum — the only way a 15-minute cadence gets
+    // through every listing's feeds inside the 60s cap. Writes go straight to the
+    // row inside syncOneFeed; here we just keep the per-feed outcome to tally and
+    // to decide the failure alert.
+    const outcomes = await mapWithConcurrency(feeds || [], CONCURRENCY, async (feed: any) => {
+        const res = await syncOneFeed(admin, feed, now);
+        return { feed: feed, res: res };
+    });
+
     let ok = 0;
     let failed = 0;
     let alerted = 0;
 
-    for (const feed of feeds || []) {
-        try {
-            // Fetched through the shared safe fetch: public-https only, private /
-            // loopback / link-local / metadata addresses (and redirects to them)
-            // refused, so a host-supplied url can't point the sync at an internal
-            // service. null means unsafe OR unreachable \u2014 either way the feed
-            // failed this run and drops into the failure ladder below.
-            const text = await fetchIcalText(feed.url, { timeoutMs: 15000 });
+    // Alerts are sent after the syncs, one at a time. They're rare (three failures
+    // in a row for one feed) and each sends an email, so there's nothing to gain
+    // from fanning them out.
+    for (const outcome of outcomes) {
+        const feed = outcome.feed;
+        const res = outcome.res;
 
-            if (text === null) throw new Error('That calendar link couldn\u2019t be fetched (it must be a public https address)');
-
-            // A link to a web page or an image will fetch happily and parse to
-            // nothing, which would look like an empty calendar and block no
-            // dates at all. Better to treat it as broken.
-            if (text.indexOf('BEGIN:VCALENDAR') === -1) {
-                throw new Error('That link doesn\u2019t return a calendar');
-            }
-
-            const events = parseICS(text);
-
-            await admin
-                .from('listing_ical_feeds')
-                .update({
-                    events: events,
-                    last_synced_at: now,
-                    last_status: 'ok',
-                    last_error: null,
-                    failure_count: 0,
-                    alerted_at: null,
-                })
-                .eq('id', feed.id);
-
+        if (res.ok) {
             ok++;
-        } catch (err: any) {
-            const count = Number(feed.failure_count || 0) + 1;
-            const message = (err && err.message) || 'Could not reach that calendar';
+            continue;
+        }
 
-            // The cached events are deliberately left alone. A calendar we
-            // can't reach today is not the same as a calendar with no
-            // bookings, and treating it that way would free up dates that are
-            // actually taken.
-            await admin
-                .from('listing_ical_feeds')
-                .update({
-                    last_synced_at: now,
-                    last_status: 'failed',
-                    last_error: message,
-                    failure_count: count,
-                })
-                .eq('id', feed.id);
+        failed++;
 
-            failed++;
+        if (res.failureCount >= ALERT_AFTER && !feed.alerted_at) {
+            const { data: listing } = await admin
+                .from('listings')
+                .select('title, host_id')
+                .eq('id', feed.listing_id)
+                .maybeSingle();
 
-            if (count >= ALERT_AFTER && !feed.alerted_at) {
-                const { data: listing } = await admin
-                    .from('listings')
-                    .select('title, host_id')
-                    .eq('id', feed.listing_id)
-                    .maybeSingle();
+            if (listing) {
+                const { data: hostUser } = await admin.auth.admin.getUserById(listing.host_id);
+                const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
 
-                if (listing) {
-                    const { data: hostUser } = await admin.auth.admin.getUserById(listing.host_id);
-                    const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
+                if (hostEmail) {
+                    await sendEmail(
+                        hostEmail,
+                        'One of your calendars has stopped syncing',
+                        emailLayout(
+                            '<p style="margin:0 0 16px;font-size:16px;">We haven’t been able to reach the <strong>'
+                                + escapeHtml(feed.label || 'imported')
+                                + '</strong> calendar on your listing <strong>'
+                                + escapeHtml(listing.title || 'your property')
+                                + '</strong> for the last few days.</p>'
+                                + '<p style="margin:0 0 16px;font-size:16px;">What we’re seeing: '
+                                + escapeHtml(res.message || 'Could not reach that calendar')
+                                + '</p>'
+                                + '<p style="margin:0 0 16px;font-size:16px;">Bookings we already knew about are still blocking those dates, but anything new booked on that site won’t reach us until this is fixed. Export links do sometimes get regenerated, so it’s worth copying yours again.</p>'
+                                + button(SITE_URL + '/dashboard', 'Check your listing'),
+                            'You’re receiving this because you host on Galloway Getaways.'
+                        )
+                    );
 
-                    if (hostEmail) {
-                        await sendEmail(
-                            hostEmail,
-                            'One of your calendars has stopped syncing',
-                            emailLayout(
-                                '<p style="margin:0 0 16px;font-size:16px;">We haven\u2019t been able to reach the <strong>'
-                                    + escapeHtml(feed.label || 'imported')
-                                    + '</strong> calendar on your listing <strong>'
-                                    + escapeHtml(listing.title || 'your property')
-                                    + '</strong> for the last few days.</p>'
-                                    + '<p style="margin:0 0 16px;font-size:16px;">What we\u2019re seeing: '
-                                    + escapeHtml(message)
-                                    + '</p>'
-                                    + '<p style="margin:0 0 16px;font-size:16px;">Bookings we already knew about are still blocking those dates, but anything new booked on that site won\u2019t reach us until this is fixed. Export links do sometimes get regenerated, so it\u2019s worth copying yours again.</p>'
-                                    + button(SITE_URL + '/dashboard', 'Check your listing'),
-                                'You\u2019re receiving this because you host on Galloway Getaways.'
-                            )
-                        );
+                    await admin
+                        .from('listing_ical_feeds')
+                        .update({ alerted_at: now })
+                        .eq('id', feed.id);
 
-                        await admin
-                            .from('listing_ical_feeds')
-                            .update({ alerted_at: now })
-                            .eq('id', feed.id);
-
-                        alerted++;
-                    }
+                    alerted++;
                 }
             }
         }
