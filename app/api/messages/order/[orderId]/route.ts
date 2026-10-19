@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { drainOutbox } from '@/lib/pushDispatch';
 import { logError } from '@/lib/logError';
 import { orderThreadContext } from '@/lib/orderThreads';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
@@ -307,6 +308,11 @@ export async function POST(req: Request, { params }: { params: { orderId: string
         } catch (err) {
             await logError('order-thread-notify', err);
         }
+
+        // The push for this message was recorded by the messages table itself
+        // (sender and role, never the text); deliver it now rather than at the
+        // push job's next minute. Never throws.
+        await drainOutbox(admin, { userId: ctx.otherId, kind: 'message.new' });
 
         return NextResponse.json({ ok: true, message: saved });
     } catch (err: any) {

@@ -8,7 +8,7 @@ import { ukDate } from '@/lib/dayKey';
 import { publicArea } from '@/lib/places';
 import { formatGBP } from '@/lib/formatMoney';
 import { recoverBookingPayment } from '@/lib/bookingPaymentReconcile';
-import BookingPlacedPush from '@/components/pwa/BookingPlacedPush';
+import PushPrompt from '@/components/pwa/PushPrompt';
 
 export const dynamic = 'force-dynamic';
 
@@ -190,7 +190,9 @@ export default async function BookingConfirmed({
                 })()}
             </div>
 
-            <BookingPlacedPush bookingId={booking.id} />
+            {/* The host's push for this booking comes from the push job, not
+                from this page; here the guest is only offered notifications. */}
+            <PushPrompt context="booking" className="mt-8" />
 
             <div className="mt-8 text-center space-y-3">
                 <Link

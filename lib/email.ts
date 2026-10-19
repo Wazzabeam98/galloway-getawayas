@@ -10,6 +10,8 @@ import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { logError } from '@/lib/logError';
 import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 import { ukDate, londonDayKey as dayKeyOf } from '@/lib/dayKey';
+import { recordEmailPush } from '@/lib/pushOutbox';
+import type { PushSpec } from '@/lib/pushRules';
 
 export const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -228,7 +230,19 @@ async function report(message: string, detail: any): Promise<void> {
     }
 }
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+// EVERY EMAIL IS ALSO A PUSH. After the email is sent (or fails), one row is
+// recorded in the push outbox for the push job to send — lib/pushOutbox. Only
+// recorded here, never sent: this function runs inside payment and payout
+// code. `push` lets a caller give the push its own words, or `false` when it
+// has recorded the push itself. Recording never throws and is time-boxed, so
+// it can't hold up the email or anything around it.
+export async function sendEmail(to: string, subject: string, html: string, push?: Partial<PushSpec> | false): Promise<boolean> {
+    const sent = await sendEmailOnly(to, subject, html);
+    await recordEmailPush(to, subject, html, push);
+    return sent;
+}
+
+async function sendEmailOnly(to: string, subject: string, html: string): Promise<boolean> {
     // NOTHING IS EVER SENT TO A RESERVED TLD, AND THE DECISION IS MADE HERE.
     //
     // lib/testAddresses.ts has existed since the seeded tradesmen started

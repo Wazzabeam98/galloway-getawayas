@@ -117,29 +117,25 @@ test('no payment, payout or settlement code sends a push', () => {
     }
 });
 
-test('the notification route pushes only after the email it goes with', () => {
+test('the notification route records the message push after the email, and never sends from settlement', () => {
     const src = fs.readFileSync(path.join(ROOT, 'app/api/notify/route.ts'), 'utf8');
-    const confirmed = src.slice(src.indexOf('const mail = guestBookedEmail('));
-    assert.ok(confirmed.indexOf('sendEmail(') < confirmed.indexOf('pushToUser('), 'confirmation: email first');
     const message = src.slice(src.indexOf("type === 'new_message'"));
     assert.ok(message.indexOf("sendEmail(to, 'New message from") < message.lastIndexOf('await pushIt()'), 'message: email first');
-});
+    assert.doesNotMatch(src, /pushToUser\(/, 'pushes go through the outbox, not straight out');
+})
 
 /* ------------------------------------------------ admin test notifications */
 
-test('the three test pushes use the real wording, say TEST, and open the admin page', () => {
-    const { testPush, TEST_PUSH_KINDS } = require('../lib/pushTest');
-    assert.deepEqual([...TEST_PUSH_KINDS], ['new_booking', 'new_message', 'booking_confirmed']);
-    const booking = testPush('new_booking');
-    assert.equal(booking.title, 'TEST New booking');
-    assert.match(booking.body, /^Morag booked Rowan Cottage \(test\), 11\/12\/2026 – 14\/12\/2026$/);
-    assert.equal(testPush('new_message').title, 'TEST Callum');
-    assert.equal(testPush('booking_confirmed').title, 'TEST You’re booked');
-    for (const k of TEST_PUSH_KINDS) {
-        const m = testPush(k);
+test('the admin test page sends every catalogue entry with TEST first and opens the admin page', () => {
+    const { CATALOGUE, catalogueTestPush } = require('../lib/pushCatalogue');
+    for (const e of CATALOGUE) {
+        const m = catalogueTestPush(e.id);
+        assert.ok(m, e.id + ' has a push');
+        assert.match(m.title, /^TEST /);
         assert.equal(m.url, '/admin/notifications');
-        assert.equal(m.tag, 'test-' + k, 'separate tags, so the three stack rather than replace each other');
+        assert.equal(m.tag, 'test-' + e.id, 'separate tags, so they stack rather than replace each other');
     }
+    assert.equal(catalogueTestPush('nope'), null);
 });
 
 test('the report says what each device did', async () => {
@@ -167,7 +163,7 @@ test('the test route is admins only, pushes only to the caller, and touches no b
     assert.doesNotMatch(route, /body\.(userId|user_id)/, 'never a recipient from the request');
     const page = strip(fs.readFileSync(path.join(ROOT, 'app/admin/notifications/page.tsx'), 'utf8'));
     assert.match(page, /requireAdmin\(\)/);
-    for (const f of ['app/api/admin/push-test/route.ts', 'lib/pushTest.ts', 'app/admin/notifications/PushTestButton.tsx']) {
+    for (const f of ['app/api/admin/push-test/route.ts', 'lib/pushCatalogue.ts', 'app/admin/notifications/PushTestButton.tsx']) {
         const src = strip(fs.readFileSync(path.join(ROOT, f), 'utf8'));
         assert.doesNotMatch(src, /from\(\s*'(bookings|messages|payments|payouts|service_orders)'/, f);
     }
