@@ -196,11 +196,17 @@ grant insert on public.restore_drill_runs to restore_drill_ro;
 The connection string to store is (URL-encode the password if it has symbols):
 
 ```
-postgresql://restore_drill_ro:PASSWORD@<PROD-DB-HOST>:5432/postgres
+postgresql://restore_drill_ro.hviwjxigqivjfhmhpjiy:PASSWORD@aws-0-eu-west-2.pooler.supabase.com:5432/postgres
 ```
 
-Use the **same host, port and database** as `SUPABASE_PROD_DB_URL`, only with
-this role's name and password.
+The same host, port and database as `SUPABASE_PROD_DB_URL`. Note the username:
+through Supabase's pooler it is the role name **plus `.` and the project ref**
+(`restore_drill_ro.hviwjxigqivjfhmhpjiy`) — the bare `restore_drill_ro` is
+refused with "Tenant or user not found".
+
+This is the **source** the drill reads from: production, through a role that can
+only read it. The restore **target** is not a secret at all — it is the
+throwaway `postgres:17` container the workflow starts and destroys on every run.
 
 ### Setup — the GitHub secrets (click by click)
 
