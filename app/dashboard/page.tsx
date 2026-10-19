@@ -12,8 +12,7 @@ import { cookies } from "next/headers";
 import { getImageUrl, displayName } from "@/lib/utils";
 import { publicArea } from "@/lib/places";
 import { createClient } from "@supabase/supabase-js";
-import { accessibleListings } from "@/lib/access";
-import LeaveListingBtn from "@/components/LeaveListingBtn";
+import { accessibleListings, isFullAccess } from "@/lib/access";
 import HideListingBtn from "@/components/HideListingBtn";
 import DeleteListingBtn from "@/components/DeleteListingBtn";
 import { listingsWithPaidRecords, removalFor } from "@/lib/listingRemoval";
@@ -24,8 +23,29 @@ import { ChevronRight, Eye, Home, Plus, Star } from "lucide-react";
 // review page and the reminder cron use. After that the chance has passed.
 const REVIEW_WINDOW_DAYS = 14;
 
-function ListingCard({ item, isDraft, booked }: { item: any; isDraft: boolean; booked: boolean }) {
-    const editHref = isDraft ? `/addhome?draft=${item.id}` : `/edit-listing/${item.id}`;
+function ListingCard({
+    item,
+    isDraft,
+    booked,
+    canEdit = true,
+    canHide = true,
+    canDelete = true,
+}: {
+    item: any;
+    isDraft: boolean;
+    booked: boolean;
+    // An owner may do everything (the defaults). A co-host's card respects their
+    // grant: it opens the editor only with can_listing, hides only with full
+    // access, and never deletes — deleting is one of the three the owner keeps.
+    canEdit?: boolean;
+    canHide?: boolean;
+    canDelete?: boolean;
+}) {
+    const editHref = isDraft
+        ? `/addhome?draft=${item.id}`
+        : canEdit
+          ? `/edit-listing/${item.id}`
+          : `/homes/${item.id}`;
     const isHidden = item.status === 'hidden';
     // Finished, sent, and waiting for an owner to look at it. Nothing writes
     // this status yet — the screens learn it before the data can hold it, so
@@ -135,12 +155,12 @@ function ListingCard({ item, isDraft, booked }: { item: any; isDraft: boolean; b
                     because the booking and payment records hang off it
                     (lib/listingRemoval). Hiding takes it off the home page,
                     out of the sitemap and noindexed, and leaves it open for a
-                    guest holding a booking. Only owners reach this card — a
-                    co-host's listings render under "Listings you help with". */}
-                {!isDraft && !isWaiting && (
+                    guest holding a booking. A full-access co-host may hide, the
+                    owner's equal; only the owner may delete. */}
+                {!isDraft && !isWaiting && canHide && (
                     <HideListingBtn id={item.id} hidden={isHidden} title={item.title} booked={booked} />
                 )}
-                {removalFor(booked) === 'delete' && (
+                {canDelete && removalFor(booked) === 'delete' && (
                     <DeleteListingBtn id={item.id} title={item.title} canHide={!isDraft && !isWaiting && !isHidden} />
                 )}
             </div>
@@ -224,15 +244,18 @@ export default async function Dashboard() {
         return Math.max(0, Math.ceil((deadline.getTime() - now.getTime()) / 86400000));
     };
 
-    const accessIdOf = (listingId: string) =>
-        access.find((a) => a.listingId === listingId && !a.isOwner)?.accessId || null;
+    const accessOf = (listingId: string) =>
+        access.find((a) => a.listingId === listingId && !a.isOwner) || null;
 
-    // A co-host opens the editor only where the owner gave them can_listing;
-    // otherwise their card goes to the guest-facing page, the same view anyone
-    // gets. The editor and its save route check this again on the server — this
-    // only decides where the card points.
-    const canEditOf = (listingId: string) =>
-        access.find((a) => a.listingId === listingId && !a.isOwner)?.can_listing === true;
+    // What a co-host may do with their card. The editor opens only with
+    // can_listing; Hide is the owner's, shared only with a full-access co-host;
+    // Delete is the owner's alone. The editor and every route check this again
+    // on the server — this only decides what the card shows.
+    const canEditOf = (listingId: string) => accessOf(listingId)?.can_listing === true;
+    const canHideOf = (listingId: string) => {
+        const a = accessOf(listingId);
+        return !!a && isFullAccess(a);
+    };
 
     // Every status a host owns has to land in one of these, or the listing
     // simply is not on their dashboard. 'pending_review' belongs with the live
@@ -369,53 +392,6 @@ export default async function Dashboard() {
                     </Link>
                 </div>
 
-                {helping.length > 0 && (
-                    <div className="mt-14">
-                        <h2 className="text-xl font-bold text-slate-900 mb-1">
-                            Properties you help with
-                        </h2>
-                        <p className="text-sm text-slate-500 mb-6">
-                            These belong to someone else. What you can do with each depends on what
-                            they&apos;ve given you.
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                            {helping.map((item) => (
-                                <div key={item.id} className="relative group">
-                                    <Link href={canEditOf(item.id) ? `/edit-listing/${item.id}` : `/homes/${item.id}`} className="block">
-                                        <div className="w-full h-56 rounded-2xl overflow-hidden bg-slate-200 relative">
-                                            {item.images && item.images.length > 0 ? (
-                                                <img
-                                                    src={getImageUrl(item.images[0])}
-                                                    alt={item.title}
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-slate-400">
-                                                    <Home className="w-10 h-10" />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="mt-3">
-                                            <h3 className="font-bold text-slate-900 truncate">
-                                                {item.title}
-                                            </h3>
-                                            <p className="text-slate-500 text-sm truncate">
-                                                {publicArea(item.location)}
-                                            </p>
-                                        </div>
-                                    </Link>
-                                    {accessIdOf(item.id) && (
-                                        <LeaveListingBtn
-                                            accessId={accessIdOf(item.id) as string}
-                                            title={item.title}
-                                        />
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
                 {drafts.length > 0 && (
                     <div className="mb-10">
                         <h2 className="text-lg font-semibold text-slate-800 mb-4">In progress</h2>
@@ -427,12 +403,31 @@ export default async function Dashboard() {
                     </div>
                 )}
 
-                {published.length > 0 && (
+                {(published.length > 0 || helping.length > 0) && (
                     <div>
                         {drafts.length > 0 && <h2 className="text-lg font-semibold text-slate-800 mb-4">Published</h2>}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {/* A property you own and a property you co-host sit
+                                together here, as on Airbnb — a full-access co-host
+                                is an equal owner, so there is no "someone else's"
+                                shelf. Each card still respects the grant: its
+                                Delete is the owner's alone, its Hide the owner's
+                                and a full-access co-host's, its editor gated on
+                                can_listing. Leaving a co-hosted listing lives in
+                                that listing's own settings now, not on the card. */}
                             {published.map((item) => (
                                 <ListingCard key={item.id} item={item} isDraft={false} booked={bookedIds.has(item.id)} />
+                            ))}
+                            {helping.map((item) => (
+                                <ListingCard
+                                    key={item.id}
+                                    item={item}
+                                    isDraft={false}
+                                    booked
+                                    canEdit={canEditOf(item.id)}
+                                    canHide={canHideOf(item.id)}
+                                    canDelete={false}
+                                />
                             ))}
                         </div>
                     </div>

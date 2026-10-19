@@ -27,6 +27,7 @@ const Navbar = async () => {
     // Whether they own any listing (owner-only menu sections), and the roll-up of
     // what they may do across every listing (co-host sections respect the grant).
     let ownsAny = false;
+    let isFullAccessSomewhere = false;
     let hostPerms: HostPerms = NO_HOST_PERMS;
 
     if (data?.session?.user) {
@@ -50,6 +51,7 @@ const Navbar = async () => {
         isProvider = read.isProvider;
         providerAudience = read.providerAudience;
         ownsAny = read.ownsAny;
+        isFullAccessSomewhere = read.isFullAccessSomewhere;
         hostPerms = read.hostPerms;
 
         // The passport is made of finished stays, so it is empty until there
@@ -141,6 +143,7 @@ const Navbar = async () => {
                         experiencesOpen={experiencesOpen}
                         isHost={isHost}
                         ownsAny={ownsAny}
+                        isFullAccessSomewhere={isFullAccessSomewhere}
                         hostPerms={hostPerms}
                         isAdmin={isAdmin}
                         mode={mode}

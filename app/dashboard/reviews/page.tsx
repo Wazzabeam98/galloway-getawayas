@@ -17,6 +17,11 @@ export default function HostReviewsPage() {
 
     const [reviewsAboutMe, setReviewsAboutMe] = useState<any[]>([]);
     const [reviewerNames, setReviewerNames] = useState<Record<string, string>>({});
+    // The listings whose reviews this person may read — their own, plus any they
+    // co-host with the guest-messages permission (Reviews rides with it). Owned
+    // ones are tracked separately, because replying to a review is still the
+    // owner's: the reviews RLS keys a reply to the person reviewed.
+    const [ownedListingIds, setOwnedListingIds] = useState<Set<string>>(new Set());
 
     const [reviewableBookings, setReviewableBookings] = useState<any[]>([]);
     const [guestNames, setGuestNames] = useState<Record<string, string>>({});
@@ -32,12 +37,25 @@ export default function HostReviewsPage() {
                 return;
             }
 
-            const { data: aboutMe } = await supabase
-                .from('reviews')
-                .select('*')
-                .eq('reviewee_id', session.user.id)
-                .eq('review_type', 'guest_to_host')
-                .order('created_at', { ascending: false });
+            // Which properties' reviews they may see: own or co-hosted with the
+            // messages permission. The server works it out through the shared
+            // co-host helper; guest-to-host reviews are world-readable, so a
+            // co-host reads the listing's reviews by listing id.
+            const mine = await fetch('/api/my-listings?permission=can_messages')
+                .then((r) => (r.ok ? r.json() : { listings: [] }))
+                .catch(() => ({ listings: [] }));
+            const accessibleIds: string[] = (mine.listings || []).map((l: any) => l.id);
+            const owned = new Set<string>((mine.listings || []).filter((l: any) => l.isOwner).map((l: any) => l.id));
+            setOwnedListingIds(owned);
+
+            const { data: aboutMe } = accessibleIds.length
+                ? await supabase
+                    .from('reviews')
+                    .select('*')
+                    .in('listing_id', accessibleIds)
+                    .eq('review_type', 'guest_to_host')
+                    .order('created_at', { ascending: false })
+                : { data: [] };
             setReviewsAboutMe(aboutMe || []);
 
             const reviewerIds = Array.from(new Set((aboutMe || []).map((r) => r.reviewer_id)));
@@ -145,7 +163,7 @@ export default function HostReviewsPage() {
 
             <div>
                 <div className="flex items-center gap-3 mb-4">
-                    <h2 className="text-lg font-semibold text-slate-800">What guests say about you</h2>
+                    <h2 className="text-lg font-semibold text-slate-800">What guests say</h2>
                     {reviewsAboutMe.length > 0 && (
                         <span className="flex items-center gap-1 text-sm text-slate-600">
                             <ReviewStars value={Math.round(avgRating)} size={16} />
@@ -167,7 +185,17 @@ export default function HostReviewsPage() {
                                     <ReviewStars value={r.rating} size={16} />
                                 </div>
                                 <p className="text-sm text-slate-700">{r.comment}</p>
-                                <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
+                                {/* Replying is the owner's — the reviews RLS keys
+                                    a reply to the person reviewed. A co-host sees
+                                    the reply the owner left, read-only. */}
+                                {ownedListingIds.has(r.listing_id) ? (
+                                    <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
+                                ) : r.host_reply ? (
+                                    <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 p-3">
+                                        <div className="text-xs font-semibold text-slate-500 mb-1">Owner&apos;s reply</div>
+                                        <p className="text-sm text-slate-700">{r.host_reply}</p>
+                                    </div>
+                                ) : null}
                             </div>
                         ))}
                     </div>

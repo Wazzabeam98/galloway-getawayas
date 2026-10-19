@@ -2,6 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { ownerOrFullAccess } from '@/lib/access';
 import { displayName } from '@/lib/utils';
 import { sendEmail, emailLayout, button, escapeHtml, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
@@ -20,8 +21,9 @@ export const dynamic = 'force-dynamic';
 // them settle it. When a real host-initiated charge exists, this is where it
 // would call it.
 //
-// Only the booking's own host may ask — not a co-host. Asking a guest for money
-// is the owner's call, the same way cancelling and refunding are.
+// The owner, or a full-access co-host, may ask — the same people who may cancel
+// and refund. A partial co-host may not: asking a guest for money is a money
+// action, and those ride with full access, not with any single permission.
 
 export async function POST(request: Request) {
     let bookingId = '';
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
             .eq('id', bookingId)
             .maybeSingle();
         if (!booking) return NextResponse.json({ ok: false, error: 'No such booking.' }, { status: 404 });
-        if (booking.host_id !== user.id) return NextResponse.json({ ok: false, error: 'Only the host of this booking can ask the guest for money.' }, { status: 403 });
+        if (booking.host_id !== user.id && !(await ownerOrFullAccess(user.id, booking.listing_id))) return NextResponse.json({ ok: false, error: 'Only the owner or a full-access co-host can ask the guest for money.' }, { status: 403 });
 
         const [{ data: listing }, { data: guest }] = await Promise.all([
             admin.from('listings').select('title').eq('id', booking.listing_id).maybeSingle(),

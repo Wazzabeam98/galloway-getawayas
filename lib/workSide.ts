@@ -17,12 +17,13 @@ import { APPROVED_LISTING_STATUSES, HostPerms, NO_WORK_SIDE, WorkSide } from './
 export async function readWorkSide(
     supabase: any,
     userId: string | null | undefined
-): Promise<WorkSide & { providerAudience: string | null; ownsAny: boolean; hostPerms: HostPerms }> {
+): Promise<WorkSide & { providerAudience: string | null; ownsAny: boolean; isFullAccessSomewhere: boolean; hostPerms: HostPerms }> {
     if (!userId) {
         return {
             ...NO_WORK_SIDE,
             providerAudience: null,
             ownsAny: false,
+            isFullAccessSomewhere: false,
             hostPerms: { can_calendar: false, can_messages: false, can_bookings: false, can_listing: false, can_earnings: false },
         };
     }
@@ -72,6 +73,15 @@ export async function readWorkSide(
         can_earnings: can('can_earnings'),
     };
 
+    // A co-host the owner ticked every permission for is the owner's equal (see
+    // lib/access isFullAccess), so they get the owner-only menu sections — the
+    // Co-hosts page above all. An owner is trivially full access.
+    const isFullAccessSomewhere =
+        ownsAny ||
+        coHostRows.some(
+            (r) => r.can_calendar && r.can_messages && r.can_bookings && r.can_listing && r.can_earnings
+        );
+
     return {
         // Owns a listing (drafts included) or co-hosts one: shown the switch.
         isHost: ownsAny || coHosts,
@@ -82,6 +92,7 @@ export async function readWorkSide(
         isProvider: !!provider.data,
         providerAudience: (provider.data && provider.data.audience) || null,
         ownsAny,
+        isFullAccessSomewhere,
         hostPerms,
     };
 }

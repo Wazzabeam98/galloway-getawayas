@@ -1,5 +1,6 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { ownerOrFullAccess } from '@/lib/access';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { issueRefunds } from '@/lib/refundSpread';
@@ -56,7 +57,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
         }
 
-        if (booking.host_id !== user.id) {
+        // The owner, or a full-access co-host, may refund. A partial co-host may
+        // not: giving the guest money back rides with full access. The owner is
+        // checked first, from the booking already in hand, before the extra read.
+        if (booking.host_id !== user.id && !(await ownerOrFullAccess(user.id, booking.listing_id))) {
             return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
         }
 

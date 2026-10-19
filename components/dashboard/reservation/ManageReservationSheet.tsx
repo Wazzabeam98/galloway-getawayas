@@ -22,7 +22,7 @@ type View = 'menu' | 'resolution' | 'cancel' | 'change';
 export default function ManageReservationSheet({
     bookingId,
     status,
-    isOwner,
+    isOwnerEquivalent,
     ended,
     started,
     phone,
@@ -44,7 +44,7 @@ export default function ManageReservationSheet({
 }: {
     bookingId: string;
     status: string;
-    isOwner: boolean;
+    isOwnerEquivalent: boolean;
     ended: boolean;
     started?: boolean;
     phone: string | null;
@@ -71,7 +71,7 @@ export default function ManageReservationSheet({
     // Changes run right up to check-out — including mid-stay extensions and
     // extra guests. Once the stay is over it's a money matter, so the host uses
     // "Send or request money" (still shown below) instead.
-    const canChange = isOwner && !closed && !ended;
+    const canChange = isOwnerEquivalent && !closed && !ended;
 
     const title = view === 'resolution' ? 'Send or request money'
         : view === 'cancel' ? 'Cancel booking'
@@ -102,7 +102,7 @@ export default function ManageReservationSheet({
                     {canChange && (
                         <Row icon={CalendarDays} label="Change reservation" sub="New dates — the guest confirms" onClick={() => setView('change')} />
                     )}
-                    {isOwner && !closed && (
+                    {isOwnerEquivalent && !closed && (
                         <Row icon={Banknote} label="Send or request money" sub="For a refund, extra services or damage" onClick={() => setView('resolution')} />
                     )}
                     {phone && (
@@ -115,14 +115,14 @@ export default function ManageReservationSheet({
                             <CopyButton value={phone} />
                         </div>
                     )}
-                    {isOwner && !closed && !ended && askToCancelHref && (
+                    {isOwnerEquivalent && !closed && !ended && askToCancelHref && (
                         <Row icon={MessageSquare} label={'Ask ' + guestFirst + ' to cancel'} sub="Draft a message for them to cancel" href={askToCancelHref} onNavigate={() => setOpen(false)} />
                     )}
                     {/* Not once the stay has begun — the list hides it from
                         check-in day too. Cancelling then would refund a stay the
                         guest is in, or has had, in full. */}
                     {!closed && !started && !ended && (
-                        <Row icon={XCircle} label="Cancel booking" sub={isOwner ? 'Call the stay off' : 'Stays with the owner'} danger onClick={() => setView('cancel')} />
+                        <Row icon={XCircle} label="Cancel booking" sub={isOwnerEquivalent ? 'Call the stay off' : 'Stays with the owner'} danger onClick={() => setView('cancel')} />
                     )}
                     {closed && <p className="py-3 text-sm text-slate-500">This booking is {status}. There’s nothing left to manage.</p>}
                 </div>
@@ -163,7 +163,7 @@ export default function ManageReservationSheet({
 
             {view === 'cancel' && (
                 <div>
-                    {isOwner ? (
+                    {isOwnerEquivalent ? (
                         <>
                             <p className="mb-3 text-sm text-slate-600">
                                 {status === 'pending'

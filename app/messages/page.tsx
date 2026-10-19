@@ -836,11 +836,11 @@ export default function MessagesInboxPage() {
             {/* Manage reservation — the host's pop-up (change / send-or-request
                 money / cancel), or the guest's own change/cancel, in a card of the
                 same family so it reads as the last card in the stack. */}
-            {thread.role === 'host' && thread.listing && (
+            {(thread.role === 'host' || thread.ownerEquivalent) && thread.listing && (
                 <ManageReservationSheet
                     bookingId={thread.booking.id}
                     status={thread.booking.status}
-                    isOwner
+                    isOwnerEquivalent={!!thread.ownerEquivalent}
                     ended={stayHasEnded(thread.booking.check_out, thread.listing.check_out_time)}
                     started={stayHasStarted(thread.booking.check_in)}
                     phone={thread.other.phone}
