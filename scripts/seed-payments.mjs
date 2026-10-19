@@ -510,6 +510,15 @@ async function main() {
     const listingFirm = await createListing(hostReady, 'Firm cottage', {
         commission_rate: 10, cancellation_policy: 'Firm',
     });
+    // Custom: full refund more than 30 days before check-in, nothing within 30.
+    const listingCustom = await createListing(hostReady, 'Custom cottage', {
+        commission_rate: 10, cancellation_policy: 'Custom', cancellation_custom_days: 30,
+    });
+    // Offers the non-refundable rate. The underlying tier is beside the point —
+    // a non_refundable booking returns nothing whatever the tier would say.
+    const listingNonRef = await createListing(hostReady, 'Non-refundable cottage', {
+        commission_rate: 10, cancellation_policy: 'Moderate', non_refundable_option: true,
+    });
 
     // 12 — a request the host has not accepted yet.
     const s12 = await createBooking(listingReady, guest, hostReady, {
@@ -572,6 +581,58 @@ async function main() {
         deposit_amount: 200, balance_amount: 600, balance_due_date: dayOffset(-10),
         check_in: dayOffset(30), check_out: dayOffset(33),
     });
+
+    /* ---------------------------- Custom policy & non-refundable, paid in full */
+
+    // Custom / 30 days. createBooking stamps the listing's Custom policy and its
+    // 30-day count onto each booking, the way checkout does. A £60 clean on each
+    // so the "cleaning fee still comes back inside the window" rule is visible.
+    //
+    // scOut: 40 days out — OUTSIDE the cut-off, a full refund.
+    const scCustOut = await createBooking(listingCustom, guest, hostReady, {
+        label: 'scCustOut', total_price: 500, amount_paid: 500, cleaning_fee: 60,
+        check_in: dayOffset(40), check_out: dayOffset(43),
+    });
+    // scIn: 20 days out — INSIDE the cut-off. No refund on the stay; only the
+    // £60 clean comes back, because the clean does not take place.
+    const scCustIn = await createBooking(listingCustom, guest, hostReady, {
+        label: 'scCustIn', total_price: 500, amount_paid: 500, cleaning_fee: 60,
+        check_in: dayOffset(20), check_out: dayOffset(23),
+    });
+
+    // The non-refundable rate: booked at the 10%-cheaper price (£450 not £500),
+    // with the choice stamped on the booking. Far out (40 days), where the
+    // underlying Moderate tier WOULD give a full refund — so a £0 result proves
+    // it is the non-refundable choice doing it, not the window. Nothing comes
+    // back, the cleaning fee included.
+    const snr1 = await createBooking(listingNonRef, guest, hostReady, {
+        label: 'snr1', total_price: 450, amount_paid: 450, cleaning_fee: 60,
+        non_refundable: true,
+        check_in: dayOffset(40), check_out: dayOffset(43),
+    });
+
+    /* ------------------- Custom policy, a stay paid as deposit + balance (two
+       charges). Both halves are charged for real so the refund has to be spread
+       across the two payment intents, deposit first (lib/refundSpread). */
+
+    const twoChargeCustom = async (label, startsIn) => {
+        const depositIntent = await chargeFor(200, label + '-deposit');
+        const balanceIntent = await chargeFor(600, label + '-balance');
+        return createBooking(listingCustom, guest, hostReady, {
+            label,
+            noCharge: true,
+            total_price: 800, amount_paid: 800, cleaning_fee: 60,
+            payment_status: 'paid', payment_plan: 'deposit',
+            deposit_amount: 200, balance_amount: 0,
+            stripe_payment_intent_id: depositIntent,
+            balance_payment_intent_id: balanceIntent,
+            check_in: dayOffset(startsIn), check_out: dayOffset(startsIn + 3),
+        });
+    };
+    // 45 days out — OUTSIDE the cut-off: a full £800 refund, spread across both
+    // charges. 25 days out — INSIDE: only the £60 clean comes back.
+    const scCustDepOut = await twoChargeCustom('scCustDepOut', 45);
+    const scCustDepIn = await twoChargeCustom('scCustDepIn', 25);
 
     /* --------------------------------------------- balance charges, 3 & 7-11 */
 
@@ -789,6 +850,7 @@ async function main() {
             ready: listingReady.id, indebted: listingIndebted.id, pending: listingPending.id,
             flexible: listingFlexible.id, firm: listingFirm.id, instant: listingInstant.id,
             price: listingPrice.id, ical: listingIcal.id, race: listingRace.id,
+            custom: listingCustom.id, nonRef: listingNonRef.id,
         },
         bookings: {
             s01: s01.id, s02: s02.id, s04: s04.id, s05: s05.id, s06: s06.id,
@@ -797,6 +859,8 @@ async function main() {
             s12: s12.id, s13: s13.id, s13m: s13m.id, s14: s14.id, s15: s15.id, s16: s16.id, s31: s31.id,
             s32: raceBookings[0].id, s33: raceBookings[1].id, s34: raceBookings[2].id,
             s17: s17.id, s18: s18.id,
+            scCustOut: scCustOut.id, scCustIn: scCustIn.id, snr1: snr1.id,
+            scCustDepOut: scCustDepOut.id, scCustDepIn: scCustDepIn.id,
             s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id,
             cg1: cg1.id, cg2: cg2.id, cg3: cg3.id, cg4: cg4.id, ch1: ch1.id, cm1: cm1.id,
         },
