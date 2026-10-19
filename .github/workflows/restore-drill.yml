@@ -81,6 +81,14 @@ jobs:
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
+          # Installing v17 is not enough: the runner's preinstalled v16 tools
+          # still win on PATH (19 Oct 2026: "pg_dump version: 16.15" against a
+          # 17.6 server). Put v17's bin first for every later step.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Show the client version in use
+        if: env.ALERT_TEST != '1'
+        run: pg_dump --version
 
       - name: Check the drill role secret is set
         if: env.ALERT_TEST != '1'
@@ -92,7 +100,17 @@ jobs:
 
       - name: Create the throwaway database
         if: env.ALERT_TEST != '1'
-        run: psql "postgresql://postgres:drill@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "create database restore_drill"
+        run: |
+          psql "postgresql://postgres:drill@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "create database restore_drill"
+          # What a bare Postgres lacks and the schema needs to be created at
+          # all: btree_gist for the no-overlap exclusion constraints (bookings,
+          # slot_sessions), and a stand-in auth.uid() for column defaults that
+          # call it (guest_delivery_addresses.guest_id was never created
+          # without one — 19 Oct 2026). Only the throwaway gets these.
+          psql "$TARGET_DB_URL" -v ON_ERROR_STOP=1 \
+            -c "create extension if not exists btree_gist" \
+            -c "create schema if not exists auth" \
+            -c "create or replace function auth.uid() returns uuid language sql stable as 'select null::uuid'"
 
       # Supabase's own storage housekeeping tables (multipart-upload bookkeeping,
       # analytics/vector buckets, its migration log) are owned by
