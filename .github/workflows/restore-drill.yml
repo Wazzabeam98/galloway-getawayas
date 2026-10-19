@@ -94,12 +94,23 @@ jobs:
         if: env.ALERT_TEST != '1'
         run: psql "postgresql://postgres:drill@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "create database restore_drill"
 
+      # Supabase's own storage housekeeping tables (multipart-upload bookkeeping,
+      # analytics/vector buckets, its migration log) are owned by
+      # supabase_storage_admin and are not readable by the drill role, so
+      # pg_dump would stop with "permission denied". They hold no business
+      # data; the verify step never sees them either (information_schema only
+      # lists tables the role can read). Excluded by name.
       - name: Dump production application data (read-only)
         if: env.ALERT_TEST != '1'
         run: |
           pg_dump "$SOURCE_DB_URL" \
             --format=custom --no-owner --no-acl \
             --schema=public --schema=storage \
+            --exclude-table='storage.migrations' \
+            --exclude-table='storage.s3_multipart_uploads*' \
+            --exclude-table='storage.buckets_analytics' \
+            --exclude-table='storage.buckets_vectors' \
+            --exclude-table='storage.vector_indexes' \
             --file=prod.dump
           ls -lh prod.dump
 
