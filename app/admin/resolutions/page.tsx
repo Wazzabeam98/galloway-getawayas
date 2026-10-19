@@ -63,7 +63,7 @@ export default async function AdminResolutions() {
 
     const personIds = Array.from(new Set(rows.flatMap((r: any) => [r.host_id, r.guest_id]).filter(Boolean)));
     const { data: people } = personIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', personIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name').in('id', personIds)
         : { data: [] };
     const nameById: Record<string, string> = {};
     (people || []).forEach((p: any) => { nameById[p.id] = p.full_name || p.preferred_name || 'Unknown'; });
@@ -89,7 +89,7 @@ export default async function AdminResolutions() {
     const disputedDebts = await attachBookings(admin, (disputedRows || []) as HostDebt[]);
     const debtHostIds = Array.from(new Set(disputedDebts.map((d) => d.host_id)));
     const { data: debtHosts } = debtHostIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', debtHostIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name').in('id', debtHostIds)
         : { data: [] };
     (debtHosts || []).forEach((p: any) => { nameById[p.id] = p.full_name || p.preferred_name || 'Unknown'; });
 

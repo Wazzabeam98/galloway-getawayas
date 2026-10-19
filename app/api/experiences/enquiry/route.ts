@@ -87,7 +87,7 @@ export async function POST(req: Request) {
         try {
             const { data: guestProfile } = await admin
                 .from('profiles')
-                .select('full_name, preferred_name')
+                .select('full_name, first_name, last_name, preferred_name')
                 .eq('id', guestId)
                 .maybeSingle();
             const guestFirst = firstName(guestProfile, 'A guest');

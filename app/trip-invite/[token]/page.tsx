@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import Image from 'next/image';
 import { notFound } from 'next/navigation';
-import { getImageUrl } from '@/lib/utils';
+import { getImageUrl, greetingName } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
 import { publicArea } from '@/lib/places';
 import AcceptTripInvite from '@/components/AcceptTripInvite';
@@ -107,11 +107,11 @@ export default async function TripInvitePage({ params }: { params: { token: stri
 
     const { data: booker } = await admin
         .from('profiles')
-        .select('full_name, preferred_name')
+        .select('full_name, first_name, last_name, preferred_name')
         .eq('id', invite.invited_by)
         .maybeSingle();
 
-    const bookerName = (booker && (booker.preferred_name || booker.full_name)) || 'Someone';
+    const bookerName = greetingName(booker, 'Someone');
     const addedLine = isOrder
         ? bookerName + ' has invited you to an experience'
         : bookerName + ' has added you to a trip';

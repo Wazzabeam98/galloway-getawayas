@@ -255,7 +255,7 @@ async function notifyTripCancelled(
     try {
         const [{ data: hostUser }, { data: guestProfile }] = await Promise.all([
             admin.auth.admin.getUserById(booking.host_id),
-            admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', booking.guest_id).maybeSingle(),
+            admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', booking.guest_id).maybeSingle(),
         ]);
         const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
         if (hostEmail) {

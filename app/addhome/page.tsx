@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Flame, Armchair, Umbrella, Anchor, Feather, Users, Gem, MapPin, Maximize2, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
+import { requireName } from '@/components/auth/FinishSignUpGate';
 import RecruitFaq from '@/components/business/RecruitFaq';
 import AgreementTick from '@/components/legal/AgreementTick';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
@@ -207,6 +208,14 @@ export default function AddHome() {
     const supabase = createClientComponentClient();
     const [draftId, setDraftId] = useState<string | null>(null);
     const [savingDraft, setSavingDraft] = useState(false);
+
+    // An account with no first and last name is asked for them before anything
+    // else in this wizard (components/auth/FinishSignUpGate) — never as a step
+    // of the wizard itself. A no-op for a named account.
+    const signedInId = session?.user?.id || null;
+    useEffect(() => {
+        if (signedInId) requireName();
+    }, [signedInId]);
 
     useEffect(() => {
         const checkUser = async () => {
@@ -639,6 +648,13 @@ export default function AddHome() {
                     || 'Your listing was saved as a draft but could not be published. Please try again.';
                 // The server has no agreement on record (or the terms changed
                 // since this page loaded): show the agree box.
+                // No first and last name on the account: ask for it, then they
+                // press publish again.
+                if (publishBody && publishBody.needsName) {
+                    const named = await requireName();
+                    setFormError(named ? 'Thanks — now press publish again.' : msg);
+                    return;
+                }
                 if (publishBody && publishBody.needsTerms) {
                     setTermsOnRecord(false);
                     setTermsTicked(false);

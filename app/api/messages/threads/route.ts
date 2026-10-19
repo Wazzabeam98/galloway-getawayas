@@ -101,7 +101,7 @@ export async function GET() {
     );
 
     const { data: profiles } = otherIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', otherIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name').in('id', otherIds)
         : { data: [] };
 
     const nameMap: Record<string, string> = {};

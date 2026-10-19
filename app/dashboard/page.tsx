@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
 
+import AddNameButton from '@/components/auth/AddNameButton';
+import { needsPersonName } from '@/lib/personName';
 import Toast from "@/components/base/Toast";
 import TemplateGapWarning from "@/components/TemplateGapWarning";
 import ArrivalNudge from "@/components/ArrivalNudge";
@@ -206,7 +208,7 @@ export default async function Dashboard() {
     const fuGuestIds = Array.from(new Set(followUps.map((b: any) => b.guest_id)));
     const fuListingIds = Array.from(new Set(followUps.map((b: any) => b.listing_id)));
     const { data: fuGuests } = fuGuestIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url').in('id', fuGuestIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url').in('id', fuGuestIds)
         : { data: [] };
     const { data: fuListings } = fuListingIds.length
         ? await admin.from('listings').select('id, title').in('id', fuListingIds)
@@ -234,14 +236,9 @@ export default async function Dashboard() {
     );
     const drafts = owned.filter((h) => h.status === 'draft');
 
-    // A host with no name shows to guests as "your host" everywhere. Nudge them
-    // to set one — this is the other half of the fix for the "Your" bug: stop it
-    // rendering ungrammatically AND ask hosts to fill the name in.
     const { data: myProfile } = uid
-        ? await admin.from('profiles').select('full_name, preferred_name, stripe_account_id, stripe_payouts_enabled').eq('id', uid).maybeSingle()
+        ? await admin.from('profiles').select('full_name, first_name, last_name, preferred_name, stripe_account_id, stripe_payouts_enabled').eq('id', uid).maybeSingle()
         : { data: null };
-    const hostNeedsName = !!uid && !!myProfile
-        && !((myProfile.preferred_name || myProfile.full_name || '') as string).trim();
 
     // A listing is live on approval now, payouts or not (the Airbnb order), so
     // the dashboard asks for a payout method the moment a host has an approved
@@ -251,6 +248,12 @@ export default async function Dashboard() {
     const approvedListing = owned.some((h) => h.status === 'published' || h.status === 'hidden');
     const hostNeedsPayouts = !!uid && !!myProfile && approvedListing && myProfile.stripe_payouts_enabled !== true;
     const payoutsStarted = !!(myProfile && myProfile.stripe_account_id);
+
+    // A live listing whose owner has no first and last name: guests see the
+    // business name or "your host" where a first name belongs. Ask for it —
+    // the same Finish signing up a new account gets (lib/personName).
+    const liveListings = owned.filter((h) => h.status === 'published');
+    const hostNeedsName = !!uid && !!myProfile && liveListings.length > 0 && needsPersonName(myProfile);
 
     return (
         <div>
@@ -288,11 +291,13 @@ export default async function Dashboard() {
                     <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
                             <h2 className="font-semibold text-slate-900">Add your name</h2>
-                            <p className="text-sm text-slate-700 mt-0.5">Guests currently see “your host” instead of your name on their trip and on your listing. Add a name so they know who they’re booking with.</p>
+                            <p className="text-sm text-slate-700 mt-0.5">
+                                {liveListings.length === 1 ? (liveListings[0].title || 'Your listing') + ' is live' : 'Your listings are live'}, but guests can’t see who’s hosting. Add your first and last name so they know who they’re booking with.
+                            </p>
                         </div>
-                        <Link href="/account" className="flex-none self-start sm:self-auto rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
-                            Set your name
-                        </Link>
+                        <AddNameButton className="flex-none self-start sm:self-auto rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+                            Add your name
+                        </AddNameButton>
                     </div>
                 </div>
             )}

@@ -361,7 +361,7 @@ export default function CalendarPage() {
             if (guestIds.length > 0) {
                 const { data: profiles } = await supabase
                     .from('profiles')
-                    .select('id, full_name, preferred_name, show_full_name, avatar_url')
+                    .select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url')
                     .in('id', guestIds);
                 const names: Record<string, string> = {};
                 const avatars: Record<string, string | null> = {};

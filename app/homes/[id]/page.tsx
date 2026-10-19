@@ -7,7 +7,7 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { capitializeFirst, getImageUrl, firstName } from '@/lib/utils';
+import { capitializeFirst, getImageUrl, firstName, hostByline } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import { guestCalendar } from '@/lib/availability';
 import { petLimit, tickedSafety } from '@/lib/listingSafety';
@@ -311,7 +311,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     let hostBio: string | null = null;
     // The host block is read through the SERVICE ROLE, not the visitor's client.
     //
-    // The name columns (full_name, preferred_name, show_full_name) are no longer
+    // The name columns (full_name, first_name, last_name, preferred_name, show_full_name) are no longer
     // readable by the anon role: a logged-out REST caller must never be able to
     // pull a person's legal surname off /rest/v1/profiles (revoked in
     // 20260924174233_profiles_revoke_anon_name.sql). show_full_name was only ever
@@ -328,10 +328,10 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     if (home?.host_id) {
         const { data: hostProfile } = await adminClient()
             .from('profiles')
-            .select('full_name, preferred_name, show_full_name, avatar_url, created_at, host_bio, stripe_payouts_enabled')
+            .select('full_name, first_name, last_name, preferred_name, show_full_name, trading_name, avatar_url, created_at, host_bio, stripe_payouts_enabled')
             .eq('id', home.host_id)
             .maybeSingle();
-        hostName = firstName(hostProfile, 'your host');
+        hostName = hostByline(hostProfile, null, 'your host');
         hostAvatar = hostProfile?.avatar_url || null;
         hostBio = (hostProfile?.host_bio || '').trim() || null;
         // When they joined — the tenure line a guest looks for on a page
@@ -377,7 +377,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         if (coIds.length) {
             const { data: coProfiles } = await adminClient()
                 .from('profiles')
-                .select('id, full_name, preferred_name, show_full_name, avatar_url')
+                .select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url')
                 .in('id', coIds);
             coHosts = (coProfiles || []).map((p: any) => ({
                 name: capitializeFirst(firstName(p, 'Co-host')),
@@ -388,11 +388,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     }
 
     // Guests see a first name only — a surname on a public page is more
-    // than anyone needs, and it's how the big platforms do it. A nameless host
-    // stays "your host" (never the bare word "Your" from splitting the fallback).
-    const hostFirstName = hostName === 'your host'
-        ? 'your host'
-        : capitializeFirst(hostName.split(' ')[0]);
+    // than anyone needs, and it's how the big platforms do it. The first name
+    // is the account's own first_name, never the first word of something
+    // longer: a host with none yet shows their business name WHOLE ("The Dark
+    // Sky Dome", not "The" — 19 Oct 2026), and a nameless host stays "your host".
+    const hostFirstName = hostName === 'your host' ? 'your host' : capitializeFirst(hostName);
     const highlights = propertyHighlights(home);
 
     // Rounded to about 110m before it ever left the database. PropertyMap
@@ -518,7 +518,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         // Service role: the reviewer name columns are no longer anon-readable
         // (see the host block above). The name is resolved server-side and the
         // list renders a first name only.
-        const { data: reviewers } = await adminClient().from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds);
+        const { data: reviewers } = await adminClient().from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name').in('id', reviewerIds);
         (reviewers || []).forEach((p) => { reviewerNames[p.id] = firstName(p, 'Guest'); });
     }
 

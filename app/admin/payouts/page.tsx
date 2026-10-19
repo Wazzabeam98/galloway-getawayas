@@ -53,7 +53,7 @@ export default async function AdminPayouts() {
     // and payouts through the same admin client.
     const { data: hosts, error: hostsError } = await admin
         .from('profiles')
-        .select('id, full_name, preferred_name, show_full_name, stripe_account_id, stripe_payouts_enabled, payout_balance_owed');
+        .select('id, full_name, first_name, last_name, preferred_name, show_full_name, stripe_account_id, stripe_payouts_enabled, payout_balance_owed');
 
     if (hostsError) {
         await logError('admin/payouts: could not load the hosts', hostsError, {

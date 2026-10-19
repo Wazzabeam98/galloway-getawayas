@@ -135,7 +135,7 @@ export async function orderThreadContext(
     // shown to the provider) can use it, whoever is viewing.
     const { data: guest } = await admin
         .from('profiles')
-        .select('full_name, preferred_name, show_full_name')
+        .select('full_name, first_name, last_name, preferred_name, show_full_name')
         .eq('id', order.guest_id)
         .maybeSingle();
     const guestName = displayName(guest, 'the guest');

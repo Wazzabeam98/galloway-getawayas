@@ -49,7 +49,7 @@ export default async function AdminEarnings({
 
     const { data: hosts } = await admin
         .from('profiles')
-        .select('id, full_name, preferred_name, show_full_name');
+        .select('id, full_name, first_name, last_name, preferred_name, show_full_name');
 
     const hostNames: Record<string, string> = {};
     (hosts || []).forEach((h: any) => {

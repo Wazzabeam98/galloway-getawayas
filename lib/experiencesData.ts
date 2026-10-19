@@ -415,7 +415,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     // the name and the show_full_name switch rather than a stored snapshot.
     const ownerIds = Array.from(new Set((rows || []).map((r: any) => r.owner_id).filter(Boolean)));
     const { data: ownerProfiles } = ownerIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url, host_bio').in('id', ownerIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url, host_bio').in('id', ownerIds)
         : { data: [] as any[] };
     const profileById: Record<string, any> = {};
     for (const pr of ownerProfiles || []) profileById[pr.id] = pr;

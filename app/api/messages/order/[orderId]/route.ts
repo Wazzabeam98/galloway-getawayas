@@ -78,7 +78,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
             // Guest name/avatar (provider view) and provider photo (guest view).
             const [{ data: gProf }, { data: prov }] = await Promise.all([
                 full.guest_id
-                    ? admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', full.guest_id).maybeSingle()
+                    ? admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name, avatar_url').eq('id', full.guest_id).maybeSingle()
                     : Promise.resolve({ data: null }),
                 admin.from('service_providers').select('business_name, fulfilment, collection_street, collection_town, collection_postcode, photos, headshot, cancellation_window_hours, guest_details').eq('id', ctx.order.provider_id).maybeSingle(),
             ]);

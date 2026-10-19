@@ -27,7 +27,7 @@ export default async function AdminExperienceEnquiries() {
         ? await admin.from('service_providers').select('id, business_name').in('id', providerIds)
         : { data: [] as any[] };
     const { data: guests } = guestIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', guestIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name').in('id', guestIds)
         : { data: [] as any[] };
     const providerName: Record<string, string> = {};
     for (const p of providers || []) providerName[p.id] = p.business_name || '—';

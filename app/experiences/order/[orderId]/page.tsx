@@ -234,7 +234,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // person, and fall back to the neutral "the provider" when we don't have one.
     const who = order.provider_business_name || (prov && prov.business_name) || 'the provider';
     const { data: hostProfile } = prov && prov.owner_id
-        ? await admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', prov.owner_id).maybeSingle()
+        ? await admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', prov.owner_id).maybeSingle()
         : { data: null };
     const hostFirst = firstName(hostProfile, '');
     const shortWho = hostFirst || 'the provider';
@@ -518,7 +518,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // The booker shown at the head of the list is the ORDER's booker (so a
     // companion sees whose experience it is), read live from their profile.
     const { data: bookerProfile } = showGroup
-        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url').eq('id', order.guest_id).maybeSingle()
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url').eq('id', order.guest_id).maybeSingle()
         : { data: null };
     const bookerName = (bookerProfile && displayName(bookerProfile, '')) || 'The booker';
     const bookerAvatar = (bookerProfile && bookerProfile.avatar_url) || null;
@@ -549,7 +549,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
         ...prefillIds,
     ]));
     const { data: faceProfiles } = faceIds.length
-        ? await admin.from('profiles').select('id, avatar_url, full_name, preferred_name, show_full_name').in('id', faceIds)
+        ? await admin.from('profiles').select('id, avatar_url, full_name, first_name, last_name, preferred_name, show_full_name').in('id', faceIds)
         : { data: [] };
     const profileById: Record<string, any> = {};
     (faceProfiles || []).forEach((p: any) => { profileById[p.id] = p; });

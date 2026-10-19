@@ -123,7 +123,7 @@ export default async function AdminProviders() {
     // ignores the show_full_name guest-privacy switch by design.
     const ownerIds = Array.from(new Set(rows.map((r: any) => r.owner_id).filter(Boolean)));
     const { data: ownerProfiles } = ownerIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', ownerIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name').in('id', ownerIds)
         : { data: [] as any[] };
     const profileById: Record<string, any> = {};
     for (const pr of ownerProfiles || []) profileById[pr.id] = pr;

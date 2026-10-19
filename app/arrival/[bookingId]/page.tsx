@@ -90,7 +90,7 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
     // and the door code, read under the service role only after the booking
     // check above.
     const [{ data: host }, { data: arrival }, { data: access }] = await Promise.all([
-        admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', booking.host_id).maybeSingle(),
+        admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', booking.host_id).maybeSingle(),
         admin.from('listing_arrival').select('wifi_name, wifi_password').eq('listing_id', booking.listing_id).maybeSingle(),
         // Inside the window we fetch the code itself; outside it we fetch only
         // listing_id, so the page can SAY a way in exists without the value ever

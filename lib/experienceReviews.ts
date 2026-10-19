@@ -69,7 +69,7 @@ export async function loadExperienceReviews(
     if (ownerId) {
         const { data: op } = await admin
             .from('profiles')
-            .select('full_name, preferred_name, show_full_name')
+            .select('full_name, first_name, last_name, preferred_name, show_full_name')
             .eq('id', ownerId)
             .maybeSingle();
         providerFirstName = firstName(op, 'the provider');
@@ -83,7 +83,7 @@ export async function loadExperienceReviews(
     const reviewerIds = Array.from(new Set(list.map((r) => r.reviewer_id)));
     const { data: profs } = await admin
         .from('profiles')
-        .select('id, full_name, preferred_name, show_full_name')
+        .select('id, full_name, first_name, last_name, preferred_name, show_full_name')
         .in('id', reviewerIds);
     const nameById = new Map<string, string>();
     (profs || []).forEach((p) => nameById.set(p.id, firstName(p, 'Guest')));

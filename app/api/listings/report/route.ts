@@ -89,7 +89,7 @@ export async function POST(request: Request) {
         if (caller) {
             const { data: profile } = await admin
                 .from('profile_private')
-                .select('full_name, preferred_name, show_full_name, email')
+                .select('full_name, first_name, last_name, preferred_name, show_full_name, email')
                 .eq('id', caller.id)
                 .maybeSingle();
             reporterName = displayName(profile, 'A signed-in guest');

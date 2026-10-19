@@ -1,4 +1,5 @@
 import { isArchived, needsReply } from '@/lib/conversations';
+import { greetingName } from '@/lib/utils';
 import { logError } from '@/lib/logError';
 import { providerFirstNames } from '@/lib/providerName';
 import { adminClient } from '@/lib/supabaseAdmin';
@@ -267,13 +268,12 @@ export async function GET(request: Request) {
 
             const { data: profile } = await admin
                 .from('profiles')
-                .select('full_name, preferred_name')
+                .select('full_name, first_name, last_name, preferred_name')
                 .eq('id', userId)
                 .maybeSingle();
 
             const first = escapeHtml(
-                (((profile && (profile.preferred_name || profile.full_name)) || 'there')
-                    .trim().split(' ')[0]) || 'there'
+                greetingName(profile, 'there')
             );
 
             const rows = items.map((item: any) => {

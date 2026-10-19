@@ -9,7 +9,9 @@ import GoogleButton from '@/components/auth/GoogleButton';
 import { holdAgreementGate } from '@/components/legal/AgreementTick';
 import { isProviderEnabled } from '@/lib/authProviders';
 import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
-import { CODE_MAX_LENGTH, looksLikeEmail, needsName, tidyCode, tidyEmail } from '@/lib/emailCodeSignIn';
+import { CODE_MAX_LENGTH, looksLikeEmail, tidyCode, tidyEmail } from '@/lib/emailCodeSignIn';
+import { mustFinishSignUp, suggestedName } from '@/lib/personName';
+import NameFields, { NameError, saveMyName } from '@/components/auth/NameFields';
 import { CodeTarget, sendSignInCode, verifySignInCode } from '@/lib/signInCode';
 import { displayPhone, maskIdentifier, parseIdentifier } from '@/lib/signInIdentifier';
 import {
@@ -40,9 +42,12 @@ import { getImageUrl } from '@/lib/utils';
  *             whether or not the address has an account, so the panel never
  *             reveals who is on the site.
  *   code    — the six digits, emailed or texted depending on what was typed.
- *   details — new accounts only (an account with no name): their name, and an
- *             email address when they signed up with a phone number, so booking
- *             confirmations have somewhere to go. This is the last screen: a
+ *   details — "Finish signing up", new accounts only (lib/personName
+ *             mustFinishSignUp): first and last name, which cannot be skipped
+ *             (no close button; the site-wide FinishSignUpGate catches a closed
+ *             tab), and an email address when they signed up with a phone
+ *             number, so booking confirmations have somewhere to go. Never the
+ *             first word of anything. This is the last screen: a
  *             plain guest agrees to nothing at sign-up (the Guest Terms are
  *             taken at a first booking checkout), so there is no terms screen.
  *
@@ -87,7 +92,9 @@ export default function AuthPanelHost() {
     const [field, setField] = useState('');
     const [target, setTarget] = useState<CodeTarget | null>(null);
     const [code, setCode] = useState('');
-    const [name, setName] = useState('');
+    const [first, setFirst] = useState('');
+    const [last, setLast] = useState('');
+    const [nameError, setNameError] = useState<NameError>(null);
     const [email, setEmail] = useState('');
     const [needEmail, setNeedEmail] = useState(false);
     const [session, setSession] = useState<any>(null);
@@ -119,7 +126,9 @@ export default function AuthPanelHost() {
         setRemembered(r);
         setField('');
         setCode('');
-        setName('');
+        setFirst('');
+        setLast('');
+        setNameError(null);
         setEmail('');
         setTarget(null);
         setError('');
@@ -302,10 +311,12 @@ export default function AuthPanelHost() {
         window.location.reload();
     };
 
-    const remember = (s: any, fullName: string | null | undefined, avatar: string | null | undefined) => {
+    const remember = (s: any, givenName: string | null | undefined, avatar: string | null | undefined) => {
         // A shared computer ("don't stay signed in") is not told who you are.
         if (!stay) { forgetAccount(); return; }
-        const first = String(fullName || '').trim().split(/\s+/)[0] || '';
+        // Their own first name (or preferred name) — never the first word of a
+        // longer string.
+        const first = String(givenName || '').trim();
         const u = s.user || {};
         const kind: 'email' | 'phone' = u.email ? 'email' : 'phone';
         const value = u.email ? tidyEmail(u.email) : u.phone ? '+' + String(u.phone).replace(/^\+/, '') : '';
@@ -330,37 +341,39 @@ export default function AuthPanelHost() {
         if (!stay) forgetAccount();
         const s = r.value;
         setSession(s);
-        const { data: prof } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', s.user.id).maybeSingle();
-        if (needsName(prof?.full_name)) {
-            // New: name (and an email if they came by phone), then straight in —
-            // no Guest Terms screen; a guest agrees to those at checkout.
+        const { data: prof } = await supabase.from('profiles').select('full_name, first_name, last_name, preferred_name, avatar_url').eq('id', s.user.id).maybeSingle();
+        if (mustFinishSignUp(prof, s.user.created_at, s.user.email)) {
+            // New: first and last name (and an email if they came by phone),
+            // then straight in — no Guest Terms screen; a guest agrees to those
+            // at checkout. A returning account never sees this.
+            const guess = suggestedName(prof, s.user.user_metadata);
+            setFirst(guess.first);
+            setLast(guess.last);
             setNeedEmail(!s.user.email);
             setBusy(false);
             go('details');
             return;
         }
-        remember(s, prof?.full_name, prof?.avatar_url);
+        remember(s, (prof?.preferred_name || prof?.first_name || '').trim(), prof?.avatar_url);
         await finish(s);
     };
 
     const submitDetails = async (e?: FormEvent) => {
         e?.preventDefault();
-        const full = name.trim();
-        if (!full) { setError('Enter your name.'); return; }
         if (needEmail && !looksLikeEmail(email)) { setError('Enter your email address — we send booking confirmations there.'); return; }
         setBusy(true);
         setError('');
-        const { error: err } = await supabase.from('profiles').update({ full_name: full }).eq('id', session.user.id);
-        if (err) {
+        setNameError(null);
+        // Through /api/account/name, which checks it with the same rule.
+        const nameErr = await saveMyName(supabase, first, last);
+        if (nameErr) {
             setBusy(false);
-            setError('We couldn’t save your name. Check your connection and try again.');
+            setNameError(nameErr);
             return;
         }
-        // Mirrored onto the auth user, where the rest of the page reads a
-        // greeting name from before the profile is loaded.
-        const update: Record<string, unknown> = { data: { name: full } };
-        if (needEmail) update.email = tidyEmail(email);
-        const { error: upErr } = await supabase.auth.updateUser(update as any, needEmail ? { emailRedirectTo: returnLink() } : undefined);
+        const { error: upErr } = needEmail
+            ? await supabase.auth.updateUser({ email: tidyEmail(email) } as any, { emailRedirectTo: returnLink() })
+            : { error: null };
         if (upErr && needEmail) {
             setBusy(false);
             setError(/already|registered|exists/i.test(upErr.message || '')
@@ -368,7 +381,7 @@ export default function AuthPanelHost() {
                 : 'We couldn’t save your email. Check it and try again.');
             return;
         }
-        remember(session, full, null);
+        remember(session, first.trim(), null);
         // A plain guest agrees to nothing at sign-up: the Guest Terms are taken
         // at a first booking checkout (and at the end of a provider/trade
         // sign-up), which is the right place and the only one. So the account is
@@ -562,21 +575,20 @@ export default function AuthPanelHost() {
                 {screen === 'details' && (
                     <>
                         <p className="mt-2 text-center text-slate-600 [text-wrap:pretty]">
-                            This is the name hosts will see on your bookings.
+                            What’s your name?
                         </p>
                         <form onSubmit={submitDetails} className="mt-6 space-y-4" noValidate>
-                            <div>
-                                <label htmlFor="auth-name" className="mb-1.5 block text-xs font-medium text-slate-600">Full name</label>
-                                <input
-                                    ref={firstField}
-                                    id="auth-name"
-                                    type="text"
-                                    autoComplete="name"
-                                    value={name}
-                                    onChange={(e) => { setName(e.target.value); setError(''); }}
-                                    className={INPUT}
-                                />
-                            </div>
+                            <NameFields
+                                idPrefix="auth"
+                                first={first}
+                                last={last}
+                                onFirst={(v) => { setFirst(v); setNameError(null); setError(''); }}
+                                onLast={(v) => { setLast(v); setNameError(null); setError(''); }}
+                                error={nameError}
+                                inputClass={INPUT}
+                                labelClass="mb-1.5 block text-xs font-medium text-slate-600"
+                                firstRef={firstField}
+                            />
                             {needEmail && (
                                 <div>
                                     <label htmlFor="auth-email" className="mb-1.5 block text-xs font-medium text-slate-600">Email</label>
@@ -592,8 +604,9 @@ export default function AuthPanelHost() {
                                     <p className="mt-1.5 text-xs text-slate-500">We’ll send booking confirmations and receipts here.</p>
                                 </div>
                             )}
+                            {nameError && <p role="alert" className="text-sm text-red-600">{nameError.message}</p>}
                             {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-                            <button type="submit" disabled={busy || !name.trim() || (needEmail && !email.trim())} className={PRIMARY}>
+                            <button type="submit" disabled={busy || !first.trim() || !last.trim() || (needEmail && !email.trim())} className={PRIMARY}>
                                 {busy ? 'Saving…' : 'Continue'}
                             </button>
                         </form>
