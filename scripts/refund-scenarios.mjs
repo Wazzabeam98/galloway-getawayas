@@ -90,6 +90,30 @@ async function assertAgreesWithStripe(bookingId) {
         'db £' + b.amount_refunded + ' vs Stripe £' + atStripe);
 }
 
+// A deposit+balance booking has TWO charges, and a refund is spread across both
+// (lib/refundSpread). Sum what Stripe gave back on each intent, so the Stripe
+// agreement check sees the whole refund and not just the deposit's share.
+async function refundedAcrossCharges(bookingId) {
+    const b = await booking(bookingId);
+    const intents = [b.stripe_payment_intent_id, b.balance_payment_intent_id].filter(Boolean);
+    let pence = 0;
+    for (const intent of intents) {
+        const list = await stripe.request('GET', '/refunds', { payment_intent: intent, limit: 100 });
+        pence += (list.data || [])
+            .filter((r) => r.status === 'succeeded' || r.status === 'pending')
+            .reduce((sum, r) => sum + r.amount, 0);
+    }
+    return round2(pence / 100);
+}
+
+async function assertAgreesAcrossCharges(bookingId) {
+    const b = await booking(bookingId);
+    const atStripe = await refundedAcrossCharges(bookingId);
+    check('the database and Stripe agree across both charges',
+        round2(Number(b.amount_refunded)) === atStripe,
+        'db £' + b.amount_refunded + ' vs Stripe £' + atStripe);
+}
+
 async function runPayouts() {
     const res = await fetch(SITE + '/api/cron/host-payouts', {
         headers: { authorization: 'Bearer ' + env.CRON_SECRET },
@@ -293,6 +317,96 @@ async function main() {
     check('the outstanding balance was cleared so the balance charge cannot fire',
         round2(Number(after18.balance_amount || 0)) === 0, String(after18.balance_amount));
     await assertAgreesWithStripe(bookings.s18);
+
+    /* ---- Custom policy: outside vs inside the host's own cut-off ---- */
+
+    const customCancels = [
+        { key: 'scCustOut', number: 'C1',
+          title: 'Guest cancels a Custom stay OUTSIDE the 30-day cut-off — full refund',
+          paid: 500, expected: 500, note: 'the whole £500 comes back' },
+        { key: 'scCustIn', number: 'C2',
+          title: 'Guest cancels a Custom stay INSIDE the 30-day cut-off — only the cleaning fee',
+          paid: 500, expected: 60, note: 'only the £60 clean comes back, nothing on the stay' },
+    ];
+
+    for (const c of customCancels) {
+        scenario(c.number, c.title);
+
+        const before = await booking(bookings[c.key]);
+        const daysOut = Math.round(
+            (new Date(before.check_in).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000
+        );
+        check('the booking carries the stamped Custom policy and 30-day count',
+            before.cancellation_policy === 'Custom' && Number(before.cancellation_custom_days) === 30,
+            before.cancellation_policy + '/' + before.cancellation_custom_days);
+        console.log('   Custom/30, ' + daysOut + ' days before check-in, £' + before.amount_paid + ' paid');
+
+        const res = await post('/api/bookings/cancel', guest, { bookingId: bookings[c.key] });
+        console.log('   cancel → ' + res.status + ' ' + JSON.stringify(res.body).slice(0, 140));
+        check('the cancellation was accepted', res.status === 200 && res.body.ok === true,
+            JSON.stringify(res.body).slice(0, 140));
+
+        const after = await booking(bookings[c.key]);
+        check(c.note, round2(Number(after.amount_refunded)) === c.expected, '£' + after.amount_refunded);
+        check('the booking is cancelled', after.status === 'cancelled', after.status);
+        await assertAgreesWithStripe(bookings[c.key]);
+    }
+
+    /* ---- Custom policy, a deposit+balance stay — the refund spreads across
+           both charges, deposit first ---- */
+
+    const customDepositCancels = [
+        { key: 'scCustDepOut', number: 'C3',
+          title: 'Guest cancels a Custom deposit+balance stay OUTSIDE the cut-off — full £800 across both charges',
+          expected: 800, note: 'the whole £800 comes back, spread across both charges' },
+        { key: 'scCustDepIn', number: 'C4',
+          title: 'Guest cancels a Custom deposit+balance stay INSIDE the cut-off — only the cleaning fee',
+          expected: 60, note: 'only the £60 clean comes back' },
+    ];
+
+    for (const c of customDepositCancels) {
+        scenario(c.number, c.title);
+
+        const before = await booking(bookings[c.key]);
+        check('it was paid in full as two charges (deposit + balance)',
+            round2(Number(before.amount_paid)) === 800
+            && !!before.stripe_payment_intent_id && !!before.balance_payment_intent_id,
+            '£' + before.amount_paid + ', two intents: ' + !!before.balance_payment_intent_id);
+
+        const res = await post('/api/bookings/cancel', guest, { bookingId: bookings[c.key] });
+        console.log('   cancel → ' + res.status + ' ' + JSON.stringify(res.body).slice(0, 140));
+        check('the cancellation was accepted', res.status === 200 && res.body.ok === true,
+            JSON.stringify(res.body).slice(0, 140));
+
+        const after = await booking(bookings[c.key]);
+        check(c.note, round2(Number(after.amount_refunded)) === c.expected, '£' + after.amount_refunded);
+        check('the booking is cancelled', after.status === 'cancelled', after.status);
+        await assertAgreesAcrossCharges(bookings[c.key]);
+    }
+
+    /* ---- Non-refundable: booked at the discounted price, nothing comes back ---- */
+
+    scenario('NR1', 'Guest cancels a non-refundable booking — nothing comes back');
+
+    const beforeNr = await booking(bookings.snr1);
+    check('it is a non-refundable booking, paid at the discounted £450',
+        beforeNr.non_refundable === true && round2(Number(beforeNr.amount_paid)) === 450,
+        'non_refundable=' + beforeNr.non_refundable + ', £' + beforeNr.amount_paid);
+    const daysOutNr = Math.round(
+        (new Date(beforeNr.check_in).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000
+    );
+    console.log('   non-refundable, ' + daysOutNr + ' days before check-in (well outside any window)');
+
+    const resNr = await post('/api/bookings/cancel', guest, { bookingId: bookings.snr1 });
+    console.log('   cancel → ' + resNr.status + ' ' + JSON.stringify(resNr.body).slice(0, 140));
+
+    const afterNr = await booking(bookings.snr1);
+    check('nothing comes back — not the stay, not the cleaning fee',
+        round2(Number(afterNr.amount_refunded)) === 0, '£' + afterNr.amount_refunded);
+    check('the booking is cancelled all the same', afterNr.status === 'cancelled', afterNr.status);
+    check('no refund payment row was written',
+        !(await paymentsFor(bookings.snr1)).some((p) => p.kind === 'refund'));
+    await assertAgreesWithStripe(bookings.snr1);
 
     /* ---- 14c: several refunds at once are summed, not lost ---- */
 
