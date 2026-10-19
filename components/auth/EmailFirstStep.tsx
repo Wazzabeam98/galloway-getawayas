@@ -10,7 +10,6 @@ import {
     CODE_MAX_LENGTH,
     logInWithPassword,
     looksLikeEmail,
-    needsName,
     sendCode,
     tidyCode,
     tidyEmail,
@@ -19,6 +18,8 @@ import {
 import AgreementTick, { fetchAgreementStatus, holdAgreementGate, recordAgreement } from '@/components/legal/AgreementTick';
 import { agreementProblem, versionForTick } from '@/lib/agreements';
 import { recordStayChoice, signOutThisDevice } from '@/lib/staySignedIn';
+import { needsPersonName, suggestedName } from '@/lib/personName';
+import NameFields, { NameError, saveMyName } from '@/components/auth/NameFields';
 
 /**
  * The shared first step of every sign-up: "What's your email?".
@@ -30,8 +31,10 @@ import { recordStayChoice, signOutThisDevice } from '@/lib/staySignedIn';
  *   email    — the address, then "Continue", with Continue with Google beneath
  *   code     — the 6-digit code we emailed; resend; or "use your password"
  *   password — for an account that already has one (still works, always)
- *   name     — only if the account has no name yet (a new one never does):
- *              the name guests and our team see.
+ *   name     — "Finish signing up": first and last name, whenever the
+ *              account has no first and last name yet — a new one never does,
+ *              and an older nameless account opening the wizard is asked here
+ *              before anything else. No way forward without it.
  *   terms    — the Guest Terms, the FINAL screen of sign-up, shown only when
  *              this flow collects them (collectGuestTerms) and the account still
  *              owes them. One tick and one button: the press both records the
@@ -86,14 +89,14 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
     const [email, setEmail] = useState(initialEmail);
     const [code, setCode] = useState('');
     const [password, setPassword] = useState('');
-    const [name, setName] = useState('');
+    const [first, setFirst] = useState('');
+    const [last, setLast] = useState('');
+    const [nameError, setNameError] = useState<NameError>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [wait, setWait] = useState(0);
     const [session, setSession] = useState<any>(null);
-    // The last screen asks for a name when the account has none.
-    const [askName, setAskName] = useState(true);
     // The Guest Terms tick on the final 'terms' screen.
     const [guestTicked, setGuestTicked] = useState(false);
     const [termsError, setTermsError] = useState('');
@@ -131,9 +134,11 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
     // never does — then take the Guest Terms as the final screen.
     const afterSignIn = async (s: any) => {
         setSession(s);
-        const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', s.user.id).maybeSingle();
-        if (needsName(prof?.full_name)) {
-            setAskName(true);
+        const { data: prof } = await supabase.from('profiles').select('full_name, first_name, last_name').eq('id', s.user.id).maybeSingle();
+        if (needsPersonName(prof)) {
+            const guess = suggestedName(prof, s.user.user_metadata);
+            setFirst(guess.first);
+            setLast(guess.last);
             setBusy(false);
             go('name');
             return;
@@ -242,23 +247,15 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
 
     const submitName = async (e?: FormEvent) => {
         e?.preventDefault();
-        const full = name.trim();
-        if (askName && !full) {
-            setError('Enter your name.');
-            return;
-        }
         setBusy(true);
         setError('');
-        if (askName) {
-            const { error: err } = await supabase.from('profiles').update({ full_name: full }).eq('id', session.user.id);
-            if (err) {
-                setBusy(false);
-                setError('We couldn’t save your name. Check your connection and try again.');
-                return;
-            }
-            // Mirror it onto the auth user too, which is where the rest of the
-            // page reads a greeting name from before the profile is loaded.
-            await supabase.auth.updateUser({ data: { name: full } });
+        setNameError(null);
+        // Through /api/account/name, which checks it with the same rule.
+        const err = await saveMyName(supabase, first, last);
+        if (err) {
+            setBusy(false);
+            setNameError(err);
+            return;
         }
         await maybeTerms(session);
     };
@@ -292,7 +289,7 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
             : screen === 'code' ? 'Enter your code'
                 : screen === 'password' ? 'Log in with your password'
                     : screen === 'terms' ? 'Our Guest Terms'
-                        : 'What’s your name?';
+                        : 'Finish signing up';
 
     const backButton = 'inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition';
 
@@ -454,23 +451,23 @@ export default function EmailFirstStep({ eyebrow, intro, exitHref, onSignedIn, i
                     {screen === 'name' && (
                         <>
                             <p className="mb-8 text-slate-600 [text-wrap:pretty]">
-                                You’re signed in. This is the name guests and our team will see on your account.
+                                You’re signed in. What’s your name?
                             </p>
                             <form onSubmit={submitName} className="space-y-4" noValidate>
-                                <div>
-                                    <label htmlFor="efs-name" className="mb-2 block text-xs font-medium text-slate-500">Full name</label>
-                                    <input
-                                        ref={firstField}
-                                        id="efs-name"
-                                        type="text"
-                                        autoComplete="name"
-                                        value={name}
-                                        onChange={(e) => setName(e.target.value)}
-                                        className={INPUT}
-                                    />
-                                </div>
+                                <NameFields
+                                    idPrefix="efs"
+                                    first={first}
+                                    last={last}
+                                    onFirst={(v) => { setFirst(v); setNameError(null); }}
+                                    onLast={(v) => { setLast(v); setNameError(null); }}
+                                    error={nameError}
+                                    inputClass={INPUT}
+                                    labelClass="mb-2 block text-xs font-medium text-slate-500"
+                                    firstRef={firstField}
+                                />
+                                {nameError && <p role="alert" className="text-sm text-red-600">{nameError.message}</p>}
                                 {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-                                <button type="submit" disabled={busy || !name.trim()} className={PRIMARY}>
+                                <button type="submit" disabled={busy || !first.trim() || !last.trim()} className={PRIMARY}>
                                     {busy ? 'Saving…' : 'Continue'}
                                 </button>
                             </form>

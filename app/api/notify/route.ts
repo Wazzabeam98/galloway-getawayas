@@ -1,4 +1,4 @@
-import { displayName, formatTime } from '@/lib/utils';
+import { formatTime, greetingName, firstName } from '@/lib/utils';
 // =====================================================================
 // GALLOWAY GETAWAYS — notification sender
 // WHERE THIS GOES: GitHub → app/api/notify/route.ts   (NEW FILE)
@@ -44,32 +44,28 @@ async function emailFor(admin: any, userId: string): Promise<string> {
 async function ownFirstNameFor(admin: any, userId: string, fallback: string): Promise<string> {
     const { data } = await admin
         .from('profiles')
-        .select('full_name, preferred_name')
+        .select('full_name, first_name, last_name, preferred_name')
         .eq('id', userId)
         .maybeSingle();
 
-    const name = (data && (data.preferred_name || data.full_name)) || '';
-    const first = name.trim().split(' ')[0];
-    return first || fallback;
+    return greetingName(data, fallback);
 }
 
 // SOMEBODY ELSE, named to the person reading the email — the guest named to a
 // host, the sender named to a recipient. This one honours the switch.
 //
-// displayName() first, then the first word of whatever it allowed. Not the
-// other way round: taking the first word of the legal name and then checking
-// the switch would already have leaked it. If the switch is off and no
-// preferred name is set, displayName returns the fallback and there is no name
-// to shorten, which is the intended outcome.
+// firstName() checks the switch before it names anyone, and reads the
+// account's own first_name — it never cuts the first word off a longer name
+// (an account called "The Dark Sky Dome" is not "The"). Switch off with no
+// preferred name gives the fallback, which is the intended outcome.
 async function otherFirstNameFor(admin: any, userId: string, fallback: string): Promise<string> {
     const { data } = await admin
         .from('profiles')
-        .select('full_name, preferred_name, show_full_name')
+        .select('full_name, first_name, last_name, preferred_name, show_full_name')
         .eq('id', userId)
         .maybeSingle();
 
-    const shown = displayName(data, fallback);
-    return shown.trim().split(' ')[0] || fallback;
+    return firstName(data, fallback);
 }
 
 // Optional emails only. Transactional ones ignore this entirely.

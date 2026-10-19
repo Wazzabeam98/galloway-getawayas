@@ -94,6 +94,8 @@ const TABLES: TableDecision[] = [
     {
         table: 'profiles',
         granted: new Set([
+            'last_name',
+            'first_name',
             'avatar_url', 'created_at', 'full_name', 'host_bio', 'id', 'identity_verified',
             'identity_verified_at', 'is_admin', 'is_host', 'preferred_name', 'show_full_name',
             'trading_name', 'welcome_message', 'welcome_message_enabled',

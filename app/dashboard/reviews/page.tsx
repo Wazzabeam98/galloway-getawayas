@@ -42,7 +42,7 @@ export default function HostReviewsPage() {
 
             const reviewerIds = Array.from(new Set((aboutMe || []).map((r) => r.reviewer_id)));
             if (reviewerIds.length) {
-                const { data: reviewers } = await supabase.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds);
+                const { data: reviewers } = await supabase.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name').in('id', reviewerIds);
                 const names: Record<string, string> = {};
                 (reviewers || []).forEach((p) => { names[p.id] = firstName(p, 'Guest'); });
                 setReviewerNames(names);
@@ -58,7 +58,7 @@ export default function HostReviewsPage() {
 
             const guestIds = Array.from(new Set((bookings || []).map((b) => b.guest_id)));
             if (guestIds.length) {
-                const { data: guests } = await supabase.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', guestIds);
+                const { data: guests } = await supabase.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name').in('id', guestIds);
                 const names: Record<string, string> = {};
                 (guests || []).forEach((p) => { names[p.id] = firstName(p, 'Guest'); });
                 setGuestNames(names);

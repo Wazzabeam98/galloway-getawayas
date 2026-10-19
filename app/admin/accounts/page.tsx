@@ -21,7 +21,7 @@ export default async function AdminAccounts() {
 
     const { data: rows, error } = await admin
         .from('profiles')
-        .select('id, full_name, preferred_name, deactivated_at')
+        .select('id, full_name, first_name, last_name, preferred_name, deactivated_at')
         .not('deactivated_at', 'is', null)
         .is('anonymised_at', null)
         .order('deactivated_at', { ascending: false })

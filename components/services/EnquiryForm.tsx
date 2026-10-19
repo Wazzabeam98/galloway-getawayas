@@ -138,14 +138,15 @@ export default function EnquiryForm({
         const load = async () => {
             const { data } = await supabase
                 .from('profile_private')
-                .select('full_name, preferred_name, phone')
+                .select('full_name, first_name, last_name, preferred_name, phone')
                 .eq('id', session.user.id)
                 .maybeSingle();
 
             const metadata = session.user.user_metadata || {};
 
             const knownName = String(
-                (data && (data.full_name || data.preferred_name))
+                (data && data.first_name && (data.first_name + ' ' + (data.last_name || '')).trim())
+                || (data && (data.full_name || data.preferred_name))
                 || metadata.full_name
                 || metadata.name
                 || ''

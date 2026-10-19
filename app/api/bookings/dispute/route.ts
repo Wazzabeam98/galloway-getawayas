@@ -47,8 +47,8 @@ export async function POST(request: Request) {
 
         const [{ data: listing }, { data: guest }, { data: raiser }] = await Promise.all([
             admin.from('listings').select('title').eq('id', booking.listing_id).maybeSingle(),
-            admin.from('profile_private').select('full_name, preferred_name, show_full_name').eq('id', booking.guest_id).maybeSingle(),
-            admin.from('profile_private').select('full_name, preferred_name, show_full_name, email').eq('id', user.id).maybeSingle(),
+            admin.from('profile_private').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', booking.guest_id).maybeSingle(),
+            admin.from('profile_private').select('full_name, first_name, last_name, preferred_name, show_full_name, email').eq('id', user.id).maybeSingle(),
         ]);
 
         const where = (listing && listing.title) || booking.listing_id;

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { greetingName } from '@/lib/utils';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { londonDayKey } from '@/lib/dayKey';
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
         // Of those, the ones without payouts.
         const { data: hosts, error: hostError } = await admin
             .from('profiles')
-            .select('id, email, full_name, preferred_name')
+            .select('id, email, full_name, first_name, last_name, preferred_name')
             .in('id', candidateIds)
             .eq('stripe_payouts_enabled', false);
         if (hostError) throw hostError;
@@ -85,7 +86,7 @@ export async function GET(request: Request) {
 
             const title = escapeHtml(titleOf[(p.booking as any).listing_id] || 'your place');
             const copy = reminderCopy(p.kind, title, 'on ' + escapeHtml(formatDate(p.booking.check_in)));
-            const name = escapeHtml(String(host.preferred_name || host.full_name || '').split(' ')[0] || 'there');
+            const name = escapeHtml(greetingName(host, 'there'));
             const ok = await sendEmail(
                 host.email,
                 copy.subject,

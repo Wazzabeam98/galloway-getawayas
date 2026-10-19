@@ -7,7 +7,7 @@ import { formatGBP } from "@/lib/formatMoney";
 import Link from "next/link";
 import { adminClient } from "@/lib/supabaseAdmin";
 import { checkListing, accessibleListings } from "@/lib/access";
-import { getImageUrl, capitializeFirst, firstName as firstNameOf } from "@/lib/utils";
+import { getImageUrl, capitializeFirst, firstName as firstNameOf, greetingName } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
 import { formatUk, refundDue, policyOf, freeCancelUntilKey } from "@/lib/cancellation";
 import { londonDayKey, shiftDayKey, ukDate } from "@/lib/dayKey";
@@ -124,7 +124,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // like every other name on the site.
     const { data: guestProfile } = await admin
         .from('profiles')
-        .select('id, full_name, preferred_name, show_full_name, avatar_url')
+        .select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url')
         .eq('id', booking.guest_id)
         .maybeSingle();
 
@@ -139,7 +139,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const { data: owner } = listing?.host_id
         ? await admin
             .from('profiles')
-            .select('id, full_name, preferred_name, show_full_name, avatar_url')
+            .select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url')
             .eq('id', listing.host_id)
             .maybeSingle()
         : { data: null };
@@ -339,7 +339,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // profile_private is what made every row say "Group of N" instead of the
     // guest's first name.
     const { data: upGuests } = upGuestIds.length
-        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url').in('id', upGuestIds)
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url').in('id', upGuestIds)
         : { data: [] };
     const upListingMap: Record<string, { title: string; image: string | null }> = {};
     (upListings || []).forEach((l: any) => {
@@ -354,8 +354,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const upGuestFirst: Record<string, string | null> = {};
     const upGuestAvatar: Record<string, string | null> = {};
     (upGuests || []).forEach((g: any) => {
-        const held = String(g.preferred_name || g.full_name || '').trim();
-        upGuestFirst[g.id] = held ? (held.split(/\s+/)[0] || null) : null;
+        upGuestFirst[g.id] = greetingName(g, '') || null;
         upGuestAvatar[g.id] = g.avatar_url ? getImageUrl(String(g.avatar_url)) : null;
     });
     // "Sara's group of 4" — the guest's first name and the party size (people,

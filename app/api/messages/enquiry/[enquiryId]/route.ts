@@ -6,7 +6,7 @@ import { logError } from '@/lib/logError';
 import { enquiryThreadContext } from '@/lib/enquiryThreads';
 import { requestedWhen, windowsClash, windowPhrase } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
-import { displayName, getImageUrl } from '@/lib/utils';
+import { displayName, getImageUrl, firstName } from '@/lib/utils';
 import { townFromLocation } from '@/components/marketplace/present';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
@@ -75,12 +75,12 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
         const needsReply = status === 'sent' || status === 'viewed';
         const [{ data: hostProf }, { data: eRow }] = await Promise.all([
             ctx.enquiry.host_id
-                ? admin.from('profiles').select('full_name, preferred_name, show_full_name, avatar_url').eq('id', ctx.enquiry.host_id).maybeSingle()
+                ? admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name, avatar_url').eq('id', ctx.enquiry.host_id).maybeSingle()
                 : Promise.resolve({ data: null }),
             admin.from('service_enquiries').select('host_phone').eq('id', params.enquiryId).maybeSingle(),
         ]);
         const hostName = hostProf ? displayName(hostProf, ctx.enquiry.host_name || 'The owner') : (ctx.enquiry.host_name || 'The owner');
-        const hostFirst = String(hostName).trim().split(' ')[0] || 'the owner';
+        const hostFirst = (hostProf && firstName(hostProf, '')) || 'the owner';
         const hostAvatar = (hostProf && hostProf.avatar_url) ? getImageUrl(String(hostProf.avatar_url)) : null;
         const business = String((ctx.provider && ctx.provider.business_name) || ctx.enquiry.business_name || 'The tradesman');
 

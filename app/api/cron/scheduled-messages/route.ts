@@ -94,7 +94,7 @@ async function checkInFallbackPass(
 
         const { data: fbGuests } = await admin
             .from('profiles')
-            .select('id, full_name, preferred_name, show_full_name')
+            .select('id, full_name, first_name, last_name, preferred_name, show_full_name')
             .in('id', fbGuestIds);
         const fbGuestById: Record<string, any> = {};
         (fbGuests || []).forEach((g: any) => { fbGuestById[g.id] = g; });
@@ -384,7 +384,7 @@ export async function GET(request: Request) {
 
         const { data: guests } = await admin
             .from('profiles')
-            .select('id, full_name, preferred_name, show_full_name')
+            .select('id, full_name, first_name, last_name, preferred_name, show_full_name')
             .in('id', guestIds);
 
         const listingById: Record<string, any> = {};

@@ -193,7 +193,7 @@ export default function ReviewPage() {
 
             const { data: host } = await supabase
                 .from('profiles')
-                .select('full_name, preferred_name, show_full_name')
+                .select('full_name, first_name, last_name, preferred_name, show_full_name')
                 .eq('id', b.host_id)
                 .maybeSingle();
             const name = displayName(host, 'your host');

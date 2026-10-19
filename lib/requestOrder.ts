@@ -108,7 +108,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
     const { data: guest } = guestId
         ? await admin
             .from('profiles')
-            .select('id, full_name, preferred_name, show_full_name, phone, email')
+            .select('id, full_name, first_name, last_name, preferred_name, show_full_name, phone, email')
             .eq('id', guestId)
             .maybeSingle()
         : { data: null };

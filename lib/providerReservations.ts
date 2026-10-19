@@ -235,7 +235,7 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
     const profiles: Record<string, any> = {};
     if (guestIds.length) {
         const { data: profs } = await admin
-            .from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url').in('id', guestIds);
+            .from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url').in('id', guestIds);
         (profs || []).forEach((p: any) => { profiles[p.id] = p; });
     }
     const providerPhoto = (Array.isArray(provider.photos) && provider.photos[0]) ? getImageUrl(String(provider.photos[0])) : null;

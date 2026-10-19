@@ -240,7 +240,7 @@ export async function POST(request: Request) {
                 // carry an address (it leaks and reads unprofessionally).
                 const { data: leaverProfile } = await admin
                     .from('profiles')
-                    .select('full_name, preferred_name, show_full_name')
+                    .select('full_name, first_name, last_name, preferred_name, show_full_name')
                     .eq('id', row.user_id)
                     .maybeSingle();
                 const leaverName = displayName(leaverProfile, row.email || 'A co-host');

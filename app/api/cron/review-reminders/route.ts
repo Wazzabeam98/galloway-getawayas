@@ -1,4 +1,5 @@
 import { townOf, townKey } from '@/lib/places';
+import { greetingName } from '@/lib/utils';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { NextResponse } from 'next/server';
@@ -75,11 +76,11 @@ export async function GET(request: Request) {
 
             const { data: guest } = await admin
                 .from('profiles')
-                .select('full_name, preferred_name')
+                .select('full_name, first_name, last_name, preferred_name')
                 .eq('id', b.guest_id)
                 .maybeSingle();
             const guestFirst = escapeHtml(
-                (((guest && (guest.preferred_name || guest.full_name)) || 'there').trim().split(' ')[0]) || 'there'
+                greetingName(guest, 'there')
             );
 
             const { data: listing } = await admin

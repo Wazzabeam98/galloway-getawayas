@@ -83,7 +83,7 @@ export default async function HostReservations() {
     const { data: guests } = guestIds.length
         ? await admin
             .from('profile_private')
-            .select('id, full_name, preferred_name, show_full_name, phone')
+            .select('id, full_name, first_name, last_name, preferred_name, show_full_name, phone')
             .in('id', guestIds)
         : { data: [] };
 

@@ -321,7 +321,7 @@ async function settleStalePending(admin: any, order: any): Promise<void> {
 
 async function guestFirstName(admin: any, order: any): Promise<string> {
     if (order.guest_id) {
-        const { data: p } = await admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', order.guest_id).maybeSingle();
+        const { data: p } = await admin.from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', order.guest_id).maybeSingle();
         const n = p ? firstName(p, '') : '';
         if (n) return n;
     }

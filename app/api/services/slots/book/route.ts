@@ -598,7 +598,7 @@ export async function POST(request: Request) {
             guestEmail = typedEmail || null;
         } else if (standalone && user) {
             const { data: prof } = await admin.from('profiles')
-                .select('full_name, preferred_name, show_full_name, phone, email').eq('id', user.id).maybeSingle();
+                .select('full_name, first_name, last_name, preferred_name, show_full_name, phone, email').eq('id', user.id).maybeSingle();
             guestName = displayName(prof, '') || null;
             guestPhone = prof ? prof.phone : null;
             guestEmail = (prof && prof.email) || user.email || null;

@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
         const [{ data: listing }, { data: guest }] = await Promise.all([
             admin.from('listings').select('title').eq('id', booking.listing_id).maybeSingle(),
-            admin.from('profile_private').select('full_name, preferred_name, show_full_name, email').eq('id', booking.guest_id).maybeSingle(),
+            admin.from('profile_private').select('full_name, first_name, last_name, preferred_name, show_full_name, email').eq('id', booking.guest_id).maybeSingle(),
         ]);
         const where = (listing && listing.title) || 'your stay';
         const firstName = displayName(guest, 'there').split(' ')[0] || 'there';

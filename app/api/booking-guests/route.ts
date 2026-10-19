@@ -56,7 +56,7 @@ async function loadOrderSeats(admin: any, orderId: string) {
     if (ids.length) {
         const { data: profRows } = await admin
             .from('profiles')
-            .select('id, avatar_url, full_name, preferred_name, show_full_name')
+            .select('id, avatar_url, full_name, first_name, last_name, preferred_name, show_full_name')
             .in('id', ids);
         (profRows || []).forEach((p: any) => { profiles[p.id] = p; });
     }
@@ -391,7 +391,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Pick someone else on the trip.' }, { status: 400 });
             }
             const { data: prof } = await admin
-                .from('profiles').select('id, full_name, preferred_name').eq('id', personId).maybeSingle();
+                .from('profiles').select('id, full_name, first_name, last_name, preferred_name').eq('id', personId).maybeSingle();
             if (!prof) {
                 return NextResponse.json({ ok: false, error: 'That person could not be found.' }, { status: 404 });
             }
@@ -438,7 +438,7 @@ export async function POST(request: Request) {
             // the booker's full legal name in the subject and body regardless of
             // their privacy setting.
             const { data: bookerProfile } = await admin
-                .from('profiles').select('full_name, preferred_name, show_full_name').eq('id', user.id).maybeSingle();
+                .from('profiles').select('full_name, first_name, last_name, preferred_name, show_full_name').eq('id', user.id).maybeSingle();
             const bookerName = displayName(bookerProfile, 'Someone').split(' ')[0] || 'Someone';
 
             // An experience invite reads about the experience \u2014 its name and date,

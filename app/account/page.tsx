@@ -4,6 +4,7 @@
 
 'use client';
 
+import { saveMyName } from '@/components/auth/NameFields';
 import React, { useEffect, useState, useRef } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
@@ -113,6 +114,10 @@ export default function AccountSettings() {
     });
     const [editingField, setEditingField] = useState<string | null>(null);
     const [draftValue, setDraftValue] = useState('');
+    // Legal name is two fields, first and last, saved through /api/account/name
+    // (the only writer; same check as Finish signing up — lib/personName).
+    const [legal, setLegal] = useState({ first: '', last: '' });
+    const [draftLegal, setDraftLegal] = useState({ first: '', last: '' });
     const [saving, setSaving] = useState(false);
 
     // Structured fields for the residential address form specifically
@@ -203,7 +208,7 @@ export default function AccountSettings() {
 
                 const { data: profileData } = await supabase
                     .from('profile_private')
-                    .select('full_name, preferred_name, phone, residential_address, show_full_name, avatar_url')
+                    .select('full_name, first_name, last_name, preferred_name, phone, residential_address, show_full_name, avatar_url')
                     .eq('id', session.user.id)
                     .single();
 
@@ -214,6 +219,7 @@ export default function AccountSettings() {
                         phone: profileData.phone || '',
                         residential_address: profileData.residential_address || '',
                     });
+                    setLegal({ first: profileData.first_name || '', last: profileData.last_name || '' });
                     setShowFullName(profileData.show_full_name !== false);
                     setAvatarUrl(profileData.avatar_url || null);
                 }
@@ -255,11 +261,24 @@ export default function AccountSettings() {
     const startEdit = (field: Field) => {
         setEditingField(field.key);
         setDraftValue(profile[field.key] || '');
+        if (field.key === 'full_name') setDraftLegal(legal);
     };
 
     const saveField = async (field: Field) => {
         if (!session?.user) return;
         setSaving(true);
+
+        if (field.key === 'full_name') {
+            const err = await saveMyName(supabase, draftLegal.first, draftLegal.last);
+            setSaving(false);
+            if (err) { toast.error(err.message, { theme: 'colored' }); return; }
+            const first = draftLegal.first.replace(/\s+/g, ' ').trim();
+            const last = draftLegal.last.replace(/\s+/g, ' ').trim();
+            setLegal({ first, last });
+            setProfile((prev) => ({ ...prev, full_name: first + ' ' + last }));
+            setEditingField(null);
+            return;
+        }
 
         // UPDATE, NOT UPSERT, AND NOT WRITING email.
         //
@@ -870,7 +889,33 @@ export default function AccountSettings() {
                                             {field.hint ? (
                                                 <div className="text-slate-400 text-xs mb-1.5 max-w-md">{field.hint}</div>
                                             ) : null}
-                                            {editingField === field.key ? (
+                                            {editingField === field.key && field.key === 'full_name' ? (
+                                                <div className="flex flex-col sm:flex-row gap-2 max-w-sm">
+                                                    <label className="flex-1">
+                                                        <span className="sr-only">First name</span>
+                                                        <input
+                                                            type="text"
+                                                            autoComplete="given-name"
+                                                            placeholder="First name"
+                                                            value={draftLegal.first}
+                                                            onChange={(e) => setDraftLegal((d) => ({ ...d, first: e.target.value }))}
+                                                            autoFocus
+                                                            className="w-full p-2 border rounded-lg text-sm"
+                                                        />
+                                                    </label>
+                                                    <label className="flex-1">
+                                                        <span className="sr-only">Last name</span>
+                                                        <input
+                                                            type="text"
+                                                            autoComplete="family-name"
+                                                            placeholder="Last name"
+                                                            value={draftLegal.last}
+                                                            onChange={(e) => setDraftLegal((d) => ({ ...d, last: e.target.value }))}
+                                                            className="w-full p-2 border rounded-lg text-sm"
+                                                        />
+                                                    </label>
+                                                </div>
+                                            ) : editingField === field.key ? (
                                                 <input
                                                     type="text"
                                                     value={draftValue}
@@ -880,7 +925,9 @@ export default function AccountSettings() {
                                                 />
                                             ) : (
                                                 <div className="text-slate-500 text-sm whitespace-pre-line">
-                                                    {profile[field.key] || 'Not provided'}
+                                                    {(field.key === 'full_name' && legal.first
+                                                        ? (legal.first + ' ' + legal.last).trim()
+                                                        : profile[field.key]) || 'Not provided'}
                                                 </div>
                                             )}
                                         </div>

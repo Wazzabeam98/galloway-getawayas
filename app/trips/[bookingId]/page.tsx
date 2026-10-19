@@ -8,7 +8,7 @@ import {
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { getImageUrl, capitializeFirst, firstName } from '@/lib/utils';
+import { getImageUrl, capitializeFirst, firstName, hostByline } from '@/lib/utils';
 import { formatGBP } from '@/lib/formatMoney';
 import { publicArea } from '@/lib/places';
 import { partyLabel, confirmationNumber, cancellationWords } from '@/lib/bookingDisplay';
@@ -138,7 +138,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
         .eq('id', booking.listing_id).maybeSingle();
 
     const { data: hostProfile } = booking.host_id
-        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, phone, avatar_url, host_bio').eq('id', booking.host_id).maybeSingle()
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name, phone, avatar_url, host_bio').eq('id', booking.host_id).maybeSingle()
         : { data: null };
     const hostName = capitializeFirst(hostProfile ? firstName(hostProfile, 'your host') : 'your host');
     // A host with no name must never render as the bare word "Your" in a sentence
@@ -148,7 +148,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
     // of "Your host", which is where the stray "Your" came from — and passing
     // 'your host' AS firstName's fallback would be split to just "your" for the
     // same reason, so the whole phrase is applied only when firstName is empty.)
-    const hostFirstName = firstName(hostProfile, '') || 'your host';
+    const hostFirstName = hostByline(hostProfile, null, 'your host');
     const hostAvatar = (hostProfile && hostProfile.avatar_url) ? getImageUrl(String(hostProfile.avatar_url)) : null;
     const hostBio = (hostProfile && (hostProfile.host_bio || '')).trim() || null;
 
