@@ -12,6 +12,13 @@
 // if a later migration re-grants any of these to anon, or a fresh env forgets
 // the revoke, this fails by name. The authenticated grant is intentionally left
 // alone (checked separately in select-grant-decision-guard.test.ts).
+//
+// last_name is included for the same reason: it is a surname and must never be
+// anon-readable. It was added by 20261019153817_profiles_first_and_last_name.sql
+// and granted to `authenticated` only (never to anon), so there is nothing to
+// revoke — but it belongs here so a future grant to anon can never slip it past.
+// first_name is deliberately NOT here: a first name is the public-safe part the
+// site already shows, so anon reading it is allowed, not a leak.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +28,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
 
 // Columns a stranger must not be able to SELECT (they carry, or gate, a surname).
-const ANON_FORBIDDEN = ['full_name', 'preferred_name', 'show_full_name'];
+const ANON_FORBIDDEN = ['full_name', 'preferred_name', 'show_full_name', 'last_name'];
 
 function testDbUrl(): string | null {
     try {
