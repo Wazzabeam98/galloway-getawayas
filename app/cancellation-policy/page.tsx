@@ -17,13 +17,12 @@ export default function CancellationPolicyPage() {
             <div className="prose prose-slate max-w-none">
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">How it works</h2>
                 <p className="text-slate-700 mb-4">
-                    Every property on Galloway Getaways has a cancellation policy, chosen by the host. It
-                    is one of the four standard policies below, or a <strong>Custom</strong> policy where
-                    the host sets their own number of days. You can see which one applies before you book,
-                    and the date your free cancellation period ends is shown on your booking confirmation.
+                    Every property on Galloway Getaways has a cancellation policy, chosen by the host —
+                    one of the five below. You can see which one applies before you book, and the date
+                    your free cancellation period ends is shown on your booking confirmation.
                 </p>
 
-                <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">The standard policies</h2>
+                <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">The policies</h2>
                 <div className="not-prose border rounded-2xl divide-y mb-6">
                     {TIERS.map((tier) => (
                         <div key={tier.name} className="p-5">
@@ -34,17 +33,14 @@ export default function CancellationPolicyPage() {
                             </ul>
                         </div>
                     ))}
+                    <div className="p-5">
+                        <div className="font-semibold text-slate-900 mb-2">Custom</div>
+                        <ul className="text-sm text-slate-600 space-y-1">
+                            <li>Full refund if you cancel more than the host&rsquo;s chosen number of days before check-in.</li>
+                            <li>No refund within that number of days. The host&rsquo;s number is shown on the listing before you book.</li>
+                        </ul>
+                    </div>
                 </div>
-
-                <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">Custom</h2>
-                <p className="text-slate-700 mb-4">
-                    A host can instead set a Custom policy with a single number of days: a full refund if
-                    you cancel more than that many days before check-in, and no refund within that number
-                    of days. There is no part-refund in between. The host&apos;s number of days is shown
-                    on the listing before you book, so you always know where the cut-off falls — for
-                    example, &ldquo;Full refund if you cancel more than 30 days before check-in. No refund
-                    within 30 days.&rdquo;
-                </p>
 
                 <h2 className="text-xl font-bold text-slate-900 mt-8 mb-3">What is and isn&apos;t refunded</h2>
                 <ul className="text-slate-700 space-y-2 mb-4 list-disc pl-5">
