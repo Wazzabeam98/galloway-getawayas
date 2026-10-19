@@ -71,7 +71,7 @@ export async function GET(request: Request) {
 
     const { data: due } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, host_id, check_in, check_out, balance_amount, balance_due_date, balance_attempts, balance_last_attempt_at, amount_paid, amount_refunded, cleaning_fee, stripe_customer_id, stripe_payment_method_id, stripe_payment_intent_id, payment_status, status')
+        .select('id, listing_id, guest_id, host_id, check_in, check_out, balance_amount, balance_due_date, balance_attempts, balance_last_attempt_at, amount_paid, amount_refunded, cleaning_fee, cancellation_policy, cancellation_custom_days, non_refundable, stripe_customer_id, stripe_payment_method_id, stripe_payment_intent_id, payment_status, status')
         .eq('payment_status', 'deposit_paid')
         .in('status', ['confirmed', 'pending'])
         .lte('balance_due_date', today)
@@ -139,13 +139,16 @@ export async function GET(request: Request) {
 
                 // The same rule as a guest cancelling by hand. The clean does
                 // not happen either way, so the cleaning fee comes back whole
-                // here too — two rules would only drift apart.
+                // here too — two rules would only drift apart. The terms are the
+                // ones stamped on the booking, not the listing's current policy.
                 const refundAmount = refundDue({
                     amountPaid: paid,
                     alreadyRefunded: alreadyRefunded,
                     cleaningFee: booking.cleaning_fee,
                     checkIn: booking.check_in,
-                    policy: listing.cancellation_policy,
+                    policy: booking.cancellation_policy,
+                    customDays: booking.cancellation_custom_days,
+                    nonRefundable: !!booking.non_refundable,
                 });
 
                 if (refundAmount > 0 && booking.stripe_payment_intent_id) {

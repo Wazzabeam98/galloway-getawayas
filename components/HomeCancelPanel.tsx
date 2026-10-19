@@ -13,6 +13,8 @@ export default function HomeCancelPanel({
     bookingId,
     checkIn,
     policy,
+    customDays,
+    nonRefundable,
     amountPaid,
     amountRefunded,
     cleaningFee,
@@ -23,6 +25,8 @@ export default function HomeCancelPanel({
     bookingId: string;
     checkIn: string;
     policy: string | null | undefined;
+    customDays?: number | null;
+    nonRefundable?: boolean;
     amountPaid: number | null | undefined;
     amountRefunded: number | null | undefined;
     cleaningFee?: number | null;
@@ -40,6 +44,8 @@ export default function HomeCancelPanel({
                     bookingId={bookingId}
                     checkIn={checkIn}
                     policy={policy}
+                    customDays={customDays}
+                    nonRefundable={nonRefundable}
                     amountPaid={amountPaid}
                     amountRefunded={amountRefunded}
                     cleaningFee={cleaningFee}

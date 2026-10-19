@@ -15,7 +15,7 @@ import { toast } from 'react-toastify';
 import { Minus, Plus, X, ArrowLeft, Star } from 'lucide-react';
 import { ukDate } from '@/lib/dayKey';
 import { notify } from '@/lib/notify';
-import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
+import { formatUk, cancellationSummary } from '@/lib/cancellation';
 import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
 import { resolveSelection, unitLabel, type ListingExtra } from '@/lib/listingExtras';
 import { getImageUrl } from '@/lib/utils';
@@ -61,6 +61,11 @@ interface Props {
     instantBookRequiresPhone?: boolean;
     instantBookRequiresVerifiedId?: boolean;
     cancellationPolicy?: string | null;
+    // For a Custom policy: the host's day count, shown in the cancellation line.
+    cancellationCustomDays?: number | null;
+    // Whether the host offers the cheaper non-refundable rate. When true the
+    // guest is given the choice at checkout; when false they never see it.
+    nonRefundableOffered?: boolean;
     // Read on the server by the listing page (lib/availability guestCalendar),
     // so the calendar paints with the taken nights already struck out. It used
     // to fetch them after mount, and a month showed wide open until they came.
@@ -305,6 +310,8 @@ export default function BookingWidget({
     newListingEligible = false,
     damageDeposit = 0,
     cancellationPolicy,
+    cancellationCustomDays,
+    nonRefundableOffered = false,
     blockedNights,
     priceOverrides,
     stayRules = {},
@@ -316,6 +323,9 @@ export default function BookingWidget({
     extras = [],
 }: Props) {
     const [payPlan, setPayPlan] = useState<'deposit' | 'full'>('deposit');
+    // The guest's refundable-vs-non-refundable choice. Only ever acted on when
+    // the host offers the option (nonRefundableOffered); defaults to refundable.
+    const [chooseNonRefundable, setChooseNonRefundable] = useState(false);
     const supabase = createClientComponentClient();
     const [session, setSession] = useState<any>(null);
     const [loadingSession, setLoadingSession] = useState(true);
@@ -522,29 +532,38 @@ export default function BookingWidget({
         .filter((s) => s.qty > 0);
     const selectedExtras = resolveSelection(extrasSelection, activeExtras);
 
-    const quote = quoteBooking(
-        {
-            price_per_night: pricePerNight,
-            weekend_price: weekendPrice,
-            cleaning_fee: cleaningFee,
-            pet_fee: petFee,
-            extra_guest_fee: extraGuestFee,
-            extra_guest_after: extraGuestAfter,
-            extra_guest_period: extraGuestPeriod,
-            new_listing_promo: newListingPromo,
-            last_minute_discount: lastMinuteDiscount,
-            weekly_discount: weeklyDiscount,
-            monthly_discount: monthlyDiscount,
-        },
-        priceOverrides,
-        dateRange.startDate || new Date(),
-        dateRange.endDate || (dateRange.startDate || new Date()),
-        adults,
-        children,
-        pets,
-        { newListingEligible, asOf: new Date() },
-        selectedExtras
-    );
+    // The guest's actual choice: non-refundable only ever bites when the host
+    // offers it. This is the single flag the price, the cancellation line and the
+    // checkout request all read.
+    const effectiveNonRefundable = nonRefundableOffered && chooseNonRefundable;
+
+    const pricingListing = {
+        price_per_night: pricePerNight,
+        weekend_price: weekendPrice,
+        cleaning_fee: cleaningFee,
+        pet_fee: petFee,
+        extra_guest_fee: extraGuestFee,
+        extra_guest_after: extraGuestAfter,
+        extra_guest_period: extraGuestPeriod,
+        new_listing_promo: newListingPromo,
+        last_minute_discount: lastMinuteDiscount,
+        weekly_discount: weeklyDiscount,
+        monthly_discount: monthlyDiscount,
+    };
+    // One `asOf` for both quotes so the last-minute window can't land differently
+    // between them on a millisecond boundary.
+    const asOf = new Date();
+    const checkInForQuote = dateRange.startDate || new Date();
+    const checkOutForQuote = dateRange.endDate || (dateRange.startDate || new Date());
+    const quoteArgs = [priceOverrides, checkInForQuote, checkOutForQuote, adults, children, pets] as const;
+
+    // The refundable price, always computed; the non-refundable price only when
+    // the host offers it, so the selector can show both figures.
+    const refundableQuote = quoteBooking(pricingListing, ...quoteArgs, { newListingEligible, asOf, nonRefundable: false }, selectedExtras);
+    const nonRefundableQuote = nonRefundableOffered
+        ? quoteBooking(pricingListing, ...quoteArgs, { newListingEligible, asOf, nonRefundable: true }, selectedExtras)
+        : null;
+    const quote = effectiveNonRefundable && nonRefundableQuote ? nonRefundableQuote : refundableQuote;
 
     const totalGuests = adults + children;
     const nights = quote.nights;
@@ -554,6 +573,10 @@ export default function BookingWidget({
     const cleaningFeeTotal = quote.cleaningFeeTotal;
     const discount = quote.discount;
     const total = quote.total;
+    // What the non-refundable rate saves — for the selector and the breakdown line.
+    const nonRefundableSavings = nonRefundableQuote
+        ? Math.round((refundableQuote.total - nonRefundableQuote.total) * 100) / 100
+        : 0;
 
     // Tell the shared selection whether a stay is chosen yet, so the listing-page
     // extras cards know whether tapping "+" should prompt for dates.
@@ -769,6 +792,9 @@ export default function BookingWidget({
                 body: JSON.stringify({
                     bookingId: created.id,
                     plan: payPlan,
+                    // The non-refundable choice. The server honours it only when
+                    // the host offers it and re-checks the discounted total.
+                    nonRefundable: effectiveNonRefundable,
                     guestTermsVersion: versionForTick('guest', guestTicked),
                 }),
             });
@@ -802,7 +828,7 @@ export default function BookingWidget({
     const depositLater = Math.round((total - depositNow) * 100) / 100;
     const dueNow = depositAvailable && payPlan === 'deposit' ? depositNow : total;
     const cancelInfo = nights > 0
-        ? cancellationSummary(dateRange.startDate, cancellationPolicy)
+        ? cancellationSummary(dateRange.startDate, cancellationPolicy, undefined, cancellationCustomDays, effectiveNonRefundable)
         : null;
 
     if (requested) {
@@ -872,6 +898,12 @@ export default function BookingWidget({
                 <div className="flex justify-between text-emerald-700">
                     <span>{discount.label} ({discount.percent}%)</span>
                     <span>&minus;{formatGBP(discount.amount)}</span>
+                </div>
+            )}
+            {effectiveNonRefundable && nonRefundableSavings > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                    <span>Non-refundable discount</span>
+                    <span>&minus;{formatGBP(nonRefundableSavings)}</span>
                 </div>
             )}
             {cleaningFeeTotal > 0 && (
@@ -981,6 +1013,37 @@ export default function BookingWidget({
                     <span className="text-sm font-bold text-slate-900">{formatGBP(total)}</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">Settled in one go, nothing more to pay.</p>
+            </button>
+        </div>
+    ) : null;
+
+    // The non-refundable choice, Airbnb's shape: two rates side by side, standard
+    // selected by default. Shown only when the host offers it and a stay is
+    // priced. The guest never sees the host's toggle — only this choice.
+    const refundableChoiceBlock = nonRefundableOffered && nights > 0 && nonRefundableSavings > 0 ? (
+        <div className="mb-4 space-y-2">
+            <button
+                type="button"
+                onClick={() => setChooseNonRefundable(false)}
+                className={`w-full text-left border rounded-xl p-3 transition ${!chooseNonRefundable ? 'border-emerald-700 bg-emerald-50/60 ring-1 ring-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
+            >
+                <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-900">Standard rate</span>
+                    <span className="text-sm font-bold text-slate-900">{formatGBP(refundableQuote.total)}</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Free cancellation within the host&rsquo;s policy.</p>
+            </button>
+
+            <button
+                type="button"
+                onClick={() => setChooseNonRefundable(true)}
+                className={`w-full text-left border rounded-xl p-3 transition ${chooseNonRefundable ? 'border-emerald-700 bg-emerald-50/60 ring-1 ring-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
+            >
+                <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-900">Non-refundable &middot; save {formatGBP(nonRefundableSavings)}</span>
+                    <span className="text-sm font-bold text-slate-900">{formatGBP(nonRefundableQuote ? nonRefundableQuote.total : total)}</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Pay less now, but you won&rsquo;t get a refund if you cancel.</p>
             </button>
         </div>
     ) : null;
@@ -1222,6 +1285,7 @@ export default function BookingWidget({
                                     {extrasBlock}
                                     {breakdownBlock}
                                     {payPlanBlock}
+                                    {refundableChoiceBlock}
                                     {cancelBlock}
                                     {damageBlock}
                                 </div>
@@ -1249,6 +1313,7 @@ export default function BookingWidget({
                 {extrasBlock}
                 {breakdownBlock}
                 {payPlanBlock}
+                {refundableChoiceBlock}
                 {cancelBlock}
                 {damageBlock}
                 {errorBlock}

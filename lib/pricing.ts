@@ -56,6 +56,15 @@ export const WEEKLY_MIN_NIGHTS = 7;
 export const MONTHLY_MIN_NIGHTS = 28;
 export const NEW_LISTING_MAX_BOOKINGS = 3;
 
+// The non-refundable option. A host can offer a cheaper, non-refundable rate
+// (listings.non_refundable_option); a guest who takes it at checkout pays this
+// much less in exchange for getting nothing back if they cancel. Airbnb's figure
+// is "typically 10% off"; it STACKS on top of any ordinary discount, coming off
+// the nightly subtotal AFTER that discount (help.airbnb resource 694), and never
+// off the fees. Kept here, the one place a total is worked out, so the booking
+// card and the checkout route take the same amount off.
+export const NON_REFUNDABLE_DISCOUNT_PERCENT = 10;
+
 // The discount applied to a stay: which one, its rate, and the money it takes
 // off the nightly subtotal (fees are never discounted, as on Airbnb).
 export interface AppliedDiscount {
@@ -73,6 +82,11 @@ export interface AppliedDiscount {
 export interface DiscountContext {
     newListingEligible?: boolean;
     asOf?: Date;
+    // The guest chose the non-refundable rate at checkout. Takes a further
+    // NON_REFUNDABLE_DISCOUNT_PERCENT off the nightly subtotal (after any other
+    // discount), never off the fees. The caller passes this only when the
+    // listing actually offers the option — the quote does not second-guess it.
+    nonRefundable?: boolean;
 }
 
 // One night, priced, with the reason it cost what it did. `kind` is what a
@@ -116,6 +130,9 @@ export interface PriceQuote {
     // it has already been taken out of `total` below — a reader adds the lines
     // and subtracts this, exactly as the breakdown shows them.
     discount: AppliedDiscount | null;
+    // The money the non-refundable rate takes off, or 0. Like `discount` it is
+    // already out of `total`; it comes off the nightly subtotal after `discount`.
+    nonRefundableDiscount: number;
     total: number;
     // The per-night series behind nightsSubtotal. Computed here so the one place
     // that owns the arithmetic is also the one place that can be snapshotted:
@@ -279,6 +296,7 @@ export function quoteBooking(
             extrasTotal: 0,
             extras: [],
             discount: null,
+            nonRefundableDiscount: 0,
             total: 0,
             nightly: [],
         };
@@ -322,6 +340,14 @@ export function quoteBooking(
     });
     const discountAmount = discount ? discount.amount : 0;
 
+    // The non-refundable rate's reduction: a further percentage off the nightly
+    // subtotal AFTER the ordinary discount, never off the fees. Applied only when
+    // the caller says the guest chose it (the listing's offer is checked by the
+    // caller, not guessed here). Rounded once, like every other figure.
+    const nonRefundableDiscount = (opts && opts.nonRefundable)
+        ? money(Math.max(0, money(nightsSubtotal) - discountAmount) * (NON_REFUNDABLE_DISCOUNT_PERCENT / 100))
+        : 0;
+
     // Host-sold extras. A per-stay extra is charged once; a per-night extra once
     // for each night of the stay. Priced from the catalogue's unit price (passed
     // in already resolved against the live catalogue — never the browser's
@@ -360,7 +386,8 @@ export function quoteBooking(
         extrasTotal: extrasTotal,
         extras: extraLines,
         discount: discount,
-        total: money(nightsSubtotal - discountAmount + extraGuestTotal + petFeeTotal + cleaningFeeTotal + extrasTotal),
+        nonRefundableDiscount: nonRefundableDiscount,
+        total: money(nightsSubtotal - discountAmount - nonRefundableDiscount + extraGuestTotal + petFeeTotal + cleaningFeeTotal + extrasTotal),
         nightly: nightly,
     };
 }

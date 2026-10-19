@@ -92,6 +92,9 @@ export interface GuestBookedInput {
     balanceAmount: number;
     balanceDueDate: string | null;
     freeCancelUntil: string | null;
+    // The guest took the cheaper non-refundable rate. Shown plainly instead of a
+    // free-cancellation window, which they do not have.
+    nonRefundable?: boolean;
     // The host's VAT snapshot from the booking — shown as the supplier only
     // when they are VAT registered (both set); omitted otherwise.
     supplierVatNumber?: string | null;
@@ -128,7 +131,13 @@ export function guestBookedEmail(input: GuestBookedInput): { subject: string; ht
                     + '. You can pay it sooner from your trips page.',
             }]
             : [{ label: 'Still to pay', value: 'Nothing &mdash; your stay is paid in full.' }]),
-        ...(input.freeCancelUntil
+        ...(input.nonRefundable
+            ? [{
+                label: 'Non-refundable',
+                value: 'You chose the non-refundable rate, so you won&rsquo;t get a refund'
+                    + ' if you cancel. If your host has to cancel, you get everything back.',
+            }]
+            : input.freeCancelUntil
             ? [{
                 label: 'Free cancellation',
                 value: 'Cancel by ' + escapeHtml(formatDate(input.freeCancelUntil))

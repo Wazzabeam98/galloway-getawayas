@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, status, payment_status, amount_paid, amount_refunded, cleaning_fee, cancellation_policy, cancellation_custom_days, non_refundable, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -77,12 +77,6 @@ export async function POST(request: Request) {
             );
         }
 
-        const { data: listing } = await admin
-            .from('listings')
-            .select('cancellation_policy')
-            .eq('id', booking.listing_id)
-            .maybeSingle();
-
         const paid = Number(booking.amount_paid || 0);
         const alreadyRefunded = Number(booking.amount_refunded || 0);
         const refundable = round2(paid - alreadyRefunded);
@@ -104,7 +98,12 @@ export async function POST(request: Request) {
                 alreadyRefunded: alreadyRefunded,
                 cleaningFee: booking.cleaning_fee,
                 checkIn: booking.check_in,
-                policy: listing && listing.cancellation_policy,
+                // The terms stamped on the booking at checkout, not the listing's
+                // current policy — a host changing their policy must not move the
+                // refund owed on a stay already agreed.
+                policy: booking.cancellation_policy,
+                customDays: booking.cancellation_custom_days,
+                nonRefundable: !!booking.non_refundable,
             });
 
         // The money goes back before the booking changes. If Stripe refuses,

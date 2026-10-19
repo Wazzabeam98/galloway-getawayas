@@ -25,6 +25,11 @@ export interface QuotedBooking {
     pets: number;
     total_price: number | string;
     nightly_breakdown?: any;
+    // The cancellation terms stamped at checkout. A shortening is refunded by
+    // these, not the listing's current policy — the stay was agreed under them.
+    cancellation_policy?: string | null;
+    cancellation_custom_days?: number | null;
+    non_refundable?: boolean | null;
 }
 
 // Enumerate the half-open [checkIn, checkOut) night date keys.
@@ -51,7 +56,7 @@ export interface ChangeQuoteContext {
 export async function quoteChangeMoney(admin: any, booking: QuotedBooking, input: ChangeQuoteInput, ctx: ChangeQuoteContext = {}): Promise<{ delta: number; newTotal: number; notice: string | null }> {
     const { data: listing } = await admin
         .from('listings')
-        .select('price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, cancellation_policy')
+        .select('price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period')
         .eq('id', booking.listing_id)
         .maybeSingle();
     if (!listing) return { delta: 0, newTotal: Math.round(Number(booking.total_price || 0) * 100) / 100, notice: null };
@@ -102,13 +107,15 @@ export async function quoteChangeMoney(admin: any, booking: QuotedBooking, input
     const fraction = decreaseRefundFraction(
         ctx.initiatedBy || 'guest',
         String(booking.check_in).slice(0, 10),
-        listing.cancellation_policy,
+        booking.cancellation_policy,
         ctx.now,
+        booking.cancellation_custom_days,
+        !!booking.non_refundable,
     );
     const { delta, newTotal } = applyChangePolicy(oldTotal, money, fraction);
     // Warn a guest, before they send, when a shortening won't come back in full.
     const notice = (ctx.initiatedBy || 'guest') === 'guest'
-        ? shorteningNotice(money, fraction, policyOf(listing.cancellation_policy))
+        ? shorteningNotice(money, fraction, policyOf(booking.cancellation_policy))
         : null;
     return { delta, newTotal, notice };
 }

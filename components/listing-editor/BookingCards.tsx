@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import { ChoiceTiles } from '@/components/services/wizardKit';
+import { cancelDaysProblem, customDaysOf, CUSTOM_MIN_DAYS, CUSTOM_MAX_DAYS } from '@/lib/cancellation';
+import { customPolicyWords } from '@/lib/bookingDisplay';
 
 // Booking settings, Airbnb's shape: "How guests book" and "Cancellation
 // policy" on raised cards, each opening to its existing choices. Each sheet's
@@ -48,23 +50,41 @@ export function HowGuestsBookCard({ instantBook, requiresPhone, onSave }: {
     );
 }
 
-export function CancellationPolicyCard({ policies, policy, nonRefundable, onSave }: {
+export function CancellationPolicyCard({ policies, policy, customDays, nonRefundable, onSave }: {
     policies: { key: string; bullets: string[] }[];
     policy: string;
+    customDays: number;
     nonRefundable: boolean;
-    onSave: (policy: string, nonRefundable: boolean) => unknown;
+    onSave: (policy: string, nonRefundable: boolean, customDays: number) => unknown;
 }) {
     const [open, setOpen] = useState(false);
     const [p, setP] = useState(policy);
     const [nr, setNr] = useState(nonRefundable);
+    // Held as a string so the host can clear the field while typing without it
+    // snapping to a number; validated with the shared rule on save.
+    const [days, setDays] = useState(String(customDaysOf(customDays)));
+
+    // Only blocks the save when Custom is the chosen policy — the number is
+    // meaningless for the four fixed tiers.
+    const daysProblem = p === 'Custom' ? cancelDaysProblem(days) : null;
+
+    // The card summary makes the default visible at a glance: a host on the
+    // default sees "Custom · no refund within 30 days" without opening the sheet.
+    const summary = policy === 'Custom'
+        ? 'Custom · no refund within ' + customDaysOf(customDays) + ' day' + (customDaysOf(customDays) === 1 ? '' : 's') + ' of check-in'
+        : policy;
 
     return (
         <>
-            <EditorCard title="Cancellation policy" summary={policy}
-                onClick={() => { setP(policy); setNr(nonRefundable); setOpen(true); }} />
+            <EditorCard title="Cancellation policy" summary={summary}
+                onClick={() => { setP(policy); setNr(nonRefundable); setDays(String(customDaysOf(customDays))); setOpen(true); }} />
             {open && (
                 <EditorPanel title="What’s your cancellation policy?" onClose={() => setOpen(false)}
-                    footer={<PanelSave onClick={async () => { if (await saved(onSave(p, nr))) setOpen(false); }} />}>
+                    footer={<PanelSave disabled={!!daysProblem} onClick={async () => {
+                        if (daysProblem) return;
+                        const d = p === 'Custom' ? Number(days) : customDaysOf(customDays);
+                        if (await saved(onSave(p, nr, d))) setOpen(false);
+                    }} />}>
                     {/* Kept: neither rule is guessable. */}
                     <p className="text-base text-slate-600 mb-4">
                         Refunds never include the Galloway Getaways service fee. Cleaning fees are always returned in full.
@@ -78,9 +98,38 @@ export function CancellationPolicyCard({ policies, policy, nonRefundable, onSave
                                     <span className="text-base font-semibold text-slate-900">{option.key}</span>
                                     {p === option.key && <Check className="w-5 h-5 text-emerald-700" />}
                                 </div>
-                                <ul className="text-sm text-slate-500 list-disc pl-4 space-y-0.5">
-                                    {option.bullets.map((b) => <li key={b}>{b}</li>)}
-                                </ul>
+                                {option.key === 'Custom' ? (
+                                    <p className="text-sm text-slate-500">
+                                        You choose how many days before check-in cancellations stop being refundable.
+                                    </p>
+                                ) : (
+                                    <ul className="text-sm text-slate-500 list-disc pl-4 space-y-0.5">
+                                        {option.bullets.map((b) => <li key={b}>{b}</li>)}
+                                    </ul>
+                                )}
+                                {option.key === 'Custom' && p === 'Custom' && (
+                                    // The number input lives inside the selected Custom tile. A
+                                    // click here must not bubble up and re-fire the tile's
+                                    // onClick (which would re-select Custom and steal focus).
+                                    <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                                        <label className="block text-sm font-medium text-slate-700">
+                                            Days before check-in
+                                        </label>
+                                        <input
+                                            type="number"
+                                            inputMode="numeric"
+                                            min={CUSTOM_MIN_DAYS}
+                                            max={CUSTOM_MAX_DAYS}
+                                            step={1}
+                                            value={days}
+                                            onChange={(e) => setDays(e.target.value)}
+                                            className={`mt-1 w-28 rounded-xl border-2 px-3 py-2 text-base text-slate-900 ${daysProblem ? 'border-red-400' : 'border-slate-200'}`}
+                                        />
+                                        <p className={`mt-2 text-sm ${daysProblem ? 'text-red-600' : 'text-slate-600'}`}>
+                                            {daysProblem || customPolicyWords(Number(days))}
+                                        </p>
+                                    </div>
+                                )}
                             </button>
                         ))}
                     </div>

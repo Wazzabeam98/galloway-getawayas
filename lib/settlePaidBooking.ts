@@ -92,7 +92,7 @@ export async function settlePaidBookingSession(
 
     const { data: booking } = await admin
         .from('bookings')
-        .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, guest_id, check_in, check_out, host_id, commission_rate, supplier_vat_number, supplier_vat_name')
+        .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, guest_id, check_in, check_out, host_id, commission_rate, cancellation_policy, cancellation_custom_days, non_refundable, supplier_vat_number, supplier_vat_name')
         .eq('id', bookingId)
         .maybeSingle();
 
@@ -506,13 +506,18 @@ export async function settlePaidBookingSession(
                     balanceDueDate: booking.balance_due_date || null,
                     supplierVatNumber: booking.supplier_vat_number || null,
                     supplierVatName: booking.supplier_vat_name || null,
-                    // Live from the stamped policy, the same deadline
-                    // the cards show — not a stored column that lands
-                    // a day early under BST.
+                    // Live from the stamped policy on the BOOKING, the same
+                    // deadline the cards show — not a stored column that lands
+                    // a day early under BST, and not the listing's current policy
+                    // (which may have changed since this stay was agreed). Null
+                    // on a non-refundable booking, which has no free window.
                     freeCancelUntil: cancellationPosition({
                         checkIn: booking.check_in,
-                        policy: listingRow && listingRow.cancellation_policy,
+                        policy: booking.cancellation_policy,
+                        customDays: booking.cancellation_custom_days,
+                        nonRefundable: !!booking.non_refundable,
                     }).freeUntilKey,
+                    nonRefundable: !!booking.non_refundable,
                 });
                 await sendEmail(guestEmail, guestMail.subject, guestMail.html);
             } else if (!instant && guestEmail) {

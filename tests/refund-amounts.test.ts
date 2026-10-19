@@ -66,6 +66,8 @@ function checkInDaysAway(days: number): string {
 
 interface Options {
     policy?: string;
+    customDays?: number | null;
+    nonRefundable?: boolean;
     cleaningFee?: number | null;
     daysAway?: number;
     amountPaid?: number;
@@ -102,6 +104,11 @@ function load(routePath: string, options: Options = {}) {
         // Stamped at checkout from the server-side quote. £60 of the £400
         // unless a test says otherwise.
         cleaning_fee: options.cleaningFee === undefined ? 60 : options.cleaningFee,
+        // The cancellation terms are stamped on the booking at checkout, and the
+        // refund routes read them here, not the listing's current policy.
+        cancellation_policy: options.policy ?? 'Moderate',
+        cancellation_custom_days: options.customDays ?? null,
+        non_refundable: options.nonRefundable ?? false,
         stripe_payment_intent_id: 'pi_1',
         balance_payment_intent_id: options.balanceIntentId ?? null,
         payout_transfer_id: null,

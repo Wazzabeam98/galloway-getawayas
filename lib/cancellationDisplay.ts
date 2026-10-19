@@ -4,9 +4,9 @@
 // never works out a refund. The bullets mirror the ones in the listing editor
 // (CANCELLATION_POLICIES) so a host sees the same words they chose.
 
-import { policyOf, type PolicyKey } from './cancellation';
+import { policyOf, customDaysOf, type PolicyKey, type FixedPolicyKey } from './cancellation';
 
-const POLICY: Record<PolicyKey, { summary: string; bullets: string[] }> = {
+const POLICY: Record<FixedPolicyKey, { summary: string; bullets: string[] }> = {
     Flexible: {
         summary: 'Free cancellation up to 1 day before check-in.',
         bullets: ['Full refund up to 1 day before check-in', '50% refund inside 1 day of check-in'],
@@ -25,15 +25,29 @@ const POLICY: Record<PolicyKey, { summary: string; bullets: string[] }> = {
     },
 };
 
-// Always true of every tier, so it belongs in the dialog whatever the policy.
+// Custom: built from the host's one number, in the same shape as the fixed
+// tiers. No 50% band — it is full before the cutoff and nothing within it.
+function customDisplay(days: number): { summary: string; bullets: string[] } {
+    const d = customDaysOf(days);
+    const dd = d + ' day' + (d === 1 ? '' : 's');
+    return {
+        summary: 'Free cancellation up to ' + dd + ' before check-in.',
+        bullets: ['Full refund up to ' + dd + ' before check-in', 'No refund within ' + dd + ' of check-in'],
+    };
+}
+
+// Always true of every refundable tier, so it belongs in the dialog whatever the
+// policy. (A non-refundable booking is a per-booking choice made at checkout, not
+// a listing policy, so it never reaches this listing-level display.)
 export const CLEANING_FEE_NOTE =
     'Any cleaning fee comes back in full whenever you cancel, because the clean would not take place.';
 
-export function cancellationDisplay(policy: string | null | undefined): {
+export function cancellationDisplay(policy: string | null | undefined, customDays?: number | null): {
     key: PolicyKey;
     summary: string;
     bullets: string[];
 } {
     const key = policyOf(policy);
+    if (key === 'Custom') return { key, ...customDisplay(customDaysOf(customDays)) };
     return { key, ...POLICY[key] };
 }

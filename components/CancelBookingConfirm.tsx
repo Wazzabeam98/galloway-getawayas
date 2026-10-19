@@ -26,6 +26,8 @@ export default function CancelBookingConfirm({
     bookingId,
     checkIn,
     policy,
+    customDays,
+    nonRefundable,
     amountPaid,
     amountRefunded,
     cleaningFee,
@@ -36,6 +38,8 @@ export default function CancelBookingConfirm({
     bookingId: string;
     checkIn: string;
     policy: string | null | undefined;
+    customDays?: number | null;
+    nonRefundable?: boolean;
     amountPaid: number | null | undefined;
     amountRefunded: number | null | undefined;
     cleaningFee?: number | null;
@@ -49,6 +53,8 @@ export default function CancelBookingConfirm({
     const cancel = cancellationPosition({
         checkIn,
         policy,
+        customDays,
+        nonRefundable,
         amountPaid,
         alreadyRefunded: amountRefunded,
         cleaningFee,

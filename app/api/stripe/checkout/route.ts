@@ -10,6 +10,7 @@ import { balanceDueKey } from '@/lib/balanceDue';
 import { londonDayKey } from '@/lib/dayKey';
 import { blockedNightsFromEvents, fetchLiveIcalEvents } from '@/lib/availability';
 import { rateFor } from '@/lib/fees';
+import { policyOf, customDaysOf } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
 import { formatGBP } from '@/lib/formatMoney';
 import { requireGuestTerms } from '@/lib/agreementRecords';
@@ -54,6 +55,11 @@ export async function POST(request: Request) {
         const body = await request.json();
         const bookingId: string = body && body.bookingId;
         const plan: string = (body && body.plan) === 'deposit' ? 'deposit' : 'full';
+        // The guest's non-refundable choice travels in the body, the same way
+        // `plan` does — it is only honoured when the listing actually offers the
+        // option (checked against the listing below), and the authoritative value
+        // is stamped on the booking by this route, never written by the browser.
+        const wantsNonRefundable: boolean = !!(body && body.nonRefundable === true);
 
         if (!bookingId) {
             return NextResponse.json({ ok: false, error: 'Missing booking' }, { status: 400 });
@@ -95,7 +101,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('status, title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, min_nights, max_nights, advance_notice, preparation_time, availability_window, amenities, max_pets')
+            .select('status, title, cancellation_policy, cancellation_custom_days, non_refundable_option, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, min_nights, max_nights, advance_notice, preparation_time, availability_window, amenities, max_pets')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
@@ -167,6 +173,12 @@ export async function POST(request: Request) {
             extraRows || []
         );
 
+        // The non-refundable rate is only real if the host offers it. A guest who
+        // asks for it on a listing that does not is simply priced at the standard
+        // rate; the totals check below then catches a stale tab that priced it
+        // cheaper. This is the one authoritative place the choice is decided.
+        const nonRefundable = !!listing.non_refundable_option && wantsNonRefundable;
+
         const quote = quoteBooking(
             listing,
             overrides,
@@ -175,7 +187,7 @@ export async function POST(request: Request) {
             Number(booking.adults || 0),
             Number(booking.children || 0),
             Number(booking.pets || 0),
-            { newListingEligible, asOf: new Date() },
+            { newListingEligible, asOf: new Date(), nonRefundable },
             resolvedExtras
         );
 
@@ -517,6 +529,18 @@ export async function POST(request: Request) {
                 // altered later, this booking's history stays true to what
                 // was actually agreed at the time.
                 commission_rate: rateFor(listing),
+                // The cancellation terms, frozen on the same principle and at the
+                // same moment as the commission: the host's policy is mutable, so
+                // the only honest record of what a guest agreed to is the one
+                // taken now. Every refund path reads this stamp, never the listing
+                // as it stands later. custom_days is kept only for a Custom policy;
+                // non_refundable is the guest's own checkout choice, honoured only
+                // where the host offers it (nonRefundable, above).
+                cancellation_policy: policyOf(listing.cancellation_policy),
+                cancellation_custom_days: policyOf(listing.cancellation_policy) === 'Custom'
+                    ? customDaysOf(listing.cancellation_custom_days)
+                    : null,
+                non_refundable: nonRefundable,
                 // Same reasoning, same moment. A cancellation gives the
                 // cleaning fee back in full, so a refund has to know what was
                 // charged for it — not what the host has set since. Taken from

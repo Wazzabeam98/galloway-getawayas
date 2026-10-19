@@ -639,12 +639,19 @@ export default async function StayReservationPage({ params }: { params: { bookin
 
                         {/* ---- Cancellation policy ---- */}
                         {!over && booking.status !== 'cancelled' && booking.status !== 'declined' && (() => {
-                            const words = cancellationWords(listing?.cancellation_policy);
+                            // The terms STAMPED on this booking, not the listing's
+                            // current policy — the stay was agreed under these.
+                            const nonRef = (booking as any).non_refundable === true;
+                            const words = cancellationWords(booking.cancellation_policy, (booking as any).cancellation_custom_days);
                             return (
                                 <section className="mt-8 border-t border-slate-200 pt-6">
                                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cancellation policy</div>
                                     <p className="mt-1 text-sm leading-relaxed text-slate-700">
-                                        <span className="font-semibold text-slate-900">{words.tier}</span> — {words.summary}{' '}
+                                        {nonRef ? (
+                                            <><span className="font-semibold text-slate-900">Non-refundable</span> — you chose the non-refundable rate, so no refund if you cancel. </>
+                                        ) : (
+                                            <><span className="font-semibold text-slate-900">{words.tier}</span> — {words.summary}{' '}</>
+                                        )}
                                         <Link href="/cancellation-policy" className="font-medium text-slate-600 underline hover:text-slate-800">Full terms</Link>
                                     </p>
 
@@ -674,7 +681,9 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                             <StayCancelRow
                                                 bookingId={booking.id}
                                                 checkIn={booking.check_in}
-                                                policy={listing?.cancellation_policy}
+                                                policy={booking.cancellation_policy}
+                                                customDays={(booking as any).cancellation_custom_days}
+                                                nonRefundable={(booking as any).non_refundable === true}
                                                 amountPaid={booking.amount_paid}
                                                 amountRefunded={booking.amount_refunded}
                                                 cleaningFee={(booking as any).cleaning_fee}

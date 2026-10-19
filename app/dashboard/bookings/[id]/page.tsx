@@ -258,11 +258,13 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // under BST. null once the free window has passed; inclusive of the last
     // free day, so a host is not told their guest has lost a right they still
     // have that very day.
-    const freeKey = freeCancelUntilKey(booking.check_in, listing?.cancellation_policy);
-    const freeCancelDisplay = londonDayKey() <= freeKey ? dateFromKey(freeKey) : null;
+    // The terms STAMPED on the booking, not the listing's current policy.
+    const nonRefundableBooking = (booking as any).non_refundable === true;
+    const freeKey = freeCancelUntilKey(booking.check_in, booking.cancellation_policy, (booking as any).cancellation_custom_days);
+    const freeCancelDisplay = !nonRefundableBooking && londonDayKey() <= freeKey ? dateFromKey(freeKey) : null;
 
-    // A guest cancelling right now would get this much back, under the
-    // policy on the listing. Worth knowing before asking them to.
+    // A guest cancelling right now would get this much back, under the terms
+    // stamped on the booking. Worth knowing before asking them to.
     // Against what they are actually still holding, not what they once paid.
     // A booking already part-refunded cannot give back the whole amount again.
     const stillHeld = round2(paid - refunded);
@@ -273,7 +275,9 @@ export default async function BookingDetail({ params }: { params: { id: string }
         alreadyRefunded: refunded,
         cleaningFee: booking.cleaning_fee,
         checkIn: booking.check_in,
-        policy: listing?.cancellation_policy,
+        policy: booking.cancellation_policy,
+        customDays: (booking as any).cancellation_custom_days,
+        nonRefundable: nonRefundableBooking,
     });
 
     const nights = Math.round(
@@ -609,7 +613,13 @@ export default async function BookingDetail({ params }: { params: { id: string }
                         {/* 5 — Cancellation policy — a small card showing just the tier
                             name; tapping opens the full policy in the page's pop-up. */}
                         {(() => {
-                            const words = cancellationWords(listing?.cancellation_policy);
+                            // The terms stamped on the booking. If the guest took the
+                            // non-refundable rate, that is what governs their refund,
+                            // so say so rather than the underlying tier.
+                            const words = cancellationWords(booking.cancellation_policy, (booking as any).cancellation_custom_days);
+                            if (nonRefundableBooking) {
+                                return <CancellationPolicyCard tier={'Non-refundable'} summary={'The guest chose the non-refundable rate, so no refund is due if they cancel.'} />;
+                            }
                             return <CancellationPolicyCard tier={words.tier} summary={words.summary} />;
                         })()}
 

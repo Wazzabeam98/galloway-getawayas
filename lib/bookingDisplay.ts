@@ -3,7 +3,7 @@
 // trips on any edit), and these are copy/format helpers with no bearing on what
 // a guest is charged or refunded. We only READ policyOf from there.
 
-import { policyOf, type PolicyKey } from './cancellation';
+import { policyOf, customDaysOf, type PolicyKey, type FixedPolicyKey } from './cancellation';
 
 // The party as a person would say it — "3 adults · 1 child · 1 pet". The split
 // (adults/children/pets) is written onto every booking at checkout, so this is a
@@ -53,18 +53,30 @@ export function confirmationNumber(bookingId: string): string {
     return 'GG-' + (hex || 'PENDING');
 }
 
-// The cancellation policy said plainly, for the card — the same four tiers as
+// The cancellation policy said plainly, for the card — the same tiers as
 // lib/cancellation.ts's RULES, in words. This is the STANDING policy, distinct
 // from the live "free to cancel until…" position the card already computes; the
 // two sit together the way terms and your current standing do.
-const POLICY_WORDS: Record<PolicyKey, string> = {
+const POLICY_WORDS: Record<FixedPolicyKey, string> = {
     Flexible: 'Full refund up to a day before check-in.',
     Moderate: 'Full refund up to 5 days before check-in.',
     Limited: 'Full refund up to 14 days before check-in, then 50% up to 7 days before.',
     Firm: 'Full refund up to 30 days before check-in, then 50% up to 7 days before.',
 };
 
-export function cancellationWords(policy: string | null | undefined): { tier: PolicyKey; summary: string } {
+// Custom reads from the stamped/chosen day count, in Airbnb's shape: full refund
+// before the host's cutoff, nothing within it.
+export function customPolicyWords(days: number): string {
+    const d = customDaysOf(days);
+    return 'Full refund if you cancel more than ' + d + ' day' + (d === 1 ? '' : 's')
+        + ' before check-in. No refund within ' + d + ' day' + (d === 1 ? '' : 's') + '.';
+}
+
+export function cancellationWords(
+    policy: string | null | undefined,
+    customDays?: number | null
+): { tier: PolicyKey; summary: string } {
     const tier = policyOf(policy);
+    if (tier === 'Custom') return { tier, summary: customPolicyWords(customDaysOf(customDays)) };
     return { tier, summary: POLICY_WORDS[tier] };
 }

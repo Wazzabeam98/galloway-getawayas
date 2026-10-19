@@ -32,7 +32,7 @@ export default async function BookingConfirmed({
         { auth: { persistSession: false } }
     );
 
-    const COLUMNS = 'id, listing_id, check_in, check_out, guests, total_price, status, payment_status, amount_paid, balance_amount, balance_due_date, created_at';
+    const COLUMNS = 'id, listing_id, check_in, check_out, guests, total_price, status, payment_status, amount_paid, balance_amount, balance_due_date, cancellation_policy, cancellation_custom_days, non_refundable, created_at';
 
     let { data: booking } = await admin
         .from('bookings')
@@ -171,7 +171,9 @@ export default async function BookingConfirmed({
                     // a different deadline here than on the card.
                     const cancel = cancellationPosition({
                         checkIn: booking.check_in,
-                        policy: listing && listing.cancellation_policy,
+                        policy: (booking as any).cancellation_policy,
+                        customDays: (booking as any).cancellation_custom_days,
+                        nonRefundable: (booking as any).non_refundable === true,
                     });
                     if (cancel.kind !== 'free' || !cancel.freeUntilKey) return null;
                     return (

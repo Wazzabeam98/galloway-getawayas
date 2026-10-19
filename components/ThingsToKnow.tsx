@@ -36,6 +36,7 @@ type Props = {
     carbonMonoxideAlarm: boolean;
     damageDeposit: number;
     cancellationPolicy: string | null;
+    cancellationCustomDays?: number | null;
     // The host's checkout tick-list and note (shown under "Checking in and
     // out" only when there is something), and the ticked Guest safety items.
     checkoutTasks?: string[];
@@ -55,7 +56,7 @@ export default function ThingsToKnow(props: Props) {
     const {
         checkInTime, checkOutTime, checkInMethod, maxGuests, petsAllowed, eventsAllowed,
         smokingAllowed, quietHoursEnabled, quietHoursStart, quietHoursEnd, additionalRules,
-        smokeAlarm, carbonMonoxideAlarm, damageDeposit, cancellationPolicy,
+        smokeAlarm, carbonMonoxideAlarm, damageDeposit, cancellationPolicy, cancellationCustomDays,
         checkoutTasks = [], checkoutNote = null, safetyItems = [],
     } = props;
     const checkoutLabels = checkoutTaskLabels(checkoutTasks);
@@ -87,8 +88,8 @@ export default function ThingsToKnow(props: Props) {
 
     const checkInHM = hm(checkInTime) || '15:00';
     const checkOutHM = hm(checkOutTime) || '11:00';
-    const policy = cancellationDisplay(cancellationPolicy);
-    const dated = checkIn ? cancellationSummary(checkIn, cancellationPolicy) : null;
+    const policy = cancellationDisplay(cancellationPolicy, cancellationCustomDays);
+    const dated = checkIn ? cancellationSummary(checkIn, cancellationPolicy, undefined, cancellationCustomDays) : null;
 
     // ---- column summaries (2–3 lines each) ----
     const rulesLines = [

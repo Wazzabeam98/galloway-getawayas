@@ -31,6 +31,14 @@ import { londonDayKey } from './dayKey';
 export interface CancellationPositionInput {
     checkIn: string | Date;
     policy: string | null | undefined;
+    /** A Custom policy's stamped day count. Ignored for the four fixed tiers. */
+    customDays?: number | null;
+    /**
+     * The guest chose the non-refundable price. There is no free window and
+     * nothing comes back on a guest cancel, so the position is always 'none'
+     * with amount 0.
+     */
+    nonRefundable?: boolean;
     // Optional — only needed for the exact £ figure. Omit to state the position
     // as a fact without a personalised amount.
     amountPaid?: number | null;
@@ -62,9 +70,6 @@ function round2(value: number): number {
 }
 
 export function cancellationPosition(input: CancellationPositionInput): CancellationPosition {
-    const freeKey = freeCancelUntilKey(input.checkIn, input.policy);
-    const todayKey = londonDayKey(input.on || new Date());
-
     const paidSoFar = round2(Number(input.amountPaid || 0) - Number(input.alreadyRefunded || 0));
     const amount = refundDue({
         amountPaid: Number(input.amountPaid || 0),
@@ -72,8 +77,19 @@ export function cancellationPosition(input: CancellationPositionInput): Cancella
         cleaningFee: input.cleaningFee,
         checkIn: input.checkIn,
         policy: input.policy,
+        customDays: input.customDays,
+        nonRefundable: input.nonRefundable,
         on: input.on,
     });
+
+    // A non-refundable booking has no free window — the guest keeps nothing back
+    // whenever they cancel, so the position is 'none' from the start.
+    if (input.nonRefundable) {
+        return { kind: 'none', freeUntilKey: null, freeUntil: null, amount, paidSoFar };
+    }
+
+    const freeKey = freeCancelUntilKey(input.checkIn, input.policy, input.customDays);
+    const todayKey = londonDayKey(input.on || new Date());
 
     // Inclusive: the last free day is still free (see cancellationSummary).
     if (todayKey <= freeKey) {
@@ -86,7 +102,7 @@ export function cancellationPosition(input: CancellationPositionInput): Cancella
         };
     }
 
-    const fraction = refundFraction(input.checkIn, input.policy, input.on);
+    const fraction = refundFraction(input.checkIn, input.policy, input.on, input.customDays);
     return {
         kind: fraction >= 0.5 ? 'partial' : 'none',
         freeUntilKey: null,
