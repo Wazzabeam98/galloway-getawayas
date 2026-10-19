@@ -15,10 +15,9 @@ export default async function AdminNotifications() {
             <Link href="/admin" className="text-sm text-slate-500 hover:text-slate-900">&larr; Owner tools</Link>
             <h1 className="text-2xl font-bold text-slate-900 mt-3 mb-1">Push notifications</h1>
             <p className="text-sm text-slate-500 mb-8">
-                Sends a test of each notification to the devices where you have turned notifications on:
-                a host&rsquo;s new booking, a new message, and a guest&rsquo;s confirmed booking, ten seconds
-                apart. They use the real wording with made-up details, and each title starts with
-                &ldquo;TEST&rdquo;. Only you receive them, and no booking or message is created.
+                Sends a test of every notification the site sends to the devices where you have turned
+                notifications on. They use the real wording with made-up details, and each title starts with
+                &ldquo;TEST&rdquo;. Only you receive them, and nothing is created: no booking, message or payment.
             </p>
             <PushTestButton />
         </div>
