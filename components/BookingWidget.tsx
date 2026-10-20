@@ -13,7 +13,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { dateToKey, keyToDate, readBookingDraft, writeBookingDraft } from '@/lib/bookingDraftParams';
 import { toast } from 'react-toastify';
 import { Minus, Plus, X, ArrowLeft, Star } from 'lucide-react';
-import { ukDate } from '@/lib/dayKey';
+import { ukDate, ukLongDate, ukWeekday } from '@/lib/dayKey';
 import { notify } from '@/lib/notify';
 import { formatUk, cancellationSummary } from '@/lib/cancellation';
 import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
@@ -214,6 +214,21 @@ function CottageCalendar({
                 } else {
                     day.removeAttribute('aria-disabled');
                 }
+
+                // The day button's accessible name is otherwise just its number
+                // ("15"). renderDay stamps the day key on the content (data-d);
+                // read it back here and name the button with the full date, so a
+                // screen reader hears "Thursday 15 October 2026" — and "…,
+                // unavailable" when the night is struck through (the struck span
+                // carries an sr-only "unavailable" which aria-label would
+                // otherwise replace).
+                const marker = day.querySelector('[data-d]');
+                const dayKey = marker && marker.getAttribute('data-d');
+                if (dayKey) {
+                    const unavailable = (marker.textContent || '').includes('unavailable');
+                    const full = `${ukWeekday(dayKey)} ${ukLongDate(dayKey)}`.trim();
+                    day.setAttribute('aria-label', full + (unavailable ? ', unavailable' : ''));
+                }
             });
         };
 
@@ -357,10 +372,14 @@ export default function BookingWidget({
         // chosen, that day is a checkout the guest can have.
         const struck = unavailableNights.has(key)
             && !(choosingCheckout && startKey && checkoutPickable(startKey, key, unavailableNights, minForStay, maxForStay));
-        if (!struck) return <span>{date.getDate()}</span>;
+        // data-d carries the day's key to the aria-labelling observer below,
+        // which reads it to give the day button the full date as its label —
+        // react-date-range renders the button with the day number alone
+        // ("15"), which a screen reader reads with no month or year.
+        if (!struck) return <span data-d={key}>{date.getDate()}</span>;
 
         return (
-            <span className="line-through decoration-2 decoration-slate-400">
+            <span data-d={key} className="line-through decoration-2 decoration-slate-400">
                 {date.getDate()}
                 <span className="sr-only"> unavailable</span>
             </span>

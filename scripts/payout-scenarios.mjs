@@ -6,6 +6,7 @@
 // real test-mode Stripe behind them. Each scenario checks Stripe and the
 // database agree afterwards, which is where the bugs in this project live.
 
+import { spawn } from 'node:child_process';
 import {
     loadEnv, assertTestEnvironment, stripeClient, supabaseClient,
     readManifest, round2, sleep, signIn, SEED_DOMAIN, dayOffset,
@@ -18,7 +19,7 @@ assertTestEnvironment(env);
 
 const stripe = stripeClient(env);
 const db = supabaseClient(env);
-const manifest = readManifest();
+let manifest = readManifest();
 // Checked before anything is written: never production, never the production
 // database, never a build behind master. See scripts/target.mjs.
 const SITE = await resolveTarget({
@@ -115,11 +116,53 @@ async function refundAsHost(bookingId, hostLabel, reason) {
     return { status: res.status, body };
 }
 
+/* ------------------------------------------------------------- baseline */
+
+// Re-run the payments seed as a child process, returning its exit code.
+function reseedPayments() {
+    return new Promise((resolve) => {
+        const child = spawn(process.execPath, ['scripts/seed-payments.mjs'], {
+            stdio: 'inherit',
+            env: { ...process.env, SITE_URL: SITE },
+        });
+        child.on('close', (code) => resolve(code === null ? 1 : code));
+    });
+}
+
+// The suite assumes seed-payments' baseline: s20 and s21 START un-paid-out.
+// But another suite run first — or a previous run of this one — can leave them
+// paid out, and then the checks lie. Scenario 20 proves the run PAYS s20; a
+// stale paid-out s20 passes "booking is marked paid out" without this run doing
+// anything (a fake pass), while its "booking starts unpaid-out" turns into a
+// fake failure. Scenario 21 proves s21 is NOT paid while its host is
+// un-onboarded; a payout left by an earlier run reads the same way (a fake
+// failure). So if the baseline is dirty, re-seed before starting — a fresh seed
+// is the only thing that restores the Stripe transfers scenarios 22/23 reverse,
+// which no database reset could. scenarios.mjs always seeds first, so there this
+// is a no-op; it only fires on a dirty standalone run.
+async function ensureCleanBaseline() {
+    const s20 = await booking(manifest.bookings.s20).catch(() => null);
+    const s21 = await booking(manifest.bookings.s21).catch(() => null);
+    const dirty = !s20 || !s21 || s20.paid_out_at !== null || s21.paid_out_at !== null;
+    if (!dirty) return;
+
+    console.log('\n⚠ baseline is not clean (a scenario booking is already paid out) — re-seeding payments first…');
+    const code = await reseedPayments();
+    if (code !== 0) {
+        console.error('re-seed failed (exit ' + code + ') — refusing to run on an untrusted baseline.');
+        process.exit(2);
+    }
+    manifest = readManifest();
+    console.log('re-seeded; continuing on a fresh baseline.\n');
+}
+
 /* ------------------------------------------------------------- scenarios */
 
 async function main() {
     console.log('site:    ' + SITE);
     console.log('project: ' + manifest.project);
+
+    await ensureCleanBaseline();
 
     const { bookings, users, accounts } = manifest;
 

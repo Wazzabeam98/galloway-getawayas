@@ -11,7 +11,9 @@ import { logError } from '@/lib/logError';
 import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 import { ukDate, londonDayKey as dayKeyOf } from '@/lib/dayKey';
 import { recordEmailPush } from '@/lib/pushOutbox';
+import { queueFailedEmail } from '@/lib/emailOutbox';
 import type { PushSpec } from '@/lib/pushRules';
+import { randomUUID } from 'crypto';
 
 export const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -250,12 +252,24 @@ export function listUnsubscribe(html: string): { headers?: Record<string, string
 // has recorded the push itself. Recording never throws and is time-boxed, so
 // it can't hold up the email or anything around it.
 export async function sendEmail(to: string, subject: string, html: string, push?: Partial<PushSpec> | false): Promise<boolean> {
-    const sent = await sendEmailOnly(to, subject, html);
+    // One key per email, stable across its retries: handed to Resend now, and
+    // handed back by the retry job if this send fails, so a send that actually
+    // went through is never doubled.
+    const idempotencyKey = randomUUID();
+    const sent = await sendEmailOnly(to, subject, html, idempotencyKey);
+    // A failed send is no longer only logged: record it so the push job retries
+    // it (lib/emailOutbox). Never throws, and queues nothing for a suppressed
+    // address or a missing-key/no-recipient fault a retry couldn't fix.
+    if (!sent) await queueFailedEmail(to, subject, html, idempotencyKey);
     await recordEmailPush(to, subject, html, push);
     return sent;
 }
 
-async function sendEmailOnly(to: string, subject: string, html: string): Promise<boolean> {
+// Exported for the retry job (lib/emailOutbox via /api/cron/push-outbox): it
+// re-sends a queued email through here, reusing the stored idempotency key and
+// recording no fresh push. `idempotencyKey` is sent to Resend as its
+// Idempotency-Key header when present.
+export async function sendEmailOnly(to: string, subject: string, html: string, idempotencyKey?: string): Promise<boolean> {
     // NOTHING IS EVER SENT TO A RESERVED TLD, AND THE DECISION IS MADE HERE.
     //
     // lib/testAddresses.ts has existed since the seeded tradesmen started
@@ -316,6 +330,9 @@ async function sendEmailOnly(to: string, subject: string, html: string): Promise
             headers: {
                 Authorization: 'Bearer ' + key,
                 'Content-Type': 'application/json',
+                // Resend deduplicates on this for 24 hours, so a retry of a send
+                // that actually reached Resend does not send a second copy.
+                ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
             },
             body: JSON.stringify({
                 from: FROM,
