@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
-import { Archive, ArchiveRestore, Check, Mail, MoreHorizontal, Star, Sparkles, Wrench } from 'lucide-react';
+import { Archive, ArchiveRestore, Check, Home, Mail, MoreHorizontal, Star, Sparkles, Wrench } from 'lucide-react';
 
 // One row in the inbox, with its own actions menu.
 //
@@ -22,17 +22,61 @@ function timeAgo(iso: string): string {
     return days + 'd ago';
 }
 
-const stageStyles: Record<string, string> = {
-    staying: 'bg-emerald-100 text-emerald-800',
-    upcoming: 'bg-sky-100 text-sky-800',
-    past: 'bg-slate-100 text-slate-500',
-};
+// One face in the stack: their photo, else the first letter of their name on
+// a plain disc, the way Airbnb shows someone with no photo.
+function Face(props: { person: any; className: string }) {
+    const p = props.person || {};
+    return (
+        <span
+            className={
+                'rounded-full ring-2 ring-white bg-slate-700 text-white overflow-hidden flex items-center justify-center font-semibold text-xs ' +
+                props.className
+            }
+        >
+            {p.avatarUrl ? (
+                <img src={p.avatarUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+                (String(p.name || '').trim().charAt(0) || '·').toUpperCase()
+            )}
+        </span>
+    );
+}
 
-const stageWords: Record<string, string> = {
-    staying: 'Here now',
-    upcoming: 'Upcoming',
-    past: 'Past',
-};
+// Airbnb's stacked avatars: the place's photo, with the other person's face
+// over its bottom-right corner and a co-host's beside it. With no photo of the
+// place, the other person's face takes the whole spot instead.
+function AvatarStack(props: { conversation: any }) {
+    const c = props.conversation;
+    const people: any[] = Array.isArray(c.people) ? c.people : [];
+    const photo = c.photoUrl || (c.listing && c.listing.images && c.listing.images[0] ? getImageUrl(c.listing.images[0]) : null);
+
+    if (!photo) {
+        if (people[0]) {
+            return (
+                <div className="relative w-14 h-14 flex-shrink-0">
+                    <Face person={people[0]} className="w-12 h-12 ring-0" />
+                    {people[1] && <Face person={people[1]} className="absolute bottom-0 right-0 w-7 h-7" />}
+                </div>
+            );
+        }
+        const Icon = c.kind === 'order' ? Sparkles : c.kind === 'enquiry' ? Wrench : Home;
+        return (
+            <div className="w-12 h-12 rounded-xl bg-slate-200 flex-shrink-0 flex items-center justify-center">
+                <Icon className="w-5 h-5 text-slate-400" />
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative w-14 h-14 flex-shrink-0">
+            <div className="w-12 h-12 rounded-xl bg-slate-200 overflow-hidden">
+                <img src={photo} alt="" className="w-full h-full object-cover" />
+            </div>
+            {people[1] && <Face person={people[1]} className="absolute bottom-0 right-5 w-7 h-7" />}
+            {people[0] && <Face person={people[0]} className="absolute bottom-0 right-0 w-7 h-7" />}
+        </div>
+    );
+}
 
 // How long a finger has to stay down before the menu opens. Long enough not
 // to fire while somebody is starting a scroll, short enough not to feel stuck.
@@ -203,19 +247,7 @@ export default function ConversationRow(props: {
                             : 'hover:bg-slate-50')
                 }
             >
-                <div className="w-12 h-12 rounded-xl bg-slate-200 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                    {c.listing && c.listing.images && c.listing.images[0] ? (
-                        <img
-                            src={getImageUrl(c.listing.images[0])}
-                            alt=""
-                            className="w-full h-full object-cover"
-                        />
-                    ) : c.kind === 'order' ? (
-                        <Sparkles className="w-5 h-5 text-slate-400" />
-                    ) : c.kind === 'enquiry' ? (
-                        <Wrench className="w-5 h-5 text-slate-400" />
-                    ) : null}
-                </div>
+                <AvatarStack conversation={c} />
 
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -239,32 +271,32 @@ export default function ConversationRow(props: {
                         )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                        <span
-                            className={
-                                'text-[10px] font-semibold px-1.5 py-0.5 rounded ' +
-                                (c.kind === 'order' ? 'bg-emerald-100 text-emerald-800'
-                                    : c.kind === 'enquiry' ? 'bg-sky-100 text-sky-800'
-                                        : (stageStyles[c.stage] || stageStyles.past))
-                            }
-                        >
-                            {c.kind === 'order' ? 'Experience'
-                                : c.kind === 'enquiry' ? 'Job'
-                                    : (stageWords[c.stage] || 'Past')}
-                        </span>
-                        <span className="text-xs text-slate-500 truncate">
-                            {c.subtitle || (c.listing && c.listing.title) || ''}
-                        </span>
+                    {/* What it is about and where it has got to — "Confirmed ·
+                        19–22 Dec" — then the place, as Airbnb's inbox writes it. */}
+                    <div className="text-xs text-slate-500 truncate mt-0.5">
+                        {[c.statusLine, c.placeTitle || (c.listing && c.listing.title) || c.subtitle]
+                            .filter(Boolean)
+                            .join(' · ')}
                     </div>
 
                     {c.lastMessage && (
                         <div
                             className={
+                                // Airbnb bolds and darkens an unread preview.
                                 'text-xs truncate mt-1 ' +
-                                (c.needsReply ? 'text-slate-900 font-medium' : 'text-slate-400')
+                                (c.unread > 0
+                                    ? 'text-slate-900 font-semibold'
+                                    : c.needsReply
+                                        ? 'text-slate-700 font-medium'
+                                        : 'text-slate-500')
                             }
                         >
                             {c.needsReply && <span className="text-amber-600">&bull; </span>}
+                            {/* Whose words these are: "You:" for your own, the
+                                sender's first name for theirs. */}
+                            {c.lastMessage.senderLabel && (
+                                <span>{capitializeFirst(c.lastMessage.senderLabel)}: </span>
+                            )}
                             {c.lastMessage.body}
                         </div>
                     )}

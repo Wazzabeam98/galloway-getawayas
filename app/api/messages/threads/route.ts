@@ -6,7 +6,8 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { listingIdsFor } from '@/lib/access';
 import { renderSecretTokens } from '@/lib/messageSecrets';
-import { firstName } from '@/lib/utils';
+import { firstName, getImageUrl } from '@/lib/utils';
+import { bookingStatusLine, categoryOf, enquiryStatusLine, orderStatusLine } from '@/lib/conversationLabels';
 import { providerIdsWith } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,7 @@ export async function GET() {
     // Their own bookings, as guest or host.
     const { data: own } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at')
+        .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at, status')
         .or('guest_id.eq.' + uid + ',host_id.eq.' + uid);
 
     // Trips someone has added them to.
@@ -56,7 +57,7 @@ export async function GET() {
     const { data: companionBookings } = companionIds.length
         ? await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at, status')
             .in('id', companionIds)
         : { data: [] };
 
@@ -64,7 +65,7 @@ export async function GET() {
     const { data: helping } = messageListings.length
         ? await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at, status')
             .in('listing_id', messageListings)
         : { data: [] };
 
@@ -93,6 +94,23 @@ export async function GET() {
         listingMap[l.id] = l;
     });
 
+    // The co-hosts who answer messages on each property, for the stacked
+    // photos on a row (Airbnb shows the co-host's face beside the guest's).
+    const { data: listingTeam } = listingIds.length
+        ? await admin
+            .from('listing_access')
+            .select('listing_id, user_id')
+            .in('listing_id', listingIds)
+            .eq('status', 'active')
+            .eq('role', 'co_host')
+            .eq('can_messages', true)
+        : { data: [] };
+    const coHostsOf: Record<string, string[]> = {};
+    (listingTeam || []).forEach((a: any) => {
+        if (!a.user_id) return;
+        (coHostsOf[a.listing_id] = coHostsOf[a.listing_id] || []).push(a.user_id);
+    });
+
     // On a booking they only see as a co-host, the person they're talking to
     // is the guest.
     const otherIds = Array.from(
@@ -109,6 +127,10 @@ export async function GET() {
     (profiles || []).forEach((p: any) => {
         nameMap[p.id] = firstName(p, 'Guest');
     });
+
+    // Everyone whose face or name a row may show — filled in as the rows are
+    // built, read in one go at the end (see `people` below).
+    const personIds = new Set<string>();
 
     const { data: lastMessages } = bookings.length
         ? await admin
@@ -160,8 +182,16 @@ export async function GET() {
     const conversations: any[] = bookings.map((b) => {
         const listing = listingMap[b.listing_id];
         const otherId = b.guest_id === uid ? b.host_id : b.guest_id;
+        const viewerIsGuest = b.guest_id === uid;
 
         const pref = prefMap[b.id];
+
+        // The second face: a co-host on the property, or — for a co-host
+        // looking at it — the owner. Never the viewer, never the person
+        // already shown.
+        const team = [b.host_id].concat(coHostsOf[b.listing_id] || []);
+        const secondId = team.find((id) => id && id !== uid && id !== otherId) || null;
+        [otherId, secondId, lastMap[b.id] && lastMap[b.id].sender_id].forEach((id) => { if (id) personIds.add(id); });
 
         return {
             // The universal identity every kind now carries. bookingId stays for
@@ -197,6 +227,11 @@ export async function GET() {
                         : 'past',
             // Flagged so the screen can make clear whose property it is.
             asCoHost: listing ? listing.host_id !== uid && b.guest_id !== uid : false,
+            category: categoryOf('booking'),
+            statusLine: bookingStatusLine({ status: b.status, checkIn: b.check_in, checkOut: b.check_out, todayKey, viewerIsGuest }),
+            placeTitle: listing ? listing.title : null,
+            photoUrl: listing && Array.isArray(listing.images) && listing.images[0] ? getImageUrl(String(listing.images[0])) : null,
+            _people: [otherId, secondId],
         };
     });
 
@@ -206,7 +241,7 @@ export async function GET() {
     // is mid-checkout, and an ended one is history.
     const { data: myOrders } = await admin
         .from('service_orders')
-        .select('id, item_name, provider_business_name, service_date, status')
+        .select('id, item_name, provider_id, provider_business_name, service_date, status')
         .eq('guest_id', uid)
         .in('status', ['authorised', 'confirmed']);
 
@@ -224,10 +259,16 @@ export async function GET() {
     });
     for (const o of myOrders || []) {
         const last = oLast[o.id] || null;
+        if (last && last.sender_id) personIds.add(last.sender_id);
         conversations.push({
             kind: 'order', id: o.id, key: 'order:' + o.id, manageable: false,
             otherName: o.provider_business_name || 'Provider',
             subtitle: (o.item_name || 'Experience') + (o.service_date ? ' · ' + String(o.service_date) : ''),
+            category: categoryOf('order'),
+            statusLine: orderStatusLine({ status: o.status, serviceDate: o.service_date, todayKey }),
+            placeTitle: o.item_name || 'Experience',
+            _provider: o.provider_id || null,
+            _people: [],
             listing: null,
             lastMessage: last,
             unread: oUnread[o.id] || 0,
@@ -242,7 +283,7 @@ export async function GET() {
     // provider side is on /services/messages).
     const { data: myEnquiries } = await admin
         .from('service_enquiries')
-        .select('id, reference, business_name, summary, status')
+        .select('id, reference, business_name, summary, status, provider_id, listing_id, preferred_date, proposed_date')
         .eq('host_id', uid)
         .in('status', ['accepted', 'cancelled']);
 
@@ -260,10 +301,17 @@ export async function GET() {
     });
     for (const e of myEnquiries || []) {
         const last = eLast[e.id] || null;
+        if (last && last.sender_id) personIds.add(last.sender_id);
         conversations.push({
             kind: 'enquiry', id: e.id, key: 'enquiry:' + e.id, manageable: false,
             otherName: e.business_name || 'The tradesman',
             subtitle: String(e.reference || '') + (e.summary ? ' · ' + e.summary : ''),
+            category: categoryOf('enquiry'),
+            statusLine: enquiryStatusLine({ status: e.status, date: e.proposed_date || e.preferred_date, todayKey }),
+            placeTitle: e.summary || null,
+            _listing: e.listing_id || null,
+            _provider: e.provider_id || null,
+            _people: [],
             listing: null,
             lastMessage: last,
             unread: eUnread[e.id] || 0,
@@ -285,7 +333,7 @@ export async function GET() {
     if (providerIds.length) {
         const { data: provOrders } = await admin
             .from('service_orders')
-            .select('id, item_name, service_date, status, guest_name')
+            .select('id, item_name, service_date, status, guest_name, guest_id, provider_id')
             .in('provider_id', providerIds)
             .is('parent_order_id', null)
             .in('status', ['authorised', 'confirmed']);
@@ -304,10 +352,17 @@ export async function GET() {
         for (const o of provOrders || []) {
             if (seenKeys.has('order:' + o.id)) continue;
             const last = poLast[o.id] || null;
+            [o.guest_id, last && last.sender_id].forEach((id) => { if (id) personIds.add(id); });
             conversations.push({
                 kind: 'order', id: o.id, key: 'order:' + o.id, manageable: false,
                 otherName: o.guest_name || 'Guest',
                 subtitle: (o.item_name || 'Experience') + (o.service_date ? ' · ' + String(o.service_date) : ''),
+                category: categoryOf('order'),
+                statusLine: orderStatusLine({ status: o.status, serviceDate: o.service_date, todayKey }),
+                placeTitle: o.item_name || 'Experience',
+                _provider: o.provider_id || null,
+                _team: true,
+                _people: [o.guest_id || null],
                 listing: null, lastMessage: last, unread: poUnread[o.id] || 0,
                 needsReply: !!(last && last.sender_id !== uid),
                 noReplyNeeded: false, starred: false, archived: false, stage: null,
@@ -316,7 +371,7 @@ export async function GET() {
 
         const { data: provEnq } = await admin
             .from('service_enquiries')
-            .select('id, reference, summary, status, host_name')
+            .select('id, reference, summary, status, host_name, host_id, provider_id, listing_id, preferred_date, proposed_date')
             .in('provider_id', providerIds)
             .in('status', ['accepted', 'cancelled']);
         const provEnqIds = (provEnq || []).map((e: any) => e.id);
@@ -334,16 +389,26 @@ export async function GET() {
         for (const e of provEnq || []) {
             if (seenKeys.has('enquiry:' + e.id)) continue;
             const last = peLast[e.id] || null;
+            [e.host_id, last && last.sender_id].forEach((id) => { if (id) personIds.add(id); });
             conversations.push({
                 kind: 'enquiry', id: e.id, key: 'enquiry:' + e.id, manageable: false,
                 otherName: e.host_name || 'The owner',
                 subtitle: String(e.reference || '') + (e.summary ? ' · ' + e.summary : ''),
+                category: categoryOf('enquiry'),
+                statusLine: enquiryStatusLine({ status: e.status, date: e.proposed_date || e.preferred_date, todayKey }),
+                placeTitle: e.summary || null,
+                _listing: e.listing_id || null,
+                _provider: e.provider_id || null,
+                _team: true,
+                _people: [e.host_id || null],
                 listing: null, lastMessage: last, unread: peUnread[e.id] || 0,
                 needsReply: !!(last && last.sender_id !== uid),
                 noReplyNeeded: false, starred: false, archived: false, stage: null,
             });
         }
     }
+
+    await dressRows(admin, uid, conversations, personIds);
 
     // Sorted by the most recent message rather than when the booking was
     // made — a conversation someone replied to an hour ago matters more than
@@ -366,4 +431,117 @@ export async function GET() {
             .reduce((sum: number, c: any) => sum + (c.unread || 0), 0),
         needsReply: conversations.filter((c: any) => c.needsReply && !c.archived).length,
     });
+}
+
+// The faces and the "Name:" / "You:" in front of a preview, filled in once for
+// every row. A row is built with placeholders (_people, _provider, _listing,
+// _team) by whichever block made it; this resolves them in a handful of reads
+// rather than one per row, then strips them.
+//
+// What each kind shows, the way Airbnb stacks it: the place's photo (the
+// cottage, the experience, the property a trade is working on), the other
+// person's face over its corner, and a co-host's face beside that when there
+// is one. Initials stand in for anyone without a photo.
+async function dressRows(admin: any, uid: string, rows: any[], personIds: Set<string>) {
+    const providerIds = Array.from(new Set(rows.map((r) => r._provider).filter(Boolean)));
+    const { data: providers } = providerIds.length
+        ? await admin.from('service_providers').select('id, owner_id, business_name, logo, headshot, photos').in('id', providerIds)
+        : { data: [] };
+    const providerMap: Record<string, any> = {};
+    (providers || []).forEach((p: any) => { providerMap[p.id] = p; if (p.owner_id) personIds.add(p.owner_id); });
+
+    // A business's co-hosts who answer messages, for the provider's own rows.
+    const { data: providerTeam } = providerIds.length
+        ? await admin.from('provider_access').select('provider_id, user_id')
+            .in('provider_id', providerIds).eq('status', 'active').eq('can_messages', true)
+        : { data: [] };
+    const providerCoHosts: Record<string, string[]> = {};
+    (providerTeam || []).forEach((a: any) => {
+        if (!a.user_id) return;
+        (providerCoHosts[a.provider_id] = providerCoHosts[a.provider_id] || []).push(a.user_id);
+        personIds.add(a.user_id);
+    });
+
+    const listingIds = Array.from(new Set(rows.map((r) => r._listing).filter(Boolean)));
+    const { data: listings } = listingIds.length
+        ? await admin.from('listings').select('id, title, images').in('id', listingIds)
+        : { data: [] };
+    const listingMap: Record<string, any> = {};
+    (listings || []).forEach((l: any) => { listingMap[l.id] = l; });
+
+    const ids = Array.from(personIds);
+    const { data: profiles } = ids.length
+        ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name, avatar_url').in('id', ids)
+        : { data: [] };
+    const profileMap: Record<string, any> = {};
+    (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
+
+    const person = (id: string | null, fallbackName?: string) => {
+        if (!id) return null;
+        const p = profileMap[id];
+        return {
+            name: firstName(p, fallbackName || 'Guest'),
+            avatarUrl: p && p.avatar_url ? getImageUrl(String(p.avatar_url)) : null,
+        };
+    };
+    const image = (key: any) => (key ? getImageUrl(String(key)) : null);
+
+    for (const r of rows) {
+        const prov = r._provider ? providerMap[r._provider] : null;
+        const people: any[] = [];
+
+        if (r.kind === 'booking') {
+            const [first, second] = r._people || [];
+            const a = person(first, r.otherName);
+            if (a) people.push({ ...a, name: r.otherName || a.name });
+            const b = person(second);
+            if (b) people.push(b);
+        } else if (r._team) {
+            // The provider's side: the customer, then a teammate.
+            const a = person((r._people || [])[0], r.otherName);
+            people.push(a ? { ...a, name: r.otherName || a.name } : { name: r.otherName, avatarUrl: null });
+            const team = prov ? [prov.owner_id].concat(providerCoHosts[prov.id] || []) : [];
+            const mate = team.find((id: string) => id && id !== uid) || null;
+            const b = person(mate);
+            if (b) people.push(b);
+        } else if (prov) {
+            // The customer's side: the business is the other party, shown by
+            // its logo or the owner's own photo.
+            const owner = person(prov.owner_id);
+            people.push({
+                name: r.otherName,
+                avatarUrl: image(prov.logo) || image(prov.headshot) || (owner && owner.avatarUrl) || null,
+            });
+        } else {
+            people.push({ name: r.otherName, avatarUrl: null });
+        }
+
+        if (!r.photoUrl) {
+            if (r.kind === 'enquiry' && r._listing && listingMap[r._listing]) {
+                const l = listingMap[r._listing];
+                r.photoUrl = Array.isArray(l.images) && l.images[0] ? image(l.images[0]) : null;
+                if (!r.placeTitle) r.placeTitle = l.title;
+            } else if (r.kind === 'order' && prov) {
+                r.photoUrl = Array.isArray(prov.photos) && prov.photos[0] ? image(prov.photos[0]) : null;
+            }
+        }
+
+        r.people = people;
+
+        // Whose words the preview is: "You:" for the viewer's own, the
+        // sender's first name for anyone else's.
+        if (r.lastMessage) {
+            const sid = r.lastMessage.sender_id;
+            r.lastMessage.senderLabel = !sid
+                ? null
+                : sid === uid
+                    ? 'You'
+                    : (profileMap[sid] ? firstName(profileMap[sid], r.otherName || '') : r.otherName) || null;
+        }
+
+        delete r._people;
+        delete r._provider;
+        delete r._listing;
+        delete r._team;
+    }
 }
