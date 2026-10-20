@@ -5,27 +5,31 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { displayName } from '@/lib/utils';
+import { cohostTarget, type CohostTarget } from '@/lib/cohostTargets';
 
 export const dynamic = 'force-dynamic';
 
-// Who may manage a listing's co-hosts: the owner, or a full-access co-host (the
-// owner's equal). Returns the listing and whether the caller is the owner —
-// callers use `isOwner` for the one thing a co-host still can't do, mint another
-// full-access co-host. Null when the caller is neither.
-async function manageAuth(admin: any, listingId: string, userId: string): Promise<{ listing: any; isOwner: boolean } | null> {
-    const { data: listing } = await admin
-        .from('listings')
-        .select('id, title, host_id')
+// Who may manage co-hosts on a listing — or on a business (an experience or a
+// trade; the same system, lib/cohostTargets): the owner, or a full-access co-host
+// (the owner's equal). Returns the thing, normalised to { id, title, host_id },
+// and whether the caller is the owner — callers use `isOwner` for the one thing
+// a co-host still can't do, mint another full-access co-host. Null when the
+// caller is neither.
+async function manageAuth(admin: any, target: CohostTarget, listingId: string, userId: string): Promise<{ listing: any; isOwner: boolean } | null> {
+    const { data: row } = await admin
+        .from(target.parent)
+        .select('id, ' + target.titleCol + ', ' + target.ownerCol)
         .eq('id', listingId)
         .maybeSingle();
 
-    if (!listing) return null;
+    if (!row) return null;
+    const listing = { id: row.id, title: row[target.titleCol], host_id: row[target.ownerCol] };
     if (listing.host_id === userId) return { listing, isOwner: true };
 
     const { data: access } = await admin
-        .from('listing_access')
+        .from(target.table)
         .select('can_calendar, can_messages, can_bookings, can_listing, can_earnings')
-        .eq('listing_id', listingId)
+        .eq(target.fk, listingId)
         .eq('user_id', userId)
         .eq('status', 'active')
         .eq('role', 'co_host')
@@ -66,17 +70,19 @@ export async function POST(request: Request) {
 
         const body = await request.json();
         const action: string = (body && body.action) || 'invite';
-        const admin = adminClient();
+        const admin: any = adminClient();
+        // A listing's co-hosts, or a business's (kind: 'provider').
+        const target = cohostTarget(body && body.kind);
 
         // ---- Invite someone ------------------------------------------------
         if (action === 'invite') {
-            const listingId: string = body.listingId;
+            const listingId: string = target.kind === 'provider' ? body.providerId : body.listingId;
             const email: string = ((body.email || '') as string).trim().toLowerCase();
             const role = 'co_host';
 
             if (!listingId || !email) {
                 return NextResponse.json(
-                    { ok: false, error: 'Choose a property and enter an email address.' },
+                    { ok: false, error: 'Choose a ' + target.noun + ' and enter an email address.' },
                     { status: 400 }
                 );
             }
@@ -88,7 +94,7 @@ export async function POST(request: Request) {
                 );
             }
 
-            const auth = await manageAuth(admin, listingId, user.id);
+            const auth = await manageAuth(admin, target, listingId, user.id);
             if (!auth) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
             }
@@ -101,7 +107,7 @@ export async function POST(request: Request) {
 
             if (email === ownerEmail) {
                 return NextResponse.json(
-                    { ok: false, error: 'They already own this property.' },
+                    { ok: false, error: 'They already own this ' + target.noun + '.' },
                     { status: 400 }
                 );
             }
@@ -141,9 +147,9 @@ export async function POST(request: Request) {
                 .maybeSingle();
 
             const { data: created, error } = await admin
-                .from('listing_access')
+                .from(target.table)
                 .insert({
-                    listing_id: listingId,
+                    [target.fk]: listingId,
                     email: email,
                     user_id: (existingProfile && existingProfile.id) || null,
                     role: role,
@@ -154,12 +160,12 @@ export async function POST(request: Request) {
                 .single();
 
             if (error) {
-                const duplicate = (error.message || '').indexOf('listing_access_unique_person') !== -1;
+                const duplicate = (error.message || '').indexOf(target.uniqueIndex) !== -1;
                 return NextResponse.json(
                     {
                         ok: false,
                         error: duplicate
-                            ? 'That person already has access to this property.'
+                            ? 'That person already has access to this ' + target.noun + '.'
                             : error.message,
                     },
                     { status: 400 }
@@ -170,15 +176,16 @@ export async function POST(request: Request) {
 
             await sendEmail(
                 email,
-                'You\u2019ve been invited to co-host ' + (listing.title || 'a property'),
+                'You\u2019ve been invited to co-host ' + (listing.title || target.fallbackTitle),
                 emailLayout(
-                    '<p style="margin:0 0 16px;font-size:16px;">You\u2019ve been invited to help look after <strong>'
-                        + escapeHtml(listing.title || 'a property')
+                    '<p style="margin:0 0 16px;font-size:16px;">You\u2019ve been invited to help '
+                        + (target.kind === 'provider' ? 'run' : 'look after') + ' <strong>'
+                        + escapeHtml(listing.title || target.fallbackTitle)
                         + '</strong> on Galloway Getaways.</p>'
                         + '<p style="margin:0 0 16px;font-size:16px;">Exactly what you can do is up to the owner, and you\u2019ll see it when you accept.</p>'
                         + '<p style="margin:0 0 16px;font-size:16px;">If you don\u2019t already have an account, you\u2019ll be asked to make one first. Use this same email address.</p>'
                         + button(link, 'Accept the invitation'),
-                    'You\u2019re receiving this because someone invited you to help with their property.'
+                    'You\u2019re receiving this because someone invited you to help with their ' + target.noun + '.'
                 )
             );
 
@@ -190,8 +197,8 @@ export async function POST(request: Request) {
             const accessId: string = body.accessId;
 
             const { data: row } = await admin
-                .from('listing_access')
-                .select('id, listing_id, role')
+                .from(target.table)
+                .select('id, role, ' + target.fk)
                 .eq('id', accessId)
                 .maybeSingle();
 
@@ -199,7 +206,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
 
-            const auth = await manageAuth(admin, row.listing_id, user.id);
+            const auth = await manageAuth(admin, target, row[target.fk], user.id);
             if (!auth) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
             }
@@ -222,7 +229,7 @@ export async function POST(request: Request) {
             }
 
             await admin
-                .from('listing_access')
+                .from(target.table)
                 .update(nextPerms)
                 .eq('id', accessId);
 
@@ -234,8 +241,8 @@ export async function POST(request: Request) {
             const accessId: string = body.accessId;
 
             const { data: row } = await admin
-                .from('listing_access')
-                .select('id, listing_id')
+                .from(target.table)
+                .select('id, ' + target.fk)
                 .eq('id', accessId)
                 .maybeSingle();
 
@@ -243,13 +250,13 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
 
-            const auth = await manageAuth(admin, row.listing_id, user.id);
+            const auth = await manageAuth(admin, target, row[target.fk], user.id);
             if (!auth) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
             }
 
             await admin
-                .from('listing_access')
+                .from(target.table)
                 .update({ status: 'revoked' })
                 .eq('id', accessId);
 
@@ -262,32 +269,33 @@ export async function POST(request: Request) {
             // own settings rather than on a dashboard card — by the listing id,
             // resolving the caller's own active grant on it.
             const accessId: string = body.accessId;
-            const listingId: string = body.listingId;
+            const listingId: string = target.kind === 'provider' ? body.providerId : body.listingId;
 
             const query = admin
-                .from('listing_access')
-                .select('id, listing_id, user_id, email')
+                .from(target.table)
+                .select('id, user_id, email, ' + target.fk)
                 .eq('user_id', user.id)
                 .eq('status', 'active');
             const { data: row } = accessId
                 ? await query.eq('id', accessId).maybeSingle()
-                : await query.eq('listing_id', listingId).maybeSingle();
+                : await query.eq(target.fk, listingId).maybeSingle();
 
             if (!row || row.user_id !== user.id) {
                 return NextResponse.json({ ok: false, error: 'Not yours to leave' }, { status: 403 });
             }
 
             await admin
-                .from('listing_access')
+                .from(target.table)
                 .update({ status: 'revoked' })
                 .eq('id', row.id);
 
             // The owner needs to know they've lost a pair of hands.
-            const { data: listing } = await admin
-                .from('listings')
-                .select('title, host_id')
-                .eq('id', row.listing_id)
+            const { data: parent } = await admin
+                .from(target.parent)
+                .select(target.titleCol + ', ' + target.ownerCol)
+                .eq('id', row[target.fk])
                 .maybeSingle();
+            const listing = parent ? { title: parent[target.titleCol], host_id: parent[target.ownerCol] } : null;
 
             if (listing) {
                 const { data: ownerUser } = await admin.auth.admin.getUserById(listing.host_id);
@@ -310,11 +318,11 @@ export async function POST(request: Request) {
                             '<p style="margin:0 0 16px;font-size:16px;"><strong>'
                                 + escapeHtml(leaverName)
                                 + '</strong> no longer helps with <strong>'
-                                + escapeHtml(listing.title || 'your property')
+                                + escapeHtml(listing.title || 'your ' + target.noun)
                                 + '</strong>. They removed themselves.</p>'
                                 + '<p style="margin:0 0 16px;font-size:16px;">Nothing else has changed, and you can invite someone else whenever you like.</p>'
-                                + button(SITE_URL + '/dashboard/people', 'Manage co-hosts'),
-                            'You\u2019re receiving this because you host on Galloway Getaways.'
+                                + button(SITE_URL + target.peopleUrl, 'Manage co-hosts'),
+                            target.footer
                         )
                     );
                 }

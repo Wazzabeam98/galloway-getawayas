@@ -12,11 +12,14 @@ const groupLabel = (key: string): string =>
     (EXTRA_GROUPS.find((g) => g.key === key) as any)?.label || key;
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { ukDate } from '@/lib/dayKey';
+import LeaveListingBtn from '@/components/LeaveListingBtn';
 import ProviderBusinessEditor from '@/components/services/ProviderBusinessEditor';
 import TradeListingStatus from '@/components/services/TradeListingStatus';
 import TradeSubscription from '@/components/services/TradeSubscription';
 import { readSubscription, isLive } from '@/lib/subscriptionCancel';
 import { londonDayKey } from '@/lib/dayKey';
+import BusinessSwitcher from '@/components/services/BusinessSwitcher';
+import { BUSINESS_COOKIE, dashboardProviders, pickDashboardProvider, firstProviderPageFor, isFullProviderAccess } from '@/lib/providerAccess';
 
 export const metadata = {
     title: 'Edit your business',
@@ -30,16 +33,15 @@ export default async function EditBusinessPage() {
 
     const admin = adminClient();
 
-    const { data: providers } = await admin
-        .from('service_providers')
-        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number, plan, trial_ends_at, owner_paused, admin_hidden_at, stripe_subscription_id, subscription_status')
-        .eq('owner_id', user.id)
-        .order('updated_at', { ascending: false });
-
-    const list = providers || [];
-    const provider = list.find((p) => p.status === 'approved') || list[0];
-    if (!provider) redirect('/services/dashboard');
-    if (provider.status !== 'approved') redirect(`/services/join?trade=${provider.trade}`);
+    // Their own business, or one they co-host with the listing permission.
+    const { rows, access } = await dashboardProviders(admin, user.id, 'can_listing',
+        'id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status, contact_email, contact_phone, sms_opt_out, registration_number, plan, trial_ends_at, owner_paused, admin_hidden_at, stripe_subscription_id, subscription_status');
+    const switchable = (rows as any[]).map((r: any) => ({ id: r.id, name: r.business_name || 'Your business' }));
+    const provider: any = pickDashboardProvider(rows, access, cookies().get(BUSINESS_COOKIE)?.value);
+    if (!provider) redirect((await firstProviderPageFor(user.id)) || '/services/dashboard');
+    const mine = access[provider.id];
+    // Finishing the application is the owner's (the wizard is theirs).
+    if (provider.status !== 'approved' && mine.isOwner) redirect(`/services/join?trade=${provider.trade}`);
 
     // This editor is host-shaped — rates, service groups, registrations. A
     // guest-experience provider now has its OWN sectioned listing editor, which
@@ -144,6 +146,7 @@ export default async function EditBusinessPage() {
             <p className="mt-1.5 text-sm text-slate-500">
                 Everything hosts see about {provider.business_name} — {tradeLabel(provider.trade)} — in one place.
             </p>
+            <BusinessSwitcher options={switchable} current={provider.id} className="mt-2" />
 
             {/* Business status — the "Listed" pill and the free-subscription line
                 that used to sit on the enquiries inbox. They describe the business,
@@ -186,9 +189,9 @@ export default async function EditBusinessPage() {
                 </a>}
             </div>
 
-            <div className="mt-6">
+            {isFullProviderAccess(mine) && <div className="mt-6">
                 <TradeListingStatus place="banner" providerId={provider.id} paused={paused} adminHidden={adminHidden} billing={billing} />
-            </div>
+            </div>}
 
             <ProviderBusinessEditor
                 provider={{
@@ -217,17 +220,26 @@ export default async function EditBusinessPage() {
             {/* VAT registration — private, never on the public profile. Owners
                 pay a trade directly, so there is no receipt of ours for it to
                 appear on; it is kept with the business for when there is. */}
-            <div className="mt-10">
+            {/* VAT, the subscription and billing are the owner's — a co-host
+                never sees them, whatever else they were given. Taking the listing
+                down is shared with a full-access co-host, as on a holiday let. */}
+            {mine.isOwner && <div className="mt-10">
                 <VatSettingsCard providerId={provider.id} audience="trade" />
-            </div>
+            </div>}
 
-            <div className="mt-10">
+            {isFullProviderAccess(mine) && <div className="mt-10">
                 <TradeListingStatus place="section" providerId={provider.id} paused={paused} adminHidden={adminHidden} billing={billing} />
-            </div>
+            </div>}
 
-            {subscription && (
+            {mine.isOwner && subscription && (
                 <div className="mt-6">
                     <TradeSubscription providerId={provider.id} state={subscription} />
+                </div>
+            )}
+            {/* A co-host can step away without asking the owner, as on a holiday let. */}
+            {!mine.isOwner && (
+                <div className="mt-12 border-t border-slate-200 pt-6">
+                    <LeaveListingBtn kind="provider" listingId={provider.id} title={provider.business_name || 'this business'} />
                 </div>
             )}
         </div>

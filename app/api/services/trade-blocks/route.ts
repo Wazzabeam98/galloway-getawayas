@@ -3,6 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { londonDayKey } from '@/lib/dayKey';
+import { checkProvider } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,8 @@ async function ownProvider(admin: any, providerId: string, userId: string) {
         .select('id, owner_id')
         .eq('id', providerId)
         .maybeSingle();
-    return p && p.owner_id === userId ? p : null;
+    // The owner, or a co-host with the calendar (lib/providerAccess).
+    return p && (p.owner_id === userId || (await checkProvider(userId, p.id, 'can_calendar'))) ? p : null;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;

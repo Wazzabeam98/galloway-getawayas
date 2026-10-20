@@ -5,6 +5,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceCancellation } from '@/lib/serviceEnquiryAlert';
 import { canCancel } from '@/lib/serviceEnquiries';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
             .eq('id', enquiry.provider_id)
             .maybeSingle();
 
-        const isProvider = !!provider && provider.owner_id === user.id;
+        const isProvider = !!provider && (await mayActOn(admin, user.id, provider, 'can_bookings'));
         const isHost = enquiry.host_id === user.id;
         if (!isProvider && !isHost) {
             return NextResponse.json({ ok: false, error: 'Not yours to cancel.' }, { status: 403 });

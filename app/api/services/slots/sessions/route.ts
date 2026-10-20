@@ -6,6 +6,7 @@ import { londonDayKey } from '@/lib/dayKey';
 import { seatsLeft, sessionClosedToAll } from '@/lib/serviceSlots';
 import { normaliseUnit } from '@/lib/serviceOrders';
 import { fetchSlotSessionRows, orphanBookedTimes } from '@/lib/providerSessions';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
             .select('id, owner_id, shape, slot_capacity, slot_min_people')
             .eq('id', providerId)
             .maybeSingle();
-        if (!provider || provider.owner_id !== user.id) {
+        if (!provider || !(await mayActOn(admin, user.id, provider, 'can_calendar'))) {
             return NextResponse.json({ ok: false, error: 'Not your business' }, { status: 403 });
         }
 

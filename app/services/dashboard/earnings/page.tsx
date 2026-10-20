@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
+import BusinessSwitcher from '@/components/services/BusinessSwitcher';
+import { BUSINESS_COOKIE, dashboardProviders, pickDashboardProvider, firstProviderPageFor } from '@/lib/providerAccess';
 import { orderNet } from '@/lib/serviceOrders';
 import { londonDayKey } from '@/lib/dayKey';
 import EarningsDateFilter from '@/components/EarningsDateFilter';
@@ -47,13 +49,11 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
 
     // The provider this account owns (approved first, most recently touched) —
     // the same resolution the dashboard uses.
-    const { data: providers } = await admin
-        .from('service_providers')
-        .select('id, business_name, status, vat_registered, vat_number, vat_name')
-        .eq('owner_id', user.id)
-        .order('updated_at', { ascending: false });
-    const provider = (providers || []).find((p: any) => p.status === 'approved') || (providers || [])[0];
-    if (!provider) redirect('/services/dashboard');
+    // Owned, or co-hosted with the earnings permission (lib/providerAccess).
+    const { rows: providers, access } = await dashboardProviders(admin, user.id, 'can_earnings', 'id, business_name, status, vat_registered, vat_number, vat_name');
+    const switchable = (providers as any[]).map((r: any) => ({ id: r.id, name: r.business_name || 'Your business' }));
+    const provider: any = pickDashboardProvider(providers, access, cookies().get(BUSINESS_COOKIE)?.value);
+    if (!provider) redirect((await firstProviderPageFor(user.id)) || '/services/dashboard');
     // Their own VAT registration at the head of the statement — the name and
     // number their guests' receipts carry. Nothing when not VAT registered.
     const ownVat = provider.vat_registered
@@ -150,6 +150,7 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Earnings</h1>
                 <EarningsDateFilter from={from} to={to} basePath="/services/dashboard/earnings" />
             </div>
+            <BusinessSwitcher options={switchable} current={provider.id} className="mb-3" />
             <p className={`text-slate-500 ${ownVat ? 'mb-1' : 'mb-8'}`}>{ukDate(from)} – {ukDate(to)}</p>
             {ownVat && (
                 <p className="text-sm text-slate-500 mb-8">{ownVat.name} · VAT number {ownVat.vatNumber}</p>

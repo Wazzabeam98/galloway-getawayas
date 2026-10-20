@@ -35,7 +35,7 @@ export default function AcceptInvite({
 
             if (data && data.ok) {
                 toast.success('You\u2019re in.', { theme: 'colored' });
-                router.push('/dashboard');
+                router.push(data.home || '/dashboard');
                 return;
             }
 

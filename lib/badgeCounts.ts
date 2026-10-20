@@ -1,6 +1,7 @@
 import { isArchived } from '@/lib/conversations';
 import { listingIdsFor } from '@/lib/access';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { providerIdsWith } from '@/lib/providerAccess';
 
 // The two numbers behind the dot on the menu.
 //
@@ -113,11 +114,11 @@ export async function pendingFor(uid: string): Promise<number> {
  */
 export async function providerRequestsFor(uid: string): Promise<number> {
     const admin = adminClient();
-    const { data: providers } = await admin
-        .from('service_providers')
-        .select('id')
-        .eq('owner_id', uid)
-        .eq('audience', 'host');
+    // Owned, or co-hosted with bookings (lib/providerAccess) — trades only.
+    const usable = await providerIdsWith(admin, uid, 'can_bookings');
+    const { data: providers } = usable.length
+        ? await admin.from('service_providers').select('id').in('id', usable).eq('audience', 'host')
+        : { data: [] as any[] };
     const ids = (providers || []).map((p: any) => p.id);
     if (ids.length === 0) return 0;
 

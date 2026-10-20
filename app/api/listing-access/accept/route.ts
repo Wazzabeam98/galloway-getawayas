@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { displayName } from '@/lib/utils';
+import { inviteByToken } from '@/lib/cohostTargets';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,13 +31,12 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Missing invitation' }, { status: 400 });
         }
 
-        const admin = adminClient();
+        const admin: any = adminClient();
 
-        const { data: invite } = await admin
-            .from('listing_access')
-            .select('id, listing_id, email, role, status, invited_by')
-            .eq('invite_token', token)
-            .maybeSingle();
+        // A holiday let's invitation or a business's (lib/cohostTargets).
+        const found = await inviteByToken(admin, token, 'id, email, role, status, invited_by');
+        const target = found && found.target;
+        const invite = found && found.invite;
 
         if (!invite || invite.status === 'revoked') {
             return NextResponse.json(
@@ -60,11 +60,11 @@ export async function POST(request: Request) {
         }
 
         if (invite.status === 'active') {
-            return NextResponse.json({ ok: true, already: true });
+            return NextResponse.json({ ok: true, already: true, home: target!.homeUrl });
         }
 
         await admin
-            .from('listing_access')
+            .from(target!.table)
             .update({
                 user_id: user.id,
                 status: 'active',
@@ -77,11 +77,12 @@ export async function POST(request: Request) {
             const { data: owner } = await admin.auth.admin.getUserById(invite.invited_by);
             const ownerEmail = (owner && owner.user && owner.user.email) || '';
 
-            const { data: listing } = await admin
-                .from('listings')
-                .select('title')
-                .eq('id', invite.listing_id)
+            const { data: parent } = await admin
+                .from(target!.parent)
+                .select(target!.titleCol)
+                .eq('id', invite.parent_id)
                 .maybeSingle();
+            const listing = parent ? { title: parent[target!.titleCol] } : null;
 
             // Name the person who accepted, not their raw email address — a
             // subject line like "jamie@example.com has accepted" leaks the
@@ -102,19 +103,19 @@ export async function POST(request: Request) {
                         '<p style="margin:0 0 16px;font-size:16px;"><strong>'
                             + escapeHtml(accepterName)
                             + '</strong> now has access to <strong>'
-                            + escapeHtml((listing && listing.title) || 'your property')
+                            + escapeHtml((listing && listing.title) || 'your ' + target!.noun)
                             + '</strong> as '
                             + (invite.role === 'staff' ? 'staff' : 'a co-host')
                             + '.</p>'
                             + '<p style="margin:0 0 16px;font-size:16px;">You can change what they can do, or remove them, at any time.</p>'
-                            + button(SITE_URL + '/dashboard/people', 'Manage co-hosts'),
-                        'You\u2019re receiving this because you host on Galloway Getaways.'
+                            + button(SITE_URL + target!.peopleUrl, 'Manage co-hosts'),
+                        target!.footer
                     )
                 );
             }
         }
 
-        return NextResponse.json({ ok: true });
+        return NextResponse.json({ ok: true, home: target!.homeUrl });
     } catch (err: any) {
         console.error('[listing-access/accept]', err && err.message);
 

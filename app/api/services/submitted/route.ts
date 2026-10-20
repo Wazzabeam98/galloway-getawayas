@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceSubmission } from '@/lib/serviceSubmittedAlert';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
 
         // Their own row only. Without this, a signed-in stranger could make us
         // email ourselves about somebody else's application.
-        if (provider.owner_id !== auth.user.id) {
+        if (!(await mayActOn(admin, auth.user.id, provider, 'can_listing'))) {
             return NextResponse.json({ ok: false, error: 'Not yours.' }, { status: 403 });
         }
 

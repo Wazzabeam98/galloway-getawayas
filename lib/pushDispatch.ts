@@ -16,6 +16,8 @@
 //     provider's contact address resolves to the provider's owner)
 //   - an email to an owner alert address (DISPUTES_/SERVICES_/ACCOUNTS_/
 //     REPORTS_ALERT_EMAIL) goes to every admin, filed under 'admin'
+//   - a business's co-hosts with messages: a message to its owner on an order
+//     or job thread (their email copies carry their own pushes)
 //   - co-hosts: when the push is to a listing's owner and the rule names a
 //     permission (bookings, messages, calendar, listing, earnings), every
 //     active co-host on that listing holding it gets it too. Payout details
@@ -90,6 +92,31 @@ async function cohostsWith(admin: any, listingId: string, permission: string): P
     return (data || []).map((r: any) => r.user_id).filter(Boolean);
 }
 
+/** The business (an experience or a trade) a push is about: from its order,
+ *  enquiry or provider id, in its context or the page it opens. */
+async function providerFor(admin: any, row: any): Promise<{ id: string; ownerId: string } | null> {
+    const ctx = row.context || {};
+    const ids = [ctx.provider_id, ctx.order_id, ctx.enquiry_id, (String(row.url || '').match(UUID) || [])[0]].filter(Boolean);
+    for (const id of ids) {
+        const { data: o } = await admin.from('service_orders').select('provider_id').eq('id', id).maybeSingle();
+        const { data: e } = o ? { data: null } : await admin.from('service_enquiries').select('provider_id').eq('id', id).maybeSingle();
+        const pid = (o && o.provider_id) || (e && e.provider_id) || id;
+        const { data: p } = await admin.from('service_providers').select('id, owner_id').eq('id', pid).maybeSingle();
+        if (p && p.owner_id) return { id: p.id, ownerId: p.owner_id };
+    }
+    return null;
+}
+
+async function providerCohostsWith(admin: any, providerId: string, permission: string): Promise<string[]> {
+    const { data } = await admin
+        .from('provider_access')
+        .select('user_id')
+        .eq('provider_id', providerId)
+        .eq('status', 'active')
+        .eq(permission, true);
+    return (data || []).map((r: any) => r.user_id).filter(Boolean);
+}
+
 export async function recipientsFor(admin: any, row: any, env: Record<string, string | undefined> = process.env): Promise<Recipient[]> {
     const category: PushCategory = isPushCategory(row.category) ? row.category : 'reservations';
     const out = new Map<string, PushCategory>();
@@ -124,6 +151,19 @@ export async function recipientsFor(admin: any, row: any, env: Record<string, st
         const listing = await listingFor(admin, row);
         if (listing && out.has(listing.hostId)) {
             for (const id of await cohostsWith(admin, listing.id, permission)) {
+                if (!out.has(id)) out.set(id, category);
+            }
+        }
+    }
+
+    // A business's co-hosts with messages hear about a message to its owner on
+    // an order or a job thread, as a holiday let's do. (A business EMAIL needs
+    // nothing here: each co-host is sent their own copy, which carries its own
+    // push — lib/providerTeamEmail.)
+    if (row.kind === 'message.new' && row.user_id && !(row.context && row.context.booking_id)) {
+        const provider = await providerFor(admin, row);
+        if (provider && out.has(provider.ownerId)) {
+            for (const id of await providerCohostsWith(admin, provider.id, 'can_messages')) {
                 if (!out.has(id)) out.set(id, category);
             }
         }

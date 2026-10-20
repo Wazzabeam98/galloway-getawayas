@@ -8,6 +8,7 @@
 // and gets null, which the routes turn into a 403.
 
 import { displayName } from '@/lib/utils';
+import { cohostCan, providerIdsWith } from './providerAccess';
 
 export interface OrderThreadContext {
     order: {
@@ -51,8 +52,7 @@ export interface OrderThreadListItem {
 }
 
 export async function listProviderOrderThreads(admin: any, uid: string): Promise<OrderThreadListItem[]> {
-    const { data: mine } = await admin.from('service_providers').select('id').eq('owner_id', uid);
-    const provIds = (mine || []).map((p: any) => p.id);
+    const provIds = await providerIdsWith(admin, uid, 'can_messages');
     if (!provIds.length) return [];
 
     const { data: orders } = await admin
@@ -124,7 +124,8 @@ export async function orderThreadContext(
     if (!prov) return null;
 
     const isGuest = order.guest_id === userId;
-    const isProvider = prov.owner_id === userId;
+    // The owner, or a co-host with messages (lib/providerAccess).
+    const isProvider = prov.owner_id === userId || (!isGuest && (await cohostCan(admin, order.provider_id, userId, 'can_messages')));
     if (!isGuest && !isProvider) return null;
 
     const business = order.provider_business_name || prov.business_name || 'the provider';
