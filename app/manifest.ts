@@ -5,9 +5,14 @@ import type { MetadataRoute } from 'next';
 // the icon itself (drawn from the goose by app/icons/[file]), and that it
 // opens full-screen with no browser bars around it.
 //
-// The emerald theme colour lives here and ONLY here — not as a theme-color
-// meta tag — so it tints the installed app's status bar without changing how
-// the site looks in an ordinary browser tab.
+// The theme colour. White, to match the white header — so the installed app's
+// title bar on a Mac and the status bar on an iPhone blend into the page the
+// way Airbnb's do, rather than showing a band of colour above it. It is set in
+// two places on purpose: here, which tints the installed/standalone app, and a
+// theme-color meta tag in app/layout.tsx, which tints the browser chrome on a
+// phone. Both say white; keep them in step if either changes. (Was emerald
+// #047857, kept only in the manifest to avoid tinting the browser tab — but a
+// white header wants the chrome white too, so the meta tag is now welcome.)
 export default function manifest(): MetadataRoute.Manifest {
     return {
         id: '/',
@@ -17,7 +22,7 @@ export default function manifest(): MetadataRoute.Manifest {
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        theme_color: '#047857',
+        theme_color: '#ffffff',
         background_color: '#ffffff',
         icons: [
             { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

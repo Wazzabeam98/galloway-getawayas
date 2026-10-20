@@ -35,7 +35,7 @@ const fs = require('fs');
 const path = require('path');
 
 /* eslint-disable @typescript-eslint/no-var-requires */
-const { AREAS, areaBySlug, areaForTownKey, hasCopy, isPublishable } = require('@/config/areas');
+const { AREAS, areaBySlug, areaForTownKey, hasCopy, isPublishable, listingInArea } = require('@/config/areas');
 const { townKey } = require('@/lib/places');
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -105,7 +105,8 @@ test('every written area is released — the stock gate is what holds an empty o
         readyToPublish,
         [
             'kirkcudbright', 'castle-douglas', 'gatehouse-of-fleet', 'dalbeattie',
-            'newton-stewart', 'wigtown', 'dumfries', 'moffat', 'stranraer', 'portpatrick',
+            'newton-stewart', 'wigtown', 'galloway-forest', 'dumfries', 'moffat',
+            'stranraer', 'portpatrick',
         ],
         'The set of written, released areas changed.\n'
         + 'Now released: ' + readyToPublish.join(', ')
@@ -167,13 +168,33 @@ test('townKeys are in the form townKey() actually produces', () => {
 
 test('the name of each area maps back to itself through townKey', () => {
     // Belt and braces on the above: the town as a person writes it must land
-    // on one of the keys the area claims.
+    // on one of the keys the area claims. A geographic area (Galloway Forest)
+    // is named for a region nobody types as an address and matches on
+    // coordinates instead, so it holds no town keys and is exempt.
     for (const area of AREAS as Area[]) {
+        if (area.townKeys.length === 0) continue;
         assert.ok(
             area.townKeys.indexOf(townKey(area.name)) !== -1,
             `${area.slug} is called "${area.name}", which townKey()s to `
             + `"${townKey(area.name)}" — not in [${area.townKeys.join(', ')}]`
         );
+    }
+});
+
+test('a geographic area carries a geo circle, a town area does not need one', () => {
+    // The two kinds of area, kept honest: an area with no town keys only makes
+    // sense if it has a geo circle to decide membership, or it would match
+    // nothing and be a permanently empty page.
+    for (const area of AREAS as Area[]) {
+        if (area.townKeys.length === 0) {
+            assert.ok(area.geo, `${area.slug} has no town keys and no geo circle — it matches nothing`);
+            assert.ok(
+                typeof area.geo.lat === 'number'
+                && typeof area.geo.lng === 'number'
+                && area.geo.radiusKm > 0,
+                `${area.slug} has a malformed geo circle`
+            );
+        }
     }
 });
 
@@ -184,6 +205,65 @@ test('a listing town finds its area', () => {
     assert.equal(areaForTownKey(townKey('Gatehouse of Fleet, Dumfries and Galloway'))?.slug,
         'gatehouse-of-fleet', 'a multi-word town survives the key');
     assert.equal(areaForTownKey('somewhereelse'), null);
+});
+
+/* --------------------------------------------- geographic area membership */
+
+test('a listing joins its area by town name, regardless of coordinates', () => {
+    const kbt = areaBySlug('kirkcudbright');
+    assert.equal(
+        listingInArea(kbt, { location: 'Kirkcudbright, Dumfries and Galloway', approx_latitude: null, approx_longitude: null }),
+        true,
+        'a town match needs no coordinates'
+    );
+    assert.equal(
+        listingInArea(kbt, { location: 'Dumfries, Dumfries and Galloway', approx_latitude: null, approx_longitude: null }),
+        false
+    );
+});
+
+test('a listing inside the Galloway Forest circle joins it; one outside does not', () => {
+    const forest = areaBySlug('galloway-forest');
+    assert.ok(forest.geo, 'galloway-forest must have a geo circle for this test to mean anything');
+
+    // The Dark Sky Dome near Straiton, at the north end of the park — inside.
+    assert.equal(
+        listingInArea(forest, { location: 'Straiton', approx_latitude: 55.22, approx_longitude: -4.50 }),
+        true,
+        'the Dark Sky Dome end of the park is in'
+    );
+    // Newton Stewart, the southern gateway — just inside the 25 km circle.
+    assert.equal(
+        listingInArea(forest, { location: 'Newton Stewart, Dumfries and Galloway', approx_latitude: 54.957, approx_longitude: -4.489 }),
+        true,
+        'the gateway town is in'
+    );
+    // Dumfries, far to the east — out. It keeps its own page.
+    assert.equal(
+        listingInArea(forest, { location: 'Dumfries, Dumfries and Galloway', approx_latitude: 55.070, approx_longitude: -3.603 }),
+        false,
+        'Dumfries is well outside the park'
+    );
+    // Gatehouse of Fleet, near the southern edge but a coastal town of its own.
+    assert.equal(
+        listingInArea(forest, { location: 'Gatehouse of Fleet, Dumfries and Galloway', approx_latitude: 54.881, approx_longitude: -4.187 }),
+        false,
+        'Gatehouse is close to the park but stays on its own page'
+    );
+});
+
+test('a geographic area cannot place a listing with no coordinates', () => {
+    const forest = areaBySlug('galloway-forest');
+    assert.equal(
+        listingInArea(forest, { location: 'Somewhere in the hills', approx_latitude: null, approx_longitude: null }),
+        false,
+        'no coordinates, no geo match — the same limitation the map has'
+    );
+    assert.equal(
+        listingInArea(forest, { location: 'Somewhere in the hills' }),
+        false,
+        'missing coordinates behave like null'
+    );
 });
 
 /* ------------------------------------------- the two gates have to agree */

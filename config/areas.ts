@@ -33,6 +33,15 @@
 // typed the address. More than one key per area is allowed on purpose: a
 // village with no stock of its own belongs on its nearest town's page rather
 // than on a page of its own.
+//
+// An area can ALSO be a geography rather than a town — Galloway Forest Park is
+// not a place anyone types as their address, it is a region that cottages sit
+// inside or beside. Such an area carries a `geo` circle instead of (or as well
+// as) town keys, and a listing joins it when its own approximate coordinates
+// fall inside that circle. The one place that decides membership for every
+// consumer is listingInArea() at the foot of this file.
+
+import { townKey } from '@/lib/places';
 
 export interface Area {
     /** The URL: /holiday-cottages/<slug>. Never change one that is live. */
@@ -44,9 +53,21 @@ export interface Area {
     /**
      * townKey() values that belong to this area. Lower case, letters only —
      * townKey strips everything else, so "Gatehouse of Fleet" is
-     * "gatehouseoffleet".
+     * "gatehouseoffleet". May be empty for a geographic area (see `geo`), whose
+     * members are decided by coordinates rather than by town name.
      */
     townKeys: string[];
+
+    /**
+     * A geographic catchment, for an area that is a region rather than a town
+     * (Galloway Forest Park). A listing joins the area when its approximate
+     * coordinates sit within `radiusKm` of (`lat`, `lng`). A circle, not the
+     * real boundary: simpler, needs no polygon, and "within or close to" is
+     * exactly the fuzzy edge a circle gives. Used alongside `townKeys` — a
+     * listing matching EITHER belongs — so a geo area can still name a town or
+     * two if it wants to. See listingInArea().
+     */
+    geo?: { lat: number; lng: number; radiusKm: number };
 
     /**
      * The page's own two or three paragraphs. EMPTY MEANS NOT PUBLISHED.
@@ -301,6 +322,60 @@ export const AREAS: Area[] = [
         nearby: ['newton-stewart', 'gatehouse-of-fleet'],
     },
     {
+        slug: "galloway-forest",
+        name: "Galloway Forest",
+        // Not a town, so no town key matches it. Membership is the geo circle
+        // below: a cottage belongs to Galloway Forest when it sits within or
+        // close to the park, whichever town its address names. A listing can
+        // therefore show on both its own town's page and this one, which is
+        // right — it is near the town AND in the forest.
+        townKeys: [],
+        // The park runs roughly from the Carrick Forest and the Dark Sky Dome
+        // near Straiton in the north down past Glen Trool and Clatteringshaws
+        // towards Newton Stewart in the south — about 300 square miles, long
+        // and narrow. A 25 km circle centred on its core (near the Merrick,
+        // the central massif) is the "sensible radius" rather than the real
+        // boundary: it takes in the Dark Sky Dome (~8 km N), Glen Trool
+        // (~11 km), Clatteringshaws (~14 km) and Newton Stewart, the gateway
+        // town (~24 km, just inside), while leaving out the coastal and eastern
+        // towns that keep their own pages — Gatehouse of Fleet (~32 km),
+        // Wigtown (~34 km), Dumfries and Stranraer (both well beyond). A
+        // listing with no geocoded coordinates (approx_* null) cannot be placed
+        // and simply does not join — the same limitation the map already has.
+        geo: { lat: 55.17, lng: -4.42, radiusKm: 25 },
+        // Pre-cleared, like the other unreleased areas: the index + sitemap
+        // gates still require a published listing, so this page reaches Google
+        // only once a cottage sits in the park, and self-parks again if that
+        // ever drops to none. Read its copy before its first listing goes live
+        // — the attractions named here have not been re-verified on the ground
+        // since they were written (20/10/2026).
+        hold: false,
+        intro: [
+            "Galloway Forest Park is the largest forest park in Britain — about three hundred square miles of forest, loch, moor and hill in the heart of Dumfries & Galloway. In 2009 it became the first Dark Sky Park in the United Kingdom, and on a clear, moonless night you can see the Milky Way, meteor showers and thousands of stars with nothing but your own eyes. There is very little else like it this far south.",
+            "By day it is walking, cycling and water. The Merrick, the highest hill in southern Scotland, is climbed from Glen Trool, where Bruce’s Stone marks a victory over an English force in 1307 above a loch worth the walk on its own. Kirroughtree and the other 7stanes centres have mountain-bike trails from gentle to fearsome, the Raiders’ Road forest drive follows the Water of Ken, and Clatteringshaws Loch sits in the middle of it all with red deer on the hills above.",
+            "Nobody lives deep in the park, so staying here means a cottage on its edge — near Newton Stewart, Glen Trool or the quiet roads in between — with the forest and the dark skies a few minutes from the door.",
+        ],
+        metaDescription: "Britain’s first Dark Sky Park — 300 square miles of forest, loch and hill, with stargazing, the Merrick and the Glen Trool trails. Cottages on its edge.",
+        thingsToDo: [
+            "The skies first. Galloway Forest was the first Dark Sky Park in Britain and still one of the darkest places in the country — from autumn to early spring, when the nights are long, the Milky Way is plain to the naked eye. The Dark Sky Dome near Straiton, in the Carrick Forest at the north end, runs stargazing sessions; you need no equipment of your own to see a great deal.",
+            "By day, Glen Trool is the obvious start: Bruce’s Stone, Loch Trool and the path up the Merrick, the highest hill in the south of Scotland. Kirroughtree, near Newton Stewart, is one of the 7stanes mountain-biking centres, with everything from family green trails to the technical black runs the place is known for, and good walking on the same forest roads.",
+            "The Raiders’ Road is a ten-mile forest drive along the Water of Ken with picnic spots and a pool to swim in. Clatteringshaws Loch has a visitor point and red deer on the surrounding hills, and the whole park is threaded with waymarked walks and cycle routes, red kites overhead and wild goats on the tops.",
+        ],
+        gettingThere: [
+            "The park sits in the middle of the region, reached from its edges rather than driven into. Newton Stewart, on the A75, is the main southern gateway — about 50 miles west of Dumfries, an hour and a half from Gretna — and Glen Trool and Kirroughtree are a short drive from there.",
+            "The northern end, around the Dark Sky Dome and the Carrick Forest, is reached from Straiton and Dalmellington off the A713, roughly an hour south of Ayr.",
+            "There is no railway into the park and the roads inside it are single-track in places and unlit by design — the darkness is the point. A car is essential, and a torch for walking back from a stargazing session.",
+        ],
+        faqs: [
+            { question: "Why is Galloway Forest Park famous for its skies?", answer: "It was the first Dark Sky Park in the United Kingdom, designated in 2009, and remains one of the darkest places in the country. On a clear, moonless night the Milky Way is visible to the naked eye, best from autumn through to early spring when the nights are long." },
+            { question: "Where should I stay for the park?", answer: "Nobody lives deep inside it, so you stay on the edge — around Newton Stewart and Glen Trool at the south, or towards Straiton at the north. Our cottages here are all within or close to the park boundary." },
+            { question: "What is there to do besides stargazing?", answer: "Walking and cycling, mostly. The Merrick and Glen Trool at the south, the Kirroughtree mountain-bike trails near Newton Stewart, the Raiders’ Road forest drive, and Clatteringshaws Loch with its red deer." },
+            { question: "Is it good for a dog?", answer: "Yes — look for the paw symbol on a listing. The forest roads and hill paths are as good a walk as anywhere in Scotland." },
+            { question: "Do I need a car?", answer: "Yes. There is no railway into the park, and the roads inside it are quiet, single-track in places, and deliberately unlit. Bring a torch for walking back after dark." },
+        ],
+        nearby: ["newton-stewart", "gatehouse-of-fleet"],
+    },
+    {
         slug: "dumfries",
         name: "Dumfries",
         townKeys: ["dumfries"],
@@ -440,6 +515,57 @@ export const AREAS: Area[] = [
         nearby: ["stranraer"],
     },
 ];
+
+// Great-circle distance in kilometres. A local copy rather than lib's
+// milesBetween(): that one lives in lib/serviceProviders (a large module about
+// provider coverage, under active change elsewhere), and this config is read by
+// the home page, the area pages and the sitemap, so it keeps its own tiny
+// standalone version rather than reaching into that module. Same haversine,
+// kilometres, nothing to drift.
+function kmBetween(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const EARTH_KM = 6371;
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return EARTH_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Whether a listing belongs to an area — the ONE place that decides it, so the
+ * area page, the home page row and the sitemap all agree. A listing matches on
+ * EITHER rule:
+ *
+ *   by town — its townKey() is one of the area's `townKeys`; the original rule,
+ *             unchanged, and how every town area works.
+ *
+ *   by geography — the area has a `geo` circle and the listing's approximate
+ *             coordinates fall inside it; how Galloway Forest works. A listing
+ *             with no coordinates (approx_* null) can't be placed and does not
+ *             match on this rule.
+ *
+ * Takes the raw `location` string (townKey is applied here) and the approximate
+ * coordinates the listings already carry for the map.
+ */
+export function listingInArea(
+    area: Area,
+    listing: { location: string | null; approx_latitude?: number | null; approx_longitude?: number | null }
+): boolean {
+    if (area.townKeys.indexOf(townKey(listing.location)) !== -1) return true;
+    if (
+        area.geo &&
+        typeof listing.approx_latitude === 'number' &&
+        typeof listing.approx_longitude === 'number'
+    ) {
+        return (
+            kmBetween(area.geo.lat, area.geo.lng, listing.approx_latitude, listing.approx_longitude)
+            <= area.geo.radiusKm
+        );
+    }
+    return false;
+}
 
 export function areaBySlug(slug: string): Area | null {
     for (let i = 0; i < AREAS.length; i++) {
