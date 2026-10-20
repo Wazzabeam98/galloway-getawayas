@@ -40,13 +40,15 @@ interface Counts {
     pending: number;
     // Requests waiting on a trade to answer (the provider mirror of `pending`).
     requests: number;
+    // Co-host invitations waiting for this person, whichever side they're on.
+    invites: number;
     // Admin review queues, by category. Zeros unless the viewer is an admin.
     admin: AdminCounts;
 }
 
 const ZERO_ADMIN: AdminCounts = { holidayLets: 0, experiences: 0, trades: 0 };
 
-let counts: Counts = { unread: 0, pending: 0, requests: 0, admin: { ...ZERO_ADMIN } };
+let counts: Counts = { unread: 0, pending: 0, requests: 0, invites: 0, admin: { ...ZERO_ADMIN } };
 let timer: ReturnType<typeof setInterval> | null = null;
 let inFlight: Promise<void> | null = null;
 
@@ -84,6 +86,7 @@ async function refresh(): Promise<void> {
                 unread: Number(data.unread) || 0,
                 pending: Number(data.pending) || 0,
                 requests: Number(data.requests) || 0,
+                invites: Number(data.invites) || 0,
                 admin: {
                     holidayLets: Number(a.holidayLets) || 0,
                     experiences: Number(a.experiences) || 0,
@@ -157,7 +160,7 @@ export default function useBadgeCounts(enabled = true): Counts {
         };
     }, [enabled]);
 
-    return enabled ? local : { unread: 0, pending: 0, requests: 0, admin: { ...ZERO_ADMIN } };
+    return enabled ? local : { unread: 0, pending: 0, requests: 0, invites: 0, admin: { ...ZERO_ADMIN } };
 }
 
 // The total still waiting on the admin, across the three categories — what the

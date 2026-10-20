@@ -227,10 +227,22 @@ test('an email resolves to its account; a provider contact address to the provid
 test('an owner alert address goes to every admin, filed under owner alerts', async () => {
     const db = world();
     assert.deepEqual([...adminAlertAddresses(ENV)].sort(), ['alerts@example.com', 'other@example.com', 'svc@example.com']);
-    const r = await recipientsFor(db, { to_email: 'svc@example.com', category: 'reservations', context: {} }, ENV);
+    const r = await recipientsFor(db, { to_email: 'svc@example.com', category: 'admin', context: {} }, ENV);
     assert.deepEqual(ids(r), ['a1', 'a2']);
     assert.ok(r.every((x: any) => x.category === 'admin'));
     assert.deepEqual(ids(await recipientsFor(db, { context: { admins: true }, category: 'admin' }, ENV)), ['a1', 'a2']);
+});
+
+test('anything else sent to an alert address reaches only the person behind it, never every admin', async () => {
+    // 19/10/2026: Jamie's co-host invitation went to his company alias, which is
+    // also an owner-alert address, and the push went to every admin — Liam's
+    // phone showed Jamie's invitation.
+    const db = world();
+    db.tables.profiles.push({ id: 'jamie-alias', email: 'other@example.com' });
+    const invite = await recipientsFor(db, { to_email: 'other@example.com', category: 'listings', context: {} }, ENV);
+    assert.deepEqual(ids(invite), ['jamie-alias']);
+    const nobody = await recipientsFor(db, { to_email: 'svc@example.com', category: 'listings', context: {} }, ENV);
+    assert.deepEqual(ids(nobody), [], 'an alias with no account behind it: nobody, not the admins');
 });
 
 test('co-hosts get only what their permissions cover, and only on pushes to the listing’s owner', async () => {
