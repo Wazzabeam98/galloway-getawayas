@@ -2968,7 +2968,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // write goes through `submit_service_provider`, which re-checks
         // ownership and the approved case in the database. Sending any of
         // those three here would now be refused outright, which is the point.
-        const statusPatch = submit ? submitStatusPatch(status, now) : {};
+        // A guest experience no longer submits from the wizard. Availability left
+        // the wizard (it's set in the listing editor's Availability section), so a
+        // new guest is handed to that editor to set it and submit from the end of
+        // it — Airbnb's "build the listing, then publish". So for a guest we save
+        // the row and record their agreement here, but DON'T flip the status; the
+        // editor's Submit does that (through the same RPC, which now also checks
+        // the weekly hours). A host trade still submits straight from the wizard.
+        const routeGuestToEditor = submit && isGuest && status !== 'approved';
+        const statusPatch = (submit && !routeGuestToEditor) ? submitStatusPatch(status, now) : {};
 
         let id = providerId;
 
@@ -3009,6 +3017,19 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             }
             id = data.id;
             setProviderId(id);
+        }
+
+        // A guest handed to the editor still agrees to the Experience Provider
+        // Agreement here, at the end of the wizard, so it's on record before the
+        // editor's Submit (the RPC refuses a submit with no acceptance). Recorded
+        // the same way the submit path below does, just without the status flip.
+        if (routeGuestToEditor && needsAgreementTick) {
+            const failed = await recordAgreement(agreementDoc, 'experience_signup');
+            if (failed) {
+                setSaving(false);
+                setTermsError(failed);
+                return;
+            }
         }
 
         // Submitting is its own step now, after the row exists and its columns
@@ -3377,7 +3398,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         //
         // Nothing here is shown to them if it fails. They have done their
         // part; a problem reaching us is ours, and the route logs it.
-        if (submit || status === 'approved') {
+        // Not for a guest being handed to the editor — they haven't submitted yet,
+        // so there's nothing to announce; the editor's Submit fires this.
+        if ((submit && !routeGuestToEditor) || status === 'approved') {
             try {
                 await fetch('/api/services/submitted', {
                     method: 'POST',
@@ -3393,6 +3416,13 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         setRestored(false);
 
         setSaving(false);
+
+        if (routeGuestToEditor) {
+            // Into the listing editor to set availability and submit from its end.
+            toast.success('Saved. Set your availability, then submit for review.', { theme: 'colored' });
+            router.push('/services/dashboard/listing');
+            return;
+        }
 
         if (submit && status === 'approved') {
             toast.success('Saved. You are still live.', { theme: 'colored' });
@@ -6716,8 +6746,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                 {status === 'approved'
                                     ? (saving ? 'Saving…' : 'Save changes')
                                     : saving
-                                        ? 'Sending…'
-                                        : 'Send for review'}
+                                        ? (isGuest ? 'Saving…' : 'Sending…')
+                                        : isGuest
+                                            ? 'Save and continue'
+                                            : 'Send for review'}
                             </span>
                         </button>
                     )}

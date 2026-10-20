@@ -6,7 +6,7 @@ import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE 
 import { logError, logInfo } from '@/lib/logError';
 import { idsFrom, decideBatch, MAX_BATCH } from '@/lib/reviewQueue';
 import {
-    reviewDigest, approvalBlockers, schemeLabel,
+    reviewDigest, approvalBlockers, needsWeeklyHours, schemeLabel,
     planForTrade, TRIAL_PERIOD_LABEL, SUBSCRIPTION_MONTHLY,
 } from '@/lib/serviceProviders';
 import { ASSIGNABLE_MCCS } from '@/lib/serviceOrders';
@@ -322,7 +322,19 @@ export async function POST(req: Request) {
             // A stale tab, a second click, or somebody who has edited their number
             // since the page loaded all arrive here.
             if (decision === 'approve') {
-                const stops = approvalBlockers(provider, registrations);
+                // A set-times or comes-to-you guest experience is bookable off its
+                // weekly hours, so it must not be approved with an empty template —
+                // the submit RPC refuses the same, and this is the control behind the
+                // greyed Approve. Only counted when the shape needs it.
+                let weeklyHoursSet: boolean | undefined;
+                if (needsWeeklyHours(provider)) {
+                    const { count } = await admin
+                        .from('slot_availability')
+                        .select('provider_id', { count: 'exact', head: true })
+                        .eq('provider_id', id);
+                    weeklyHoursSet = (count || 0) > 0;
+                }
+                const stops = approvalBlockers(provider, registrations, undefined, { weeklyHoursSet });
 
                 if (stops.length > 0) {
                     return { status: 409, body: { ok: false, error: stops.join(' ') } };

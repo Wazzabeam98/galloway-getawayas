@@ -53,11 +53,17 @@ export default async function ProviderListingPage() {
     }
 
     const isSlot = shapeOf(provider) === 'slot';
+    // A comes-to-you experience carries weekly hours too (the dates a guest may
+    // request are read from them), so its template must load here — not only a
+    // slot's. Without this the editor showed a comes-to-you provider an empty
+    // Opening hours section (wiping their hours on the next save) and the banner
+    // wrongly told them they weren't bookable.
+    const hasWeeklyHours = isSlot || shapeOf(provider) === 'comes_to_you';
     const [{ data: areas }, { data: items }, { data: avail }] = await Promise.all([
         admin.from('service_areas').select('label').eq('provider_id', provider.id).order('created_at', { ascending: true }),
         admin.from('service_provider_items').select('id, name, description, price, group_price, min_hours, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category, vat_treatment')
             .eq('provider_id', provider.id).order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
-        isSlot
+        hasWeeklyHours
             ? admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id).order('day_of_week', { ascending: true })
             : Promise.resolve({ data: [] as any[] }),
     ]);

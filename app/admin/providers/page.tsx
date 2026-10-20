@@ -16,6 +16,7 @@ import {
     registrationVerified,
     registrationExpired,
     approvalBlockers,
+    needsWeeklyHours,
     needsAttention,
     attentionLabel,
     ATTENTION_REASONS,
@@ -187,6 +188,15 @@ export default async function AdminProviders() {
         for (const r of avail || []) scheduledIds.add(r.provider_id);
         for (const r of declared || []) scheduledIds.add(r.provider_id);
     }
+    // Which slot / comes-to-you guests have their weekly template set — the one
+    // thing Approve now refuses without (approvalBlockers). Declared sessions do
+    // NOT count here: the rule is the weekly hours themselves.
+    const hoursShapeIds = rows.filter((r: any) => needsWeeklyHours(r)).map((r: any) => r.id);
+    const weeklyHoursIds = new Set<string>();
+    if (hoursShapeIds.length) {
+        const { data: wh } = await admin.from('slot_availability').select('provider_id').in('provider_id', hoursShapeIds);
+        for (const r of wh || []) weeklyHoursIds.add(r.provider_id);
+    }
     // Null when the provider is genuinely live; otherwise the plain-English reason
     // a guest can't see or book it despite approval. Take-downs (owner_paused, an
     // admin hide) are said by the take-down line itself, so they return null here.
@@ -217,7 +227,8 @@ export default async function AdminProviders() {
     // Worked out from the digest rather than from `changes_pending_at`,
     // because providers write their own row and could decline to stamp it.
     // The stamp is only what this sorts by.
-    const blockersFor = (row: any) => approvalBlockers(row, regsFor(row.id));
+    const blockersFor = (row: any) => approvalBlockers(row, regsFor(row.id), undefined,
+        { weeklyHoursSet: needsWeeklyHours(row) ? weeklyHoursIds.has(row.id) : undefined });
 
     // Why each listing wants looking at, asked once.
     //

@@ -31,7 +31,7 @@ export const dynamic = 'force-dynamic';
 async function ownGuestProvider(admin: any, providerId: string, userId: string) {
     const { data: p } = await admin
         .from('service_providers')
-        .select('id, owner_id, trade, audience, guest_details, shape, fulfilment')
+        .select('id, owner_id, trade, audience, guest_details, shape, fulfilment, status')
         .eq('id', providerId)
         .maybeSingle();
     if (!p || p.owner_id !== userId) return null;
@@ -203,16 +203,23 @@ export async function POST(request: Request) {
                 };
                 break;
 
-            case 'photos':
+            case 'photos': {
                 // The experience gallery (and logo). The headshot is NOT here — it
-                // moved to About you. The guard against vanishing (no photo → dropped
-                // from every grid) lives in the editor UI as a warning; the row is
-                // still allowed to save, so a provider mid-edit isn't blocked.
+                // moved to About you. A provider mid-setup (not yet approved) may
+                // still save an empty gallery — they're building it up. But a LIVE
+                // (approved) listing must keep at least one photo: removing the last
+                // one would drop it from every grid, the same harm the last-priced-
+                // item guard prevents. Refused here, not only in the editor UI.
+                const nextPhotos = Array.isArray(data.photos) ? data.photos.filter(Boolean) : [];
+                if (p.status === 'approved' && nextPhotos.length === 0) {
+                    return NextResponse.json({ ok: false, error: 'Your listing is live — keep at least one photo. Add another before removing the last.' }, { status: 400 });
+                }
                 patch = {
-                    photos: Array.isArray(data.photos) ? data.photos.filter(Boolean) : [],
+                    photos: nextPhotos,
                     logo: strOrNull(data.logo),
                 };
                 break;
+            }
 
             case 'where': {
                 const fulfilment = strOrNull(data.fulfilment);
@@ -309,6 +316,20 @@ export async function POST(request: Request) {
                 // the list is deleted. The last-priced-item guard is a UI warning —
                 // the route still honours an empty menu (the provider was warned).
                 const incoming: any[] = Array.isArray(data.items) ? data.items : [];
+                // A live (approved) listing must always keep at least one bookable
+                // offering — a named, active item priced above £0. This refuses the
+                // two ways a provider could empty their shop: deleting the last
+                // priced item, and setting the only item's price to £0 (the client
+                // warns, but the price is validated server-side and must be refused
+                // here, never trusted). A provider still mid-setup may leave it
+                // empty — the submit/approve gate catches that before it goes live.
+                if (p.status === 'approved') {
+                    const bookableCount = incoming.filter((it) =>
+                        String(it.name || '').trim() && Number(it.price) > 0 && it.active !== false).length;
+                    if (bookableCount === 0) {
+                        return NextResponse.json({ ok: false, error: 'Keep at least one bookable offering — a live listing needs something priced above £0 for a guest to book.' }, { status: 400 });
+                    }
+                }
                 const { data: existing } = await admin.from('service_provider_items').select('id').eq('provider_id', providerId);
                 const existingIds = new Set((existing || []).map((r: any) => r.id));
                 const keep = new Set<string>();

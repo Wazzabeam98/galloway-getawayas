@@ -67,7 +67,13 @@ export default async function ProviderReservationsPage() {
 
     const provider = list.find((p) => p.status === 'approved') || list[0];
     if (provider.status !== 'approved') {
-        redirect(`/services/join?trade=${provider.trade}`);
+        // A guest experience finishes setup and submits from the listing editor
+        // now (the wizard hands them there), so a not-yet-approved guest lands in
+        // the editor rather than being sent back through the wizard. A host trade
+        // still finishes in the wizard.
+        redirect(provider.audience === 'guest'
+            ? '/services/dashboard/listing'
+            : `/services/join?trade=${provider.trade}`);
     }
 
     const { reservations, past, summary } = await loadProviderReservations(admin, provider);
@@ -123,6 +129,19 @@ export default async function ProviderReservationsPage() {
             admin.from('slot_sessions').select('provider_id', { count: 'exact', head: true }).eq('provider_id', provider.id).eq('declared', true),
         ]);
         needsTimes = (hoursCount || 0) === 0 && (declaredCount || 0) === 0;
+    }
+
+    // A comes-to-you experience reads its weekly hours for the dates a guest may
+    // request, so one approved with none set is live but has no dates to offer.
+    // Experiences approved before weekly hours became part of setup keep their
+    // listing untouched — this only prompts the owner to add them. (Set in the
+    // listing editor's Opening hours section, not the slot calendar.)
+    const isComesToYou = !isTrade && shapeOf(provider) === 'comes_to_you';
+    let needsComesHours = false;
+    if (isComesToYou) {
+        const { count } = await admin.from('slot_availability')
+            .select('provider_id', { count: 'exact', head: true }).eq('provider_id', provider.id);
+        needsComesHours = (count || 0) === 0;
     }
 
     // Live (approved) with no first and last name on the account: guests see
@@ -192,6 +211,23 @@ export default async function ProviderReservationsPage() {
                     <Link href="/services/dashboard/calendar"
                         className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950">
                         Set your opening times
+                    </Link>
+                </div>
+            )}
+
+            {/* Live, but no weekly hours: a comes-to-you experience reads them for
+                the dates a guest can request, so without them there's nothing to
+                request. The listing stays up untouched; this only prompts. */}
+            {needsComesHours && (
+                <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-5">
+                    <h2 className="text-base font-bold text-amber-900">Add your opening hours</h2>
+                    <p className="mt-1 text-sm text-amber-900">
+                        You’re approved and on the site, but you haven’t set your weekly hours — so guests
+                        have no dates to request. Add your opening hours and guests can book you.
+                    </p>
+                    <Link href="/services/dashboard/listing"
+                        className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950">
+                        Add your opening hours
                     </Link>
                 </div>
             )}
