@@ -13,6 +13,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { testDbUrl, withTestDb, liveColumns } from './_testDb';
 
 const fs = require('fs');
 const path = require('path');
@@ -79,26 +80,14 @@ test('HOST_WRITABLE matches the UPDATE grant in the migration', () => {
     assert.deepEqual(onlyInGrant, [], 'granted UPDATE but not in HOST_WRITABLE: ' + onlyInGrant.join(', '));
 });
 
-// DB half — only where a TEST Supabase is configured (pre-push, local). Skips in CI.
-function envHasTestDb(): boolean {
-    try {
-        const t = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8');
-        return /SUPABASE_TEST_DB_URL=.+yefoqcabuijcowoqewtc/.test(t);
-    } catch { return false; }
-}
+// DB half — wherever a TEST Supabase is configured (CI's repo secret, or
+// .env.local locally; see tests/_testDb.ts).
+const url = testDbUrl();
 
 test('every live listings column is classified — a new one forces a decision',
-    { skip: envHasTestDb() ? false : 'no TEST db configured — static lists still checked' },
+    { skip: url ? false : 'no TEST db configured — static lists still checked' },
     async () => {
-        const pg = require('pg');
-        const url = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8').split('\n')
-            .find((l: string) => l.startsWith('SUPABASE_TEST_DB_URL='))!.slice('SUPABASE_TEST_DB_URL='.length).trim();
-        const client = new pg.Client({ connectionString: url });
-        await client.connect();
-        let cols: string[];
-        try {
-            cols = (await client.query("select column_name from information_schema.columns where table_name='listings' and table_schema='public'")).rows.map((r: any) => r.column_name);
-        } finally { await client.end(); }
+        const cols = await withTestDb(url!, (client) => liveColumns(client, 'listings'));
         const unclassified = cols.filter((c) => !HOST_WRITABLE.has(c) && !(c in PLATFORM_ONLY));
         assert.deepEqual(
             unclassified, [],

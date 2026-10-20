@@ -19,6 +19,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { testDbUrl, tableGrantsTo } from './_testDb';
 
 const fs = require('fs');
 const path = require('path');
@@ -70,14 +71,6 @@ for (const t of SERVICE_ROLE_ONLY) {
     });
 }
 
-function testDbUrl(): string | null {
-    try {
-        const line = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8').split('\n')
-            .find((l: string) => l.startsWith('SUPABASE_TEST_DB_URL='));
-        return line ? line.slice('SUPABASE_TEST_DB_URL='.length).trim() : null;
-    } catch { return null; }
-}
-
 for (const t of SERVICE_ROLE_ONLY) {
     const url = testDbUrl();
     test(`${t.table}: live — RLS on, no policies, nothing for anon or authenticated`,
@@ -94,10 +87,8 @@ for (const t of SERVICE_ROLE_ONLY) {
                 assert.equal(rls.rows[0].relrowsecurity, true, 'RLS is on');
                 const pol = await client.query(`select count(*)::int n from pg_policies where schemaname = 'public' and tablename = $1`, [t.table]);
                 assert.equal(pol.rows[0].n, 0, 'no policies');
-                const grants = await client.query(
-                    `select grantee, privilege_type from information_schema.role_table_grants
-                      where table_schema = 'public' and table_name = $1 and grantee in ('anon', 'authenticated', 'PUBLIC')`, [t.table]);
-                assert.deepEqual(grants.rows, [], 'no privilege for a browser role');
+                const grants = await tableGrantsTo(client, t.table, ['anon', 'authenticated', 'PUBLIC']);
+                assert.deepEqual(grants, [], 'no privilege for a browser role');
             } finally {
                 await client.end();
             }

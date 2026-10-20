@@ -23,6 +23,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { testDbUrl, withTestDb, liveColumns, columnsGrantedTo } from './_testDb';
 
 const fs = require('fs');
 const path = require('path');
@@ -125,42 +126,18 @@ test('the write sweep migration grants exactly the columns it should', () => {
     assert.deepEqual(leakedPlatform, [], 'the sweep grants PLATFORM_ONLY columns: ' + leakedPlatform.join(', '));
 });
 
-// DB half — wherever a TEST Supabase is configured. Reads SUPABASE_TEST_DB_URL
-// from the process environment first (so CI can supply it as a secret) and falls
-// back to .env.local (local + pre-push). Where neither exists the static lists
-// still run; only the live-grant comparison is skipped.
-function testDbUrl(): string | null {
-    if (process.env.SUPABASE_TEST_DB_URL && process.env.SUPABASE_TEST_DB_URL.trim()) {
-        return process.env.SUPABASE_TEST_DB_URL.trim();
-    }
-    try {
-        const line = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8').split('\n')
-            .find((l: string) => l.startsWith('SUPABASE_TEST_DB_URL='));
-        return line ? line.slice('SUPABASE_TEST_DB_URL='.length).trim() : null;
-    } catch { return null; }
-}
-
+// DB half — wherever a TEST Supabase is configured (CI's repo secret, or
+// .env.local locally; see tests/_testDb.ts). Where neither exists the static
+// lists still run; only the live-grant comparison is skipped.
 const url = testDbUrl();
 test('service_providers: every live column has a WRITE decision, matching the live INSERT and UPDATE grants',
     { skip: url ? false : 'no TEST db configured — static lists still checked' },
     async () => {
-        const pg = require('pg');
-        const client = new pg.Client({ connectionString: url });
-        await client.connect();
-        let cols: string[];
-        let liveInsert: Set<string>;
-        let liveUpdate: Set<string>;
-        try {
-            cols = (await client.query(
-                "select column_name from information_schema.columns where table_name='service_providers' and table_schema='public'",
-            )).rows.map((r: any) => r.column_name);
-            const grantsFor = async (priv: string): Promise<Set<string>> => new Set<string>((await client.query(
-                "select column_name from information_schema.column_privileges where table_name='service_providers' and grantee='authenticated' and privilege_type=$1",
-                [priv],
-            )).rows.map((r: any) => String(r.column_name)));
-            liveInsert = await grantsFor('INSERT');
-            liveUpdate = await grantsFor('UPDATE');
-        } finally { await client.end(); }
+        const { cols, liveInsert, liveUpdate } = await withTestDb(url!, async (client) => ({
+            cols: await liveColumns(client, 'service_providers'),
+            liveInsert: await columnsGrantedTo(client, 'service_providers', 'authenticated', 'INSERT'),
+            liveUpdate: await columnsGrantedTo(client, 'service_providers', 'authenticated', 'UPDATE'),
+        }));
 
         // (1) every live column is bucketed — a new one forces a decision.
         const unclassified = cols.filter((c) => !PROVIDER_WRITABLE.has(c) && !(c in PLATFORM_ONLY));
