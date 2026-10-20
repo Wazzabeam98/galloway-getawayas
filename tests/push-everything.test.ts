@@ -354,3 +354,28 @@ test('every database trigger that records a push swallows its own errors', () =>
     }
     assert.match(sql, /new\.email like 'deleted\+%@invalid\.example'/, 'an erased account queues nothing');
 });
+
+/* ------------------------------------------------------------ a team member's message */
+
+test('a message from the owner reaches the co-hosts with messages; nobody is pushed about their own message', async () => {
+    // 20/10/2026: Liam wrote to a guest on a stay Jamie co-hosts; Jamie heard
+    // nothing, because the push only fanned out on messages TO the owner.
+    const B = '11111111-1111-4111-8111-111111111111';
+    const db = world();
+    db.tables.messages = [
+        { id: 'm1', sender_id: 'host', automated: false },
+        { id: 'm2', sender_id: 'co2', automated: false },
+        { id: 'm3', sender_id: 'host', automated: true },
+        { id: 'm4', sender_id: 'host', automated: false },
+    ];
+    const row = (key: string, user: string) => ({ dedupe_key: key, kind: 'message.new', user_id: user, url: '/messages/' + B, category: 'messages', context: { booking_id: B, cohost: 'can_messages' } });
+
+    assert.deepEqual(ids(await recipientsFor(db, row('message:m1', 'guest'), ENV)), ['co2', 'guest'],
+        'owner → guest: the guest, and the co-host with messages (not co1, who has none)');
+    assert.deepEqual(ids(await recipientsFor(db, row('message:m2', 'guest'), ENV)), ['guest', 'host'],
+        'co-host → guest: the guest and the owner, never the co-host who wrote it');
+    assert.deepEqual(ids(await recipientsFor(db, row('message:m3', 'guest'), ENV)), ['guest'],
+        'an automated check-in message is not news to the team');
+    assert.deepEqual(ids(await recipientsFor(db, row('message:m4', 'host'), ENV)), ['co2'],
+        'a stay the owner booked at their own place: addressed to the owner, who wrote it — the co-host hears, the owner does not');
+});

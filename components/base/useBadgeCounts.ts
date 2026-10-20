@@ -65,6 +65,13 @@ export function bookingsChanged(): void {
     }
 }
 
+// Re-count now, for anything else that has just changed a number — opening or
+// answering a conversation clears unread messages, and the dot must not stay
+// lit for two minutes afterwards. Same event, same single refresh.
+export function recountBadges(): void {
+    bookingsChanged();
+}
+
 function publish(next: Counts): void {
     counts = next;
     listeners.forEach((fn) => fn(counts));

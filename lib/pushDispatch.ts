@@ -168,7 +168,49 @@ export async function recipientsFor(admin: any, row: any, env: Record<string, st
             }
         }
     }
+
+    // A message FROM someone on the team — the owner or a co-host with
+    // messages, of a property or a business — reaches the rest of that team,
+    // as it shows unread in their inbox (lib/threadReads). And whoever wrote a
+    // message is never pushed about it, whoever it was addressed to: on a stay
+    // an owner booked at their own place it is addressed to them (20/10/2026).
+    if (row.kind === 'message.new') {
+        const message = await messageFor(admin, row);
+        if (message && message.sender_id) {
+            if (!message.automated) {
+                for (const id of await teamFor(admin, row)) {
+                    if (id !== message.sender_id && !out.has(id)) out.set(id, category);
+                }
+            }
+            out.delete(message.sender_id);
+        }
+    }
     return Array.from(out, ([userId, c]) => ({ userId, category: c }));
+}
+
+/** The message a 'message:<id>' push was recorded for. */
+async function messageFor(admin: any, row: any): Promise<any | null> {
+    const id = String(row.dedupe_key || '').startsWith('message:') ? String(row.dedupe_key).slice(8) : null;
+    if (!id) return null;
+    const { data } = await admin.from('messages').select('sender_id, automated').eq('id', id).maybeSingle();
+    return data || null;
+}
+
+/** Everyone answering a message's thread on the host's or the business's
+ *  side, but only when the message came from one of them — a guest's message
+ *  already reaches them through the fan-outs above. */
+async function teamFor(admin: any, row: any): Promise<string[]> {
+    const message = await messageFor(admin, row);
+    if (!message) return [];
+    let team: string[] = [];
+    if (row.context && row.context.booking_id) {
+        const listing = await listingFor(admin, row);
+        if (listing) team = [listing.hostId].concat(await cohostsWith(admin, listing.id, 'can_messages'));
+    } else {
+        const provider = await providerFor(admin, row);
+        if (provider) team = [provider.ownerId].concat(await providerCohostsWith(admin, provider.id, 'can_messages'));
+    }
+    return team.indexOf(message.sender_id) !== -1 ? team.filter(Boolean) : [];
 }
 
 async function prefsFor(admin: any, userId: string): Promise<Record<string, unknown> | null> {

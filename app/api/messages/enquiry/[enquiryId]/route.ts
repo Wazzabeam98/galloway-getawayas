@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { drainOutbox } from '@/lib/pushDispatch';
 import { logError } from '@/lib/logError';
+import { markThreadRead } from '@/lib/threadReads';
 import { enquiryThreadContext } from '@/lib/enquiryThreads';
 import { requestedWhen, windowsClash, windowPhrase } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
@@ -41,13 +42,9 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
             .eq('enquiry_id', params.enquiryId)
             .order('created_at', { ascending: true });
 
-        // Opening the thread reads it — stamp this viewer's inbound messages.
-        await admin
-            .from('messages')
-            .update({ read_at: new Date().toISOString() })
-            .eq('enquiry_id', params.enquiryId)
-            .eq('recipient_id', uid)
-            .is('read_at', null);
+        // Opening the thread reads it — this viewer's inbound messages, and
+        // their place in it if they answer for the business (lib/threadReads).
+        await markThreadRead(admin, uid, 'enquiry', params.enquiryId);
 
         let cottage: string | null = null;
         let cottageImage: string | null = null;
@@ -191,10 +188,16 @@ export async function POST(req: Request, { params }: { params: { enquiryId: stri
             return NextResponse.json({ ok: false, error: 'Could not send that.' }, { status: 500 });
         }
 
+        // Replying is reading: the sender's own copy of the thread is never left
+        // showing anything as unread (lib/threadReads).
+        await markThreadRead(admin, uid, 'enquiry', params.enquiryId);
+
         // Tell the other side, unless they've turned new-message email off. A
         // message TO the business also goes to its co-hosts with messages, each
         // by their own switch — as the owner gets it (lib/providerAccess).
-        const tellIds: string[] = [ctx.otherId];
+        // Never the sender: a business owner who books their own experience is
+        // both sides of the thread.
+        const tellIds: string[] = [ctx.otherId].filter((id) => !!id && id !== uid);
         if (!(!ctx.isHost) && (ctx.provider && ctx.provider.id)) {
             const { data: team } = await admin.from('provider_access').select('user_id')
                 .eq('provider_id', (ctx.provider && ctx.provider.id)).eq('status', 'active').eq('can_messages', true);

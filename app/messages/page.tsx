@@ -2,6 +2,7 @@
 
 import { notify } from '@/lib/notify';
 import ConversationRow from '@/components/messages/ConversationRow';
+import { recountBadges } from '@/components/base/useBadgeCounts';
 import ProviderReservationCard, { type ReservationCardData } from '@/components/services/ProviderReservationCard';
 import ManageReservationSheet from '@/components/dashboard/reservation/ManageReservationSheet';
 import RequestChangeRow from '@/components/trips/RequestChangeRow';
@@ -83,9 +84,10 @@ export default function MessagesInboxPage() {
     const composerRef = useRef<HTMLTextAreaElement>(null);
     const mobileComposerRef = useRef<HTMLTextAreaElement>(null);
 
-    // Set for the one conversation the page opens by itself on load. See the
-    // note where it is set.
-    const skipMarkRead = useRef(false);
+    // The conversation the person themselves chose (clicked, or asked for by
+    // link). Only that one is marked read as new messages arrive in it; the one
+    // the page puts on screen by itself on load is not theirs until they click.
+    const chosenKey = useRef<string | null>(null);
 
     // rows={1} does not mean "one line and then grow" — it means one line and
     // then scroll, which hides what the host has already written from them.
@@ -172,16 +174,13 @@ export default function MessagesInboxPage() {
             // false unless they asked for this one by name, so a phone lands
             // on the list — but lands on the conversation they clicked.
             if (first) {
+                // Marking read follows somebody choosing a conversation, not the
+                // page choosing one for them: marking a conversation unread and
+                // reloading must not land on it and quietly read it again. Asking
+                // for one by name (a link from an email or a push) is choosing it.
                 if (asked) {
                     setMobileOpen(true);
-                } else {
-                    // Marking read follows somebody choosing a conversation,
-                    // not the page choosing one for them. Without this,
-                    // marking a conversation unread and reloading the page
-                    // would land on it and quietly mark it read again, which
-                    // is the one thing the action exists to prevent. Asking
-                    // for one by name is them choosing it, so it is exempt.
-                    skipMarkRead.current = true;
+                    markRead(first.key);
                 }
                 setActiveId(first.key);
             }
@@ -230,29 +229,6 @@ export default function MessagesInboxPage() {
                 }
 
                 setThread(data);
-
-                if (skipMarkRead.current) {
-                    // Opened by the page rather than by the person. Leave the
-                    // unread flags alone; the next conversation they choose
-                    // themselves clears its own.
-                    skipMarkRead.current = false;
-                } else {
-                    // Opening it clears the unread flags, here and in the list.
-                    // Booking threads have an explicit mark-read; enquiry and order
-                    // threads are stamped read by their own GET above, so those
-                    // just need the optimistic list update.
-                    if (kind === 'booking') {
-                        fetch('/api/messages/mark-read', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ bookingId: id }),
-                        }).catch(() => {});
-                    }
-
-                    setConversations((prev) =>
-                        prev.map((c) => (c.key === activeId ? { ...c, unread: 0 } : c))
-                    );
-                }
             } catch (err: any) {
                 if (!cancelled) {
                     setThread(null);
@@ -299,6 +275,10 @@ export default function MessagesInboxPage() {
                         if (prev.messages.some((m: any) => m.id === payload.new.id)) return prev;
                         return { ...prev, messages: prev.messages.concat(payload.new) };
                     });
+                    // Arriving in the conversation they have open and chose: read.
+                    if (chosenKey.current === activeId && payload.new.sender_id !== (session && session.user.id)) {
+                        markRead(activeId);
+                    }
                 }
             )
             .subscribe();
@@ -518,6 +498,34 @@ export default function MessagesInboxPage() {
         }
     };
 
+    // Reads a conversation for this person: both markers the list checks —
+    // read_at on what was sent to them, and their own place in the thread when
+    // they answer it as the owner or a co-host — for every kind of thread
+    // (app/api/messages/mark-read, lib/threadReads). The row, the Unread filter
+    // and its count follow at once; the badge and the menu dot re-count when
+    // the server has it.
+    function markRead(key: string | null) {
+        if (!key) return;
+        const { kind, id } = splitKey(key);
+        setConversations((prev) => prev.map((c) => (c.key === key ? { ...c, unread: 0 } : c)));
+        fetch('/api/messages/mark-read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind, id }),
+        }).then(recountBadges, () => {});
+    }
+
+    // The person choosing a conversation. Marks it read EVERY time, including
+    // the one the page had already put on screen: that one was selected without
+    // being read, and clicking it changes no selection — so when reading hung
+    // off the selection changing, clicking it did nothing at all and it stayed
+    // bold for good (20/10/2026).
+    const openConversation = (key: string) => {
+        chosenKey.current = key;
+        setActiveId(key);
+        markRead(key);
+    };
+
     const markUnread = async (c: any) => {
         if (busy[c.bookingId]) return;
         setBusy((prev) => ({ ...prev, [c.bookingId]: true }));
@@ -557,6 +565,7 @@ export default function MessagesInboxPage() {
 
         // Opening a conversation marks it read, so leaving this one open would
         // undo the action the moment anything reloaded it.
+        if (chosenKey.current === c.key) chosenKey.current = null;
         if (activeId === c.key) {
             setActiveId(null);
             setThread(null);
@@ -583,6 +592,13 @@ export default function MessagesInboxPage() {
                 toast.error(error.message, { theme: 'colored' });
                 return;
             }
+            // Replying is reading. The page can open a conversation by itself
+            // without marking it read (so a thread marked unread survives a
+            // reload); answering it is the person choosing it, so nothing in it
+            // may stay unread for them — the guest's question they just answered
+            // included (lib/threadReads). Order and enquiry threads do this in
+            // their own send route.
+            markRead(activeId);
             // Email the other person, if they have message alerts on — the route
             // decides that, this just asks.
             notify('new_message', id, outgoing);
@@ -602,6 +618,8 @@ export default function MessagesInboxPage() {
                     toast.error((d && d.error) || 'Could not send.', { theme: 'colored' });
                     return;
                 }
+                // The route marked the thread read for the sender; let the dot know.
+                recountBadges();
                 // Reflect it now; the realtime channel dedupes if it also fires.
                 if (d.message) {
                     setThread((prev: any) => prev && !prev.messages.some((m: any) => m.id === d.message.id)
@@ -617,15 +635,22 @@ export default function MessagesInboxPage() {
         setText('');
         setShowQuick(false);
 
-        // Reflect it straight away in the list, so the ordering and the
-        // needs-reply flag don't lie until the next load.
+        // Reflect it straight away in the list, so the ordering, the needs-reply
+        // flag and the unread count don't lie until the next load: their own
+        // message, read, as "You: …" in normal weight, the way Airbnb shows it.
         setConversations((prev) =>
             prev.map((c) =>
                 c.key === activeId
                     ? {
                         ...c,
                         needsReply: false,
-                        lastMessage: { body: outgoing, created_at: new Date().toISOString() },
+                        unread: 0,
+                        lastMessage: {
+                            body: outgoing,
+                            created_at: new Date().toISOString(),
+                            sender_id: session.user.id,
+                            senderLabel: 'You',
+                        },
                     }
                     : c
             )
@@ -651,29 +676,10 @@ export default function MessagesInboxPage() {
         );
     }
 
-    // The row in the list for whatever is open, which is where needsReply
-    // lives — it is worked out per person when the list is built.
-    const activeConversation = conversations.filter(
-        (c) => c.key === activeId
-    )[0] || null;
-
-    // Offered under the last message rather than buried in the row menu,
-    // because it belongs to the message that is waiting. A needs-reply count
-    // that includes threads ending "thanks!" is one nobody reads.
-    const noReplyLink = activeConversation && activeConversation.needsReply ? (
-        <div className="pt-2 flex items-center justify-center gap-2 text-xs">
-            <span className="text-amber-700 font-medium">Waiting on you</span>
-            <span className="text-slate-300">&middot;</span>
-            <button
-                type="button"
-                onClick={() => markNoReplyNeeded(activeConversation.bookingId)}
-                disabled={!!busy[activeConversation.bookingId]}
-                className="font-semibold text-slate-500 underline hover:text-slate-900 disabled:opacity-50"
-            >
-                Mark no reply needed
-            </button>
-        </div>
-    ) : null;
+    // No "Waiting on you · Mark no reply needed" line under the messages:
+    // Airbnb shows none, and Liam doesn't want it (20/10/2026). Needs reply is
+    // still the filter, which a thread leaves when someone on the host's side
+    // replies, and "No reply needed" is still in the row's menu.
 
     // --- The list of conversations ----------------------------------------
     const list = (
@@ -713,7 +719,8 @@ export default function MessagesInboxPage() {
                             active={activeId === c.key}
                             showActive
                             busy={!!busy[c.bookingId]}
-                            onOpen={() => setActiveId(c.key)}
+                            onOpen={() => openConversation(c.key)}
+                            onMarkRead={() => markRead(c.key)}
                             onNoReplyNeeded={() => markNoReplyNeeded(c.bookingId)}
                             onStar={() => toggleStar(c)}
                             onArchive={() => toggleArchive(c)}
@@ -795,8 +802,6 @@ export default function MessagesInboxPage() {
                                 </div>
                             );
                         })}
-
-                        {noReplyLink}
                     </div>
 
                     <div className="p-4 border-t">
@@ -1087,8 +1092,9 @@ export default function MessagesInboxPage() {
                                     key={c.key}
                                     conversation={c}
                                     busy={!!busy[c.bookingId]}
+                                    onMarkRead={() => markRead(c.key)}
                                     onOpen={() => {
-                                        setActiveId(c.key);
+                                        openConversation(c.key);
                                         setMobileOpen(true);
                                         setShowDetails(false);
                                     }}
@@ -1211,8 +1217,6 @@ export default function MessagesInboxPage() {
                                             </div>
                                         );
                                     })}
-
-                                    {noReplyLink}
                                 </div>
 
                                 <div className="p-3 border-t">

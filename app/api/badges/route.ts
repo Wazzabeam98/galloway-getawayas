@@ -1,7 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { unreadFor, pendingFor, providerRequestsFor, adminPendingFor, EMPTY_ADMIN_PENDING } from '@/lib/badgeCounts';
+import { unreadFor, teamUnreadFor, pendingFor, providerRequestsFor, adminPendingFor, EMPTY_ADMIN_PENDING } from '@/lib/badgeCounts';
 import { pendingInvitesFor } from '@/lib/pendingInvites';
 import { adminClient } from '@/lib/supabaseAdmin';
 
@@ -41,14 +41,19 @@ export async function GET() {
     // so the request costs the slowest rather than the sum. `admin` is zeros for
     // a non-admin (adminPendingFor short-circuits on the profile check), so this
     // stays the owner-only numbers it looks like.
-    const [unread, pending, requests, admin, invites] = await Promise.all([
+    const [unreadToMe, unreadForTeam, pending, requests, admin, invites] = await Promise.all([
         unreadFor(supabase, user.id),
+        // The threads they answer as an owner or co-host: what was said there
+        // by somebody else, addressed to somebody else (lib/threadReads).
+        teamUnreadFor(user.id).catch(() => 0),
         pendingFor(user.id),
         providerRequestsFor(user.id),
         adminPendingFor(user.id),
         // Co-host invitations waiting on them — a line and a dot in the menu.
         pendingInvitesFor(adminClient(), user.email).then((l) => l.length).catch(() => 0),
     ]);
+
+    const unread = unreadToMe + unreadForTeam;
 
     return NextResponse.json({ unread, pending, requests, admin, invites });
 }

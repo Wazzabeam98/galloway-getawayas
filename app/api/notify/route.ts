@@ -309,6 +309,14 @@ export async function POST(request: Request) {
             // so it goes whether or not message EMAILS are switched off.
             const pushIt = () => drainOutbox(admin, { userId: recipientId, kind: 'message.new' });
 
+            // Never the sender. On a stay an owner booked at their own place,
+            // guest and host are one account, so "the other party" is them
+            // (20/10/2026). The push for the rest of the team still goes.
+            if (recipientId === uid) {
+                await pushIt();
+                return NextResponse.json({ ok: true, skipped: 'sender' });
+            }
+
             const allowed = await wants(admin, recipientId, 'new_message');
             if (!allowed) {
                 await pushIt();

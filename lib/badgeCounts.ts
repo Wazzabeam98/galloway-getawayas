@@ -1,4 +1,5 @@
 import { isArchived } from '@/lib/conversations';
+import { TEAM_READS_FROM, isInboundFor, isUnreadFor, readPositionsFor, threadKey } from '@/lib/threadReads';
 import { listingIdsFor } from '@/lib/access';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { providerIdsWith } from '@/lib/providerAccess';
@@ -27,10 +28,14 @@ export async function unreadFor(supabase: any, uid: string): Promise<number> {
     // provider's /services/messages carries their enquiry and order threads. So
     // every unread message addressed to this person is now openable somewhere they
     // can reach, and the count is simply all of it.
+    // Never their own words, even when addressed to themselves: on a stay an
+    // owner booked at their own place, guest and host are one account and their
+    // message to "the guest" is addressed to them (20/10/2026). lib/threadReads.
     const { count } = await supabase
         .from('messages')
         .select('id', { count: 'exact', head: true })
         .eq('recipient_id', uid)
+        .neq('sender_id', uid)
         .is('read_at', null);
 
     const total = count || 0;
@@ -54,6 +59,7 @@ export async function unreadFor(supabase: any, uid: string): Promise<number> {
         .from('messages')
         .select('booking_id, created_at, read_at')
         .eq('recipient_id', uid)
+        .neq('sender_id', uid)
         .in('booking_id', archivedIds);
 
     const lastInbound: Record<string, string> = {};
@@ -76,6 +82,94 @@ export async function unreadFor(supabase: any, uid: string): Promise<number> {
     });
 
     return Math.max(0, total - hidden);
+}
+
+/**
+ * Unread messages on the threads this person answers as part of a team — the
+ * owner or a co-host of a property, or of a business — that were not addressed
+ * to them: the guest's question to the owner, as a co-host sees it; the owner's
+ * reply, as the co-host sees it; a co-host's reply, as the owner sees it.
+ * unreadFor() counts what was addressed to them; this counts the rest, by the
+ * same rule the inbox uses (lib/threadReads), so the dot and the list agree.
+ *
+ * Service key: a co-host is neither party on these rows.
+ */
+export async function teamUnreadFor(uid: string, admin: any = adminClient()): Promise<number> {
+    const [listings, providers, readTo] = await Promise.all([
+        listingIdsFor(uid, 'can_messages'),
+        providerIdsWith(admin, uid, 'can_messages'),
+        readPositionsFor(admin, uid),
+    ]);
+
+    // [kind, thread id] for every thread they answer on the team side.
+    const threads: { kind: 'booking' | 'order' | 'enquiry'; id: string }[] = [];
+
+    if (listings.length) {
+        const { data: bookings } = await admin
+            .from('bookings')
+            .select('id, guest_id, host_id')
+            .in('listing_id', listings);
+        // A co-host who is also the guest on a stay is the guest there.
+        (bookings || []).forEach((b: any) => {
+            if (b.host_id === uid || b.guest_id !== uid) threads.push({ kind: 'booking', id: b.id });
+        });
+    }
+    if (providers.length) {
+        const [{ data: orders }, { data: enquiries }] = await Promise.all([
+            admin.from('service_orders').select('id').in('provider_id', providers)
+                .is('parent_order_id', null).in('status', ['authorised', 'confirmed']),
+            admin.from('service_enquiries').select('id').in('provider_id', providers)
+                .in('status', ['accepted', 'cancelled']),
+        ]);
+        (orders || []).forEach((o: any) => threads.push({ kind: 'order', id: o.id }));
+        (enquiries || []).forEach((e: any) => threads.push({ kind: 'enquiry', id: e.id }));
+    }
+    if (threads.length === 0) return 0;
+
+    let total = 0;
+    const bookingUnread: Record<string, number> = {};
+    const bookingInbound: Record<string, string> = {};
+
+    for (const kind of ['booking', 'order', 'enquiry'] as const) {
+        const ids = threads.filter((t) => t.kind === kind).map((t) => t.id);
+        if (!ids.length) continue;
+        const col = kind + '_id';
+        // Only what is NOT addressed to them (unreadFor has those) and is newer
+        // than anyone's read position could be.
+        const { data: msgs } = await admin
+            .from('messages')
+            .select(col + ', sender_id, recipient_id, read_at, created_at, automated')
+            .in(col, ids)
+            .neq('sender_id', uid)
+            .neq('recipient_id', uid)
+            .gt('created_at', TEAM_READS_FROM);
+        (msgs || []).forEach((m: any) => {
+            const id = m[col];
+            if (kind === 'booking' && isInboundFor(m, uid, true)
+                && (!bookingInbound[id] || m.created_at > bookingInbound[id])) bookingInbound[id] = m.created_at;
+            if (!isUnreadFor(m, uid, true, readTo[threadKey(kind, id)])) return;
+            if (kind === 'booking') bookingUnread[id] = (bookingUnread[id] || 0) + 1;
+            else total += 1;
+        });
+    }
+
+    // Something archived stays out of the dot, as in unreadFor.
+    const unreadBookings = Object.keys(bookingUnread);
+    if (unreadBookings.length) {
+        const { data: prefs } = await admin
+            .from('conversation_prefs')
+            .select('booking_id, archived_at')
+            .eq('user_id', uid)
+            .in('booking_id', unreadBookings)
+            .not('archived_at', 'is', null);
+        const archivedAt: Record<string, string> = {};
+        (prefs || []).forEach((p: any) => { archivedAt[p.booking_id] = p.archived_at; });
+        unreadBookings.forEach((id) => {
+            if (!isArchived(archivedAt[id], bookingInbound[id])) total += bookingUnread[id];
+        });
+    }
+
+    return total;
 }
 
 /**
