@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { unstable_cache } from 'next/cache';
 import Image from 'next/image';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen, businessSignupsOpen } from '@/lib/serviceOrders';
@@ -24,13 +25,30 @@ export const SEE_ALL_FROM = 12;
 // live, and the shelf isn't shown). Exported so app/page.tsx can place each state where it
 // belongs, deciding from the same read it renders — without loading the (heavy)
 // marketplace twice.
+// Read once per five minutes, not once per visitor. The marketplace load is a
+// handful of queries (providers, items, sessions, photos) and the shelf is the
+// same for everybody, so the home page serves it from Next's data cache and
+// refreshes it in the background — the way Airbnb serves its home page rows.
+// A provider approved or paused now shows here within five minutes.
+const cachedHomeProviders = unstable_cache(
+    async (): Promise<MpProvider[]> => {
+        const mp = await loadPublicMarketplace(adminClient(), true);
+        if (!mp.open) return [];
+        // Only ones with a real photo — a card on a bare gradient block reads as
+        // unfinished, so it is not shown at all.
+        return mp.providers.filter((p) => !!p.hero);
+    },
+    ['home-experience-providers-v1'],
+    { revalidate: 300, tags: ['home'] },
+);
+
 export async function liveHomeProviders(): Promise<MpProvider[]> {
     if (!guestExperiencesOpen()) return [];
-    const mp = await loadPublicMarketplace(adminClient(), true);
-    if (!mp.open) return [];
-    // Only ones with a real photo — a card on a bare gradient block reads as
-    // unfinished, so it is not shown at all.
-    return mp.providers.filter((p) => !!p.hero);
+    try {
+        return await cachedHomeProviders();
+    } catch {
+        return [];
+    }
 }
 
 // The "Experiences" section, placed by the page directly under Our Properties
@@ -75,7 +93,9 @@ export function ExperienceCard({ p }: { p: MpProvider }) {
     const [main, per] = label.split(' / ');
     const shown = main.charAt(0).toUpperCase() + main.slice(1);
     return (
-        <Link href={`/experiences/browse/${p.id}`} className="group flex flex-col space-y-2">
+        // Same card shape as ListingCard: the title is the link, stretched over
+        // the card, and is not a heading.
+        <div className="group relative flex flex-col space-y-2">
             <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
                 {/* Through the optimiser: hero is the provider's original upload
                     (one was 914 KB at 1707x2560) shown in a ~360px card. */}
@@ -83,12 +103,16 @@ export function ExperienceCard({ p }: { p: MpProvider }) {
                     sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
                     className="object-cover group-hover:scale-105 transition duration-300" />
             </div>
-            <h3 className="font-bold text-stone-900 text-base truncate">{p.business_name}</h3>
+            <p className="font-bold text-stone-900 text-base truncate">
+                <Link href={`/experiences/browse/${p.id}`} className="after:absolute after:inset-0 after:content-[''] focus:outline-none focus-visible:after:rounded-2xl focus-visible:after:ring-2 focus-visible:after:ring-emerald-600">
+                    {p.business_name}
+                </Link>
+            </p>
             <p className="text-sm text-stone-500 truncate">{town}</p>
             <p className="text-sm font-semibold text-stone-900">
                 {shown}{per && <span className="font-normal text-stone-500"> / {per}</span>}
             </p>
-        </Link>
+        </div>
     );
 }
 

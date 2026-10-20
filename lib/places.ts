@@ -40,7 +40,7 @@ export function publicArea(location: string | null): string {
     }
 
     const kept = parts.slice(start);
-    return kept.length ? kept.join(', ') : location;
+    return correctRegion(kept.length ? kept.join(', ') : location);
 }
 
 // Just the town, for grouping stays by where they were. "18 Dovecroft,
@@ -86,7 +86,33 @@ export function buildLocation(town: string | null, region: string | null): strin
 // the publish rule and let a listing through with none.
 export function listingLocation(town: string | null): string {
     const t = (town || '').trim();
-    return t ? buildLocation(t, DEFAULT_REGION) : '';
+    return t ? buildLocation(t, regionForTown(t)) : '';
+}
+
+// The exceptions to "always Dumfries and Galloway". Galloway Forest Park runs
+// north over the council boundary into Ayrshire, so a cottage on its northern
+// edge can be in the park without being in D&G — and saying it is reads as a
+// mistake to anybody who knows the area. Keyed by townKey. Add a town here
+// only when a real listing needs it.
+const REGION_OUTSIDE_DG: Record<string, string> = {
+    straiton: 'South Ayrshire',
+    dalmellington: 'East Ayrshire',
+};
+
+export function regionForTown(town: string | null): string {
+    return REGION_OUTSIDE_DG[townKey(town)] || DEFAULT_REGION;
+}
+
+// A stored location read back for display, with the region put right for a
+// town outside D&G. Rows saved before the exception existed still say
+// "Straiton, Dumfries and Galloway"; this corrects them on the way out, so no
+// data has to change and the next save stores the right one anyway.
+export function correctRegion(location: string): string {
+    const parts = location.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 2) return location;
+    const actual = REGION_OUTSIDE_DG[townKey(parts[0])];
+    if (!actual) return location;
+    return [parts[0], actual].concat(parts.slice(2).filter((p) => !/dumfries/i.test(p))).join(', ');
 }
 
 // Reading a stored `location` back into the town and region boxes. Runs through

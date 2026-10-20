@@ -12,6 +12,9 @@ import UpcomingExperience, { type Upcoming } from '@/components/UpcomingExperien
 import { guestExperienceLists } from '@/lib/guestExperienceLists';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
+import { unstable_cache } from 'next/cache';
+import { createClient } from '@supabase/supabase-js';
+import Env from '@/config/Env';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
 import ListingCard from '@/components/ListingCard';
@@ -105,6 +108,37 @@ function whereLabel(slug: string): string {
         .join(' ');
 }
 
+// Every published listing, from Next's data cache rather than the database on
+// every visit. The list is the same for everyone (the anon read, published
+// only), so it is fetched at most once every five minutes and served from the
+// cache in between — the home page's slow part was this and the experiences
+// shelf, read fresh per request across the Atlantic. A listing published or
+// hidden now shows on the home page within five minutes; availability for a
+// dated search is still read live below, never from the cache.
+const cachedPublishedListings = unstable_cache(
+    async (): Promise<any[]> => {
+        const anon = createClient(Env.SUPABASE_URL, Env.SUPABASE_KEY);
+        const { data, error } = await anon
+            .from('listings')
+            .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude, property_type, bedrooms, beds, bathrooms, instant_book, check_in_method')
+            .eq('status', 'published')
+            .order('created_at', { ascending: false });
+        // Thrown, so a failed read is never cached as "no listings".
+        if (error) throw error;
+        return data || [];
+    },
+    ['home-published-listings-v1'],
+    { revalidate: 300, tags: ['home', 'listings'] },
+);
+
+async function publishedListings(): Promise<any[]> {
+    try {
+        return await cachedPublishedListings();
+    } catch {
+        return [];
+    }
+}
+
 function readParam(value: string | string[] | undefined): string {
     return typeof value === 'string' ? value : '';
 }
@@ -116,6 +150,11 @@ export default async function HomePage({
 }) {
     const cookieStore = cookies();
     const supabase = createServerComponentClient({ cookies });
+
+    // The shared, public data starts loading straight away, alongside the
+    // viewer's own reads rather than after them (it used to wait its turn).
+    const publishedPromise = publishedListings();
+    const experiencesPromise = liveHomeProviders();
 
     // Same rule the navbar reads, so the page agrees with the mode switch: the
     // side they were last on, or — never having chosen — hosting for an
@@ -139,13 +178,6 @@ export default async function HomePage({
     const hasDates = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from < to;
     const searching = Boolean(where) || hasDates || guests > 0 || filterCount > 0;
 
-    let query = supabase
-        .from('listings')
-        .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude, property_type, bedrooms, beds, bathrooms, instant_book, check_in_method')
-        .eq('status', 'published')
-        .order('created_at', { ascending: false });
-
-    if (guests > 0) query = query.gte('max_guests', guests);
     // Pets are an amenity rather than a column of their own, and are matched
     // with the other filters below rather than here — the panel's count needs
     // the places WITHOUT pets too, to say what turning it off would give.
@@ -160,8 +192,8 @@ export default async function HomePage({
             .then((d: any) => (d && d.upcoming) || [])
             .catch(() => []);
 
-    const { data } = await query;
-    let listings = data || [];
+    const data = await publishedPromise;
+    let listings = guests > 0 ? data.filter((l: any) => Number(l.max_guests) >= guests) : data;
 
     if (where) {
         const wanted = where.replace(/[^a-z]/g, '');
@@ -293,7 +325,7 @@ export default async function HomePage({
     // Properties; empty → the coming-soon panel drops down between the towns row
     // and the map instead, so an empty section never leads. Hidden while a
     // property search is on, like the sections below.
-    const homeExperienceList = searching ? [] : await liveHomeProviders();
+    const homeExperienceList = searching ? [] : await experiencesPromise;
     const experiencesLive = homeExperienceList.length > 0;
 
     // What the guest asked for, said back to them, so a short list reads as a

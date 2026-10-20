@@ -30,7 +30,7 @@ const Footer = () => {
                     </div>
 
                     <div>
-                        <h3 className="text-sm font-semibold text-slate-900 mb-3">Guests</h3>
+                        <p className="text-sm font-semibold text-slate-900 mb-3">Guests</p>
                         <ul className="space-y-2 text-sm text-slate-600">
                             <li><Link href="/" className="hover:text-slate-900">Find a place to stay</Link></li>
                             <li><Link href="/trips" className="hover:text-slate-900">Your trips</Link></li>
@@ -43,16 +43,16 @@ const Footer = () => {
                     </div>
 
                     <div>
-                        <h3 className="text-sm font-semibold text-slate-900 mb-3">Hosting</h3>
+                        <p className="text-sm font-semibold text-slate-900 mb-3">Hosting</p>
                         <ul className="space-y-2 text-sm text-slate-600">
-                            <li><Link href="/business" className="hover:text-slate-900">Start hosting</Link></li>
+                            <li><Link href="/business" className="hover:text-slate-900">Become a host</Link></li>
                             <li><Link href="/dashboard" className="hover:text-slate-900">Host dashboard</Link></li>
                             <li><Link href="/services" className="hover:text-slate-900">Property services</Link></li>
                         </ul>
                     </div>
 
                     <div>
-                        <h3 className="text-sm font-semibold text-slate-900 mb-3">Company</h3>
+                        <p className="text-sm font-semibold text-slate-900 mb-3">Company</p>
                         <ul className="space-y-2 text-sm text-slate-600">
                             <li><Link href="/contact" className="hover:text-slate-900">Contact us</Link></li>
                             <li><Link href="/terms" className="hover:text-slate-900">Terms &amp; conditions</Link></li>

@@ -35,6 +35,10 @@ const OLD_TRADE_PAGES = {
 }
 
 const nextConfig = {
+    // No "X-Powered-By: Next.js" on every response — it tells a scanner which
+    // framework (and so which known holes) to try, and tells a visitor nothing.
+    poweredByHeader: false,
+
     // Where the build writes. Default `.next` for dev, `next start` and Vercel,
     // but overridable so a compile-only gate (the pre-push hook) can build into
     // a throwaway dir instead of clobbering the `.next` a running `next dev` is

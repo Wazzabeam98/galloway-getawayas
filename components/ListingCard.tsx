@@ -78,7 +78,13 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
     const area = publicArea(listing.location);
 
     return (
-        <Link href={`/homes/${listing.id}`} className="group flex flex-col space-y-2">
+        // Airbnb's card: the whole card is clickable, but the LINK is just the
+        // title, stretched over the card (after:inset-0). A crawler and a screen
+        // reader get "Mains of Greenlaw Cottage" as the link text instead of the
+        // card's every line run together — badge, title, place, price — and the
+        // title is plain text, not a heading: a grid of h3s gave the home page
+        // 28 headings with no structure.
+        <div className="group relative flex flex-col space-y-2">
             <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
                 <ListingImage
                     images={listing.images}
@@ -126,7 +132,11 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
             </div>
 
             <div className="flex items-start justify-between gap-2">
-                <h3 className="font-bold text-stone-900 text-base truncate">{listing.title}</h3>
+                <p className="font-bold text-stone-900 text-base truncate">
+                    <Link href={`/homes/${listing.id}`} className="after:absolute after:inset-0 after:content-[''] focus:outline-none focus-visible:after:rounded-2xl focus-visible:after:ring-2 focus-visible:after:ring-emerald-600">
+                        {listing.title}
+                    </Link>
+                </p>
 
                 {rating && hasPublicScore(count) ? (
                     <span className="flex items-center gap-1 text-sm text-stone-900 shrink-0">
@@ -146,6 +156,6 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
             <p className="text-sm font-semibold text-stone-900">
                 £{listing.price_per_night} <span className="font-normal text-stone-500">night</span>
             </p>
-        </Link>
+        </div>
     );
 }

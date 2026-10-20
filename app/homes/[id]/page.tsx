@@ -21,7 +21,7 @@ import ShowAllReviews from '@/components/ShowAllReviews';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import { listingSeoTitle } from '@/lib/seoTitle';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
-import { townKey } from '@/lib/places';
+import { townKey, correctRegion, regionForTown, DEFAULT_REGION } from '@/lib/places';
 import { plural } from '@/lib/plural';
 import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
 import { areaForTownKey, areaBySlug, hasCopy, areaCentroid } from '@/config/areas';
@@ -62,7 +62,7 @@ function placeSummary(location: string | null): string {
         return true;
     });
 
-    return kept.join(', ');
+    return correctRegion(kept.join(', '));
 }
 
 // Things worth calling out at a glance. Every one is derived from real
@@ -759,7 +759,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 // it is. Google flags both as "could be better";
                                 // that is accepted, not an oversight.
                                 addressLocality: (placeSummary(home.location) || '').split(',')[0].trim(),
-                                addressRegion: 'Dumfries & Galloway',
+                                addressRegion: regionForTown((placeSummary(home.location) || '').split(',')[0].trim()) === DEFAULT_REGION
+                                    ? 'Dumfries & Galloway'
+                                    : regionForTown((placeSummary(home.location) || '').split(',')[0].trim()),
                                 addressCountry: 'GB',
                             },
                             // Required by Google. Always the APPROXIMATE point —
