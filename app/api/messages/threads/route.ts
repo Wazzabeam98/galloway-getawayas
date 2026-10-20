@@ -183,12 +183,17 @@ export async function GET() {
     // A host archiving a thread leaves the guest's copy exactly where it was.
     const { data: prefs } = await admin
         .from('conversation_prefs')
-        .select('booking_id, archived_at, starred_at, no_reply_needed_at')
+        .select('thread_kind, thread_id, booking_id, archived_at, starred_at, no_reply_needed_at')
         .eq('user_id', uid);
 
+    // Booking code keys on booking_id, as it always did. Everything else keys on
+    // the thread's key ('order:<id>' / 'enquiry:<id>'), which the generic
+    // (thread_kind, thread_id) identity gives for every kind — bookings included.
     const prefMap: Record<string, any> = {};
+    const prefByKey: Record<string, any> = {};
     (prefs || []).forEach((p: any) => {
-        prefMap[p.booking_id] = p;
+        if (p.booking_id) prefMap[p.booking_id] = p;
+        if (p.thread_kind && p.thread_id) prefByKey[threadKey(p.thread_kind, p.thread_id)] = p;
     });
 
     const todayKey = londonDayKey();
@@ -211,13 +216,15 @@ export async function GET() {
         [otherId, secondId, lastMap[b.id] && lastMap[b.id].sender_id].forEach((id) => { if (id) personIds.add(id); });
 
         return {
-            // The universal identity every kind now carries. bookingId stays for
-            // the booking-only actions (prefs, mark-unread) that key on it.
+            // The universal identity every kind now carries. bookingId stays
+            // alongside it for the booking-specific data this row exposes.
             kind: 'booking',
             id: b.id,
             key: 'booking:' + b.id,
             subtitle: listing ? listing.title : null,
-            manageable: true,   // star / archive / mark-unread live only on bookings
+            // The row menu — mark read/unread, star, archive — is offered on
+            // every kind now that conversation_prefs covers orders and enquiries.
+            manageable: true,
             bookingId: b.id,
             starred: !!(pref && pref.starred_at),
             // Worked out, not stored — see lib/conversations.ts. A message
@@ -270,15 +277,19 @@ export async function GET() {
         : { data: [] };
     const oLast: Record<string, any> = {};
     const oUnread: Record<string, number> = {};
+    const oLastInbound: Record<string, string> = {};
     (orderMsgs || []).forEach((m: any) => {
         if (!oLast[m.order_id]) oLast[m.order_id] = m;
+        // The guest side of an order thread is never the team side.
+        if (isInboundFor(m, uid, false) && !oLastInbound[m.order_id]) oLastInbound[m.order_id] = m.created_at;
         if (isUnreadFor(m, uid, false)) oUnread[m.order_id] = (oUnread[m.order_id] || 0) + 1;
     });
     for (const o of myOrders || []) {
         const last = oLast[o.id] || null;
         if (last && last.sender_id) personIds.add(last.sender_id);
+        const pref = prefByKey['order:' + o.id];
         conversations.push({
-            kind: 'order', id: o.id, key: 'order:' + o.id, manageable: false,
+            kind: 'order', id: o.id, key: 'order:' + o.id, manageable: true,
             otherName: o.provider_business_name || 'Provider',
             subtitle: (o.item_name || 'Experience') + (o.service_date ? ' · ' + String(o.service_date) : ''),
             category: categoryOf('order'),
@@ -289,9 +300,13 @@ export async function GET() {
             listing: null,
             lastMessage: last,
             unread: oUnread[o.id] || 0,
-            // The other side spoke last and it's unanswered — no prefs to suppress it.
+            // The other side spoke last and it's unanswered. "No reply needed" is
+            // a booking-only acknowledgement, so no pref suppresses it here.
             needsReply: !!(last && last.sender_id !== uid),
-            noReplyNeeded: false, starred: false, archived: false, stage: null,
+            noReplyNeeded: false,
+            starred: !!(pref && pref.starred_at),
+            archived: isArchived(pref && pref.archived_at, oLastInbound[o.id]),
+            stage: null,
         });
     }
 
@@ -312,15 +327,19 @@ export async function GET() {
         : { data: [] };
     const eLast: Record<string, any> = {};
     const eUnread: Record<string, number> = {};
+    const eLastInbound: Record<string, string> = {};
     (enquiryMsgs || []).forEach((m: any) => {
         if (!eLast[m.enquiry_id]) eLast[m.enquiry_id] = m;
+        // The host side of an enquiry thread is never the team (provider) side.
+        if (isInboundFor(m, uid, false) && !eLastInbound[m.enquiry_id]) eLastInbound[m.enquiry_id] = m.created_at;
         if (isUnreadFor(m, uid, false)) eUnread[m.enquiry_id] = (eUnread[m.enquiry_id] || 0) + 1;
     });
     for (const e of myEnquiries || []) {
         const last = eLast[e.id] || null;
         if (last && last.sender_id) personIds.add(last.sender_id);
+        const pref = prefByKey['enquiry:' + e.id];
         conversations.push({
-            kind: 'enquiry', id: e.id, key: 'enquiry:' + e.id, manageable: false,
+            kind: 'enquiry', id: e.id, key: 'enquiry:' + e.id, manageable: true,
             otherName: e.business_name || 'The tradesman',
             subtitle: String(e.reference || '') + (e.summary ? ' · ' + e.summary : ''),
             category: categoryOf('enquiry'),
@@ -333,7 +352,10 @@ export async function GET() {
             lastMessage: last,
             unread: eUnread[e.id] || 0,
             needsReply: !!(last && last.sender_id !== uid),
-            noReplyNeeded: false, starred: false, archived: false, stage: null,
+            noReplyNeeded: false,
+            starred: !!(pref && pref.starred_at),
+            archived: isArchived(pref && pref.archived_at, eLastInbound[e.id]),
+            stage: null,
         });
     }
 
@@ -372,12 +394,14 @@ export async function GET() {
         const provOrderIds = (provOrders || []).map((o: any) => o.id);
         const poLast: Record<string, any> = {};
         const poUnread: Record<string, number> = {};
+        const poLastInbound: Record<string, string> = {};
         if (provOrderIds.length) {
             const { data: msgs } = await admin.from('messages')
                 .select('order_id, body, created_at, sender_id, recipient_id, read_at')
                 .in('order_id', provOrderIds).order('created_at', { ascending: false });
             (msgs || []).forEach((m: any) => {
                 if (!poLast[m.order_id]) poLast[m.order_id] = m;
+                if (isInboundFor(m, uid, true) && !poLastInbound[m.order_id]) poLastInbound[m.order_id] = m.created_at;
                 if (isUnreadFor(m, uid, true, readTo[threadKey('order', m.order_id)])) poUnread[m.order_id] = (poUnread[m.order_id] || 0) + 1;
             });
         }
@@ -385,8 +409,9 @@ export async function GET() {
             if (seenKeys.has('order:' + o.id)) continue;
             const last = poLast[o.id] || null;
             [o.guest_id, last && last.sender_id].forEach((id) => { if (id) personIds.add(id); });
+            const pref = prefByKey['order:' + o.id];
             conversations.push({
-                kind: 'order', id: o.id, key: 'order:' + o.id, manageable: false,
+                kind: 'order', id: o.id, key: 'order:' + o.id, manageable: true,
                 otherName: o.guest_name || 'Guest',
                 subtitle: (o.item_name || 'Experience') + (o.service_date ? ' · ' + String(o.service_date) : ''),
                 category: categoryOf('order'),
@@ -397,7 +422,10 @@ export async function GET() {
                 _people: [o.guest_id || null],
                 listing: null, lastMessage: last, unread: poUnread[o.id] || 0,
                 needsReply: !!(last && last.sender_id !== uid) && !provTeamAnswered(last, o.provider_id),
-                noReplyNeeded: false, starred: false, archived: false, stage: null,
+                noReplyNeeded: false,
+                starred: !!(pref && pref.starred_at),
+                archived: isArchived(pref && pref.archived_at, poLastInbound[o.id]),
+                stage: null,
             });
         }
 
@@ -409,12 +437,14 @@ export async function GET() {
         const provEnqIds = (provEnq || []).map((e: any) => e.id);
         const peLast: Record<string, any> = {};
         const peUnread: Record<string, number> = {};
+        const peLastInbound: Record<string, string> = {};
         if (provEnqIds.length) {
             const { data: msgs } = await admin.from('messages')
                 .select('enquiry_id, body, created_at, sender_id, recipient_id, read_at')
                 .in('enquiry_id', provEnqIds).order('created_at', { ascending: false });
             (msgs || []).forEach((m: any) => {
                 if (!peLast[m.enquiry_id]) peLast[m.enquiry_id] = m;
+                if (isInboundFor(m, uid, true) && !peLastInbound[m.enquiry_id]) peLastInbound[m.enquiry_id] = m.created_at;
                 if (isUnreadFor(m, uid, true, readTo[threadKey('enquiry', m.enquiry_id)])) peUnread[m.enquiry_id] = (peUnread[m.enquiry_id] || 0) + 1;
             });
         }
@@ -422,8 +452,9 @@ export async function GET() {
             if (seenKeys.has('enquiry:' + e.id)) continue;
             const last = peLast[e.id] || null;
             [e.host_id, last && last.sender_id].forEach((id) => { if (id) personIds.add(id); });
+            const pref = prefByKey['enquiry:' + e.id];
             conversations.push({
-                kind: 'enquiry', id: e.id, key: 'enquiry:' + e.id, manageable: false,
+                kind: 'enquiry', id: e.id, key: 'enquiry:' + e.id, manageable: true,
                 otherName: e.host_name || 'The owner',
                 subtitle: String(e.reference || '') + (e.summary ? ' · ' + e.summary : ''),
                 category: categoryOf('enquiry'),
@@ -435,7 +466,10 @@ export async function GET() {
                 _people: [e.host_id || null],
                 listing: null, lastMessage: last, unread: peUnread[e.id] || 0,
                 needsReply: !!(last && last.sender_id !== uid) && !provTeamAnswered(last, e.provider_id),
-                noReplyNeeded: false, starred: false, archived: false, stage: null,
+                noReplyNeeded: false,
+                starred: !!(pref && pref.starred_at),
+                archived: isArchived(pref && pref.archived_at, peLastInbound[e.id]),
+                stage: null,
             });
         }
     }

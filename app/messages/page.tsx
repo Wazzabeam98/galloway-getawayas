@@ -418,8 +418,10 @@ export default function MessagesInboxPage() {
     // rest of this page there is no co-host problem to work around: a co-host
     // writing their own preference row is still writing their own row.
     // Keyed on the thread's key, like every other per-row action, so the busy
-    // flag and the row match line up across all thread kinds — the write still
-    // goes to conversation_prefs by booking_id, which only booking threads have.
+    // flag and the row match line up across all thread kinds. conversation_prefs
+    // now carries a generic (thread_kind, thread_id) identity, so a star or an
+    // archive stores against the thread whatever kind it is — the matching
+    // booking_id / order_id / enquiry_id column carries the on-delete cascade.
     const setPref = async (c: any, patch: any, optimistic: any, undo: any) => {
         if (!session || !session.user || busy[c.key]) return;
 
@@ -428,9 +430,17 @@ export default function MessagesInboxPage() {
             prev.map((x) => (x.key === c.key ? { ...x, ...optimistic } : x))
         );
 
+        const { kind, id } = splitKey(c.key);
+        const idColumn = kind === 'order' ? 'order_id' : kind === 'enquiry' ? 'enquiry_id' : 'booking_id';
         const { error } = await supabase.from('conversation_prefs').upsert(
-            { user_id: session.user.id, booking_id: c.bookingId, ...patch },
-            { onConflict: 'user_id,booking_id' }
+            {
+                user_id: session.user.id,
+                thread_kind: kind,
+                thread_id: id,
+                [idColumn]: id,
+                ...patch,
+            },
+            { onConflict: 'user_id,thread_kind,thread_id' }
         );
 
         setBusy((prev) => ({ ...prev, [c.key]: false }));

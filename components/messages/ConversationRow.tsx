@@ -146,9 +146,9 @@ export default function ConversationRow(props: {
     };
 
     const startPress = () => {
-        // Star / archive / mark-unread exist only on booking threads (they live in
-        // conversation_prefs, which the other kinds have no row in). No menu, and
-        // no long-press to raise one, on an enquiry or order row.
+        // The management menu — mark read/unread, star, archive — is offered on
+        // every kind of thread now that conversation_prefs covers orders and
+        // enquiries. manageable stays as the switch for it, set for all three.
         if (!c.manageable) return;
         cancelPress();
         openedByPress.current = false;
@@ -165,7 +165,11 @@ export default function ConversationRow(props: {
 
     const actions = (
         <>
-            {c.needsReply && (
+            {/* "No reply needed" is a booking-only acknowledgement — it feeds the
+                host's needs-reply count, which only booking threads carry. Orders
+                and enquiries get the rest of the menu (read/unread, star, archive)
+                but not this. */}
+            {c.needsReply && c.kind === 'booking' && (
                 <button
                     type="button"
                     disabled={props.busy}
