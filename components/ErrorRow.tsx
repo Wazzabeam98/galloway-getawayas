@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { ChevronDown, ChevronRight, Check } from 'lucide-react';
+import { ukDateTime } from '@/lib/dayKey';
 
 export default function ErrorRow({ row }: { row: any }) {
     const router = useRouter();
@@ -66,7 +67,7 @@ export default function ErrorRow({ row }: { row: any }) {
                             </span>
                             {row.path && <span className="mr-2">{row.path}</span>}
                             <span className={isRecent ? 'text-red-600 font-medium' : ''}>
-                                {when.toLocaleString('en-GB')}
+                                {ukDateTime(row.created_at)}
                             </span>
                         </span>
                     </span>
