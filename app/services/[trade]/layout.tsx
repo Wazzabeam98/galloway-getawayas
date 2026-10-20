@@ -76,40 +76,13 @@ export default function TradeLayout({
 }) {
   if (KEYS.indexOf(params.trade) === -1) notFound();
 
-  // Service structured data on the seven real trade pages. It tells Google the
-  // page is a service (an <trade> covering holiday lets) offered across
-  // Dumfries & Galloway, which is how these pages can win the local result.
-  // Only the enquirable trades get it — the placeholder and redirect slugs are
-  // noindex (see generateMetadata) and have nothing to describe.
-  const label = tradeLabel(params.trade);
-  const serviceSchema = canBeEnquiredAbout(params.trade)
-    ? {
-        '@context': 'https://schema.org',
-        '@type': 'Service',
-        serviceType: label,
-        name: `${label} for holiday lets in Dumfries & Galloway`,
-        description: describeTrade(params.trade),
-        provider: {
-          '@type': 'Organization',
-          name: 'Galloway Getaways',
-          url: SITE_URL,
-        },
-        areaServed: {
-          '@type': 'AdministrativeArea',
-          name: 'Dumfries & Galloway',
-        },
-        url: `${SITE_URL}/services?trade=${encodeURIComponent(params.trade)}`,
-      }
-    : null;
-
+  // No structured data here. It used to be a generic Service block for the
+  // per-trade list page; that page is gone (a redirect), and on the one route
+  // this layout still wraps — a tradesperson's own profile — it described the
+  // list instead of the business. The profile page emits its own
+  // LocalBusiness now.
   return (
     <>
-      {serviceSchema && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceSchema) }}
-        />
-      )}
       {children}
     </>
   );

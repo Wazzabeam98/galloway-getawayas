@@ -19,7 +19,7 @@ import { visibleInDirectory } from '@/lib/serviceSubscription';
 import PhotoGallery from '@/components/PhotoGallery';
 import ReportListing from '@/components/ReportListing';
 import HostCredentials from '@/components/marketplace/HostCredentials';
-import { regionCoverageLine } from '@/components/marketplace/present';
+import { regionCoverageLine, isRadiusLabel } from '@/components/marketplace/present';
 import { MapPin, FileText, BadgeCheck, Wrench, Clock, CalendarClock, ArrowRight } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -35,13 +35,52 @@ export const dynamic = 'force-dynamic';
 // or phone — those are released to the host only when the trade accepts an
 // enquiry). Visibility mirrors the directory: approved AND not delisted.
 
+const SITE_URL = 'https://gallowaygetaways.co.uk';
+
+// One line about the business for the meta description and the structured
+// data, so the two cannot disagree: the trade's own words when they wrote some,
+// else what and where.
+function describeTrade(provider: any, coverage: string | null): string {
+    const raw = String(provider.description || '').replace(/\s+/g, ' ').trim();
+    if (raw) return raw.length > 155 ? raw.slice(0, 152).trimEnd() + '…' : raw;
+    return `${provider.business_name} — ${tradeLabel(provider.trade).toLowerCase()} covering holiday lets in `
+        + `${coverage || 'Dumfries & Galloway'}. See what they charge and ask them through Galloway Getaways.`;
+}
+
+// Indexed only when a stranger can actually see the profile — the directory's
+// own rule (visibleInDirectory), on the trade's own URL. Anything else (a
+// draft, a paused or delisted trade, the wrong trade in the path) redirects
+// for everyone but its owner, so it is noindex with no description.
 export async function generateMetadata(
-    { params }: { params: { providerId: string } }
+    { params }: { params: { trade: string; providerId: string } }
 ): Promise<import('next').Metadata> {
     const admin = adminClient();
     const { data } = await admin
-        .from('service_providers').select('business_name').eq('id', params.providerId).maybeSingle();
-    return { title: (data && data.business_name) || 'Trade', robots: { index: false, follow: false } };
+        .from('service_providers')
+        .select('business_name, trade, description, photos, status, subscription_status, owner_paused, admin_hidden_at')
+        .eq('id', params.providerId)
+        .maybeSingle();
+    const name = (data && data.business_name) || 'Trade';
+    if (!data || data.trade !== params.trade || audienceForTrade(data.trade) === 'guest' || !visibleInDirectory(data)) {
+        return { title: name, robots: { index: false, follow: false } };
+    }
+    const { data: areas } = await admin.from('service_areas').select('label').eq('provider_id', params.providerId);
+    const coverage = regionCoverageLine((areas || []).map((a: any) => a.label));
+    const description = describeTrade(data, coverage);
+    const path = `/services/${data.trade}/${params.providerId}`;
+    const photo = Array.isArray(data.photos) && data.photos[0] ? getImageUrl(data.photos[0]) : undefined;
+    return {
+        // "Solway Plumbing | Plumber in Dumfries & Galloway" — the business,
+        // then what and where, which is how a host searches for one.
+        title: `${name} | ${tradeLabel(data.trade)} in Dumfries & Galloway`,
+        description,
+        alternates: { canonical: path },
+        openGraph: {
+            type: 'website', locale: 'en_GB', url: path, siteName: 'Galloway Getaways',
+            title: name, description,
+            ...(photo ? { images: [{ url: photo, alt: name }] } : {}),
+        },
+    };
 }
 
 export default async function TradeProfilePage({ params }: { params: { trade: string; providerId: string } }) {
@@ -125,8 +164,38 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
     const backHref = '/services?trade=' + encodeURIComponent(provider.trade);
     const photos: string[] = Array.isArray(provider.photos) ? provider.photos : [];
 
+    // LocalBusiness structured data — the tradesperson as a local business
+    // serving named regions, offering their trade as a Service. Public fields
+    // only (never phone or email, which are released on an accepted enquiry),
+    // and none on the owner's preview, which is not public.
+    const ld = preview ? null : {
+        '@context': 'https://schema.org',
+        '@type': 'LocalBusiness',
+        name: provider.business_name,
+        description: describeTrade(provider, coverage),
+        url: `${SITE_URL}/services/${provider.trade}/${provider.id}`,
+        ...(photos[0] ? { image: getImageUrl(photos[0]) } : provider.headshot ? { image: getImageUrl(provider.headshot) } : {}),
+        // The named regions they ticked (the same ones "Covers" shows), never
+        // a legacy radius label; the whole region when there are none.
+        areaServed: (() => {
+            const named = Array.from(new Set((areas || []).map((a: any) => String(a.label || '').trim())))
+                .filter((l) => l && !isRadiusLabel(l));
+            return (named.length ? named : ['Dumfries & Galloway']).map((name) => ({ '@type': 'AdministrativeArea', name }));
+        })(),
+        makesOffer: {
+            '@type': 'Offer',
+            itemOffered: {
+                '@type': 'Service',
+                serviceType: tradeLabel(provider.trade),
+                name: `${tradeLabel(provider.trade)} for holiday lets`,
+                ...(services.length ? { description: services.join(', ') } : {}),
+            },
+        },
+    };
+
     return (
         <div className="min-h-screen bg-slate-50">
+            {ld && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }} />}
             <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-5 sm:pt-6 pb-24">
                 <Link href={backHref} className="text-sm font-medium text-slate-500 hover:text-slate-800">
                     ← All {tradeLabel(provider.trade).toLowerCase()}s

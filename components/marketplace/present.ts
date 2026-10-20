@@ -92,7 +92,7 @@ export function coverageLabel(p: MpProvider): string | null {
 // never surface on a guest experience: a sauna sits at one spot, and "within 25
 // miles of Kirkcudbright" could be any town in that circle. Named regions
 // ("The Stewartry") are fine and are not radii.
-function isRadiusLabel(label: string): boolean {
+export function isRadiusLabel(label: string): boolean {
     return /\s+and\s+\d+(?:\.\d+)?\s*miles?$/i.test(String(label || '').trim());
 }
 

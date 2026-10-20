@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { shapeCue } from '@/lib/serviceSlots';
 import { BadgeCheck, MapPin } from 'lucide-react';
 import { fromPriceLabel, nextSessionLabel, cardLocationLine } from '@/components/marketplace/present';
@@ -17,9 +18,11 @@ export default function ProviderCard({ p, href }: { p: MpProvider; href: string 
         >
             <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
                 {p.hero ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.hero} alt={`${who} — ${p.category}`} loading="lazy"
-                        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
+                    // Through the optimiser — hero is the provider's original
+                    // upload, often well over the card's few hundred pixels.
+                    <Image src={p.hero} alt={`${who} — ${p.category}`} fill
+                        sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                        className="object-cover transition duration-500 group-hover:scale-[1.03]" />
                 ) : (
                     <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-300">
                         <span className="text-4xl font-semibold">{who.slice(0, 1)}</span>
@@ -36,8 +39,8 @@ export default function ProviderCard({ p, href }: { p: MpProvider; href: string 
 
                 <div className="mt-2 flex items-center gap-2">
                     {p.headshot ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.headshot} alt="" className="h-6 w-6 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                        // A 24px circle: was the full ~1000px headshot.
+                        <Image src={p.headshot} alt={who} width={24} height={24} className="h-6 w-6 flex-none rounded-full object-cover ring-1 ring-slate-200" />
                     ) : (
                         <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-500">
                             {who.slice(0, 1)}
