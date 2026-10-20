@@ -92,7 +92,7 @@ export default function CancelBookingConfirm({
                         ? 'You’ll get your full ' + formatGBP(paidSoFar) + ' back to your card.'
                     : refund > 0
                         ? 'You’ll get ' + formatGBP(refund) + ' of the ' + formatGBP(paidSoFar) + ' you’ve paid back to your card, usually within five to ten days.'
-                        : 'These dates are inside the non-refundable period for this place, so no refund is due on the ' + formatGBP(paidSoFar) + ' you’ve paid.'}
+                        : 'No refund applies to this booking, so none of the ' + formatGBP(paidSoFar) + ' you’ve paid comes back.'}
             </p>
 
             {orders.length > 0 && (

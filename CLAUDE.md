@@ -121,17 +121,20 @@ Built and working in Stripe sandbox:
 
 1. **Nothing has been tested end to end with real money.** Stripe is still in
    sandbox. Live mode has not been switched on.
-2. **The payout engine has never been run.** It is the largest untested thing
-   in the project and it sends money to other people. Test it first.
+2. **The payout engine has only ever been run in sandbox.** It is exercised by
+   the scripted payout scenarios against test-mode Stripe (see below), but it
+   has never moved real money to a real person. That is still the biggest thing
+   to prove once live mode is on.
 3. There is a list of about 29 payment scenarios in the owner's notes that
    need scripting — money in, balance failures, refunds, payouts, and the
-   cross-cutting cases like a price changing mid-booking. Roughly eight have
-   been tested by hand.
+   cross-cutting cases like a price changing mid-booking. The scripted suites
+   now run green against the test project: **refunds 14/14, payouts 7/7 and
+   balance charges 8/8** pass (`npm run scenarios`, recorded in
+   SCENARIO-RESULTS.json). The remaining cross-cutting cases are still being
+   scripted.
 4. Host terms are drafted but not reviewed by a solicitor. The open question
    is whether the platform acts as agent or principal, which affects
    liability and the VAT threshold.
-5. Guest-facing terms still contain an incorrect line about a 10% fee being
-   deducted from refunds.
 
 ## How the owner works
 

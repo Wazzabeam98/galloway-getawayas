@@ -43,6 +43,11 @@ const SERVICE_ROLE_ONLY: ServiceOnly[] = [
         migration: '20261019170805_push_outbox_and_push_preferences.sql',
         reason: 'a fingerprint of each connected account\'s payout destination, for the payout-details-changed alert; read and written only by the push job',
     },
+    {
+        table: 'email_outbox',
+        migration: '20261020151334_email_outbox.sql',
+        reason: 'the recipient and rendered body of every email awaiting a retry after a failed send; written by the email layer and retried by the push job, both with the service role',
+    },
 ];
 
 const code = (sql: string) => sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
