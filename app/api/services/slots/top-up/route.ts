@@ -15,7 +15,7 @@ import {
 } from '@/lib/serviceSlots';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { childrenAllowed } from '@/lib/guestAges';
-import { inheritedStamp } from '@/lib/orderCancelTerms';
+import { inheritedStamp, orderCancelTerms } from '@/lib/orderCancelTerms';
 
 // The provider's minimum age (null / 12 / 16 / 18 / 21), read from the guest_details
 // jsonb where the listing stores it.
@@ -54,6 +54,7 @@ interface Loaded {
     session: any;
     unitPrice: number;
     windowHours: number;
+    noRefund: boolean;
 }
 type LoadError = { error: { status: number; message: string } };
 
@@ -95,14 +96,18 @@ async function loadForTopUp(admin: any, orderId: string, userId: string): Promis
         .eq('id', order.slot_session_id).maybeSingle();
     if (!session) return { error: { status: 409, message: 'That session is no longer available.' } };
 
-    return { order, provider, session, unitPrice: Number(order.unit_price), windowHours: Number(provider.cancellation_window_hours) || 48 };
+    // The terms this order was BOOKED under — the stamp on the order, not the
+    // provider's live policy — so the refund-deadline warning on an added place
+    // matches exactly what the cancel route (orderCancelTerms) will honour.
+    const terms = orderCancelTerms(order, provider);
+    return { order, provider, session, unitPrice: Number(order.unit_price), windowHours: terms.windowHours, noRefund: terms.noRefund };
 }
 
 // The confirmed family head count and the cancellation cutoff — the two facts
 // the panel needs to size the picker and to warn about a place bought inside the
 // window (which the session-anchored deadline makes non-refundable at once).
 async function sessionFacts(admin: any, loaded: Loaded, now: Date) {
-    const { order, session, windowHours } = loaded;
+    const { order, session, windowHours, noRefund } = loaded;
     const { data: children } = await admin
         .from('service_orders').select('quantity, attendees, adults, children, item_unit')
         .eq('parent_order_id', order.id).eq('status', 'confirmed');
@@ -116,7 +121,7 @@ async function sessionFacts(admin: any, loaded: Loaded, now: Date) {
     const deadline = freeCancelDeadline('slot', String(order.service_date), order.service_time || null, windowHours);
     const insideWindow = !guestMayCancelFree('slot', String(order.service_date), order.service_time || null, windowHours, now);
 
-    return { folded, seatsLeft: left, deadlineISO: deadline.toISOString(), insideWindow };
+    return { folded, seatsLeft: left, deadlineISO: deadline.toISOString(), insideWindow, noRefund };
 }
 
 // GET — the payer's quote for the panel: unit price, seats left, the current
@@ -152,6 +157,10 @@ export async function GET(request: Request) {
             serviceTime: loaded.order.service_time ? String(loaded.order.service_time).slice(0, 5) : null,
             deadlineISO: facts.deadlineISO,
             insideWindow: facts.insideWindow,
+            // The stamped "no refund" flag — a non-refundable order has no free
+            // cancellation however the clock reads, so the panel says that of an
+            // added place instead of promising a cutoff it won't honour.
+            noRefund: facts.noRefund,
             itemName: loaded.order.item_name,
             minAge: providerMinAge(loaded.provider),
         });
