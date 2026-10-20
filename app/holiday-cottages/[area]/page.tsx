@@ -10,6 +10,7 @@ import ListingCard, { type CardListing } from '@/components/ListingCard';
 import TownSearch from '@/components/TownSearch';
 import { AREAS, areaBySlug, hasCopy, listingInArea, type Area } from '@/config/areas';
 import AreaExperiences from '@/components/AreaExperiences';
+import { orderPublishedListings } from '@/lib/listingOrder';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -32,11 +33,12 @@ async function listingsForArea(area: Area): Promise<CardListing[]> {
     // `anon`, which no longer holds a table-level grant on listings — a
     // select('*') is refused outright, and tests/no-star-select-on-listings
     // fails the build for one. Same list the home page grid asks for.
-    const { data } = await supabase
-        .from('listings')
-        .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude, property_type')
-        .eq('status', 'published')
-        .order('created_at', { ascending: false });
+    const { data } = await orderPublishedListings(
+        supabase
+            .from('listings')
+            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude, property_type, display_order')
+            .eq('status', 'published'),
+    );
 
     // Matched in code rather than in the query because `location` is a free
     // text address and townKey() is what decides two spellings are one town —

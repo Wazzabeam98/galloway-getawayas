@@ -63,6 +63,7 @@ const PLATFORM_ONLY: Record<string, string> = {
     ical_import_url: 'editor via service route', checkin_start: 'legacy', checkin_end: 'legacy',
     checkout_time: 'legacy',
     deactivated_at: 'reversible deactivation tombstone — set only by the SECURITY DEFINER deactivate/reactivate routines, never a browser UPDATE',
+    display_order: 'public display order for the grids — set ONLY by the admin arrange route (/api/admin/arrange, is_admin + service role), never a browser UPDATE; it is granted SELECT to anon/authenticated (ordering) but no write grant',
 };
 
 test('host-writable and platform-only lists are disjoint', () => {

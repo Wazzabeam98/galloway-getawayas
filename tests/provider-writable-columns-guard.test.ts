@@ -88,6 +88,7 @@ const PLATFORM_ONLY: Record<string, string> = {
     deactivated_at: 'reversible deactivation tombstone — written only by the SECURITY DEFINER deactivate/reactivate routines, never a browser write',
     reminders_sent: 'server-side reminder bookkeeping',
     notify_user_ids: 'server-managed notify list',
+    display_order: 'public display order for the experiences grid — set ONLY by the admin arrange route (/api/admin/arrange, is_admin + service role), never a browser write; granted to no browser role (the grid reads it via the service role)',
     // Stripe — every field is set by the connect/webhook flow under the service role.
     stripe_account_id: 'Stripe connected-account id; service role only',
     stripe_customer_id: 'Stripe customer id; service role only',

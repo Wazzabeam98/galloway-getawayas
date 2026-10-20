@@ -28,6 +28,7 @@ import fs from 'fs';
 import path from 'path';
 import { resolveWorkMode } from '@/lib/workMode';
 import { readWorkSide } from '@/lib/workSide';
+import { orderPublishedListings } from '@/lib/listingOrder';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,11 +119,12 @@ function whereLabel(slug: string): string {
 const cachedPublishedListings = unstable_cache(
     async (): Promise<any[]> => {
         const anon = createClient(Env.SUPABASE_URL, Env.SUPABASE_KEY);
-        const { data, error } = await anon
-            .from('listings')
-            .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude, property_type, bedrooms, beds, bathrooms, instant_book, check_in_method')
-            .eq('status', 'published')
-            .order('created_at', { ascending: false });
+        const { data, error } = await orderPublishedListings(
+            anon
+                .from('listings')
+                .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude, property_type, bedrooms, beds, bathrooms, instant_book, check_in_method, display_order')
+                .eq('status', 'published'),
+        );
         // Thrown, so a failed read is never cached as "no listings".
         if (error) throw error;
         return data || [];

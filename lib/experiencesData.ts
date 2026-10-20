@@ -13,6 +13,7 @@ import { getImageUrl, firstName } from '@/lib/utils';
 import { offeredTimes } from '@/lib/offeredTimes';
 import { venueMapPoint } from '@/lib/venuePoint';
 import { shiftDayKey, londonDayKey } from '@/lib/dayKey';
+import { byDisplayOrder } from '@/lib/listingOrder';
 
 // Only a FIXED price is listed (9 Oct 2026). Ranges and price on enquiry were
 // dropped; price_mode/price_max stay on the table but are no longer written, and
@@ -259,6 +260,9 @@ export interface MpProvider {
     // their cottage deserves to know which it is. (There are no provider reviews
     // yet; when there are, they lead and this becomes the secondary line.)
     bookingsCount: number;
+    // The admin "Arrange listings" order (lib/listingOrder); NULL until an admin
+    // places it, which sorts it to the bottom of the grid.
+    display_order: number | null;
 }
 
 export interface Marketplace {
@@ -405,7 +409,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     // window is still dropped there, exactly as before.
     let query = admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at, venue_lat, venue_lng, show_precise_location')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at, venue_lat, venue_lng, show_precise_location, display_order')
         .eq('audience', 'guest');
     if (previewOwnerId) {
         query = query.eq('id', pausedId).eq('owner_id', previewOwnerId).neq('status', 'approved');
@@ -705,15 +709,21 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             mapLng: venueMapPoint(p, areasBy[p.id])?.lng ?? null,
             mapPrecise: (p as any).show_precise_location === true,
             bookingsCount: bookingsCountBy[p.id] || 0,
+            // The admin "Arrange listings" order; NULL until an admin places it,
+            // which sorts it to the bottom (lib/listingOrder).
+            display_order: (p as any).display_order == null ? null : Number((p as any).display_order),
         });
     }
 
-    // A gentle order: the ones with a photo first (the shop window sells on
-    // them), then by name, so the grid never opens on a wall of placeholders.
-    providers.sort((a, b) => {
+    // The admin "Arrange listings" order first (lib/listingOrder): placed
+    // providers in the order the admin set, then the ones never placed. Within
+    // that un-placed group, the gentle order it always had — the ones with a
+    // photo first (the shop window sells on them), then by name, so the grid
+    // never opens on a wall of placeholders.
+    providers.sort(byDisplayOrder((a, b) => {
         const ah = a.hero ? 0 : 1, bh = b.hero ? 0 : 1;
         return ah !== bh ? ah - bh : a.business_name.localeCompare(b.business_name);
-    });
+    }));
 
     return providers;
 }

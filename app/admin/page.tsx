@@ -21,6 +21,11 @@ const tools = [
         blurb: 'Every property on the site. Take one down, or put it back.',
     },
     {
+        href: '/admin/arrange',
+        title: 'Arrange listings',
+        blurb: 'Drag properties and experiences into the order they show, best first, everywhere they appear.',
+    },
+    {
         href: '/admin/commission',
         title: 'Commission rates',
         blurb: 'What each property is charged. Blank means the standard rate.',
