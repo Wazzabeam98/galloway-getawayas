@@ -1,8 +1,8 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-10-19T17:45:02.678Z",
-      "target": "http://localhost:3100",
+      "ranAt": "2026-10-20T12:52:31.543Z",
+      "target": "http://localhost:3000",
       "passed": 7,
       "failed": 0,
       "untestable": 0,
@@ -304,7 +304,7 @@
       ]
     }
   },
-  "updatedAt": "2026-10-19T17:51:08.633Z",
+  "updatedAt": "2026-10-20T12:52:31.543Z",
   "fingerprint": {
     "app/api/cron/host-payouts/route.ts": "7ff2eef70b87f9f2",
     "app/api/cron/balance-charges/route.ts": "eb255e3a22b807e5",
@@ -337,7 +337,7 @@
     "app/api/bookings/resolutions/respond/route.ts": "907c8533d6489e58",
     "app/api/bookings/resolutions/host-decide/route.ts": "aec631c035c6c142",
     "scripts/seed-payments.mjs": "68c3c58ae3ed9a96",
-    "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
+    "scripts/payout-scenarios.mjs": "1a0e0552c7156022",
     "scripts/refund-scenarios.mjs": "2987b8ae8bc5b75b",
     "scripts/balance-scenarios.mjs": "cd9d045653faf651",
     "scripts/change-scenarios.mjs": "fedc558161c3c6fe",
