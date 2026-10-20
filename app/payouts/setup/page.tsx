@@ -29,6 +29,9 @@ export default function PayoutSetupPage() {
     const [type, setType] = useState<'individual' | 'company' | ''>('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    // Stripe won't change who the account is for once its form is started;
+    // this holds what to tell them, and whether starting again is possible.
+    const [restart, setRestart] = useState<{ message: string; canRestart: boolean } | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -37,13 +40,17 @@ export default function PayoutSetupPage() {
             if (data.session) {
                 const res = await fetch('/api/stripe/connect').catch(() => null);
                 const body = res ? await res.json().catch(() => null) : null;
-                if (body && body.ok !== false) setStatus(body);
+                if (body && body.ok !== false) {
+                    setStatus(body);
+                    // Started before: show the type they started with.
+                    if (body.business_type === 'company' || body.business_type === 'individual') setType(body.business_type);
+                }
             }
             setLoading(false);
         })();
     }, [supabase]);
 
-    const start = async () => {
+    const start = async (action: 'onboard' | 'restart' = 'onboard') => {
         if (!type) return;
         setBusy(true);
         setError('');
@@ -51,11 +58,16 @@ export default function PayoutSetupPage() {
             const res = await fetch('/api/stripe/connect', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'onboard', businessType: type, returnTo: '/payouts/setup' }),
+                body: JSON.stringify({ action, businessType: type, returnTo: '/payouts/setup' }),
             });
             const out = await res.json().catch(() => ({}));
             if (out && out.ok && out.url) {
                 window.location.href = out.url;
+                return;
+            }
+            if (out && typeof out.message === 'string') {
+                setRestart({ message: out.message, canRestart: out.needsRestart === true });
+                setBusy(false);
                 return;
             }
             setError('We couldn’t open Stripe just now. Please try again in a moment.');
@@ -154,11 +166,27 @@ export default function PayoutSetupPage() {
                                 {option('company', Building2, 'A company', 'A limited company, partnership or estate.')}
                             </div>
 
+                            {restart && (
+                                <div role="status" className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-slate-800">
+                                    <p>{restart.message}</p>
+                                    {restart.canRestart && (
+                                        <button
+                                            type="button"
+                                            onClick={() => start('restart')}
+                                            disabled={busy}
+                                            className="mt-3 w-full rounded-xl bg-emerald-700 px-4 py-2.5 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                                        >
+                                            {busy ? 'Opening Stripe\u2026' : 'Start again as ' + (type === 'company' ? 'a company' : 'an individual')}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
                             {error && <p role="alert" className="mt-4 text-sm text-red-600">{error}</p>}
 
                             <button
                                 type="button"
-                                onClick={start}
+                                onClick={() => { setRestart(null); start('onboard'); }}
                                 disabled={!type || busy}
                                 className="mt-6 w-full rounded-xl bg-emerald-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
                             >
