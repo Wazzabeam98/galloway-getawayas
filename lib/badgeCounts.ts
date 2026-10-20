@@ -41,44 +41,55 @@ export async function unreadFor(supabase: any, uid: string): Promise<number> {
     const total = count || 0;
     if (total === 0) return 0;
 
+    // Archived conversations of ANY kind stay out of the dot, the same way they
+    // stay out of the inbox. conversation_prefs now covers orders and enquiries
+    // as well as bookings (thread_kind, thread_id), so an archived order or
+    // enquiry hides its unread here too — before this the dot kept counting it
+    // while the list had already dropped it.
     const { data: archivedPrefs } = await supabase
         .from('conversation_prefs')
-        .select('booking_id, archived_at')
+        .select('thread_kind, thread_id, archived_at')
         .eq('user_id', uid)
         .not('archived_at', 'is', null);
 
     if (!archivedPrefs || archivedPrefs.length === 0) return total;
 
-    const archivedIds = archivedPrefs.map((p: any) => p.booking_id);
+    const idsByKind: Record<string, string[]> = { booking: [], order: [], enquiry: [] };
+    const archivedAt: Record<string, string> = {};
+    archivedPrefs.forEach((p: any) => {
+        if (!p.thread_kind || !p.thread_id || !idsByKind[p.thread_kind]) return;
+        idsByKind[p.thread_kind].push(p.thread_id);
+        archivedAt[threadKey(p.thread_kind, p.thread_id)] = p.archived_at;
+    });
 
     // Every message addressed to this person in those conversations, read ones
     // included. A read message that arrived after they archived it has already
     // brought the conversation back, and once it is back its older unread
-    // messages have to be counted again too.
-    const { data: inbound } = await supabase
-        .from('messages')
-        .select('booking_id, created_at, read_at')
-        .eq('recipient_id', uid)
-        .neq('sender_id', uid)
-        .in('booking_id', archivedIds);
-
+    // messages have to be counted again too. Queried per kind, since each hangs
+    // off its own id column on messages.
     const lastInbound: Record<string, string> = {};
     const unreadPer: Record<string, number> = {};
 
-    (inbound || []).forEach((m: any) => {
-        if (!lastInbound[m.booking_id] || m.created_at > lastInbound[m.booking_id]) {
-            lastInbound[m.booking_id] = m.created_at;
-        }
-        if (!m.read_at) {
-            unreadPer[m.booking_id] = (unreadPer[m.booking_id] || 0) + 1;
-        }
-    });
+    for (const kind of ['booking', 'order', 'enquiry'] as const) {
+        const ids = idsByKind[kind];
+        if (!ids.length) continue;
+        const col = kind + '_id';
+        const { data: inbound } = await supabase
+            .from('messages')
+            .select(col + ', created_at, read_at')
+            .eq('recipient_id', uid)
+            .neq('sender_id', uid)
+            .in(col, ids);
+        (inbound || []).forEach((m: any) => {
+            const key = threadKey(kind, m[col]);
+            if (!lastInbound[key] || m.created_at > lastInbound[key]) lastInbound[key] = m.created_at;
+            if (!m.read_at) unreadPer[key] = (unreadPer[key] || 0) + 1;
+        });
+    }
 
     let hidden = 0;
-    archivedPrefs.forEach((p: any) => {
-        if (isArchived(p.archived_at, lastInbound[p.booking_id])) {
-            hidden += unreadPer[p.booking_id] || 0;
-        }
+    Object.keys(archivedAt).forEach((key) => {
+        if (isArchived(archivedAt[key], lastInbound[key])) hidden += unreadPer[key] || 0;
     });
 
     return Math.max(0, total - hidden);
@@ -126,9 +137,11 @@ export async function teamUnreadFor(uid: string, admin: any = adminClient()): Pr
     }
     if (threads.length === 0) return 0;
 
-    let total = 0;
-    const bookingUnread: Record<string, number> = {};
-    const bookingInbound: Record<string, string> = {};
+    // Per thread (keyed 'booking:<id>' / 'order:<id>' / 'enquiry:<id>'), so the
+    // archived rule below can drop a whole thread of any kind — as the inbox
+    // does — rather than bookings alone.
+    const unreadPer: Record<string, number> = {};
+    const inboundAt: Record<string, string> = {};
 
     for (const kind of ['booking', 'order', 'enquiry'] as const) {
         const ids = threads.filter((t) => t.kind === kind).map((t) => t.id);
@@ -144,30 +157,33 @@ export async function teamUnreadFor(uid: string, admin: any = adminClient()): Pr
             .neq('recipient_id', uid)
             .gt('created_at', TEAM_READS_FROM);
         (msgs || []).forEach((m: any) => {
-            const id = m[col];
-            if (kind === 'booking' && isInboundFor(m, uid, true)
-                && (!bookingInbound[id] || m.created_at > bookingInbound[id])) bookingInbound[id] = m.created_at;
-            if (!isUnreadFor(m, uid, true, readTo[threadKey(kind, id)])) return;
-            if (kind === 'booking') bookingUnread[id] = (bookingUnread[id] || 0) + 1;
-            else total += 1;
+            const key = threadKey(kind, m[col]);
+            if (isInboundFor(m, uid, true)
+                && (!inboundAt[key] || m.created_at > inboundAt[key])) inboundAt[key] = m.created_at;
+            if (!isUnreadFor(m, uid, true, readTo[key])) return;
+            unreadPer[key] = (unreadPer[key] || 0) + 1;
         });
     }
 
-    // Something archived stays out of the dot, as in unreadFor.
-    const unreadBookings = Object.keys(bookingUnread);
-    if (unreadBookings.length) {
-        const { data: prefs } = await admin
-            .from('conversation_prefs')
-            .select('booking_id, archived_at')
-            .eq('user_id', uid)
-            .in('booking_id', unreadBookings)
-            .not('archived_at', 'is', null);
-        const archivedAt: Record<string, string> = {};
-        (prefs || []).forEach((p: any) => { archivedAt[p.booking_id] = p.archived_at; });
-        unreadBookings.forEach((id) => {
-            if (!isArchived(archivedAt[id], bookingInbound[id])) total += bookingUnread[id];
-        });
-    }
+    const unreadKeys = Object.keys(unreadPer);
+    if (!unreadKeys.length) return 0;
+
+    // Something archived stays out of the dot, as in unreadFor and the inbox —
+    // for every kind, now that conversation_prefs covers orders and enquiries.
+    const { data: prefs } = await admin
+        .from('conversation_prefs')
+        .select('thread_kind, thread_id, archived_at')
+        .eq('user_id', uid)
+        .not('archived_at', 'is', null);
+    const archivedAt: Record<string, string> = {};
+    (prefs || []).forEach((p: any) => {
+        if (p.thread_kind && p.thread_id) archivedAt[threadKey(p.thread_kind, p.thread_id)] = p.archived_at;
+    });
+
+    let total = 0;
+    unreadKeys.forEach((key) => {
+        if (!isArchived(archivedAt[key], inboundAt[key])) total += unreadPer[key];
+    });
 
     return total;
 }
