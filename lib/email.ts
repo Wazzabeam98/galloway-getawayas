@@ -12,6 +12,7 @@ import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 import { ukDate, londonDayKey as dayKeyOf } from '@/lib/dayKey';
 import { recordEmailPush } from '@/lib/pushOutbox';
 import { queueFailedEmail } from '@/lib/emailOutbox';
+import { providerTeamCopies } from '@/lib/providerTeamEmail';
 import type { PushSpec } from '@/lib/pushRules';
 import { randomUUID } from 'crypto';
 
@@ -262,6 +263,14 @@ export async function sendEmail(to: string, subject: string, html: string, push?
     // address or a missing-key/no-recipient fault a retry couldn't fix.
     if (!sent) await queueFailedEmail(to, subject, html, idempotencyKey);
     await recordEmailPush(to, subject, html, push);
+    // A business's co-hosts get the same email, and its push, for what their
+    // permissions cover (lib/providerTeamEmail). Sent here rather than through
+    // sendEmail again, so a copy can never fan out a second time.
+    for (const copy of await providerTeamCopies(to, subject, html)) {
+        const key = randomUUID();
+        if (!(await sendEmailOnly(copy, subject, html, key))) await queueFailedEmail(copy, subject, html, key);
+        await recordEmailPush(copy, subject, html, push);
+    }
     return sent;
 }
 

@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceProposedChange } from '@/lib/serviceEnquiryAlert';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
             .select('id, owner_id')
             .eq('id', enquiry.provider_id)
             .maybeSingle();
-        if (!provider || provider.owner_id !== user.id) {
+        if (!provider || !(await mayActOn(admin, user.id, provider, 'can_bookings'))) {
             return NextResponse.json({ ok: false, error: 'Not your job.' }, { status: 403 });
         }
         if (String(enquiry.status || '') !== 'accepted') {

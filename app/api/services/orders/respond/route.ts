@@ -9,6 +9,7 @@ import { providerFirstName } from '@/lib/providerName';
 import { sendEmail, emailLayout, escapeHtml, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
 import { supplierVatHtml } from '@/lib/vat';
 import { logError } from '@/lib/logError';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -139,7 +140,10 @@ export async function POST(request: Request) {
             .eq('id', order.provider_id)
             .maybeSingle();
 
-        if (!provider || provider.owner_id !== user.id) {
+        // The owner, or a co-host with bookings. Refunding a confirmed booking is
+        // the owner's or a full-access co-host's — as cancelling and refunding a
+        // holiday-let stay is (lib/access ownerOrFullAccess).
+        if (!provider || !(await mayActOn(admin, user.id, provider, decision === 'refund' ? 'full' : 'can_bookings'))) {
             return NextResponse.json({ ok: false, error: 'Not your order' }, { status: 403 });
         }
 

@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +30,7 @@ async function gate(orderId: string) {
     if (!order) return { error: NextResponse.json({ ok: false, error: 'No such order.' }, { status: 404 }) };
 
     const { data: provider } = await admin.from('service_providers').select('id, owner_id').eq('id', order.provider_id).maybeSingle();
-    if (!provider || provider.owner_id !== user.id) return { error: NextResponse.json({ ok: false, error: 'Not your order.' }, { status: 403 }) };
+    if (!provider || !(await mayActOn(admin, user.id, provider, 'can_bookings'))) return { error: NextResponse.json({ ok: false, error: 'Not your order.' }, { status: 403 }) };
 
     return { uid: user.id, order, admin };
 }

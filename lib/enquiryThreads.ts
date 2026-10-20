@@ -6,6 +6,8 @@
 // which is what the RLS on messages enforces and what this mirrors in code so
 // the routes can authorise and name the other side.
 
+import { cohostCan, providerIdsWith } from './providerAccess';
+
 export type EnquiryThreadContext = {
     enquiry: any;
     provider: any;
@@ -37,7 +39,8 @@ export async function enquiryThreadContext(
         .maybeSingle();
 
     const isHost = enquiry.host_id === uid;
-    const isProvider = !!provider && provider.owner_id === uid;
+    // The owner, or a co-host with messages (lib/providerAccess).
+    const isProvider = !!provider && (provider.owner_id === uid || (!isHost && (await cohostCan(admin, provider.id, uid, 'can_messages'))));
     if (!isHost && !isProvider) return null;
 
     // The host talks to a business; the tradesman talks to a person.
@@ -66,11 +69,7 @@ export type ThreadListItem = {
 // reachable. Accepted and cancelled jobs where they are the host or own the
 // provider, newest activity first, unread on top.
 export async function listEnquiryThreadsFor(admin: any, uid: string): Promise<ThreadListItem[]> {
-    const { data: mine } = await admin
-        .from('service_providers')
-        .select('id')
-        .eq('owner_id', uid);
-    const providerIds = (mine || []).map((p: any) => p.id);
+    const providerIds = await providerIdsWith(admin, uid, 'can_messages');
 
     // Host on it, or owner of the provider it went to.
     let orClause = 'host_id.eq.' + uid;

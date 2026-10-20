@@ -35,6 +35,10 @@ const ALLOWED: Record<string, { roles: Role[]; reason: string }> = {
         roles: ['authenticated'],
         reason: 'booking message-thread row policies for co-hosts with messages; answers only about auth.uid()',
     },
+    'has_provider_permission(uuid,text)': {
+        roles: ['authenticated'],
+        reason: 'co-host row policies on a business (provider tables, slot diary, enquiries, order/enquiry messages, review replies) — mirrors lib/providerAccess checkProvider; answers only about auth.uid()',
+    },
     'may_read_listing(uuid,uuid)': {
         roles: ['anon', 'authenticated'],
         reason: 'listings_readable SELECT policy applies to every role (public listing pages); answers only about auth.uid()',

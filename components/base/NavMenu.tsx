@@ -33,6 +33,8 @@ const NavMenu = ({
     hasCompletedStay = false,
     isProvider = false,
     providerAudience = null,
+    providerPerms = ALL_HOST_PERMS,
+    providerFullAccess = true,
     avatarUrl = null,
     initial = '',
 }: {
@@ -56,6 +58,11 @@ const NavMenu = ({
     hasCompletedStay?: boolean;
     isProvider?: boolean;
     providerAudience?: string | null;
+    // The same two for a business (an experience or a trade): what they may do
+    // across the businesses they own or co-host, and whether they may hand out
+    // access (owner or full-access co-host). Default to an owner's.
+    providerPerms?: HostPerms;
+    providerFullAccess?: boolean;
     avatarUrl?: string | null;
     initial?: string;
 }) => {
@@ -186,20 +193,28 @@ const NavMenu = ({
                                            "bookings" — they take bookings for their
                                            experiences, not reservations for a property. */
                                         <>
-                                            <li className={itemClass}>
-                                                <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
-                                                    Your listing
-                                                </Link>
-                                            </li>
-                                            <li className={itemClass}>
-                                                <Link href='/services/dashboard'>Your bookings</Link>
-                                            </li>
-                                            <li className={itemClass}>
-                                                <Link href='/services/dashboard/calendar'>Calendar</Link>
-                                            </li>
-                                            <li className={itemClass}>
-                                                <Link href='/services/dashboard/earnings'>Earnings</Link>
-                                            </li>
+                                            {providerPerms.can_listing && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
+                                                        Your listing
+                                                    </Link>
+                                                </li>
+                                            )}
+                                            {providerPerms.can_bookings && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard'>Your bookings</Link>
+                                                </li>
+                                            )}
+                                            {providerPerms.can_calendar && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/calendar'>Calendar</Link>
+                                                </li>
+                                            )}
+                                            {providerPerms.can_earnings && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/earnings'>Earnings</Link>
+                                                </li>
+                                            )}
                                         </>
                                     ) : (
                                         /* A trade's menu, in a host's shape: Requests,
@@ -210,24 +225,40 @@ const NavMenu = ({
                                            the same green badge a host's reservations line
                                            gets. */
                                         <>
-                                            <li className={itemClass}>
-                                                <RequestsLink className='font-semibold text-emerald-800' />
-                                            </li>
-                                            <li className={itemClass}>
-                                                <Link href='/services/dashboard/calendar'>Calendar</Link>
-                                            </li>
-                                            <li className={itemClass}>
-                                                <Link href='/services/dashboard/edit'>Your listing</Link>
-                                            </li>
+                                            {providerPerms.can_bookings && (
+                                                <li className={itemClass}>
+                                                    <RequestsLink className='font-semibold text-emerald-800' />
+                                                </li>
+                                            )}
+                                            {providerPerms.can_calendar && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/calendar'>Calendar</Link>
+                                                </li>
+                                            )}
+                                            {providerPerms.can_listing && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/edit'>Your listing</Link>
+                                                </li>
+                                            )}
                                         </>
+                                    )}
+                                    {/* Co-hosts, as on the host side: for the owner and
+                                        a full-access co-host — the people who may hand
+                                        out access to the business. */}
+                                    {providerFullAccess && (
+                                        <li className={itemClass}>
+                                            <Link href='/services/dashboard/people'>Co-hosts</Link>
+                                        </li>
                                     )}
                                     {/* A provider's messages are their job/booking
                                         threads — a home they can navigate to so a
                                         thread is never a lost email. The count is the
                                         same badge the host gets. */}
-                                    <li className={itemClass}>
-                                        <MessagesLink />
-                                    </li>
+                                    {providerPerms.can_messages && (
+                                        <li className={itemClass}>
+                                            <MessagesLink />
+                                        </li>
+                                    )}
                                     {/* A provider is a traveller too: their own
                                         stays and booked experiences, one place. */}
                                     <li className={itemClass}>

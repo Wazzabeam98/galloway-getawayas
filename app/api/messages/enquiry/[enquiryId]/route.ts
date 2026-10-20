@@ -191,16 +191,24 @@ export async function POST(req: Request, { params }: { params: { enquiryId: stri
             return NextResponse.json({ ok: false, error: 'Could not send that.' }, { status: 500 });
         }
 
-        // Tell the other side, unless they've turned new-message email off.
-        try {
+        // Tell the other side, unless they've turned new-message email off. A
+        // message TO the business also goes to its co-hosts with messages, each
+        // by their own switch — as the owner gets it (lib/providerAccess).
+        const tellIds: string[] = [ctx.otherId];
+        if (!(!ctx.isHost) && (ctx.provider && ctx.provider.id)) {
+            const { data: team } = await admin.from('provider_access').select('user_id')
+                .eq('provider_id', (ctx.provider && ctx.provider.id)).eq('status', 'active').eq('can_messages', true);
+            for (const t of team || []) if (t.user_id && t.user_id !== uid && tellIds.indexOf(t.user_id) === -1) tellIds.push(t.user_id);
+        }
+        for (const tellId of tellIds) try {
             const { data: pref } = await admin
                 .from('notification_preferences')
                 .select('new_message')
-                .eq('user_id', ctx.otherId)
+                .eq('user_id', tellId)
                 .maybeSingle();
             const wants = !pref || pref.new_message !== false;
             if (wants) {
-                const recipient = await admin.auth.admin.getUserById(ctx.otherId);
+                const recipient = await admin.auth.admin.getUserById(tellId);
                 const to = (recipient && recipient.data && recipient.data.user && recipient.data.user.email) || '';
                 // The sender, named to the recipient: a business to the host, a
                 // person to the tradesman.

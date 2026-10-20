@@ -17,7 +17,7 @@ import { APPROVED_LISTING_STATUSES, HostPerms, NO_WORK_SIDE, WorkSide } from './
 export async function readWorkSide(
     supabase: any,
     userId: string | null | undefined
-): Promise<WorkSide & { providerAudience: string | null; ownsAny: boolean; isFullAccessSomewhere: boolean; hostPerms: HostPerms }> {
+): Promise<WorkSide & { providerAudience: string | null; ownsAny: boolean; isFullAccessSomewhere: boolean; hostPerms: HostPerms; providerPerms: HostPerms; providerFullAccess: boolean }> {
     if (!userId) {
         return {
             ...NO_WORK_SIDE,
@@ -25,10 +25,12 @@ export async function readWorkSide(
             ownsAny: false,
             isFullAccessSomewhere: false,
             hostPerms: { can_calendar: false, can_messages: false, can_bookings: false, can_listing: false, can_earnings: false },
+            providerPerms: { can_calendar: false, can_messages: false, can_bookings: false, can_listing: false, can_earnings: false },
+            providerFullAccess: false,
         };
     }
 
-    const [anyListing, approvedListing, coHost, provider] = await Promise.all([
+    const [anyListing, approvedListing, coHost, provider, providerCoHost] = await Promise.all([
         // Drafts count for the switch: you're mid-way through becoming a host.
         supabase.from('listings').select('id', { count: 'exact', head: true }).eq('host_id', userId),
         supabase
@@ -56,7 +58,43 @@ export async function readWorkSide(
             .order('updated_at', { ascending: false })
             .limit(1)
             .maybeSingle(),
+        // The businesses they co-host (provider_access — the same system, on a
+        // trade or an experience), and what each owner let them do. Their own
+        // rows only ("people see their own provider access").
+        supabase
+            .from('provider_access')
+            .select('provider_id, can_calendar, can_messages, can_bookings, can_listing, can_earnings')
+            .eq('user_id', userId)
+            .eq('status', 'active'),
     ]);
+
+    // A business co-host is a provider too — of a live business. Its audience
+    // (experience or trade) picks the menu, as an owner's does.
+    const providerGrants: any[] = (providerCoHost && providerCoHost.data) || [];
+    let coProvider: { audience: string } | null = null;
+    if (!provider.data && providerGrants.length > 0) {
+        const { data } = await supabase
+            .from('service_providers')
+            .select('audience')
+            .in('id', providerGrants.map((g) => g.provider_id))
+            .eq('status', 'approved')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        coProvider = data || null;
+    }
+    const ownsProvider = !!provider.data;
+    const pcan = (key: keyof HostPerms) => ownsProvider || providerGrants.some((r) => r[key] === true);
+    const providerPerms: HostPerms = {
+        can_calendar: pcan('can_calendar'),
+        can_messages: pcan('can_messages'),
+        can_bookings: pcan('can_bookings'),
+        can_listing: pcan('can_listing'),
+        can_earnings: pcan('can_earnings'),
+    };
+    const providerFullAccess = ownsProvider || providerGrants.some(
+        (r) => r.can_calendar && r.can_messages && r.can_bookings && r.can_listing && r.can_earnings
+    );
 
     const ownsAny = (anyListing.count || 0) > 0;
     const coHostRows: any[] = coHost.data || [];
@@ -89,8 +127,10 @@ export async function readWorkSide(
         // for someone who has never used the switch. A co-host's grant is an
         // owner-approved relationship, so they default onto hosting, as on Airbnb.
         isApprovedHost: (approvedListing.count || 0) > 0 || coHosts,
-        isProvider: !!provider.data,
-        providerAudience: (provider.data && provider.data.audience) || null,
+        isProvider: ownsProvider || !!coProvider,
+        providerAudience: (provider.data && provider.data.audience) || (coProvider && coProvider.audience) || null,
+        providerPerms,
+        providerFullAccess,
         ownsAny,
         isFullAccessSomewhere,
         hostPerms,

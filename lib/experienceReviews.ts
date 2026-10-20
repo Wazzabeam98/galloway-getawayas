@@ -19,6 +19,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { hasPublicScore, meanTo2dp } from '@/lib/reviews';
 import { firstName } from '@/lib/utils';
+import { cohostCan } from './providerAccess';
 
 export interface ExperienceReviewItem {
     id: string;
@@ -74,7 +75,8 @@ export async function loadExperienceReviews(
             .maybeSingle();
         providerFirstName = firstName(op, 'the provider');
     }
-    const canReply = !!viewerId && !!ownerId && viewerId === ownerId;
+    // The owner, or a co-host with messages (the reviews policy asks the same).
+    const canReply = !!viewerId && !!ownerId && (viewerId === ownerId || (await cohostCan(admin, providerId, viewerId, 'can_messages')));
 
     if (list.length === 0) {
         return { count: 0, avg: null, items: [], canReply, providerFirstName };

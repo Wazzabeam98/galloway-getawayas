@@ -7,6 +7,7 @@ import { loadOrderForChange, buildChangeFeed, validateProposedChange, type Loade
 import { logError } from '@/lib/logError';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE, formatDate } from '@/lib/email';
 import { formatTime } from '@/lib/utils';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,7 @@ async function ownedOrder(admin: any, orderId: string, uid: string): Promise<Own
     if ('error' in loaded) return { error: loaded.error };
     // The provider on the order has to be one the caller owns — verified, since a
     // proposal changes a real booking.
-    if (!loaded.provider || loaded.provider.owner_id !== uid) return { error: { status: 403, message: 'Not your booking' } };
+    if (!loaded.provider || !(await mayActOn(admin, uid, loaded.provider, 'can_bookings'))) return { error: { status: 403, message: 'Not your booking' } };
     return { loaded };
 }
 

@@ -41,8 +41,9 @@ export default function CohostInvites({ className }: { className?: string }) {
             }
             bookingsChanged();
             if (accept) {
-                // Into the host side, with the new property in it.
-                window.location.assign('/dashboard');
+                // Into the host side with the new property in it — or the
+                // business dashboard, for an experience or a trade.
+                window.location.assign((d && d.home) || '/dashboard');
                 return;
             }
             setInvites((list) => list.filter((x) => x.token !== inv.token));

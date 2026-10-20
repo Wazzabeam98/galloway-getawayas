@@ -29,6 +29,8 @@ const Navbar = async () => {
     let ownsAny = false;
     let isFullAccessSomewhere = false;
     let hostPerms: HostPerms = NO_HOST_PERMS;
+    let providerPerms: HostPerms = NO_HOST_PERMS;
+    let providerFullAccess = false;
 
     if (data?.session?.user) {
         const { data: profile } = await supabase
@@ -53,6 +55,8 @@ const Navbar = async () => {
         ownsAny = read.ownsAny;
         isFullAccessSomewhere = read.isFullAccessSomewhere;
         hostPerms = read.hostPerms;
+        providerPerms = read.providerPerms;
+        providerFullAccess = read.providerFullAccess;
 
         // The passport is made of finished stays, so it is empty until there
         // is one. Same rule the passport page itself uses — a confirmed
@@ -150,6 +154,8 @@ const Navbar = async () => {
                         hasCompletedStay={hasCompletedStay}
                         isProvider={isProvider}
                         providerAudience={providerAudience}
+                        providerPerms={providerPerms}
+                        providerFullAccess={providerFullAccess}
                         avatarUrl={avatarUrl}
                         initial={firstName ? firstName.charAt(0).toUpperCase() : ''}
                     />
