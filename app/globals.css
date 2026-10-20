@@ -118,13 +118,21 @@ body {
 /* =========================================================================
    MOBILE TYPE SCALE — match the Airbnb APP (not its mobile web) at phone width
    =========================================================================
-   Liam compared our Messages page with the Airbnb iPhone APP side by side: in
-   the app the page title, names, previews and dates are all bigger, and the
-   previews are dark rather than pale grey. Airbnb's mobile WEB is actually
-   small (measured 20/10/2026: base 14px, card titles 13–15px, secondary 12px);
-   the benchmark here is deliberately the app, whose scale is roughly iOS:
-   body ~16–17px, list titles/names ~17–18px, large titles ~30–32px, secondary
-   dark enough to read. Those are the targets below.
+   Liam measured our Messages page against the Airbnb iPhone APP on the same
+   phone — the gap is not 1px, the whole scale is smaller. Airbnb's mobile WEB is
+   actually small too (measured 20/10/2026: base 14px, card titles 13–15px,
+   secondary 12px), so the benchmark is deliberately the APP, the iPhone
+   standard. The targets, phones only:
+
+     page titles            32px bold
+     names / list titles    18px semibold
+     message previews       17px, near-black, bold when unread
+     status / dates / lines 16–17px, readable grey
+     normal body text       17px
+
+   These are hit by the size-class remap below plus a few role-exact tweaks in
+   the components (e.g. message rows), since not every role maps cleanly onto one
+   Tailwind size class.
 
    WHY THIS SHAPE. The site leans on Tailwind's `text-sm` (14px) and `text-xs`
    (12px) for body and secondary copy, and page titles sit at `text-2xl` (24px)
@@ -151,32 +159,32 @@ body {
    The input rule above (17px, higher specificity on fields) still wins for form
    fields, which must stay ≥16px to stop iOS focus-zoom. */
 @media (max-width: 639px) {
-  /* Body / reading copy and any size-less inherited text (e.g. list-row names)
-     → 17px. `text-base` lifted to match so classed and class-less body read the
-     same. */
+  /* Normal body / reading copy and any size-less inherited text → 17px.
+     `text-base` lifted to match so classed and class-less body read the same. */
   body {
     font-size: 17px;
   }
   [class~="text-base"] {
     font-size: 1.0625rem; /* 17px */
   }
-  /* Labels, captions, metadata. */
+  /* Status, dates, listing lines and other secondary copy. */
   [class~="text-sm"] {
+    font-size: 1rem; /* 16px */
+  }
+  /* Metadata / captions. Lifted to the readable floor; the genuinely tiny
+     marks on the site are arbitrary sizes (text-[10px]/[11px]) and are left
+     alone. */
+  [class~="text-xs"] {
     font-size: 0.9375rem; /* 15px */
   }
-  [class~="text-xs"] {
-    font-size: 0.8125rem; /* 13px */
-  }
-  /* Page titles. Only an <h1> is lifted — a `text-2xl` card heading stays 24px.
-     At 30/28px these land in the app's large-title range; an h1 already at
-     text-3xl (30px) or bigger is left as it is. */
-  h1[class~="text-2xl"] {
-    font-size: 1.875rem; /* 30px */
-    line-height: 2.25rem;
-  }
-  h1[class~="text-xl"]:not([class~="text-2xl"]):not([class~="text-3xl"]) {
-    font-size: 1.75rem; /* 28px */
-    line-height: 2.125rem;
+  /* Page titles → 32px. Only an <h1> is lifted (a `text-2xl` card heading stays
+     24px). text-xl/2xl/3xl page titles all land at 32px; a hero h1 already at
+     text-4xl or bigger is left as it is. */
+  h1[class~="text-3xl"],
+  h1[class~="text-2xl"],
+  h1[class~="text-xl"] {
+    font-size: 2rem; /* 32px */
+    line-height: 2.5rem;
   }
 }
 
