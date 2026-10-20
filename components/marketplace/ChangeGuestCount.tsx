@@ -36,6 +36,7 @@ interface Quote {
     maxAddable?: number;
     deadlineISO?: string;
     insideWindow?: boolean;
+    noRefund?: boolean;        // stamped non-refundable — no free cancellation, whatever the clock says
     // request
     perGroup?: boolean;
     mode?: 'people' | 'quantity' | 'group';
@@ -328,7 +329,7 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
                                     {isRequest ? (
                                         <p className="text-[13px] text-slate-500">Adding guests is a request — {quote.providerName || 'the provider'} has 48 hours to accept, and your card is only held until they do. To lower your party, message them or cancel and rebook.</p>
                                     ) : (
-                                        <p className="text-[13px] text-slate-500">{quote.deadlineISO ? 'An added place is charged now. Free to cancel until ' + cutoffLabel(quote.deadlineISO) + '.' : 'An added place is charged now.'}</p>
+                                        <p className="text-[13px] text-slate-500">{quote.noRefund ? 'An added place is charged now and is non-refundable.' : quote.deadlineISO ? 'An added place is charged now. Free to cancel until ' + cutoffLabel(quote.deadlineISO) + '.' : 'An added place is charged now.'}</p>
                                     )}
 
                                     {error && <p className="text-[13px] text-rose-600">{error}</p>}
