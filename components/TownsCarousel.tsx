@@ -96,70 +96,77 @@ export default function TownsCarousel({ towns }: { towns: Town[] }) {
 
     if (!towns || towns.length === 0) return null;
 
+    // Airbnb's row: both arrows up beside the heading, always shown, the one
+    // with nowhere to go greyed out; no scroll bar under the row (a phone still
+    // swipes it, and the next card peeking in says there is more).
+    const arrow = (dir: 1 | -1, enabled: boolean) => (
+        <button
+            type="button"
+            aria-label={dir === 1 ? 'Show more places' : 'Show previous places'}
+            onClick={() => scrollBy(dir)}
+            disabled={!enabled}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white
+                       text-stone-900 transition hover:border-stone-900 hover:shadow-sm
+                       disabled:cursor-default disabled:border-stone-200 disabled:text-stone-300 disabled:hover:shadow-none"
+        >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points={dir === 1 ? '9 18 15 12 9 6' : '15 18 9 12 15 6'} />
+            </svg>
+        </button>
+    );
+
     return (
         <section className="mt-16">
-            <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
-                Where to stay in Dumfries &amp; Galloway
-            </h2>
-            <p className="text-stone-600 text-sm md:text-base mt-1 mb-6">
-                {towns.length} {towns.length === 1 ? 'town' : 'towns'} across the region, and what
-                each one is for.
-            </p>
+            <div className="flex items-end justify-between gap-4">
+                <div className="min-w-0">
+                    <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
+                        Where to stay in Dumfries &amp; Galloway
+                    </h2>
+                    {/* "places", not "towns": Galloway Forest is a forest park. */}
+                    <p className="text-stone-600 text-sm md:text-base mt-1">
+                        {towns.length} {towns.length === 1 ? 'place' : 'places'} across the region, and what
+                        each one is for.
+                    </p>
+                </div>
+                {(canLeft || canRight) && (
+                    <div className="flex flex-none gap-2 pb-1">
+                        {arrow(-1, canLeft)}
+                        {arrow(1, canRight)}
+                    </div>
+                )}
+            </div>
 
-            <div className="relative -mx-4 sm:mx-0">
+            <div className="relative -mx-4 sm:mx-0 mt-6">
                 <ul
                     ref={scrollRef}
-                    className="flex gap-4 overflow-x-auto px-4 sm:px-0 pb-2 snap-x snap-mandatory
-                               [scrollbar-width:thin]"
+                    className="flex gap-4 overflow-x-auto px-4 sm:px-0 scroll-px-4 sm:scroll-px-0 pb-2 snap-x snap-mandatory
+                               [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                     {towns.map((t) => (
                         <li key={t.slug} className="snap-start shrink-0 w-72">
+                            {/* Every card the height of the tallest (the row
+                                stretches its items), with the link pinned to the
+                                bottom, so the green links line up across the row
+                                whatever the length of each blurb. */}
                             <Link
                                 href={'/holiday-cottages/' + t.slug}
-                                className="group block h-full rounded-2xl border border-stone-200 hover:border-stone-900 transition overflow-hidden"
+                                className="group flex h-full flex-col rounded-2xl border border-stone-200 hover:border-stone-900 transition overflow-hidden"
                             >
                                 <TownPhoto photo={t.photo} alt={t.photoAlt} name={t.name} />
-                                <div className="p-4">
+                                <div className="flex flex-1 flex-col p-4">
                                     <h3 className="font-bold text-stone-900">{t.name}</h3>
                                     <p className="mt-1 text-sm text-stone-600">{t.blurb}</p>
-                                    <span className="mt-3 inline-block text-sm font-semibold text-emerald-700">
-                                        Cottages in {t.name} →
+                                    {/* "Stays", Airbnb's word, on the link; the
+                                        area pages keep "Holiday cottages in …" in
+                                        their own titles and URLs for search. */}
+                                    <span className="mt-auto pt-3 text-sm font-semibold text-emerald-700">
+                                        Stays in {t.name} →
                                     </span>
                                 </div>
                             </Link>
                         </li>
                     ))}
                 </ul>
-
-                {canLeft && (
-                    <button
-                        type="button"
-                        aria-label="Scroll to previous towns"
-                        onClick={() => scrollBy(-1)}
-                        className="absolute left-2 top-[calc(33%-1rem)] z-10 hidden sm:flex h-10 w-10 items-center
-                                   justify-center rounded-full bg-white/90 shadow-md ring-1 ring-stone-200
-                                   text-stone-900 hover:bg-white transition"
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <polyline points="15 18 9 12 15 6" />
-                        </svg>
-                    </button>
-                )}
-
-                {canRight && (
-                    <button
-                        type="button"
-                        aria-label="Scroll to more towns"
-                        onClick={() => scrollBy(1)}
-                        className="absolute right-2 top-[calc(33%-1rem)] z-10 hidden sm:flex h-10 w-10 items-center
-                                   justify-center rounded-full bg-white/90 shadow-md ring-1 ring-stone-200
-                                   text-stone-900 hover:bg-white transition"
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <polyline points="9 18 15 12 9 6" />
-                        </svg>
-                    </button>
-                )}
             </div>
         </section>
     );
