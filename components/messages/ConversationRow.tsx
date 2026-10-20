@@ -254,7 +254,7 @@ export default function ConversationRow(props: {
                         {c.starred && (
                             <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 flex-shrink-0" />
                         )}
-                        <span className="font-semibold text-slate-900 truncate">
+                        <span className="font-semibold text-slate-900 truncate max-sm:text-lg">
                             {capitializeFirst(c.otherName)}
                         </span>
                         {c.unread > 0 && (
@@ -265,7 +265,7 @@ export default function ConversationRow(props: {
                         {c.lastMessage && (
                             // Room kept clear on the right for the three dots,
                             // so a long name does not run underneath them.
-                            <span className="ml-auto text-xs text-slate-500 flex-shrink-0 pr-6">
+                            <span className="ml-auto text-xs text-slate-500 flex-shrink-0 pr-6 max-sm:text-[15px] max-sm:text-slate-600">
                                 {timeAgo(c.lastMessage.created_at)}
                             </span>
                         )}
@@ -273,7 +273,7 @@ export default function ConversationRow(props: {
 
                     {/* What it is about and where it has got to — "Confirmed ·
                         19–22 Dec" — then the place, as Airbnb's inbox writes it. */}
-                    <div className="text-xs text-slate-500 truncate mt-0.5">
+                    <div className="text-xs text-slate-500 truncate mt-0.5 max-sm:text-base max-sm:text-slate-600">
                         {[c.statusLine, c.placeTitle || (c.listing && c.listing.title) || c.subtitle]
                             .filter(Boolean)
                             .join(' · ')}
@@ -282,17 +282,16 @@ export default function ConversationRow(props: {
                     {c.lastMessage && (
                         <div
                             className={
-                                // Airbnb bolds and darkens an unread preview and
-                                // leaves a read one a readable grey — never the
-                                // pale grey this used to show. text-sm (15px on a
-                                // phone) rather than text-xs so the line is big
-                                // enough to read at a glance.
-                                'text-sm truncate mt-1 ' +
+                                // On a phone the preview matches the Airbnb app:
+                                // 17px, near-black (slate-800), and bold + darkest
+                                // (slate-900) when unread. Desktop keeps its own
+                                // size/colour; the phone changes are max-sm: only.
+                                'text-sm truncate mt-1 max-sm:text-[17px] ' +
                                 (c.unread > 0
                                     ? 'text-slate-900 font-semibold'
                                     : c.needsReply
-                                        ? 'text-slate-700 font-medium'
-                                        : 'text-slate-500')
+                                        ? 'text-slate-700 font-medium max-sm:text-slate-800'
+                                        : 'text-slate-500 max-sm:text-slate-800')
                             }
                         >
                             {c.needsReply && <span className="text-amber-600">&bull; </span>}
