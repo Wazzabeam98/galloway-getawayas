@@ -2593,6 +2593,23 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const imageFilesFrom = (dt: DataTransfer | null): File[] =>
         Array.from(dt?.files || []).filter((f) => f.type.startsWith('image/'));
 
+    // Every sign-up write goes through the one server route (ownership-checked,
+    // column allow-listed, service role) — the way the listing editor saves —
+    // so nothing here writes to the database straight from the browser.
+    const saveSection = async (body: Record<string, any>): Promise<any> => {
+        try {
+            const res = await fetch('/api/services/signup/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const json = await res.json().catch(() => ({}));
+            return res.ok ? json : { ok: false, error: (json && json.error) || 'Could not save that.' };
+        } catch {
+            return { ok: false, error: 'Could not reach us. Check your connection and try again.' };
+        }
+    };
+
     // Removing a draft. Drafts only: an application we are looking at, or a
     // business already on the site, is not something to throw away with a
     // button — those come off through us.
@@ -2608,16 +2625,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
 
         // The status is matched at the write as well as checked here, so a
         // stale screen cannot delete something that has since been sent.
-        const { error } = await supabase
-            .from('service_providers')
-            .delete()
-            .eq('id', providerId)
-            .eq('status', 'draft');
+        const res = await saveSection({ section: 'remove', providerId });
 
         setRemoving(false);
 
-        if (error) {
-            toast.error(error.message, { theme: 'colored' });
+        if (!res.ok) {
+            toast.error(res.error || 'Could not remove that.', { theme: 'colored' });
             return;
         }
 
@@ -2981,46 +2994,18 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         const routeGuestToEditor = submit && isGuest && status !== 'approved';
         const statusPatch = (submit && !routeGuestToEditor) ? submitStatusPatch(status, now) : {};
 
-        let id = providerId;
-
-        // They may already have a business in this trade — a second tab, or an
-        // application started months ago. One per trade is a constraint, so
-        // find it rather than collide.
-        if (!id) {
-            const { data: already } = await supabase
-                .from('service_providers')
-                .select('id')
-                .eq('owner_id', active.user.id)
-                .eq('trade', trade)
-                .maybeSingle();
-            if (already) {
-                id = already.id;
-                setProviderId(already.id);
-            }
+        // Every write goes through /api/services/signup/save (ownership-checked,
+        // column allow-listed) — nothing writes straight from the browser. The
+        // route also finds an existing business in this trade (a second tab, an
+        // application started months ago) rather than colliding with it.
+        const rowRes = await saveSection({ section: 'row', providerId, row: payload });
+        if (!rowRes.ok || !rowRes.id) {
+            setSaving(false);
+            toast.error(rowRes.error || 'Could not save that.', { theme: 'colored' });
+            return;
         }
-
-        if (id) {
-            const { error } = await supabase.from('service_providers').update(payload).eq('id', id);
-            if (error) {
-                setSaving(false);
-                toast.error(error.message, { theme: 'colored' });
-                return;
-            }
-        } else {
-            const { data, error } = await supabase
-                .from('service_providers')
-                .insert(payload)
-                .select('id')
-                .single();
-
-            if (error || !data) {
-                setSaving(false);
-                toast.error((error && error.message) || 'Could not save that.', { theme: 'colored' });
-                return;
-            }
-            id = data.id;
-            setProviderId(id);
-        }
+        const id: string = rowRes.id;
+        if (id !== providerId) setProviderId(id);
 
         // A guest handed to the editor still agrees to the Experience Provider
         // Agreement here, at the end of the wizard, so it's on record before the
@@ -3049,7 +3034,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     return;
                 }
             }
-            const { error } = await supabase.rpc('submit_service_provider', { p_id: id });
+            const submitRes = await saveSection({ section: 'submit', providerId: id });
+            const error = submitRes.ok ? null : { message: submitRes.error || 'Could not send that.' };
             if (error) {
                 setSaving(false);
                 // Never fail silently. The wizard's own checks run before this,
@@ -3080,67 +3066,26 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             }
         }
 
-        // Registrations are NOT replaced wholesale, unlike everything below.
+        // The child tables — registrations, extras, prices, coverage areas and the
+        // menu — are worked out here and written by the save route in one call.
+        // What each holds is unchanged:
         //
-        // Deleting and re-inserting would throw away `verified_at` on every
-        // save — a Gas Safe number checked in March would go back to unchecked
-        // because they fixed a typo in their description in June. So each row
-        // is written only when its number has actually changed, which is also
-        // exactly when the check should be thrown away.
+        //   registrations — NOT replaced wholesale: the route writes a row only
+        //     when its number changed, so a Gas Safe number checked in March keeps
+        //     its verified_at when they fix a typo in June. The verified columns
+        //     are never sent (they are platform-only).
+        //   extras, prices, areas — replaced wholesale; a row that isn't there is
+        //     a no (a blank band means "I do not cover that size").
+        //   the menu — upserted by id, so an edited row keeps its id and its photo
+        //     and only a row taken off the menu is deleted. A guest trade only.
         //
-        // The verified columns are not sent at all. They cannot be: they are
-        // revoked from `authenticated` in 20260825205043_trade_registration.sql, so
-        // a payload mentioning one would be refused rather than trusted.
-        {
-            const { data: haveRegs } = await supabase
-                .from('service_provider_registrations')
-                .select('scheme, number')
-                .eq('provider_id', id);
+        // A refused child write doesn't abort the save (the row is written); the
+        // route names it and the warning below says so, never a silent success.
+        const savedButFailed: string[] = [];
 
-            const wanted = showableSchemes
-                .map((scheme) => ({ scheme, number: String(registrations[scheme] || '').trim() }))
-                .filter((r) => r.number !== '');
-
-            const wantedSchemes = wanted.map((r) => r.scheme);
-
-            // A plumber who has stopped doing oil takes the OFTEC row off, and
-            // with it the record that it was ever checked. That is right: they
-            // are no longer claiming it.
-            const goners = (haveRegs || [])
-                .filter((r: any) => wantedSchemes.indexOf(String(r.scheme)) === -1)
-                .map((r: any) => String(r.scheme));
-
-            if (goners.length) {
-                await supabase
-                    .from('service_provider_registrations')
-                    .delete()
-                    .eq('provider_id', id)
-                    .in('scheme', goners);
-            }
-
-            for (const row of wanted) {
-                const before = (haveRegs || []).filter((r: any) => String(r.scheme) === row.scheme)[0];
-
-                if (!before) {
-                    await supabase.from('service_provider_registrations').insert({
-                        provider_id: id,
-                        scheme: row.scheme,
-                        number: row.number,
-                        updated_at: now.toISOString(),
-                    });
-                } else if (String(before.number || '').trim() !== row.number) {
-                    await supabase
-                        .from('service_provider_registrations')
-                        .update({ number: row.number, updated_at: now.toISOString() })
-                        .eq('provider_id', id)
-                        .eq('scheme', row.scheme);
-                }
-            }
-        }
-
-        // Extras are replaced wholesale, like the prices and the areas. Only
-        // what is offered is written — a row that is not there is a no.
-        await supabase.from('service_provider_extras').delete().eq('provider_id', id);
+        const registrationRows = showableSchemes
+            .map((scheme) => ({ scheme, number: String(registrations[scheme] || '').trim() }))
+            .filter((r) => r.number !== '');
 
         const extraRows = tradeExtras
             .filter((extra) => {
@@ -3157,115 +3102,39 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 const byQuote = extra.type === 'priced' && entry.quote === true;
                 const priced = extra.type === 'priced' && !byQuote && String(entry.price).trim() !== '' && Number(entry.price) > 0;
                 return {
-                    provider_id: id,
                     extra_key: extra.key,
-                    offered: true,
                     // Null for a toggle, a reimbursed one, or one priced by quote:
                     // the amount is whatever the receipt says, weeks later, or is
                     // quoted per job. Paid host to provider directly, never through us.
                     price: priced ? Number(entry.price) : null,
                     quote: byQuote,
                     notes: String(entry.notes || '').trim() || null,
-                    updated_at: now.toISOString(),
                 };
             });
 
-        if (extraRows.length) {
-            await supabase.from('service_provider_extras').insert(extraRows);
-        }
-
-        // Prices are replaced wholesale, like the areas. A row that is not
-        // there is the blank band, and a blank band is a real answer — it means
-        // "I do not cover that size" and keeps them out of results for it.
-        await supabase.from('service_provider_prices').delete().eq('provider_id', id);
-
-        if (model === 'bands') {
-            const priceRows = bandsFor(trade)
-                .filter((band) => {
-                    const entry = prices[band.key];
-                    return entry && String(entry.price).trim() !== '' && Number(entry.price) > 0;
-                })
-                .map((band) => {
-                    const entry = prices[band.key];
-                    const hours = String(entry.typical_hours || '').trim();
-                    return {
-                        provider_id: id,
-                        band_key: band.key,
-                        price: Number(entry.price),
-                        // Stored as hours, never a rate, and never multiplied
-                        // by anything. See tests/service-pricing.test.ts.
-                        typical_hours: hours === '' || !(Number(hours) > 0) ? null : Number(hours),
-                        updated_at: now.toISOString(),
-                    };
-                });
-
-            if (priceRows.length) {
-                await supabase.from('service_provider_prices').insert(priceRows);
-            }
-        }
-
-        // The child writes below used to be `await …insert(rows)` with the
-        // returned error thrown away, so a rejected write (a constraint, an RLS
-        // refusal) vanished and the save reported success over the top of it —
-        // the class of silent failure that hid the coverage bug. Each one is now
-        // checked and, if it fails, named in a warning at the end, like the
-        // skills write already does. Nothing here aborts the save (the row is
-        // written); it just stops a failure being invisible.
-        const savedButFailed: string[] = [];
-
-        // Areas are replaced wholesale — there are only ever a handful, and
-        // diffing them would be more code than it saves.
-        await supabase.from('service_areas').delete().eq('provider_id', id);
-
-        if (areas.length) {
-            const rows = areas.map((a) => {
-                const town = COVERAGE_TOWNS.filter((t) => t.label === a.town)[0];
+        const priceRows = model !== 'bands' ? [] : bandsFor(trade)
+            .filter((band) => {
+                const entry = prices[band.key];
+                return entry && String(entry.price).trim() !== '' && Number(entry.price) > 0;
+            })
+            .map((band) => {
+                const entry = prices[band.key];
+                const hours = String(entry.typical_hours || '').trim();
                 return {
-                    provider_id: id,
-                    label: a.town,
-                    centre_lat: town ? town.lat : 0,
-                    centre_lng: town ? town.lng : 0,
-                    // A guest's region has no radius, so this is 0 for them (the
-                    // check allows it, and nothing on the guest path reads it); a
-                    // host keeps their real radius. Same honest value the finish
-                    // route writes, so the two save paths never disagree.
-                    radius_miles: a.radius_miles,
+                    band_key: band.key,
+                    price: Number(entry.price),
+                    // Stored as hours, never a rate, and never multiplied
+                    // by anything. See tests/service-pricing.test.ts.
+                    typical_hours: hours === '' || !(Number(hours) > 0) ? null : Number(hours),
                 };
             });
-            const { error } = await supabase.from('service_areas').insert(rows);
-            if (error) {
-                console.error('[provider-save] service_areas insert failed', error);
-                savedButFailed.push('your coverage areas');
-            }
-        }
 
-        // The "Where you'll be" map point follows the address just saved. Only the
-        // server can geocode and write it (lib/venuePoint.ts); best effort — a
-        // failure leaves no map, never a failed save.
-        if (isGuest) {
-            try {
-                await fetch('/api/services/venue-point', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ providerId: id }),
-                });
-            } catch { /* the map is optional */ }
-        }
+        // A guest's region has no radius, so this is 0 for them (the check allows
+        // it, and nothing on the guest path reads it); a host keeps their real
+        // radius. The route takes the centre from the known town list.
+        const areaRows = areas.map((a) => ({ town: a.town, radius_miles: a.radius_miles }));
 
-        // Weekly opening hours are NOT written here any more. They moved out of
-        // the wizard to the listing editor's Availability section, which is the
-        // single home for the weekly template — so the wizard neither asks for
-        // hours nor writes slot_availability. A new slot provider sets them in the
-        // editor after create; the diary still owns the dated exceptions.
-
-        // The menu — UPSERTED BY ID, not deleted and re-inserted. A guest trade
-        // only; a host trade never has items. An item now carries a photo, and
-        // delete-then-insert would give every row a new id on every save and
-        // orphan the photo attached to it — the kind of thing nobody notices
-        // until someone's pictures vanish. So a row that was only edited keeps
-        // its id (and its photo); only a row the provider actually removed is
-        // deleted. The order snapshots what it was for, so none of this touches
-        // a placed order. Empty rows (no name or no price) are dropped.
+        let itemRows: any[] | null = null;
         if (audienceForTrade(trade) === 'guest') {
             // A slot keeps each item's OWN unit — flat for a private hire, person
             // for a shared table. private/shared derive it from the offering; 'both'
@@ -3291,7 +3160,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     const price = typed > 0 ? typed : 0;
                     return {
                         id: it.id,
-                        provider_id: id,
                         name: String(it.name || '').trim(),
                         description: String(it.description || '').trim() || null,
                         price,
@@ -3322,37 +3190,42 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             // double-booking again. The duration step is mandatory in the sub-flow,
             // so this only ever fires as a guard; when it does, the untimed row is
             // not written and the provider is told, rather than silently accepted.
-            const writable = slotPerItem ? valid.filter((r) => r.duration_minutes != null) : valid;
-            if (slotPerItem && writable.length !== valid.length) {
+            itemRows = slotPerItem ? valid.filter((r) => r.duration_minutes != null) : valid;
+            if (slotPerItem && itemRows.length !== valid.length) {
                 savedButFailed.push('a length on every treatment');
             }
-
-            // Delete only the rows that are in the database but no longer on the
-            // form — the ones the provider took off the menu.
-            const { data: existingItems } = await supabase
-                .from('service_provider_items').select('id').eq('provider_id', id);
-            const keep = new Set(writable.map((r) => r.id).filter(Boolean));
-            const removed = (existingItems || [])
-                .map((r: any) => r.id)
-                .filter((x: string) => !keep.has(x));
-            if (removed.length) {
-                await supabase.from('service_provider_items').delete().in('id', removed);
-            }
-
-            // Edited rows keep their id (update in place); new rows have none
-            // (insert, letting the id default). Split so each request carries a
-            // uniform set of columns.
-            const toUpdate = writable.filter((r) => r.id);
-            const toInsert = writable.filter((r) => !r.id).map(({ id: _omit, ...rest }) => rest);
-            if (toUpdate.length) {
-                const { error } = await supabase.from('service_provider_items').upsert(toUpdate);
-                if (error) { console.error('[provider-save] items upsert failed', error); savedButFailed.push('your prices'); }
-            }
-            if (toInsert.length) {
-                const { error } = await supabase.from('service_provider_items').insert(toInsert);
-                if (error) { console.error('[provider-save] items insert failed', error); savedButFailed.push('your prices'); }
-            }
         }
+
+        const childRes = await saveSection({
+            section: 'children',
+            providerId: id,
+            registrations: registrationRows,
+            extras: extraRows,
+            prices: priceRows,
+            areas: areaRows,
+            items: itemRows,
+        });
+        if (!childRes.ok) savedButFailed.push('your prices, extras or coverage areas');
+        else (childRes.failed || []).forEach((f: string) => savedButFailed.push(f));
+
+        // The "Where you'll be" map point follows the address just saved. Only the
+        // server can geocode and write it (lib/venuePoint.ts); best effort — a
+        // failure leaves no map, never a failed save.
+        if (isGuest) {
+            try {
+                await fetch('/api/services/venue-point', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ providerId: id }),
+                });
+            } catch { /* the map is optional */ }
+        }
+
+        // Weekly opening hours are NOT written here any more. They moved out of
+        // the wizard to the listing editor's Availability section, which is the
+        // single home for the weekly template — so the wizard neither asks for
+        // hours nor writes slot_availability. A new slot provider sets them in the
+        // editor after create; the diary still owns the dated exceptions.
 
         // Skills go through a route rather than being written from here.
         //
@@ -3801,6 +3674,17 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         Thanks — we check every business before it appears, usually within {REVIEW_WITHIN_HOURS} hours.
                         We will email you either way. You can still read what you sent below.
                     </p>
+                    {/* Their own page as it will look once approved — owner-only
+                        until then (the pending preview, like a host's cottage). */}
+                    {providerId && (
+                        <Link
+                            href={audienceForTrade(trade) === 'guest' ? '/experiences/browse/' + providerId : '/services/' + trade + '/' + providerId}
+                            target="_blank"
+                            className="mt-3 inline-block text-sm font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-950"
+                        >
+                            Preview your page
+                        </Link>
+                    )}
                     {/* A guest business is read by a person, who decides whether
                         it fits and what category it takes before it can go live.
                         Said plainly here so they are not left wondering why theirs
