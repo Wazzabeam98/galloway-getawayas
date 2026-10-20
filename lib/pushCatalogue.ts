@@ -81,6 +81,7 @@ const LIST: CatalogueEntry[] = [
     E('Holiday lets', 'Added to a trip', 'Companion', 'Morag has added you to a trip', '/trip-invite/x'),
     E('Holiday lets', 'Co-host invitation', 'Invitee', 'You’ve been invited to co-host Rowan Cottage', '/invite/x'),
     E('Holiday lets', 'Co-host steps down', 'Host', 'Callum has stepped down as a co-host', '/dashboard/people'),
+    E('Holiday lets', 'Co-host declines', 'Host', 'Callum declined your co-host invitation', '/dashboard/people'),
     E('Holiday lets', 'Co-host accepts', 'Host', 'Callum has accepted your invitation', '/dashboard/people'),
     E('Holiday lets', 'Listing approved', 'Host', 'Rowan Cottage is live on Galloway Getaways', '/homes/x'),
     E('Holiday lets', 'Listing sent back', 'Host', 'A few things to change on Rowan Cottage', '/dashboard'),

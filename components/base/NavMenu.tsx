@@ -12,6 +12,7 @@ import ModeSwitch from './ModeSwitch'
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/utils'
 import MessagesLink from './MessagesLink'
+import InvitesLink from './InvitesLink'
 import MenuUnreadDot from './MenuUnreadDot'
 import BookingsLink from './BookingsLink'
 import RequestsLink from './RequestsLink'
@@ -116,6 +117,9 @@ const NavMenu = ({
                         just noise. */}
                     {session != null ? (
                         <>
+                            {/* A co-host invitation waiting on them, whichever
+                                side they're on — first, so it can't be missed. */}
+                            <InvitesLink className={itemClass} />
                             {hostView ? (
                                 <>
                                     {/* The hub where their properties live — their

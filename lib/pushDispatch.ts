@@ -105,7 +105,13 @@ export async function recipientsFor(admin: any, row: any, env: Record<string, st
         out.set(row.user_id, category);
     } else if (row.to_email) {
         const email = String(row.to_email).toLowerCase();
-        if (adminAlertAddresses(env).has(email)) {
+        // An owner alert (the rules filed it under 'admin') to an alert address
+        // goes to every admin. Anything else that happens to be addressed to one
+        // — a co-host invitation sent to someone's company alias — is resolved
+        // like any other email, so it reaches that person and nobody else.
+        // (Until 20/10/2026 it went to every admin: Jamie's invitation pushed
+        // to Liam's phone.)
+        if (category === 'admin' && adminAlertAddresses(env).has(email)) {
             for (const id of await adminIds(admin)) out.set(id, 'admin');
             return Array.from(out, ([userId, c]) => ({ userId, category: c }));
         }

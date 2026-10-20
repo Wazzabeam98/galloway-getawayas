@@ -164,6 +164,7 @@ export const RULES: Rule[] = [
     { kind: 'trip.added', match: R('^(.+) has added you to a trip$'), category: 'reservations', title: 'You\u2019ve been added to a trip', body: '$1 added you. Tap to see the details.' },
     { kind: 'cohost.invited', match: R('^You’ve been invited to co-host (.+)$'), category: 'listings', title: 'Co-host invitation', body: 'You\u2019ve been invited to co-host $1.' },
     { kind: 'cohost.left', match: R('^(.+) has stepped down as a co-host$'), category: 'listings', title: '$1 stepped down', body: 'They\u2019re no longer a co-host.' },
+    { kind: 'cohost.declined', match: R('^(.+) declined your co-host invitation$'), category: 'listings', title: '$1 declined your invitation', body: 'They won\u2019t be co-hosting. You can invite someone else.' },
     { kind: 'cohost.accepted', match: R('^(.+) has accepted your invitation$'), category: 'listings', title: '$1 is now a co-host', body: 'They can help with your listing now.' },
     { kind: 'listing.approved', match: R('^(.+) is live on Galloway Getaways$'), category: 'listings', title: 'Your listing is live!', body: '$1 is now on Galloway Getaways.' },
     { kind: 'listing.sent_back', match: R('^A few things to change on (.+)$'), category: 'listings', title: 'Your listing needs a few changes', body: 'We\u2019ve sent $1 back with notes.' },

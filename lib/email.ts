@@ -230,6 +230,19 @@ async function report(message: string, detail: any): Promise<void> {
     }
 }
 
+// AN UNSUBSCRIBE HEADER WHERE THE EMAIL HAS AN UNSUBSCRIBE LINK. Outlook,
+// Hotmail and Gmail weigh the List-Unsubscribe header when deciding junk: an
+// optional email (message alerts, review reminders) that lets you leave in one
+// click is treated as a sender that respects its readers. Only on emails that
+// already carry our /unsubscribe link — a booking confirmation has nothing to
+// unsubscribe from. Exported for its test.
+export function listUnsubscribe(html: string): { headers?: Record<string, string> } {
+    const m = String(html || '').match(/href="(https:\/\/(?:www\.)?gallowaygetaways\.co\.uk\/unsubscribe\?[^"]+)"/);
+    if (!m) return {};
+    const url = m[1].replace(/&amp;/g, '&');
+    return { headers: { 'List-Unsubscribe': '<' + url + '>, <mailto:' + REPLY_TO + '?subject=unsubscribe>' } };
+}
+
 // EVERY EMAIL IS ALSO A PUSH. After the email is sent (or fails), one row is
 // recorded in the push outbox for the push job to send — lib/pushOutbox. Only
 // recorded here, never sent: this function runs inside payment and payout
@@ -310,6 +323,7 @@ async function sendEmailOnly(to: string, subject: string, html: string): Promise
                 reply_to: REPLY_TO,
                 subject: subject,
                 html: html,
+                ...listUnsubscribe(html),
             }),
         });
 

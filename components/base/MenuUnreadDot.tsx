@@ -34,11 +34,16 @@ export default function MenuUnreadDot({
     const pending = enabled && host ? counts.pending : 0;
     const requests = enabled && provider ? counts.requests : 0;
     const adminWaiting = enabled && admin ? adminPendingTotal(counts.admin) : 0;
+    // Anyone can be invited to co-host, whatever side they're on.
+    const invites = enabled ? counts.invites : 0;
 
-    const waiting = unread > 0 || pending > 0 || requests > 0 || adminWaiting > 0;
+    const waiting = unread > 0 || pending > 0 || requests > 0 || adminWaiting > 0 || invites > 0;
 
     const label = () => {
         const parts: string[] = [];
+        if (invites > 0) {
+            parts.push(`${invites} co-host invitation${invites === 1 ? '' : 's'}`);
+        }
         if (adminWaiting > 0) {
             parts.push(`${adminWaiting} waiting for review`);
         }
