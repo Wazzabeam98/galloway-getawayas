@@ -70,7 +70,10 @@ so and carry on with other work.
   components), read the live policy on that table, and make it ask
   `has_listing_permission(listing, permission)` (which mirrors `lib/access`
   `checkListing`) with the permission the action needs, or move the write
-  behind a route that checks the shared helper. (Jamie, a full-access co-host,
+  behind a route that checks the shared helper. A business (an experience or a
+  trade) is the same system on `provider_access`: `has_provider_permission`
+  in the policies, `lib/providerAccess` (`mayActOn`, `checkProvider`) in the
+  routes. (Jamie, a full-access co-host,
   19 October 2026: #435 and #439 let co-hosts into the host pages, and saving a
   calendar price failed with "new row violates row-level security policy for
   table calendar_overrides", as did extras, iCal feeds, booking messages,
@@ -234,6 +237,8 @@ distinct:
 - `@gallowaywalk.test` — the enquiry-walkthrough seed
 - `@gallowayreview.test` — the review-row seed
 - `@gallowaycal.test` — the host-calendar seed (`seed-host-calendar`)
+- `@gallowaycohost.test` — the business co-host accounts (`seed-provider-cohosts`,
+  proved by `prove-provider-cohosts`)
 
 If you add a seed, give it a new domain and do not reuse one above. The trade
 logins for walking the trade side are `seed-joiner@gallowaytrade.test` and

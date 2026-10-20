@@ -5,6 +5,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceResponse } from '@/lib/serviceEnquiryAlert';
 import { canRespond } from '@/lib/serviceEnquiries';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
             .eq('id', enquiry.provider_id)
             .maybeSingle();
 
-        if (!provider || provider.owner_id !== user.id) {
+        if (!provider || !(await mayActOn(admin, user.id, provider, 'can_bookings'))) {
             return NextResponse.json({ ok: false, error: 'Not your enquiry.' }, { status: 403 });
         }
 

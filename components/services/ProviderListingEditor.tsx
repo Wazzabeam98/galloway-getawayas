@@ -48,6 +48,10 @@ export interface EditorProvider {
     commission_rate: number;
     business_name: string; category_label: string; category: string; description: string;
     status: string; owner_paused: boolean; admin_hidden: boolean;
+    // Who is editing: the owner, or a co-host (lib/providerAccess). Taking the
+    // listing down is the owner's or a full-access co-host's; submitting it for
+    // review is the owner's alone (it is their agreement on record).
+    viewer_is_owner?: boolean; viewer_full_access?: boolean;
     photos: string[]; headshot: string | null; logo: string | null;
     dietary_note: string; fulfilment: string; delivery_fee: number; delivery_radius_miles: number;
     collection_street: string; collection_town: string; collection_postcode: string;
@@ -885,7 +889,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         { key: 'cancellation', label: 'Cancellation', short: 'Cancellation', icon: RotateCcw },
         { key: 'host', label: 'Host profile', short: 'Host', icon: User },
         ...(p.isFood ? [{ key: 'dietary' as NavKey, label: 'Food & dietary', short: 'Food', icon: Salad }] : []),
-        { key: 'status', label: 'Listing status', short: 'Status', icon: (paused || p.admin_hidden) ? EyeOff : Eye },
+        ...(p.viewer_full_access !== false ? [{ key: 'status' as NavKey, label: 'Listing status', short: 'Status', icon: (paused || p.admin_hidden) ? EyeOff : Eye }] : []),
     ];
 
     const OWN_HEADING = new Set<NavKey>(['photos']);
@@ -1062,7 +1066,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         <DietaryCard dietaryNote={dietaryNote} onSave={(v) => runThen('dietary', { dietary_note: v, dietary_options: p.dietary_options }, () => setDietaryNote(v))} />
                     ))}
 
-                    {sec('status', (
+                    {p.viewer_full_access !== false && sec('status', (
                         <ListingStatusCard paused={paused} adminHidden={p.admin_hidden} onSave={setPausedTo} />
                     ))}
                 </div>
@@ -1074,7 +1078,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 set-times or comes-to-you experience stays greyed until the weekly
                 hours are set; made-to-order has none and is never held. Gone once
                 approved — an approved listing edits live, with no re-review. */}
-            {status !== 'approved' && (
+            {status !== 'approved' && p.viewer_is_owner !== false && (
                 <div className="mt-12 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6">
                     {status === 'pending_review' ? (
                         <>

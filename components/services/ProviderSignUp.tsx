@@ -949,6 +949,29 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         const offered = chargeUnitsFor('comes_to_you') as string[];
                         setChargeUnits(offered.filter((u) => (itemRows || []).some((r: any) => String(r.unit) === u)));
                     }
+                    // The About-you hub — years, professional title, qualifications,
+                    // endorsements — is written to guest_details by BOTH audiences
+                    // (guestContentFields), so it is read back for both. It used to be
+                    // read inside the guest-only branch below, so a trade returning to
+                    // a saved draft found every About-you answer blank.
+                    const hub = (ex.guest_details && typeof ex.guest_details === 'object') ? ex.guest_details : {};
+                    if (hub.years_experience) setYearsDoing(String(hub.years_experience));
+                    if (hub.professional_title) setProfessionalTitle(String(hub.professional_title));
+                    if (hub.qualifications) setQualifications(String(hub.qualifications));
+                    if (hub.recognition) setRecognition(String(hub.recognition));
+                    // A trade's draft reopens on the step they saved it from, as
+                    // Airbnb's "Save & exit" does — not back at the start. (A guest
+                    // draft still opens on step one — Liam, 5 Oct 2026.)
+                    if (audienceForTrade(existing.trade || tradeFromUrl) !== 'guest'
+                        && (existing.status || 'draft') === 'draft'
+                        && typeof hub.resume_step === 'string') {
+                        const t = existing.trade || tradeFromUrl;
+                        const landing = resolveStep(t, hub.resume_step);
+                        const upTo = stepsFor(t);
+                        setStep(landing);
+                        setVisited(upTo.slice(0, upTo.findIndex((x: any) => x.key === landing) + 1).map((x: any) => x.key));
+                        setRestored(true);
+                    }
                     if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
                         // The category key is persisted now (guest_details.category),
                         // so read it straight back. The label match is kept only as a
@@ -980,11 +1003,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         // fields that now live in the guest_details jsonb column
                         // (20260906143712). A returning provider edits what they
                         // wrote rather than a blank form.
-                        const gd = (ex.guest_details && typeof ex.guest_details === 'object') ? ex.guest_details : {};
-                        if (gd.years_experience) setYearsDoing(String(gd.years_experience));
-                        if (gd.professional_title) setProfessionalTitle(String(gd.professional_title));
-                        if (gd.qualifications) setQualifications(String(gd.qualifications));
-                        if (gd.recognition) setRecognition(String(gd.recognition));
+                        const gd = hub;
                         if (gd.what_to_expect) setWhatToExpect(String(gd.what_to_expect));
                         // The three-step flow, by position — a returning provider
                         // edits the steps they wrote rather than a blank set.
@@ -2806,6 +2825,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 professional_title: t(professionalTitle),
                 qualifications: t(qualifications),
                 recognition: t(recognition),
+                // Where they were, so a saved draft reopens on this step.
+                resume_step: step,
             };
         }
         return {
@@ -3288,8 +3309,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             }
         }
 
+        // `restored` is deliberately left alone: clearing it re-ran the opening
+        // effect, which sent someone pressing "Save and finish later" back to the
+        // first step. They stay on the step they saved from.
         forgetDraft();
-        setRestored(false);
 
         setSaving(false);
 

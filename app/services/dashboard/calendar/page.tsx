@@ -5,6 +5,9 @@ import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
+import LeaveListingBtn from '@/components/LeaveListingBtn';
+import BusinessSwitcher from '@/components/services/BusinessSwitcher';
+import { BUSINESS_COOKIE, dashboardProviders, pickDashboardProvider, firstProviderPageFor } from '@/lib/providerAccess';
 import { requestedWhen, windowsClash } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 import TradeCalendar from '@/components/services/TradeCalendar';
@@ -38,14 +41,12 @@ export default async function ProviderDashboardPage() {
     // The provider(s) this account owns. Approved first, then the most recently
     // touched — a signed-in owner with a live business lands on it, not on a
     // half-finished draft for a second trade.
-    const { data: providers } = await admin
-        .from('service_providers')
-        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, stripe_account_id, owner_paused, admin_hidden_at, trial_ends_at, approved_at, callout_fee, shape, fulfilment, photos')
-        .eq('owner_id', user.id)
-        .order('updated_at', { ascending: false });
-
-    const list = providers || [];
+    // Owned, or co-hosted with the calendar permission (lib/providerAccess).
+    const { rows: list, access } = await dashboardProviders(admin, user.id, 'can_calendar',
+        'id, business_name, trade, audience, plan, status, stripe_payouts_enabled, stripe_account_id, owner_paused, admin_hidden_at, trial_ends_at, approved_at, callout_fee, shape, fulfilment, photos');
     if (list.length === 0) {
+        const elsewhere = await firstProviderPageFor(user.id);
+        if (elsewhere) redirect(elsewhere);
         // Signed in, but no business on this account. Point at the way in
         // rather than 404 — this is where "become a provider" would live.
         return (
@@ -62,11 +63,13 @@ export default async function ProviderDashboardPage() {
         );
     }
 
-    const provider = list.find((p) => p.status === 'approved') || list[0];
+    const switchable = (list as any[]).map((r: any) => ({ id: r.id, name: r.business_name || 'Your business' }));
+    const provider: any = pickDashboardProvider(list, access, cookies().get(BUSINESS_COOKIE)?.value);
+    const mine = access[provider.id];
 
     // Not approved yet: the dashboard proper is for a live business. A pending
     // or returned application belongs back in the wizard, with its note.
-    if (provider.status !== 'approved') {
+    if (provider.status !== 'approved' && mine.isOwner) {
         redirect(`/services/join?trade=${provider.trade}`);
     }
 
@@ -117,27 +120,29 @@ export default async function ProviderDashboardPage() {
                         <p className="mt-1 text-sm text-slate-500">
                             {tradeLabel(provider.trade)}
                         </p>
+                        <BusinessSwitcher options={switchable} current={provider.id} className="mt-2" />
                     </div>
                     <div className="flex gap-2">
-                        <Link
+                        {mine.can_bookings && <Link
                             href="/services/dashboard"
                             className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
                         >
                             Reservations
-                        </Link>
+                        </Link>}
                         {/* Same route as the nav menu's "Your listing" — /services/
                             dashboard/edit is the one edit door (it forks a guest to the
                             sectioned listing editor, a trade to the business editor). */}
-                        <Link
+                        {mine.can_listing && <Link
                             href="/services/dashboard/edit"
                             className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
                         >
                             Your listing
-                        </Link>
+                        </Link>}
                     </div>
                 </div>
 
-                {awaitingPayouts && (
+                {/* Payouts are the owner's to set up; a co-host never sees it. */}
+                {awaitingPayouts && mine.isOwner && (
                     <div className="mt-6">
                         <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />
                     </div>
@@ -165,6 +170,12 @@ export default async function ProviderDashboardPage() {
                         </div>
                     )
                     : <ProviderExperienceDashboard providerId={provider.id} live={isLiveToGuests(provider)} payoutsReady={!awaitingPayouts} />}
+                {/* A co-host can step away without asking the owner, as on a holiday let. */}
+                {!mine.isOwner && (
+                    <div className="mt-12 border-t border-slate-200 pt-6">
+                        <LeaveListingBtn kind="provider" listingId={provider.id} title={provider.business_name || 'this business'} />
+                    </div>
+                )}
             </div>
         );
     }
@@ -240,11 +251,18 @@ export default async function ProviderDashboardPage() {
                     <span className="text-slate-300"> · </span>
                     {tradeLabel(provider.trade)}
                 </p>
+                <BusinessSwitcher options={switchable} current={provider.id} className="mt-2" />
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
                 <TradeCalendar providerId={provider.id} jobs={jobs} blockedDays={blockedDays} clashDays={clashDays} />
             </div>
+            {/* A co-host can step away without asking the owner, as on a holiday let. */}
+            {!mine.isOwner && (
+                <div className="mt-12 border-t border-slate-200 pt-6">
+                    <LeaveListingBtn kind="provider" listingId={provider.id} title={provider.business_name || 'this business'} />
+                </div>
+            )}
         </div>
     );
 }

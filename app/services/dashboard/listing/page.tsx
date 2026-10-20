@@ -6,6 +6,8 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { audienceForTrade, commissionRateFor } from '@/lib/serviceProviders';
 import { isFoodProvider } from '@/lib/serviceOrders';
+import BusinessSwitcher from '@/components/services/BusinessSwitcher';
+import { BUSINESS_COOKIE, dashboardProviders, pickDashboardProvider, firstProviderPageFor, isFullProviderAccess } from '@/lib/providerAccess';
 import { shapeOf } from '@/lib/serviceSlots';
 import ProviderListingEditor from '@/components/services/ProviderListingEditor';
 
@@ -28,23 +30,22 @@ export default async function ProviderListingPage() {
     if (!user) redirect('/');
 
     const admin = adminClient();
-    const { data: providers } = await admin
-        .from('service_providers')
-        .select('id, owner_id, business_name, trade, custom_label, stripe_mcc, audience, status, shape, description, '
+    // Their own business, or one they co-host with the listing permission.
+    const { rows: providers, access } = await dashboardProviders(admin, user.id, 'can_listing', 'id, owner_id, business_name, trade, custom_label, stripe_mcc, audience, status, shape, description, '
             + 'photos, headshot, logo, dietary_note, guest_details, fulfilment, delivery_fee, delivery_radius_miles, '
             + 'collection_street, collection_town, collection_postcode, '
             + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, '
             + 'venue_lat, venue_lng, show_precise_location, '
-            + 'lead_time_days, cancellation_window_hours, owner_paused, admin_hidden_at, vat_registered, plan, commission_rate')
-        .eq('owner_id', user.id)
-        .order('updated_at', { ascending: false });
+            + 'lead_time_days, cancellation_window_hours, owner_paused, admin_hidden_at, vat_registered, plan, commission_rate');
 
     // Cast: the select is built as a concatenated string, which defeats
     // supabase-js's typed-select inference — the reads are shaped by hand below.
     const list = (providers || []) as any[];
     // One provider = one listing: the approved row, else the most recent.
-    const provider = list.find((p) => p.status === 'approved') || list[0];
-    if (!provider) redirect('/services/dashboard');
+    const switchable = (list as any[]).map((r: any) => ({ id: r.id, name: r.business_name || 'Your business' }));
+    const provider = pickDashboardProvider(list, access, cookies().get(BUSINESS_COOKIE)?.value);
+    if (!provider) redirect((await firstProviderPageFor(user.id)) || '/services/dashboard');
+    const mine = access[provider.id];
 
     // The editor is the guest surface. A host trade edits elsewhere; a guest whose
     // row isn't approved yet is still in create — send them to the dashboard.
@@ -71,9 +72,17 @@ export default async function ProviderListingPage() {
     const gd = (provider.guest_details && typeof provider.guest_details === 'object') ? provider.guest_details : {};
 
     return (
+        <>
+        {switchable.length > 1 && (
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-6">
+                <BusinessSwitcher options={switchable} current={provider.id} />
+            </div>
+        )}
         <ProviderListingEditor
             provider={{
                 id: provider.id,
+                viewer_is_owner: mine.isOwner,
+                viewer_full_access: isFullProviderAccess(mine),
                 shape: provider.shape,
                 isSlot,
                 isFood: isFoodProvider(provider),
@@ -164,5 +173,6 @@ export default async function ProviderListingPage() {
                 })),
             }}
         />
+        </>
     );
 }

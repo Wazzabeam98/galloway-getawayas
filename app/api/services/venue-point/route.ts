@@ -7,6 +7,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { refreshVenuePoint } from '@/lib/venuePoint';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
             .select('id, owner_id, audience')
             .eq('id', providerId)
             .maybeSingle();
-        if (!p || p.owner_id !== user.id || p.audience !== 'guest') {
+        if (!p || !(await mayActOn(admin, user.id, p, 'can_listing')) || p.audience !== 'guest') {
             return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
         }
 

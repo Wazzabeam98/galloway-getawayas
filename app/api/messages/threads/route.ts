@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 import { listingIdsFor } from '@/lib/access';
 import { renderSecretTokens } from '@/lib/messageSecrets';
 import { firstName } from '@/lib/utils';
+import { providerIdsWith } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -278,11 +279,8 @@ export async function GET() {
     // bare single-thread page. Deduped by key (a user is never both sides of one
     // thread, so this only adds).
     const seenKeys = new Set(conversations.map((c: any) => c.key));
-    const { data: myProviders } = await admin
-        .from('service_providers')
-        .select('id')
-        .eq('owner_id', uid);
-    const providerIds = (myProviders || []).map((p: any) => p.id);
+    // Owned, or co-hosted with messages (lib/providerAccess).
+    const providerIds = await providerIdsWith(admin, uid, 'can_messages');
 
     if (providerIds.length) {
         const { data: provOrders } = await admin

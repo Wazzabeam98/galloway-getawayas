@@ -12,6 +12,9 @@ export interface ManagedListing {
     // create another full-access co-host, so the toggles respect it.
     viewerIsOwner: boolean;
     primaryHost: { name: string; isYou: boolean };
+    // A holiday let (the default), or a business — an experience or a trade —
+    // whose co-hosts live in provider_access. Same manager, same rules.
+    kind?: 'listing' | 'provider';
 }
 
 export interface Person {
@@ -38,6 +41,15 @@ const PERMISSIONS: { key: PermKey; label: string; hint: string }[] = [
     { key: 'can_earnings', label: 'Earnings', hint: 'See what this property makes' },
 ];
 
+// A business's wording for the same five permissions.
+const BUSINESS_PERMISSIONS: { key: PermKey; label: string; hint: string }[] = [
+    { key: 'can_calendar', label: 'Calendar', hint: 'Open and block times, set weekly hours' },
+    { key: 'can_messages', label: 'Messages and reviews', hint: 'Read and reply to customers; reply to reviews' },
+    { key: 'can_bookings', label: 'Bookings and enquiries', hint: 'See bookings, accept, decline and change them' },
+    { key: 'can_listing', label: 'Edit the listing', hint: 'Photos, description, offerings' },
+    { key: 'can_earnings', label: 'Earnings', hint: 'See what the business makes' },
+];
+
 const PERM_KEYS: PermKey[] = PERMISSIONS.map((p) => p.key);
 
 // The named tiers Airbnb shows, with a Custom fallback for any other mix. Full
@@ -51,6 +63,8 @@ function accessLevel(p: Record<PermKey, boolean>): string {
 }
 
 const isFull = (p: Record<PermKey, boolean>) => PERM_KEYS.every((k) => p[k]);
+
+const permsFor = (l: ManagedListing | undefined) => (l && l.kind === 'provider' ? BUSINESS_PERMISSIONS : PERMISSIONS);
 
 export default function PeopleManager({
     listings,
@@ -82,6 +96,9 @@ export default function PeopleManager({
     };
 
     const selected = listings.find((l) => l.id === listingId);
+    // The page's own noun: a business (experience or trade) or a property.
+    const isBusiness = listings.length > 0 && listings.every((l) => l.kind === 'provider');
+    const noun = isBusiness ? 'business' : 'property';
     const inviteWouldBeFull = isFull(perms);
     const inviteBlocked = inviteWouldBeFull && selected ? !selected.viewerIsOwner : false;
 
@@ -91,7 +108,8 @@ export default function PeopleManager({
             return;
         }
         setInviting(true);
-        const data = await call({ action: 'invite', listingId, email, role: 'co_host', ...perms });
+        const kind = selected && selected.kind === 'provider' ? 'provider' : 'listing';
+        const data = await call({ action: 'invite', kind, listingId, providerId: listingId, email, role: 'co_host', ...perms });
         setInviting(false);
 
         if (data && data.ok) {
@@ -113,6 +131,7 @@ export default function PeopleManager({
 
         const data = await call({
             action: 'update',
+            kind: listings.find((l) => l.id === row.listing_id)?.kind || 'listing',
             accessId: row.id,
             can_calendar: next.can_calendar,
             can_messages: next.can_messages,
@@ -129,8 +148,8 @@ export default function PeopleManager({
     };
 
     const revoke = async (row: Person) => {
-        if (!confirm('Remove ' + row.name + ' from this property?')) return;
-        const data = await call({ action: 'revoke', accessId: row.id });
+        if (!confirm('Remove ' + row.name + ' from this ' + noun + '?')) return;
+        const data = await call({ action: 'revoke', kind: listings.find((l) => l.id === row.listing_id)?.kind || 'listing', accessId: row.id });
         if (data && data.ok) {
             toast.success('Removed.', { theme: 'colored' });
             router.refresh();
@@ -158,7 +177,7 @@ export default function PeopleManager({
 
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-sm font-semibold text-slate-800 mb-1">Which property</label>
+                        <label className="block text-sm font-semibold text-slate-800 mb-1">Which {noun}</label>
                         <select
                             value={listingId}
                             onChange={(e) => setListingId(e.target.value)}
@@ -184,7 +203,7 @@ export default function PeopleManager({
                     <div>
                         <label className="block text-sm font-semibold text-slate-800 mb-2">What they can do</label>
                         <div className="space-y-2">
-                            {PERMISSIONS.map((p) => (
+                            {permsFor(selected).map((p) => (
                                 <label
                                     key={p.key}
                                     className="flex items-start gap-3 border rounded-xl p-3 cursor-pointer hover:border-slate-400"
@@ -204,8 +223,10 @@ export default function PeopleManager({
                         </div>
                         <p className="text-xs text-slate-400 mt-3">
                             Every permission ticked makes a full-access co-host — your equal. They can
-                            still never see your payout bank details, delete the listing, or change who
-                            the primary host is. {inviteBlocked && (
+                            {' '}{isBusiness
+                                ? 'still never see your payout bank details, your subscription or billing, close the account, or change who the primary host is. '
+                                : 'still never see your payout bank details, delete the listing, or change who the primary host is. '}
+                            {inviteBlocked && (
                                 <span className="text-amber-700 font-medium">Only the owner can give full access.</span>
                             )}
                         </p>
@@ -280,7 +301,7 @@ export default function PeopleManager({
                                                 </div>
 
                                                 <div className="flex flex-wrap gap-2">
-                                                    {PERMISSIONS.map((p) => {
+                                                    {permsFor(l).map((p) => {
                                                         const on = row[p.key];
                                                         return (
                                                             <button

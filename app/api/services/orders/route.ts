@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { getImageUrl } from '@/lib/utils';
 import { withFamilyFolded } from '@/lib/orderFamily';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,11 @@ export async function GET(request: Request) {
             .eq('id', providerId)
             .maybeSingle();
 
-        if (!provider || provider.owner_id !== user.id) {
+        // Reading the list: the owner, or a co-host with bookings OR the calendar
+        // — the diary shows who is booked into each session, as a holiday let's
+        // calendar shows its bookings to a calendar co-host. Answering a booking
+        // still needs bookings (orders/respond).
+        if (!provider || !((await mayActOn(admin, user.id, provider, 'can_bookings')) || (await mayActOn(admin, user.id, provider, 'can_calendar')))) {
             return NextResponse.json({ ok: false, error: 'Not your business' }, { status: 403 });
         }
 

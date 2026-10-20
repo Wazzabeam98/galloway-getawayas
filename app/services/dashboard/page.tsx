@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
+import BusinessSwitcher from '@/components/services/BusinessSwitcher';
+import { BUSINESS_COOKIE, dashboardProviders, pickDashboardProvider, firstProviderPageFor } from '@/lib/providerAccess';
 import { tradeLabel } from '@/lib/serviceProviders';
 import { firstName } from '@/lib/utils';
 import { needsPersonName } from '@/lib/personName';
@@ -18,6 +20,8 @@ import { loadHeldOrders, heldSummary } from '@/lib/heldPayouts';
 import { londonDayKey } from '@/lib/dayKey';
 import HeldPayoutsBanner from '@/components/services/HeldPayoutsBanner';
 import AgreementUpdateNotice from '@/components/legal/AgreementUpdateNotice';
+import CohostInvites from '@/components/CohostInvites';
+import LeaveListingBtn from '@/components/LeaveListingBtn';
 
 export const metadata = {
     // One static tab title for both audiences. The visible heading carries the
@@ -43,16 +47,17 @@ export default async function ProviderReservationsPage() {
 
     const admin = adminClient();
 
-    const { data: providers } = await admin
-        .from('service_providers')
-        .select('id, business_name, trade, audience, status, plan, stripe_payouts_enabled, stripe_account_id, trial_ends_at, fulfilment, photos, cancellation_window_hours, guest_details, collection_street, collection_town, collection_postcode, shape')
-        .eq('owner_id', user.id)
-        .order('updated_at', { ascending: false });
-
-    const list = providers || [];
+    // Owned, or co-hosted with the bookings permission (lib/providerAccess). A
+    // co-host without it goes to the first page they may open.
+    const { rows: list, access } = await dashboardProviders(admin, user.id, 'can_bookings',
+        'id, business_name, trade, audience, status, plan, stripe_payouts_enabled, stripe_account_id, trial_ends_at, fulfilment, photos, cancellation_window_hours, guest_details, collection_street, collection_town, collection_postcode, shape');
     if (list.length === 0) {
+        const elsewhere = await firstProviderPageFor(user.id);
+        if (elsewhere && elsewhere !== '/services/dashboard') redirect(elsewhere);
         return (
             <div className="max-w-lg mx-auto px-4 py-20 text-center">
+                {/* Someone invited to co-host a business lands here before accepting. */}
+                <CohostInvites className="mb-8 text-left" />
                 <h1 className="text-2xl font-extrabold text-slate-900">No business here yet</h1>
                 <p className="mt-3 text-slate-600">
                     This account doesn&rsquo;t have a service business. If you run one locally — a trade for
@@ -65,8 +70,10 @@ export default async function ProviderReservationsPage() {
         );
     }
 
-    const provider = list.find((p) => p.status === 'approved') || list[0];
-    if (provider.status !== 'approved') {
+    const switchable = (list as any[]).map((r: any) => ({ id: r.id, name: r.business_name || 'Your business' }));
+    const provider: any = pickDashboardProvider(list, access, cookies().get(BUSINESS_COOKIE)?.value);
+    const mine = access[provider.id];
+    if (provider.status !== 'approved' && mine.isOwner) {
         // A guest experience finishes setup and submits from the listing editor
         // now (the wizard hands them there), so a not-yet-approved guest lands in
         // the editor rather than being sent back through the wizard. A host trade
@@ -161,27 +168,32 @@ export default async function ProviderReservationsPage() {
                         <span className="text-slate-300"> · </span>
                         {tradeLabel(provider.trade)}
                     </p>
+                    <BusinessSwitcher options={switchable} current={provider.id} className="mt-2" />
                 </div>
                 {/* A trade's in-page nav duplicated the account menu (Calendar, Your
                     listing), so it is gone — the menu is the one place to move
                     around. A guest provider keeps its quick links. */}
                 {!isTrade && (
                     <div className="flex flex-wrap items-center gap-2">
-                        <Link href="/services/dashboard/calendar" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                        {mine.can_calendar && <Link href="/services/dashboard/calendar" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
                             Calendar
-                        </Link>
-                        <Link href="/services/dashboard/edit" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                        </Link>}
+                        {mine.can_listing && <Link href="/services/dashboard/edit" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
                             Your listing
-                        </Link>
+                        </Link>}
                     </div>
                 )}
             </div>
 
             {/* The provider's own agreement, when it has been updated since they
                 agreed. Asks; never blocks. */}
-            <AgreementUpdateNotice doc={isTrade ? 'tradesperson' : 'experience_provider'} source="dashboard_notice" className="mb-6" />
+            {/* Co-host invitations waiting on them, as on the host dashboard. */}
+            <CohostInvites className="mb-6" />
 
-            {ownerNeedsName && (
+            {/* The agreement, the name guests see and payouts are the owner's. */}
+            {mine.isOwner && <AgreementUpdateNotice doc={isTrade ? 'tradesperson' : 'experience_provider'} source="dashboard_notice" className="mb-6" />}
+
+            {mine.isOwner && ownerNeedsName && (
                 <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
                         <h2 className="text-base font-bold text-amber-900">Add your name</h2>
@@ -195,7 +207,7 @@ export default async function ProviderReservationsPage() {
                 </div>
             )}
 
-            {awaitingPayouts && <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />}
+            {awaitingPayouts && mine.isOwner && <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />}
 
             {/* Live, but nothing to book: a set-times experience with no times opened.
                 Said plainly, because "approved" reads as "done" and the empty
@@ -254,6 +266,12 @@ export default async function ProviderReservationsPage() {
             )}
 
             <ProviderUpcoming reservations={reservations} past={past} summary={summary} title={isTrade ? null : 'Upcoming bookings'} folders={isTrade} />
+            {/* A co-host can step away without asking the owner, as on a holiday let. */}
+            {!mine.isOwner && (
+                <div className="mt-12 border-t border-slate-200 pt-6">
+                    <LeaveListingBtn kind="provider" listingId={provider.id} title={provider.business_name || 'this business'} />
+                </div>
+            )}
         </div>
     );
 }

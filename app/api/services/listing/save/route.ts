@@ -9,6 +9,7 @@ import { normaliseTime } from '@/lib/offeredTimes';
 import { refreshVenuePoint } from '@/lib/venuePoint';
 import { normaliseVatTreatment } from '@/lib/vat';
 import { normaliseUnit } from '@/lib/serviceOrders';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,7 @@ async function ownGuestProvider(admin: any, providerId: string, userId: string) 
         .select('id, owner_id, trade, audience, guest_details, shape, fulfilment, status')
         .eq('id', providerId)
         .maybeSingle();
-    if (!p || p.owner_id !== userId) return null;
+    if (!p || !(await mayActOn(admin, userId, p, 'can_listing'))) return null;
     // The editor is the guest-experience surface; a host trade edits elsewhere.
     if (p.audience !== 'guest' && audienceForTrade(p.trade) !== 'guest') return null;
     return p;

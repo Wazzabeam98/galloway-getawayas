@@ -10,9 +10,12 @@ import { toast } from 'react-toastify';
 export default function LeaveListingBtn({
     listingId,
     title,
+    kind = 'listing',
 }: {
     listingId: string;
     title: string;
+    // A holiday let, or a business (an experience or a trade) — provider_access.
+    kind?: 'listing' | 'provider';
 }) {
     const router = useRouter();
     const [confirming, setConfirming] = useState(false);
@@ -25,13 +28,13 @@ export default function LeaveListingBtn({
             const res = await fetch('/api/listing-access', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'leave', listingId: listingId }),
+                body: JSON.stringify({ action: 'leave', kind, listingId: listingId, providerId: listingId }),
             });
             const data = await res.json();
 
             if (data && data.ok) {
                 toast.success('You no longer help with ' + title + '.', { theme: 'colored' });
-                router.push('/dashboard');
+                router.push(kind === 'provider' ? '/' : '/dashboard');
                 router.refresh();
                 return;
             }
@@ -52,7 +55,7 @@ export default function LeaveListingBtn({
                 onClick={() => setConfirming(true)}
                 className="text-sm font-semibold text-slate-600 underline hover:text-slate-900"
             >
-                Leave this listing
+                {kind === 'provider' ? 'Leave this business' : 'Leave this listing'}
             </button>
         );
     }

@@ -3,6 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { setOwnerPaused } from '@/lib/providerTakedown';
+import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
             .select('id, owner_id, status')
             .eq('id', providerId)
             .maybeSingle();
-        if (!p || p.owner_id !== user.id) {
+        if (!p || !(await mayActOn(admin, user.id, p, 'full'))) {
             return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
         }
         // Only a live listing has anything to take down; a draft or an
