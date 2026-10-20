@@ -44,6 +44,10 @@ export default function MessagesInboxPage() {
     const [filter, setFilter] = useState<
         'all' | 'unread' | 'needsReply' | 'starred' | 'archived'
     >('all');
+    // What the thread is about, as Airbnb's Messages tabs sort it: a stay
+    // (Homes), an experience order, or a trade job (Services). Sits alongside
+    // the filter above — Homes + Unread is the unread stays.
+    const [category, setCategory] = useState<'all' | 'homes' | 'experiences' | 'services'>('all');
     // Which rows have a menu action in flight. One entry per conversation
     // rather than a single id: two rows acted on at once are independent, and
     // a shared flag would have let the second one finish and re-enable the
@@ -315,23 +319,42 @@ export default function MessagesInboxPage() {
     // Every count is of the inbox, never of the archive. Something archived is
     // deliberately out of sight, so it must not keep a number lit next to a
     // filter the person is not looking at.
+    const inCategory = useMemo(
+        () => conversations.filter((c) => category === 'all' || c.category === category),
+        [conversations, category]
+    );
+
+    // Airbnb's All "shows only the categories relevant to your account", so a
+    // tab appears once there is something in it.
+    const categories = useMemo(
+        () =>
+            ([
+                ['homes', 'Homes'],
+                ['experiences', 'Experiences'],
+                ['services', 'Services'],
+            ] as [typeof category, string][]).filter((row) =>
+                conversations.some((c) => c.category === row[0])
+            ),
+        [conversations]
+    );
+
     const counts = useMemo(
         () => {
-            const inbox = conversations.filter((c) => !c.archived);
+            const inbox = inCategory.filter((c) => !c.archived);
             return {
                 unread: inbox.reduce((s, c) => s + (c.unread || 0), 0),
                 needsReply: inbox.filter((c) => c.needsReply).length,
                 starred: inbox.filter((c) => c.starred).length,
-                archived: conversations.filter((c) => c.archived).length,
+                archived: inCategory.filter((c) => c.archived).length,
             };
         },
-        [conversations]
+        [inCategory]
     );
 
     const shown = useMemo(() => {
         const q = query.trim().toLowerCase();
 
-        return conversations.filter((c) => {
+        return inCategory.filter((c) => {
             // The archive is a folder, not a filter on top of the inbox: it is
             // the only view that shows archived conversations, and every other
             // view hides them.
@@ -347,12 +370,67 @@ export default function MessagesInboxPage() {
             if (!q) return true;
 
             const name = (c.otherName || '').toLowerCase();
-            const place = ((c.listing && c.listing.title) || '').toLowerCase();
+            const place = [
+                c.listing && c.listing.title,
+                c.placeTitle,
+                c.subtitle,
+                c.statusLine,
+            ].filter(Boolean).join(' ').toLowerCase();
             const body = ((c.lastMessage && c.lastMessage.body) || '').toLowerCase();
 
             return name.indexOf(q) !== -1 || place.indexOf(q) !== -1 || body.indexOf(q) !== -1;
         });
-    }, [conversations, query, filter]);
+    }, [inCategory, query, filter]);
+
+    // The one filter row both lists use: All and the category tabs, then the
+    // folders and flags. One row that scrolls sideways on a phone, as Airbnb's
+    // does, rather than wrapping onto three lines. `phone` only changes the
+    // tap target.
+    const filterRow = (phone: boolean) => {
+        const pill = (on: boolean) =>
+            'px-3 rounded-lg text-xs font-semibold border transition flex-shrink-0 whitespace-nowrap ' +
+            (phone ? 'py-2 ' : 'py-1.5 ') +
+            (on
+                ? 'bg-slate-900 text-white border-slate-900'
+                : 'text-slate-600' + (phone ? '' : ' hover:border-slate-900'));
+        return (
+            <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <button
+                    type="button"
+                    onClick={() => { setCategory('all'); setFilter('all'); }}
+                    className={pill(category === 'all' && filter === 'all')}
+                >
+                    All
+                </button>
+                {categories.map((row) => (
+                    <button
+                        key={row[0]}
+                        type="button"
+                        onClick={() => setCategory(category === row[0] ? 'all' : row[0])}
+                        className={pill(category === row[0])}
+                    >
+                        {row[1]}
+                    </button>
+                ))}
+                {([
+                    ['needsReply', 'Needs reply', counts.needsReply],
+                    ['unread', 'Unread', counts.unread],
+                    ['starred', 'Starred', counts.starred],
+                    ['archived', 'Archived', counts.archived],
+                ] as [typeof filter, string, number][]).map((row) => (
+                    <button
+                        key={row[0]}
+                        type="button"
+                        onClick={() => setFilter(filter === row[0] ? 'all' : row[0])}
+                        className={pill(filter === row[0])}
+                    >
+                        {row[1]}
+                        {row[2] > 0 ? ' ' + row[2] : ''}
+                    </button>
+                ))}
+            </div>
+        );
+    };
 
     // Starring and archiving are this person's own view of the conversation,
     // so the browser writes them straight to conversation_prefs — the row is
@@ -612,30 +690,7 @@ export default function MessagesInboxPage() {
                     />
                 </div>
 
-                <div className="flex flex-wrap gap-1.5">
-                    {([
-                        ['all', 'All', 0],
-                        ['needsReply', 'Needs reply', counts.needsReply],
-                        ['unread', 'Unread', counts.unread],
-                        ['starred', 'Starred', counts.starred],
-                        ['archived', 'Archived', counts.archived],
-                    ] as [typeof filter, string, number][]).map((row) => (
-                        <button
-                            key={row[0]}
-                            type="button"
-                            onClick={() => setFilter(row[0])}
-                            className={
-                                'px-3 py-1.5 rounded-lg text-xs font-semibold border transition ' +
-                                (filter === row[0]
-                                    ? 'bg-slate-900 text-white border-slate-900'
-                                    : 'text-slate-600 hover:border-slate-900')
-                            }
-                        >
-                            {row[1]}
-                            {row[2] > 0 ? ' ' + row[2] : ''}
-                        </button>
-                    ))}
-                </div>
+                {filterRow(false)}
             </div>
 
             <div className="flex-1 overflow-y-auto">
@@ -1012,30 +1067,7 @@ export default function MessagesInboxPage() {
                                 />
                             </div>
 
-                            <div className="flex flex-wrap gap-1.5">
-                                {([
-                                    ['all', 'All', 0],
-                                    ['needsReply', 'Needs reply', counts.needsReply],
-                                    ['unread', 'Unread', counts.unread],
-                                    ['starred', 'Starred', counts.starred],
-                                    ['archived', 'Archived', counts.archived],
-                                ] as [typeof filter, string, number][]).map((row) => (
-                                    <button
-                                        key={row[0]}
-                                        type="button"
-                                        onClick={() => setFilter(row[0])}
-                                        className={
-                                            'px-3 py-2 rounded-lg text-xs font-semibold border transition ' +
-                                            (filter === row[0]
-                                                ? 'bg-slate-900 text-white border-slate-900'
-                                                : 'text-slate-600')
-                                        }
-                                    >
-                                        {row[1]}
-                                        {row[2] > 0 ? ' ' + row[2] : ''}
-                                    </button>
-                                ))}
-                            </div>
+                            {filterRow(true)}
                         </div>
 
                         {shown.length === 0 ? (
