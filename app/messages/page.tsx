@@ -676,29 +676,10 @@ export default function MessagesInboxPage() {
         );
     }
 
-    // The row in the list for whatever is open, which is where needsReply
-    // lives — it is worked out per person when the list is built.
-    const activeConversation = conversations.filter(
-        (c) => c.key === activeId
-    )[0] || null;
-
-    // Offered under the last message rather than buried in the row menu,
-    // because it belongs to the message that is waiting. A needs-reply count
-    // that includes threads ending "thanks!" is one nobody reads.
-    const noReplyLink = activeConversation && activeConversation.needsReply ? (
-        <div className="pt-2 flex items-center justify-center gap-2 text-xs">
-            <span className="text-amber-700 font-medium">Waiting on you</span>
-            <span className="text-slate-300">&middot;</span>
-            <button
-                type="button"
-                onClick={() => markNoReplyNeeded(activeConversation.bookingId)}
-                disabled={!!busy[activeConversation.bookingId]}
-                className="font-semibold text-slate-500 underline hover:text-slate-900 disabled:opacity-50"
-            >
-                Mark no reply needed
-            </button>
-        </div>
-    ) : null;
+    // No "Waiting on you · Mark no reply needed" line under the messages:
+    // Airbnb shows none, and Liam doesn't want it (20/10/2026). Needs reply is
+    // still the filter, which a thread leaves when someone on the host's side
+    // replies, and "No reply needed" is still in the row's menu.
 
     // --- The list of conversations ----------------------------------------
     const list = (
@@ -821,8 +802,6 @@ export default function MessagesInboxPage() {
                                 </div>
                             );
                         })}
-
-                        {noReplyLink}
                     </div>
 
                     <div className="p-4 border-t">
@@ -1238,8 +1217,6 @@ export default function MessagesInboxPage() {
                                             </div>
                                         );
                                     })}
-
-                                    {noReplyLink}
                                 </div>
 
                                 <div className="p-3 border-t">
