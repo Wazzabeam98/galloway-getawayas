@@ -7,6 +7,7 @@ import Hero from '@/components/base/Hero';
 import ComingSoonBanner from '@/components/base/ComingSoonBanner';
 import { businessSignupsOpen } from '@/lib/serviceOrders';
 import UpcomingTrip from '@/components/UpcomingTrip';
+import CohostInvites from '@/components/CohostInvites';
 import UpcomingExperience, { type Upcoming } from '@/components/UpcomingExperience';
 import { guestExperienceLists } from '@/lib/guestExperienceLists';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -308,6 +309,11 @@ export default async function HomePage({
 
             {/* Kirkcudbright Hero Banner */}
             <Hero />
+
+            {/* A co-host invitation waiting for whoever's signed in: in front of
+          them, Accept or Decline, so it can't be missed if the email went to
+          junk. Renders nothing otherwise. */}
+            <CohostInvites className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8" />
 
             {/* Someone with a stay coming up sees it before anything else. Returns
           nothing at all for a signed-out visitor or a guest with no booking.
