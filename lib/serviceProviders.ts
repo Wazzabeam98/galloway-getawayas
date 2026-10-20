@@ -2537,15 +2537,45 @@ export function categoryBlockers(
     return ['No guest category assigned yet — set the word guests see and the payout category before approving.'];
 }
 
+// Whether a guest experience must have its weekly opening hours set before it
+// can go live. A set-times (slot) experience generates its bookable times from
+// the weekly template, and a comes-to-you experience reads the template for the
+// dates a guest may request — so both are useless the moment they are approved
+// with an empty template (B's audit: approval made them "live" with nothing to
+// book). A made-to-order product has no weekly hours at all and is never gated.
+//
+// The one place the rule lives, so the editor's greyed Submit, the submit RPC's
+// mirror, the admin Approve gate and the dashboard prompt all agree on it.
+export function needsWeeklyHours(
+    provider: { audience?: string | null; trade?: string | null; shape?: string | null }
+): boolean {
+    const isGuest = String(provider.audience || '') === 'guest'
+        || audienceForTrade(String(provider.trade || '')) === 'guest';
+    if (!isGuest) return false;
+    const shape = String(provider.shape || 'made_to_order');
+    return shape === 'slot' || shape === 'comes_to_you';
+}
+
 // The whole approval gate, in one function, so the admin queue and the decision
 // route refuse on exactly the same list. Registrations for the regulated host
-// trades, and a payout category (word + code) for every guest provider.
+// trades, a payout category (word + code) for every guest provider, and — for a
+// slot or comes-to-you guest — the weekly opening hours without which it would
+// be approved with nothing a guest can book.
+//
+// `weeklyHoursSet` is left undefined by a caller that hasn't counted the hours
+// (so the hours gate is simply not applied for it); the admin queue and the
+// decision route both pass it, so both refuse on the same list.
 export function approvalBlockers(
-    provider: RegistrationDraft & { stripe_mcc?: string | null },
+    provider: RegistrationDraft & { stripe_mcc?: string | null; audience?: string | null; shape?: string | null },
     rows: RegistrationRow[] | null | undefined,
-    today?: Date
+    today?: Date,
+    opts?: { weeklyHoursSet?: boolean }
 ): string[] {
-    return registrationBlockers(provider, rows, today).concat(categoryBlockers(provider));
+    const blockers = registrationBlockers(provider, rows, today).concat(categoryBlockers(provider));
+    if (needsWeeklyHours(provider) && opts && opts.weeklyHoursSet === false) {
+        blockers.push('No weekly opening hours set yet — this experience would be live with no times for a guest to book.');
+    }
+    return blockers;
 }
 
 // Short, guest-facing category words keyed by the Stripe MCC assigned at review.

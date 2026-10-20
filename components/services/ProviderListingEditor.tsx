@@ -621,6 +621,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [active, setActive] = useState<NavKey>('basics');
     const [paused, setPaused] = useState(provider.owner_paused);
     const [pausing, setPausing] = useState(false);
+    // Live state of the listing's status. A not-yet-approved provider finishes
+    // setup and submits for review from the end of THIS editor (the wizard hands
+    // them here); an approved one never sees the submit panel and edits live.
+    const [status, setStatus] = useState(provider.status);
+    const [submitting, setSubmitting] = useState(false);
 
     const [isPhone, setIsPhone] = useState(false);
     useEffect(() => {
@@ -777,6 +782,14 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const savePhotos: SavePhotos = (change) => {
         const before = photosRef.current;
         const next = change(before);
+        // A live listing keeps at least one photo — removing the last would drop
+        // it from every grid, the same harm the last-priced-item guard prevents.
+        // Blocked here and refused server-side too. A provider still in setup may
+        // clear the gallery while building it up.
+        if (status === 'approved' && next.length === 0) {
+            toast.error('Keep at least one photo — your listing is live. Add another before removing the last.', { theme: 'colored' });
+            return Promise.resolve(false);
+        }
         photosRef.current = next;
         setPhotos(next);
         return run('photos', { photos: next, logo }).then((ok) => {
@@ -832,7 +845,35 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     if (!activity.trim()) missing.push('the activity level');
 
     const hasHours = p.isSlot || p.shape === 'comes_to_you';
+    // Whether the weekly template has a usable day. Read from live state so it
+    // updates the moment hours are saved, with no reload. A slot and a
+    // comes-to-you are both bookable off these hours; a submit is held until
+    // they're set (the server mirrors this in the submit RPC and Approve gate).
+    const hoursSet = hours.some((h) => h.on && h.open && h.close && h.open < h.close);
     const hasVenue = p.venue_lat != null && p.venue_lng != null;
+
+    // Submit for review — the one action a not-yet-approved provider takes at the
+    // end of this editor. It flips the row to pending_review through the
+    // security-definer RPC (which re-checks ownership, the description and the
+    // weekly hours), then alerts the admins. An approved listing never shows it.
+    const submitForReview = async () => {
+        if (submitting || (hasHours && !hoursSet)) return;
+        setSubmitting(true);
+        const { error } = await supabase.rpc('submit_service_provider', { p_id: p.id });
+        if (error) {
+            setSubmitting(false);
+            toast.error(error.message || 'Could not submit', { theme: 'colored' });
+            return;
+        }
+        try {
+            await fetch('/api/services/submitted', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }),
+            });
+        } catch { /* the admin alert is best-effort — the submit already landed */ }
+        setStatus('pending_review');
+        setSubmitting(false);
+        toast.success('Sent to us for review.', { theme: 'colored' });
+    };
     const SECTIONS: { key: NavKey; label: string; short: string; icon: any }[] = [
         { key: 'basics', label: 'Basics & guests', short: 'Basics', icon: FileText },
         { key: 'photos', label: 'Photos', short: 'Photos', icon: ImageIcon },
@@ -877,10 +918,14 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
             <TakenDownBanner paused={paused} adminHidden={p.admin_hidden} pausing={pausing} onPutBack={togglePaused} who="guests" />
 
-            {hasHours && p.availability.length === 0 && !paused && (
+            {hasHours && !hoursSet && !paused && (
                 <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4">
-                    <div className="font-semibold text-amber-900">You’re not bookable yet — add your weekly hours</div>
-                    <p className="mt-1 text-sm text-amber-900/80">Guests book a time from your weekly hours. Until you set them, your listing generates no times and won’t appear in the marketplace.</p>
+                    <div className="font-semibold text-amber-900">Add your weekly hours</div>
+                    <p className="mt-1 text-sm text-amber-900/80">
+                        {p.isSlot
+                            ? 'Guests book a time from your weekly hours. Until you set them, there are no times for a guest to book.'
+                            : 'Guests ask to book a date that falls within your weekly hours. Until you set them, a guest has no dates to request.'}
+                    </p>
                     <button type="button" onClick={() => (isPhone ? goToEditorSection('availability') : setActive('availability'))}
                         className="mt-3 rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white">Set your hours</button>
                 </div>
@@ -1022,6 +1067,41 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     ))}
                 </div>
             </div>
+
+            {/* Submit for review — the end of setup, for a listing not yet approved.
+                The wizard hands a new provider here to set the things it no longer
+                asks (their weekly hours), then they submit from this one place. A
+                set-times or comes-to-you experience stays greyed until the weekly
+                hours are set; made-to-order has none and is never held. Gone once
+                approved — an approved listing edits live, with no re-review. */}
+            {status !== 'approved' && (
+                <div className="mt-12 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6">
+                    {status === 'pending_review' ? (
+                        <>
+                            <h2 className="text-lg font-bold text-emerald-900">Sent for review</h2>
+                            <p className="mt-1 text-sm text-emerald-900/80">
+                                We’ve got your experience and we’ll be in touch. You can keep editing in the meantime — anything you change now is part of what we review.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <h2 className="text-lg font-bold text-emerald-900">Ready to go live?</h2>
+                            <p className="mt-1 text-sm text-emerald-900/80">
+                                {hasHours && !hoursSet
+                                    ? (p.isSlot
+                                        ? 'Set your weekly hours above first — guests book their times from them, so there’s nothing to book without them.'
+                                        : 'Set your weekly hours above first — guests request dates within them, so there are no dates to request without them.')
+                                    : 'Send your experience to us for review. We’ll check it over and get you live.'}
+                            </p>
+                            <button type="button" onClick={submitForReview}
+                                disabled={submitting || (hasHours && !hoursSet)}
+                                className="mt-4 inline-flex items-center gap-2 rounded-full bg-emerald-700 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
+                                {submitting ? 'Sending…' : 'Submit for review'}
+                            </button>
+                        </>
+                    )}
+                </div>
+            )}
 
             {selecting && (
                 <div role="region" aria-label="Selected offerings" className="fixed inset-x-0 bottom-0 z-[60] border-t border-slate-200 bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
