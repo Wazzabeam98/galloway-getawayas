@@ -148,22 +148,27 @@ export default function TownsCarousel({ towns }: { towns: Town[] }) {
                                 stretches its items), with the link pinned to the
                                 bottom, so the green links line up across the row
                                 whatever the length of each blurb. */}
-                            <Link
-                                href={'/holiday-cottages/' + t.slug}
-                                className="group flex h-full flex-col rounded-2xl border border-stone-200 hover:border-stone-900 transition overflow-hidden"
-                            >
+                            {/* The card is clickable throughout, but the link
+                                is only "Stays in <place> →", stretched over it —
+                                the same pattern as ListingCard — so the link text
+                                is short and unique, and the place name is plain
+                                text, not a heading. */}
+                            <div className="group relative flex h-full flex-col rounded-2xl border border-stone-200 hover:border-stone-900 transition overflow-hidden">
                                 <TownPhoto photo={t.photo} alt={t.photoAlt} name={t.name} />
                                 <div className="flex flex-1 flex-col p-4">
-                                    <h3 className="font-bold text-stone-900">{t.name}</h3>
+                                    <p className="font-bold text-stone-900">{t.name}</p>
                                     <p className="mt-1 text-sm text-stone-600">{t.blurb}</p>
                                     {/* "Stays", Airbnb's word, on the link; the
                                         area pages keep "Holiday cottages in …" in
                                         their own titles and URLs for search. */}
-                                    <span className="mt-auto pt-3 text-sm font-semibold text-emerald-700">
+                                    <Link
+                                        href={'/holiday-cottages/' + t.slug}
+                                        className="mt-auto pt-3 text-sm font-semibold text-emerald-700 after:absolute after:inset-0 after:content-[''] focus:outline-none focus-visible:after:rounded-2xl focus-visible:after:ring-2 focus-visible:after:ring-emerald-600"
+                                    >
                                         Stays in {t.name} →
-                                    </span>
+                                    </Link>
                                 </div>
-                            </Link>
+                            </div>
                         </li>
                     ))}
                 </ul>

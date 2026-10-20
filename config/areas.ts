@@ -132,8 +132,8 @@ export const AREAS: Area[] = [
         ],
         metaDescription: "Scotland’s Artists’ Town, on the River Dee. Pastel houses, a working harbour, and a light that has drawn painters here since the late 1800s.",
         thingsToDo: [
-            "The town is the attraction. Broughton House on the High Street was the home of the artist E A Hornel and has a Japanese-inspired garden running down to the Dee — worth an hour on its own. Kirkcudbright Galleries, in the converted town hall, holds the town’s art collection and changes its exhibitions through the year, and the Tolbooth Art Centre sits in a seventeenth-century building that was once the jail. MacLellan’s Castle is roofless and free to wander when it’s open.",
-            "Beyond the galleries, walk the riverside path along the Dee, or head to Dhoon Bay, a few minutes out of town, for the beach. The harbour still lands shellfish, and the town’s summer programme runs from the art and crafts trail in the spring through to the floodlit tattoo.",
+            "The town is the attraction. Broughton House on the High Street was the home of the artist E A Hornel and has a Japanese-inspired garden running down to the Dee — worth an hour on its own. Kirkcudbright Galleries, in the converted town hall, holds the town’s art collection and changes its exhibitions through the year, and the Tolbooth Art Centre sits in a seventeenth-century building that was once the jail. MacLellan’s Castle, roofless since the 1700s, opens through the summer (Historic Environment Scotland, small entry charge).",
+            "Beyond the galleries, walk the riverside path along the Dee, or head to Dhoon Bay, a few minutes out of town, for the beach. The harbour still lands shellfish, and the town’s summer programme runs from the art and crafts trail in early August through to the floodlit tattoo at the end of the month.",
             "The Cocoabean Company at Twynholm is about ten to fifteen minutes away if you have children with you, and Threave and Castle Douglas are fifteen minutes the other way.",
         ],
         gettingThere: [
@@ -142,7 +142,7 @@ export const AREAS: Area[] = [
             "Most people arrive by car, and you will want one — the beaches, the forest and the neighbouring towns are all short drives rather than walks.",
         ],
         faqs: [
-            { question: "Is Kirkcudbright a good base for exploring Dumfries & Galloway?", answer: "It is one of the best. Castle Douglas is fifteen minutes, Gatehouse of Fleet twenty, Dalbeattie half an hour, and the Galloway Forest Park about forty-five minutes. Everything in the east of the region is within an hour." },
+            { question: "Is Kirkcudbright a good base for exploring Dumfries & Galloway?", answer: "It is one of the best. Castle Douglas is fifteen minutes, Gatehouse of Fleet twenty, Dalbeattie half an hour, and the Galloway Forest Park about forty-five minutes. Most of the east of the region is within an hour." },
             { question: "Are there dog friendly cottages in Kirkcudbright?", answer: "Yes — look for the paw symbol on a listing. The beaches and the forest walks nearby make it a good spot for a dog." },
             { question: "How do you pronounce Kirkcudbright?", answer: "Kur-KOO-bree. The middle is swallowed. Nobody local will mind if you get it wrong, but you will hear it said properly within about a minute of arriving." },
             { question: "Is there a beach?", answer: "Dhoon Bay is a few minutes out of town. Brighouse Bay and Sandgreen are within twenty minutes, and Rockcliffe and Sandyhills are about forty." },
@@ -164,7 +164,7 @@ export const AREAS: Area[] = [
             "Threave Garden is a mile out of town: sixty-four acres run by the National Trust for Scotland, where their heritage gardeners are trained, with a walled garden, glasshouses and an osprey platform. Threave Castle is a little further on, a fourteenth-century tower house on an island in the Dee that you reach by ringing a bell for the ferryman.",
             "Carlingwark Loch sits at the edge of the town for boating, picnics and a playground, and the whole place is walkable end to end in twenty minutes.",
         ],
-        metaDescription: "Scotland’s Food Town, with Threave Gardens on the doorstep and a loch at the end of the street.",
+        metaDescription: "Scotland’s Food Town, with Threave Garden on the doorstep and a loch at the end of the street.",
         thingsToDo: [
             "Eat, mostly, and then walk it off. The town’s three main streets are lined with butchers, bakers, delis and independent food shops, and the producers’ market runs on the third Sunday of the month.",
             "Threave Garden, a mile out, is sixty-four acres run by the National Trust for Scotland and the place their heritage gardeners are trained — a walled garden, glasshouses, rockeries, and an osprey platform and bat reserve on the estate. Threave Castle is a little further, a fourteenth-century tower on an island in the Dee that you reach by ringing a bell for the ferryman, which is the best approach to any castle in the region.",
@@ -195,7 +195,7 @@ export const AREAS: Area[] = [
         // named here have not been re-verified since they were written.
         hold: false,
         intro: [
-            "Gatehouse of Fleet takes its name from the toll house that stood on the old coach road between Dumfries and Stranraer. Robert Burns stayed at what is now the Murray Arms in 1793 and wrote the first draft of Scots Wha Hae there.",
+            "Gatehouse of Fleet takes its name from the toll house that stood on the old coach road between Dumfries and Stranraer. Robert Burns stayed at what is now the Murray Arms in 1793 and is said to have written the first draft of Scots Wha Hae there.",
             "The town was once a proper industrial place — mills, a brewery, its own port — and is now one of the quietest and prettiest villages in the south of Scotland. The clock tower at the end of the main street is the picture everyone takes. It sits on the Water of Fleet with wooded hills behind it, on the edge of a National Scenic Area and within reach of the Galloway Forest Park.",
             "Cardoness Castle stands on its rock a mile to the south-west, and Cream o’ Galloway is a short drive out at Rainton. The A75 bypassed the town in 1986, so getting here needs a deliberate turn off the main road — which is exactly why it has stayed the way it is.",
         ],
@@ -250,7 +250,7 @@ export const AREAS: Area[] = [
             { question: "Is it good for mountain biking?", answer: "Yes — Dalbeattie is one of the 7stanes trail centres, with routes from family green up to the well-known technical sections." },
             { question: "Are there dog friendly cottages in Dalbeattie?", answer: "Yes — look for the paw symbol on a listing. The forest and the coast paths are both on the doorstep." },
             { question: "Is there a beach?", answer: "Sandyhills is the nearest proper sandy beach, about fifteen minutes. Rockcliffe has a smaller shore and better views." },
-            { question: "How far is Kirkcudbright or Castle Douglas?", answer: "Both about twenty to twenty-five minutes." },
+            { question: "How far is Kirkcudbright or Castle Douglas?", answer: "Castle Douglas is ten to fifteen minutes, Kirkcudbright about twenty-five." },
         ],
         nearby: ["castle-douglas", "kirkcudbright", "dumfries"],
     },
@@ -299,13 +299,13 @@ export const AREAS: Area[] = [
         // named here have not been re-verified since they were written.
         hold: false,
         intro: [
-            "Wigtown is Scotland’s National Book Town, which for a place of about a thousand people means an improbable number of bookshops — second-hand, antiquarian and new — strung around a broad central square. The designation came in 1998 and the town rebuilt itself around it; The Bookshop on North Main Street is the largest second-hand bookshop in Scotland.",
+            "Wigtown is Scotland’s National Book Town, which for a place of about a thousand people means an improbable number of bookshops — second-hand, antiquarian and new — strung around a broad central square. The designation came in 1998 and the town rebuilt itself around it; The Bookshop on North Main Street bills itself as Scotland’s largest second-hand bookshop.",
             "Every autumn the Wigtown Book Festival brings ten days of writers, talks and events and fills the town. The rest of the year it is quiet, which is the other half of the appeal — a wet afternoon works through the shelves, a dry one goes down to the salt marsh below the town where the Bladnoch meets Wigtown Bay.",
-            "It sits at the top of the Machars, the peninsula running south to Whithorn — where St Ninian landed, the cradle of Scottish Christianity — and on to the Isle of Whithorn and the sea. Bladnoch, Scotland’s most southerly distillery, is a mile out of town, and Newton Stewart and the Galloway Forest Park are fifteen minutes north.",
+            "It sits at the top of the Machars, the peninsula running south to Whithorn — traditionally where St Ninian brought Christianity to Scotland — and on to the Isle of Whithorn and the sea. Bladnoch, Scotland’s most southerly distillery, is a mile out of town, and Newton Stewart and the Galloway Forest Park are fifteen minutes north.",
         ],
         metaDescription: "Scotland’s National Book Town, on the Machars — more bookshops than a place its size has any right to, and a book festival every autumn.",
         thingsToDo: [
-            "Wigtown is Scotland’s National Book Town, and that is genuinely what you come for — a small town with more bookshops than seems reasonable, including The Bookshop, one of the largest second-hand bookshops in the country. An afternoon disappears easily.",
+            "Wigtown is Scotland’s National Book Town, and that is genuinely what you come for — a small town with more bookshops than seems reasonable, including The Bookshop, which bills itself as Scotland’s largest second-hand bookshop. An afternoon disappears easily.",
             "The Wigtown Book Festival runs each autumn and brings authors and readers from all over; the town books up well in advance for it.",
             "Wigtown Bay is the largest local nature reserve in Britain, with a bird hide above the merse. South of here the Machars peninsula runs down to Whithorn, where Christianity is said to have first arrived in Scotland, and on to the Isle of Whithorn and its ruined chapel by the sea. Bladnoch Distillery is on the edge of the town.",
         ],
@@ -314,7 +314,7 @@ export const AREAS: Area[] = [
             "The nearest railway stations are Stranraer and Barrhill, both around forty minutes. A car is essential.",
         ],
         faqs: [
-            { question: "What is Wigtown known for?", answer: "It is Scotland’s National Book Town — a small town with a disproportionate number of bookshops, including one of the largest second-hand bookshops in the country." },
+            { question: "What is Wigtown known for?", answer: "It is Scotland’s National Book Town — a small town with a disproportionate number of bookshops, including The Bookshop, which bills itself as Scotland’s largest second-hand bookshop." },
             { question: "When is the book festival?", answer: "Each autumn, usually late September into October. It brings authors and readers from all over and the town books up well in advance." },
             { question: "Are there dog friendly cottages in Wigtown?", answer: "Yes — look for the paw symbol on a listing." },
             { question: "What else is nearby?", answer: "Wigtown Bay is the largest local nature reserve in Britain, good for birds. The Machars peninsula runs south from here to Whithorn, where Christianity is said to have first arrived in Scotland." },
@@ -352,24 +352,24 @@ export const AREAS: Area[] = [
         hold: false,
         intro: [
             "Galloway Forest Park is the largest forest park in Britain — about three hundred square miles of forest, loch, moor and hill in the heart of Dumfries & Galloway. In 2009 it became the first Dark Sky Park in the United Kingdom, and on a clear, moonless night you can see the Milky Way, meteor showers and thousands of stars with nothing but your own eyes. There is very little else like it this far south.",
-            "By day it is walking, cycling and water. The Merrick, the highest hill in southern Scotland, is climbed from Glen Trool, where Bruce’s Stone marks a victory over an English force in 1307 above a loch worth the walk on its own. Kirroughtree and the other 7stanes centres have mountain-bike trails from gentle to fearsome, the Raiders’ Road forest drive follows the Water of Ken, and Clatteringshaws Loch sits in the middle of it all with red deer on the hills above.",
+            "By day it is walking, cycling and water. The Merrick, the highest hill in southern Scotland, is climbed from Glen Trool, where Bruce’s Stone marks a victory over an English force in 1307 above a loch worth the walk on its own. Kirroughtree and the other 7stanes centres have mountain-bike trails from gentle to fearsome, the Raiders’ Road forest drive follows the Black Water of Dee, and Clatteringshaws Loch sits in the middle of it all with red deer on the hills above.",
             "Nobody lives deep in the park, so staying here means a cottage on its edge — near Newton Stewart, Glen Trool or the quiet roads in between — with the forest and the dark skies a few minutes from the door.",
         ],
         metaDescription: "Britain’s first Dark Sky Park — forest, loch and hill, with stargazing, the Merrick and Glen Trool.",
         thingsToDo: [
-            "The skies first. Galloway Forest was the first Dark Sky Park in Britain and still one of the darkest places in the country — from autumn to early spring, when the nights are long, the Milky Way is plain to the naked eye. The Dark Sky Dome near Straiton, in the Carrick Forest at the north end, runs stargazing sessions; you need no equipment of your own to see a great deal.",
+            "The skies first. Galloway Forest was the first Dark Sky Park in Britain and still one of the darkest places in the country — from autumn to early spring, when the nights are long, the Milky Way is plain to the naked eye. The Dark Sky Dome near Straiton, in the Carrick Forest at the north end, is a place to sleep under these skies; you need no equipment of your own to see a great deal.",
             "By day, Glen Trool is the obvious start: Bruce’s Stone, Loch Trool and the path up the Merrick, the highest hill in the south of Scotland. Kirroughtree, near Newton Stewart, is one of the 7stanes mountain-biking centres, with everything from family green trails to the technical black runs the place is known for, and good walking on the same forest roads.",
-            "The Raiders’ Road is a ten-mile forest drive along the Water of Ken with picnic spots and a pool to swim in. Clatteringshaws Loch has a visitor point and red deer on the surrounding hills, and the whole park is threaded with waymarked walks and cycle routes, red kites overhead and wild goats on the tops.",
+            "The Raiders’ Road is a ten-mile forest drive along the Black Water of Dee with picnic spots and a pool to swim in. Clatteringshaws Loch has lochside walks, with the Red Deer Range a short drive west, and the whole park is threaded with waymarked walks and cycle routes, red kites overhead and wild goats on the tops.",
         ],
         gettingThere: [
             "The park sits in the middle of the region, reached from its edges rather than driven into. Newton Stewart, on the A75, is the main southern gateway — about 50 miles west of Dumfries, an hour and a half from Gretna — and Glen Trool and Kirroughtree are a short drive from there.",
-            "The northern end, around the Dark Sky Dome and the Carrick Forest, is reached from Straiton and Dalmellington off the A713, roughly an hour south of Ayr.",
+            "The northern end, around the Dark Sky Dome and the Carrick Forest, is reached from Straiton and Dalmellington off the A713, about half an hour south of Ayr.",
             "There is no railway into the park and the roads inside it are single-track in places and unlit by design — the darkness is the point. A car is essential, and a torch for walking back from a stargazing session.",
         ],
         faqs: [
             { question: "Why is Galloway Forest Park famous for its skies?", answer: "It was the first Dark Sky Park in the United Kingdom, designated in 2009, and remains one of the darkest places in the country. On a clear, moonless night the Milky Way is visible to the naked eye, best from autumn through to early spring when the nights are long." },
             { question: "Where should I stay for the park?", answer: "Nobody lives deep inside it, so you stay on the edge — around Newton Stewart and Glen Trool at the south, or towards Straiton at the north. Our cottages here are all within or close to the park boundary." },
-            { question: "What is there to do besides stargazing?", answer: "Walking and cycling, mostly. The Merrick and Glen Trool at the south, the Kirroughtree mountain-bike trails near Newton Stewart, the Raiders’ Road forest drive, and Clatteringshaws Loch with its red deer." },
+            { question: "What is there to do besides stargazing?", answer: "Walking and cycling, mostly. The Merrick and Glen Trool at the south, the Kirroughtree mountain-bike trails near Newton Stewart, the Raiders’ Road forest drive, and Clatteringshaws Loch and the Red Deer Range nearby." },
             { question: "Is it good for a dog?", answer: "Yes — look for the paw symbol on a listing. The forest roads and hill paths are as good a walk as anywhere in Scotland." },
             { question: "Do I need a car?", answer: "Yes. There is no railway into the park, and the roads inside it are quiet, single-track in places, and deliberately unlit. Bring a torch for walking back after dark." },
         ],
@@ -394,11 +394,11 @@ export const AREAS: Area[] = [
         thingsToDo: [
             "Burns, mostly, and then the coast. Robert Burns spent his last years in Dumfries and the town makes the most of it: the Robert Burns Centre in a converted watermill on the Nith, Burns House on Burns Street where he died, his mausoleum in St Michael’s churchyard, and the Globe Inn, which was his local and is still a pub.",
             "Dumfries Museum sits in an eighteenth-century windmill with a camera obscura at the top, which on a clear day projects the whole town onto a table.",
-            "Caerlaverock Castle is fifteen minutes south — a moated triangular fortress, unusual and photogenic — and next to it the WWT reserve, which fills with barnacle geese and whooper swans from October. Mabie Forest has more 7stanes mountain biking, and Southerness has a long sandy beach and a lighthouse about forty minutes down the coast.",
+            "Caerlaverock Castle is fifteen minutes south — a moated triangular fortress, unusual and photogenic — and next to it the WWT reserve, which fills with barnacle geese and whooper swans from October. Mabie Forest has more 7stanes mountain biking, and Southerness has a long sandy beach and a lighthouse about half an hour down the coast.",
         ],
         gettingThere: [
             "Dumfries is the largest town in the region, 25 miles from the border at Gretna — about half an hour on the A75. Carlisle is roughly forty-five minutes, Glasgow an hour and a half, Edinburgh an hour and three quarters.",
-            "Dumfries has a railway station on the Glasgow to Carlisle line, which makes it the only town in this list you can comfortably reach without a car. Buses run from here across the whole region.",
+            "Dumfries has a railway station on the Glasgow to Carlisle line, which makes it the easiest town in this list to reach without a car. Buses run from here across the whole region.",
             "If you are coming from England and want to arrive quickly, this is the easiest town in the region to get to.",
         ],
         faqs: [
@@ -406,7 +406,7 @@ export const AREAS: Area[] = [
             { question: "What is there to do in Dumfries?", answer: "The Robert Burns Centre, Burns House and his grave at St Michael’s are all walkable. Caerlaverock Castle and the wetland reserve are a short drive south, and Mabie Forest has mountain bike trails." },
             { question: "Are there dog friendly cottages in Dumfries?", answer: "Yes — look for the paw symbol on a listing." },
             { question: "Is Dumfries a good base for the rest of the region?", answer: "For the east, yes. Castle Douglas is half an hour, Kirkcudbright forty-five minutes, Moffat forty. Stranraer and the far west are over an hour and a half, so pick something further west if that is where you are heading." },
-            { question: "Is there a beach nearby?", answer: "The Solway coast at Southerness is about forty minutes, with a long sandy beach and a lighthouse." },
+            { question: "Is there a beach nearby?", answer: "The Solway coast at Southerness is about half an hour, with a long sandy beach and a lighthouse." },
         ],
         nearby: ["castle-douglas", "dalbeattie", "moffat"],
     },
@@ -429,11 +429,11 @@ export const AREAS: Area[] = [
         thingsToDo: [
             "Moffat is a walking town. The Devil’s Beef Tub, a vast natural hollow in the hills a few miles north, is where the Border reivers hid stolen cattle — there is a viewpoint from the road and a walk from there if you want it.",
             "The Grey Mare’s Tail, twenty minutes east on the road to St Mary’s Loch, is one of the highest waterfalls in Britain, with a steep path climbing beside it to a hanging valley and a loch at the top.",
-            "In the town itself, the broad main street is lined with shops and cafés from its spa days, and the Moffat Museum covers the town’s history. Moffat Woollen Mill is the obvious stop for a gift on the way home. The town also has a dark sky observatory nearby and sits on the Southern Upland Way, which passes a few miles to the west.",
+            "In the town itself, the broad main street is lined with shops and cafés from its spa days, and the Moffat Museum covers the town’s history. Moffat Woollen Mill is the obvious stop for a gift on the way home. The town also has a dark sky observatory nearby and sits on the Southern Upland Way, which runs right through the town.",
         ],
         gettingThere: [
             "Moffat is in the east of the region, 21 miles north of Dumfries and about two miles off the M74 — the easiest town on this list to reach from the motorway.",
-            "From Gretna it is roughly half an hour straight up the M74. Carlisle is about forty-five minutes, Glasgow an hour, Edinburgh an hour.",
+            "From Gretna it is roughly half an hour straight up the M74. Carlisle is about forty-five minutes, Glasgow an hour, Edinburgh about an hour and a quarter.",
             "The nearest railway stations are Lockerbie, about fifteen minutes away on the West Coast Main Line, and Dumfries. Lockerbie has direct trains to London and Glasgow, which makes Moffat surprisingly reachable by rail.",
         ],
         faqs: [
@@ -498,11 +498,11 @@ export const AREAS: Area[] = [
         thingsToDo: [
             "Walking and the sea. The Southern Upland Way starts on the harbour and climbs straight onto the cliffs, and the first few miles north towards Killantringan lighthouse make an excellent morning with a pub lunch at the end of it.",
             "The harbour itself is the other half of the appeal — pastel houses round a small rocky bay, with pubs and restaurants along the front and boats coming and going. There is a small beach, and rock pools at low tide.",
-            "Dunskey Castle stands ruined on the cliff a short walk south, and Dunskey Estate above the village has walled gardens and woodland paths. The Mull of Galloway and Logan Botanic Garden are both within forty minutes down the peninsula.",
+            "Dunskey Castle stands ruined on the cliff a short walk south, and Dunskey Glen, just above the village, has woodland paths down to the sea. The Mull of Galloway and Logan Botanic Garden are both within forty minutes down the peninsula.",
         ],
         gettingThere: [
             "Portpatrick is on the west coast of the Rhins of Galloway, about fifteen minutes beyond Stranraer at the very end of the A77.",
-            "From Gretna it is roughly two hours and a quarter, and from Carlisle a little more. Glasgow is around two and a half hours. It is the furthest of our towns from the border, and worth knowing that before you set off.",
+            "From Gretna it is roughly two hours and a quarter, and from Carlisle a little more. Glasgow is around two and a quarter hours. It is the furthest of our towns from the border, and worth knowing that before you set off.",
             "The nearest railway station is Stranraer, fifteen minutes away. There is no practical way to get here without a car unless you are walking the Southern Upland Way, which starts on the harbour.",
         ],
         faqs: [
