@@ -14,6 +14,7 @@ import AuthPanelHost from '@/components/auth/AuthPanel';
 import FinishSignUpGate from '@/components/auth/FinishSignUpGate';
 import KeepSignedIn from '@/components/auth/KeepSignedIn';
 import PwaSetup from '@/components/pwa/PwaSetup';
+import InstallHint from '@/components/pwa/InstallHint';
 import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import { COMPANY } from '@/config/company';
@@ -192,6 +193,9 @@ export default function RootLayout({
         />
         <ChromeGate><Navbar /></ChromeGate>
         {children}
+        {/* Add to Home Screen: signed-in phones only, once, AFTER the page's
+            own content — never over something they need to act on. */}
+        <InstallHint />
         <FooterSwitch full={<Footer />} minimal={<FooterMinimal />} />
         <ToastContainer position="top-center" />
         {/* Reads ?error= and ?success= off the URL and shows it. It was only
