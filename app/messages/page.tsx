@@ -1157,7 +1157,9 @@ export default function MessagesInboxPage() {
                                             >
                                                 <div
                                                     className={
-                                                        'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ' +
+                                                        // Chat bubbles are body text — 17px on a phone
+                                                        // (desktop/tablet keep text-sm).
+                                                        'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm max-sm:text-[17px] ' +
                                                         (mine
                                                             ? 'bg-emerald-700 text-white'
                                                             : 'bg-slate-100 text-slate-900')
