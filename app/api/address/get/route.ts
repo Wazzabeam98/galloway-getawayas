@@ -3,6 +3,7 @@ import ServerEnv from '@/config/ServerEnv';
 import { mapAddress, upstreamDetail } from '@/lib/address';
 import { adminDistrictForPostcode, DG_ADMIN_DISTRICT } from '@/lib/postcodeGeocode';
 import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
+import { liveAddressLookup, fakeAddress } from '@/lib/addressLookupMode';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,15 @@ export async function GET(request: Request) {
                 { ok: false, error: 'Too many address lookups in a short time. Try again shortly, or enter your address by hand.' },
                 { status: 429 }
             );
+        }
+
+        // Off production: the fake ID1 1QD addresses, and no council-area check
+        // (ID1 is nowhere) — see lib/addressLookupMode.ts.
+        if (!liveAddressLookup()) {
+            const fake = fakeAddress((new URL(request.url).searchParams.get('id') || '').trim());
+            return fake
+                ? NextResponse.json({ ok: true, address: fake })
+                : NextResponse.json({ ok: false, error: 'Not a test address id (off production only ID1 1QD resolves).' }, { status: 404 });
         }
 
         if (!ServerEnv.IDEAL_POSTCODES_API_KEY) {

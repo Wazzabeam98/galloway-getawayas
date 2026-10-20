@@ -13,19 +13,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { testDbUrl } from './_testDb';
 
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-
-function testDbUrl(): string | null {
-    try {
-        const line = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8').split('\n')
-            .find((l: string) => l.startsWith('SUPABASE_TEST_DB_URL='));
-        return line ? line.slice('SUPABASE_TEST_DB_URL='.length).trim() : null;
-    } catch { return null; }
-}
 
 const url = testDbUrl();
 

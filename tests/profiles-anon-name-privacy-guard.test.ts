@@ -22,6 +22,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { testDbUrl, withTestDb, columnsGrantedTo } from './_testDb';
 
 const fs = require('fs');
 const path = require('path');
@@ -30,30 +31,12 @@ const ROOT = path.resolve(__dirname, '..', '..');
 // Columns a stranger must not be able to SELECT (they carry, or gate, a surname).
 const ANON_FORBIDDEN = ['full_name', 'preferred_name', 'show_full_name', 'last_name'];
 
-function testDbUrl(): string | null {
-    try {
-        const line = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8').split('\n')
-            .find((l: string) => l.startsWith('SUPABASE_TEST_DB_URL='));
-        return line ? line.slice('SUPABASE_TEST_DB_URL='.length).trim() : null;
-    } catch { return null; }
-}
-
 const url = testDbUrl();
 
 test('profiles: anon cannot SELECT the name columns (no surname leak over REST)',
     { skip: url ? false : 'no TEST db configured — apply the migration and re-run against test' },
     async () => {
-        const pg = require('pg');
-        const client = new pg.Client({ connectionString: url });
-        await client.connect();
-        let anonGranted: Set<string>;
-        try {
-            anonGranted = new Set((await client.query(
-                "select column_name from information_schema.column_privileges "
-                + "where table_name='profiles' and table_schema='public' "
-                + "and grantee='anon' and privilege_type='SELECT'",
-            )).rows.map((r: any) => r.column_name));
-        } finally { await client.end(); }
+        const anonGranted = await withTestDb(url!, (client) => columnsGrantedTo(client, 'profiles', 'anon', 'SELECT'));
 
         const leaked = ANON_FORBIDDEN.filter((c) => anonGranted.has(c));
         assert.deepEqual(

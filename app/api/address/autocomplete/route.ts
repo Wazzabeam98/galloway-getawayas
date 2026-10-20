@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import ServerEnv from '@/config/ServerEnv';
 import { upstreamDetail } from '@/lib/address';
 import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
+import { liveAddressLookup, fakeAutocomplete } from '@/lib/addressLookupMode';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,14 @@ export async function GET(request: Request) {
                 { ok: false, error: 'Too many address searches in a short time. Try again shortly, or enter your address by hand.' },
                 { status: 429 }
             );
+        }
+
+        // Off production nothing reaches Ideal Postcodes: previews, local and
+        // anything on TEST answer from the fake (search ID1 1QD) — see
+        // lib/addressLookupMode.ts. Only the live site spends credits.
+        if (!liveAddressLookup()) {
+            const fake = fakeAutocomplete(new URL(request.url).searchParams.get('q') || '');
+            return NextResponse.json(fake.body, { status: fake.status });
         }
 
         if (!ServerEnv.IDEAL_POSTCODES_API_KEY) {

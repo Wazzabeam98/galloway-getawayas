@@ -19,6 +19,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { testDbUrl } from './_testDb';
 
 const fs = require('fs');
 const path = require('path');
@@ -109,14 +110,6 @@ test('the migration fixes the root cause: postgres default privileges drop the b
 
 // DB half — the gate. Reads the live TEST grants, so a function created later
 // that nobody decided about fails by name.
-function testDbUrl(): string | null {
-    try {
-        const line = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8').split('\n')
-            .find((l: string) => l.startsWith('SUPABASE_TEST_DB_URL='));
-        return line ? line.slice('SUPABASE_TEST_DB_URL='.length).trim() : null;
-    } catch { return null; }
-}
-
 const url = testDbUrl();
 
 test('no public function is executable by anon or authenticated unless it is on the allowlist for that role',

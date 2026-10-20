@@ -22,6 +22,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { testDbUrl, withTestDb, liveColumns, columnsGrantedTo } from './_testDb';
 
 const fs = require('fs');
 const path = require('path');
@@ -140,34 +141,15 @@ for (const { table, granted, revoked } of TABLES) {
 // test). This is the gate: it reads the live schema and grants so a column added
 // later that no one bucketed fails by name, and a decision that diverges from the
 // live grant (a stripe column accidentally granted, business_name revoked) fails too.
-function testDbUrl(): string | null {
-    try {
-        const line = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8').split('\n')
-            .find((l: string) => l.startsWith('SUPABASE_TEST_DB_URL='));
-        return line ? line.slice('SUPABASE_TEST_DB_URL='.length).trim() : null;
-    } catch { return null; }
-}
-
 for (const { table, granted, revoked } of TABLES) {
     const url = testDbUrl();
     test(`${table}: every live column has a SELECT-grant decision, and it matches the live grant`,
         { skip: url ? false : 'no TEST db configured — static buckets still checked' },
         async () => {
-            const pg = require('pg');
-            const client = new pg.Client({ connectionString: url });
-            await client.connect();
-            let cols: string[];
-            let liveGranted: Set<string>;
-            try {
-                cols = (await client.query(
-                    "select column_name from information_schema.columns where table_name=$1 and table_schema='public'",
-                    [table],
-                )).rows.map((r: any) => r.column_name);
-                liveGranted = new Set((await client.query(
-                    "select column_name from information_schema.column_privileges where table_name=$1 and grantee='authenticated' and privilege_type='SELECT'",
-                    [table],
-                )).rows.map((r: any) => r.column_name));
-            } finally { await client.end(); }
+            const { cols, liveGranted } = await withTestDb(url!, async (client) => ({
+                cols: await liveColumns(client, table),
+                liveGranted: await columnsGrantedTo(client, table, 'authenticated', 'SELECT'),
+            }));
 
             // (1) every live column is bucketed — a new one forces a decision
             const unclassified = cols.filter((c) => !granted.has(c) && !(c in revoked));

@@ -48,10 +48,24 @@ jobs:
       - name: Install
         run: npm ci
 
+      # The ONE secret this job holds, and only for the test step. Without it the
+      # DB half of every schema guard (public-page-anon-grants, profiles-anon-
+      # name-privacy, select-grant-decision, the writable-columns and grants
+      # guards) skipped here and passed green — which is how #426's logged-out
+      # 404 got past this check. It is a TEST-only login, ci_schema_reader: no
+      # table grants, no role memberships, read-only transactions, so it can
+      # read the catalog (who may read what) and nothing else. tests/_testDb.ts
+      # refuses any URL that is not the TEST project.
       - name: Tests
-        run: rm -rf .test-build && npm test
+        env:
+          SUPABASE_TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_TEST_DB_URL" ]; then
+            echo "::warning title=Schema guards skipped::SUPABASE_TEST_DB_URL is not available to this run, so the DB half of the schema guards is skipped (repo secret missing, or a fork/Dependabot PR)."
+          fi
+          rm -rf .test-build && npm test
 
-      # No secrets are given to this job on purpose. The build needs Supabase
+      # No other secrets are given to this job on purpose. The build needs Supabase
       # variables only to prerender a few pages; without them those pages log
       # an error and the build still exits 0, which is enough to catch the type
       # and syntax faults this is here for. A CI job that never holds a key
