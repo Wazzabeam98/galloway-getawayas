@@ -22,6 +22,7 @@ import { deliveryReach, type ReachDecision } from '@/lib/postcodeGeocode';
 import { outOfReachMessage } from '@/lib/deliveryReachMessage';
 import { packageNoticeRecord, packageNoticeMetadata } from '@/lib/packageNotice';
 import { agreementProblem, anonGuestTermsRecord, anonGuestTermsMetadata } from '@/lib/agreements';
+import { termsMetadata } from '@/lib/orderCancelTerms';
 import { requireGuestTerms } from '@/lib/agreementRecords';
 
 export const dynamic = 'force-dynamic';
@@ -192,7 +193,7 @@ export async function POST(request: Request) {
             const byId = new Map<string, any>(cartItems.map((i: any) => [i.id, i]));
 
             const { data: prov } = await admin.from('service_providers')
-                .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_fee, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, stripe_charges_enabled, owner_paused, admin_hidden_at, plan, commission_rate, guest_details')
+                .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_fee, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, stripe_charges_enabled, owner_paused, admin_hidden_at, plan, commission_rate, cancellation_window_hours, guest_details')
                 .eq('id', providerId).maybeSingle();
             if (!prov || prov.shape !== 'made_to_order' || !isLiveToGuests(prov)) {
                 return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
@@ -308,6 +309,9 @@ export async function POST(request: Request) {
                 delivery_fee: deliveryFeeC > 0 ? String(deliveryFeeC) : '',
                 collection_note: collectionNote,
                 commission_rate: String(pricingC.commissionRate),
+                // The cancellation terms this order is booked under, stamped onto
+                // the row by the webhook (lib/orderCancelTerms).
+                ...termsMetadata(prov),
                 ...heldChargeMetadata(pricingC),
                 note: note,
                 allergy: allergy,
@@ -390,7 +394,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, stripe_charges_enabled, owner_paused, admin_hidden_at, plan, commission_rate, exclusive_per_date, guest_details')
+            .select('id, business_name, trade, shape, fulfilment, lead_time_days, delivery_radius_miles, collection_postcode, status, stripe_account_id, stripe_payouts_enabled, stripe_charges_enabled, owner_paused, admin_hidden_at, plan, commission_rate, exclusive_per_date, cancellation_window_hours, guest_details')
             .eq('id', item.provider_id)
             .maybeSingle();
 
@@ -639,6 +643,9 @@ export async function POST(request: Request) {
             adults: hasExtraGuests(item) ? String(Math.max(1, reqAdults || 1)) : '',
             children: hasExtraGuests(item) ? String(childrenAllowed(minAge) ? reqChildrenRaw : 0) : '',
             commission_rate: String(pricing.commissionRate),
+            // The cancellation terms this order is booked under, stamped onto the
+            // row by the webhook (lib/orderCancelTerms).
+            ...termsMetadata(provider),
             ...heldChargeMetadata(pricing),
             note: note,
             allergy: allergy,

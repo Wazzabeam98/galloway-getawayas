@@ -1,4 +1,7 @@
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import OwnerPreviewBanner from '@/components/services/OwnerPreviewBanner';
 import Link from 'next/link';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { getImageUrl } from '@/lib/utils';
@@ -46,9 +49,20 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
 
     const { data: provider } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, status, subscription_status, owner_paused, admin_hidden_at, description, headshot, photos, guest_details, registration_number, callout_fee, callout_waived, hourly_rate, flat_fee, provides_quote, does_emergency, does_scheduled')
+        .select('id, owner_id, business_name, trade, audience, status, subscription_status, owner_paused, admin_hidden_at, description, headshot, photos, guest_details, registration_number, callout_fee, callout_waived, hourly_rate, flat_fee, provides_quote, does_emergency, does_scheduled')
         .eq('id', params.providerId)
         .maybeSingle();
+
+    // THE OWNER'S PREVIEW, before approval: a trade looking at their own profile
+    // while it's a draft or waiting on us sees the real page with a bar saying no
+    // host can see it yet — the holiday-let pending preview's rule. Owner-checked
+    // with getUser(); everyone else is redirected exactly as before.
+    let preview = false;
+    if (provider && provider.status !== 'approved' && !visibleInDirectory(provider)) {
+        const supabase = createServerComponentClient({ cookies });
+        const { data: { user } } = await supabase.auth.getUser();
+        preview = !!user && user.id === provider.owner_id;
+    }
 
     // Not found, not a trade, the wrong trade's URL, or not publicly visible
     // (pre-approval, delisted for non-payment, or taken down by the trade or by
@@ -58,7 +72,7 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
     if (!provider
         || audienceForTrade(provider.trade) === 'guest'
         || provider.trade !== params.trade
-        || !visibleInDirectory(provider)) {
+        || (!visibleInDirectory(provider) && !preview)) {
         redirect(tradeListHref(params.trade));
     }
 
@@ -117,6 +131,10 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                 <Link href={backHref} className="text-sm font-medium text-slate-500 hover:text-slate-800">
                     ← All {tradeLabel(provider.trade).toLowerCase()}s
                 </Link>
+
+                {preview && (
+                    <OwnerPreviewBanner status={provider.status} who="hosts" backHref={'/services/join?trade=' + encodeURIComponent(provider.trade)} backLabel="Back to your application" />
+                )}
 
                 {photos.length ? (
                     <PhotoGallery images={photos} title={provider.business_name} area={coverage || undefined} />
@@ -240,7 +258,7 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                 {/* Report this listing — the cottage's component, same form and admin
                     queue, at the foot of the page. */}
                 <div className="mt-12 pt-8 border-t border-slate-200 flex justify-center">
-                    <ReportListing targetType="trade" targetId={provider.id} title={provider.business_name} />
+                    {!preview && <ReportListing targetType="trade" targetId={provider.id} title={provider.business_name} />}
                 </div>
             </div>
         </div>

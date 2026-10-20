@@ -3,7 +3,8 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
-import { loadPublicMarketplace, loadPausedProvider, pickProvider } from '@/lib/experiencesData';
+import { loadPublicMarketplace, loadPausedProvider, loadOwnerPreviewProvider, pickProvider } from '@/lib/experiencesData';
+import OwnerPreviewBanner from '@/components/services/OwnerPreviewBanner';
 import NotTakingBookings from '@/components/NotTakingBookings';
 import { EXPERIENCE_NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import { loadExperienceReviews } from '@/lib/experienceReviews';
@@ -111,11 +112,14 @@ export async function generateMetadata(
     const admin = adminClient();
     const { data } = await admin
         .from('service_providers')
-        .select('business_name, based_line, description, headshot, photos')
+        .select('business_name, based_line, description, headshot, photos, status')
         .eq('id', params.providerId)
         .maybeSingle();
 
     if (!data) return { title: 'Experience' };
+    // Not approved yet: only its owner can open it (the preview), so describe
+    // nothing and keep it out of search.
+    if (data.status !== 'approved') return { title: data.business_name || 'Experience', robots: { index: false, follow: false } };
 
     const name = data.business_name || 'Experience';
     const where = data.based_line ? `${data.based_line}, ` : '';
@@ -163,7 +167,23 @@ export default async function PublicListingPage({ params }: { params: { provider
 
     const admin = adminClient();
     const mp = await loadPublicMarketplace(admin, guestExperiencesOpen());
-    const p = pickProvider(mp, params.providerId);
+    let p = pickProvider(mp, params.providerId);
+    // THE OWNER'S PREVIEW, before approval: the provider looking at their own
+    // page sees exactly what guests will, with a quiet bar saying no one else
+    // can yet — the same as a host previewing a pending cottage. The loader
+    // matches the owner in its query, so anyone else falls through as before.
+    let preview: { status: string } | null = null;
+    if (!p && user) {
+        const own = await loadOwnerPreviewProvider(admin, params.providerId, user.id);
+        if (own) {
+            const { data: st } = await admin.from('service_providers').select('status').eq('id', own.id).maybeSingle();
+            p = own;
+            preview = { status: String((st && st.status) || 'draft') };
+        }
+    }
+    const banner = preview
+        ? <OwnerPreviewBanner status={preview.status} who="guests" backHref="/services/dashboard/listing" backLabel="Back to your listing" />
+        : undefined;
     if (!p) {
         // Paused by its provider: the old link still opens the page, with the
         // panel replaced — the same as a hidden cottage. Static "What you get"
@@ -202,7 +222,8 @@ export default async function PublicListingPage({ params }: { params: { provider
     // below (made-to-order, slot, request, comes-to-you alike). Not on the
     // paused branch above: a paused provider isn't bookable, so it should not
     // advertise an offer.
-    const ldScripts = experienceJsonLd(p, reviews, here).map((obj, i) => (
+    // None for the owner's preview: an unapproved page advertises nothing.
+    const ldScripts = (preview ? [] : experienceJsonLd(p, reviews, here)).map((obj, i) => (
         <script
             key={i}
             type="application/ld+json"
@@ -221,13 +242,14 @@ export default async function PublicListingPage({ params }: { params: { provider
                 in the listing body (and refused server-side anyway). */}
             <FoodCartProvider items={p.items}>
                 <ExperienceListingBody
+                    banner={banner}
                     p={p}
                     backHref="/experiences/browse"
                     backLabel="All experiences"
                     reviews={reviews}
                     sticky
                     responsiveness={responsiveness}
-                    reportable
+                    reportable={!preview}
                     menu={<FoodMenu leadTimeDays={p.lead_time_days} />}
                     panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} standalone providerId={p.id} signedIn={!!user} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} />}
                 />
@@ -289,13 +311,14 @@ export default async function PublicListingPage({ params }: { params: { provider
     const isComesToYou = p.shape === 'comes_to_you';
     const body = (
         <ExperienceListingBody
+            banner={banner}
             p={p}
             backHref="/experiences/browse"
             backLabel="All experiences"
             panel={panel}
             sticky
             responsiveness={responsiveness}
-            reportable
+            reportable={!preview}
             itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
             reviews={reviews}
         />

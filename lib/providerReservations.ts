@@ -17,6 +17,7 @@ import { groupLabel } from '@/lib/bookingDisplay';
 import { formatGBP } from '@/lib/formatMoney';
 import { getImageUrl, displayName } from '@/lib/utils';
 import { londonDayKey, shiftDayKey, ukDate, ukWeekday } from '@/lib/dayKey';
+import { orderCancelTerms } from '@/lib/orderCancelTerms';
 
 export type ReservationKind = 'slot' | 'comes_to_you' | 'made_to_order' | 'trade';
 
@@ -221,7 +222,7 @@ export async function loadProviderReservations(
 async function loadGuestReservations(admin: any, provider: any, today: string, tomorrow: string, weekEnd: string): Promise<ProviderReservationsResult> {
     const { data: orders } = await admin
         .from('service_orders')
-        .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, guest_id, guest_name, guest_phone, note, allergy, listing_id, created_at, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, funds_flow, paid_out_at')
+        .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, guest_id, guest_name, guest_phone, note, allergy, listing_id, created_at, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, funds_flow, paid_out_at, cancellation_window_hours, no_refund')
         .eq('provider_id', provider.id)
         .in('status', ['authorised', 'confirmed'])
         .is('parent_order_id', null)
@@ -289,11 +290,9 @@ async function loadGuestReservations(admin: any, provider: any, today: string, t
             const pendingChange = pendingLive ? whenLabel(o.shape, o.pending_service_date, o.pending_service_time) : null;
             // Who proposed the pending change (null marker = a legacy guest request).
             const pendingChangeBy: 'guest' | 'provider' | null = pendingLive ? (o.pending_change_by === 'provider' ? 'provider' : 'guest') : null;
-            const cancellation = cancellationFor(
-                o.shape,
-                Number(provider.cancellation_window_hours ?? 48),
-                !!(provider.guest_details && provider.guest_details.no_refund),
-            );
+            // The terms this booking was made under (its stamp), not today's policy.
+            const terms = orderCancelTerms(o, provider);
+            const cancellation = cancellationFor(o.shape, terms.windowHours, terms.noRefund);
             return {
                 id: o.id,
                 kind: (o.shape as ReservationKind) || 'made_to_order',
