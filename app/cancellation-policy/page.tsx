@@ -4,7 +4,7 @@ import { CANCELLATION_TIERS as TIERS } from '@/lib/cancellationTiers';
 export const metadata: Metadata = {
     title: 'Cancellation & Refund Policy',
     description:
-        'How cancellations and refunds work when you book a holiday let or an experience through Galloway Getaways.',
+        'How cancellations and refunds work when you book a self-catering holiday let or an experience in Dumfries & Galloway through Galloway Getaways.',
     alternates: { canonical: '/cancellation-policy' },
 };
 

@@ -5,7 +5,7 @@ import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 
 export const metadata: Metadata = {
     title: 'Contact Us',
-    description: 'Get in touch with Galloway Getaways about a booking, a listing or anything else.',
+    description: 'Contact Galloway Getaways about a self-catering booking, a holiday let listing, an experience or anything else to do with staying in Dumfries & Galloway.',
     alternates: { canonical: '/contact' },
 };
 

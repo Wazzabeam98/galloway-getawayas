@@ -69,8 +69,11 @@ const Footer = () => {
                     </p>
                     <div className="flex items-center gap-4">
                         {/* The brands' own coloured logos (public/social, 96px
-                            PNGs), decorative — alt="" — so the link's
-                            aria-label is the one thing announced.
+                            PNGs). The link's aria-label is what a screen reader
+                            announces (it overrides the image), but the image
+                            still names its brand: SEO checkers count an empty
+                            alt on every page as a fault, and this is on every
+                            page.
 
                             Icons only, no labels. The aria-label is not a
                             visible label — it is the only thing a screen
@@ -88,7 +91,7 @@ const Footer = () => {
                                 className="p-1 -m-1 rounded-full transition hover:opacity-80"
                             >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src="/social/instagram.png" alt="" width={28} height={28} className="h-7 w-7" />
+                                <img src="/social/instagram.png" alt="Instagram" width={28} height={28} className="h-7 w-7" />
                             </a>
                         ) : null}
                         {SOCIAL.facebook ? (
@@ -100,7 +103,7 @@ const Footer = () => {
                                 className="p-1 -m-1 rounded-full transition hover:opacity-80"
                             >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src="/social/facebook.png" alt="" width={28} height={28} className="h-7 w-7" />
+                                <img src="/social/facebook.png" alt="Facebook" width={28} height={28} className="h-7 w-7" />
                             </a>
                         ) : null}
                         <a

@@ -6,6 +6,7 @@ import { AREAS, hasCopy, listingInArea } from '@/config/areas';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace } from '@/lib/experiencesData';
+import { loadPublicTrades } from '@/lib/publicTrades';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -75,7 +76,6 @@ export async function GET() {
     // put two spellings of the same page in front of Google.
     const staticPages: Entry[] = [
         { loc: `${SITE_URL}/`, lastmod: now, changefreq: 'daily', priority: '1.0' },
-        { loc: `${SITE_URL}/services`, lastmod: now, changefreq: 'weekly', priority: '0.5' },
         // The public experiences marketplace. A permanent page, so it is listed
         // whether or not the section is currently taking bookings — "Coming
         // soon" is still a real 200. The provider pages under it are listed
@@ -91,7 +91,9 @@ export async function GET() {
     // No /services/<trade> entries. There is no page per trade any more — trade
     // is a filter on the one list at /services, and the old per-trade URLs are
     // permanent redirects (next.config.js). A sitemap naming a redirect is a
-    // sitemap that disagrees with the site. /services itself is listed above.
+    // sitemap that disagrees with the site. /services itself, and each
+    // tradesperson's own profile, are listed further down — only when there is
+    // somebody in the directory to show.
     const knownPages = staticPages;
 
     const headers = {
@@ -202,12 +204,38 @@ export async function GET() {
             await logError('[sitemap] experiences omitted', err, { path: 'sitemap.xml' });
         }
 
+        // ---------------------------------------------------------------
+        // The trade directory and each tradesperson's public profile
+        // (/services/<trade>/<id>). Same rule as the profile page and the
+        // directory (lib/publicTrades): approved, not paused, not taken down,
+        // not unpaid. /services itself goes in only when it has somebody in
+        // it — an empty directory is noindex (app/services/page.tsx), and the
+        // sitemap must not offer a page the page itself declines.
+        // ---------------------------------------------------------------
+        let tradePages: Entry[] = [];
+        try {
+            const trades = await loadPublicTrades(adminClient());
+            if (trades.length) {
+                tradePages = [
+                    { loc: `${SITE_URL}/services`, lastmod: now, changefreq: 'weekly', priority: '0.5' },
+                    ...trades.map((t) => ({
+                        loc: `${SITE_URL}/services/${t.trade}/${t.id}`,
+                        lastmod: new Date(t.approved_at || now).toISOString(),
+                        changefreq: 'weekly',
+                        priority: '0.5',
+                    })),
+                ];
+            }
+        } catch (err) {
+            await logError('[sitemap] trades omitted', err, { path: 'sitemap.xml' });
+        }
+
         // Deliberately NOT reporting an empty list. "No listings yet" is a
         // true state before launch, and this route runs once per crawler hit,
         // so reporting it would fill /admin/errors with the same row. A query
         // that FAILED is a different thing and is caught above.
         return new NextResponse(
-            render(knownPages.concat(areaPages).concat(listingPages).concat(experiencePages)),
+            render(knownPages.concat(areaPages).concat(listingPages).concat(experiencePages).concat(tradePages)),
             { headers }
         );
     } catch (err) {

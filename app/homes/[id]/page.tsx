@@ -19,6 +19,7 @@ import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
 import ShowAllReviews from '@/components/ShowAllReviews';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
+import { listingSeoTitle } from '@/lib/seoTitle';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
 import { plural } from '@/lib/plural';
@@ -224,14 +225,10 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
     const town = area.split(',')[0].trim();
     const kind = describePlace(home.privacy_type, home.property_type).toLowerCase();
 
-    // Built to match how people actually search: type of place, town, then
-    // the detail that narrows it down. The host's title is clamped for the tag
-    // so a legacy or pasted-in over-long title cannot produce a 200-character
-    // browser tab — the input caps new ones, this covers the rest.
-    const clampedTitle = home.title && home.title.length > 70
-        ? home.title.slice(0, 67).trimEnd() + '…'
-        : home.title;
-    const title = `${clampedTitle} | Self Catering in ${town}`;
+    // Built to match how people actually search: the place, then the town.
+    // Kept to what Google shows without cutting it off — see lib/seoTitle.
+    // Absolute, because the helper decides whether the brand fits.
+    const title = { absolute: listingSeoTitle(home.title, town) };
 
     const amenities: string[] = home.amenities || [];
     const highlights: string[] = [];

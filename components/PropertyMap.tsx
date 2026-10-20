@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useRef } from 'react';
+import { whenNearViewport } from '@/lib/nearViewport';
 
 // Shows roughly where a property is, without giving away the exact door.
 //
@@ -203,10 +204,14 @@ export default function PropertyMap({
             }
         };
 
-        build();
+        // Not until the map is about to scroll into view — see lib/nearViewport.
+        const stopWaiting = containerRef.current
+            ? whenNearViewport(containerRef.current, build)
+            : (build(), () => {});
 
         return () => {
             cancelled = true;
+            stopWaiting();
             if (roRef.current) {
                 roRef.current.disconnect();
                 roRef.current = null;

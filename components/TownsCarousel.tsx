@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 // The towns, one panel each, on the home page. A visual "browse by area" that
 // leads to the area pages — which is where the search traffic actually lands.
@@ -36,12 +37,17 @@ function TownPhoto({ photo, alt, name }: { photo: string; alt: string; name: str
     return (
         <div className="relative aspect-[3/2] w-full overflow-hidden rounded-t-2xl bg-stone-200">
             {!broken ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                // Through the image optimiser, sized to the panel (w-72 = 288px).
+                // A plain <img> here sent the original file — the curated town
+                // photos are several hundred KB each, and a region borrowing a
+                // host's listing photo (Galloway Forest) sent a 1.6 MB phone
+                // original into a 288px tile.
+                <Image
                     src={photo}
                     alt={alt}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
+                    fill
+                    sizes="288px"
+                    className="object-cover"
                     onError={() => setBroken(true)}
                 />
             ) : (

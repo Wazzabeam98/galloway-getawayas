@@ -1,6 +1,8 @@
 "use client"
 
 import React, { useEffect, useRef } from 'react';
+import { whenNearViewport } from '@/lib/nearViewport';
+import { optimisedSrc } from '@/lib/imageSrc';
 
 // The search map — Airbnb's shape. A white price pill for every live property,
 // a mini card (photo, title, price) on click that links to the listing, and a
@@ -32,7 +34,7 @@ function pillHtml(price: number | string): string {
 function cardHtml(p: PriceMapPoint): string {
     const esc = (s: string) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     const img = p.image
-        ? `<img src="${esc(p.image)}" alt="" style="width:100%;height:124px;object-fit:cover;display:block;" />`
+        ? `<img src="${esc(optimisedSrc(p.image, 400))}" alt="" style="width:100%;height:124px;object-fit:cover;display:block;" />`
         : `<div style="width:100%;height:124px;background:#e2e8f0;"></div>`;
     return (
         `<a href="${esc(p.href)}" style="display:block;width:200px;text-decoration:none;color:inherit;">`
@@ -156,9 +158,13 @@ export default function PriceMap({
             }
         };
 
-        build();
+        // Not until the map is about to scroll into view — see lib/nearViewport.
+        const stopWaiting = containerRef.current
+            ? whenNearViewport(containerRef.current, build)
+            : (build(), () => {});
         return () => {
             cancelled = true;
+            stopWaiting();
             if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
             elsRef.current = {};
         };

@@ -77,9 +77,11 @@ export function ExperienceCard({ p }: { p: MpProvider }) {
     return (
         <Link href={`/experiences/browse/${p.id}`} className="group flex flex-col space-y-2">
             <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.hero!} alt={`${p.business_name}, an experience in ${town}`} loading="lazy"
-                    className="h-full w-full object-cover group-hover:scale-105 transition duration-300" />
+                {/* Through the optimiser: hero is the provider's original upload
+                    (one was 914 KB at 1707x2560) shown in a ~360px card. */}
+                <Image src={p.hero!} alt={`${p.business_name}, an experience in ${town}`} fill
+                    sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+                    className="object-cover group-hover:scale-105 transition duration-300" />
             </div>
             <h3 className="font-bold text-stone-900 text-base truncate">{p.business_name}</h3>
             <p className="text-sm text-stone-500 truncate">{town}</p>

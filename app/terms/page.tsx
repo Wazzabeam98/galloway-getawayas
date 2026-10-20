@@ -6,7 +6,7 @@ import { ukDate } from '@/lib/dayKey';
 
 export const metadata: Metadata = {
     title: 'Terms & Conditions',
-    description: 'The terms on which you use Galloway Getaways as a guest, a host or a provider.',
+    description: 'The terms for booking a self-catering stay or an experience with Galloway Getaways, and for listing a holiday let, experience or trade service with us.',
     alternates: { canonical: '/terms' },
 };
 
