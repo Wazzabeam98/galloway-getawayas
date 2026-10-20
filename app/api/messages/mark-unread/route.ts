@@ -1,4 +1,6 @@
 import { adminClient } from '@/lib/supabaseAdmin';
+import { checkListing } from '@/lib/access';
+import { markThreadUnreadForTeam } from '@/lib/threadReads';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
@@ -44,28 +46,38 @@ export async function POST(request: Request) {
             .select('id')
             .eq('booking_id', bookingId)
             .eq('recipient_id', user.id)
+            // Never their own message, even addressed to themselves (a stay an
+            // owner booked at their own place).
+            .neq('sender_id', user.id)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
         if (findError) throw findError;
 
-        // A conversation where they have only ever sent, never received. There
-        // is nothing that could be unread, so say so rather than reporting a
-        // success that changed nothing.
-        if (!last) {
-            return NextResponse.json({ ok: true, marked: false });
+        if (last) {
+            const { error: updateError } = await admin
+                .from('messages')
+                .update({ read_at: null })
+                .eq('id', last.id)
+                .eq('recipient_id', user.id);
+
+            if (updateError) throw updateError;
         }
 
-        const { error: updateError } = await admin
-            .from('messages')
-            .update({ read_at: null })
-            .eq('id', last.id)
-            .eq('recipient_id', user.id);
+        // On the team side — the owner or a co-host — what they read is tracked
+        // by their place in the thread (lib/threadReads), and a co-host is never
+        // the recipient of anything. Step it back before the newest message from
+        // somebody else. Their own place only; never anyone else's.
+        const { data: b } = await admin.from('bookings').select('guest_id, host_id, listing_id').eq('id', bookingId).maybeSingle();
+        const team = !!b && (b.host_id === user.id
+            || (b.guest_id !== user.id && !!(await checkListing(user.id, b.listing_id, 'can_messages'))));
+        const teamMarked = team ? await markThreadUnreadForTeam(admin, user.id, 'booking', bookingId) : false;
 
-        if (updateError) throw updateError;
-
-        return NextResponse.json({ ok: true, marked: true });
+        // A conversation where nobody else has said anything. There is nothing
+        // that could be unread, so say so rather than reporting a success that
+        // changed nothing.
+        return NextResponse.json({ ok: true, marked: !!last || teamMarked });
     } catch (err: any) {
         console.error('[messages/mark-unread]', err && err.message);
         return NextResponse.json({ ok: false, error: 'Could not mark as unread' }, { status: 500 });

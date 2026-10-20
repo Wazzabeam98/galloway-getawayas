@@ -47,13 +47,20 @@ export function isArchived(
 // this person, because a co-host is not the recipient_id on anything — those
 // messages are addressed to the owner — and would otherwise have no timestamp
 // to compare against at all.
+//
+// `team` is everyone answering on the same side as this person (the owner and
+// the co-hosts with messages). An answer from any of them answers the thread:
+// a co-host must not be told a thread is "waiting on you" because the owner,
+// not they, replied last (20/10/2026).
 export function needsReply(
     lastMessage: { sender_id: string; created_at: string } | null | undefined,
     userId: string,
-    noReplyNeededAt?: string | null
+    noReplyNeededAt?: string | null,
+    team?: string[]
 ): boolean {
     if (!lastMessage) return false;
     if (lastMessage.sender_id === userId) return false;
+    if (team && team.indexOf(lastMessage.sender_id) !== -1) return false;
     if (!noReplyNeededAt) return true;
 
     // Parsed rather than compared as strings, for the reason given above.

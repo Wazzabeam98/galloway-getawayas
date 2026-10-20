@@ -9,6 +9,7 @@ import { renderSecretTokens } from '@/lib/messageSecrets';
 import { firstName, getImageUrl } from '@/lib/utils';
 import { bookingStatusLine, categoryOf, enquiryStatusLine, orderStatusLine } from '@/lib/conversationLabels';
 import { providerIdsWith } from '@/lib/providerAccess';
+import { isInboundFor, isUnreadFor, readPositionsFor, threadKey } from '@/lib/threadReads';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +39,10 @@ export async function GET() {
     );
 
     const messageListings = await listingIdsFor(uid, 'can_messages');
+
+    // How far they have read each thread they answer as part of a team — the
+    // owner or a co-host. See lib/threadReads.
+    const readTo = await readPositionsFor(admin, uid);
 
     // Their own bookings, as guest or host.
     const { data: own } = await admin
@@ -111,13 +116,17 @@ export async function GET() {
         (coHostsOf[a.listing_id] = coHostsOf[a.listing_id] || []).push(a.user_id);
     });
 
-    // On a booking they only see as a co-host, the person they're talking to
-    // is the guest.
-    const otherIds = Array.from(
-        new Set(
-            bookings.map((b) => (b.guest_id === uid ? b.host_id : b.guest_id))
-        )
-    );
+    // Whether they answer this booking as the host's side: the owner, or a
+    // co-host with messages. Checked before "are they the guest", because an
+    // owner can book their own place (a test stay) and is then both.
+    const onTeam = (b: any) =>
+        b.host_id === uid || (b.guest_id !== uid && messageListings.indexOf(b.listing_id) !== -1);
+
+    // On the host's side the person they're talking to is the guest; on the
+    // guest's side, the host.
+    const otherOf = (b: any) => (onTeam(b) ? b.guest_id : b.host_id);
+
+    const otherIds = Array.from(new Set(bookings.map(otherOf)));
 
     const { data: profiles } = otherIds.length
         ? await admin.from('profiles').select('id, full_name, first_name, last_name, preferred_name, show_full_name').in('id', otherIds)
@@ -146,6 +155,9 @@ export async function GET() {
     // to decide whether something they archived has been brought back.
     const lastInboundMap: Record<string, string> = {};
 
+    const teamOn: Record<string, boolean> = {};
+    bookings.forEach((b) => { teamOn[b.id] = onTeam(b); });
+
     (lastMessages || []).forEach((m: any) => {
         // A check-in message's placeholders never become values in a preview.
         if (!lastMap[m.booking_id]) {
@@ -153,14 +165,16 @@ export async function GET() {
             lastMap[m.booking_id] = { ...rest, body: renderSecretTokens(m.body, automated, 'preview') };
         }
 
-        if (m.recipient_id === uid && !lastInboundMap[m.booking_id]) {
+        const team = teamOn[m.booking_id];
+        if (isInboundFor(m, uid, team) && !lastInboundMap[m.booking_id]) {
             // Already sorted newest first, so the first one seen is the newest.
             lastInboundMap[m.booking_id] = m.created_at;
         }
 
-        // Unread means sent to this person and not yet opened. Something they
-        // sent themselves is never unread.
-        if (m.recipient_id === uid && !m.read_at) {
+        // Sent to them and not opened, or — on the team side — newer than how
+        // far they have read. Something they sent themselves never is, even on
+        // a stay they booked at their own place. See lib/threadReads.
+        if (isUnreadFor(m, uid, team, readTo[threadKey('booking', m.booking_id)])) {
             unreadMap[m.booking_id] = (unreadMap[m.booking_id] || 0) + 1;
         }
     });
@@ -181,8 +195,11 @@ export async function GET() {
 
     const conversations: any[] = bookings.map((b) => {
         const listing = listingMap[b.listing_id];
-        const otherId = b.guest_id === uid ? b.host_id : b.guest_id;
-        const viewerIsGuest = b.guest_id === uid;
+        const otherId = otherOf(b);
+        const viewerIsGuest = !teamOn[b.id];
+        // Everyone answering for the property: an answer from any of them
+        // answers the guest.
+        const answering = teamOn[b.id] ? [b.host_id].concat(coHostsOf[b.listing_id] || []) : undefined;
 
         const pref = prefMap[b.id];
 
@@ -215,7 +232,7 @@ export async function GET() {
             // The signal a host actually works from: the other person spoke
             // last and nobody has answered — unless they have said they have
             // read it and no answer is needed. See lib/conversations.ts.
-            needsReply: needsReply(lastMap[b.id], uid, pref && pref.no_reply_needed_at),
+            needsReply: needsReply(lastMap[b.id], uid, pref && pref.no_reply_needed_at, answering),
             noReplyNeeded: !!(pref && pref.no_reply_needed_at),
             // Somebody currently in the property matters more than somebody
             // arriving in April.
@@ -226,7 +243,7 @@ export async function GET() {
                         ? 'upcoming'
                         : 'past',
             // Flagged so the screen can make clear whose property it is.
-            asCoHost: listing ? listing.host_id !== uid && b.guest_id !== uid : false,
+            asCoHost: listing ? listing.host_id !== uid && teamOn[b.id] : false,
             category: categoryOf('booking'),
             statusLine: bookingStatusLine({ status: b.status, checkIn: b.check_in, checkOut: b.check_out, todayKey, viewerIsGuest }),
             placeTitle: listing ? listing.title : null,
@@ -255,7 +272,7 @@ export async function GET() {
     const oUnread: Record<string, number> = {};
     (orderMsgs || []).forEach((m: any) => {
         if (!oLast[m.order_id]) oLast[m.order_id] = m;
-        if (m.recipient_id === uid && !m.read_at) oUnread[m.order_id] = (oUnread[m.order_id] || 0) + 1;
+        if (isUnreadFor(m, uid, false)) oUnread[m.order_id] = (oUnread[m.order_id] || 0) + 1;
     });
     for (const o of myOrders || []) {
         const last = oLast[o.id] || null;
@@ -297,7 +314,7 @@ export async function GET() {
     const eUnread: Record<string, number> = {};
     (enquiryMsgs || []).forEach((m: any) => {
         if (!eLast[m.enquiry_id]) eLast[m.enquiry_id] = m;
-        if (m.recipient_id === uid && !m.read_at) eUnread[m.enquiry_id] = (eUnread[m.enquiry_id] || 0) + 1;
+        if (isUnreadFor(m, uid, false)) eUnread[m.enquiry_id] = (eUnread[m.enquiry_id] || 0) + 1;
     });
     for (const e of myEnquiries || []) {
         const last = eLast[e.id] || null;
@@ -331,6 +348,21 @@ export async function GET() {
     const providerIds = await providerIdsWith(admin, uid, 'can_messages');
 
     if (providerIds.length) {
+        // The business's own team — its owner and co-hosts with messages — so a
+        // reply from any of them answers the customer (needsReply).
+        const [{ data: provRows }, { data: provTeamRows }] = await Promise.all([
+            admin.from('service_providers').select('id, owner_id').in('id', providerIds),
+            admin.from('provider_access').select('provider_id, user_id')
+                .in('provider_id', providerIds).eq('status', 'active').eq('can_messages', true),
+        ]);
+        const teamOfProvider: Record<string, string[]> = {};
+        (provRows || []).forEach((p: any) => { teamOfProvider[p.id] = [p.owner_id].filter(Boolean); });
+        (provTeamRows || []).forEach((a: any) => {
+            if (a.user_id) (teamOfProvider[a.provider_id] = teamOfProvider[a.provider_id] || []).push(a.user_id);
+        });
+        const provTeamAnswered = (last: any, providerId: string) =>
+            !!last && (teamOfProvider[providerId] || []).indexOf(last.sender_id) !== -1;
+
         const { data: provOrders } = await admin
             .from('service_orders')
             .select('id, item_name, service_date, status, guest_name, guest_id, provider_id')
@@ -346,7 +378,7 @@ export async function GET() {
                 .in('order_id', provOrderIds).order('created_at', { ascending: false });
             (msgs || []).forEach((m: any) => {
                 if (!poLast[m.order_id]) poLast[m.order_id] = m;
-                if (m.recipient_id === uid && !m.read_at) poUnread[m.order_id] = (poUnread[m.order_id] || 0) + 1;
+                if (isUnreadFor(m, uid, true, readTo[threadKey('order', m.order_id)])) poUnread[m.order_id] = (poUnread[m.order_id] || 0) + 1;
             });
         }
         for (const o of provOrders || []) {
@@ -364,7 +396,7 @@ export async function GET() {
                 _team: true,
                 _people: [o.guest_id || null],
                 listing: null, lastMessage: last, unread: poUnread[o.id] || 0,
-                needsReply: !!(last && last.sender_id !== uid),
+                needsReply: !!(last && last.sender_id !== uid) && !provTeamAnswered(last, o.provider_id),
                 noReplyNeeded: false, starred: false, archived: false, stage: null,
             });
         }
@@ -383,7 +415,7 @@ export async function GET() {
                 .in('enquiry_id', provEnqIds).order('created_at', { ascending: false });
             (msgs || []).forEach((m: any) => {
                 if (!peLast[m.enquiry_id]) peLast[m.enquiry_id] = m;
-                if (m.recipient_id === uid && !m.read_at) peUnread[m.enquiry_id] = (peUnread[m.enquiry_id] || 0) + 1;
+                if (isUnreadFor(m, uid, true, readTo[threadKey('enquiry', m.enquiry_id)])) peUnread[m.enquiry_id] = (peUnread[m.enquiry_id] || 0) + 1;
             });
         }
         for (const e of provEnq || []) {
@@ -402,7 +434,7 @@ export async function GET() {
                 _team: true,
                 _people: [e.host_id || null],
                 listing: null, lastMessage: last, unread: peUnread[e.id] || 0,
-                needsReply: !!(last && last.sender_id !== uid),
+                needsReply: !!(last && last.sender_id !== uid) && !provTeamAnswered(last, e.provider_id),
                 noReplyNeeded: false, starred: false, archived: false, stage: null,
             });
         }
@@ -492,9 +524,12 @@ async function dressRows(admin: any, uid: string, rows: any[], personIds: Set<st
 
         if (r.kind === 'booking') {
             const [first, second] = r._people || [];
-            const a = person(first, r.otherName);
+            // Never the viewer's own face. On a stay an owner booked at their
+            // own place the "other person" is themselves, and their photo sat
+            // over the co-host's (20/10/2026) — the co-host goes in front.
+            const a = first !== uid ? person(first, r.otherName) : null;
             if (a) people.push({ ...a, name: r.otherName || a.name });
-            const b = person(second);
+            const b = second !== uid ? person(second) : null;
             if (b) people.push(b);
         } else if (r._team) {
             // The provider's side: the customer, then a teammate.

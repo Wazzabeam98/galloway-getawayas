@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
-import { Archive, ArchiveRestore, Check, Home, Mail, MoreHorizontal, Star, Sparkles, Wrench } from 'lucide-react';
+import { Archive, ArchiveRestore, Check, Home, Mail, MailOpen, MoreHorizontal, Star, Sparkles, Wrench } from 'lucide-react';
 
 // One row in the inbox, with its own actions menu.
 //
@@ -67,12 +67,15 @@ function AvatarStack(props: { conversation: any }) {
         );
     }
 
+    // The same stack at every width (the desktop list and the phone list are
+    // this one component). The co-host's face sits far enough out from behind
+    // the other person's that it is a face, not a sliver of ring.
     return (
         <div className="relative w-14 h-14 flex-shrink-0">
             <div className="w-12 h-12 rounded-xl bg-slate-200 overflow-hidden">
                 <img src={photo} alt="" className="w-full h-full object-cover" />
             </div>
-            {people[1] && <Face person={people[1]} className="absolute bottom-0 right-5 w-7 h-7" />}
+            {people[1] && <Face person={people[1]} className="absolute bottom-0 right-6 w-7 h-7" />}
             {people[0] && <Face person={people[0]} className="absolute bottom-0 right-0 w-7 h-7" />}
         </div>
     );
@@ -93,6 +96,7 @@ export default function ConversationRow(props: {
     onStar: () => void;
     onArchive: () => void;
     onMarkUnread: () => void;
+    onMarkRead?: () => void;
 }) {
     const c = props.conversation;
 
@@ -173,15 +177,29 @@ export default function ConversationRow(props: {
                 </button>
             )}
 
-            <button
-                type="button"
-                disabled={props.busy}
-                onClick={() => run(props.onMarkUnread)}
-                className="w-full flex items-center gap-2.5 px-4 py-3 sm:py-2 text-sm text-left text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-                <Mail className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                Mark as unread
-            </button>
+            {/* One or the other, as Airbnb's menu does: an unread conversation
+                offers "Mark as read", a read one "Mark as unread". */}
+            {c.unread > 0 && props.onMarkRead ? (
+                <button
+                    type="button"
+                    disabled={props.busy}
+                    onClick={() => run(props.onMarkRead as () => void)}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 sm:py-2 text-sm text-left text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                    <MailOpen className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    Mark as read
+                </button>
+            ) : (
+                <button
+                    type="button"
+                    disabled={props.busy}
+                    onClick={() => run(props.onMarkUnread)}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 sm:py-2 text-sm text-left text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                    <Mail className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    Mark as unread
+                </button>
+            )}
 
             <button
                 type="button"
