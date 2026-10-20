@@ -263,7 +263,7 @@ export async function POST(req: Request, { params }: { params: { orderId: string
         // message TO the business also goes to its co-hosts with messages, each
         // by their own switch — as the owner gets it (lib/providerAccess).
         const tellIds: string[] = [ctx.otherId];
-        if (!(!ctx.isGuest) && ctx.order.provider_id) {
+        if (ctx.isGuest && ctx.order.provider_id) {
             const { data: team } = await admin.from('provider_access').select('user_id')
                 .eq('provider_id', ctx.order.provider_id).eq('status', 'active').eq('can_messages', true);
             for (const t of team || []) if (t.user_id && t.user_id !== uid && tellIds.indexOf(t.user_id) === -1) tellIds.push(t.user_id);
