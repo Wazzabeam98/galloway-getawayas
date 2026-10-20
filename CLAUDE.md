@@ -254,6 +254,36 @@ fetch without `guardFetch`. If you write a new script that deletes users, use
 reset his password from a script; to sign in as him from tooling, mint a magic
 link (`scripts/_login-url.mjs`).
 
+## Walking an address step: type ID1 1QD
+
+Ideal Postcodes is paid per lookup from one allowance, and when it runs out the
+live site's lookup stops too. **Only the production deployment calls it**
+(`lib/addressLookupMode.ts`): on previews, local dev and anything against TEST
+the address routes answer from a fake, whatever key is set. So any session
+walking a sign-up, the listing wizard or a delivery/travel address:
+
+- **types `ID1 1QD`** in the address search — it returns two test addresses in
+  Kirkcudbright that fill the form like a real lookup. Any other search off
+  production returns nothing (the form says to enter it by hand).
+- types **`ID1 CLIP`** to see what happens when the allowance is spent — it
+  answers exactly as the live route does then, and the form must fall back to
+  typing the address by hand.
+
+Never point a walk, a script or a test at the live address routes to "check it
+really works" — that spends real credits.
+
+## The schema guards run in CI against TEST, read-only
+
+The DB half of the schema guards (`tests/*-guard.test.ts`) reads grants off the
+TEST database. In CI it connects with the `SUPABASE_TEST_DB_URL` repo secret as
+`ci_schema_reader`, a TEST-only login with no table grants, no role memberships
+and read-only transactions — it can read the catalog and nothing else. Two
+consequences for anyone writing a guard: use the helpers in `tests/_testDb.ts`
+(catalog queries), **not `information_schema`** — its privilege views only show
+grants the connecting role is party to, so as `ci_schema_reader` they come back
+empty and the guard passes while checking nothing. And a TEST migration that
+breaks a grant now fails the required check on every PR, not just on your push.
+
 ## House rules for this codebase
 
 - **every change goes to master through a pull request.**
