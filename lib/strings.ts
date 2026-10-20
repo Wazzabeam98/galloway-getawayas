@@ -208,9 +208,13 @@ export const GUEST_SCREEN_COPY = {
     // never appears on the marketplace and can't be booked.
     menuRequiredGate: 'Add at least one thing a guest can book, with a price — without one your listing can’t be booked.',
     menuAddRow: 'Add an offering',
-    // The add row for a slot offering 'both': the two starters (private hire,
-    // shared table) are seeded, and this adds a further option beside them.
+    // A slot's pricing is an add-list now: it opens with one "Add an option"
+    // button (with a subtitle), and once an option exists the row reads "Add
+    // another option". Each option chooses per person / the whole thing in its
+    // own sub-flow; the private/shared/both answer decides which it must include.
+    menuSlotAddFirst: 'Add an option',
     menuSlotAddRow: 'Add another option',
+    menuSlotAddSubtitle: 'Something guests can book. Name it and set a price',
     menuRowPrompt: 'Name it and set a price',
     menuUntitled: 'Untitled offering',
     menuSlotRowLabel: 'Your session',
@@ -243,11 +247,10 @@ export const GUEST_SCREEN_COPY = {
     menuPricePlaceholder: '45',        // the big numeral's placeholder — an example price
     menuPriceTypeLabel: 'How this is priced',   // the current-choice row on the price step
     menuPriceTypeTitle: 'How is this priced?',  // the basis picker's heading
-    // SLOT 'offer both' only: the unit is chosen per item, as its own step in the
-    // sub-flow. A private-only slot is flat and a shared-only slot is per person —
-    // both derived, never asked — so these two are the only choices, and only when
-    // the provider offers both. 'flat' = a private hire (the whole session, one
-    // booking), 'person' = a seat at a shared table.
+    // Every slot option is asked how it's priced, as its own step in the sub-flow:
+    // 'person' = a seat at a shared table (a price each), listed first; 'flat' =
+    // a private hire (the whole session, one booking). The private/shared/both
+    // answer decides which the list must include, not what each option can be.
     menuSlotUnitTitle: 'How is this priced?',
     menuSlotUnitFlat: 'For the whole thing',
     menuSlotUnitFlatHint: 'One price for a private booking — the group pays it in full however many come, up to your maximum.',
@@ -268,22 +271,15 @@ export const GUEST_SCREEN_COPY = {
     menuBookedSharedHint: 'Several guests book the same time, at one fixed length.',
     menuBookedPrivateLabel: 'A private session',
     menuBookedPrivateHint: 'One group books the whole session, closing that time to everyone else. You set the length.',
-    // Shown beside the greyed Next on the slot price screen when 'offer both' is
-    // missing one side, so the reason is never left unsaid. The no-price-at-all
-    // case falls to menuRequiredGate.
-    menuSlotBothGatePrivate: 'Set a price for the whole-thing booking to carry on.',
-    menuSlotBothGateShared: 'Set a price for the individual places to carry on.',
-    // One offering, two prices (9 Oct 2026): 'Offer both' is ONE offering with a
-    // price per person AND a price for one group to book the whole session — the
-    // provider never creates the experience twice.
-    menuSlotBothGateGroup: 'Add a price for the whole group to carry on — that’s what lets guests book it privately.',
-    menuSlotBothRowLabel: 'A place each, or the whole session',
-    menuSlotBothRowHint: 'One offering with two prices: per person, and for one group to book it all.',
+    // Shown beside the greyed Next on the slot price screen when the options don't
+    // yet match the private/shared/both choice, so the reason is never left unsaid.
+    // The no-option-at-all case falls to menuRequiredGate.
+    menuSlotGateShared: 'Add a per-person option so guests can book individual places.',
+    menuSlotGatePrivate: 'Add a whole-thing option so a group can book the whole session.',
     menuGroupTitle: 'How much for the whole group?',
     // Per hour (9 Oct 2026): the fewest hours a guest can book an hourly offering.
     menuHoursTitle: 'What’s the fewest hours someone can book?',
     menuHoursNote: 'Guests choose how many hours, from this up. The price is per hour, whatever the number of people.',
-    menuGroupNoteBoth: 'One group books the whole session and pays this in full however many come, up to your maximum. No one else can join.',
     menuGroupNoteOptional: 'Optional. Set it and one group can book it all at this price, however many come, up to your maximum. Leave it blank for places only.',
     menuDescTitle: 'Add a short description',
     menuDescPlaceholder: 'e.g. About an hour, all kit included, hot drink after.',
@@ -487,10 +483,10 @@ export const GUEST_SCREEN_COPY = {
     // decent listing) but the gate stays at one photo — the ask and the gate are
     // deliberately different, so this line is NOT wired to the Next gate.
     photosHeading: 'Add photos of your experience',
-    // Cut right down to Airbnb's own wording (Liam, 9 Oct 2026). The gate stays at
-    // one photo — the ask and the gate are deliberately different, so this line is
-    // NOT wired to the Next gate.
+    // Cut right down to Airbnb's own wording (Liam, 9 Oct 2026).
     photosAsk: 'Add 3 photos',
+    // Shown beside the greyed Next until three photos are added (Airbnb's minimum).
+    photosGate: 'Add at least three photos to carry on.',
     // Shown above the editable grid once photos exist. Order and cover are the
     // same thing on the guest side — the first photo is the cover — so the line
     // says exactly that; dragging to the front is how you set it.

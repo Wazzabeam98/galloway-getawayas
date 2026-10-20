@@ -485,10 +485,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const [menuIndex, setMenuIndex] = useState<number | null>(null);
     const [menuStep, setMenuStep] = useState(0);
     // True while authoring an item whose unit is already decided — a slot shape the
-    // host opened from its named guidance row (a per-person seat, or the whole
-    // session). Such an item skips the 'both' unit step: tapping the shape WAS the
-    // unit choice. An "Add another option" item leaves this false and is asked.
-    const [unitLocked, setUnitLocked] = useState(false);
     const [payoutOpen, setPayoutOpen] = useState(false);
 
     // The section rail collapses to an icon-only strip, Airbnb-style. Kept in
@@ -942,10 +938,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // one item and no stored offering, and loads as exactly what
                     // that item is — 'private' or 'shared' — never flipped.
                     if (ex.shape === 'slot') {
-                        // A per-person offering with a group price IS 'both' — one
-                        // offering priced two ways.
-                        const twoPrices = (itemRows || []).some((r: any) => r.unit === 'person' && Number(r.group_price) > 0);
-                        setSlotOffer(twoPrices ? 'both' : slotOfferingFromUnits((itemRows || []).map((r: any) => r.unit)));
+                        // 'both' is now two separate options — one per-person, one
+                        // whole-thing — so the offering is read straight from the
+                        // units present: a flat item is private, a per-person item is
+                        // shared, both present is 'both'. (The old single-item 'both'
+                        // that carried a group price is gone.)
+                        setSlotOffer(slotOfferingFromUnits((itemRows || []).map((r: any) => r.unit)));
                     }
                     if (ex.shape === 'comes_to_you') {
                         const offered = chargeUnitsFor('comes_to_you') as string[];
@@ -1956,13 +1954,16 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     const guestSlotChoice = isGuest && ((shape === 'slot' && (step === 'g_slot_basis' || step === 'g_slot_where')) || step === 'g_charge');
     // group falls back to the category's own group, so a restored draft (which
     // saves the category, not the group) still resolves its steps correctly.
-    // An 'Offer both' slot is priced both ways: a per-person offering that also
-    // carries a group price — or, for a provider who set up before that, a
-    // per-person offering AND a separate whole-thing one. Next waits for either,
-    // or a host who chose both quietly ships only one way to book.
-    const slotBothPriced = items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0 && Number(r.groupPrice) > 0)
-        || (items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
-            && items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0));
+    // A slot's priced options must match the private/shared choice: a per-person
+    // option for "individual places", a whole-thing (flat) option for "a private
+    // group", and one of each for "both". Each option is its own item now — the
+    // old single offering that carried two prices is gone.
+    const slotHasPerson = items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0);
+    const slotHasFlat = items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0);
+    const slotMenuComplete = slotOffer === 'private' ? slotHasFlat
+        : slotOffer === 'shared' ? slotHasPerson
+            : slotOffer === 'both' ? (slotHasPerson && slotHasFlat)
+                : (slotHasPerson || slotHasFlat);
     const stepCtx: StepContext | undefined =
         isGuest
             ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, slotOffer, fulfilment, chargeUnits }
@@ -2091,11 +2092,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // requirement is the 'availability' problem, which maps to that step).
     const whereMissing: string | null = null;
 
-    // g_photos deliberately shows no footer message: the on-screen line asks for
-    // three, the Next gate quietly holds at one, and we don't restate either in
-    // the footer. The gate itself lives in the Next-disabled computation.
+    // g_photos now gates on three (Airbnb's minimum) and names it bottom-left,
+    // the same greyed-Next pattern every other required step uses.
     const guestExtraMissing: string | null = isGuest
-        ? (step === 'g_creds' && !professionalTitle.trim()
+        ? (step === 'g_photos' && photos.length < 3
+            ? GUEST_SCREEN_COPY.photosGate
+            : step === 'g_creds' && !professionalTitle.trim()
             ? GUEST_SCREEN_COPY.titleGate
             // The listing must be named before Next — it is the h1 a guest reads.
             : step === 'g_title' && !listingTitle.trim()
@@ -2112,14 +2114,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             // The come-to-me / travel fork, same rule.
             : step === 'g_slot_where' && !fulfilment
             ? GUEST_SCREEN_COPY.slotWhereGate
-            // A 'both' slot needs a priced private hire AND a priced shared table,
-            // or it quietly ships only one. Next is greyed until both — say which
-            // is missing rather than leaving it unexplained. (No price at all falls
-            // to the menu's own required-item gate.)
-            : step === 'g_menu' && shape === 'slot' && slotOffer === 'both' && !slotBothPriced
-            ? (!items.some((r) => Number(r.price) > 0)
+            // A slot's options must match the private/shared choice. Say which is
+            // missing rather than leaving the greyed Next unexplained. No priced
+            // option at all falls to the menu's own required-item gate.
+            : step === 'g_menu' && shape === 'slot' && !slotMenuComplete
+            ? (!slotHasPerson && !slotHasFlat
                 ? GUEST_SCREEN_COPY.menuRequiredGate
-                : GUEST_SCREEN_COPY.menuSlotBothGateGroup)
+                : (slotOffer === 'private' || (slotOffer === 'both' && !slotHasFlat))
+                    ? GUEST_SCREEN_COPY.menuSlotGatePrivate
+                    : GUEST_SCREEN_COPY.menuSlotGateShared)
             // The 'both' place screen carries two answers. When BOTH are still
             // empty the footer named only the areas (the first problem), so the
             // address looked optional — name both. If just one is missing this
@@ -4413,11 +4416,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // ('delivery'). A 'both' provider is false here and resolves travel
                     // PER ITEM below (itemTravels), where the item's location is known.
                     const travels = fulfilment === 'delivery';
-                    // 'offer both' is the only slot where the unit is ambiguous, so
-                    // it alone lets the provider add items and choose each one's unit
-                    // (session vs person) as a step in the sub-flow. private/shared
-                    // stay a single item whose unit is derived, never asked.
-                    const slotBoth = isSlot && slotOffer === 'both';
+                    // Every slot option now chooses how it's priced (per person /
+                    // the whole thing) as a step in its own sub-flow — the provider
+                    // builds an add-list, not a fixed one-per-shape set. The
+                    // private/shared/both answer decides which units the list must
+                    // include (the Next gate), not what each option is forced to be.
                     // The units a non-slot offering may use: a made-to-order menu is
                     // per item; a "something else" provider uses the ones they ticked
                     // on g_charge; a named comes-to-you category (a chef) chooses per
@@ -4427,7 +4430,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     const allowedUnits: string[] = shape === 'made_to_order'
                         ? (chargeUnitsFor('made_to_order') as string[])
                         : (askedCharge ? chargeUnits : (chargeUnitsFor(shape) as string[]));
-                    const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: isSlot ? 'flat' : (allowedUnits[0] || 'flat'), image: null as string | null, duration: '' };
+                    // A new slot option defaults to the unit the private/shared answer
+                    // implies (private → the whole thing, shared/both → per person),
+                    // so the common case needs no change on the "How is this priced?"
+                    // step; the provider can still switch it there.
+                    const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: isSlot ? (slotOffer === 'private' ? 'flat' : 'person') : (allowedUnits[0] || 'flat'), image: null as string | null, duration: '' };
 
                     // "per person", "per group", "per event" — the unit as the
                     // provider chose it (lib/pricingUnits), never "for the session".
@@ -4456,52 +4463,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         return Number(r.price) > 0;
                     };
 
-                    // The slot shapes this offer prices as — the whole session (a
-                    // flat, private hire) and/or a per-person seat — each shown as a
-                    // NAMED guidance row until the host fills it, so the screen is
-                    // never a blank list. private/shared show only their one shape;
-                    // 'both' shows both. A shape the host has already priced shows
-                    // their real item; guidance never appears over real data.
-                    // 'both' is ONE per-person offering that also carries a price for
-                    // the whole group (9 Oct 2026) — not two offerings to set up. An
-                    // older 'both' provider's separate whole-thing row still shows,
-                    // as an extra row below.
-                    const offerUnits: string[] = slotOffer === 'private' ? ['flat'] : ['person'];
-                    const shapeMeta: Record<string, { label: string; hint: string }> = {
-                        flat: { label: GUEST_SCREEN_COPY.menuSlotUnitFlat, hint: GUEST_SCREEN_COPY.menuSlotUnitFlatHint },
-                        person: slotOffer === 'both'
-                            ? { label: GUEST_SCREEN_COPY.menuSlotBothRowLabel, hint: GUEST_SCREEN_COPY.menuSlotBothRowHint }
-                            : { label: GUEST_SCREEN_COPY.menuSlotUnitPerson, hint: GUEST_SCREEN_COPY.menuSlotUnitPersonHint },
-                    };
-                    const shapeRows = offerUnits.map((unit) => {
-                        const index = items.findIndex((r) => String(r.unit) === unit);
-                        return { unit, label: shapeMeta[unit].label, hint: shapeMeta[unit].hint, index, item: index >= 0 ? items[index] : null };
-                    });
-                    const usedIdx = new Set(shapeRows.filter((r) => r.index >= 0).map((r) => r.index));
-                    // Any item beyond the one-per-shape starters (a 'both' host who
-                    // added a further option), rendered as its own row after them.
-                    const extraRows = items.map((r, i) => ({ r, i })).filter(({ i }) => !usedIdx.has(i));
-
                     const rows = items;
                     const setField = (i: number, field: 'name' | 'description' | 'price' | 'groupPrice' | 'minHours' | 'unit' | 'duration' | 'fulfilment', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
-                    const openEdit = (i: number) => { setMenuIndex(i); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
-                    const openAdd = () => { setItems((prev) => [...prev, { ...blank }]); setMenuIndex(items.length); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
-                    // Opening a named shape guidance row. The item's unit IS the shape
-                    // (locked, so 'both' skips the unit step — tapping the shape was
-                    // the unit choice); its name is the host's to write and its price
-                    // is empty. It lives in state so the sub-flow can edit it, but is
-                    // dropped on cancel and kept OUT of the draft until it has a price
-                    // (see the draft filter) — the suggestion itself persists nothing.
-                    const openGuidance = (unit: string) => {
-                        setItems((prev) => [...prev, { id: undefined as string | undefined, name: '', description: '', price: '', unit, image: null as string | null, duration: '' }]);
-                        setMenuIndex(items.length); setUnitLocked(true); setMenuStep(0); setPayoutOpen(false);
-                    };
-                    // On close, a slot drops any item with no real price — so a
-                    // guidance shape opened and abandoned leaves nothing behind and its
-                    // row returns to guidance. A full menu keeps a named-but-unpriced
-                    // draft as before (its final save drops it).
+                    const openEdit = (i: number) => { setMenuIndex(i); setMenuStep(0); setPayoutOpen(false); };
+                    const openAdd = () => { setItems((prev) => [...prev, { ...blank }]); setMenuIndex(items.length); setMenuStep(0); setPayoutOpen(false); };
+                    // On close, a slot drops any item with no real price — so an option
+                    // opened and abandoned leaves nothing behind. A full menu keeps a
+                    // named-but-unpriced draft as before (its final save drops it).
                     const closeItem = () => {
                         setItems((prev) => prev.filter((r) => {
                             // A slot drops a bare priceless row; a full menu keeps a
@@ -4509,9 +4479,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             const priced = Number(r.price) > 0;
                             return isSlot ? priced : (String(r.name || '').trim() !== '' || String(r.price || '').trim() !== '');
                         }));
-                        setMenuIndex(null); setUnitLocked(false);
+                        setMenuIndex(null);
                     };
-                    const removeItem = (i: number) => { setItems((prev) => prev.filter((_, j) => j !== i)); setMenuIndex(null); setUnitLocked(false); };
+                    const removeItem = (i: number) => { setItems((prev) => prev.filter((_, j) => j !== i)); setMenuIndex(null); };
 
                     const it = menuIndex !== null ? items[menuIndex] : null;
                     const nameFilled = !!it && String(it.name || '').trim() !== '';
@@ -4527,10 +4497,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     const itemTravels = travels || (locationPerItem && String(it && it.fulfilment) === 'delivery');
                     const mixedChoiceItem = mixedShape && !itemTravels;
                     const forcedOneToOneItem = perItemShape || (mixedShape && itemTravels);
-                    // The sub-flow is one question a screen. A 'both' slot gets the
-                    // unit-choice screen between price and description — but only when
-                    // the unit is not already decided by the shape the host opened
-                    // (unitLocked). Steps are addressed by KIND, not a bare index.
+                    // The sub-flow is one question a screen. A slot option gets the
+                    // "How is this priced?" screen between name and price. Steps are
+                    // addressed by KIND, not a bare index.
                     // One question a screen. The per-treatment shape inserts DURATION
                     // between name and price — the one added screen, same craft, no
                     // per-person/unit step (a treatment is always flat). 'both' keeps
@@ -4555,16 +4524,22 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // price for the whole group — required in spirit for 'both' (the
                     // Next gate checks one exists), optional for "something else"
                     // that ticked per group too.
+                    // The group-price step belongs only to a non-slot "something else"
+                    // provider who also charges per group — the slot combined offering
+                    // (one per-person offering carrying a whole-group price) is gone.
                     const groupStep = !!it && String(it.unit) === 'person' && !forcedOneToOneItem && !mixedChoiceItem
-                        && (slotBoth || (askedCharge && chargeUnits.includes('flat')));
+                        && (askedCharge && chargeUnits.includes('flat'));
                     const stepKindsBase: Array<'name' | 'location' | 'booked' | 'duration' | 'price' | 'group' | 'hours' | 'unit' | 'desc' | 'photo'> = forcedOneToOneItem
                         ? ['name', ...locStep, 'duration', 'price', 'desc', 'photo']
                         : mixedChoiceItem
                             ? (mixedTimed
                                 ? ['name', ...locStep, 'booked', 'duration', 'price', 'desc', 'photo']
                                 : ['name', ...locStep, 'booked', 'price', 'desc', 'photo'])
-                            : ((slotBoth && !unitLocked) || menuUnitStep)
-                                ? ['name', 'unit', 'price', 'desc', 'photo']
+                            // Every slot option is asked how it's priced (per person /
+                            // the whole thing); a non-slot offering gets the unit step
+                            // only when it can charge more than one way.
+                            : (isSlot || menuUnitStep)
+                                ? ['name', ...locStep, 'unit', 'price', 'desc', 'photo']
                                 : ['name', ...locStep, 'price', 'desc', 'photo'];
                     // Per hour: after the price, the fewest hours someone can book.
                     const hoursStep = !!it && String(it.unit) === 'hour';
@@ -4600,31 +4575,16 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
 
                             <div className="mt-8 space-y-1">
                                 {(isSlot && !perItemShape && !mixedShape) ? (
-                                    // A slot's shapes as named rows: a priced one shows
-                                    // the host's real item; an unfilled one is guidance
-                                    // (the shape's name + what it means) that persists
-                                    // nothing until opened and priced. 'both' can add a
-                                    // further option beyond the two; private/shared can't.
+                                    // A slot's options as an add-list, the same shape as
+                                    // the full menu below: each option the host has added
+                                    // as its own row, then a single add row. The step
+                                    // opens with just "Add an option"; once one exists it
+                                    // reads "Add another option". Each option picks how
+                                    // it's priced (per person / the whole thing) in its
+                                    // own sub-flow; the private/shared choice decides
+                                    // which it must include (the Next gate).
                                     <>
-                                        {shapeRows.map((s) => (s.item
-                                            ? <HubRow
-                                                key={s.unit}
-                                                filled={isRowComplete(s.item)}
-                                                thumb={s.item.image ? getImageUrl(s.item.image) : null}
-                                                label={s.item.name.trim() || s.label}
-                                                prompt={GUEST_SCREEN_COPY.menuRowPrompt}
-                                                summary={rowSummary(s.item)}
-                                                onOpen={() => openEdit(s.index)}
-                                            />
-                                            : <HubRow
-                                                key={s.unit}
-                                                filled={false}
-                                                label={s.label}
-                                                prompt={s.hint}
-                                                onOpen={() => openGuidance(s.unit)}
-                                            />
-                                        ))}
-                                        {extraRows.map(({ r, i }) => (
+                                        {rows.map((r, i) => (
                                             <HubRow
                                                 key={r.id || i}
                                                 filled={isRowComplete(r)}
@@ -4635,14 +4595,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                                 onOpen={() => openEdit(i)}
                                             />
                                         ))}
-                                        {slotBoth && (
-                                            <HubRow
-                                                filled={false}
-                                                label={GUEST_SCREEN_COPY.menuSlotAddRow}
-                                                prompt={GUEST_SCREEN_COPY.menuRowPrompt}
-                                                onOpen={openAdd}
-                                            />
-                                        )}
+                                        <HubRow
+                                            filled={false}
+                                            label={items.length === 0 ? GUEST_SCREEN_COPY.menuSlotAddFirst : GUEST_SCREEN_COPY.menuSlotAddRow}
+                                            prompt={GUEST_SCREEN_COPY.menuSlotAddSubtitle}
+                                            onOpen={openAdd}
+                                        />
                                     </>
                                 ) : (
                                     // A full menu (non-slot): the host's items, add-style.
@@ -4685,7 +4643,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                     }
                                     onClose={closeItem}
                                     onBack={menuStep > 0 ? () => setMenuStep((s) => s - 1) : undefined}
-                                    onRemove={(!isSlot || slotBoth || perItemShape || mixedShape) ? () => removeItem(menuIndex) : undefined}
+                                    onRemove={() => removeItem(menuIndex)}
                                     saveLabel={menuStep === LAST ? GUEST_SCREEN_COPY.save : GUEST_SCREEN_COPY.menuNext}
                                     saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'location' && !String(it.fulfilment || '')) || (stepKind === 'duration' && !durationFilled) || (stepKind === 'price' && !priceFilled)}
                                     onSave={menuStep === LAST ? closeItem : () => setMenuStep((s) => s + 1)}
@@ -4858,8 +4816,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                         <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuSlotUnitTitle} className="mx-auto w-full max-w-md space-y-3">
                                             {(isSlot
                                                 ? ([
-                                                    ['flat', GUEST_SCREEN_COPY.menuSlotUnitFlat, GUEST_SCREEN_COPY.menuSlotUnitFlatHint],
+                                                    // Per person above For the whole thing.
                                                     ['person', GUEST_SCREEN_COPY.menuSlotUnitPerson, GUEST_SCREEN_COPY.menuSlotUnitPersonHint],
+                                                    ['flat', GUEST_SCREEN_COPY.menuSlotUnitFlat, GUEST_SCREEN_COPY.menuSlotUnitFlatHint],
                                                 ] as Array<[string, string, string]>)
                                                 : itemUnitChoices.map((u) => [u, UNIT_NAME[u] || u, UNIT_HINT[u] || ''] as [string, string, string])
                                             ).map(([u, label, hint]) => {
@@ -4897,7 +4856,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                                 placeholder="120"
                                                 ariaLabel={GUEST_SCREEN_COPY.menuGroupTitle} />
                                             <p className="mx-auto mt-6 max-w-md text-center text-sm text-slate-500 [text-wrap:balance]">
-                                                {slotBoth ? GUEST_SCREEN_COPY.menuGroupNoteBoth : GUEST_SCREEN_COPY.menuGroupNoteOptional}
+                                                {GUEST_SCREEN_COPY.menuGroupNoteOptional}
                                             </p>
                                             {Number(it.groupPrice) > 0 && (
                                                 <p className="mt-4 text-center text-sm font-medium text-slate-600">
@@ -5064,8 +5023,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
                     <div className="grid gap-3 sm:grid-cols-3">
                         {([
-                            { v: 'private', t: GUEST_SCREEN_COPY.slotBasisPrivateLabel, d: GUEST_SCREEN_COPY.slotBasisPrivateHint },
+                            // Individual places (left), the whole thing (middle),
+                            // both (right). None preselected — slotOffer starts null.
                             { v: 'shared', t: GUEST_SCREEN_COPY.slotBasisSharedLabel, d: GUEST_SCREEN_COPY.slotBasisSharedHint },
+                            { v: 'private', t: GUEST_SCREEN_COPY.slotBasisPrivateLabel, d: GUEST_SCREEN_COPY.slotBasisPrivateHint },
                             { v: 'both', t: GUEST_SCREEN_COPY.slotBasisBothLabel, d: GUEST_SCREEN_COPY.slotBasisBothHint },
                         ] as const).map((o) => (
                             <ChoiceCard key={o.v} selected={slotOffer === o.v} onSelect={() => applyOffer(o.v)} title={o.t} hint={o.d} />
@@ -6669,7 +6630,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             : step === 'g_creds' ? !professionalTitle.trim()
                             // The listing needs a name — it is the h1 and the card.
                             : step === 'g_title' ? !listingTitle.trim()
-                            : step === 'g_photos' ? photos.length === 0
+                            : step === 'g_photos' ? photos.length < 3
                             // The booking-shape fork ('something else') must be
                             // answered — it decides the location screen and the rest.
                             : step === 'g_shape' ? !shape
@@ -6680,10 +6641,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             : step === 'g_charge' ? chargeUnits.length === 0
                             // The come-to-me / travel fork sets the location screen.
                             : step === 'g_slot_where' ? !fulfilment
-                            // A 'both' slot must have BOTH products priced, or a
-                            // host who chose both quietly ships only one.
-                            : step === 'g_menu' && shape === 'slot' && slotOffer === 'both'
-                                ? !slotBothPriced
+                            // A slot's priced options must match the private/shared
+                            // choice (per-person for shared, whole-thing for private,
+                            // one of each for both).
+                            : step === 'g_menu' && shape === 'slot'
+                                ? !slotMenuComplete
                             : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
                             : stepProblems.length > 0
                         );
