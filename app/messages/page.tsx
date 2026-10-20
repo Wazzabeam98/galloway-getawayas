@@ -417,20 +417,23 @@ export default function MessagesInboxPage() {
     // theirs, and row-level security is what keeps it that way. Unlike the
     // rest of this page there is no co-host problem to work around: a co-host
     // writing their own preference row is still writing their own row.
-    const setPref = async (bookingId: string, patch: any, optimistic: any, undo: any) => {
-        if (!session || !session.user || busy[bookingId]) return;
+    // Keyed on the thread's key, like every other per-row action, so the busy
+    // flag and the row match line up across all thread kinds — the write still
+    // goes to conversation_prefs by booking_id, which only booking threads have.
+    const setPref = async (c: any, patch: any, optimistic: any, undo: any) => {
+        if (!session || !session.user || busy[c.key]) return;
 
-        setBusy((prev) => ({ ...prev, [bookingId]: true }));
+        setBusy((prev) => ({ ...prev, [c.key]: true }));
         setConversations((prev) =>
-            prev.map((c) => (c.bookingId === bookingId ? { ...c, ...optimistic } : c))
+            prev.map((x) => (x.key === c.key ? { ...x, ...optimistic } : x))
         );
 
         const { error } = await supabase.from('conversation_prefs').upsert(
-            { user_id: session.user.id, booking_id: bookingId, ...patch },
+            { user_id: session.user.id, booking_id: c.bookingId, ...patch },
             { onConflict: 'user_id,booking_id' }
         );
 
-        setBusy((prev) => ({ ...prev, [bookingId]: false }));
+        setBusy((prev) => ({ ...prev, [c.key]: false }));
 
         if (error) {
             // Put this row back rather than leaving the screen claiming
@@ -438,7 +441,7 @@ export default function MessagesInboxPage() {
             // touched, on the one row — restoring the whole list would throw
             // away anything that arrived while the save was in flight.
             setConversations((prev) =>
-                prev.map((c) => (c.bookingId === bookingId ? { ...c, ...undo } : c))
+                prev.map((x) => (x.key === c.key ? { ...x, ...undo } : x))
             );
             toast.error('That did not save. Please try again.');
         }
@@ -446,7 +449,7 @@ export default function MessagesInboxPage() {
 
     const toggleStar = (c: any) =>
         setPref(
-            c.bookingId,
+            c,
             { starred_at: c.starred ? null : new Date().toISOString() },
             { starred: !c.starred },
             { starred: !!c.starred }
@@ -460,9 +463,9 @@ export default function MessagesInboxPage() {
     //
     // Deliberately not a toggle. Undoing it would mean writing null, and the
     // thing it would put back is a flag the next message restores anyway.
-    const markNoReplyNeeded = (bookingId: string) =>
+    const markNoReplyNeeded = (c: any) =>
         setPref(
-            bookingId,
+            c,
             { no_reply_needed_at: new Date().toISOString() },
             { needsReply: false, noReplyNeeded: true },
             { needsReply: true, noReplyNeeded: false }
@@ -483,7 +486,7 @@ export default function MessagesInboxPage() {
         // Moving it back to the inbox clears the stamp outright, so it stays
         // in the inbox until it is archived again.
         setPref(
-            c.bookingId,
+            c,
             { archived_at: c.archived ? null : new Date().toISOString() },
             { archived: !c.archived },
             { archived: !!c.archived }
@@ -527,22 +530,24 @@ export default function MessagesInboxPage() {
     };
 
     const markUnread = async (c: any) => {
-        if (busy[c.bookingId]) return;
-        setBusy((prev) => ({ ...prev, [c.bookingId]: true }));
+        if (busy[c.key]) return;
+        setBusy((prev) => ({ ...prev, [c.key]: true }));
+
+        const { kind, id } = splitKey(c.key);
 
         let data: any = null;
         try {
             const res = await fetch('/api/messages/mark-unread', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bookingId: c.bookingId }),
+                body: JSON.stringify({ kind, id }),
             });
             data = await res.json();
         } catch (err) {
             data = null;
         }
 
-        setBusy((prev) => ({ ...prev, [c.bookingId]: false }));
+        setBusy((prev) => ({ ...prev, [c.key]: false }));
 
         if (!data || !data.ok) {
             toast.error('Could not mark that as unread.');
@@ -559,7 +564,7 @@ export default function MessagesInboxPage() {
 
         setConversations((prev) =>
             prev.map((x) =>
-                x.bookingId === c.bookingId ? { ...x, unread: Math.max(1, x.unread || 0) } : x
+                x.key === c.key ? { ...x, unread: Math.max(1, x.unread || 0) } : x
             )
         );
 
@@ -718,10 +723,10 @@ export default function MessagesInboxPage() {
                             conversation={c}
                             active={activeId === c.key}
                             showActive
-                            busy={!!busy[c.bookingId]}
+                            busy={!!busy[c.key]}
                             onOpen={() => openConversation(c.key)}
                             onMarkRead={() => markRead(c.key)}
-                            onNoReplyNeeded={() => markNoReplyNeeded(c.bookingId)}
+                            onNoReplyNeeded={() => markNoReplyNeeded(c)}
                             onStar={() => toggleStar(c)}
                             onArchive={() => toggleArchive(c)}
                             onMarkUnread={() => markUnread(c)}
@@ -1091,14 +1096,14 @@ export default function MessagesInboxPage() {
                                 <ConversationRow
                                     key={c.key}
                                     conversation={c}
-                                    busy={!!busy[c.bookingId]}
+                                    busy={!!busy[c.key]}
                                     onMarkRead={() => markRead(c.key)}
                                     onOpen={() => {
                                         openConversation(c.key);
                                         setMobileOpen(true);
                                         setShowDetails(false);
                                     }}
-                                    onNoReplyNeeded={() => markNoReplyNeeded(c.bookingId)}
+                                    onNoReplyNeeded={() => markNoReplyNeeded(c)}
                                     onStar={() => toggleStar(c)}
                                     onArchive={() => toggleArchive(c)}
                                     onMarkUnread={() => markUnread(c)}
