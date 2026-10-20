@@ -32,9 +32,12 @@ import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
 // notice). A plain server component. Rules: first name only, no ratings/counts,
 // no address before payment.
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel, reviews, menu, itemsMenu, sticky, responsiveness, reportable,
+    p, backHref, backLabel, panel, reviews, menu, itemsMenu, sticky, responsiveness, reportable, banner,
 }: {
     p: MpProvider;
+    // A bar above the photos — the owner's "Preview, not yet visible" notice on
+    // their own page before approval (OwnerPreviewBanner).
+    banner?: React.ReactNode;
     backHref: string;
     backLabel: string;
     panel: React.ReactNode;
@@ -183,6 +186,8 @@ export default function ExperienceListingBody({
                 <Link href={backHref} className="text-sm font-medium text-slate-500 hover:text-slate-800">
                     ← {backLabel}
                 </Link>
+
+                {banner}
 
                 <div id="photos" className="scroll-mt-24">
                     {p.galleryKeys.length ? (
