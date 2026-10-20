@@ -363,7 +363,7 @@ export const AREAS: Area[] = [
         ],
         gettingThere: [
             "The park sits in the middle of the region, reached from its edges rather than driven into. Newton Stewart, on the A75, is the main southern gateway — about 50 miles west of Dumfries, an hour and a half from Gretna — and Glen Trool and Kirroughtree are a short drive from there.",
-            "The northern end, around the Dark Sky Dome and the Carrick Forest, is reached from Straiton and Dalmellington, over the boundary in Ayrshire, off the A713, about half an hour south of Ayr.",
+            "The northern end, around the Dark Sky Dome and the Carrick Forest, is reached from Straiton and Dalmellington off the A713, about half an hour south of Ayr.",
             "There is no railway into the park and the roads inside it are single-track in places and unlit by design — the darkness is the point. A car is essential, and a torch for walking back from a stargazing session.",
         ],
         faqs: [
