@@ -265,7 +265,7 @@ export default function ConversationRow(props: {
                         {c.lastMessage && (
                             // Room kept clear on the right for the three dots,
                             // so a long name does not run underneath them.
-                            <span className="ml-auto text-xs text-slate-400 flex-shrink-0 pr-6">
+                            <span className="ml-auto text-xs text-slate-500 flex-shrink-0 pr-6">
                                 {timeAgo(c.lastMessage.created_at)}
                             </span>
                         )}
@@ -282,8 +282,12 @@ export default function ConversationRow(props: {
                     {c.lastMessage && (
                         <div
                             className={
-                                // Airbnb bolds and darkens an unread preview.
-                                'text-xs truncate mt-1 ' +
+                                // Airbnb bolds and darkens an unread preview and
+                                // leaves a read one a readable grey — never the
+                                // pale grey this used to show. text-sm (15px on a
+                                // phone) rather than text-xs so the line is big
+                                // enough to read at a glance.
+                                'text-sm truncate mt-1 ' +
                                 (c.unread > 0
                                     ? 'text-slate-900 font-semibold'
                                     : c.needsReply
