@@ -35,6 +35,7 @@ import { formatGBP } from '@/lib/formatMoney';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { venueMapPoint } from '@/lib/venuePoint';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
+import { orderCancelTerms } from '@/lib/orderCancelTerms';
 
 export const dynamic = 'force-dynamic';
 
@@ -247,9 +248,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const gallery = Array.isArray(prov?.photos) ? (prov!.photos as string[]).filter(Boolean).map((k) => getImageUrl(k)) : [];
     const hero = gallery[0] || null;
 
-    const windowHours = Number(prov && prov.cancellation_window_hours) || 48;
+    // The terms this order was booked under (its stamp), not the provider's live
+    // policy — the same rule the cancel route applies, so the line shown agrees.
+    const terms = orderCancelTerms(order as any, prov);
+    const windowHours = terms.windowHours;
     const charged = order.status === 'confirmed';
-    const free = charged
+    const free = charged && !terms.noRefund
         ? guestMayCancelFree(order.shape, String(order.service_date), order.service_time || null, windowHours, new Date())
         : false;
 

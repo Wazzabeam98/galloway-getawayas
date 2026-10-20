@@ -13,6 +13,7 @@ import { exclusivePerDate } from '@/lib/serviceOrders';
 import { shapeOf, generateSessions } from '@/lib/serviceSlots';
 import { changeWindowState, dayKey, dayKeyFromNow, providerTakesChanges } from '@/lib/orderChange';
 import { offeredTimes as providerOfferedTimes, isOfferedTime, normaliseTime } from '@/lib/offeredTimes';
+import { orderCancelTerms } from '@/lib/orderCancelTerms';
 
 const HORIZON_FALLBACK = 90;
 
@@ -33,7 +34,7 @@ export async function loadOrderForChange(admin: any, orderId: string): Promise<L
     if (!orderId) return { error: { status: 400, message: 'Missing order' } };
     const { data: order } = await admin
         .from('service_orders')
-        .select('id, guest_id, guest_email, guest_name, provider_id, booking_id, parent_order_id, status, shape, service_date, service_time, item_name, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
+        .select('id, guest_id, guest_email, guest_name, provider_id, booking_id, parent_order_id, status, shape, service_date, service_time, item_name, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, cancellation_window_hours, no_refund')
         .eq('id', orderId).maybeSingle();
     if (!order) return { error: { status: 404, message: 'No such booking' } };
     if (order.parent_order_id) return { error: { status: 400, message: 'Change the original booking, not an added part.' } };
@@ -52,7 +53,7 @@ export async function loadOrderForChange(admin: any, orderId: string): Promise<L
         const { data: b } = await admin.from('bookings').select('check_in, check_out').eq('id', order.booking_id).maybeSingle();
         if (b) stay = { check_in: String(b.check_in).slice(0, 10), check_out: String(b.check_out).slice(0, 10) };
     }
-    const windowHours = Number(provider.cancellation_window_hours) || 48;
+    const windowHours = orderCancelTerms(order, provider).windowHours;
     return { order, provider, stay, windowHours, shape };
 }
 

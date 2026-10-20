@@ -6,6 +6,7 @@ import { isLiveToGuests, mccForProvider, guestExperiencesOpen, normaliseUnit } f
 import { guestCategory } from '@/lib/serviceProviders';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { getImageUrl } from '@/lib/utils';
+import { orderCancelTerms } from '@/lib/orderCancelTerms';
 
 export const dynamic = 'force-dynamic';
 
@@ -170,7 +171,7 @@ export async function GET(request: Request) {
         if (bookingId) {
             const { data: mine } = await admin
                 .from('service_orders')
-                .select('id, status, shape, service_date, service_time, price, item_name, provider_business_name, provider_id')
+                .select('id, status, shape, service_date, service_time, price, item_name, provider_business_name, provider_id, cancellation_window_hours, no_refund')
                 .eq('booking_id', bookingId)
                 .eq('guest_id', user.id)
                 .order('created_at', { ascending: false });
@@ -179,18 +180,20 @@ export async function GET(request: Request) {
             // refund BEFORE they confirm a cancel — the same guestMayCancelFree the
             // cancel route runs, so the figure shown and the figure given agree.
             const provIds = Array.from(new Set((mine || []).map((o) => o.provider_id).filter(Boolean)));
-            const windowById: Record<string, number> = {};
+            const provById: Record<string, any> = {};
             if (provIds.length) {
                 const { data: provs } = await admin
-                    .from('service_providers').select('id, cancellation_window_hours').in('id', provIds);
-                (provs || []).forEach((p) => { windowById[p.id] = Number(p.cancellation_window_hours) || 48; });
+                    .from('service_providers').select('id, cancellation_window_hours, guest_details').in('id', provIds);
+                (provs || []).forEach((p) => { provById[p.id] = p; });
             }
             const now = new Date();
 
             orders = (mine || []).map((o) => {
                 const charged = o.status === 'confirmed';
-                const free = charged
-                    ? guestMayCancelFree(o.shape, String(o.service_date), o.service_time || null, windowById[o.provider_id] || 48, now)
+                // The order's own stamped terms (lib/orderCancelTerms), as the cancel route reads them.
+                const terms = orderCancelTerms(o, provById[o.provider_id]);
+                const free = charged && !terms.noRefund
+                    ? guestMayCancelFree(o.shape, String(o.service_date), o.service_time || null, terms.windowHours, now)
                     : false;
                 return {
                     id: o.id,

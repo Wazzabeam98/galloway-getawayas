@@ -14,6 +14,7 @@ import { formatGBP } from '@/lib/formatMoney';
 import { ltaNoticeRecord } from '@/lib/linkedTravelNotice';
 import { orderFieldsFromMetadata } from '@/lib/experienceFunds';
 import { packageNoticeFromMetadata } from './packageNotice';
+import { termsFromMetadata, termsToStamp } from './orderCancelTerms';
 
 // Builds the 'authorised' service order for a REQUEST-shape guest experience
 // (a chef/baker/masseur booked against a stay) from a completed Checkout
@@ -64,7 +65,7 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
 
     const { data: prov } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, shape, contact_email, exclusive_per_date')
+        .select('id, business_name, trade, shape, contact_email, exclusive_per_date, cancellation_window_hours, guest_details')
         .eq('id', md.provider_id)
         .maybeSingle();
 
@@ -195,6 +196,11 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             children: md.children ? (parseInt(md.children, 10) || 0) : null,
             price: Number(cs.amount_total || 0) / 100,
             commission_rate: Number(md.commission_rate) || 0.10,
+            // The cancellation terms the guest checked out under, decided by the
+            // order route and carried in the server-written metadata. A session
+            // from before the stamp carries none, so it takes the provider's terms
+            // now — the nearest thing to what was shown.
+            ...(termsFromMetadata(md) || termsToStamp(prov)),
             // Which way the money went — 'held' (a platform charge, paid out the
             // day after the date) when the session says so; a session from before
             // that change is a destination charge and stays 'direct'.

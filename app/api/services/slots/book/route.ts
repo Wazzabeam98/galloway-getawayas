@@ -24,6 +24,7 @@ import { ltaNoticeRecord } from '@/lib/linkedTravelNotice';
 import { packageNoticeRecord } from '@/lib/packageNotice';
 import { displayName } from '@/lib/utils';
 import { withinLimits, callerAddress } from '@/lib/rateLimit';
+import { termsToStamp } from '@/lib/orderCancelTerms';
 
 export const dynamic = 'force-dynamic';
 
@@ -646,6 +647,10 @@ export async function POST(request: Request) {
                 // what the guest bought and the provider is turning up for must not
                 // change if the menu's duration is edited later.
                 duration_minutes: durationMinutes,
+                // The cancellation terms this booking is made under, frozen beside
+                // the price — the cancel route reads these, never the provider's
+                // live policy, so a later policy change can't rewrite them.
+                ...termsToStamp(provider),
                 // Freeze the fulfilment DIRECTION beside the duration: what a guest
                 // booked (come-to-me vs the provider travelling) must not flip if
                 // the provider later switches their setup. For a 'both' provider
