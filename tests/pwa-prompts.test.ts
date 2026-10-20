@@ -70,10 +70,10 @@ test('the Home Screen hint is for Safari on an iPhone, not other browsers or app
 });
 
 test('the hint: once per device (server cookie for a year + local note), never in the installed app, Safari’s icons drawn in, a button to close it', () => {
-    const setup = fs.readFileSync(path.join(ROOT, 'components/pwa/PwaSetup.tsx'), 'utf8');
+    const setup = fs.readFileSync(path.join(ROOT, 'components/pwa/InstallHint.tsx'), 'utf8');
     assert.match(setup, /isStandalone\(\)\) return;/, 'never inside the installed app');
     assert.match(setup, /if \(hintSeen\(\)\) return;/);
-    assert.ok(setup.indexOf('rememberHint();') < setup.indexOf('setHint(true);'), 'remembered the moment it appears');
+    assert.ok(setup.indexOf('rememberHint();') < setup.indexOf('setShow(true);'), 'remembered the moment it appears');
     assert.match(setup, /<AddToHomeScreenSteps \/>/);
     assert.match(setup, /Got it/);
     const route = fs.readFileSync(path.join(ROOT, 'app/api/pwa/seen/route.ts'), 'utf8');
@@ -88,4 +88,14 @@ test('outside Account settings, iPhone Safari gets no second "add to Home Screen
     assert.match(src, /if \(needsHomeScreenFirst\(\)\) \{\s*if \(always && /);
     const settings = fs.readFileSync(path.join(ROOT, 'components/account/PushSettings.tsx'), 'utf8');
     assert.match(settings, /<PushPrompt context="settings"[^>]*always/, 'still in Account settings');
+});
+
+test('the hint is for signed-in people, and sits after the page\u2019s content instead of over it', () => {
+    const hint = fs.readFileSync(path.join(ROOT, 'components/pwa/InstallHint.tsx'), 'utf8');
+    assert.match(hint, /auth\.getSession\(\)/);
+    assert.match(hint, /!data\.session/, 'nobody signed in: no hint');
+    assert.doesNotMatch(hint.replace(/\/\/.*$/gm, ''), /\bfixed\b/, 'never a floating overlay');
+    const layout = fs.readFileSync(path.join(ROOT, 'app/layout.tsx'), 'utf8');
+    assert.ok(layout.indexOf('{children}') < layout.indexOf('<InstallHint />') && layout.indexOf('<InstallHint />') < layout.indexOf('<FooterSwitch'), 'after the page, before the footer');
+    assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'components/pwa/PwaSetup.tsx'), 'utf8'), /Add Galloway Getaways to your Home Screen/, 'no second copy');
 });

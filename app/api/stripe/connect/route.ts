@@ -1,4 +1,5 @@
-import { logError } from '@/lib/logError';
+import { logError, logInfo } from '@/lib/logError';
+import { mayRestartPayoutAccount, restartMessage } from '@/lib/payoutRestart';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -70,44 +71,7 @@ export async function POST(request: Request) {
         // Create the connected account the first time round.
         // -------------------------------------------------------------
         if (!accountId) {
-            const account = await stripeRequest('POST', '/accounts', {
-                type: 'express',
-                country: 'GB',
-                email: user.email,
-                default_currency: 'gbp',
-                business_type: businessType || 'individual',
-                capabilities: {
-                    transfers: { requested: 'true' },
-                    card_payments: { requested: 'true' },
-                },
-                business_profile: {
-                    // MCC 7011 — lodging. Tells Stripe what this host sells.
-                    mcc: '7011',
-                    url: SITE_URL,
-                    product_description: 'Self-catering holiday accommodation let through Galloway Getaways.',
-                },
-                settings: {
-                    payouts: {
-                        // Daily, so a payout is created every day rather than
-                        // sitting until a host logs into Stripe and releases
-                        // it, which no host expects to do.
-                        //
-                        // Daily is how often a payout is *made*, not how fast
-                        // it lands. 'minimum' resolves to whatever settlement
-                        // wait Stripe sets for the account — seven days on
-                        // every UK account checked, shortening as the account
-                        // builds history. The wording hosts see is generated
-                        // from the account's real delay_days in
-                        // lib/payoutTiming.ts rather than written down here,
-                        // because a number written down here goes stale
-                        // silently.
-                        schedule: { interval: 'daily', delay_days: 'minimum' },
-                    },
-                },
-                metadata: {
-                    galloway_user_id: uid,
-                },
-            });
+            const account = await createPayoutAccount(uid, user.email || '', businessType);
 
             accountId = account.id;
 
@@ -128,13 +92,50 @@ export async function POST(request: Request) {
         // Stripe's own form.
         // -------------------------------------------------------------
         else if (businessType && !(profile && profile.stripe_details_submitted)) {
-            try {
-                await stripeRequest('POST', '/accounts/' + accountId, { business_type: businessType });
-            } catch (err: any) {
-                await logError('stripe/connect: could not change business_type on an unfinished account', err, {
-                    path: 'api/stripe/connect',
-                    userId: uid,
-                });
+            const current = await stripeRequest('GET', '/accounts/' + accountId);
+            if (current.business_type !== businessType) {
+                let changed = false;
+                try {
+                    await stripeRequest('POST', '/accounts/' + accountId, { business_type: businessType });
+                    changed = true;
+                } catch {
+                    // Stripe owns business_type once its form has been started.
+                    // Not an error to report: it's how Express accounts work.
+                }
+                if (!changed) {
+                    const canRestart = mayRestartPayoutAccount(current);
+                    if (action !== 'restart' || !canRestart) {
+                        // Ask first: restarting means filling in Stripe's form again.
+                        return NextResponse.json({
+                            ok: false,
+                            needsRestart: canRestart,
+                            currentType: current.business_type || null,
+                            message: restartMessage(current.business_type, businessType, canRestart),
+                        });
+                    }
+                    // They said yes. A fresh account of the right type; the old
+                    // one was never usable, so no money can be tied to it. Only
+                    // the profile's pointer changes on our side.
+                    const fresh = await createPayoutAccount(uid, user.email || '', businessType);
+                    await admin
+                        .from('profiles')
+                        .update({
+                            stripe_account_id: fresh.id,
+                            stripe_charges_enabled: false,
+                            stripe_payouts_enabled: false,
+                            stripe_details_submitted: false,
+                            stripe_requirements_due: null,
+                            stripe_updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', uid)
+                        .eq('stripe_account_id', accountId);
+                    await logInfo('stripe/connect: payout setup restarted as ' + businessType, {
+                        replaced_account: accountId,
+                        new_account: fresh.id,
+                        from_type: current.business_type || null,
+                    }, { path: 'api/stripe/connect', userId: uid });
+                    accountId = fresh.id;
+                }
             }
         }
 
@@ -224,6 +225,7 @@ export async function GET() {
             payouts_enabled: account.payouts_enabled === true,
             details_submitted: account.details_submitted === true,
             requirements_due: due,
+            business_type: account.business_type || null,
         });
     } catch (err: any) {
         console.error('[stripe/connect GET]', err && err.message);
@@ -238,4 +240,47 @@ export async function GET() {
 
         return NextResponse.json({ ok: false, error: 'Could not check your payout account' }, { status: 500 });
     }
+}
+
+// A new Express account. Used the first time round, and again when a host
+// restarts payout setup as a different business type (lib/payoutRestart).
+async function createPayoutAccount(uid: string, email: string, businessType: 'company' | 'individual' | null) {
+    return stripeRequest('POST', '/accounts', {
+        type: 'express',
+        country: 'GB',
+        email: email,
+        default_currency: 'gbp',
+        business_type: businessType || 'individual',
+        capabilities: {
+            transfers: { requested: 'true' },
+            card_payments: { requested: 'true' },
+        },
+        business_profile: {
+            // MCC 7011 — lodging. Tells Stripe what this host sells.
+            mcc: '7011',
+            url: SITE_URL,
+            product_description: 'Self-catering holiday accommodation let through Galloway Getaways.',
+        },
+        settings: {
+            payouts: {
+                // Daily, so a payout is created every day rather than
+                // sitting until a host logs into Stripe and releases
+                // it, which no host expects to do.
+                //
+                // Daily is how often a payout is *made*, not how fast
+                // it lands. 'minimum' resolves to whatever settlement
+                // wait Stripe sets for the account — seven days on
+                // every UK account checked, shortening as the account
+                // builds history. The wording hosts see is generated
+                // from the account's real delay_days in
+                // lib/payoutTiming.ts rather than written down here,
+                // because a number written down here goes stale
+                // silently.
+                schedule: { interval: 'daily', delay_days: 'minimum' },
+            },
+        },
+        metadata: {
+            galloway_user_id: uid,
+        },
+    });
 }
