@@ -130,7 +130,7 @@ export const AREAS: Area[] = [
             "It is a working harbour town rather than a museum piece. Boats still land scallops and shellfish, the streets are lined with pastel-painted houses, and MacLellan’s Castle sits in the middle of it all, roofless since the 1700s. There is a riverside walk along the Dee, a beach at Dhoon a few minutes out of town, and a summer programme of art trails, festivals and the floodlit tattoo.",
             "Most people heading for the Highlands drive straight past the turn-off. That is rather the point.",
         ],
-        metaDescription: "Scotland’s Artists’ Town, on the River Dee. Pastel houses, a working harbour, and a light that has drawn painters here for two hundred years.",
+        metaDescription: "Scotland’s Artists’ Town, on the River Dee. Pastel houses, a working harbour, and a light that has drawn painters here since the late 1800s.",
         thingsToDo: [
             "The town is the attraction. Broughton House on the High Street was the home of the artist E A Hornel and has a Japanese-inspired garden running down to the Dee — worth an hour on its own. Kirkcudbright Galleries, in the converted town hall, holds the town’s art collection and changes its exhibitions through the year, and the Tolbooth Art Centre sits in a seventeenth-century building that was once the jail. MacLellan’s Castle is roofless and free to wander when it’s open.",
             "Beyond the galleries, walk the riverside path along the Dee, or head to Dhoon Bay, a few minutes out of town, for the beach. The harbour still lands shellfish, and the town’s summer programme runs from the art and crafts trail in the spring through to the floodlit tattoo.",
@@ -355,7 +355,7 @@ export const AREAS: Area[] = [
             "By day it is walking, cycling and water. The Merrick, the highest hill in southern Scotland, is climbed from Glen Trool, where Bruce’s Stone marks a victory over an English force in 1307 above a loch worth the walk on its own. Kirroughtree and the other 7stanes centres have mountain-bike trails from gentle to fearsome, the Raiders’ Road forest drive follows the Water of Ken, and Clatteringshaws Loch sits in the middle of it all with red deer on the hills above.",
             "Nobody lives deep in the park, so staying here means a cottage on its edge — near Newton Stewart, Glen Trool or the quiet roads in between — with the forest and the dark skies a few minutes from the door.",
         ],
-        metaDescription: "Britain’s first Dark Sky Park — 300 square miles of forest, loch and hill, with stargazing, the Merrick and the Glen Trool trails. Cottages on its edge.",
+        metaDescription: "Britain’s first Dark Sky Park — forest, loch and hill, with stargazing, the Merrick and Glen Trool.",
         thingsToDo: [
             "The skies first. Galloway Forest was the first Dark Sky Park in Britain and still one of the darkest places in the country — from autumn to early spring, when the nights are long, the Milky Way is plain to the naked eye. The Dark Sky Dome near Straiton, in the Carrick Forest at the north end, runs stargazing sessions; you need no equipment of your own to see a great deal.",
             "By day, Glen Trool is the obvious start: Bruce’s Stone, Loch Trool and the path up the Merrick, the highest hill in the south of Scotland. Kirroughtree, near Newton Stewart, is one of the 7stanes mountain-biking centres, with everything from family green trails to the technical black runs the place is known for, and good walking on the same forest roads.",
