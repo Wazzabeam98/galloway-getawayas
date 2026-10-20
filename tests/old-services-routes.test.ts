@@ -78,7 +78,15 @@ test('a hidden provider profile goes straight to the list, not via /services/<tr
 
 test('the sitemap does not list the per-trade URLs', () => {
     const body = read('app/sitemap.xml/route.ts');
-    assert.ok(!/\/services\/\$\{/.test(body), 'the sitemap builds /services/<trade> entries, which only redirect');
+    // A bare /services/<trade> is a redirect and must never be listed. A
+    // tradesperson's own profile, /services/<trade>/<id>, is a real page and
+    // is listed — but only through loadPublicTrades, the directory's own
+    // visibility rule, so a hidden or unpaid trade can't be offered to Google.
+    assert.ok(!/\/services\/\$\{[^}]*\}`/.test(body), 'the sitemap builds /services/<trade> entries, which only redirect');
+    for (const m of body.match(/\/services\/\$\{[^`]*`/g) || []) {
+        assert.match(m, /^\/services\/\$\{t\.trade\}\/\$\{t\.id\}`$/, 'unexpected /services URL in the sitemap: ' + m);
+    }
+    assert.ok(body.includes('loadPublicTrades('), 'trade profiles are listed without the directory visibility rule');
     assert.ok(!body.includes('SHOP_TRADES'), 'the sitemap still reads the trade list');
 });
 

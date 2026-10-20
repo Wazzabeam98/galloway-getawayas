@@ -96,7 +96,39 @@ function experienceJsonLd(p: MpProvider, reviews: ExperienceReviewsBlock, path: 
         ],
     };
 
-    return [product, breadcrumbs];
+    // The provider as a LocalBusiness — who runs this, where, and what they
+    // offer. The Product above is the bookable thing and its price; this is
+    // the business behind it, the shape Google's local results read (Airbnb
+    // marks an experience's host the same way, as a business with a place).
+    // Only what the page already shows publicly: the business name, the town
+    // it is based in (never a street address — the venue is released on
+    // booking), the region it serves, its photo and its rating on the same
+    // rule as the Product (none until MIN_PUBLIC_REVIEWS).
+    const town = (p.based_line || '').trim();
+    const travels = !town || /^travels\b/i.test(town);
+    const business: any = {
+        '@context': 'https://schema.org',
+        '@type': 'LocalBusiness',
+        name: p.business_name,
+        description,
+        url,
+        ...(image ? { image } : {}),
+        ...(!travels
+            ? { address: { '@type': 'PostalAddress', addressLocality: town, addressRegion: 'Dumfries & Galloway', addressCountry: 'GB' } }
+            : {}),
+        areaServed: { '@type': 'AdministrativeArea', name: 'Dumfries & Galloway' },
+        ...(p.priceFrom > 0 ? { priceRange: `From £${p.priceFrom}` } : {}),
+        ...(reviews && reviews.avg != null
+            ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: reviews.avg, reviewCount: reviews.count } }
+            : {}),
+        makesOffer: {
+            '@type': 'Offer',
+            itemOffered: { '@type': 'Service', name: p.business_name, serviceType: p.category },
+            url,
+        },
+    };
+
+    return [product, business, breadcrumbs];
 }
 
 // The browser tab carries the provider's name — "Loch Sauna | Galloway Getaways"
@@ -218,7 +250,7 @@ export default async function PublicListingPage({ params }: { params: { provider
     // the package notice when the picked day falls inside one (lib/packageNotice).
     const packageStays = await loadStayWindows(admin, user?.id, londonDayKey());
 
-    // Product + BreadcrumbList structured data, injected on every live render
+    // Product + LocalBusiness + BreadcrumbList structured data, injected on every live render
     // below (made-to-order, slot, request, comes-to-you alike). Not on the
     // paused branch above: a paused provider isn't bookable, so it should not
     // advertise an offer.

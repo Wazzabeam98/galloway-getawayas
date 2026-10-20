@@ -14,9 +14,11 @@ export const dynamic = 'force-dynamic';
 // providers below it change. Relative canonical/url resolve against
 // metadataBase in app/layout.tsx, as the listing page's canonical does.
 export const metadata: Metadata = {
-    title: 'Experiences & Things to Do in Dumfries & Galloway',
+    // Absolute: with the layout's " | Galloway Getaways" this ran to 69
+    // characters and Google cut it. The brand is still in og:site_name.
+    title: { absolute: 'Experiences & Things to Do in Dumfries & Galloway' },
     description:
-        'Book local experiences across Dumfries & Galloway — chefs, bakers, saunas, guides and classes. Booked and paid securely through Galloway Getaways, with no booking fee.',
+        'Book local experiences across Dumfries & Galloway — chefs, bakers, saunas, guides and classes — paid securely through Galloway Getaways, with no booking fee.',
     alternates: { canonical: '/experiences/browse' },
     openGraph: {
         type: 'website',

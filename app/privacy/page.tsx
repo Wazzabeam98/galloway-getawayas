@@ -4,7 +4,7 @@ import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 
 export const metadata: Metadata = {
     title: 'Privacy Policy',
-    description: 'What data Galloway Getaways collects, why, and what your rights are.',
+    description: 'What personal data Galloway Getaways collects when you book, host or list with us, why we hold it, who we share it with, and what your rights are.',
     alternates: { canonical: '/privacy' },
 };
 
