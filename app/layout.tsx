@@ -125,7 +125,16 @@ const baseMetadata: Metadata = {
 // force-dynamic, so this runs per request and nothing caches one device's
 // answer for another.
 export async function generateMetadata(): Promise<Metadata> {
-  return { ...baseMetadata, viewport: viewportFor(headers().get('user-agent')) };
+  // theme-color is white, matching the white header, so a phone browser's
+  // chrome blends into the page rather than carrying a coloured band. The
+  // manifest (app/manifest.ts) says the same white for the installed app;
+  // keep the two in step. Set here, alongside the per-request viewport, rather
+  // than on the static baseMetadata only because they are emitted together.
+  return {
+    ...baseMetadata,
+    themeColor: '#ffffff',
+    viewport: viewportFor(headers().get('user-agent')),
+  };
 }
 
 export default function RootLayout({

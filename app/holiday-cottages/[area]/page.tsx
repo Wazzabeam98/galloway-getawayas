@@ -8,8 +8,7 @@ import { cookies } from 'next/headers';
 import { MapPin } from 'lucide-react';
 import ListingCard, { type CardListing } from '@/components/ListingCard';
 import TownSearch from '@/components/TownSearch';
-import { townKey } from '@/lib/places';
-import { AREAS, areaBySlug, hasCopy, type Area } from '@/config/areas';
+import { AREAS, areaBySlug, hasCopy, listingInArea, type Area } from '@/config/areas';
 import AreaExperiences from '@/components/AreaExperiences';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
@@ -40,8 +39,10 @@ async function listingsForArea(area: Area): Promise<CardListing[]> {
         .order('created_at', { ascending: false });
 
     // Matched in code rather than in the query because `location` is a free
-    // text address and townKey() is what decides two spellings are one town.
-    return (data || []).filter((l) => area.townKeys.indexOf(townKey(l.location)) !== -1);
+    // text address and townKey() is what decides two spellings are one town —
+    // and a geographic area (Galloway Forest) matches on the listing's own
+    // coordinates instead. listingInArea() is the one place both rules live.
+    return (data || []).filter((l) => listingInArea(area, l));
 }
 
 export async function generateMetadata({

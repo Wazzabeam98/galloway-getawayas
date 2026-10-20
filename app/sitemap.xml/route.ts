@@ -2,8 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import Env from '@/config/Env';
 import { logError } from '@/lib/logError';
-import { AREAS, hasCopy } from '@/config/areas';
-import { townKey } from '@/lib/places';
+import { AREAS, hasCopy, listingInArea } from '@/config/areas';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace } from '@/lib/experiencesData';
@@ -112,8 +111,10 @@ export async function GET() {
             .from('listings')
             // `location` is here for the area pages below: which of them are
             // offered to Google is decided from the properties that exist
-            // right now, not from a list baked in at build time.
-            .select('id, created_at, approved_at, status, location')
+            // right now, not from a list baked in at build time. The approximate
+            // coordinates ride along for the same reason — a geographic area
+            // (Galloway Forest) decides its members by them, not by town name.
+            .select('id, created_at, approved_at, status, location, approx_latitude, approx_longitude')
             .eq('status', 'published');
 
         // supabase-js does NOT throw on a failed query — it hands the error
@@ -162,15 +163,13 @@ export async function GET() {
         // the visitor bounces and a cluster of near-identical thin pages is
         // read as a quality signal about the whole domain.
         // ---------------------------------------------------------------
-        const counts: Record<string, number> = {};
-        for (const listing of listings || []) {
-            const key = townKey((listing as any).location);
-            counts[key] = (counts[key] || 0) + 1;
-        }
-
         const areaPages: Entry[] = AREAS.filter((area) => {
             if (!hasCopy(area) || area.hold) return false;
-            return area.townKeys.some((key) => (counts[key] || 0) > 0);
+            // listingInArea() knows both rules — by town name, and (for a
+            // geographic area like Galloway Forest) by the listing's own
+            // coordinates — so the sitemap offers exactly the area pages a
+            // visitor would find populated.
+            return (listings || []).some((l: any) => listingInArea(area, l));
         }).map((area) => ({
             loc: `${SITE_URL}/holiday-cottages/${area.slug}`,
             lastmod: now,

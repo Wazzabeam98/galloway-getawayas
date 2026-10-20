@@ -20,7 +20,7 @@ import { readFilters, matchesFilters, activeFilterCount, propertyTypeLabel, QUIC
 import { isSelfCheckIn } from '@/lib/checkInMethods';
 import HomeExperiences, { liveHomeProviders, ExperiencesForBusinesses } from '@/components/HomeExperiences';
 import TownsCarousel from '@/components/TownsCarousel';
-import { AREAS, hasCopy } from '@/config/areas';
+import { AREAS, hasCopy, listingInArea } from '@/config/areas';
 import fs from 'fs';
 import path from 'path';
 import { resolveWorkMode } from '@/lib/workMode';
@@ -236,29 +236,53 @@ export default async function HomePage({
     // `listings`, which has the current search applied to it. The area links
     // are navigation, not results, and must not vanish because somebody
     // searched for two guests in March.
-    const townCounts: Record<string, number> = {};
-    for (const listing of data || []) {
-        const key = townKey(listing.location);
-        townCounts[key] = (townCounts[key] || 0) + 1;
+    // Which listings sit in each area, decided once by listingInArea() — the
+    // one place that knows both rules: by town name, and (for Galloway Forest,
+    // a region rather than a town) by the listing's own coordinates. The links
+    // and the carousel below both read this, so they agree with each other and
+    // with the sitemap.
+    const allPublished = data || [];
+    const listingsByArea = new Map<string, typeof allPublished>();
+    for (const area of AREAS) {
+        listingsByArea.set(area.slug, allPublished.filter((l) => listingInArea(area, l)));
     }
     const areaLinks = AREAS.filter(
-        (area) => hasCopy(area) && area.townKeys.some((key) => (townCounts[key] || 0) > 0)
+        (area) => hasCopy(area) && (listingsByArea.get(area.slug)?.length ?? 0) > 0
     );
 
-    // The carousel shows a town only once it has a photo. A written blurb is
-    // still required — the panel leads to the area page and needs something to
-    // say — but the gate is the image on disk, not a list kept here: drop
+    // The first real cottage photo in an area, built into a public URL the same
+    // way the grid cards are. Used only as a fallback when there is no curated
+    // town photo on disk — see the carousel note below.
+    const firstAreaImage = (slug: string): string | null => {
+        for (const l of listingsByArea.get(slug) || []) {
+            const imgs = l.images;
+            if (Array.isArray(imgs) && imgs.length > 0 && typeof imgs[0] === 'string' && imgs[0]) {
+                return getImageUrl(imgs[0]);
+            }
+        }
+        return null;
+    };
+
+    // The carousel shows a town only once it has a photo, and a written blurb —
+    // the panel leads to the area page and needs something to say. For the
+    // towns the photo is a curated image on disk: drop
     // public/images/towns/<slug>.jpg (or .jpeg/.png/.webp/.avif) in and the
     // town appears on the next request, with no code change. Resolving the file
-    // server-side also settles the exact path, so the panel renders a photo we
-    // know exists rather than guessing an extension and falling back to grey.
+    // server-side settles the exact path, so the panel renders a photo we know
+    // exists rather than guessing an extension.
+    //
+    // Galloway Forest is a region, not a town, so it has no curated photo and
+    // the repo holds no rasters anyway — it borrows a real cottage's picture
+    // from a listing inside the park (which is how Liam asked for it). With no
+    // listing there yet it has no photo, so it stays off the row until a
+    // cottage appears — the same self-gating as the links and the sitemap.
     const carouselTowns = AREAS
         .filter((area) => (area.metaDescription || '').trim().length > 0)
         .map((area) => ({
             slug: area.slug,
             name: area.name,
             blurb: area.metaDescription,
-            photo: townPhoto(area.slug),
+            photo: townPhoto(area.slug) ?? firstAreaImage(area.slug),
             photoAlt: townPhotoAlt(area.slug, area.name),
         }))
         .filter((t): t is typeof t & { photo: string } => t.photo !== null);

@@ -30,6 +30,10 @@ export const REGION_FOR_AREA: Record<string, string> = {
     'dalbeattie': 'stewartry',
     'newton-stewart': 'machars',
     'wigtown': 'machars',
+    // Galloway Forest is a region, not a town; its southern gateway is Newton
+    // Stewart, so it sits with the Machars for which travelling experiences
+    // reach it. (An all-D&G provider reaches it regardless.)
+    'galloway-forest': 'machars',
     'dumfries': 'nithsdale',
     'moffat': 'annandale',
     'stranraer': 'rhins',
