@@ -56,7 +56,10 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
     if (!provider) redirect((await firstProviderPageFor(user.id)) || '/services/dashboard');
     // Their own VAT registration at the head of the statement — the name and
     // number their guests' receipts carry. Nothing when not VAT registered.
-    const ownVat = provider.vat_registered
+    // Tax details stay with the owner: a co-host with earnings sees neither
+    // this line nor the VAT card (whose API is owner-only anyway).
+    const isOwner = !!access[provider.id]?.isOwner;
+    const ownVat = isOwner && provider.vat_registered
         ? supplierFromSnapshot({ supplier_vat_number: provider.vat_number, supplier_vat_name: provider.vat_name })
         : null;
 
@@ -187,9 +190,11 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
                 </p>
             </div>
 
-            <div className="mb-10">
-                <VatSettingsCard providerId={provider.id} audience="experience" />
-            </div>
+            {isOwner && (
+                <div className="mb-10">
+                    <VatSettingsCard providerId={provider.id} audience="experience" />
+                </div>
+            )}
 
             <div className="border rounded-2xl p-6 mb-10">
                 <h2 className="font-bold text-slate-900 mb-4">Fee breakdown</h2>
