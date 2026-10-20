@@ -16,6 +16,7 @@ import { formatGBP } from '@/lib/formatMoney';
 import { groupLabel } from '@/lib/bookingDisplay';
 import { displayName, getImageUrl } from '@/lib/utils';
 import { cancellationFor } from '@/lib/providerReservations';
+import { orderCancelTerms } from '@/lib/orderCancelTerms';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +62,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
         // (with our fee shown as working); a guest sees what they paid.
         const { data: full } = await admin
             .from('service_orders')
-            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_id, guest_name, guest_phone, parent_order_id, slot_session_id, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by')
+            .select('id, shape, service_time, fulfilment, service_address, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, adults, children, note, allergy, guest_id, guest_name, guest_phone, parent_order_id, slot_session_id, pending_service_date, pending_service_time, pending_change_expires_at, pending_change_by, cancellation_window_hours, no_refund')
             .eq('id', params.orderId)
             .maybeSingle();
 
@@ -156,11 +157,9 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
             const pendingChange = pendingLive ? whenLabel(full.shape, full.pending_service_date, full.pending_service_time) : null;
             const pendingChangeBy = pendingLive ? (full.pending_change_by === 'provider' ? 'provider' : 'guest') : null;
             const guests = ctx.isGuest ? null : { name: guestName, party: partyLabel };
-            const cancellation = ctx.isGuest ? null : cancellationFor(
-                full.shape,
-                Number((prov && prov.cancellation_window_hours) ?? 48),
-                !!(prov && prov.guest_details && prov.guest_details.no_refund),
-            );
+            // The terms this order was booked under (its stamp), not today's policy.
+            const terms = orderCancelTerms(full, prov);
+            const cancellation = ctx.isGuest ? null : cancellationFor(full.shape, terms.windowHours, terms.noRefund);
             const manage = ctx.isGuest ? null : {
                 orderId: full.id,
                 status,
@@ -178,7 +177,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
             // which self-fetch, so it needs only these flags — mirroring the order
             // page's own gating (app/experiences/order/[orderId]/page.tsx). Each
             // party sees only its own actions: this is null for the provider.
-            const windowHours = Number((prov && prov.cancellation_window_hours) ?? 48);
+            const windowHours = terms.windowHours;
             const isSlotShape = full.shape === 'slot';
             const guestCharged = status === 'confirmed';
             const guestManage = ctx.isGuest ? {
@@ -186,7 +185,7 @@ export async function GET(_req: Request, { params }: { params: { orderId: string
                 shape: full.shape,
                 status,
                 charged: guestCharged,
-                free: guestCharged
+                free: guestCharged && !terms.noRefund
                     ? guestMayCancelFree(full.shape, String(ctx.order.service_date), full.service_time || null, windowHours, new Date())
                     : false,
                 price: net.gross,

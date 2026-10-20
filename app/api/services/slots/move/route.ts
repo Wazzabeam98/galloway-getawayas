@@ -7,6 +7,7 @@ import { isSlot, shapeOf, guestMayCancelFree } from '@/lib/serviceSlots';
 import { moveOrderFamily, moveTargetEligibility } from '@/lib/experienceMove';
 import { fetchSlotSessionRows } from '@/lib/providerSessions';
 import { londonDayKey } from '@/lib/dayKey';
+import { orderCancelTerms } from '@/lib/orderCancelTerms';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ async function loadForMove(admin: any, orderId: string, userId: string): Promise
 
     const { data: order } = await admin
         .from('service_orders')
-        .select('id, guest_id, provider_id, status, shape, item_unit, item_name, slot_session_id, parent_order_id, service_date, service_time, quantity')
+        .select('id, guest_id, provider_id, status, shape, item_unit, item_name, slot_session_id, parent_order_id, service_date, service_time, quantity, cancellation_window_hours, no_refund')
         .eq('id', orderId).maybeSingle();
     if (!order) return { error: { status: 404, message: 'No such booking' } };
     // Payer-only. A companion is never the guest_id, so this is the wall.
@@ -88,7 +89,7 @@ async function loadForMove(admin: any, orderId: string, userId: string): Promise
 
     return {
         order, provider, current,
-        windowHours: Number(provider.cancellation_window_hours) || 48,
+        windowHours: orderCancelTerms(order, provider).windowHours,
         familySeats,
         familyPrivate: !!current.private,
     };

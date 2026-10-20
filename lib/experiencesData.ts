@@ -385,7 +385,11 @@ export async function loadPublicMarketplace(
  * stay, a listing or a guest, so the two callers can't drift apart on
  * eligibility, pricing, seat availability or privacy.
  */
-async function shapeProviders(admin: any, fromKey: string, toKey: string, pausedId?: string, showUnscheduled = false): Promise<MpProvider[]> {
+async function shapeProviders(admin: any, fromKey: string, toKey: string, pausedId?: string, showUnscheduled = false, previewOwnerId?: string): Promise<MpProvider[]> {
+    // previewOwnerId: shape that ONE provider (pausedId is its id) for its OWNER
+    // to preview before approval — any status but approved, owner-matched in the
+    // query, and none of the live-to-guests gates (an MCC is only assigned at
+    // review). Only loadOwnerPreviewProvider passes it.
     // pausedId: shape that ONE provider, and only if the single thing keeping it
     // off the marketplace is a take-down — its own pause, or ours
     // (admin_hidden_at) — for loadPausedProvider. Every other gate — approved,
@@ -402,10 +406,15 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     let query = admin
         .from('service_providers')
         .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, admin_hidden_at, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment, delivery_fee, created_at, venue_lat, venue_lng, show_precise_location')
-        .eq('audience', 'guest').eq('status', 'approved');
-    query = pausedId
-        ? query.eq('id', pausedId).or('owner_paused.eq.true,admin_hidden_at.not.is.null')
-        : query.eq('owner_paused', false).is('admin_hidden_at', null);
+        .eq('audience', 'guest');
+    if (previewOwnerId) {
+        query = query.eq('id', pausedId).eq('owner_id', previewOwnerId).neq('status', 'approved');
+    } else {
+        query = query.eq('status', 'approved');
+        query = pausedId
+            ? query.eq('id', pausedId).or('owner_paused.eq.true,admin_hidden_at.not.is.null')
+            : query.eq('owner_paused', false).is('admin_hidden_at', null);
+    }
     const { data: rows } = await query;
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -464,7 +473,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
 
     const providers: MpProvider[] = [];
     for (const p of rows || []) {
-        if (!(isLiveToGuests(pausedId ? { ...p, owner_paused: false, admin_hidden_at: null } : p) && mccForProvider(p))) continue;
+        if (!previewOwnerId && !(isLiveToGuests(pausedId ? { ...p, owner_paused: false, admin_hidden_at: null } : p) && mccForProvider(p))) continue;
         const items = (itemsBy[p.id] || []).map((it: any) => ({
             id: it.id, name: it.name, description: it.description, price: Number(it.price),
             groupPrice: normaliseUnit(it.unit) === 'person' && Number(it.group_price) > 0 ? Number(it.group_price) : null,
@@ -721,6 +730,20 @@ export async function loadPausedProvider(admin: any, providerId: string, open: b
     if (!open) return null;
     const fromKey = londonDayKey(new Date());
     const providers = await shapeProviders(admin, fromKey, shiftDayKey(fromKey, 1), providerId);
+    return providers[0] || null;
+}
+
+/**
+ * The owner's own experience, BEFORE approval, shaped exactly as the live page
+ * would show it — for the owner-only preview on /experiences/browse/[id]. Null
+ * unless `ownerId` owns it and it is not yet approved (an approved provider is
+ * either live or taken down, and both have their own page). Not behind the
+ * marketplace switch: the owner is looking at their own page, nobody else is.
+ */
+export async function loadOwnerPreviewProvider(admin: any, providerId: string, ownerId: string | null | undefined): Promise<MpProvider | null> {
+    if (!ownerId || !providerId) return null;
+    const fromKey = londonDayKey(new Date());
+    const providers = await shapeProviders(admin, fromKey, shiftDayKey(fromKey, PUBLIC_HORIZON_DAYS), providerId, true, ownerId);
     return providers[0] || null;
 }
 

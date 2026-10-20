@@ -305,6 +305,27 @@ export function needsDate(urgency: string): boolean {
     return String(urgency || '') === 'planned';
 }
 
+// THE DAY AN ENQUIRY IS FOR, as a London day key — what a trade's day off
+// (a slot_blocks row) is checked against. Planned work is for the day the host
+// picked; an emergency is for today. "Soon" names no day, so there is nothing to
+// hold it against and it is never refused for a day off.
+export function enquiryDayKey(urgency: string, preferredDate: string | null | undefined, todayKey: string): string | null {
+    if (needsDate(urgency)) {
+        const d = String(preferredDate || '').trim().slice(0, 10);
+        return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+    }
+    return isEmergency(urgency) ? todayKey : null;
+}
+
+// What the host is told when that day is one the trade has blocked off. Said on
+// the field they can change: the date for planned work, the urgency for a
+// call-out today.
+export function blockedDayProblem(urgency: string): { field: string; message: string } {
+    return needsDate(urgency)
+        ? { field: 'preferred_date', message: 'They’re not working that day. Pick another day.' }
+        : { field: 'urgency', message: 'They’re not taking call-outs today. Try someone else, or book planned work for another day.' };
+}
+
 function prettyTime(value: string | null | undefined): string {
     const raw = String(value || '').slice(0, 5);
     if (!/^\d{2}:\d{2}$/.test(raw)) return '';

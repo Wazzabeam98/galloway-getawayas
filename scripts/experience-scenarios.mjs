@@ -1718,6 +1718,80 @@ async function main() {
         }
     }
 
+    scenario('31', 'The terms a booking was made under hold after the provider changes policy: refunds before and after the change');
+    {
+        // Each order is stamped with the provider's cancellation terms at checkout
+        // (service_orders.cancellation_window_hours + no_refund) and the cancel
+        // route reads the stamp — so a policy change only reaches FUTURE orders.
+        const before = (await db.select('service_providers', '?select=cancellation_window_hours,guest_details&id=eq.' + chef.id))[0];
+        const setPolicy = (hours, noRefund) => db.update('service_providers', '?id=eq.' + chef.id, {
+            cancellation_window_hours: hours,
+            guest_details: { ...(before.guest_details || {}), no_refund: noRefund ? true : null },
+        });
+        const refundedPence = async (piId) => {
+            let c = null;
+            for (let i = 0; i < 6; i++) { c = await chargeOf(piId); if (c && Number(c.amount_refunded) > 0) break; await sleep(1000); }
+            return c ? Number(c.amount_refunded) : -1;
+        };
+        // What the order route puts in the Checkout metadata (lib/orderCancelTerms termsMetadata).
+        const bookUnder = async (serviceDate, hours, noRefund) => {
+            const total = 110;
+            const pi = await guestPI({ total, account, capture: 'manual', metadata: { kind: 'service_order', provider_id: chef.id } });
+            const base = sessionForServiceOrder({ pi: pi.id, total, provider: chef, guest, booking, serviceDate, item: chefPerson });
+            await postWebhook({ ...base, metadata: { ...base.metadata, item_unit: 'person', unit_price: '55', quantity: '2', adults: '2', children: '0',
+                cancellation_window_hours: String(hours), no_refund: noRefund ? '1' : '' } });
+            const order = (await db.select('service_orders', '?select=*&provider_id=eq.' + chef.id + '&service_date=eq.' + serviceDate + '&order=created_at.desc&limit=1'))[0];
+            await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'confirm' });
+            return { order: await orderRow(order.id), pi };
+        };
+        try {
+            // Flexible: free to cancel up to 24 hours before.
+            await setPolicy(24, false);
+            const a = await bookUnder(dayOffset(3), 24, false);
+            const d = await bookUnder(dayOffset(2), 24, false);
+            const b = await bookUnder(dayOffset(26), 24, false);
+            check('APP: each order is stamped with the terms it was booked under (24h, refundable)',
+                [a, d, b].every((x) => x.order.status === 'confirmed' && x.order.cancellation_window_hours === 24 && x.order.no_refund === false),
+                [a, d, b].map((x) => x.order.status + '/' + x.order.cancellation_window_hours + '/' + x.order.no_refund).join(' '));
+
+            // BEFORE the change: a cancel 3 days out on Flexible is a full refund.
+            const ca = await postRoute('/api/services/orders/cancel', guestCookie, { orderId: a.order.id });
+            check('BEFORE the change: cancelling refunds in full', ca.status === 200 && ca.body.status === 'refunded', 'HTTP ' + ca.status + ' ' + JSON.stringify(ca.body).slice(0, 120));
+            check('STRIPE: £110 back to the guest', (await refundedPence(a.pi.id)) === 11000, null);
+
+            // The provider goes Firm (7 days). The order 2 days out was booked on
+            // 24 hours — read live it would now be inside the window; read from its
+            // stamp it is still free.
+            await setPolicy(168, false);
+            const cd = await postRoute('/api/services/orders/cancel', guestCookie, { orderId: d.order.id });
+            check('AFTER a move to Firm: the order booked on Flexible still refunds in full', cd.status === 200 && cd.body.status === 'refunded', 'HTTP ' + cd.status + ' ' + JSON.stringify(cd.body).slice(0, 120));
+            check('STRIPE: £110 back to the guest', (await refundedPence(d.pi.id)) === 11000, null);
+
+            // The provider goes No refund. The earlier booking keeps its refund.
+            await setPolicy(0, true);
+            const cb = await postRoute('/api/services/orders/cancel', guestCookie, { orderId: b.order.id });
+            check('AFTER a move to No refund: the order booked on Flexible still refunds in full', cb.status === 200 && cb.body.status === 'refunded', 'HTTP ' + cb.status + ' ' + JSON.stringify(cb.body).slice(0, 120));
+            check('STRIPE: £110 back to the guest', (await refundedPence(b.pi.id)) === 11000, null);
+
+            // A booking made ON No refund, then the provider goes back to Flexible:
+            // it stays non-refundable — the change runs both ways.
+            const c = await bookUnder(dayOffset(27), 0, true);
+            check('APP: an order booked on No refund is stamped non-refundable', c.order.no_refund === true, String(c.order.no_refund));
+            await setPolicy(24, false);
+            const cc = await postRoute('/api/services/orders/cancel', guestCookie, { orderId: c.order.id });
+            const cRow = await orderRow(c.order.id);
+            const cCharge = await chargeOf(c.pi.id);
+            check('AFTER a move to Flexible: the order booked on No refund gets no automatic refund',
+                cc.status === 409 && cRow.status === 'confirmed' && Number(cCharge.amount_refunded) === 0,
+                'HTTP ' + cc.status + ' ' + cRow.status + ' refunded=' + (cCharge && cCharge.amount_refunded));
+            // The provider can still choose to refund it.
+            const pr = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: c.order.id, decision: 'refund' });
+            check('the provider can still choose to refund it', pr.status === 200 && (await refundedPence(c.pi.id)) === 11000, 'HTTP ' + pr.status);
+        } finally {
+            await db.update('service_providers', '?id=eq.' + chef.id, before);
+        }
+    }
+
     /* ----------------------------------------------------------------- write + sum */
     const passed = results.filter((r) => r.status === 'passed').length;
     const failed = results.filter((r) => r.status === 'failed').length;

@@ -15,6 +15,7 @@ import { childrenAllowed } from '@/lib/guestAges';
 import { perGroupPricing, changeWindowState, providerTakesChanges } from '@/lib/orderChange';
 import { hasExtraGuests, partyPrice, partyCeiling } from '@/lib/extraGuests';
 import { logError } from '@/lib/logError';
+import { orderCancelTerms, inheritedStamp } from '@/lib/orderCancelTerms';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +40,7 @@ const ORDER_COLUMNS =
     'id, guest_id, provider_id, listing_id, booking_id, parent_order_id, status, shape, ' +
     'item_id, item_name, item_description, item_unit, unit_price, price, quantity, attendees, adults, children, amount_refunded, ' +
     'provider_business_name, service_date, service_time, fulfilment, service_address, stripe_payment_intent_id, ' +
-    'guest_name, guest_email, guest_phone';
+    'guest_name, guest_email, guest_phone, cancellation_window_hours, no_refund';
 
 function providerMinAge(provider: any): number | null {
     const raw = provider && provider.guest_details && provider.guest_details.min_age;
@@ -82,7 +83,7 @@ async function loadForCount(admin: any, orderId: string, userId: string): Promis
         .eq('parent_order_id', order.id).eq('status', 'confirmed').order('created_at', { ascending: false });
 
     const unit = normaliseUnit(order.item_unit);
-    const windowHours = Number(provider.cancellation_window_hours) || 48;
+    const windowHours = orderCancelTerms(order, provider).windowHours;
     return { order, provider, item, children: children || [], unit, windowHours, shape };
 }
 
@@ -109,6 +110,7 @@ async function startIncreaseRequest(
         quantity: Math.max(1, child.quantity), adults: child.adults, children: child.children,
         unit_price: child.unitPrice, item_unit: child.unit, price: child.price, commission_rate: pricing.commissionRate,
         ...heldOrderFields(pricing),
+        ...inheritedStamp(order, provider),
         status: 'holding', item_id: order.item_id, item_name: itemName, item_description: order.item_description || '',
         provider_business_name: business, guest_name: order.guest_name, guest_email: order.guest_email, guest_phone: order.guest_phone,
         expires_at: new Date(Date.now() + SLOT_HOLD_MINUTES * 60 * 1000).toISOString(), created_at: nowIso,

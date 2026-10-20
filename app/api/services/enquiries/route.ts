@@ -14,12 +14,15 @@ import {
 import { visibleInDirectory } from '@/lib/serviceSubscription';
 import { propertyAnswer } from '@/lib/propertyQuestions';
 import { sendTrialStarted } from '@/lib/serviceSubscriptionAlert';
+import { londonDayKey } from '@/lib/dayKey';
 import {
     enquiryProblems,
     enquiryReference,
     expiresAt,
     isEmergency,
     needsDate,
+    enquiryDayKey,
+    blockedDayProblem,
     offersEmergency,
     priceSnapshot,
 } from '@/lib/serviceEnquiries';
@@ -178,6 +181,20 @@ export async function POST(req: Request) {
         const problems = enquiryProblems(draft);
         if (problems.length) {
             return NextResponse.json({ ok: false, problems }, { status: 400 });
+        }
+
+        // A DAY THE TRADE HAS BLOCKED OFF. Their days off (/api/services/trade-blocks,
+        // a slot_blocks row) refuse an enquiry for that day — planned work on the
+        // day picked, an emergency on today — the way a host's blocked date
+        // refuses a booking. Checked here, not just painted on their calendar, so
+        // a stale page can't send one anyway.
+        const enquiryDay = enquiryDayKey(draft.urgency, draft.preferred_date, londonDayKey());
+        if (enquiryDay) {
+            const { data: dayOff } = await admin.from('slot_blocks')
+                .select('blocked_date').eq('provider_id', provider.id).eq('blocked_date', enquiryDay).limit(1);
+            if (dayOff && dayOff.length) {
+                return NextResponse.json({ ok: false, problems: [blockedDayProblem(draft.urgency)] }, { status: 409 });
+            }
         }
 
         const emergency = isEmergency(draft.urgency);

@@ -12,9 +12,10 @@ export const dynamic = 'force-dynamic';
 // unavailable, stored in slot_blocks (provider_id + blocked_date) — the same
 // whole-day block table the slot schedule uses, reused here for a host-trade
 // (whose id never appears in any slot booking, so a row here is inert to the
-// slot machinery). It is advisory: a trade agrees the actual day with the host,
-// so a block does not refuse an enquiry, it just paints the day on their own
-// calendar the way a host's blocked date is painted.
+// slot machinery). A blocked day refuses a NEW enquiry for that day — planned
+// work on that date, or an emergency today (/api/services/enquiries,
+// lib/serviceEnquiries enquiryDayKey) — the way a host's blocked date refuses a
+// booking. An enquiry already sent or accepted is left alone.
 //
 // Owner-checked both ways: a trade only ever touches their own diary.
 

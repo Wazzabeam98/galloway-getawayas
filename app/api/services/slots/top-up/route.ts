@@ -15,6 +15,7 @@ import {
 } from '@/lib/serviceSlots';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { childrenAllowed } from '@/lib/guestAges';
+import { inheritedStamp } from '@/lib/orderCancelTerms';
 
 // The provider's minimum age (null / 12 / 16 / 18 / 21), read from the guest_details
 // jsonb where the listing stores it.
@@ -45,7 +46,7 @@ const PARENT_COLUMNS =
     'id, guest_id, provider_id, listing_id, booking_id, parent_order_id, status, shape, ' +
     'item_id, item_name, item_description, item_unit, unit_price, provider_business_name, ' +
     'service_date, service_time, duration_minutes, fulfilment, service_address, ' +
-    'slot_session_id, quantity, attendees, guest_name, guest_email, guest_phone';
+    'slot_session_id, quantity, attendees, guest_name, guest_email, guest_phone, cancellation_window_hours, no_refund';
 
 interface Loaded {
     order: any;
@@ -277,6 +278,8 @@ export async function POST(request: Request) {
                 price: deltaTotal,
                 commission_rate: pricing.commissionRate,
                 ...heldOrderFields(pricing),
+                // Added places ride on the booking's own terms.
+                ...inheritedStamp(order, provider),
                 status: 'holding',
                 item_id: order.item_id,
                 item_name: itemName,
