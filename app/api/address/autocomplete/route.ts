@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import ServerEnv from '@/config/ServerEnv';
 import { upstreamDetail } from '@/lib/address';
 import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
+import { fromOwnSite } from '@/lib/sameOrigin';
 import { liveAddressLookup, fakeAutocomplete } from '@/lib/addressLookupMode';
 
 export const dynamic = 'force-dynamic';
@@ -13,12 +14,17 @@ export const dynamic = 'force-dynamic';
 // Returns only { id, address } per suggestion. The id is what /api/address/get
 // exchanges for the full address.
 //
-// NO SIGN-IN. A guest can order food or book a comes-to-you chef without an
-// account, and they need to search for their address like everyone else. Every
-// call still spends a lookup from a paid allowance, so an open endpoint is
-// somebody else's bill — the guard against that is the rate limit below, not a
-// sign-in wall. IP slows a single abuser; the site-wide cap is the load-bearing
-// half, because it bounds the total spend however the calls are spread.
+// NO SIGN-IN, BUT OUR OWN PAGES ONLY. A guest can order food or book a
+// comes-to-you chef without an account, and they need to search for their
+// address like everyone else — so this cannot sit behind a sign-in wall. Every
+// call still spends a lookup from a paid allowance, so two guards stand in for
+// the missing sign-in: fromOwnSite (lib/sameOrigin) refuses anything that is not
+// a fetch from one of our own pages, keeping a cross-site page or a bare script
+// off the route entirely; and the rate limit below bounds what our own visitors
+// can draw — a tighter per-IP cap slows a single abuser, and the site-wide cap
+// is the load-bearing half, because it bounds the total spend however the calls
+// are spread. Sign-up still works before anyone has an account: our pages fetch
+// this with a relative URL, which the browser marks same-origin.
 //
 // HARD FILTER TO DUMFRIES & GALLOWAY. postcode_area=dg tells Ideal Postcodes to
 // return only DG addresses, so a search that would otherwise surface an English
@@ -30,12 +36,20 @@ export const dynamic = 'force-dynamic';
 // asked for: only offer DG.)
 export async function GET(request: Request) {
     try {
+        // Our own pages only. A fetch from another site, or a bare script, never
+        // reaches the paid lookup — checked before the rate limit so a stranger's
+        // call costs nothing, not even a counter write. Signed-out guests pass:
+        // our pages fetch this same-origin.
+        if (!fromOwnSite(request.headers)) {
+            return NextResponse.json({ ok: false, error: 'Not allowed.' }, { status: 403 });
+        }
+
         // Open to signed-out guests, so a paid lookup is rate-limited instead of
         // gated on identity. Per-IP slows one caller; the site-wide cap bounds
         // the total draw on the allowance no matter how the calls are spread.
         const verdict = await withinLimits([
             { bucket: 'address-autocomplete:all', key: GLOBAL_KEY, max: 1500, windowMinutes: 60 },
-            { bucket: 'address-autocomplete:ip', key: callerAddress(request.headers), max: 150, windowMinutes: 60 },
+            { bucket: 'address-autocomplete:ip', key: callerAddress(request.headers), max: 60, windowMinutes: 60 },
         ]);
         if (!verdict.ok) {
             return NextResponse.json(

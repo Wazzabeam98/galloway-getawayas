@@ -3,6 +3,7 @@ import ServerEnv from '@/config/ServerEnv';
 import { mapAddress, upstreamDetail } from '@/lib/address';
 import { adminDistrictForPostcode, DG_ADMIN_DISTRICT } from '@/lib/postcodeGeocode';
 import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
+import { fromOwnSite } from '@/lib/sameOrigin';
 import { liveAddressLookup, fakeAddress } from '@/lib/addressLookupMode';
 
 export const dynamic = 'force-dynamic';
@@ -23,15 +24,21 @@ export const dynamic = 'force-dynamic';
 // so the form can say so plainly rather than silently accepting it — this catches
 // the few DG-area postcodes that reach over the Cumbrian border.
 //
-// NO SIGN-IN, same as /api/address/autocomplete: a guest orders without an
-// account, so a paid lookup is protected by the rate limit below rather than a
-// sign-in wall.
+// NO SIGN-IN, OUR OWN PAGES ONLY, same as /api/address/autocomplete: a guest
+// orders without an account, so the paid lookup is protected by fromOwnSite
+// (lib/sameOrigin) plus the rate limit below rather than a sign-in wall.
 
 export async function GET(request: Request) {
     try {
+        // Our own pages only — refused before the rate limit so a stranger's call
+        // costs nothing. Signed-out guests pass (our pages fetch same-origin).
+        if (!fromOwnSite(request.headers)) {
+            return NextResponse.json({ ok: false, error: 'Not allowed.' }, { status: 403 });
+        }
+
         const verdict = await withinLimits([
             { bucket: 'address-get:all', key: GLOBAL_KEY, max: 600, windowMinutes: 60 },
-            { bucket: 'address-get:ip', key: callerAddress(request.headers), max: 60, windowMinutes: 60 },
+            { bucket: 'address-get:ip', key: callerAddress(request.headers), max: 30, windowMinutes: 60 },
         ]);
         if (!verdict.ok) {
             return NextResponse.json(
