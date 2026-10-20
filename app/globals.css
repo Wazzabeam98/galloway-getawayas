@@ -115,6 +115,71 @@ body {
   }
 }
 
+/* =========================================================================
+   MOBILE TYPE SCALE — match the Airbnb APP (not its mobile web) at phone width
+   =========================================================================
+   Liam compared our Messages page with the Airbnb iPhone APP side by side: in
+   the app the page title, names, previews and dates are all bigger, and the
+   previews are dark rather than pale grey. Airbnb's mobile WEB is actually
+   small (measured 20/10/2026: base 14px, card titles 13–15px, secondary 12px);
+   the benchmark here is deliberately the app, whose scale is roughly iOS:
+   body ~16–17px, list titles/names ~17–18px, large titles ~30–32px, secondary
+   dark enough to read. Those are the targets below.
+
+   WHY THIS SHAPE. The site leans on Tailwind's `text-sm` (14px) and `text-xs`
+   (12px) for body and secondary copy, and page titles sit at `text-2xl` (24px)
+   — all noticeably under the app. Rather than touch ~200 files, the floor is
+   lifted here, once, for phones only.
+
+   DESKTOP IS UNTOUCHED. Everything is scoped to `max-width: 639px` — below
+   Tailwind's `sm` breakpoint (640px) — so no `sm:`/`md:`/`lg:` responsive size
+   an author chose is ever overridden, and tablets and desktop render exactly as
+   before.
+
+   DECOUPLED FROM LAYOUT. Only font-size is changed, never the root font-size.
+   Tailwind's spacing/width/height utilities are rem-based; bumping the root
+   would scale all of them and zoom the whole UI, which is where overflow comes
+   from. Leaving the root at 16px keeps every box the size it was and grows only
+   the text inside it — the low-risk half of the change.
+
+   EXACT-TOKEN MATCH. `[class~="text-sm"]` matches only a standalone `text-sm`
+   token, never `sm:text-sm` / `md:text-base` / `text-smthing`, so an element
+   whose BASE size is something else (e.g. `text-lg sm:text-sm`) is left alone
+   below 640px. These rules are unlayered, so they win over Tailwind's
+   `@layer utilities` on equal specificity without `!important`.
+
+   The input rule above (17px, higher specificity on fields) still wins for form
+   fields, which must stay ≥16px to stop iOS focus-zoom. */
+@media (max-width: 639px) {
+  /* Body / reading copy and any size-less inherited text (e.g. list-row names)
+     → 17px. `text-base` lifted to match so classed and class-less body read the
+     same. */
+  body {
+    font-size: 17px;
+  }
+  [class~="text-base"] {
+    font-size: 1.0625rem; /* 17px */
+  }
+  /* Labels, captions, metadata. */
+  [class~="text-sm"] {
+    font-size: 0.9375rem; /* 15px */
+  }
+  [class~="text-xs"] {
+    font-size: 0.8125rem; /* 13px */
+  }
+  /* Page titles. Only an <h1> is lifted — a `text-2xl` card heading stays 24px.
+     At 30/28px these land in the app's large-title range; an h1 already at
+     text-3xl (30px) or bigger is left as it is. */
+  h1[class~="text-2xl"] {
+    font-size: 1.875rem; /* 30px */
+    line-height: 2.25rem;
+  }
+  h1[class~="text-xl"]:not([class~="text-2xl"]):not([class~="text-3xl"]) {
+    font-size: 1.75rem; /* 28px */
+    line-height: 2.125rem;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
