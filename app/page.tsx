@@ -305,7 +305,7 @@ export default async function HomePage() {
                             href={`/holiday-cottages/${area.slug}`}
                             className="inline-block rounded-full border border-stone-300 hover:border-stone-900 px-4 py-2 text-sm font-semibold text-stone-800 transition"
                         >
-                            Holiday cottages in {area.name}
+                            Holiday lets in {area.name}
                         </Link>
                     </li>
                 ))}
