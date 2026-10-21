@@ -18,10 +18,11 @@ type Props = {
     maxGuests?: Count;
     bedrooms?: Count;
     bathrooms?: Count;
-    // Whether the listing allows pets (the 'Pets allowed' amenity).
+    // Whether the listing allows pets (the 'Pets allowed' amenity). A listing
+    // that does shows the paw on its own; one that doesn't shows no pet icon.
     petsAllowed?: boolean;
-    // How many pets, when we store a number. Null/undefined → the paw shows
-    // alone (pets allowed, count unknown).
+    // Accepted but not shown: the pets icon is the paw alone, no number. Kept so
+    // the callers and their queries don't need to change if we ever show it.
     maxPets?: Count;
     className?: string;
 };
@@ -31,7 +32,7 @@ function Divider() {
 }
 
 export default function ListingStats({
-    maxGuests, bedrooms, bathrooms, petsAllowed, maxPets, className = 'text-stone-500',
+    maxGuests, bedrooms, bathrooms, petsAllowed, className = 'text-stone-500',
 }: Props) {
     const items: ReactNode[] = [];
 
@@ -65,26 +66,16 @@ export default function ListingStats({
         );
     }
 
-    // Pets: a paw with the count when allowed and we know it; a paw alone when
-    // allowed with no number stored; a struck-through paw when not allowed.
-    const pets = Number(maxPets);
-    const haveCount = petsAllowed && Number.isFinite(pets) && pets > 0;
-    const petLabel = !petsAllowed
-        ? 'No pets'
-        : haveCount
-            ? `${pets} ${pets === 1 ? 'pet' : 'pets'}`
-            : 'Pets allowed';
-    items.push(
-        <span key="pets" className="inline-flex items-center gap-1" aria-label={petLabel}>
-            <span className="relative inline-flex">
+    // Pets: a listing that accepts pets shows the paw on its own, no number. A
+    // listing that doesn't take pets shows no pet icon at all — the row is just
+    // guests, bedrooms, bathrooms.
+    if (petsAllowed) {
+        items.push(
+            <span key="pets" className="inline-flex items-center gap-1" aria-label="Pets allowed">
                 <PawPrint aria-hidden className="h-3.5 w-3.5" />
-                {!petsAllowed && (
-                    <span aria-hidden className="absolute left-1/2 top-1/2 h-px w-[135%] -translate-x-1/2 -translate-y-1/2 rotate-45 rounded bg-current" />
-                )}
-            </span>
-            {haveCount && <span>{pets}</span>}
-        </span>,
-    );
+            </span>,
+        );
+    }
 
     return (
         <div className={`flex items-center gap-2 whitespace-nowrap text-xs ${className}`}>

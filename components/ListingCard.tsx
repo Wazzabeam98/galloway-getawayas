@@ -166,9 +166,6 @@ export default function ListingCard({ listing, priority = false }: { listing: Ca
             </div>
 
             <p className="text-sm text-stone-500 truncate">{type ? `${type} in ${area}` : area}</p>
-            {near && (
-                <p className="text-xs text-stone-400 truncate -mt-1">{nearestTownLabel(near)}</p>
-            )}
             <ListingStats
                 maxGuests={listing.max_guests}
                 bedrooms={listing.bedrooms}
@@ -179,6 +176,12 @@ export default function ListingCard({ listing, priority = false }: { listing: Ca
             <p className="text-sm font-semibold text-stone-900">
                 {formatPrice(listing.price_per_night)} <span className="font-normal text-stone-500">night</span>
             </p>
+            {/* The distance line sits at the very bottom, under the price, so
+                that the price lands at the same height on every card in a row —
+                a card out in the country doesn't push its own price down. */}
+            {near && (
+                <p className="text-xs text-stone-400 truncate">{nearestTownLabel(near)}</p>
+            )}
         </div>
     );
 }
