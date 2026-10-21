@@ -30,6 +30,14 @@ const SITE_URL = 'https://gallowaygetaways.co.uk';
 // exists: the properties are matched to the area by townKey(), the same
 // function the home page search uses.
 
+// Pre-render every area page at build so each is static and edge-cached. AREAS
+// is the full, fixed list (config/areas), so there are no other slugs to render
+// on demand. A listing publish/edit/hide and an Arrange save refresh them via
+// lib/revalidatePublic.
+export function generateStaticParams(): { area: string }[] {
+    return AREAS.map((a) => ({ area: a.slug }));
+}
+
 async function listingsForArea(area: Area): Promise<CardListing[]> {
     // A cookieless anon client, not createServerComponentClient({ cookies }):
     // reading cookies would opt this page out of static caching, and the data is
