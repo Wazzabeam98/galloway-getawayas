@@ -48,6 +48,8 @@ function load(options: {
     bandPrices?: any[];
     stripeMcc?: string | null;
     customLabel?: string | null;
+    audience?: string;
+    shape?: string;
 } = {}) {
     const delivered = options.delivered !== false;
     const sent: any[] = [];
@@ -64,7 +66,8 @@ function load(options: {
         does_gas: options.doesGas === true,
         does_oil: options.doesOil === true,
         description: 'Changeover cleans for holiday cottages across the Stewartry.',
-        audience: 'host',
+        audience: options.audience || 'host',
+        shape: options.shape,
         photos: ['providers/a.jpg'],
         approved_digest: options.approvedDigest === undefined ? null : options.approvedDigest,
         changes_pending_at: options.changesPendingAt === undefined ? null : options.changesPendingAt,
@@ -853,4 +856,53 @@ test('a non-cleaning provider is unaffected by any of it', async () => {
     assert.equal(res.status, 200);
     assert.equal(updates[0].patch.kind, 'external');
     assert.equal('pricing_choice' in updates[0].patch, false);
+});
+
+// ---------------------------------------------------------------------------
+// AN EXPERIENCE IS TOLD IN ITS OWN WORDS, AND SENT TO ITS LISTING
+//
+// The approval email used to say "People looking for your trade in the areas
+// you cover can now find you" to a smokehouse tasting, and its "See your
+// listing" opened the sign-up wizard on step one. An experience is booked by
+// guests, and is managed in its listing editor.
+
+const guest = () => load({ audience: 'guest', trade: 'guest', shape: 'made_to_order', stripeMcc: '5812', customLabel: 'Tastings' });
+
+test('an approved experience is told it is live for guests, not hosts looking for a trade', async () => {
+    const { route, sent } = guest();
+    const res: any = await route.POST(call('approve'));
+
+    assert.equal(res.status, 200);
+    assert.equal(sent.length, 1);
+    const html = String(sent[0].html);
+    assert.match(sent[0].subject, /listed on Galloway Getaways/, 'the subject (and its push rule) is unchanged');
+    assert.match(html, /now live on Galloway Getaways/);
+    assert.match(html, /Guests staying across Dumfries/);
+    assert.match(html, /we keep 10% and pay the rest to you/);
+    assert.doesNotMatch(html, /your trade|asks for work|a job/, 'no trade wording reaches an experience');
+});
+
+test('a declined experience carries the reason and says where to fix it', async () => {
+    const { route, sent } = guest();
+    await route.POST(call('decline', 'The photos are of a different business.'));
+
+    assert.equal(sent.length, 1);
+    const html = String(sent[0].html);
+    assert.match(html, /The photos are of a different business\./, 'the reason is in the email');
+    assert.match(html, /border-left:4px solid/, 'set apart as our words');
+    assert.match(html, /Make the changes in your listing/);
+    assert.match(html, /send it back to us for review/);
+});
+
+test('every decision email links an experience to its listing, a trade to its application', () => {
+    const { listingLinkFor } = require('../lib/serviceSubmittedConfirm');
+    assert.match(listingLinkFor({ audience: 'guest', trade: 'guest' }), /\/services\/dashboard\/listing$/);
+    assert.match(listingLinkFor({ audience: 'host', trade: 'plumber' }), /\/services\/join\?trade=plumber$/);
+
+    // And the route builds no link of its own: one hand-written join link would
+    // send an experience back to the wizard's step one again.
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'app/api/admin/providers/route.ts'), 'utf8');
+    assert.doesNotMatch(src, /button\(SITE_URL/, 'every decision button goes through listingLinkFor');
 });

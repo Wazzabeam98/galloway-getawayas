@@ -68,9 +68,11 @@ export default async function ProviderDashboardPage() {
     const mine = access[provider.id];
 
     // Not approved yet: the dashboard proper is for a live business. A pending
-    // or returned application belongs back in the wizard, with its note.
+    // or returned application belongs where it is finished and fixed — a guest
+    // experience in its listing editor (which shows the review status and the
+    // note), a trade in the wizard, with its note.
     if (provider.status !== 'approved' && mine.isOwner) {
-        redirect(`/services/join?trade=${provider.trade}`);
+        redirect(provider.audience === 'guest' ? '/services/dashboard/listing' : `/services/join?trade=${provider.trade}`);
     }
 
     // A GUEST-TRADE PROVIDER GETS A DIFFERENT HOME.

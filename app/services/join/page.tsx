@@ -31,6 +31,7 @@
 
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import ProviderSignUp from '@/components/services/ProviderSignUp';
@@ -86,6 +87,17 @@ export default async function JoinPage({
                 .eq('owner_id', user.id)
                 .eq('trade', trade)
                 .maybeSingle();
+
+            // A guest experience that has been sent (in review, sent back, or
+            // live) is no longer created here: its listing editor shows the
+            // review status and the note, and is where it is fixed and sent
+            // again — the way Airbnb takes you back to your listing, not the
+            // start of the sign-up. Old emails and the "Host a guest experience"
+            // tile land here, so they go there too. A draft still resumes in the
+            // wizard, where it was saved.
+            if (data && trade === 'guest' && data.status !== 'draft') {
+                redirect('/services/dashboard/listing');
+            }
 
             if (data) {
                 initialResume = {
