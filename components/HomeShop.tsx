@@ -1,5 +1,6 @@
 'use client';
 
+import { areaBySlug, listingInArea } from '@/config/areas';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -64,6 +65,8 @@ type HomeListing = {
 // The `where` slug the hero sends is the town with its spaces turned into
 // hyphens, which is what townKey() produces once the hyphens come back out.
 function whereLabel(slug: string): string {
+    const area = areaBySlug(slug);
+    if (area) return area.name;
     const small = ['of', 'and', 'the'];
     return slug
         .split('-')
@@ -134,8 +137,15 @@ export default function HomeShop({
             ? listings.filter((l) => Number(l.max_guests) >= guests)
             : listings;
         if (where) {
+            // An area slug from the hero: the area's own rule (listingInArea —
+            // by town, or for Galloway Forest by the map circle), the same one
+            // the tiles and area pages use. An older link's bare town still
+            // matches by name.
+            const area = areaBySlug(where);
             const wanted = where.replace(/[^a-z]/g, '');
-            out = out.filter((l) => townKey(l.location) === wanted);
+            out = area
+                ? out.filter((l) => listingInArea(area, l as any))
+                : out.filter((l) => townKey(l.location) === wanted);
         }
         return out;
     }, [listings, guests, where]);

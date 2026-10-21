@@ -152,6 +152,13 @@ export default async function HomePage() {
         (area) => hasCopy(area) && (listingsByArea.get(area.slug)?.length ?? 0) > 0,
     );
 
+    // The hero's "Where" dropdown lists exactly these areas, A to Z — one list,
+    // so the dropdown and the tiles can never disagree about where there is
+    // somewhere to stay (components/base/Hero).
+    const wherePlaces = areaLinks
+        .map((area) => ({ value: area.slug, label: area.name }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'en-GB'));
+
     // The first real cottage photo in an area, built into a public URL the same
     // way the grid cards are. Used only as a fallback when there is no curated
     // town photo on disk.
@@ -397,7 +404,7 @@ export default async function HomePage() {
             {!businessSignupsOpen() && <ComingSoonBanner />}
 
             {/* Kirkcudbright Hero Banner */}
-            <Hero />
+            <Hero places={wherePlaces} />
 
             {/* A co-host invitation waiting for whoever's signed in: in front of
           them, Accept or Decline, so it can't be missed if the email went to
