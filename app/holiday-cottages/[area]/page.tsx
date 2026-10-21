@@ -5,8 +5,8 @@
 export const revalidate = 300;
 
 import type { Metadata } from 'next';
-import fs from 'fs';
-import path from 'path';
+import Image from 'next/image';
+import { townPhoto, townPhotoAlt } from '@/lib/townPhotos';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
@@ -95,9 +95,9 @@ export async function generateMetadata({
     // The town's own photograph when one is on disk (the home page's town
     // tile — public/images/towns/<slug>.jpg, 1200×800, ours to use), else the
     // site default. Never a host's listing photo.
-    const townPhotoRel = '/images/towns/' + area.slug + '.jpg';
-    const hasTownPhoto = fs.existsSync(path.join(process.cwd(), 'public', townPhotoRel));
-    const image = hasTownPhoto ? `${SITE_URL}${townPhotoRel}` : `${SITE_URL}/images/og-default.jpg`;
+    const townPhotoRel = townPhoto(area.slug);
+    const hasTownPhoto = !!townPhotoRel;
+    const image = townPhotoRel ? `${SITE_URL}${townPhotoRel}` : `${SITE_URL}/images/og-default.jpg`;
     const imageSize = hasTownPhoto ? { width: 1200, height: 800 } : { width: 1200, height: 630 };
 
     return {
@@ -141,6 +141,25 @@ function Placeholder({ what }: { what: string }) {
                 See AREA-BRIEF.md. Until this is written the page is noindex and out of the sitemap.
             </p>
         </div>
+    );
+}
+
+// The page's one h1, and it is the search phrase rather than the brand —
+// "Holiday cottages in Kirkcudbright". Over the town photo it is set the way a
+// destination page sets it, the town name large in white; with no photo it is
+// the plain heading it always was. Rendered in exactly one of the two places.
+function AreaHeading({ name, onPhoto }: { name: string; onPhoto: boolean }) {
+    return (
+        <h1 className={onPhoto ? 'text-white drop-shadow-sm' : 'text-3xl md:text-5xl font-extrabold tracking-tight text-stone-900'}>
+            {onPhoto ? (
+                <>
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-white/85 md:text-base">Holiday cottages in </span>
+                    <span className="block text-3xl font-extrabold tracking-tight md:text-6xl">{name}</span>
+                </>
+            ) : (
+                <>Holiday cottages in {name}</>
+            )}
+        </h1>
     );
 }
 
@@ -195,6 +214,12 @@ export default async function AreaPage({ params }: { params: { area: string } })
           }
         : null;
 
+    // The town's photograph, as a banner — the same picture as its tile on the
+    // home page (lib/townPhotos), so the tile you clicked is the page you land
+    // on, the way an Airbnb destination page opens. No photo yet: no banner,
+    // and the page is exactly as it was.
+    const bannerPhoto = townPhoto(area.slug);
+
     const nearbyAreas = area.nearby
         .map((slug) => AREAS.filter((a) => a.slug === slug)[0])
         .filter(Boolean);
@@ -216,7 +241,33 @@ export default async function AreaPage({ params }: { params: { area: string } })
                 />
             )}
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-14">
+            {bannerPhoto && (
+                <section className="relative h-72 w-full overflow-hidden bg-stone-800 sm:h-80 md:h-[26rem]">
+                    <Image
+                        src={bannerPhoto}
+                        alt={townPhotoAlt(area.slug, area.name)}
+                        fill
+                        // The first thing on the page — its LCP — so fetched
+                        // straight away rather than lazily.
+                        priority
+                        sizes="100vw"
+                        className="object-cover"
+                    />
+                    {/* A soft dark wash from the foot up, so white words read on
+                        any photo without dimming the whole picture. */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" aria-hidden="true" />
+                    <div className="absolute inset-x-0 bottom-0">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-5 md:pb-10">
+                            <AreaHeading name={area.name} onPhoto />
+                            {area.metaDescription && (
+                                <p className="mt-1.5 max-w-2xl text-sm leading-snug text-white/90 md:mt-3 md:text-lg">{area.metaDescription}</p>
+                            )}
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${bannerPhoto ? 'py-6 md:py-8' : 'py-10 md:py-14'}`}>
                 {/* A visible breadcrumb as well as the schema one. It is the
                     way back up that a listing page did not have. */}
                 <nav aria-label="Breadcrumb" className="mb-6 text-sm text-stone-500">
@@ -228,11 +279,10 @@ export default async function AreaPage({ params }: { params: { area: string } })
                 </nav>
 
                 {/* The one h1 on this page, and it is the search term rather
-                    than the brand. */}
-                <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-stone-900">
-                    Holiday cottages in {area.name}
-                </h1>
-                <p className="mt-3 flex items-center gap-2 text-stone-600">
+                    than the brand — in the banner when the town has a photo,
+                    here when it has none. */}
+                {!bannerPhoto && <AreaHeading name={area.name} onPhoto={false} />}
+                <p className={`${bannerPhoto ? '' : 'mt-3 '}flex items-center gap-2 text-stone-600`}>
                     <MapPin className="w-4 h-4 shrink-0" aria-hidden="true" />
                     Dumfries &amp; Galloway, Scotland
                 </p>
