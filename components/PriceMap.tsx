@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { whenNearViewport } from '@/lib/nearViewport';
 import { optimisedSrc } from '@/lib/imageSrc';
 import { formatPrice } from '@/lib/formatMoney';
+import { computePinOffsets } from '@/lib/pinOffsets';
 
 // The search map — Airbnb's shape. A white price pill for every live property,
 // a mini card (photo, title, price) on click that links to the listing, and a
@@ -62,6 +63,7 @@ export default function PriceMap({
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<any>(null);
     const elsRef = useRef<Record<string, HTMLElement>>({});
+    const popupsRef = useRef<Record<string, any>>({});
 
     useEffect(() => {
         if (!MAPBOX_TOKEN || !points.length) return;
@@ -119,6 +121,9 @@ export default function PriceMap({
             mapRef.current = map;
             map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
 
+            // Fan apart any pins that share a spot so each is visible and tappable.
+            const offsets = computePinOffsets(points);
+
             const bounds = new mapboxgl.LngLatBounds();
             points.forEach((p) => {
                 const el = document.createElement('div');
@@ -128,7 +133,8 @@ export default function PriceMap({
 
                 const popup = new mapboxgl.Popup({ offset: 18, closeButton: true, className: 'pricemap-popup', maxWidth: '220px' })
                     .setHTML(cardHtml(p));
-                const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+                popupsRef.current[p.id] = popup;
+                const marker = new mapboxgl.Marker({ element: el, anchor: 'center', offset: offsets[p.id] || [0, 0] })
                     .setLngLat([p.lng, p.lat])
                     .setPopup(popup)
                     .addTo(map);
@@ -136,8 +142,17 @@ export default function PriceMap({
                 el.addEventListener('mouseenter', () => { onHover && onHover(p.id); });
                 el.addEventListener('mouseleave', () => { onHover && onHover(null); });
                 // A pill that is a marker swallows the map click, so wire the popup
-                // open explicitly rather than relying on the default toggle.
-                el.addEventListener('click', (e) => { e.stopPropagation(); marker.togglePopup(); });
+                // open explicitly rather than relying on the default toggle. Only one
+                // card is ever open (Airbnb): close any other first, then toggle this
+                // one. Tapping the map or the card's X closes it (Popup closeOnClick /
+                // closeButton defaults).
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    Object.entries(popupsRef.current).forEach(([otherId, pp]) => {
+                        if (otherId !== p.id && pp.isOpen()) pp.remove();
+                    });
+                    marker.togglePopup();
+                });
                 bounds.extend([p.lng, p.lat]);
             });
 
@@ -168,6 +183,7 @@ export default function PriceMap({
             stopWaiting();
             if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
             elsRef.current = {};
+            popupsRef.current = {};
         };
     }, [points, onHover]);
 
