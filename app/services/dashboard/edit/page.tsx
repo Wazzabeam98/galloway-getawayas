@@ -40,8 +40,13 @@ export default async function EditBusinessPage() {
     const provider: any = pickDashboardProvider(rows, access, cookies().get(BUSINESS_COOKIE)?.value);
     if (!provider) redirect((await firstProviderPageFor(user.id)) || '/services/dashboard');
     const mine = access[provider.id];
-    // Finishing the application is the owner's (the wizard is theirs).
-    if (provider.status !== 'approved' && mine.isOwner) redirect(`/services/join?trade=${provider.trade}`);
+    const isGuestProvider = provider.audience === 'guest' || audienceForTrade(provider.trade) === 'guest';
+    // Finishing the application is the owner's (the wizard is theirs) — for a
+    // trade. A guest experience finishes, waits for review and is fixed after a
+    // decline in its listing editor (below), which shows its review status; the
+    // wizard is first-time create only, and sending one back to its step 1 from
+    // "Your listing" lost the listing they had just submitted.
+    if (provider.status !== 'approved' && mine.isOwner && !isGuestProvider) redirect(`/services/join?trade=${provider.trade}`);
 
     // This editor is host-shaped — rates, service groups, registrations. A
     // guest-experience provider now has its OWN sectioned listing editor, which
@@ -54,7 +59,7 @@ export default async function EditBusinessPage() {
     // tradesman editor. audience === 'guest' is the truth and can't be fooled;
     // the trade fallback stays only as belt-and-braces. Mirrors the guard on
     // /services/dashboard/listing so the two routes agree.
-    if (provider.audience === 'guest' || audienceForTrade(provider.trade) === 'guest') {
+    if (isGuestProvider) {
         redirect('/services/dashboard/listing');
     }
 

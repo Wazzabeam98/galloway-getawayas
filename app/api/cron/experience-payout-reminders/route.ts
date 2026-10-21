@@ -6,8 +6,11 @@ import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/emai
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { loadHeldOrders } from '@/lib/heldPayouts';
 import { planProviderReminders, providerReminderCopy } from '@/lib/experiencePayoutReminders';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
+
+const JOB = 'experience-payout-reminders';
 
 // Hourly: remind an approved experience provider with no payouts that money is
 // being held for them — on their first booking, once money is waiting (the
@@ -40,10 +43,16 @@ export async function GET(request: Request) {
             .eq('status', 'approved')
             .or('stripe_payouts_enabled.is.null,stripe_payouts_enabled.eq.false');
         if (providerError) throw providerError;
-        if (!providers || providers.length === 0) return NextResponse.json({ ok: true, sent, failed });
+        if (!providers || providers.length === 0) {
+            await recordCronRun(JOB, true, 'no approved providers without payouts');
+            return NextResponse.json({ ok: true, sent, failed });
+        }
 
         const orders = await loadHeldOrders(admin, providers.map((p: any) => p.id));
-        if (orders.length === 0) return NextResponse.json({ ok: true, sent, failed });
+        if (orders.length === 0) {
+            await recordCronRun(JOB, true, 'no held orders');
+            return NextResponse.json({ ok: true, sent, failed });
+        }
 
         const { data: claimed, error: claimReadError } = await admin
             .from('provider_payout_reminders')
@@ -86,9 +95,11 @@ export async function GET(request: Request) {
             }
         }
 
+        await recordCronRun(JOB, true, 'sent=' + sent + ' failed=' + failed);
         return NextResponse.json({ ok: true, sent, failed });
     } catch (err: any) {
         await logError('experience-payout-reminders: run failed', err, { path: '/api/cron/experience-payout-reminders' });
+        await recordCronRun(JOB, false, 'run failed: ' + ((err && err.message) || ''));
         return NextResponse.json({ ok: false, error: 'Run failed', sent, failed }, { status: 500 });
     }
 }

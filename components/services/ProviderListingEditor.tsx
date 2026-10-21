@@ -7,7 +7,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { getImageUrl } from '@/lib/utils';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
 import { stepHeadings } from '@/lib/experienceSteps';
-import { slotAsksWhereFork, slotDurationPerItem, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
+import { slotAsksWhereFork, slotDurationPerItem, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS, REVIEW_WITHIN_HOURS } from '@/lib/serviceProviders';
 import AutoTextarea from '@/components/AutoTextarea';
 import { cleanAmountInput, amountForBox } from '@/lib/amountInput';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
@@ -27,7 +27,7 @@ import { savePaused, TakenDownBanner } from '@/components/services/ListingPauseC
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
     ShoppingBag, MapPin, CalendarRange, Sparkles, RotateCcw,
-    Eye, EyeOff, ExternalLink, Check, Trash2,
+    Eye, EyeOff, ExternalLink, Check, Trash2, Clock, AlertCircle,
 } from 'lucide-react';
 
 // The guest-experience listing editor, on the same shape as the holiday-let
@@ -48,6 +48,9 @@ export interface EditorProvider {
     commission_rate: number;
     business_name: string; category_label: string; category: string; description: string;
     status: string; owner_paused: boolean; admin_hidden: boolean;
+    // Our note when we sent it back (status 'declined') — what to fix, shown in
+    // the "Action required" banner at the top.
+    review_note?: string | null;
     // Who is editing: the owner, or a co-host (lib/providerAccess). Taking the
     // listing down is the owner's or a full-access co-host's; submitting it for
     // review is the owner's alone (it is their agreement on record).
@@ -855,6 +858,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // they're set (the server mirrors this in the submit RPC and Approve gate).
     const hoursSet = hours.some((h) => h.on && h.open && h.close && h.open < h.close);
     const hasVenue = p.venue_lat != null && p.venue_lng != null;
+    // Live = approved. Anything else (in progress, in review, sent back) shows
+    // its review status at the top and words the banners for a listing guests
+    // can't see yet.
+    const live = status === 'approved';
 
     // Submit for review — the one action a not-yet-approved provider takes at the
     // end of this editor. It flips the row to pending_review through the
@@ -876,6 +883,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         } catch { /* the admin alert is best-effort — the submit already landed */ }
         setStatus('pending_review');
         setSubmitting(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         toast.success('Sent to us for review.', { theme: 'colored' });
     };
     const SECTIONS: { key: NavKey; label: string; short: string; icon: any }[] = [
@@ -908,10 +916,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
     return (
         <QuestionSheetContext.Provider value={true}>
-        <div className="mx-auto w-full max-w-5xl px-5 py-8">
+        {/* px-6, the holiday-let editor's padding: the phone tab bar (PhoneSectionTabs) bleeds
+            with -mx-6, so any other padding left it 4px past each edge of the screen. */}
+        <div className="mx-auto w-full max-w-5xl px-6 py-8">
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 className="text-2xl font-extrabold text-emerald-800">Edit your listing</h1>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <h1 className="text-2xl font-extrabold text-emerald-800">Edit your listing</h1>
+                        {!live && <ReviewStatusPill status={status} />}
+                    </div>
                     <p className="mt-1 text-sm text-slate-500">Change a section and it saves itself — no need to run through everything again.</p>
                 </div>
                 <Link href={`/experiences/browse/${p.id}`} target="_blank"
@@ -919,6 +932,22 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     <ExternalLink className="h-4 w-4" /> View listing
                 </Link>
             </div>
+
+            {/* Where the listing stands in review, at the top where Airbnb puts
+                it: in progress (with the submit), in review, or sent back with
+                our note ("Action required"). Gone once it's live — an approved
+                listing edits live, with no re-review. */}
+            {!live && (
+                <ReviewStatusBanner
+                    status={status}
+                    reviewNote={p.review_note || null}
+                    isOwner={p.viewer_is_owner !== false}
+                    submitting={submitting}
+                    holdForHours={hasHours && !hoursSet}
+                    isSlot={p.isSlot}
+                    onSubmit={submitForReview}
+                />
+            )}
 
             <TakenDownBanner paused={paused} adminHidden={p.admin_hidden} pausing={pausing} onPutBack={togglePaused} who="guests" />
 
@@ -938,7 +967,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
             {missing.length > 0 && (
                 <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50 p-4">
                     <div className="text-sm font-semibold text-sky-900">Your listing is missing a few things</div>
-                    <p className="mt-1 text-sm text-sky-800">None of these stop it going live, but a fuller listing gets booked more. Still to add: {missing.join(', ')}.</p>
+                    <p className="mt-1 text-sm text-sky-800">
+                        {live
+                            ? <>None of these stop it going live, but a fuller listing gets booked more. Still to add: {missing.join(', ')}.</>
+                            : <>None of these hold up your review, but a fuller listing gets booked more once it&rsquo;s live. Still to add: {missing.join(', ')}.</>}
+                    </p>
                 </div>
             )}
 
@@ -1072,41 +1105,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 </div>
             </div>
 
-            {/* Submit for review — the end of setup, for a listing not yet approved.
-                The wizard hands a new provider here to set the things it no longer
-                asks (their weekly hours), then they submit from this one place. A
-                set-times or comes-to-you experience stays greyed until the weekly
-                hours are set; made-to-order has none and is never held. Gone once
-                approved — an approved listing edits live, with no re-review. */}
-            {status !== 'approved' && p.viewer_is_owner !== false && (
-                <div className="mt-12 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6">
-                    {status === 'pending_review' ? (
-                        <>
-                            <h2 className="text-lg font-bold text-emerald-900">Sent for review</h2>
-                            <p className="mt-1 text-sm text-emerald-900/80">
-                                We’ve got your experience and we’ll be in touch. You can keep editing in the meantime — anything you change now is part of what we review.
-                            </p>
-                        </>
-                    ) : (
-                        <>
-                            <h2 className="text-lg font-bold text-emerald-900">Ready to go live?</h2>
-                            <p className="mt-1 text-sm text-emerald-900/80">
-                                {hasHours && !hoursSet
-                                    ? (p.isSlot
-                                        ? 'Set your weekly hours above first — guests book their times from them, so there’s nothing to book without them.'
-                                        : 'Set your weekly hours above first — guests request dates within them, so there are no dates to request without them.')
-                                    : 'Send your experience to us for review. We’ll check it over and get you live.'}
-                            </p>
-                            <button type="button" onClick={submitForReview}
-                                disabled={submitting || (hasHours && !hoursSet)}
-                                className="mt-4 inline-flex items-center gap-2 rounded-full bg-emerald-700 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
-                                {submitting ? 'Sending…' : 'Submit for review'}
-                            </button>
-                        </>
-                    )}
-                </div>
-            )}
-
             {selecting && (
                 <div role="region" aria-label="Selected offerings" className="fixed inset-x-0 bottom-0 z-[60] border-t border-slate-200 bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
                     <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3">
@@ -1149,5 +1147,92 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
             )}
         </div>
         </QuestionSheetContext.Provider>
+    );
+}
+
+// ── Review status ────────────────────────────────────────────────────────────
+// The listing's place in review, Airbnb-style: a short label beside the heading
+// and a banner at the top of the editor. Not shown once the listing is live.
+
+function ReviewStatusPill({ status }: { status: string }) {
+    const [label, cls] = status === 'pending_review'
+        ? ['In review', 'bg-amber-100 text-amber-900']
+        : status === 'declined'
+            ? ['Action required', 'bg-rose-100 text-rose-900']
+            : ['In progress', 'bg-slate-100 text-slate-700'];
+    return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{label}</span>;
+}
+
+function ReviewStatusBanner({ status, reviewNote, isOwner, submitting, holdForHours, isSlot, onSubmit }: {
+    status: string; reviewNote: string | null; isOwner: boolean; submitting: boolean;
+    holdForHours: boolean; isSlot: boolean; onSubmit: () => void;
+}) {
+    const submitButton = (label: string) => isOwner && (
+        <button type="button" onClick={onSubmit} disabled={submitting || holdForHours}
+            className="mt-4 inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
+            {submitting ? 'Sending…' : label}
+        </button>
+    );
+    const hoursFirst = holdForHours && (
+        <p className="mt-2 text-sm text-slate-600">
+            {isSlot
+                ? 'Set your weekly hours first — guests book their times from them, so there’s nothing to book without them.'
+                : 'Set your weekly hours first — guests request dates within them, so there are no dates to request without them.'}
+        </p>
+    );
+
+    if (status === 'pending_review') {
+        return (
+            <div role="status" className="mb-6 flex gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5">
+                <Clock className="mt-0.5 h-5 w-5 flex-none text-amber-700" aria-hidden />
+                <div className="min-w-0">
+                    <h2 className="font-semibold text-amber-950">In review</h2>
+                    <p className="mt-1 text-sm text-amber-900/90">
+                        We’re checking your experience and usually reply within {REVIEW_WITHIN_HOURS} hours. We’ll email you either way.
+                        You can keep editing in the meantime — anything you change now is part of what we review.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    if (status === 'declined') {
+        return (
+            <div role="alert" className="mb-6 flex gap-3 rounded-2xl border border-rose-300 bg-rose-50 p-4 sm:p-5">
+                <AlertCircle className="mt-0.5 h-5 w-5 flex-none text-rose-700" aria-hidden />
+                <div className="min-w-0">
+                    <h2 className="font-semibold text-rose-950">Action required</h2>
+                    <p className="mt-1 text-sm text-rose-900/90">We couldn’t approve your experience yet. Here’s what to change:</p>
+                    {reviewNote ? (
+                        <blockquote className="mt-3 rounded-r-lg border-l-4 border-rose-400 bg-white/80 px-4 py-3">
+                            <p className="whitespace-pre-line break-words text-sm text-rose-950">{reviewNote}</p>
+                        </blockquote>
+                    ) : (
+                        <p className="mt-2 text-sm text-rose-900/90">We didn’t leave a note — reply to our email and we’ll tell you what needs changing.</p>
+                    )}
+                    <p className="mt-3 text-sm text-rose-900/90">
+                        {isOwner
+                            ? 'Make the changes below — each section saves as you go — then send it back to us for review.'
+                            : 'Make the changes below — each section saves as you go. The owner sends it back to us for review.'}
+                    </p>
+                    {hoursFirst}
+                    {submitButton('Send for review again')}
+                </div>
+            </div>
+        );
+    }
+
+    // In progress: the wizard is done, the listing hasn't been sent yet.
+    return (
+        <div className="mb-6 rounded-2xl border border-slate-300 bg-white p-4 sm:p-5">
+            <h2 className="font-semibold text-slate-900">Ready to send for review?</h2>
+            <p className="mt-1 text-sm text-slate-600">
+                {isOwner
+                    ? 'When your listing looks right, send it to us. We check every experience before guests can book it.'
+                    : 'The owner sends this listing to us for review when it’s ready.'}
+            </p>
+            {hoursFirst}
+            {submitButton('Submit for review')}
+        </div>
     );
 }

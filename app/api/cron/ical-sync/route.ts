@@ -3,9 +3,12 @@ import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { syncOneFeed, mapWithConcurrency } from '@/lib/icalSync';
 import { revalidateListings } from '@/lib/revalidatePublic';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'ical-sync';
 
 // Tell the host after this many runs in a row have failed. One blip is usually
 // the other platform being briefly unavailable and isn't worth an email.
@@ -109,5 +112,6 @@ export async function GET(request: Request) {
         }
     }
 
+    await recordCronRun(JOB, true, 'synced=' + ok + ' failed=' + failed + ' alerted=' + alerted);
     return NextResponse.json({ ok: true, synced: ok, failed: failed, alerted: alerted });
 }

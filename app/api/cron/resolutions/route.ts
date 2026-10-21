@@ -2,8 +2,11 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { sendEmailToAll, recipients, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
+
+const JOB = 'resolutions';
 
 // Escalate money requests that never resolved. A request that passes its 72h
 // deadline goes to an admin, mirroring Airbnb's "no response → involve us"
@@ -53,9 +56,11 @@ export async function GET(request: Request) {
                 } catch { /* alerting must never block the sweep */ }
             }
         }
+        await recordCronRun(JOB, true, 'escalated=' + escalated);
         return NextResponse.json({ ok: true, escalated });
     } catch (err: any) {
         await logError('[cron/resolutions] ' + ((err && err.message) || 'failed'), err, { path: 'cron/resolutions' });
+        await recordCronRun(JOB, false, 'sweep failed: ' + ((err && err.message) || ''));
         return NextResponse.json({ ok: false, error: 'sweep failed' }, { status: 500 });
     }
 }

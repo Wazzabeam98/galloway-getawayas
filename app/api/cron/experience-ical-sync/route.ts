@@ -4,9 +4,12 @@ import { parseBusyIntervals } from '@/lib/icalParse';
 import { minutesOfDay } from '@/lib/serviceSlots';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'experience-ical-sync';
 
 // IMPORT a provider's personal calendar so an outside commitment blocks the
 // matching hour here. Each external busy interval is MATERIALISED as an ordinary
@@ -175,5 +178,6 @@ export async function GET(request: Request) {
         }
     }
 
+    await recordCronRun(JOB, true, 'synced=' + ok + ' failed=' + failed + ' alerted=' + alerted + ' clashes=' + clashCount);
     return NextResponse.json({ ok: true, synced: ok, failed, alerted, clashes: clashCount });
 }

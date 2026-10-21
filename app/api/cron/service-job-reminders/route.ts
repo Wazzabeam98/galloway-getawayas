@@ -3,9 +3,12 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceUpcomingJob } from '@/lib/serviceEnquiryAlert';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'service-job-reminders';
 
 // A REMINDER THE DAY BEFORE AN ACCEPTED JOB — the trade's version of the nudge a
 // host gets before a stay.
@@ -58,5 +61,6 @@ export async function GET(request: Request) {
         await logError('service-job-reminders-sweep', { error: String(err && err.message) });
     }
 
+    await recordCronRun(JOB, true, 'day=' + tomorrow + ' sent=' + sent);
     return NextResponse.json({ ok: true, day: tomorrow, sent });
 }

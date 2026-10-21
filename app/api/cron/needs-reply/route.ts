@@ -12,9 +12,12 @@ import {
     waitedFor,
     SITE_URL,
 } from '@/lib/email';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'needs-reply';
 
 // A guest asked something and nobody answered.
 //
@@ -109,6 +112,7 @@ export async function GET(request: Request) {
         await logError('needs-reply: could not load the recent messages', recentError, {
             path: '/api/cron/needs-reply',
         });
+        await recordCronRun(JOB, false, 'could not load the recent messages');
         return NextResponse.json(
             { ok: false, error: 'Could not load the recent messages' },
             { status: 500 }
@@ -142,6 +146,7 @@ export async function GET(request: Request) {
     const otherWaiting = waitingAll.filter((m: any) => !m.booking_id);
 
     if (waitingAll.length === 0) {
+        await recordCronRun(JOB, true, 'nothing waiting');
         return NextResponse.json({ ok: true, waiting: 0, emailed: 0, skipped: 0 });
     }
 
@@ -159,6 +164,7 @@ export async function GET(request: Request) {
         await logError('needs-reply: could not load the bookings behind the messages', bookingsError, {
             path: '/api/cron/needs-reply',
         });
+        await recordCronRun(JOB, false, 'could not load the bookings');
         return NextResponse.json(
             { ok: false, error: 'Could not load the bookings' },
             { status: 500 }
@@ -461,6 +467,7 @@ export async function GET(request: Request) {
         }
     }
 
+    await recordCronRun(JOB, true, 'waiting=' + waitingAll.length + ' emailed=' + (emailed + otherEmailed) + ' skipped=' + skipped + (preview ? ' (preview)' : ''));
     return NextResponse.json({
         ok: true,
         preview: preview,

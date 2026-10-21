@@ -31,7 +31,7 @@ export default async function ProviderListingPage() {
 
     const admin = adminClient();
     // Their own business, or one they co-host with the listing permission.
-    const { rows: providers, access } = await dashboardProviders(admin, user.id, 'can_listing', 'id, owner_id, business_name, trade, custom_label, stripe_mcc, audience, status, shape, description, '
+    const { rows: providers, access } = await dashboardProviders(admin, user.id, 'can_listing', 'id, owner_id, business_name, trade, custom_label, stripe_mcc, audience, status, review_note, shape, description, '
             + 'photos, headshot, logo, dietary_note, guest_details, fulfilment, delivery_fee, delivery_radius_miles, '
             + 'collection_street, collection_town, collection_postcode, '
             + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, '
@@ -97,6 +97,8 @@ export default async function ProviderListingPage() {
                 category: gd.category || '',
                 description: provider.description || '',
                 status: provider.status,
+                // Our note on a sent-back listing — the "Action required" banner's reason.
+                review_note: provider.status === 'declined' ? (provider.review_note || null) : null,
                 owner_paused: provider.owner_paused === true,
                 admin_hidden: !!provider.admin_hidden_at,
                 photos: provider.photos || [],

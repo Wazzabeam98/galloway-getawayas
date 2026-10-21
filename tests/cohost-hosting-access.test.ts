@@ -24,7 +24,7 @@ const { readWorkSide } = require('../lib/workSide');
 // listings reads (total, and approved via .in('status', …)) don't bleed into
 // each other. `calls` keeps the last op list per table so a test can assert how
 // a query was filtered.
-function client(opts: { listings?: number; approved?: number; coHost?: any[]; provider?: any } = {}) {
+function client(opts: { listings?: number; approved?: number; coHost?: any[]; provider?: any; providerRows?: any[] } = {}) {
     const calls: Record<string, any[]> = {};
     function builder(table: string) {
         const state: any = { ops: [] };
@@ -40,6 +40,9 @@ function client(opts: { listings?: number; approved?: number; coHost?: any[]; pr
                         v = { count: approvedQuery ? (opts.approved ?? 0) : (opts.listings ?? 0), error: null };
                     } else if (table === 'listing_access') {
                         v = { data: opts.coHost ?? [], error: null };
+                    } else if (table === 'service_providers') {
+                        // The businesses they own, newest first (the list read).
+                        v = { data: opts.providerRows ?? [], error: null };
                     }
                     return (resolve: any) => resolve(v);
                 }
@@ -137,4 +140,67 @@ test('no user id: not a host, nothing granted', async () => {
     assert.equal(side.isHost, false);
     assert.equal(side.ownsAny, false);
     assert.deepEqual(side.hostPerms, grant());
+});
+
+// ---------------------------------------------------------------------------
+// A business owner's side. Once someone has applied, they work from their own
+// side — the switch and "Your listing" — whatever state the business is in, as
+// a host with a listing in review does. Every non-live state is looped, so a
+// status that falls back to the guest menu ("Start hosting") fails here.
+
+const NOT_LIVE = ['draft', 'pending_review', 'declined'];
+
+for (const status of NOT_LIVE) {
+    test(`a provider whose business is ${status} is a provider, offered only their listing and messages`, async () => {
+        const { client: c } = client({ providerRows: [{ audience: 'guest', status }] });
+        const side = await readWorkSide(c, 'eilidh');
+
+        assert.equal(side.isProvider, true, 'applied: never the guest menu ("Start hosting") again');
+        assert.equal(side.providerAudience, 'guest');
+        assert.equal(side.providerPerms.can_listing, true, '"Your listing" is the way back to the listing');
+        assert.equal(side.providerPerms.can_messages, true);
+        // The live-business pages bounce a business that is not live yet.
+        assert.equal(side.providerPerms.can_bookings, false);
+        assert.equal(side.providerPerms.can_calendar, false);
+        assert.equal(side.providerPerms.can_earnings, false);
+        assert.equal(side.providerFullAccess, false, 'no co-hosts to hand out before it is live');
+    });
+}
+
+for (const status of ['approved', 'hidden']) {
+    test(`a provider whose business is ${status} gets the whole provider menu`, async () => {
+        const { client: c } = client({ providerRows: [{ audience: 'guest', status }] });
+        const side = await readWorkSide(c, 'eilidh');
+
+        assert.equal(side.isProvider, true);
+        assert.deepEqual(side.providerPerms, grant({ can_calendar: true, can_messages: true, can_bookings: true, can_listing: true, can_earnings: true }));
+        assert.equal(side.providerFullAccess, true);
+    });
+}
+
+test('a live business wins over a newer one still in review', async () => {
+    // Newest first, as the query orders them: the sent-back trade is newer, but
+    // the live experience is the one their menu is for.
+    const { client: c } = client({ providerRows: [{ audience: 'host', status: 'declined' }, { audience: 'guest', status: 'approved' }] });
+    const side = await readWorkSide(c, 'eilidh');
+
+    assert.equal(side.providerAudience, 'guest');
+    assert.equal(side.providerPerms.can_bookings, true);
+});
+
+test('the business read is their own rows, in every state', async () => {
+    const { client: c, calls } = client({});
+    await readWorkSide(c, 'eilidh');
+
+    const ops = calls['service_providers'] || [];
+    assert.ok(ops.some((o: any) => o.op === 'eq' && o.args[0] === 'owner_id' && o.args[1] === 'eilidh'), 'their own businesses only');
+    assert.ok(!ops.some((o: any) => o.op === 'eq' && o.args[0] === 'status'), 'no status filter: an applicant counts before approval');
+});
+
+test('no business at all: not a provider', async () => {
+    const { client: c } = client({ providerRows: [] });
+    const side = await readWorkSide(c, 'sam');
+
+    assert.equal(side.isProvider, false);
+    assert.equal(side.providerAudience, null);
 });
