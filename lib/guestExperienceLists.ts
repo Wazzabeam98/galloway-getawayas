@@ -3,6 +3,7 @@ import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { getImageUrl } from '@/lib/utils';
 import { directionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
+import { REVIEW_WINDOW_DAYS } from '@/lib/experienceReviewRules';
 
 // A guest's own experience orders, either side of today — read with the
 // service role because a guest has no read on service_orders.
@@ -27,6 +28,9 @@ export async function guestExperienceLists(userId: string): Promise<{ items: any
 
     const admin = adminClient();
     const today = new Date().toISOString().slice(0, 10);
+    // A review can be left for 14 days after the day (REVIEW_WINDOW_DAYS, the
+    // database's window); a prompt for an older one would only be refused.
+    const windowOpenFrom = new Date(Date.parse(today + 'T00:00:00Z') - REVIEW_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
 
     // Past (to review) and future (upcoming), in one round trip each.
     const [{ data: pastOrders }, { data: futureOrders }] = await Promise.all([
@@ -36,6 +40,7 @@ export async function guestExperienceLists(userId: string): Promise<{ items: any
             .eq('guest_id', userId)
             .eq('status', 'confirmed')
             .lt('service_date', today)
+            .gte('service_date', windowOpenFrom)
             .order('service_date', { ascending: false }),
         admin
             .from('service_orders')
