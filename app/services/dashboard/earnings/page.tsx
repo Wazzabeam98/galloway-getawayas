@@ -147,7 +147,13 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
         .select('id, provider_id, status, cancel_ack, service_date, price, commission_rate, amount_refunded, created_at, paid_out_at, funds_flow, item_name, payout_amount')
         .eq('provider_id', provider.id)
         .eq('funds_flow', 'held')
-        .in('status', ['confirmed', 'cancelled']);
+        // 'refunded' is here so an order refunded AFTER it was paid out still
+        // shows under "Already paid" (with the refund). A full refund flips the
+        // status to 'refunded'; without it such an order dropped off the list
+        // entirely, even though the money really was paid. A refunded order that
+        // was never paid out carries no paid_out_at and isn't owed, so it is
+        // filtered out by providerPayoutRows — it appears nowhere, as before.
+        .in('status', ['confirmed', 'cancelled', 'refunded']);
     const payouts = providerPayoutRows((heldRows || []) as any[], today);
     // When it reaches their bank: read off their own Stripe account (it shortens
     // as the account builds history), the way the host's page says it.
@@ -236,7 +242,12 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
                             {payouts.alreadyPaid.slice(0, 10).map((r) => (
                                 <div key={r.id} className="flex justify-between text-sm">
                                     <span className="text-slate-600 truncate">{r.title} &middot; {ukDate(r.date)}</span>
-                                    <span className="text-slate-900 font-medium whitespace-nowrap ml-3">{money(r.amount)} on {ukDate(r.paidOn)}</span>
+                                    <span className="text-right whitespace-nowrap ml-3">
+                                        <span className="text-slate-900 font-medium">{money(r.amount)} on {ukDate(r.paidOn)}</span>
+                                        {r.refunded > 0 && (
+                                            <span className="block text-xs text-amber-700">{money(r.refunded)} refunded since</span>
+                                        )}
+                                    </span>
                                 </div>
                             ))}
                         </div>
