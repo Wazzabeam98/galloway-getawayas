@@ -228,14 +228,33 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
         .maybeSingle();
     const home: typeof readable = readable;
 
+    // The generic, reveals-nothing metadata. Used for a missing listing AND for
+    // any status that isn't publicly visible, so a draft/pending link shared on
+    // social carries no title, description, price or photo of the property.
+    const notFoundMeta: Metadata = {
+        title: 'Property not found',
+        description: 'This listing is no longer available.',
+        // The page itself 404s (or shows a "not published" notice). This stops
+        // the "not found" wording being indexed in the window before Google
+        // re-crawls.
+        robots: { index: false, follow: false },
+    };
+
     if (!home) {
-        return {
-            title: 'Property not found',
-            description: 'This listing is no longer available.',
-            // The page itself now 404s. This stops the "not found" wording
-            // being indexed in the window before Google re-crawls.
-            robots: { index: false, follow: false },
-        };
+        return notFoundMeta;
+    }
+
+    // Only a publicly visible listing gets real share tags. This mirrors
+    // PUBLICLY_VISIBLE in the page below exactly: 'published' is indexed,
+    // 'hidden' still opens at its own URL for a guest holding a booking or an
+    // old link. Every other status — draft, pending_review, anything added
+    // later — is not public, so its title, description, price and photo must
+    // not leak into the <head> of a shared link. generateMetadata is cookieless
+    // (so it can be built statically), which means it can't tell an owner
+    // previewing from a stranger — so it reveals nothing to anyone, and the
+    // owner's own preview still renders the full page via the gate below.
+    if (home.status !== 'published' && home.status !== 'hidden') {
+        return notFoundMeta;
     }
 
     const area = placeSummary(home.location) || 'Dumfries & Galloway';

@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
-import { deletionBlockers } from '@/lib/deactivateAccount';
+import { deletionBlockers, revalidateOwnedPublicPages } from '@/lib/deactivateAccount';
 
 // Closing an account ANONYMISES it — it never deletes the profile or auth row,
 // because bookings/payments/payouts/orders are RESTRICT-linked to them and must
@@ -103,6 +103,14 @@ export async function POST() {
         if (rpcError) {
             return NextResponse.json({ error: rpcError.message }, { status: 400 });
         }
+
+        // The scrub has unpublished every listing this person hosts and taken
+        // their experiences off the grids. Bust the edge cache for those public
+        // pages now so they vanish at once rather than lingering for up to the
+        // 300s ISR window. host_id/owner_id survive the scrub, so the ids are
+        // still readable. Runs before the storage removal below, which is itself
+        // best-effort — the erasure already stands.
+        await revalidateOwnedPublicPages(admin, uid);
 
         // 3. Remove the images. The account is already anonymised, so a storage
         //    error is logged, not surfaced as a failure — the erasure stands.

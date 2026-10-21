@@ -22,6 +22,7 @@
 
 import { issueRefunds } from '@/lib/refundSpread';
 import { refundDue } from '@/lib/cancellation';
+import { revalidateListings, revalidateExperience } from '@/lib/revalidatePublic';
 import { logError } from '@/lib/logError';
 import { logMoneyFailure } from '@/lib/moneyAlert';
 import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
@@ -276,6 +277,37 @@ async function notifyTripCancelled(
         }
     } catch (hostMailErr: any) {
         await logError('[deactivate] the host was not told about the cancellation', hostMailErr, { path: 'lib/deactivateAccount', userId: uid });
+    }
+}
+
+// Bust the edge cache for every public page this person owns, right after their
+// account has been deactivated or anonymised. Both the deactivate RPC and the
+// anonymise RPC hide the profile and flip the person's listings to 'hidden' (and
+// their experiences off the grids) in the database — but the public listing page,
+// every experience page and the browse grids are edge-cached (ISR, 300s), so
+// without this they keep showing the person's cards and pages for up to five
+// minutes after they've gone. This refreshes them on the spot, exactly as a
+// publish/hide/approve does. host_id/owner_id survive the scrub (the rows are
+// kept as audit records), so the ids are still readable here, after the RPC.
+//
+// Best-effort: revalidateListings/revalidateExperience already swallow their own
+// throws, and the whole thing is wrapped so a read failure here can never undo an
+// account closure that has already succeeded.
+export async function revalidateOwnedPublicPages(admin: any, uid: string): Promise<void> {
+    try {
+        const [{ data: listings }, { data: providers }] = await Promise.all([
+            admin.from('listings').select('id').eq('host_id', uid),
+            admin.from('service_providers').select('id').eq('owner_id', uid),
+        ]);
+
+        const listingIds = (listings || []).map((l: any) => l.id).filter(Boolean);
+        if (listingIds.length) revalidateListings(listingIds);
+
+        for (const p of (providers || [])) {
+            if (p && p.id) revalidateExperience(p.id);
+        }
+    } catch (err: any) {
+        await logError('[deactivate] could not revalidate the closed account’s public pages', err, { path: 'lib/deactivateAccount', userId: uid });
     }
 }
 

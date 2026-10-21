@@ -162,10 +162,21 @@ export async function generateMetadata(
         .eq('id', params.providerId)
         .maybeSingle();
 
-    if (!data) return { title: 'Experience' };
-    // Not approved yet: only its owner can open it (the preview), so describe
-    // nothing and keep it out of search.
-    if (data.status !== 'approved') return { title: data.business_name || 'Experience', robots: { index: false, follow: false } };
+    // The generic, reveals-nothing metadata — for a missing provider AND for any
+    // status that isn't publicly visible. generateMetadata is cookieless, so it
+    // can't tell the owner previewing from a stranger; a not-yet-approved
+    // provider's business name, like a draft cottage's title, must not leak into
+    // the <head> of a shared link. The owner's own preview still renders the
+    // full page via the gate below. A paused/admin-hidden provider keeps
+    // status 'approved' (paused is a separate flag), so it keeps its share tags,
+    // exactly as a hidden cottage does.
+    if (!data || data.status !== 'approved') {
+        return {
+            title: 'Experience not found',
+            description: 'This experience is no longer available.',
+            robots: { index: false, follow: false },
+        };
+    }
 
     const name = data.business_name || 'Experience';
     // Built from structured facts (name + category + where), never the

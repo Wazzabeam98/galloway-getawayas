@@ -47,6 +47,39 @@ test('already paid: the payout amount and the day it went, newest first', () => 
     assert.deepEqual(alreadyPaid.map((r: any) => [r.id, r.paidOn, r.amount]), [['b', '2026-10-09', 90], ['a', '2026-10-02', 45]]);
 });
 
+test('a refund AFTER payout stays under "already paid", with what came back shown', () => {
+    // The bug: a full refund flips the order's status to 'refunded', and the
+    // earnings query only fetched confirmed/cancelled, so a paid-out order that
+    // was later refunded dropped off the list entirely — the money really was
+    // paid, so it must stay, with the refund beside it.
+    const { alreadyPaid } = providerPayoutRows([
+        held({ id: 'full', status: 'refunded', paid_out_at: '2026-10-09T03:00:00Z', payout_amount: 90, amount_refunded: 100 }),
+        held({ id: 'part', status: 'confirmed', paid_out_at: '2026-10-02T03:00:00Z', payout_amount: 90, amount_refunded: 20 }),
+        held({ id: 'clean', status: 'confirmed', paid_out_at: '2026-09-25T03:00:00Z', payout_amount: 45, amount_refunded: 0 }),
+    ], '2026-10-21');
+    assert.deepEqual(
+        alreadyPaid.map((r: any) => [r.id, r.amount, r.refunded]),
+        [['full', 90, 100], ['part', 90, 20], ['clean', 45, 0]],
+        'every paid-out order stays, refunded or not; refunded shows what came back',
+    );
+});
+
+test('a refunded order that was NEVER paid out appears nowhere', () => {
+    // It isn't owed (the payout rule), and it has no paid_out_at, so it is not
+    // "already paid" either — adding 'refunded' to the query must not surface it.
+    const rows = providerPayoutRows([
+        held({ id: 'r', status: 'refunded', paid_out_at: null, amount_refunded: 100 }),
+    ], '2026-10-21');
+    assert.equal(rows.awaiting.length, 0);
+    assert.equal(rows.alreadyPaid.length, 0);
+});
+
+test('the earnings query fetches refunded orders so a post-payout refund is kept', () => {
+    const page = read('app/services/dashboard/earnings/page.tsx');
+    assert.match(page, /\.in\('status', \['confirmed', 'cancelled', 'refunded'\]\)/);
+    assert.match(page, /refunded since/, 'the already-paid row shows what came back');
+});
+
 test('the payout run\'s rule: refunded, direct and plain-cancelled orders are not owed', () => {
     const { awaiting } = providerPayoutRows([
         held({ id: 'refunded', status: 'refunded' }),

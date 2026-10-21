@@ -8,6 +8,7 @@ import {
     deactivationBlockers,
     cancelOwnUpcomingTrips,
     providerSubscriptionIds,
+    revalidateOwnedPublicPages,
 } from '@/lib/deactivateAccount';
 import { cancelProviderSubscription } from '@/lib/cancelSubscription';
 
@@ -102,6 +103,11 @@ export async function POST() {
         if (rpcError) {
             return NextResponse.json({ ok: false, error: rpcError.message }, { status: 400 });
         }
+
+        // The profile and listings are now hidden in the DB. Bust the edge cache
+        // for every public page this person owned so their cards and pages
+        // disappear at once, not after the 300s ISR window.
+        await revalidateOwnedPublicPages(admin, uid);
 
         // The login is now suspended and the session killed server-side; clear
         // the cookie too so the browser doesn't carry a dead session around.
