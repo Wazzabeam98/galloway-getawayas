@@ -12,6 +12,10 @@
       "schedule": "0 10 * * *"
     },
     {
+      "path": "/api/cron/experience-review-reminders",
+      "schedule": "10 10 * * *"
+    },
+    {
       "path": "/api/cron/balance-charges",
       "schedule": "0 9 * * *"
     },

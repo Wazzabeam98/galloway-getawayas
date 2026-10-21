@@ -22,16 +22,19 @@ const ROUTE = '@/app/api/listings/publish/route';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { HOST_TERMS_VERSION } = require('../lib/hostTerms');
 
-function loadPublish({ status, payoutsEnabled = false, termsVersion = null, named = true }: { status: string; payoutsEnabled?: boolean; termsVersion?: string | null; named?: boolean }) {
+function loadPublish({ status, payoutsEnabled = false, termsVersion = null, named = true, declinedAt = null }: { status: string; payoutsEnabled?: boolean; termsVersion?: string | null; named?: boolean; declinedAt?: string | null }) {
     const updates: any[] = [];
+    const sent: any[] = [];
     const listing = {
         id: 'l-1', host_id: HOST, title: 'Heron Cottage', price_per_night: 120, status,
         images: ['a', 'b', 'c', 'd', 'e'],
         street_address: '1 Harbour Row', postcode: 'DG6 4JG', latitude: 54.8, longitude: -4.05,
+        declined_at: declinedAt,
     };
     const profile = {
         stripe_payouts_enabled: payoutsEnabled, host_terms_version: termsVersion,
         first_name: named ? 'Morag' : null, last_name: named ? 'MacLellan' : null,
+        email: 'morag@heroncottage.co.uk',
     };
 
     const admin: any = {
@@ -57,10 +60,21 @@ function loadPublish({ status, payoutsEnabled = false, termsVersion = null, name
     stubModule('@/lib/listingRules', { addressBlockerForPublish: () => null, NEW_LISTING_MIN_PHOTOS: 5 });
     stubModule('@/lib/postcodeGeocode', { coordinatePatchFor: async () => ({}) });
     stubModule('@/lib/logError', { logError: async () => {} });
+    // The host's "it's in review" email (lib/listingSubmittedConfirm) — captured,
+    // never sent. Additive: nothing above asserted on email.
+    stubModule('@/lib/email', {
+        sendEmail: async (to: string, subject: string, html: string) => { sent.push({ to, subject, html }); return true; },
+        emailLayout: (body: string) => body,
+        escapeHtml: (x: string) => String(x),
+        button: (url: string, label: string) => '[' + label + '](' + url + ')',
+        SITE_URL: 'http://example.invalid',
+        COTTAGE_SUBTITLE: '',
+    });
 
     clearModule('@/lib/supabaseAdmin');
+    clearModule('@/lib/listingSubmittedConfirm');
     clearModule(ROUTE);
-    return { route: require(ROUTE), updates };
+    return { route: require(ROUTE), updates, sent };
 }
 
 const post = (extra: any = {}) => new Request('http://x/api/listings/publish', {
@@ -155,4 +169,46 @@ test('a host with no first and last name cannot publish, and nothing changes', a
     assert.equal(res.status, 400);
     assert.equal(res.body.needsName, true);
     assert.equal(updates.length, 0);
+});
+
+/* ------------------------------------------------------------ "it's in review" */
+// The host twin of the provider's confirmation: sent when the listing moves INTO
+// review, and only then.
+
+test('a first submit tells the host it is in review, linking to the listing', async () => {
+    const { route, sent } = loadPublish({ status: 'draft', termsVersion: HOST_TERMS_VERSION });
+    const res = await route.POST(post());
+    assert.equal(res.status, 200);
+    assert.equal(sent.length, 1, 'one confirmation');
+    assert.equal(sent[0].to, 'morag@heroncottage.co.uk');
+    assert.match(sent[0].subject, /got your listing.*in review/);
+    assert.match(sent[0].html, /Hello Morag/);
+    assert.match(sent[0].html, /Heron Cottage/);
+    assert.match(sent[0].html, /\[See your listing\]\(http:\/\/example\.invalid\/edit-listing\/l-1\)/);
+    assert.doesNotMatch(sent[0].html, /again with your changes/);
+});
+
+test('a listing sent back and submitted again says so', async () => {
+    const { route, sent } = loadPublish({ status: 'draft', termsVersion: HOST_TERMS_VERSION, declinedAt: '2026-10-01T10:00:00Z' });
+    await route.POST(post());
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].html, /again with your changes/);
+});
+
+test('no confirmation when nothing goes into review', async () => {
+    for (const status of ['published', 'hidden']) {
+        const { route, sent } = loadPublish({ status, termsVersion: HOST_TERMS_VERSION });
+        await route.POST(post());
+        assert.equal(sent.length, 0, status + ': back up without a review, nothing to confirm');
+    }
+    const again = loadPublish({ status: 'pending_review', termsVersion: HOST_TERMS_VERSION });
+    await again.route.POST(post());
+    assert.equal(again.sent.length, 0, 'a second press while waiting sends nothing more');
+});
+
+test('a refused submit sends nothing', async () => {
+    const { route, sent } = loadPublish({ status: 'draft' });
+    const res = await route.POST(post());
+    assert.equal(res.status, 400);
+    assert.equal(sent.length, 0);
 });
