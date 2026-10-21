@@ -198,3 +198,16 @@ test('"Your listing" is a listings page with a + chooser, like the host\'s', () 
     assert.match(chooser, /href="\/addhome"/, 'a holiday let');
     assert.match(chooser, /one per account/, 'one experience per account, said rather than refused later');
 });
+
+test('the home grid reads every filter the URL can carry — Luxury included', () => {
+    // HomeShop builds readFilters' params by hand; a key left out there means
+    // the chip changes the URL and filters nothing (the Luxury chip did, 21 Oct).
+    const shop = read('components/HomeShop.tsx');
+    const lf = read('lib/listingFilters.ts');
+    const keys = ((lf.match(/\[('am'[^\]]*)\]\.forEach\(\(k\) => out\.delete\(k\)\)/) || [])[1] || '')
+        .split(',').map((k) => k.trim().replace(/'/g, '')).filter(Boolean);
+    assert.ok(keys.length > 5, 'found the URL keys writeFilters owns');
+    for (const k of keys) {
+        assert.match(shop, new RegExp('\\b' + k + ': sp\\.get(All)?\\(\'' + k + '\'\\)'), 'HomeShop does not read ?' + k + ' into its filters');
+    }
+});
