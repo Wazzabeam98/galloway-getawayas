@@ -10,9 +10,12 @@ import { outstandingOf, spread } from '@/lib/hostDebt';
 import { readSchedule, arrivalSentence } from '@/lib/payoutTiming';
 import { chargeToDrawOn } from '@/lib/payoutSource';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'host-payouts';
 
 function round2(value: number): number {
     return Math.round(value * 100) / 100;
@@ -103,6 +106,7 @@ export async function GET(request: Request) {
         await logMoneyFailure('host-payouts: could not load the bookings due for payout — no host was paid today', dueError, {
             path: '/api/cron/host-payouts',
         });
+        await recordCronRun(JOB, false, 'could not load the bookings due for payout');
         return NextResponse.json(
             { ok: false, error: 'Could not load the bookings due for payout' },
             { status: 500 }
@@ -707,6 +711,12 @@ export async function GET(request: Request) {
         });
     }
 
+    // ok=true because the run COMPLETED — per-booking failures are counted in
+    // the detail and already raise their own immediate directors' alert above.
+    // The heartbeat's job is to prove the run fired at all; ok=false is reserved
+    // for a run that could not complete (the due-load failure above).
+    await recordCronRun(JOB, true, 'sent=' + sent + ' skipped=' + skipped + ' failed=' + failed
+        + ' reconciled=' + reconciled + ' waiting=' + waiting.size + ' notReached=' + notReached + ' problems=' + problems.length);
     return NextResponse.json({
         ok: true,
         sent: sent,

@@ -6,9 +6,12 @@ import { createRequestOrderFromSession } from '@/lib/requestOrder';
 import { recordOrderGuestTerms } from '@/lib/agreementRecords';
 import { authoriseChangeRequest } from '@/lib/changeRequest';
 import { notifyTopUpConfirmed } from '@/lib/slotNotify';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'service-orders';
 
 // Find a succeeded PaymentIntent for a slot order that stored no Stripe id.
 //
@@ -376,5 +379,6 @@ export async function GET(request: Request) {
         failures.push('request rebuild: ' + (err && err.message));
     }
 
+    await recordCronRun(JOB, true, 'released=' + released + ' seatsReleased=' + seatsReleased + ' reconciled=' + reconciled + ' rebuilt=' + rebuilt + ' dateRequestsCleared=' + dateRequestsCleared + ' failures=' + failures.length);
     return NextResponse.json({ ok: true, released, seatsReleased, reconciled, rebuilt, dateRequestsCleared, failures });
 }

@@ -5,8 +5,11 @@ import { logError } from '@/lib/logError';
 import { londonDayKey } from '@/lib/dayKey';
 import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
 import { planReminders, reminderCopy, ReminderBooking } from '@/lib/payoutReminders';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
+
+const JOB = 'payout-reminders';
 
 // Hourly: remind a host with no payouts set up, on their first booking and
 // again before that guest checks in. The choosing is lib/payoutReminders; this
@@ -37,7 +40,10 @@ export async function GET(request: Request) {
             .gte('check_in', today);
         if (upcomingError) throw upcomingError;
         const candidateIds = Array.from(new Set((upcoming || []).map((b: any) => b.host_id).filter(Boolean)));
-        if (candidateIds.length === 0) return NextResponse.json({ ok: true, sent, failed });
+        if (candidateIds.length === 0) {
+            await recordCronRun(JOB, true, 'no hosts with upcoming stays');
+            return NextResponse.json({ ok: true, sent, failed });
+        }
 
         // Of those, the ones without payouts.
         const { data: hosts, error: hostError } = await admin
@@ -46,7 +52,10 @@ export async function GET(request: Request) {
             .in('id', candidateIds)
             .eq('stripe_payouts_enabled', false);
         if (hostError) throw hostError;
-        if (!hosts || hosts.length === 0) return NextResponse.json({ ok: true, sent, failed });
+        if (!hosts || hosts.length === 0) {
+            await recordCronRun(JOB, true, 'no hosts without payouts');
+            return NextResponse.json({ ok: true, sent, failed });
+        }
 
         // Every confirmed booking of theirs, past too — "first booking" means
         // first ever.
@@ -56,7 +65,10 @@ export async function GET(request: Request) {
             .in('host_id', hosts.map((h: any) => h.id))
             .eq('status', 'confirmed');
         if (bookingError) throw bookingError;
-        if (!bookings || bookings.length === 0) return NextResponse.json({ ok: true, sent, failed });
+        if (!bookings || bookings.length === 0) {
+            await recordCronRun(JOB, true, 'no confirmed bookings');
+            return NextResponse.json({ ok: true, sent, failed });
+        }
 
         const { data: claimed, error: claimReadError } = await admin
             .from('host_payout_reminders')
@@ -66,7 +78,10 @@ export async function GET(request: Request) {
         const already = new Set<string>((claimed || []).map((r: any) => r.booking_id + ':' + r.kind));
 
         const plan = planReminders(bookings as ReminderBooking[], already, today);
-        if (plan.length === 0) return NextResponse.json({ ok: true, sent, failed });
+        if (plan.length === 0) {
+            await recordCronRun(JOB, true, 'nothing due');
+            return NextResponse.json({ ok: true, sent, failed });
+        }
 
         const listingIds = Array.from(new Set(plan.map((p) => (p.booking as any).listing_id)));
         const { data: listings } = await admin.from('listings').select('id, title').in('id', listingIds);
@@ -106,9 +121,11 @@ export async function GET(request: Request) {
             }
         }
 
+        await recordCronRun(JOB, true, 'sent=' + sent + ' failed=' + failed);
         return NextResponse.json({ ok: true, sent, failed });
     } catch (err: any) {
         await logError('payout-reminders: run failed', err, { path: '/api/cron/payout-reminders' });
+        await recordCronRun(JOB, false, 'run failed: ' + ((err && err.message) || ''));
         return NextResponse.json({ ok: false, error: 'Run failed', sent, failed }, { status: 500 });
     }
 }

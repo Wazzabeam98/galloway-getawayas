@@ -5,6 +5,7 @@ import { refundDue } from '@/lib/cancellation';
 import { londonDayKey } from '@/lib/dayKey';
 import { logError } from '@/lib/logError';
 import { logMoneyFailure, alertDirectorsNow } from '@/lib/moneyAlert';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 import { closeOpenBookingRequests } from '@/lib/closeBookingRequests';
 import {
     sendEmail,
@@ -711,6 +712,11 @@ export async function GET(request: Request) {
         }
     }
 
+    // The run completed (ok=true). Per-booking failures are counted here and
+    // raise their own immediate alert above; the heartbeat proves the run fired,
+    // which the daily error-digest checks to catch a run that has stopped.
+    await recordCronRun('balance-charges', true, 'charged=' + charged + ' failed=' + failed
+        + ' cancelled=' + cancelled + ' skipped=' + skipped + ' reconciled=' + reconciled);
     return NextResponse.json({
         ok: true,
         charged: charged,
