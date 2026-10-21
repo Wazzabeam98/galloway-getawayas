@@ -8,6 +8,7 @@ import {
     MAX_NOTIFICATION_EMAILS,
     normalizeNotificationEmail,
     isValidNotificationEmail,
+    confirmResendBlocked,
 } from '@/lib/notificationEmails';
 import { newSubscriberToken, hashSubscriberToken } from '@/lib/listingSubscriberToken';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
@@ -83,7 +84,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
         const { data: existing } = await admin
             .from('listing_notification_subscribers')
-            .select('id, email, confirmed_at')
+            .select('id, email, confirmed_at, confirm_sent_at')
             .eq('listing_id', listingId);
 
         const rows = existing || [];
@@ -92,6 +93,14 @@ export async function POST(request: Request, { params }: { params: { id: string 
         // Already confirmed — nothing to do, and no second confirmation email.
         if (already && already.confirmed_at) {
             return NextResponse.json({ ok: true, subscriber: publicRow(already), already: true });
+        }
+
+        // A resend too soon after the last one is refused — without it an owner
+        // could have us email an arbitrary address without limit. The existing
+        // confirm link stays valid (no new token is minted, nothing is sent), so
+        // the address can still confirm from the email it already has.
+        if (already && confirmResendBlocked(already.confirm_sent_at)) {
+            return NextResponse.json({ ok: true, subscriber: publicRow(already), throttled: true });
         }
 
         // The cap counts what is already there. An unconfirmed row for this same
@@ -108,17 +117,18 @@ export async function POST(request: Request, { params }: { params: { id: string 
         const rawToken = newSubscriberToken();
         const tokenHash = hashSubscriberToken(rawToken);
 
+        const sentAt = new Date().toISOString();
         let rowId = already && already.id;
         if (already) {
             const { error } = await admin
                 .from('listing_notification_subscribers')
-                .update({ confirm_token_hash: tokenHash, email })
+                .update({ confirm_token_hash: tokenHash, email, confirm_sent_at: sentAt })
                 .eq('id', already.id);
             if (error) throw error;
         } else {
             const { data: inserted, error } = await admin
                 .from('listing_notification_subscribers')
-                .insert({ listing_id: listingId, email, confirm_token_hash: tokenHash, created_by: g.user!.id })
+                .insert({ listing_id: listingId, email, confirm_token_hash: tokenHash, confirm_sent_at: sentAt, created_by: g.user!.id })
                 .select('id, email, confirmed_at')
                 .single();
             if (error) throw error;

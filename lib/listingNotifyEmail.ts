@@ -131,7 +131,51 @@ export function listingUnsubscribeUrl(token: string): string {
     return SITE_URL + '/unsubscribe?listing=' + encodeURIComponent(token);
 }
 
-// A copy is the owner's own email, made safe to forward and given a way out.
+// A subscriber is told about bookings, not about the owner's money. The host's
+// own email carries that money — the "You earn" net-payout row on a new
+// booking, a "Total", "Paid and held", and the odd inline figure like "paid
+// £45 for the change" — and a cleaner, partner or agent the owner added for
+// "let me know when a booking comes in" has no business seeing any of it.
+//
+// So before a copy goes out, every money figure is taken out of it, two ways,
+// because the emails put money in two shapes:
+//   1. a whole detail row whose right-aligned value is an amount (You earn,
+//      Total, Paid and held) — the row is dropped entirely; and
+//   2. an amount sitting inline in a sentence — the figure is removed and the
+//      spacing tidied, so the sentence still reads without ever naming it.
+// Done at the fan-out chokepoint, once, so it covers every forwarded kind —
+// including ones added later — rather than trusting each email builder to know
+// it might be forwarded. A booking fact (property, guest first name, dates,
+// how many) carries no amount, so it is left untouched.
+
+// £ or its HTML entities, then an amount: digits, grouping commas, optional
+// pence. The non-global twin is for testing a fragment; the global one edits.
+const MONEY = '(?:£|&pound;|&#163;|&#x0*a3;)\\s*\\d[\\d,]*(?:\\.\\d{1,2})?';
+const MONEY_ONE = new RegExp(MONEY, 'i');
+const MONEY_ALL = new RegExp(MONEY, 'gi');
+
+export function stripOwnerMoney(html: string): string {
+    let out = String(html || '');
+
+    // 1) Drop any detail row whose value cell (the only right-aligned cell the
+    //    email layout produces — lib/email detailRows) shows an amount.
+    out = out.replace(
+        /<tr>\s*<td[^>]*>[\s\S]*?<\/td>\s*<td[^>]*text-align:\s*right[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/gi,
+        (row, valueCell) => (MONEY_ONE.test(String(valueCell)) ? '' : row),
+    );
+
+    // 2) Remove any amount still sitting inline, drop the now-empty emphasis it
+    //    may have been wrapped in, and tidy the whitespace/punctuation left
+    //    behind ("accepted and paid £45 for" -> "accepted and paid for").
+    out = out.replace(MONEY_ALL, '');
+    out = out.replace(/<strong>\s*<\/strong>/gi, '');
+    out = out.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+([.,;:])/g, '$1');
+
+    return out;
+}
+
+// A copy is the owner's own email, stripped of the owner's money, made safe to
+// forward and given a way out.
 //
 // Some host emails (a new message) already carry the OWNER's personal
 // account-unsubscribe link. A subscriber must never see or click that — it
@@ -141,6 +185,7 @@ export function listingUnsubscribeUrl(token: string): string {
 // subscriber should be able to do. Emails that carry no unsubscribe link
 // (a booking, a cancellation, a change) get the footnote appended instead.
 export function withListingUnsubscribe(html: string, token: string): string {
+    html = stripOwnerMoney(html);
     const url = listingUnsubscribeUrl(token);
     const existing = /href="https:\/\/(?:www\.)?gallowaygetaways\.co\.uk\/unsubscribe\?[^"]*"/g;
     if (existing.test(String(html || ''))) {

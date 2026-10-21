@@ -24,3 +24,19 @@ export function isValidNotificationEmail(value: string | null | undefined): bool
     if (!email || email.length > 254) return false;
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
+
+// How often a confirmation email may be re-sent to the same unconfirmed
+// address. Without this, an authenticated owner or full-access co-host could
+// POST the same address over and over and have the platform email a third party
+// without limit, from our sending reputation — the confirm step is opt-in, but
+// nothing stopped the re-asking. Five minutes is long enough to stop a flood
+// and short enough that a genuine "it didn't arrive, send again" still works.
+export const CONFIRM_RESEND_THROTTLE_MS = 5 * 60 * 1000;
+
+// Whether a resend to an address is too soon after the last one. A row that has
+// never been sent to (no timestamp) is never blocked — that is the first send.
+export function confirmResendBlocked(confirmSentAt: string | null | undefined, now: number = Date.now()): boolean {
+    if (!confirmSentAt) return false;
+    const t = new Date(confirmSentAt).getTime();
+    return Number.isFinite(t) && now - t < CONFIRM_RESEND_THROTTLE_MS;
+}

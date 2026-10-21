@@ -37,4 +37,9 @@ test('Earnings opens on this year, from the month the account was made', () => {
     assert.deepEqual(defaultEarningsPeriod('2026-10-21T09:00:00Z', '2027-02-01'), { from: '2027-01-01', to: '2027-12-31' },
         'the January after: the whole year');
     assert.deepEqual(defaultEarningsPeriod(null, '2026-10-21'), { from: '2026-01-01', to: '2026-12-31' }, 'unknown: the whole year');
+    // Late-evening UTC on the last day of a month, in BST: 23:30Z on 30 June is
+    // 00:30 on 1 July in London, so the creation month is July, not June — the
+    // default must not open a month early. (The old raw-UTC slice gave June.)
+    assert.deepEqual(defaultEarningsPeriod('2026-06-30T23:30:00Z', '2026-08-01'), { from: '2026-07-01', to: '2026-12-31' },
+        'late-evening-UTC signup keyed to the London month, not the UTC one');
 });
