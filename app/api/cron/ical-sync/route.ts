@@ -2,6 +2,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { syncOneFeed, mapWithConcurrency } from '@/lib/icalSync';
+import { revalidateListings } from '@/lib/revalidatePublic';
 import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +43,15 @@ export async function GET(request: Request) {
         const res = await syncOneFeed(admin, feed, now);
         return { feed: feed, res: res };
     });
+
+    // A synced feed can change which nights are blocked, and the listing page
+    // bakes those in (guestCalendar reads listing_ical_feeds). Refresh the pages
+    // of every listing whose feed synced so a date taken on Airbnb/Booking shows
+    // as unavailable here within one request, not up to the 300s fallback
+    // (lib/revalidatePublic; de-duped, best-effort).
+    revalidateListings(
+        outcomes.filter((o) => o.res.ok && o.feed.listing_id).map((o) => String(o.feed.listing_id)),
+    );
 
     let ok = 0;
     let failed = 0;

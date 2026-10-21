@@ -10,6 +10,7 @@ import { refreshVenuePoint } from '@/lib/venuePoint';
 import { normaliseVatTreatment } from '@/lib/vat';
 import { normaliseUnit } from '@/lib/serviceOrders';
 import { mayActOn } from '@/lib/providerAccess';
+import { revalidateExperience } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -448,6 +449,10 @@ export async function POST(request: Request) {
         // the "Where you'll be" map point follows it. Best effort — never fails
         // the save (lib/venuePoint.ts).
         if (section === 'where') await refreshVenuePoint(admin, providerId);
+
+        // An edit to a live experience changes its public page and the grid —
+        // refresh them at once (lib/revalidatePublic).
+        revalidateExperience(providerId);
 
         return NextResponse.json({ ok: true });
     } catch (err: any) {

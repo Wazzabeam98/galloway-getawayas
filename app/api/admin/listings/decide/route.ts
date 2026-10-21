@@ -7,6 +7,7 @@ import { sendEmail, emailLayout, button, escapeHtml, SITE_URL } from '@/lib/emai
 import { logError } from '@/lib/logError';
 import { publishProblems, fromRow } from '@/lib/listingRules';
 import { idsFrom, decideBatch, MAX_BATCH } from '@/lib/reviewQueue';
+import { revalidateListings } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -181,6 +182,11 @@ export async function POST(req: Request) {
 
             return { ok: true, emailed };
         });
+
+        // Approving makes a listing appear on the public grids and its own page;
+        // refresh them at once (lib/revalidatePublic). Covers every decided id —
+        // cheap, and a no-op where nothing actually changed.
+        revalidateListings(ids);
 
         // Not an error status even when some failed: the ones that worked have
         // worked, and the screen reports per row.

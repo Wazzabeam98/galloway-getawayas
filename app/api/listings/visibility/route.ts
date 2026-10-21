@@ -1,4 +1,5 @@
 import { logError } from '@/lib/logError';
+import { revalidateListing } from '@/lib/revalidatePublic';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -100,6 +101,10 @@ export async function POST(request: Request) {
         if (error) {
             return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
         }
+
+        // Hiding/unhiding takes the listing out of or back into the public grids
+        // and its own page — refresh them at once (lib/revalidatePublic).
+        revalidateListing(listingId);
 
         return NextResponse.json({ ok: true, status: hidden ? 'hidden' : 'published' });
     } catch (err: any) {

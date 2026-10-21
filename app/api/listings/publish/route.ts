@@ -1,4 +1,5 @@
 import { logError } from '@/lib/logError';
+import { revalidateListing } from '@/lib/revalidatePublic';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -178,6 +179,10 @@ export async function POST(request: Request) {
         if (error) {
             return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
         }
+
+        // Publishing (or re-publishing) changes what the public grids and the
+        // listing page show — refresh them at once (lib/revalidatePublic).
+        revalidateListing(listingId);
 
         // Recorded once the submission has gone through, so a refused submit
         // records nothing. A failure here is logged rather than un-submitting

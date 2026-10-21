@@ -1,10 +1,14 @@
-export const dynamic = 'force-dynamic';
+// Edge-cached (ISR): keyed only on [area], identical for every viewer (public
+// published listings, read as anon), so it is served from Vercel's cache. A
+// listing publish/edit/approve/hide/delete and an Arrange save refresh the area
+// pages on the spot via lib/revalidatePublic; 300s is the background fallback.
+export const revalidate = 300;
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { createClient } from '@supabase/supabase-js';
+import Env from '@/config/Env';
 import { MapPin } from 'lucide-react';
 import ListingCard, { type CardListing } from '@/components/ListingCard';
 import TownSearch from '@/components/TownSearch';
@@ -26,8 +30,20 @@ const SITE_URL = 'https://gallowaygetaways.co.uk';
 // exists: the properties are matched to the area by townKey(), the same
 // function the home page search uses.
 
+// Pre-render every area page at build so each is static and edge-cached. AREAS
+// is the full, fixed list (config/areas), so there are no other slugs to render
+// on demand. A listing publish/edit/hide and an Arrange save refresh them via
+// lib/revalidatePublic.
+export function generateStaticParams(): { area: string }[] {
+    return AREAS.map((a) => ({ area: a.slug }));
+}
+
 async function listingsForArea(area: Area): Promise<CardListing[]> {
-    const supabase = createServerComponentClient({ cookies });
+    // A cookieless anon client, not createServerComponentClient({ cookies }):
+    // reading cookies would opt this page out of static caching, and the data is
+    // the same for everyone (published listings, anon-readable columns). Same
+    // client the home page's cached grid uses.
+    const supabase = createClient(Env.SUPABASE_URL, Env.SUPABASE_KEY);
 
     // Named columns, not a star. This page is read by strangers, so it runs as
     // `anon`, which no longer holds a table-level grant on listings — a

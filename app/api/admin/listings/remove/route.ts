@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { isAdmin, recordAdminAction, cleanReason, setListingHiddenAsAdmin } from '@/lib/adminAudit';
 import { deleteListingForGood, listingsWithPaidRecords } from '@/lib/listingRemoval';
 import { logError } from '@/lib/logError';
+import { revalidateListing } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,6 +120,10 @@ export async function POST(request: Request) {
             },
         });
 
+        // Gone from the public grids and its own page (which now 404s) — purge
+        // the cached copies at once (lib/revalidatePublic).
+        revalidateListing(listing.id);
+
         return NextResponse.json({ ok: true, outcome: 'deleted' });
     } catch (err: any) {
         console.error('[admin/listings/remove]', err && err.message);
@@ -138,5 +143,7 @@ async function hide(adminId: string, listing: any, reason: string) {
     if ('error' in result) {
         return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
     }
+    // Taken down — out of the public grids and its page (lib/revalidatePublic).
+    revalidateListing(listing.id);
     return NextResponse.json({ ok: true, outcome: 'hidden' });
 }

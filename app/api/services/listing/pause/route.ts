@@ -1,5 +1,6 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { revalidateExperience } from '@/lib/revalidatePublic';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { setOwnerPaused } from '@/lib/providerTakedown';
@@ -44,6 +45,9 @@ export async function POST(request: Request) {
 
         const result = await setOwnerPaused(admin, providerId, paused);
         if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+        // Pausing/unpausing takes the experience out of or back into the public
+        // grid and home shelf — refresh them at once (lib/revalidatePublic).
+        revalidateExperience(providerId);
         return NextResponse.json({ ok: true, paused, billing: result.billing || null });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: (err && err.message) || 'Could not save' }, { status: 500 });

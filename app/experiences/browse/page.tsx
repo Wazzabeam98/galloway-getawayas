@@ -5,7 +5,12 @@ import { loadPublicMarketplace } from '@/lib/experiencesData';
 import ProviderCard from '@/components/marketplace/ProviderCard';
 import type { Metadata } from 'next';
 
-export const dynamic = 'force-dynamic';
+// Edge-cached (ISR): this page is the same for everyone (read via the service
+// role, no per-viewer data), so it is served from Vercel's cache and rebuilt in
+// the background. A provider approval, edit, pause or take-down, and an Arrange
+// save, refresh it on the spot via revalidatePath('/experiences/browse')
+// (lib/revalidatePublic). 300s is only the background fallback.
+export const revalidate = 300;
 
 // Without this the page inherited the root layout's default title and
 // description — so this public marketplace went out to Google wearing the home
@@ -42,8 +47,16 @@ export const metadata: Metadata = {
 // /experiences/[bookingId] and this is its bookingless twin. Signing in is only
 // needed to book (prompted on the listing), never to look.
 export default async function BrowseExperiencesPage() {
-    const admin = adminClient();
-    const mp = await loadPublicMarketplace(admin, guestExperiencesOpen());
+    // This page renders at build (static). The GitHub test-and-build check runs
+    // `next build` with no Supabase env, where adminClient() throws — fail soft to
+    // an empty marketplace so the build passes; the real deploy on Vercel has the
+    // env and renders it, and ISR fills it at runtime.
+    let mp: Awaited<ReturnType<typeof loadPublicMarketplace>>;
+    try {
+        mp = await loadPublicMarketplace(adminClient(), guestExperiencesOpen());
+    } catch {
+        mp = { open: false, stay: null, listing: null, providers: [] };
+    }
 
     return (
         <div className="min-h-screen bg-slate-50">

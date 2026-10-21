@@ -74,6 +74,7 @@ const SOURCES: Source[] = [
 // a file that starts reading profiles this way fails until it is added here
 // or to SOURCES; a file that stops is dropped from here by the same test.
 const SIGNED_IN_PROFILE_READS: Record<string, string> = {
+    'app/api/nav/route.ts': 'the navbar data endpoint — getUser() first, returns { signedIn: false } without a session, so the profiles read only ever runs as authenticated',
     'app/account/page.tsx': 'the account page — redirects to sign-in without a session',
     'app/dashboard/calendar/page.tsx': 'host dashboard — signed-in host only',
     'app/dashboard/reviews/page.tsx': 'host dashboard — signed-in host only',
@@ -84,7 +85,6 @@ const SIGNED_IN_PROFILE_READS: Record<string, string> = {
     'components/auth/AuthPanel.tsx': 'runs after the sign-in succeeds, for the session user\'s own row',
     'components/auth/EmailFirstStep.tsx': 'runs after the sign-in succeeds, for the session user\'s own row',
     'components/auth/FinishSignUpGate.tsx': 'the session user\'s own row — renders only with a session',
-    'components/base/Navbar.tsx': 'guarded by data.session.user — logged-out visitors never reach the read',
     'components/services/ProviderSignUp.tsx': 'provider sign-up after the account step — signed in',
     'lib/access.ts': 'requireAdmin and friends — getUser() first, notFound() without one',
 };

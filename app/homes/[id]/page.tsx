@@ -1,4 +1,15 @@
-export const dynamic = "force-dynamic";
+// Edge-cached (ISR). A published listing page is the same for everyone — the
+// host block is public (first name only), reviews are public, and the booking
+// card prices from public listing data — so it is served from Vercel's cache
+// and rebuilt in the background. The per-viewer bits (the guest-terms tick, the
+// host's inline review reply) are fetched on the client. Published ids are
+// pre-rendered by generateStaticParams; a draft/pending listing is NOT
+// pre-rendered and renders on demand, where the owner/admin gate below reads the
+// session (so a draft never lands in cached HTML). A publish/edit/approve/hide/
+// delete/calendar change refreshes the page on the spot via lib/revalidatePublic;
+// 300s is the background fallback.
+export const revalidate = 300;
+
 import React from 'react'
 import type { Metadata } from 'next';
 import { adminClient } from '@/lib/supabaseAdmin';
@@ -15,7 +26,7 @@ import { NEW_LISTING_MAX_BOOKINGS } from '@/lib/pricing';
 import { AGREEMENTS } from '@/lib/agreements';
 import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
-import HostReplyBox from '@/components/HostReplyBox';
+import ReviewReply from '@/components/ReviewReply';
 import ReviewsSummary from '@/components/ReviewsSummary';
 import ShowAllReviews from '@/components/ShowAllReviews';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
@@ -177,39 +188,44 @@ const SITE_URL = 'https://gallowaygetaways.co.uk';
 // reads exactly the same columns as the visitor's own query.
 const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, cancellation_custom_days, non_refundable_option, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood, min_nights, max_nights, advance_notice, preparation_time, max_pets, checkout_tasks, checkout_note, guest_safety';
 
-async function hiddenListingForOldLink(id: string, columns: string): Promise<any | null> {
-    const admin = adminClient();
-    const { data: row } = await admin
-        .from('listings')
-        .select(columns + ', deactivated_at')
-        .eq('id', id)
-        .maybeSingle();
-    const listing = row as any;
-    if (!listing || listing.status !== 'hidden' || listing.deactivated_at) return null;
-    const { data: host } = await admin
-        .from('profiles')
-        .select('anonymised_at, deactivated_at')
-        .eq('id', listing.host_id)
-        .maybeSingle();
-    if (!host || host.anonymised_at || host.deactivated_at) return null;
-    delete listing.deactivated_at;
-    return listing;
+// Pre-render every published listing at build so each is a static, edge-cached
+// page from the first visit. A listing published after the build is not in this
+// list; it renders on demand the first time it is opened and is cached from then
+// (its render touches no per-request data), and a publish/edit also refreshes it
+// via lib/revalidatePublic. A draft/pending/hidden id is not listed — it renders
+// on demand through the owner/admin gate, which keeps it out of cached HTML.
+export async function generateStaticParams(): Promise<{ id: string }[]> {
+    // The GitHub `test-and-build` check runs `next build` with no Supabase env,
+    // so adminClient() would throw here and fail the build ("NEXT_PUBLIC_SUPABASE_URL
+    // is not set"). Return [] when the env isn't there (or on any read error):
+    // dynamicParams defaults true, so pages then render on demand and still cache
+    // (ISR) — and the real deploy on Vercel HAS the env, so it pre-renders every
+    // published listing as before.
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
+    try {
+        const { data } = await adminClient()
+            .from('listings')
+            .select('id')
+            .eq('status', 'published');
+        return (data || []).map((l: any) => ({ id: String(l.id) }));
+    } catch {
+        return [];
+    }
 }
 
 // Per-listing page title and description. Without this every property
 // shares one title and Google can't tell them apart — which is the
 // single biggest thing holding back a site like this in search.
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-    const supabase = createServerComponentClient({ cookies });
-
-    const { data: readable } = await supabase
+    // Cookieless (service role) so the metadata can be generated statically. It
+    // reads any status; `indexable` below keeps a draft/hidden page out of the
+    // index exactly as before.
+    const { data: readable } = await adminClient()
         .from('listings')
         .select('title, description, location, images, price_per_night, max_guests, bedrooms, property_type, privacy_type, amenities, status')
         .eq('id', params.id)
-        .single();
-    // Hidden: still titled for the old link, and noindexed below (not published).
-    const home: typeof readable = readable
-        || await hiddenListingForOldLink(params.id, 'host_id, title, description, location, images, price_per_night, max_guests, bedrooms, property_type, privacy_type, amenities, status');
+        .maybeSingle();
+    const home: typeof readable = readable;
 
     if (!home) {
         return {
@@ -278,26 +294,24 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
 }
 
 const FindHome = async ({ params }: { params: { id: string } }) => {
-    const supabase = createServerComponentClient({ cookies });
-
-    // Named, not '*'. This page is read by strangers, so it runs as `anon`,
-    // and `anon` no longer holds a table-level grant on listings — a `select *`
-    // is refused outright now. That is the point: a sensitive column added
-    // later cannot arrive in the page source by being swept up by a star.
+    // Cookieless (service role), NOT the viewer's client: reading cookies would
+    // opt the page out of static caching, and the data below is the same for
+    // everyone. The service role reads any status so an owner/admin can still
+    // preview a draft — which the visibility gate further down protects, so a
+    // draft only ever reaches an authorised viewer, in a dynamic (uncached)
+    // render, never in cached HTML.
     //
-    // approx_latitude/approx_longitude, never the exact pair. The exact
-    // coordinates are not readable here at all.
-    const { data: readable } = await supabase
+    // Named columns, not '*' — LISTING_PAGE_COLUMNS is the anon-safe set
+    // (approx_latitude/approx_longitude only, never the exact pair), kept in one
+    // place so a sensitive column can't be swept into the page by a star.
+    const { data: readable } = await adminClient()
         .from('listings')
-        .select(
-            LISTING_PAGE_COLUMNS
-        )
+        .select(LISTING_PAGE_COLUMNS + ', deactivated_at')
         .eq('id', params.id)
-        .single();
-    // The stranger's old link to a hidden listing — see hiddenListingForOldLink.
-    // The column list is the select above, read back off the module constant so
-    // the two can't drift.
-    const home: typeof readable = readable || await hiddenListingForOldLink(params.id, LISTING_PAGE_COLUMNS);
+        .maybeSingle();
+    const home: any = readable && !(readable as any).deactivated_at ? readable : null;
+    if (!home) notFound();
+    delete home.deactivated_at;
 
     // One sensible fallback for a nameless host, shared with the trip page
     // ("your host") rather than the old inconsistent "Host".
@@ -325,9 +339,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     if (home?.host_id) {
         const { data: hostProfile } = await adminClient()
             .from('profiles')
-            .select('full_name, first_name, last_name, preferred_name, show_full_name, trading_name, avatar_url, created_at, host_bio, stripe_payouts_enabled')
+            .select('full_name, first_name, last_name, preferred_name, show_full_name, trading_name, avatar_url, created_at, host_bio, stripe_payouts_enabled, anonymised_at, deactivated_at')
             .eq('id', home.host_id)
             .maybeSingle();
+        // A ghost host's listing is gone — the same guard hiddenListingForOldLink
+        // applied when the page still read hidden listings through that path.
+        if (hostProfile?.anonymised_at || hostProfile?.deactivated_at) notFound();
         hostName = hostByline(hostProfile, null, 'your host');
         hostAvatar = hostProfile?.avatar_url || null;
         hostBio = (hostProfile?.host_bio || '').trim() || null;
@@ -452,6 +469,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     // guest read a pending or draft row, so a stranger never reaches here anyway.
     let isOwnerPreview = false;
     if (PUBLICLY_VISIBLE.indexOf(home.status) === -1) {
+        // This is the ONLY place the page reads the session, and it runs only for
+        // a non-public listing — which is never pre-rendered, so reading cookies
+        // here makes just the draft/preview render dynamic, while the published
+        // page (which never reaches this branch) stays static and cacheable.
+        const supabase = createServerComponentClient({ cookies });
         const { data: { user } } = await supabase.auth.getUser();
         if (user?.id !== home.host_id) {
             return (
@@ -498,7 +520,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     // The six category ratings are for ReviewsSummary; the rest is what the
     // list itself draws. created_at is ordered by and not selected, which
     // Postgres is perfectly happy with.
-    const { data: reviews } = await supabase
+    // Service role (cookieless) so the page stays statically cacheable; only
+    // published reviews are selected, so nothing private is read.
+    const { data: reviews } = await adminClient()
         .from('reviews')
         // One string literal, deliberately: supabase-js infers the row type
         // from it, and a concatenation defeats that — every field then comes
@@ -519,13 +543,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         (reviewers || []).forEach((p) => { reviewerNames[p.id] = firstName(p, 'Guest'); });
     }
 
-    const { data: { user: viewer } } = await supabase.auth.getUser();
-    const isHostViewing = viewer?.id === home.host_id;
-
     // The booking calendar's data, read here so the widget paints with every
     // taken night already struck out — never an open month that fills up two
-    // seconds later. And whether this viewer still owes the Guest Terms, so the
-    // tick is there from the first paint too (null when signed out).
+    // seconds later.
     // The host's optional paid extras for this listing — active ones only, in
     // the host's order. Read with the service role (the table is public-read
     // anyway); passed to the booking card so it prices them exactly as checkout
@@ -539,21 +559,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         .order('created_at', { ascending: true });
     const listingExtras = (extraRows || []) as any[];
 
-    const [calendar, guestTermsRow] = await Promise.all([
-        guestCalendar(home.id),
-        viewer
-            ? adminClient()
-                .from('agreement_acceptances')
-                .select('version')
-                .eq('user_id', viewer.id)
-                .eq('document', 'guest')
-                .eq('version', AGREEMENTS.guest.version)
-                .maybeSingle()
-            : Promise.resolve(null),
-    ]);
-    const viewerNeedsGuestTerms: boolean | null = viewer
-        ? (guestTermsRow && !(guestTermsRow as any).error ? !(guestTermsRow as any).data : null)
-        : null;
+    const calendar = await guestCalendar(home.id);
 
     // ONE rating source for the whole site: the stored aggregate columns,
     // rating_avg and rating_count, maintained by a database trigger. They are
@@ -592,17 +598,19 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     let nearbyListings: CardListing[] = [];
     if (nearbyKeys.size) {
-        const { data: candidates } = await supabase
+        // Cookieless (service role) so this read doesn't opt the page out of
+        // caching; published listings, anon-safe columns.
+        const { data: candidates } = await adminClient()
             .from('listings')
             .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude')
             .eq('status', 'published')
             .neq('id', home.id)
             .order('created_at', { ascending: false })
             .limit(60);
-        const inArea = (candidates || []).filter((l) => nearbyKeys.has(townKey(l.location)));
+        const inArea = (candidates || []).filter((l: any) => nearbyKeys.has(townKey(l.location)));
         // Same town ahead of a neighbouring one, so the closest places show first.
-        const sameTown = inArea.filter((l) => townKey(l.location) === townForNearby);
-        const neighbour = inArea.filter((l) => townKey(l.location) !== townForNearby);
+        const sameTown = inArea.filter((l: any) => townKey(l.location) === townForNearby);
+        const neighbour = inArea.filter((l: any) => townKey(l.location) !== townForNearby);
         nearbyListings = sameTown.concat(neighbour).slice(0, 4);
     }
 
@@ -1020,7 +1028,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             nonRefundableOffered={home.non_refundable_option === true}
                             blockedNights={calendar.blockedNights}
                             priceOverrides={calendar.priceOverrides}
-                            needsGuestTerms={viewerNeedsGuestTerms}
+                            needsGuestTerms={null}
                             showScore={showScore}
                             ratingAvg={ratingAvg}
                             extras={listingExtras}
@@ -1126,14 +1134,14 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                             <ReviewStars value={r.rating} size={14} />
                                         </div>
                                         <p className='text-sm text-slate-700'>{r.comment}</p>
-                                        {isHostViewing ? (
-                                            <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
-                                        ) : r.host_reply ? (
-                                            <div className='mt-3 ml-4 pl-4 border-l-2 border-slate-200'>
-                                                <p className='text-xs font-semibold text-slate-500 mb-1'>Response from the host</p>
-                                                <p className='text-sm text-slate-700'>{r.host_reply}</p>
-                                            </div>
-                                        ) : null}
+                                        {/* The host's inline reply box is a per-viewer
+                                            affordance, so it is decided on the client
+                                            (ReviewReply asks /api/listings/[id]/relationship
+                                            once). The server HTML shows the read-only reply,
+                                            which everyone — the host included, until the check
+                                            returns — sees. */}
+                                        <ReviewReply listingId={home.id} reviewId={r.id} existingReply={r.host_reply} />
+
                                     </div>
                                 ))}
                             </ShowAllReviews>

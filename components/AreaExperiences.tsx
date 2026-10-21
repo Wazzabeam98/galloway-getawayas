@@ -26,7 +26,16 @@ export default async function AreaExperiences({
 }) {
     if (!area || !guestExperiencesOpen()) return null;
 
-    const mp = await loadPublicMarketplace(adminClient(), true);
+    // This renders at build on the area page (now static ISR). The GitHub
+    // test-and-build check runs `next build` with no Supabase env, where
+    // adminClient() throws — fail soft to "nothing" so the build passes; the real
+    // deploy on Vercel has the env and renders it, and ISR fills it at runtime.
+    let mp;
+    try {
+        mp = await loadPublicMarketplace(adminClient(), true);
+    } catch {
+        return null;
+    }
     if (!mp.open) return null;
 
     const shown = mp.providers.filter((p) => !!p.hero && servesTown(p, area));

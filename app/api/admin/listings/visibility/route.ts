@@ -3,6 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { isAdmin, cleanReason, setListingHiddenAsAdmin } from '@/lib/adminAudit';
+import { revalidateListing } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +64,9 @@ export async function POST(request: Request) {
         // The take-down itself is shared with Remove, which hides a listing
         // that has taken money instead of deleting it.
         const result = await setListingHiddenAsAdmin(user.id, listing, hidden, reason);
+        // Taking a listing down or relisting it changes the public grids and its
+        // page — refresh them at once (lib/revalidatePublic).
+        revalidateListing(listingId);
         if ('error' in result) {
             return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
         }

@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { syncOneFeed, mapWithConcurrency } from '@/lib/icalSync';
+import { revalidateListing } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -73,6 +74,9 @@ export async function POST(request: Request) {
             if (res.ok) ok++;
             else failed++;
         }
+
+        // Newly-synced dates feed the listing page's calendar — refresh it now.
+        if (ok > 0) revalidateListing(listingId);
 
         return NextResponse.json({ ok: true, synced: ok, failed: failed });
     } catch (err: any) {

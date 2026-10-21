@@ -1,5 +1,6 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { revalidateExperience } from '@/lib/revalidatePublic';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { isAdmin, recordAdminAction, cleanReason } from '@/lib/adminAudit';
@@ -113,6 +114,10 @@ export async function POST(request: Request) {
                 ...(!hidden && patch.subscription_status ? { back_on_card_ladder: true, trial_ends_at: patch.trial_ends_at || provider.trial_ends_at } : {}),
             },
         });
+
+        // Taking down or relisting an experience changes the public grid, its
+        // page and the home shelf — refresh them at once (lib/revalidatePublic).
+        revalidateExperience(providerId);
 
         return NextResponse.json({ ok: true, hidden, billing });
     } catch (err: any) {

@@ -6,6 +6,7 @@ import { checkListing } from '@/lib/access';
 import { guestCalendar } from '@/lib/availability';
 import { checkOverridePatch, checkOverrideDates } from '@/lib/calendarOverrides';
 import { logError } from '@/lib/logError';
+import { revalidateListing } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -103,6 +104,9 @@ export async function POST(request: Request) {
         await logError('[calendar] could not save calendar dates', error, { path: 'api/listings/calendar', userId: gate.user.id });
         return NextResponse.json({ ok: false, error: 'Those dates couldn’t be saved. Please try again.' }, { status: 500 });
     }
+    // Blocked nights and per-date price/min-nights are baked into the listing
+    // page's calendar — refresh it so the change shows at once.
+    revalidateListing(body.listingId);
     return NextResponse.json({ ok: true, rows });
 }
 
@@ -124,5 +128,6 @@ export async function DELETE(request: Request) {
         await logError('[calendar] could not reset calendar dates', error, { path: 'api/listings/calendar', userId: gate.user.id });
         return NextResponse.json({ ok: false, error: 'Those dates couldn’t be reset. Please try again.' }, { status: 500 });
     }
+    revalidateListing(body.listingId);
     return NextResponse.json({ ok: true });
 }
