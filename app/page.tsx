@@ -415,8 +415,10 @@ export default async function HomePage({
                 {/* Property Grid */}
                 {listings && listings.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-                        {listings.map((property) => (
-                            <ListingCard key={property.id} listing={property} />
+                        {listings.map((property, i) => (
+                            // The first row loads eagerly (the grid's LCP after the
+                            // hero); the rest stay lazy.
+                            <ListingCard key={property.id} listing={property} priority={i < 4} />
                         ))}
                     </div>
                 ) : searching ? (

@@ -52,6 +52,15 @@ const nextConfig = {
             'yefoqcabuijcowoqewtc.supabase.co',
             'hviwjxigqivjfhmhpjiy.supabase.co',
         ],
+        // Serve AVIF where the browser takes it, WebP otherwise. AVIF is ~20–30%
+        // smaller than WebP for these cottage photos, so the hero and the grid
+        // cards arrive in fewer bytes. Next falls back to WebP, then the original
+        // JPEG, so nothing breaks on an older browser.
+        formats: ['image/avif', 'image/webp'],
+        // Keep an optimised image at the edge for 31 days once built, rather than
+        // the 60s default — the source photos rarely change, so re-optimising on
+        // every miss was wasted work and a slow first byte for the image.
+        minimumCacheTTL: 60 * 60 * 24 * 31,
     },
 
     // /homes has never been a route. Only /homes/[id] exists, so the bare

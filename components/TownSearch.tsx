@@ -39,13 +39,14 @@ export default function TownSearch({ listings }: { listings: CardListing[] }) {
         <>
             <div className={hasMap ? 'lg:grid lg:grid-cols-[3fr_2fr] lg:gap-8 lg:items-start' : ''}>
                 <div className={'grid grid-cols-1 gap-x-6 gap-y-10 ' + (hasMap ? 'sm:grid-cols-2' : 'sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4')}>
-                    {listings.map((l) => (
+                    {listings.map((l, i) => (
                         <div
                             key={l.id}
                             onMouseEnter={() => setHoveredId(l.id)}
                             onMouseLeave={() => setHoveredId((cur) => (cur === l.id ? null : cur))}
                         >
-                            <ListingCard listing={l} />
+                            {/* The first row loads eagerly (the grid's LCP); the rest lazy. */}
+                            <ListingCard listing={l} priority={i < 4} />
                         </div>
                     ))}
                 </div>

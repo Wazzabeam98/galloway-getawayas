@@ -64,7 +64,7 @@ const BADGE_STYLE: Record<string, { Icon: LucideIcon; color: string }> = {
     'Sauna': { Icon: ThermometerSun, color: 'text-amber-700' },
 };
 
-export default function ListingCard({ listing }: { listing: CardListing }) {
+export default function ListingCard({ listing, priority = false }: { listing: CardListing; priority?: boolean }) {
     const rating = listing.rating_avg ? Number(listing.rating_avg) : null;
     const count = listing.rating_count || 0;
     // At most two, from the amenities the host has already ticked. The rule
@@ -93,6 +93,11 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
                     // a laptop — so the browser asks for a photo the size of
                     // the card rather than whatever was uploaded.
                     sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                    // The first row of cards is the grid's LCP — load those eagerly
+                    // with a priority hint so they don't start out as grey boxes;
+                    // the rest stay lazy (the default). The caller passes priority
+                    // for the first few cards only.
+                    priority={priority}
                     className="object-cover group-hover:scale-105 transition duration-300"
                 />
 
