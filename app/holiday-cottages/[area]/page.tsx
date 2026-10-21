@@ -5,6 +5,8 @@
 export const revalidate = 300;
 
 import type { Metadata } from 'next';
+import fs from 'fs';
+import path from 'path';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
@@ -52,7 +54,7 @@ async function listingsForArea(area: Area): Promise<CardListing[]> {
     const { data } = await orderPublishedListings(
         supabase
             .from('listings')
-            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude, property_type, max_guests, bedrooms, bathrooms, max_pets, display_order')
+            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude, property_type, max_guests, bedrooms, bathrooms, max_pets, display_order, is_luxury')
             .eq('status', 'published'),
     );
 
@@ -90,9 +92,13 @@ export async function generateMetadata({
         || `Self catering holiday cottages and apartments in ${area.name}, Dumfries & Galloway. `
            + 'Book direct with local hosts — no booking fees.';
 
-    const image = listings.length && listings[0].images && listings[0].images.length
-        ? `${SITE_URL}/images/og-default.jpg`
-        : `${SITE_URL}/images/og-default.jpg`;
+    // The town's own photograph when one is on disk (the home page's town
+    // tile — public/images/towns/<slug>.jpg, 1200×800, ours to use), else the
+    // site default. Never a host's listing photo.
+    const townPhotoRel = '/images/towns/' + area.slug + '.jpg';
+    const hasTownPhoto = fs.existsSync(path.join(process.cwd(), 'public', townPhotoRel));
+    const image = hasTownPhoto ? `${SITE_URL}${townPhotoRel}` : `${SITE_URL}/images/og-default.jpg`;
+    const imageSize = hasTownPhoto ? { width: 1200, height: 800 } : { width: 1200, height: 630 };
 
     return {
         title,
@@ -105,7 +111,7 @@ export async function generateMetadata({
             siteName: 'Galloway Getaways',
             title: `${title} | Galloway Getaways`,
             description,
-            images: [{ url: image, width: 1200, height: 630, alt: `Holiday cottages in ${area.name}` }],
+            images: [{ url: image, ...imageSize, alt: `Holiday cottages in ${area.name}` }],
         },
         twitter: {
             card: 'summary_large_image',

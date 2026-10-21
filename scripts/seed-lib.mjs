@@ -372,6 +372,18 @@ export async function signIn(env, email, password) {
 
 // The Guest Terms version in force, read from lib/agreements.ts — the one
 // place it is written — so a wording change cannot leave the seeds behind.
+// The Experience Provider Agreement's current version, read the same way. A
+// real provider accepts it at the end of sign-up (ProviderSignUp records it
+// before Submit, and submit_service_provider refuses without it); a seeded
+// provider is inserted approved and skips that step, so the seed records it
+// itself — otherwise the dashboard asks every seeded provider to agree.
+export function currentExperienceProviderVersion() {
+    const src = fs.readFileSync(path.join(ROOT, 'lib', 'agreements.ts'), 'utf8');
+    const m = src.match(/experience_provider:\s*\{[^}]*?version:\s*'([^']+)'/);
+    if (!m) throw new Error('could not find the Experience Provider Agreement version in lib/agreements.ts');
+    return m[1];
+}
+
 export function currentGuestTermsVersion() {
     const src = fs.readFileSync(path.join(ROOT, 'lib', 'agreements.ts'), 'utf8');
     const m = src.match(/guest:\s*\{[^}]*?version:\s*'([^']+)'/);

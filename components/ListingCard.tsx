@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Star, PawPrint, Bath, ThermometerSun, Check, type LucideIcon } from 'lucide-react';
+import { Star, PawPrint, Bath, ThermometerSun, Check, Gem, type LucideIcon } from 'lucide-react';
 import ListingImage from '@/components/ListingImage';
 import { cardBadges } from '@/lib/listingRules';
 import { publicArea } from '@/lib/places';
@@ -59,6 +59,8 @@ export interface CardListing {
     bedrooms?: number | string | null;
     bathrooms?: number | string | null;
     max_pets?: number | string | null;
+    /** Our Luxury tag — set by an admin, never by the host (Airbnb Luxe's shape). */
+    is_luxury?: boolean | null;
 }
 
 // Which icon and colour draws which badge. The rule and the cap live in
@@ -112,12 +114,24 @@ export default function ListingCard({ listing, priority = false }: { listing: Ca
                     className="object-cover group-hover:scale-105 transition duration-300"
                 />
 
-                {badges.length > 0 && (
+                {(badges.length > 0 || listing.is_luxury === true) && (
                     // Wraps rather than overflowing: two pills and a narrow
                     // phone card is the case that would otherwise push the
                     // second one off the edge of the photo. `right-2` gives it
                     // something to wrap against.
                     <div className="absolute top-2 left-2 right-2 flex flex-wrap gap-1">
+                        {/* Luxury leads, in its own dark pill: it is our mark on
+                            the place, not an amenity the host ticked, so it sits
+                            apart from (and outside the cap of) the ones below. */}
+                        {listing.is_luxury === true && (
+                            <span
+                                className="inline-flex items-center gap-1 rounded-full bg-stone-900/90 px-2 py-1 text-xs font-semibold text-white shadow-md ring-1 ring-black/10 backdrop-blur"
+                                title="Luxury — chosen by Galloway Getaways"
+                            >
+                                <Gem className="w-3.5 h-3.5 text-amber-300" />
+                                Luxury
+                            </span>
+                        )}
                         {badges.map((badge) => {
                             // Each badge draws its own icon and colour (see
                             // BADGE_STYLE). The colour is a 700 for the same

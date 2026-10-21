@@ -75,6 +75,10 @@ const TOWN_PHOTO_ALT: Record<string, string> = {
         'The long three-storey grey stone mill at Gatehouse, rows of white sash windows under '
         + 'a slate roof, seen across the Water of Fleet through overhanging summer trees and '
         + 'reflected in the river',
+    wanlockhead:
+        'Stone cottages and white-harled houses scattered along the floor of a high valley, '
+        + 'beneath a steep heather hillside lit gold and green by low sun, with bare moorland '
+        + 'hills fading into the distance',
     dalbeattie:
         'A gravel path curving away through tall moss-footed conifers in Dalbeattie forest, '
         + 'low sun throwing long shadows across fallen leaves, with a loch showing through the '
@@ -108,14 +112,14 @@ const cachedPublishedListings = unstable_cache(
         const { data, error } = await orderPublishedListings(
             anon
                 .from('listings')
-                .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude, property_type, bedrooms, beds, bathrooms, max_pets, instant_book, check_in_method, display_order')
+                .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude, property_type, bedrooms, beds, bathrooms, max_pets, instant_book, check_in_method, display_order, is_luxury')
                 .eq('status', 'published'),
         );
         // Thrown, so a failed read is never cached as "no listings".
         if (error) throw error;
         return data || [];
     },
-    ['home-published-listings-v1'],
+    ['home-published-listings-v2'],
     { revalidate: 300, tags: ['home', 'listings'] },
 );
 
@@ -328,7 +332,7 @@ export default async function HomePage() {
     const areaLinksNode = areaLinks.length > 0 ? (
         <section className="mt-16 pt-10 border-t border-stone-200">
             <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
-                Holiday cottages by town
+                Holiday Lets by town
             </h2>
             <p className="text-stone-600 text-sm md:text-base mt-1 mb-6">
                 Pick a town and see what we have there.

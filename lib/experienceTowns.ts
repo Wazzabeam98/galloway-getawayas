@@ -36,6 +36,8 @@ export const REGION_FOR_AREA: Record<string, string> = {
     'galloway-forest': 'machars',
     'dumfries': 'nithsdale',
     'moffat': 'annandale',
+    // Upper Nithsdale — the Mennock Pass comes down to the Nith at Sanquhar.
+    'wanlockhead': 'nithsdale',
     'stranraer': 'rhins',
     'portpatrick': 'rhins',
 };

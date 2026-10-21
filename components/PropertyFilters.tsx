@@ -48,23 +48,28 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
     const [accessOpen, setAccessOpen] = useState(false);
 
     // What the listings in view actually have, so a filter that could only
-    // ever return nothing is not offered. Pets, hot tub and step-free access are
-    // always offered — they are the three a guest arrives asking about.
+    // ever return nothing is not offered. Pets, hot tub, sauna and step-free
+    // access are always offered — the ones a guest arrives asking about (sauna
+    // joined hot tub, done exactly like it, 21 Oct 2026).
     const present = useMemo(() => {
         const s = new Set<string>();
         pool.forEach((l) => (l.amenities || []).forEach((a) => s.add(a)));
         return s;
     }, [pool]);
-    const ALWAYS = ['Pets allowed', 'Hot tub', 'Step-free guest entrance'];
+    const ALWAYS = ['Pets allowed', 'Hot tub', 'Sauna', 'Step-free guest entrance'];
     const chips = QUICK_CHIPS.filter((c) => ALWAYS.indexOf(c.amenity) !== -1 || present.has(c.amenity));
     const recommended = RECOMMENDED.filter((r) => ALWAYS.indexOf(r.amenity) !== -1 || present.has(r.amenity)).slice(0, 4);
-    const amenityOptions = FILTER_AMENITIES.filter((a) => a === 'Hot tub' || present.has(a));
+    const amenityOptions = FILTER_AMENITIES.filter((a) => a === 'Hot tub' || a === 'Sauna' || present.has(a));
     // Every type a listing in view actually has — legacy ones included, so an
     // old 'Coastal Stays' listing can still be filtered to.
     const typesPresent = PROPERTY_TYPES.filter((c) => pool.some((l) => l.property_type === c.name));
     const prices = pool.map((l) => Number(l.price_per_night) || 0).filter((n) => n > 0);
     const priceFloor = prices.length ? Math.min(...prices) : 0;
     const priceCeil = prices.length ? Math.max(...prices) : 0;
+
+    // Our Luxury tag is offered only when a place in view carries it — a
+    // filter that could only ever return nothing does not earn a place.
+    const anyLuxury = pool.some((l) => l.is_luxury === true);
 
     const count = pool.filter((l) => matchesFilters(l, draft)).length;
     const appliedCount = activeFilterCount(applied);
@@ -120,6 +125,19 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
                     )}
                 </button>
                 <span className="h-6 w-px flex-none bg-stone-200" aria-hidden="true" />
+                {/* Luxury first, as Airbnb puts Luxe at the front: our tag, not an amenity. */}
+                {(anyLuxury || applied.luxury) && (
+                    <button
+                        type="button"
+                        aria-pressed={applied.luxury}
+                        onClick={() => go({ ...applied, luxury: !applied.luxury })}
+                        className={`flex-none whitespace-nowrap rounded-full border px-4 py-2 text-sm transition ${
+                            applied.luxury ? 'border-stone-900 bg-stone-100 font-semibold text-stone-900' : 'border-stone-300 text-stone-700 hover:border-stone-900'
+                        }`}
+                    >
+                        Luxury
+                    </button>
+                )}
                 {chips.map((c) => {
                     const on = applied.amenities.indexOf(c.amenity) !== -1;
                     return (
@@ -221,6 +239,9 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
                                 <div className="flex flex-wrap gap-3">
                                     <Pill label="Instant Book" on={draft.instantBook} onClick={() => setDraft((d) => ({ ...d, instantBook: !d.instantBook }))} />
                                     <Pill label="Self check-in" on={draft.selfCheckIn} onClick={() => setDraft((d) => ({ ...d, selfCheckIn: !d.selfCheckIn }))} />
+                                    {(anyLuxury || draft.luxury) && (
+                                        <Pill label="Luxury" on={draft.luxury} onClick={() => setDraft((d) => ({ ...d, luxury: !d.luxury }))} />
+                                    )}
                                     <Pill label="Allows pets" icon="Pets allowed" on={draft.amenities.indexOf('Pets allowed') !== -1} onClick={() => toggleIn('amenities', 'Pets allowed')} />
                                 </div>
                             </Section>

@@ -9,6 +9,7 @@ import BusinessSwitcher from '@/components/services/BusinessSwitcher';
 import { BUSINESS_COOKIE, dashboardProviders, pickDashboardProvider, firstProviderPageFor } from '@/lib/providerAccess';
 import { orderNet } from '@/lib/serviceOrders';
 import { londonDayKey } from '@/lib/dayKey';
+import { defaultEarningsPeriod } from '@/lib/earningsPeriod';
 import EarningsDateFilter from '@/components/EarningsDateFilter';
 import MonthlyTrendChart, { type TrendMonth } from '@/components/MonthlyTrendChart';
 import { ArrowLeft } from 'lucide-react';
@@ -66,11 +67,12 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
         ? supplierFromSnapshot({ supplier_vat_number: provider.vat_number, supplier_vat_name: provider.vat_name })
         : null;
 
-    // Range: default to the current calendar year, filtered on SERVICE_DATE (the
-    // day the session runs — the experience analogue of a stay's check-in).
-    const year = new Date().getFullYear();
-    const from = searchParams.from || `${year}-01-01`;
-    const to = searchParams.to || `${year}-12-31`;
+    // Range: default to this year from the month their account was created —
+    // the host's rule (lib/earningsPeriod) — filtered on SERVICE_DATE (the day
+    // the session runs — the experience analogue of a stay's check-in).
+    const period = defaultEarningsPeriod(user.created_at, londonDayKey());
+    const from = searchParams.from || period.from;
+    const to = searchParams.to || period.to;
     const today = londonDayKey();
 
     // Every order for this provider (no 50-row cap — this is the ledger).

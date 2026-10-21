@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { TownNudgeNote } from '@/components/listing-editor/LocationCards';
 import { Accessibility as AccessibilityIcon } from 'lucide-react';
 import { ACCESSIBILITY_AMENITIES } from '@/lib/listingFilters';
 import { formatGBP } from '@/lib/formatMoney';
@@ -897,6 +898,8 @@ export default function AddHome() {
                             <div>
                                 <label className="text-xs text-slate-500 font-semibold uppercase">Town / city</label>
                                 <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full p-3 border rounded-xl mt-1" required />
+                                {/* The post town is not always the nearest town — see lib/townNudge. */}
+                                <TownNudgeNote town={city} postcode={postcode} onUse={setCity} />
                             </div>
                             {/* No Country box: every listing is in the UK. Nothing stored
                                 it, and the listing page states GB itself. */}
