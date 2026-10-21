@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import AutoTextarea from '@/components/AutoTextarea';
 import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import { addressLineLabel } from '@/lib/propertyTypes';
 import { listingLocation } from '@/lib/places';
+import { townNudge } from '@/lib/townNudge';
+import { COVERAGE_TOWNS } from '@/lib/serviceProviders';
 import { ChoiceTiles, bigFieldCls, wizardAreaCls } from '@/components/services/wizardKit';
 
 // The editor's Location section, Airbnb's shape: the address on a raised card
@@ -19,6 +21,44 @@ export function addressSummary(street: string, town: string, postcode: string): 
 
 const inputClass = bigFieldCls;
 const labelClass = 'block text-base font-semibold text-slate-800';
+
+// Is the town they typed the one guests should see? The postcode's coordinates
+// (postcodes.io, keyless — the same source the save route geocodes with)
+// against our main towns: a post town fifteen miles off gets a one-tap
+// suggestion of the nearer one (lib/townNudge). Nothing at all otherwise.
+// Used under the Town box here and in add-a-property.
+export function TownNudgeNote({ town, postcode, onUse }: { town: string; postcode: string; onUse: (town: string) => void }) {
+    const [point, setPoint] = useState<{ lat: number; lng: number } | null>(null);
+    useEffect(() => {
+        const tidy = String(postcode || '').trim().toUpperCase().replace(/\s+/g, '');
+        if (!/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(tidy)) { setPoint(null); return; }
+        let live = true;
+        const timer = setTimeout(() => {
+            fetch('https://api.postcodes.io/postcodes/' + encodeURIComponent(tidy))
+                .then((r) => (r.ok ? r.json() : null))
+                .then((d) => {
+                    const r = d && d.result;
+                    if (live) setPoint(r && typeof r.latitude === 'number' ? { lat: r.latitude, lng: r.longitude } : null);
+                })
+                .catch(() => { if (live) setPoint(null); });
+        }, 400);
+        return () => { live = false; clearTimeout(timer); };
+    }, [postcode]);
+    const nudge = point ? townNudge(town, point.lat, point.lng, COVERAGE_TOWNS) : null;
+    if (!nudge) return null;
+    return (
+        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <p>
+                This postcode is about {Math.round(nudge.suggestMiles)} miles from {nudge.suggest} and {Math.round(nudge.typedMiles)} from {nudge.typed}.
+                Guests choosing {nudge.typed} will expect to be near it.
+            </p>
+            <button type="button" onClick={() => onUse(nudge.suggest)}
+                className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-semibold text-amber-900 hover:border-amber-500">
+                Show guests {nudge.suggest}
+            </button>
+        </div>
+    );
+}
 
 export function AddressCard({ town, street, postcode, propertyType, onSave }: {
     town: string;
@@ -35,6 +75,7 @@ export function AddressCard({ town, street, postcode, propertyType, onSave }: {
 
     const openPanel = () => { setT(town); setS(street); setP(postcode); setOpen(true); };
 
+
     return (
         <>
             <EditorCard title="Address" summary={addressSummary(street, town, postcode) || 'Add the address'} onClick={openPanel} />
@@ -49,6 +90,7 @@ export function AddressCard({ town, street, postcode, propertyType, onSave }: {
                         <div>
                             <label htmlFor="edit-town" className={labelClass}>Town / city</label>
                             <input id="edit-town" type="text" value={t} onChange={(e) => setT(e.target.value)} placeholder="e.g. Kirkcudbright" className={inputClass} />
+                            <TownNudgeNote town={t} postcode={p} onUse={setT} />
                         </div>
                         <div>
                             <label htmlFor="edit-street" className={labelClass}>{line.label} (private)</label>

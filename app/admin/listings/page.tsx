@@ -46,7 +46,7 @@ export default async function AdminListings() {
     // broken key, and is a lie in the one place that must not tell them.
     const { data: listings, error: listingsError } = await admin
         .from('listings')
-        .select('id, title, location, images, status, host_id, created_at, property_type, street_address, postcode, price_per_night, max_guests, bedrooms, beds, bathrooms, amenities, description, check_in_method, weekend_price')
+        .select('id, title, location, images, status, host_id, created_at, property_type, street_address, postcode, price_per_night, max_guests, bedrooms, beds, bathrooms, amenities, description, check_in_method, weekend_price, is_luxury')
         .order('created_at', { ascending: false });
 
     if (listingsError) {
@@ -179,6 +179,7 @@ export default async function AdminListings() {
                         isMine={l.host_id === myId}
                         liveBookings={liveCount[l.id] || 0}
                         removal={removalFor(paidIds.has(l.id))}
+                        luxury={(l as any).is_luxury === true}
                     />
                 ))}
                 {!rows.length && (

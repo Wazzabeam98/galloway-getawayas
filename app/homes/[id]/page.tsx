@@ -54,7 +54,7 @@ import MeetYourHost from '@/components/MeetYourHost';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
 import { hostResponsiveness } from '@/lib/hostResponsiveness';
 import { describePlace } from '@/lib/propertyTypes';
-import { KeyRound, Zap, Car, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck } from 'lucide-react';
+import { KeyRound, Zap, Car, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Gem } from 'lucide-react';
 
 // "Entire flat" / "Private room in a static caravan" — the type words live in
 // lib/propertyTypes.ts, with every other place a type is shown.
@@ -187,7 +187,7 @@ const SITE_URL = 'https://gallowaygetaways.co.uk';
 // the account-deletion migration promises nothing of theirs is left reachable.
 // What /homes/[id] reads. A constant, not inline, so the old-link fallback
 // reads exactly the same columns as the visitor's own query.
-const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, cancellation_custom_days, non_refundable_option, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood, min_nights, max_nights, advance_notice, preparation_time, max_pets, checkout_tasks, checkout_note, guest_safety';
+const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, cancellation_custom_days, non_refundable_option, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood, min_nights, max_nights, advance_notice, preparation_time, max_pets, checkout_tasks, checkout_note, guest_safety, is_luxury';
 
 // Pre-render every published listing at build so each is a static, edge-cached
 // page from the first visit. A listing published after the build is not in this
@@ -269,6 +269,7 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
     const amenities: string[] = home.amenities || [];
     const highlights: string[] = [];
     if (amenities.indexOf('Hot tub') !== -1) highlights.push('hot tub');
+    if (amenities.indexOf('Sauna') !== -1) highlights.push('sauna');
     if (amenities.indexOf('Pets allowed') !== -1) highlights.push('dog friendly');
     if (amenities.indexOf('Wifi') !== -1) highlights.push('wifi');
     const extras = highlights.length ? ` Features ${highlights.join(', ')}.` : '';
@@ -737,6 +738,13 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         </Link>
                     </nav>
                 )}
+                {/* Our Luxury tag (admin-only) — the card's dark pill, above the title. */}
+                {home.is_luxury === true && (
+                    <span className='mb-2 inline-flex items-center gap-1 rounded-full bg-stone-900 px-2.5 py-1 text-xs font-semibold text-white' title='Luxury — chosen by Galloway Getaways'>
+                        <Gem className='h-3.5 w-3.5 text-amber-300' />
+                        Luxury
+                    </span>
+                )}
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (
@@ -863,7 +871,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             {plural(home.max_guests, 'guest')} · {plural(home.bedrooms, 'bedroom')} · {plural(home.beds, 'bed')} · {plural(home.bathrooms, 'bathroom')}
                         </p>
                         {(() => {
-                            // Only for a cottage outside our main towns — see lib/nearestTown.
+                            // Only for a cottage outside our main towns, or named for one but well
+                            // outside it — see lib/nearestTown.
                             const near = nearestTown(home.location, home.approx_latitude, home.approx_longitude);
                             return near ? (
                                 <p className='mt-1 text-sm text-slate-500'>{nearestTownLabel(near)}</p>

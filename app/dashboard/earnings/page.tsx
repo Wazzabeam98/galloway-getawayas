@@ -13,6 +13,7 @@ import { outstandingDebts, outstandingOf, debtAgainstStays, round2 } from '@/lib
 import { readSchedule, payoutTimingText } from '@/lib/payoutTiming';
 import { formatGBP } from '@/lib/formatMoney';
 import { ukDate, londonDayKey } from '@/lib/dayKey';
+import { defaultEarningsPeriod } from '@/lib/earningsPeriod';
 import { hostDebtsForHost, debtFigures, debtStatusLabel, debtTitle } from '@/lib/hostDebtView';
 import HostDebtsPanel, { type DebtCard } from '@/components/dashboard/HostDebtsPanel';
 
@@ -22,9 +23,10 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     const { data: user } = await supabase.auth.getUser();
 
 
-    const currentYear = new Date().getFullYear();
-    const from = searchParams?.from || `${currentYear}-01-01`;
-    const to = searchParams?.to || `${currentYear}-12-31`;
+    // This year, from the month their account was created (lib/earningsPeriod).
+    const period = defaultEarningsPeriod(user.user?.created_at, londonDayKey());
+    const from = searchParams?.from || period.from;
+    const to = searchParams?.to || period.to;
 
     // Only properties they may see money for. A co-host without the earnings
     // permission sees nothing here, even for a listing they otherwise manage.
