@@ -89,7 +89,7 @@ const baseMetadata: Metadata = {
         url: '/images/og-default.jpg',
         width: 1200,
         height: 630,
-        alt: 'Holiday cottages in Dumfries & Galloway',
+        alt: 'Holiday lets in Dumfries & Galloway',
       },
     ],
   },

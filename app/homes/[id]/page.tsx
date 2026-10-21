@@ -652,7 +652,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 ? [{
                       '@type': 'ListItem',
                       position: 2,
-                      name: `Holiday cottages in ${area.name}`,
+                      name: `Holiday lets in ${area.name}`,
                       item: `${SITE_URL}/holiday-cottages/${area.slug}`,
                   }]
                 : []),
@@ -734,7 +734,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             href={`/holiday-cottages/${area.slug}`}
                             className='inline-flex items-center min-h-[44px] py-1.5 hover:text-slate-900 underline underline-offset-4'
                         >
-                            Holiday cottages in {area.name}
+                            Holiday lets in {area.name}
                         </Link>
                     </nav>
                 )}

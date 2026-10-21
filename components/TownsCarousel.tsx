@@ -159,7 +159,7 @@ export default function TownsCarousel({ towns }: { towns: Town[] }) {
                                     <p className="font-bold text-stone-900">{t.name}</p>
                                     <p className="mt-1 text-sm text-stone-600">{t.blurb}</p>
                                     {/* "Stays", Airbnb's word, on the link; the
-                                        area pages keep "Holiday cottages in …" in
+                                        area pages keep "Holiday lets in …" in
                                         their own titles and URLs for search. */}
                                     <Link
                                         href={'/holiday-cottages/' + t.slug}

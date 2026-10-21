@@ -78,10 +78,11 @@ export async function generateMetadata({
     const listings = await listingsForArea(area);
     const publishable = hasCopy(area) && !area.hold && listings.length > 0;
 
-    // Built the way people search: what, then where. "Holiday cottages in
-    // Kirkcudbright" is the phrase; the brand goes on the end by the template
-    // in the root layout.
-    const title = `Holiday cottages in ${area.name}`;
+    // Built the way people search: what, then where. "Holiday lets in
+    // Kirkcudbright" is the phrase (the URL keeps /holiday-cottages/ so links
+    // and rankings hold); the brand goes on the end by the template in the
+    // root layout.
+    const title = `Holiday lets in ${area.name}`;
 
     // The real description is written by hand in config/areas.ts. This
     // fallback exists so the page is never description-less while it is being
@@ -111,7 +112,7 @@ export async function generateMetadata({
             siteName: 'Galloway Getaways',
             title: `${title} | Galloway Getaways`,
             description,
-            images: [{ url: image, ...imageSize, alt: `Holiday cottages in ${area.name}` }],
+            images: [{ url: image, ...imageSize, alt: `Holiday lets in ${area.name}` }],
         },
         twitter: {
             card: 'summary_large_image',
@@ -145,7 +146,7 @@ function Placeholder({ what }: { what: string }) {
 }
 
 // The page's one h1, and it is the search phrase rather than the brand —
-// "Holiday cottages in Kirkcudbright". Over the town photo it is set the way a
+// "Holiday lets in Kirkcudbright". Over the town photo it is set the way a
 // destination page sets it, the town name large in white; with no photo it is
 // the plain heading it always was. Rendered in exactly one of the two places.
 function AreaHeading({ name, onPhoto }: { name: string; onPhoto: boolean }) {
@@ -153,11 +154,11 @@ function AreaHeading({ name, onPhoto }: { name: string; onPhoto: boolean }) {
         <h1 className={onPhoto ? 'text-white drop-shadow-sm' : 'text-3xl md:text-5xl font-extrabold tracking-tight text-stone-900'}>
             {onPhoto ? (
                 <>
-                    <span className="block text-xs font-semibold uppercase tracking-wider text-white/85 md:text-base">Holiday cottages in </span>
+                    <span className="block text-xs font-semibold uppercase tracking-wider text-white/85 md:text-base">Holiday lets in </span>
                     <span className="block text-3xl font-extrabold tracking-tight md:text-6xl">{name}</span>
                 </>
             ) : (
-                <>Holiday cottages in {name}</>
+                <>Holiday lets in {name}</>
             )}
         </h1>
     );
@@ -178,7 +179,7 @@ export default async function AreaPage({ params }: { params: { area: string } })
     const itemListSchema = {
         '@context': 'https://schema.org',
         '@type': 'ItemList',
-        name: `Holiday cottages in ${area.name}`,
+        name: `Holiday lets in ${area.name}`,
         numberOfItems: listings.length,
         itemListElement: listings.map((l, i) => ({
             '@type': 'ListItem',
@@ -196,7 +197,7 @@ export default async function AreaPage({ params }: { params: { area: string } })
             {
                 '@type': 'ListItem',
                 position: 2,
-                name: `Holiday cottages in ${area.name}`,
+                name: `Holiday lets in ${area.name}`,
                 item: `${SITE_URL}/holiday-cottages/${area.slug}`,
             },
         ],
@@ -275,7 +276,7 @@ export default async function AreaPage({ params }: { params: { area: string } })
                         Home
                     </Link>
                     <span className="mx-2" aria-hidden="true">/</span>
-                    <span className="text-stone-900 font-medium">Holiday cottages in {area.name}</span>
+                    <span className="text-stone-900 font-medium">Holiday lets in {area.name}</span>
                 </nav>
 
                 {/* The one h1 on this page, and it is the search term rather
@@ -403,7 +404,7 @@ export default async function AreaPage({ params }: { params: { area: string } })
                                         href={`/holiday-cottages/${other.slug}`}
                                         className="inline-block rounded-full border border-stone-300 hover:border-stone-900 px-4 py-2 text-sm font-semibold text-stone-800 transition"
                                     >
-                                        Holiday cottages in {other.name}
+                                        Holiday lets in {other.name}
                                     </Link>
                                 </li>
                             ))}
