@@ -166,3 +166,29 @@ test('an absurdly long value is refused rather than stored', async () => {
     assert.equal(res.status, 400);
     assert.equal(writes.length, 0);
 });
+
+test('a valid release time is stored and echoed; a bad one becomes null', async () => {
+    const { route, writes } = load({});
+    const ok: any = await route.POST(post({ listing: 'l1', code: '1860', release_hours: 0, release_at_time: '08:30' }));
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.release_at_time, '08:30:00', 'HH:MM is stored as HH:MM:SS');
+    assert.equal(ok.body.release_hours, 0, 'at check-in time (0) is now allowed');
+    assert.equal(writes[0].release_at_time, '08:30:00');
+    assert.equal(writes[0].release_hours, 0);
+
+    const { route: route2, writes: writes2 } = load({});
+    const bad: any = await route2.POST(post({ listing: 'l1', code: '1860', release_hours: 48, release_at_time: 'nope' }));
+    assert.equal(bad.status, 200);
+    assert.equal(bad.body.release_at_time, null, 'a bad time means "use the hours"');
+    assert.equal(writes2[0].release_at_time, null);
+    assert.equal(writes2[0].release_hours, 48);
+});
+
+test('GET returns the stored release time alongside the code', async () => {
+    const stored = { code: sealSecret('2417', { table: 'listing_access_codes', id: 'l1' }), updated_at: null, release_hours: 0, release_at_time: '08:30:00' };
+    const { route } = load({ user: 'host-7', stored });
+    const res: any = await route.GET(get());
+    assert.equal(res.status, 200);
+    assert.equal(res.body.release_hours, 0);
+    assert.equal(res.body.release_at_time, '08:30:00');
+});

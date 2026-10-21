@@ -4,7 +4,8 @@ import { logError } from '@/lib/logError';
 import { revealSecret } from '@/lib/listingSecrets';
 import { DOOR_TOKEN, tokeniseSecrets } from '@/lib/messageSecrets';
 import { londonDayKey, shiftDayKey, ukDate } from '@/lib/dayKey';
-import { arrivalSecretsWindowOpen, normaliseReleaseHours, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
+import { arrivalSecretsWindowOpen, normaliseReleaseSetting, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
+import type { CodeReleaseSetting } from '@/lib/bookingWindows';
 import { displayName } from '@/lib/utils';
 import {
     timingFor,
@@ -406,21 +407,22 @@ export async function GET(request: Request) {
         // they are only ever read here, with the service role. Only fetched
         // when a live template actually asks for one.
         const codeByListing: Record<string, string> = {};
-        // How long before check-in each listing releases its code — the host's
-        // own setting, read beside the code. The clamp below holds a
-        // code-bearing message until this window opens, so the message and the
-        // guest's card reveal the code at the same moment.
-        const releaseByListing: Record<string, number> = {};
+        // When each listing releases its code — the host's own setting, read
+        // beside the code (hours before check-in, or an absolute time on the
+        // check-in day). The clamp below holds a code-bearing message until this
+        // window opens, so the message and the guest's card reveal the code at
+        // the same moment.
+        const releaseByListing: Record<string, CodeReleaseSetting> = {};
         if (live.some((t) => usesLockboxCode(t.body))) {
             const { data: codes } = await admin
                 .from('listing_access_codes')
-                .select('listing_id, code, release_hours')
+                .select('listing_id, code, release_hours, release_at_time')
                 .in('listing_id', listingIds);
 
             // Stored sealed: opened here, at the moment of sending. One that
             // won't open reads as no code, so the message is held, not sent blank.
             for (const c of codes || []) {
-                releaseByListing[c.listing_id] = normaliseReleaseHours(c.release_hours);
+                releaseByListing[c.listing_id] = normaliseReleaseSetting(c.release_hours, c.release_at_time);
                 const v = await revealSecret(c.code, { table: 'listing_access_codes', id: c.listing_id }, 'cron/scheduled-messages');
                 if (v) codeByListing[c.listing_id] = v;
             }
@@ -463,10 +465,10 @@ export async function GET(request: Request) {
         // the listing code. Used for both the hold-back check and the fill.
         const codeFor = (b: BookingLike) => codeByBooking[b.id] || codeByListing[b.listing_id] || null;
 
-        // The listing's release window (hours before check-in), defaulting the
-        // same way the arrival page and card do when a listing has no row.
-        const releaseFor = (b: BookingLike) =>
-            releaseByListing[b.listing_id] ?? DEFAULT_CODE_RELEASE_HOURS;
+        // The listing's release setting, defaulting the same way the arrival
+        // page and card do when a listing has no row.
+        const releaseFor = (b: BookingLike): CodeReleaseSetting =>
+            releaseByListing[b.listing_id] ?? normaliseReleaseSetting(DEFAULT_CODE_RELEASE_HOURS, null);
 
         // Deliver one template to one booking, claiming under `claimKey`. Pulled
         // out so a preset (claimed by its template_type) and a host's own custom

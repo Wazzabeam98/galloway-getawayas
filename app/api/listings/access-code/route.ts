@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { logError } from '@/lib/logError';
 import { revealSecret, sealSecret } from '@/lib/listingSecrets';
-import { normaliseReleaseHours, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
+import { normaliseReleaseHours, normaliseReleaseAtTime, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
 
         const { data } = await adminClient()
             .from('listing_access_codes')
-            .select('code, updated_at, release_hours')
+            .select('code, updated_at, release_hours, release_at_time')
             .eq('listing_id', listingId)
             .maybeSingle();
 
@@ -58,8 +58,10 @@ export async function GET(request: Request) {
             code: code || '',
             updated_at: (data && data.updated_at) || null,
             // The host's own release window; a listing with no code yet answers
-            // with the default so the control has something to show.
+            // with the default so the control has something to show. An absolute
+            // reveal time comes back when set; null means "use the hours".
             release_hours: data ? normaliseReleaseHours(data.release_hours) : DEFAULT_CODE_RELEASE_HOURS,
+            release_at_time: data ? normaliseReleaseAtTime(data.release_at_time) : null,
         });
     } catch (err: any) {
         await logError('[listings/access-code GET] ' + ((err && err.message) || 'failed'), err, {
@@ -74,9 +76,12 @@ export async function POST(request: Request) {
         const body = await request.json().catch(function () { return {}; });
         const listingId: string = (body && body.listing) || '';
         const code: string = String((body && body.code) || '').trim();
-        // The release window is the host's choice; the SAME rule the browser
-        // applies runs here too, so a value the UI would not offer can never
-        // reach the row by another route. Anything off the list becomes 24.
+        // The release window is the host's choice; the SAME rules the browser
+        // applies run here too, so a value the UI would not offer can never
+        // reach the row by another route. An out-of-range hours value becomes
+        // the default; a bad time becomes null (meaning "use the hours"). When a
+        // valid absolute time is given it wins and the hours are left unused.
+        const releaseAtTime = normaliseReleaseAtTime(body && body.release_at_time);
         const releaseHours = normaliseReleaseHours(body && body.release_hours);
 
         const check = await permitted(listingId);
@@ -111,7 +116,11 @@ export async function POST(request: Request) {
                     // shows ciphertext, never the code.
                     code: sealSecret(code, { table: 'listing_access_codes', id: listingId }),
                     // When the code is handed over — the host's security to set.
+                    // Either a number of hours before check-in, or an absolute
+                    // time on the check-in day (release_at_time) that overrides
+                    // it. Writing both keeps the row self-describing.
                     release_hours: releaseHours,
+                    release_at_time: releaseAtTime,
                     updated_at: new Date().toISOString(),
                     // A door code is a credential. Being able to say who set
                     // it, and when, is part of being able to answer for it.
@@ -127,7 +136,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Could not save the code' }, { status: 500 });
         }
 
-        return NextResponse.json({ ok: true, code: code, release_hours: releaseHours });
+        return NextResponse.json({ ok: true, code: code, release_hours: releaseHours, release_at_time: releaseAtTime });
     } catch (err: any) {
         await logError('[listings/access-code POST] ' + ((err && err.message) || 'failed'), err, {
             path: 'listings/access-code',

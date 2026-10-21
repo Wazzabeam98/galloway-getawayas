@@ -14,7 +14,8 @@
 // Same word, two windows, on purpose. Keep them apart.
 
 import { londonDayKey, daysBetweenKeys } from './dayKey';
-import { londonInstant } from './scheduledMessages';
+import { londonInstant, timingFor, usesLockboxCode } from './scheduledMessages';
+import type { Template, BookingLike } from './scheduledMessages';
 
 // Upcoming until checkout: confirmed and not yet ended. Compared on the London
 // CALENDAR day, not on the instant — the guest is on the stay for the whole of
@@ -115,7 +116,14 @@ export function stayCountdown(
 // code over at different moments.
 export const DEFAULT_CODE_RELEASE_HOURS = 24;
 
-// What the host can pick from. Hours throughout; the label is what they read.
+// The database check allows up to 336 hours (two weeks); the floor is now 0,
+// which means "at check-in time" — the code shows the moment the guest can get
+// in, not before. Kept in step with the migration's constraint.
+export const MAX_CODE_RELEASE_HOURS = 336;
+
+// What the host can pick from as a one-tap preset. Hours throughout; the label
+// is what they read. "At check-in time" (0) and a fully custom time are offered
+// alongside these in the editor, but these five are the standard spread.
 // (Airbnb reveals check-in instructions at a fixed 48 hours and does not let
 // the host move it — see the PR notes. We let the host decide and default
 // tighter, at 24, because a stranger's door code is theirs to time.)
@@ -127,25 +135,107 @@ export const CODE_RELEASE_CHOICES: { hours: number; label: string }[] = [
     { hours: 168, label: '1 week before check-in' },
 ];
 
-// The one rule for a release window, used by the browser AND the server route
-// that saves it, so a value the UI would reject can never reach the database by
-// another path. Anything not on the list falls back to the default rather than
-// being stored as a surprise.
+// When the code is handed over, as a single value the gate reads. One of two
+// shapes, never both:
+//   releaseAtTime null  -> releaseHours before the check-in instant (0 = at it)
+//   releaseAtTime 'HH:MM:SS' -> that clock time on the check-in DAY, and
+//                               releaseHours is then ignored.
+// This is what every reveal surface passes to arrivalSecretsWindowOpen, so the
+// card, the message thread and the scheduled sender can never read the setting
+// differently.
+export interface CodeReleaseSetting {
+    releaseHours: number;
+    releaseAtTime: string | null;
+}
+
+// The one rule for the hours-before value, used by the browser AND the server
+// route that saves it, so a value the UI would reject can never reach the
+// database by another path. Now any whole number in [0, 336] — 0 is "at
+// check-in time", and the host may type a custom number of hours, not only a
+// preset. Anything non-finite or out of range falls back to the default rather
+// than being stored as a surprise.
 export function normaliseReleaseHours(value: unknown): number {
+    // Absent is the default, not zero — Number(null) and Number('') are both 0,
+    // which would silently turn a missing setting into "at check-in time".
+    if (value === null || value === undefined || value === '') return DEFAULT_CODE_RELEASE_HOURS;
     const n = Math.round(Number(value));
     if (!Number.isFinite(n)) return DEFAULT_CODE_RELEASE_HOURS;
-    return CODE_RELEASE_CHOICES.some((c) => c.hours === n) ? n : DEFAULT_CODE_RELEASE_HOURS;
+    if (n < 0 || n > MAX_CODE_RELEASE_HOURS) return DEFAULT_CODE_RELEASE_HOURS;
+    return n;
+}
+
+// 'HH:MM' or 'HH:MM:SS' -> 'HH:MM:SS', or null when absent or not a real time.
+// The same rule the browser applies and the save route re-applies, so a bad
+// value never reaches the row and a stored null always means "use the hours".
+export function normaliseReleaseAtTime(value: unknown): string | null {
+    if (value === null || value === undefined || value === '') return null;
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(value).trim());
+    if (!m) return null;
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+    return String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0') + ':00';
+}
+
+// Build the setting from the two stored columns, applying both rules. When a
+// valid release_at_time is present it wins and the hours are left at the
+// default (unused), so a caller can never accidentally read a stale hours value
+// alongside an absolute time.
+export function normaliseReleaseSetting(hours: unknown, atTime: unknown): CodeReleaseSetting {
+    const releaseAtTime = normaliseReleaseAtTime(atTime);
+    return { releaseHours: normaliseReleaseHours(hours), releaseAtTime };
+}
+
+// Accept either a bare hours number (the old call shape, still used by tests and
+// a couple of call sites) or a full setting, and return a normalised setting.
+function asReleaseSetting(release: number | CodeReleaseSetting): CodeReleaseSetting {
+    if (typeof release === 'number') return { releaseHours: normaliseReleaseHours(release), releaseAtTime: null };
+    return normaliseReleaseSetting(release.releaseHours, release.releaseAtTime);
 }
 
 // The window as a guest-facing duration — "24 hours", "2 days", "a week" — for
 // copy like "shows here {label} before you arrive". No "before check-in" here;
-// the sentence that uses it supplies that.
+// the sentence that uses it supplies that. Only meaningful for a positive
+// hours-before window; 0 and an absolute time are handled by
+// codeRevealWhenPhrase.
 export function releaseHoursLabel(hours: number): string {
     const h = normaliseReleaseHours(hours);
     if (h % 24 !== 0 || h < 24) return h + ' hours';
     const days = h / 24;
     if (days === 7) return 'a week';
     return days === 1 ? '24 hours' : days + ' days';
+}
+
+// 'HH:MM:SS' -> a plain 12-hour clock a guest reads: '8am', '8.30am', 'noon',
+// 'midnight'. Mirrors lib/utils formatTime, inlined so this module stays free
+// of cross-lib imports (it is loaded by tests that resolve no path aliases).
+function clockLabel(time: string): string {
+    const parts = String(time).split(':');
+    const hour = Number(parts[0]);
+    const minute = Number(parts[1] || 0);
+    if (isNaN(hour) || isNaN(minute)) return '';
+    if (hour === 0 && minute === 0) return 'midnight';
+    if (hour === 12 && minute === 0) return 'noon';
+    const suffix = hour < 12 ? 'am' : 'pm';
+    let display = hour % 12;
+    if (display === 0) display = 12;
+    return minute === 0 ? display + suffix : display + '.' + String(minute).padStart(2, '0') + suffix;
+}
+
+// The trailing clause for "Your door code shows here ___." — one sentence that
+// reads right for all three shapes the host can set, so the arrival screen and
+// the trip card describe the reveal the same way the gate enforces it:
+//   hours before -> "24 hours before you arrive"
+//   at check-in  -> "when you check in"
+//   at a time    -> "from 8am on the day you arrive"
+export function codeRevealWhenPhrase(release: number | CodeReleaseSetting): string {
+    const setting = asReleaseSetting(release);
+    if (setting.releaseAtTime) {
+        const label = clockLabel(setting.releaseAtTime);
+        return label ? 'from ' + label + ' on the day you arrive' : 'on the day you arrive';
+    }
+    if (setting.releaseHours === 0) return 'when you check in';
+    return releaseHoursLabel(setting.releaseHours) + ' before you arrive';
 }
 
 // 'HH:MM:SS' -> the hour, defaulting to a 3pm check-in the way the rest of the
@@ -170,12 +260,78 @@ function checkInHour(time: string | null | undefined): number {
 export function arrivalSecretsWindowOpen(
     b: { check_in: string; check_out: string },
     now: Date,
-    releaseHours: number = DEFAULT_CODE_RELEASE_HOURS,
+    release: number | CodeReleaseSetting = DEFAULT_CODE_RELEASE_HOURS,
     checkInTime?: string | null,
 ): boolean {
     const { phase } = stayCountdown(b, now);
     if (phase === 'over') return false;
-    const openFrom = londonInstant(String(b.check_in).slice(0, 10), checkInHour(checkInTime)).getTime()
-        - normaliseReleaseHours(releaseHours) * 3_600_000;
+    const setting = asReleaseSetting(release);
+    const checkInKey = String(b.check_in).slice(0, 10);
+
+    let openFrom: number;
+    if (setting.releaseAtTime) {
+        // An absolute clock time on the check-in day, whatever the check-in
+        // time is. The host chose this instant outright.
+        const parts = setting.releaseAtTime.split(':');
+        openFrom = londonInstant(checkInKey, Number(parts[0]), Number(parts[1])).getTime();
+    } else {
+        // `releaseHours` before the check-in instant (0 = exactly at it).
+        openFrom = londonInstant(checkInKey, checkInHour(checkInTime)).getTime()
+            - setting.releaseHours * 3_600_000;
+    }
     return now.getTime() >= openFrom;
+}
+
+// Would a scheduled message carrying {lockbox_code} be held back because it is
+// timed to send BEFORE the code is released? Returns the listings (by the title
+// passed in) for which it would — empty when the message sends inside the
+// window everywhere it applies. The editor warns from this; it reuses the exact
+// gate and timing the cron sender uses, against a synthetic stay, so the
+// warning and the actual hold can never disagree.
+//
+// A booking-anchored message is judged against a representative advance
+// acceptance (a month before the stay), which is the normal case and the one
+// where holding bites; a last-minute acceptance inside the window would not be
+// held, but the hold is harmless either way (the message simply sends the
+// moment the code is live), so erring towards the heads-up is right.
+export function templateCodeHeldFor(
+    template: Pick<Template, 'anchor' | 'days_offset' | 'send_hour' | 'minutes_after' | 'hours_after' | 'hours_before' | 'body'>,
+    listings: { title?: string | null; release_hours?: number | null; release_at_time?: string | null; check_in_time?: string | null; check_out_time?: string | null }[],
+): string[] {
+    // A fixed future stay, far from today, so "now" never falls inside it.
+    const CHECK_IN = '2099-06-15';
+    const synthetic: BookingLike = {
+        id: 'synthetic', host_id: '', guest_id: '', listing_id: '',
+        check_in: CHECK_IN, check_out: '2099-06-18', status: 'confirmed',
+        // A month before check-in: a booking-anchored message then lands well
+        // before any release window.
+        confirmed_at: '2099-05-15T09:00:00.000Z',
+    };
+    const tpl: Template = {
+        user_id: '', template_type: '', enabled: true, listing_ids: null,
+        anchor: template.anchor || 'none',
+        days_offset: template.days_offset || 0,
+        send_hour: typeof template.send_hour === 'number' ? template.send_hour : 9,
+        minutes_after: template.minutes_after || 0,
+        hours_after: template.hours_after || 0,
+        hours_before: template.hours_before || 0,
+        body: template.body || '',
+    };
+
+    // A template that does not ask for the code can never be held for the code.
+    if (!usesLockboxCode(tpl.body)) return [];
+
+    const held: string[] = [];
+    for (const l of listings) {
+        const timing = timingFor(tpl, synthetic, { check_in_time: l.check_in_time, check_out_time: l.check_out_time });
+        if (!timing) continue;
+        const open = arrivalSecretsWindowOpen(
+            synthetic,
+            timing.dueAt,
+            normaliseReleaseSetting(l.release_hours ?? DEFAULT_CODE_RELEASE_HOURS, l.release_at_time ?? null),
+            l.check_in_time,
+        );
+        if (!open) held.push(l.title || 'a property');
+    }
+    return held;
 }

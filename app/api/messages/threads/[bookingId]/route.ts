@@ -8,7 +8,8 @@ import { firstName, getImageUrl, formatTime, hostByline } from '@/lib/utils';
 import { groupLabel, cancellationWords } from '@/lib/bookingDisplay';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukDate, ukWeekday, daysBetweenKeys } from '@/lib/dayKey';
-import { stayCountdown, arrivalSecretsWindowOpen, normaliseReleaseHours, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
+import { stayCountdown, arrivalSecretsWindowOpen, normaliseReleaseSetting, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
+import type { CodeReleaseSetting } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { rateFor, netOfFee } from '@/lib/fees';
 import { formatGBP } from '@/lib/formatMoney';
@@ -190,14 +191,16 @@ export async function GET(
     // Read without the code — release_hours sits on the code's row — so the
     // window is judged before any secret is fetched, and only when a guest
     // might qualify (a host never needs it).
-    let releaseHours = DEFAULT_CODE_RELEASE_HOURS;
+    let releaseSetting: CodeReleaseSetting = normaliseReleaseSetting(DEFAULT_CODE_RELEASE_HOURS, null);
     if (isGuest && bookingReleasesPrivateData(booking)) {
         const { data: releaseRow } = await admin
-            .from('listing_access_codes').select('release_hours').eq('listing_id', booking.listing_id).maybeSingle();
-        releaseHours = releaseRow ? normaliseReleaseHours((releaseRow as any).release_hours) : DEFAULT_CODE_RELEASE_HOURS;
+            .from('listing_access_codes').select('release_hours, release_at_time').eq('listing_id', booking.listing_id).maybeSingle();
+        releaseSetting = releaseRow
+            ? normaliseReleaseSetting((releaseRow as any).release_hours, (releaseRow as any).release_at_time)
+            : normaliseReleaseSetting(DEFAULT_CODE_RELEASE_HOURS, null);
     }
     const guestSecrets = isGuest && bookingReleasesPrivateData(booking)
-        && arrivalSecretsWindowOpen({ check_in: booking.check_in, check_out: booking.check_out }, new Date(), releaseHours, listing && listing.check_in_time);
+        && arrivalSecretsWindowOpen({ check_in: booking.check_in, check_out: booking.check_out }, new Date(), releaseSetting, listing && listing.check_in_time);
     let arrival: { doorCode: string | null; wifiName: string | null; wifiPassword: string | null } | null = null;
     if (hostSecrets || guestSecrets) {
         const [{ data: arr }, { data: code }, { data: override }] = await Promise.all([
