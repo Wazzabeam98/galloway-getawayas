@@ -8,6 +8,7 @@ import { getImageUrl } from '@/lib/utils';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
 import { stepHeadings } from '@/lib/experienceSteps';
 import { slotAsksWhereFork, slotDurationPerItem, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS, REVIEW_WITHIN_HOURS } from '@/lib/serviceProviders';
+import { experienceCustomDaysProblem, experienceCustomDaysOf, experienceCustomWords, EXPERIENCE_CUSTOM_MIN_DAYS, EXPERIENCE_CUSTOM_MAX_DAYS } from '@/lib/experienceCancellation';
 import AutoTextarea from '@/components/AutoTextarea';
 import { cleanAmountInput, amountForBox } from '@/lib/amountInput';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
@@ -67,6 +68,9 @@ export interface EditorProvider {
     what_to_expect: string; itinerary: Array<{ title?: string | null; detail?: string | null }>;
     min_age: number | null; activity_level: string; what_to_bring: string;
     accessibility: string; parking: string; no_refund: boolean;
+    // Custom cancellation (guest_details.cancellation_custom): the window is the
+    // provider's own number of days, read back as Custom, not the nearest preset.
+    cancellation_custom?: boolean;
     amenities: string[];
     dietary_options: string[];
     areas: string[];
@@ -221,20 +225,52 @@ function WhatToBringCard({ whatToBring, onSave }: { whatToBring: string; onSave:
     );
 }
 
-function CancellationCard({ hours, noRefund, onSave }: { hours: number; noRefund: boolean; onSave: (draft: { hours: number; noRefund: boolean }) => unknown }) {
-    const c = useCardSheet({ hours, noRefund }, onSave);
-    const current = experienceCancellationOption(hours, noRefund);
-    const draftKey = experienceCancellationOption(c.draft.hours, c.draft.noRefund).key;
+// The holiday-let's CancellationPolicyCard (components/listing-editor/
+// BookingCards), built the same way for an experience: Custom first with its
+// number input inside the selected tile and the policy in words beneath it,
+// then the window presets and No refund. Custom's days are validated by the one
+// shared rule (experienceCustomDaysProblem), which the save route runs too.
+function CancellationCard({ hours, noRefund, custom, onSave }: { hours: number; noRefund: boolean; custom: boolean; onSave: (draft: { hours: number; noRefund: boolean; custom: boolean }) => unknown }) {
+    const [open, setOpen] = useState(false);
+    const [key, setKey] = useState(experienceCancellationOption(hours, noRefund, custom).key);
+    // Held as a string so the field can be cleared while typing, as on a holiday let.
+    const [days, setDays] = useState(String(experienceCustomDaysOf(custom ? hours : 0)));
+    const [busy, setBusy] = useState(false);
+    const daysProblem = key === 'custom' ? experienceCustomDaysProblem(days) : null;
+
+    const current = experienceCancellationOption(hours, noRefund, custom);
+    const summary = current.key === 'custom'
+        ? 'Custom · no refund within ' + experienceCustomDaysOf(hours) + ' day' + (experienceCustomDaysOf(hours) === 1 ? '' : 's') + ' of the experience'
+        : current.label;
+
+    const start = () => {
+        setKey(experienceCancellationOption(hours, noRefund, custom).key);
+        setDays(String(experienceCustomDaysOf(custom ? hours : 0)));
+        setOpen(true);
+    };
+    const save = async () => {
+        if (daysProblem || busy) return;
+        const o = EXPERIENCE_CANCELLATION_OPTIONS.find((x) => x.key === key)!;
+        const draft = o.custom
+            ? { hours: Number(days) * 24, noRefund: false, custom: true }
+            : { hours: o.hours, noRefund: !!o.noRefund, custom: false };
+        setBusy(true);
+        const ok = await saved(onSave(draft));
+        setBusy(false);
+        if (ok) setOpen(false);
+    };
+
     return (
         <>
-            <EditorCard title="Cancellation policy" summary={current.label} onClick={c.start} />
-            {c.open && (
-                <EditorPanel title="What’s your cancellation policy?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+            <EditorCard title="Cancellation policy" summary={summary} onClick={start} />
+            {open && (
+                <EditorPanel title="What’s your cancellation policy?" onClose={() => setOpen(false)}
+                    footer={<SheetFooter busy={busy} onCancel={() => setOpen(false)} onSave={save} disabled={!!daysProblem} />}>
                     <div className="space-y-3">
                         {EXPERIENCE_CANCELLATION_OPTIONS.map((o) => {
-                            const on = draftKey === o.key;
+                            const on = key === o.key;
                             return (
-                                <button key={o.key} type="button" onClick={() => c.setDraft({ hours: o.hours, noRefund: !!o.noRefund })}
+                                <button key={o.key} type="button" onClick={() => setKey(o.key)}
                                     role="radio" aria-checked={on}
                                     className={`w-full rounded-2xl border-2 p-5 text-left transition ${on ? 'border-emerald-600 bg-emerald-50/60 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}>
                                     <div className="flex items-center justify-between">
@@ -242,6 +278,29 @@ function CancellationCard({ hours, noRefund, onSave }: { hours: number; noRefund
                                         {on && <Check className="h-4 w-4 text-emerald-700" />}
                                     </div>
                                     <p className="mt-1 text-sm text-slate-500">{o.blurb}</p>
+                                    {o.custom && on && (
+                                        // Inside the selected tile, as on a holiday let; a click
+                                        // here must not bubble up and re-select the tile.
+                                        <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                                            <label className="block text-sm font-medium text-slate-700" htmlFor="custom-cancel-days">
+                                                Days before the experience
+                                            </label>
+                                            <input
+                                                id="custom-cancel-days"
+                                                type="number"
+                                                inputMode="numeric"
+                                                min={EXPERIENCE_CUSTOM_MIN_DAYS}
+                                                max={EXPERIENCE_CUSTOM_MAX_DAYS}
+                                                step={1}
+                                                value={days}
+                                                onChange={(e) => setDays(e.target.value)}
+                                                className={`mt-1 w-28 rounded-xl border-2 px-3 py-2 text-base text-slate-900 ${daysProblem ? 'border-red-400' : 'border-slate-200'}`}
+                                            />
+                                            <p className={`mt-2 text-sm ${daysProblem ? 'text-red-600' : 'text-slate-600'}`}>
+                                                {daysProblem || experienceCustomWords(Number(days))}
+                                            </p>
+                                        </div>
+                                    )}
                                 </button>
                             );
                         })}
@@ -662,6 +721,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [dietaryNote, setDietaryNote] = useState(p.dietary_note);
     const [cancelHours, setCancelHours] = useState(Number(p.cancellation_window_hours ?? 48));
     const [noRefund, setNoRefund] = useState(p.no_refund);
+    const [cancelCustom, setCancelCustom] = useState(p.cancellation_custom === true);
 
     const [hours, setHours] = useState(() => DAY_NAMES.map((_, d) => {
         const row = p.availability.find((a) => a.day_of_week === d);
@@ -1083,8 +1143,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     ))}
 
                     {sec('cancellation', (
-                        <CancellationCard hours={cancelHours} noRefund={noRefund}
-                            onSave={(d) => runThen('cancellation', { cancellation_window_hours: d.hours, no_refund: !!d.noRefund }, () => { setCancelHours(d.hours); setNoRefund(d.noRefund); })} />
+                        <CancellationCard hours={cancelHours} noRefund={noRefund} custom={cancelCustom}
+                            onSave={(d) => runThen('cancellation', { cancellation_window_hours: d.hours, no_refund: !!d.noRefund, custom: d.custom, custom_days: d.custom ? d.hours / 24 : null }, () => { setCancelHours(d.hours); setNoRefund(d.noRefund); setCancelCustom(d.custom); })} />
                     ))}
 
                     {sec('host', (<>

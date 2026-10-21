@@ -73,14 +73,12 @@ export default async function ProviderReservationsPage() {
     const switchable = (list as any[]).map((r: any) => ({ id: r.id, name: r.business_name || 'Your business' }));
     const provider: any = pickDashboardProvider(list, access, cookies().get(BUSINESS_COOKIE)?.value);
     const mine = access[provider.id];
-    if (provider.status !== 'approved' && mine.isOwner) {
-        // A guest experience finishes setup and submits from the listing editor
-        // now (the wizard hands them there), so a not-yet-approved guest lands in
-        // the editor rather than being sent back through the wizard. A host trade
-        // still finishes in the wizard.
-        redirect(provider.audience === 'guest'
-            ? '/services/dashboard/listing'
-            : `/services/join?trade=${provider.trade}`);
+    // A trade that is not approved yet still finishes in the wizard. A guest
+    // experience opens Reservations at any stage, as a host with a listing in
+    // review does (Liam, 21 Oct 2026) — empty until guests can book; the review
+    // status itself lives at the top of its listing editor.
+    if (provider.status !== 'approved' && mine.isOwner && provider.audience !== 'guest') {
+        redirect(`/services/join?trade=${provider.trade}`);
     }
 
     const { reservations, past, summary } = await loadProviderReservations(admin, provider);
@@ -189,6 +187,29 @@ export default async function ProviderReservationsPage() {
                 agreed. Asks; never blocks. */}
             {/* Co-host invitations waiting on them, as on the host dashboard. */}
             <CohostInvites className="mb-6" />
+
+            {/* Not live yet: where the listing stands, at the top of the home a
+                provider lands on, linking to the listing that shows the detail
+                (the "In review" / "Action required" banner there). */}
+            {!isTrade && provider.status !== 'approved' && (
+                <div className={`mb-6 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 ${provider.status === 'declined' ? 'border-rose-300 bg-rose-50' : provider.status === 'pending_review' ? 'border-amber-300 bg-amber-50' : 'border-slate-300 bg-white'}`}>
+                    <div>
+                        <h2 className="font-semibold text-slate-900">
+                            {provider.status === 'pending_review' ? 'Your listing is in review' : provider.status === 'declined' ? 'Action required on your listing' : 'Your listing isn’t live yet'}
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-700">
+                            {provider.status === 'pending_review'
+                                ? 'Guests can book once we’ve approved it. Your reservations will appear here.'
+                                : provider.status === 'declined'
+                                    ? 'We couldn’t approve it yet — see what to change, then send it back to us.'
+                                    : 'Finish it and send it to us for review. Your reservations will appear here once guests can book.'}
+                        </p>
+                    </div>
+                    <Link href="/services/dashboard/listing" className="inline-flex flex-none items-center justify-center rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">
+                        {provider.status === 'declined' ? 'See what to change' : 'Go to your listing'}
+                    </Link>
+                </div>
+            )}
 
             {/* The agreement, the name guests see and payouts are the owner's. */}
             {mine.isOwner && <AgreementUpdateNotice doc={isTrade ? 'tradesperson' : 'experience_provider'} source="dashboard_notice" className="mb-6" />}

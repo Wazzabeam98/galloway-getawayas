@@ -964,7 +964,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
 
                             <div className="mt-4">
                                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cancellation policy</div>
-                                <p className="mt-0.5 text-sm leading-relaxed text-slate-700">{cancellationSentence(order.shape, windowHours, shortWho)}</p>
+                                <p className="mt-0.5 text-sm leading-relaxed text-slate-700">{terms.noRefund
+                                    // Booked under No refund: say so — this line used to print the
+                                    // free-cancel sentence (the window read back as 48) on a
+                                    // non-refundable order.
+                                    ? 'This booking is non-refundable — it was booked under a no-refund policy.'
+                                    : cancellationSentence(order.shape, windowHours, shortWho)}</p>
                             </div>
 
                             <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">

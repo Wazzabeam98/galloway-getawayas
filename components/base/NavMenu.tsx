@@ -187,22 +187,19 @@ const NavMenu = ({
                                    mode, above.) */
                                 <>
                                     {isGuestProvider ? (
-                                        /* A guest-experience provider is booked and paid
-                                           through us: their listing, their bookings,
-                                           the calendar, then Earnings. Their word is
-                                           "bookings" — they take bookings for their
-                                           experiences, not reservations for a property. */
+                                        /* A guest-experience provider's menu is the
+                                           holiday-let host's, item for item (Liam,
+                                           21 Oct 2026): Reservations, Calendar, Your
+                                           listing, Messages, Reviews, Earnings,
+                                           Co-hosts — and, like Airbnb's hosting menu,
+                                           no "Your trips": trips belong to travelling
+                                           mode, one switch away. Shown from the moment
+                                           they apply (lib/workSide), each item only
+                                           where they may act. */
                                         <>
-                                            {providerPerms.can_listing && (
-                                                <li className={itemClass}>
-                                                    <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
-                                                        Your listing
-                                                    </Link>
-                                                </li>
-                                            )}
                                             {providerPerms.can_bookings && (
                                                 <li className={itemClass}>
-                                                    <Link href='/services/dashboard'>Your bookings</Link>
+                                                    <Link href='/services/dashboard'>Reservations</Link>
                                                 </li>
                                             )}
                                             {providerPerms.can_calendar && (
@@ -210,9 +207,29 @@ const NavMenu = ({
                                                     <Link href='/services/dashboard/calendar'>Calendar</Link>
                                                 </li>
                                             )}
+                                            {providerPerms.can_listing && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/edit'>Your listing</Link>
+                                                </li>
+                                            )}
+                                            {providerPerms.can_messages && (
+                                                <li className={itemClass}>
+                                                    <MessagesLink />
+                                                </li>
+                                            )}
+                                            {providerPerms.can_messages && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/reviews'>Reviews</Link>
+                                                </li>
+                                            )}
                                             {providerPerms.can_earnings && (
                                                 <li className={itemClass}>
                                                     <Link href='/services/dashboard/earnings'>Earnings</Link>
+                                                </li>
+                                            )}
+                                            {providerFullAccess && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/people'>Co-hosts</Link>
                                                 </li>
                                             )}
                                         </>
@@ -240,30 +257,30 @@ const NavMenu = ({
                                                     <Link href='/services/dashboard/edit'>Your listing</Link>
                                                 </li>
                                             )}
+                                            {/* Co-hosts, as on the host side: for the owner and
+                                                a full-access co-host — the people who may hand
+                                                out access to the business. */}
+                                            {providerFullAccess && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/people'>Co-hosts</Link>
+                                                </li>
+                                            )}
+                                            {/* A provider's messages are their job/booking
+                                                threads — a home they can navigate to so a
+                                                thread is never a lost email. The count is the
+                                                same badge the host gets. */}
+                                            {providerPerms.can_messages && (
+                                                <li className={itemClass}>
+                                                    <MessagesLink />
+                                                </li>
+                                            )}
+                                            {/* A trade is a traveller too: their own stays
+                                                and booked experiences, one place. */}
+                                            <li className={itemClass}>
+                                                <Link href='/trips'>Your trips</Link>
+                                            </li>
                                         </>
                                     )}
-                                    {/* Co-hosts, as on the host side: for the owner and
-                                        a full-access co-host — the people who may hand
-                                        out access to the business. */}
-                                    {providerFullAccess && (
-                                        <li className={itemClass}>
-                                            <Link href='/services/dashboard/people'>Co-hosts</Link>
-                                        </li>
-                                    )}
-                                    {/* A provider's messages are their job/booking
-                                        threads — a home they can navigate to so a
-                                        thread is never a lost email. The count is the
-                                        same badge the host gets. */}
-                                    {providerPerms.can_messages && (
-                                        <li className={itemClass}>
-                                            <MessagesLink />
-                                        </li>
-                                    )}
-                                    {/* A provider is a traveller too: their own
-                                        stays and booked experiences, one place. */}
-                                    <li className={itemClass}>
-                                        <Link href='/trips'>Your trips</Link>
-                                    </li>
                                 </>
                             ) : (
                                 <>

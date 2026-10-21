@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
 async function ownProvider(admin: any, providerId: string, userId: string) {
     const { data: p } = await admin
         .from('service_providers')
-        .select('id, owner_id, slot_length_minutes, slot_capacity, slot_min_people')
+        .select('id, owner_id, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people')
         .eq('id', providerId)
         .maybeSingle();
     // The owner, or a co-host with the calendar (lib/providerAccess).
@@ -58,6 +58,9 @@ export async function GET(request: Request) {
         return NextResponse.json({
             ok: true,
             slot_length_minutes: p.slot_length_minutes || 60,
+            // The gap between sessions — the calendar's grid steps by length + gap,
+            // the same grid guests are offered and the booking route accepts.
+            slot_turnaround_minutes: Math.max(0, Number(p.slot_turnaround_minutes) || 0),
             slot_capacity: p.slot_capacity || 1,
             slot_min_people: p.slot_min_people || 1,
             items: (items || []).map((it: any) => ({ unit: it.unit, capacity: it.capacity, min_people: it.min_people, active: it.active !== false, price: Number(it.price) })),

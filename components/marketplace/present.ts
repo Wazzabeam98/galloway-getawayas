@@ -376,6 +376,13 @@ export function partyMatters(shape: string): boolean {
 export function cancellationSentence(shape: string, hours: number, who: string): string {
     const h = Math.max(0, Number(hours) || 0);
     if (shape === 'slot') {
+        // A whole number of days from three up reads in days — "7 days", not
+        // "168 hours"; a provider's Custom 30 days, not "720 hours". 24 and 48
+        // stay in hours, which is how a timed session's window is said.
+        if (h >= 72 && h % 24 === 0) {
+            const d = h / 24;
+            return 'Free to cancel up to ' + d + ' days before your time.';
+        }
         return 'Free to cancel up to ' + h + ' hour' + (h === 1 ? '' : 's') + ' before your time.';
     }
     const days = Math.round(h / 24);

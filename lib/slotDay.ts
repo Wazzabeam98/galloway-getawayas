@@ -32,6 +32,9 @@ export interface DayData {
 export interface DayInputs {
     availabilityRows: Availability[];
     slotLen: number;
+    // The gap the provider leaves between sessions (slot_turnaround_minutes): the
+    // grid steps by slotLen + turnaround, as the guest grid and the booking route do.
+    turnaround?: number;
     blockedDates: string[];
     partialBlocks: { date: string; startMin: number; endMin: number; id?: string }[];
     sessions: { date: string; time: string; capacity: number; seats_taken: number; seats_left: number; private: boolean }[];
@@ -52,8 +55,9 @@ export function daySlots(date: string, i: DayInputs): DayData {
 
     // Open-hours slots from the template, minus part-blocked starts. None on a full
     // day off — the whole day reads as off instead.
+    const turn = Math.max(0, Number(i.turnaround) || 0);
     const gen = dayOff ? [] : generateSessions(
-        i.availabilityRows, [], slotLen, date, date, slotLen,
+        i.availabilityRows, [], slotLen + turn, date, date, slotLen,
         dayPartials.map((p) => ({ date, startMin: p.startMin, endMin: p.endMin })),
     );
 

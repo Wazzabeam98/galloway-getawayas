@@ -5,6 +5,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace, loadPausedProvider, loadOwnerPreviewProvider, pickProvider } from '@/lib/experiencesData';
 import OwnerPreviewBanner from '@/components/services/OwnerPreviewBanner';
+import { isAdmin } from '@/lib/adminAudit';
 import NotTakingBookings from '@/components/NotTakingBookings';
 import { EXPERIENCE_NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import { loadExperienceReviews } from '@/lib/experienceReviews';
@@ -214,17 +215,30 @@ export default async function PublicListingPage({ params }: { params: { provider
     // page sees exactly what guests will, with a quiet bar saying no one else
     // can yet — the same as a host previewing a pending cottage. The loader
     // matches the owner in its query, so anyone else falls through as before.
-    let preview: { status: string } | null = null;
+    let preview: { status: string; asAdmin: boolean } | null = null;
     if (!p && user) {
         const own = await loadOwnerPreviewProvider(admin, params.providerId, user.id);
         if (own) {
             const { data: st } = await admin.from('service_providers').select('status').eq('id', own.id).maybeSingle();
             p = own;
-            preview = { status: String((st && st.status) || 'draft') };
+            preview = { status: String((st && st.status) || 'draft'), asAdmin: false };
+        } else if (await isAdmin(user.id)) {
+            // AN ADMIN REVIEWING IT: the same real guest page the owner previews
+            // (loaded as its owner would see it), so the review queue's title
+            // opens what guests will get, not a redirect to browse. Server-side
+            // check on the viewer's own is_admin; anyone else falls through.
+            const { data: row } = await admin.from('service_providers').select('owner_id, status').eq('id', params.providerId).maybeSingle();
+            const theirs = row && row.owner_id ? await loadOwnerPreviewProvider(admin, params.providerId, row.owner_id) : null;
+            if (theirs) {
+                p = theirs;
+                preview = { status: String((row && row.status) || 'draft'), asAdmin: true };
+            }
         }
     }
     const banner = preview
-        ? <OwnerPreviewBanner status={preview.status} who="guests" backHref="/services/dashboard/listing" backLabel="Back to your listing" />
+        ? (preview.asAdmin
+            ? <OwnerPreviewBanner status={preview.status} who="guests" viewer="admin" backHref="/admin/providers#experiences" backLabel="Back to the review queue" />
+            : <OwnerPreviewBanner status={preview.status} who="guests" backHref="/services/dashboard/listing" backLabel="Back to your listing" />)
         : undefined;
     if (!p) {
         // Paused by its provider: the old link still opens the page, with the
