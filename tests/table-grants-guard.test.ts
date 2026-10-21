@@ -53,6 +53,11 @@ const SERVICE_ROLE_ONLY: ServiceOnly[] = [
         migration: '20261020151334_email_outbox.sql',
         reason: 'the recipient and rendered body of every email awaiting a retry after a failed send; written by the email layer and retried by the push job, both with the service role',
     },
+    {
+        table: 'listing_notification_subscribers',
+        migration: '20261021160837_listing_notification_subscribers.sql',
+        reason: 'extra addresses an owner forwards a listing\'s booking emails to, plus the one-time confirm-token hash; written and read only through app/api/listings/[id]/notification-emails (owner or full-access co-host) and the confirm/unsubscribe pages, all with the service role',
+    },
 ];
 
 const code = (sql: string) => sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');

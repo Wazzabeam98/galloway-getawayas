@@ -120,6 +120,7 @@ const TOKEN_MODULES = [
     path.join('lib', 'enquiryToken.ts'),
     path.join('lib', 'serviceBillingToken.ts'),
     path.join('lib', 'serviceApplicationToken.ts'),
+    path.join('lib', 'listingSubscriberToken.ts'),
 ];
 
 test('nothing outside the token modules hashes a token', () => {
