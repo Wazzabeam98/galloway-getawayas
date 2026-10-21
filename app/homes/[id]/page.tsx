@@ -195,11 +195,22 @@ const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_
 // via lib/revalidatePublic. A draft/pending/hidden id is not listed — it renders
 // on demand through the owner/admin gate, which keeps it out of cached HTML.
 export async function generateStaticParams(): Promise<{ id: string }[]> {
-    const { data } = await adminClient()
-        .from('listings')
-        .select('id')
-        .eq('status', 'published');
-    return (data || []).map((l: any) => ({ id: String(l.id) }));
+    // The GitHub `test-and-build` check runs `next build` with no Supabase env,
+    // so adminClient() would throw here and fail the build ("NEXT_PUBLIC_SUPABASE_URL
+    // is not set"). Return [] when the env isn't there (or on any read error):
+    // dynamicParams defaults true, so pages then render on demand and still cache
+    // (ISR) — and the real deploy on Vercel HAS the env, so it pre-renders every
+    // published listing as before.
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
+    try {
+        const { data } = await adminClient()
+            .from('listings')
+            .select('id')
+            .eq('status', 'published');
+        return (data || []).map((l: any) => ({ id: String(l.id) }));
+    } catch {
+        return [];
+    }
 }
 
 // Per-listing page title and description. Without this every property

@@ -47,8 +47,16 @@ export const metadata: Metadata = {
 // /experiences/[bookingId] and this is its bookingless twin. Signing in is only
 // needed to book (prompted on the listing), never to look.
 export default async function BrowseExperiencesPage() {
-    const admin = adminClient();
-    const mp = await loadPublicMarketplace(admin, guestExperiencesOpen());
+    // This page renders at build (static). The GitHub test-and-build check runs
+    // `next build` with no Supabase env, where adminClient() throws — fail soft to
+    // an empty marketplace so the build passes; the real deploy on Vercel has the
+    // env and renders it, and ISR fills it at runtime.
+    let mp: Awaited<ReturnType<typeof loadPublicMarketplace>>;
+    try {
+        mp = await loadPublicMarketplace(adminClient(), guestExperiencesOpen());
+    } catch {
+        mp = { open: false, stay: null, listing: null, providers: [] };
+    }
 
     return (
         <div className="min-h-screen bg-slate-50">
