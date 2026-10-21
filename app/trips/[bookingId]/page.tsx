@@ -20,7 +20,7 @@ import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/d
 import { loadBookingSeats } from '@/lib/groupSeats';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { londonDayKey, ukDate } from '@/lib/dayKey';
-import PropertyMap from '@/components/PropertyMap';
+import TripMap from '@/components/trips/TripMap';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
 import TripGroup from '@/components/TripGroup';
@@ -36,7 +36,8 @@ export const dynamic = 'force-dynamic';
 // A booked STAY, as a page — the holiday-let counterpart to the experience order
 // page (app/experiences/order/[orderId]), built from the SAME layout and the
 // same components rather than a second set: a narrow scrolling column beside a
-// sticky map, a hero with the countdown badge, raised cards for the dates, and
+// sticky map (on a phone the photo leads and the map sits in "Where you'll be"),
+// a hero with the countdown badge, raised cards for the dates, and
 // the reservation actions as quiet chevron rows.
 //
 // Three walls are kept exactly as the trips card and /api/trips hold them:
@@ -303,20 +304,15 @@ export default async function StayReservationPage({ params }: { params: { bookin
                     ? 'mt-4 flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-10 lg:items-start'
                     : 'mt-4'}>
 
+                    {/* Desktop: the sticky side map. On a phone the photo leads
+                        and the map sits in "Where you'll be" instead. */}
                     {showMap && (
-                        <aside className="order-1 lg:order-2 lg:sticky lg:top-24">
-                            <PropertyMap
-                                latitude={lat as number}
-                                longitude={lng as number}
-                                area={cottageArea || undefined}
-                                variant="card"
-                                pinImage={hero}
-                                frameClassName="h-[220px] lg:h-[620px]"
-                            />
+                        <aside className="hidden lg:block lg:order-2 lg:sticky lg:top-24">
+                            <TripMap placement="side" latitude={lat as number} longitude={lng as number} area={cottageArea || undefined} pinImage={hero} />
                         </aside>
                     )}
 
-                    <div className={showMap ? 'order-2 lg:order-1 min-w-0' : ''}>
+                    <div className={showMap ? 'lg:order-1 min-w-0' : ''}>
                         {/* Hero with the countdown badge, top-left. No photo → no
                             frame rather than a placeholder. */}
                         {hero && (
@@ -401,6 +397,9 @@ export default async function StayReservationPage({ params }: { params: { bookin
                         {/* ---- Where you'll be ---- */}
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Where you’ll be</h2>
+                            {showMap && (
+                                <TripMap placement="inline" latitude={lat as number} longitude={lng as number} area={cottageArea || undefined} pinImage={hero} />
+                            )}
                             <div className="mt-3 flex gap-3">
                                 <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
                                 <div className="min-w-0 text-sm text-slate-800">
