@@ -106,7 +106,7 @@ test('every written area is released — the stock gate is what holds an empty o
         [
             'kirkcudbright', 'castle-douglas', 'gatehouse-of-fleet', 'dalbeattie',
             'newton-stewart', 'wigtown', 'galloway-forest', 'dumfries', 'moffat',
-            'stranraer', 'portpatrick',
+            'wanlockhead', 'stranraer', 'portpatrick',
         ],
         'The set of written, released areas changed.\n'
         + 'Now released: ' + readyToPublish.join(', ')

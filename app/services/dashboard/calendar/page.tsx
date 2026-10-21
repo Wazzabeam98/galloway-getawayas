@@ -135,10 +135,10 @@ export default async function ProviderDashboardPage() {
                             Reservations
                         </Link>}
                         {/* Same route as the nav menu's "Your listing" — /services/
-                            dashboard/edit is the one edit door (it forks a guest to the
-                            sectioned listing editor, a trade to the business editor). */}
+                            dashboard/listings is the one door (a guest's listings page,
+                            like a host's; a trade is sent on to its business editor). */}
                         {mine.can_listing && <Link
-                            href="/services/dashboard/edit"
+                            href="/services/dashboard/listings"
                             className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
                         >
                             Your listing

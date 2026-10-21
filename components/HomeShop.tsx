@@ -82,6 +82,7 @@ const factsOf = (l: any): FilterFacts => ({
     bathrooms: l.bathrooms,
     instant_book: l.instant_book,
     self_check_in: isSelfCheckIn(l.check_in_method),
+    is_luxury: l.is_luxury === true,
 });
 
 export default function HomeShop({

@@ -90,6 +90,7 @@ const LOCATIONS: { value: string; label: string }[] = [
   { value: 'dalbeattie', label: 'Dalbeattie' },
   { value: 'newton-stewart', label: 'Newton Stewart' },
   { value: 'moffat', label: 'Moffat' },
+  { value: 'wanlockhead', label: 'Wanlockhead' },
   { value: 'stranraer', label: 'Stranraer' },
   { value: 'portpatrick', label: 'Portpatrick' },
 ];

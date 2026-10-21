@@ -64,6 +64,7 @@ const PLATFORM_ONLY: Record<string, string> = {
     checkout_time: 'legacy',
     deactivated_at: 'reversible deactivation tombstone — set only by the SECURITY DEFINER deactivate/reactivate routines, never a browser UPDATE',
     display_order: 'public display order for the grids — set ONLY by the admin arrange route (/api/admin/arrange, is_admin + service role), never a browser UPDATE; it is granted SELECT to anon/authenticated (ordering) but no write grant',
+    is_luxury: 'admin-only Luxury tag — set ONLY by /api/admin/listings/luxury (is_admin + service role); granted SELECT to anon/authenticated for the badge and filter, no UPDATE grant, and the listings_luxury_authority trigger refuses a browser insert or change (the table INSERT grant would otherwise cover it)',
 };
 
 test('host-writable and platform-only lists are disjoint', () => {

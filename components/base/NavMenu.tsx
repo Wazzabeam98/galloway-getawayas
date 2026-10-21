@@ -188,15 +188,21 @@ const NavMenu = ({
                                 <>
                                     {isGuestProvider ? (
                                         /* A guest-experience provider's menu is the
-                                           holiday-let host's, item for item (Liam,
-                                           21 Oct 2026): Reservations, Calendar, Your
-                                           listing, Messages, Reviews, Earnings,
-                                           Co-hosts — and, like Airbnb's hosting menu,
-                                           no "Your trips": trips belong to travelling
-                                           mode, one switch away. Shown from the moment
-                                           they apply (lib/workSide), each item only
-                                           where they may act. */
+                                           holiday-let host's, item for item and in
+                                           its order (Liam, 21 Oct 2026): Your listing
+                                           first, where the host's Listings sits, then
+                                           Reservations, Calendar, Reviews, Earnings,
+                                           Co-hosts, Messages — and, like Airbnb's
+                                           hosting menu, no "Your trips": trips belong
+                                           to travelling mode, one switch away. Shown
+                                           from the moment they apply (lib/workSide),
+                                           each item only where they may act. */
                                         <>
+                                            {providerPerms.can_listing && (
+                                                <li className={itemClass}>
+                                                    <Link href='/services/dashboard/listings'>Your listing</Link>
+                                                </li>
+                                            )}
                                             {providerPerms.can_bookings && (
                                                 <li className={itemClass}>
                                                     {/* With the number of booking requests still to
@@ -207,16 +213,6 @@ const NavMenu = ({
                                             {providerPerms.can_calendar && (
                                                 <li className={itemClass}>
                                                     <Link href='/services/dashboard/calendar'>Calendar</Link>
-                                                </li>
-                                            )}
-                                            {providerPerms.can_listing && (
-                                                <li className={itemClass}>
-                                                    <Link href='/services/dashboard/edit'>Your listing</Link>
-                                                </li>
-                                            )}
-                                            {providerPerms.can_messages && (
-                                                <li className={itemClass}>
-                                                    <MessagesLink />
                                                 </li>
                                             )}
                                             {providerPerms.can_messages && (
@@ -232,6 +228,11 @@ const NavMenu = ({
                                             {providerFullAccess && (
                                                 <li className={itemClass}>
                                                     <Link href='/services/dashboard/people'>Co-hosts</Link>
+                                                </li>
+                                            )}
+                                            {providerPerms.can_messages && (
+                                                <li className={itemClass}>
+                                                    <MessagesLink />
                                                 </li>
                                             )}
                                         </>

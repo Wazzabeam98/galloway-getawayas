@@ -20,7 +20,7 @@
 // yoga class uses a real, free-licence yoga photo (Unsplash) at seed-assets/
 // yoga-1.jpg — uploaded to the test bucket only, never committed to the repo.
 
-import { loadEnv, assertTestEnvironment, supabaseClient, dayOffset } from './seed-lib.mjs';
+import { loadEnv, assertTestEnvironment, supabaseClient, dayOffset, currentExperienceProviderVersion } from './seed-lib.mjs';
 
 const env = loadEnv('.env.local');
 assertTestEnvironment(env);
@@ -180,6 +180,15 @@ async function makeProvider(spec) {
         await db.insert('service_areas', {
             provider_id: p.id, label: spec.town || 'Dumfries & Galloway',
             centre_lat: spec.mapLat, centre_lng: spec.mapLng,
+        });
+    }
+    // The agreement a real provider accepts at the end of sign-up — this seed
+    // skips sign-up, so it records it, as every approved provider has it.
+    const existingAcceptance = await db.select('agreement_acceptances',
+        '?select=user_id&user_id=eq.' + spec.owner.id + '&document=eq.experience_provider&version=eq.' + encodeURIComponent(currentExperienceProviderVersion()));
+    if (!existingAcceptance.length) {
+        await db.insert('agreement_acceptances', {
+            user_id: spec.owner.id, document: 'experience_provider', version: currentExperienceProviderVersion(), source: 'seed',
         });
     }
     return p;

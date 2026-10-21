@@ -443,7 +443,41 @@ export const AREAS: Area[] = [
             { question: "Are there dog friendly cottages in Moffat?", answer: "Yes — look for the paw symbol on a listing. The hill walking straight from the town is the draw." },
             { question: "Is Moffat a good stop on the way north?", answer: "It is two miles off the M74, so yes — a lot of people use it as a first or last night rather than driving the whole way in one go." },
         ],
-        nearby: ["dumfries"],
+        nearby: ["dumfries", "wanlockhead"],
+    },
+    {
+        slug: "wanlockhead",
+        name: "Wanlockhead",
+        townKeys: ["wanlockhead"],
+        // Added 21/10/2026 for the three Wanlockhead cottages, which matched no
+        // area. Released like the pre-cleared towns: it already has stock, so it
+        // reaches Google with this deploy. Its named places (the museum, the
+        // railway, the Tolbooth) were written from what is well known about them
+        // and are seasonal — check opening before the next refresh of this copy.
+        hold: false,
+        intro: [
+            "Wanlockhead is the highest village in Scotland, about 1,500 feet up in the Lowther Hills at the far north of the region. It was built on lead — mined here for three centuries — and the old workings, the miners’ rows and the beam engine over a shaft are still part of the place rather than tidied away behind it.",
+            "It is a small, quiet village in big, bare hill country, and that is the reason to come. The Southern Upland Way comes straight through, the Mennock Pass down to Nithsdale is one of the finest drives in the south of Scotland, and on a clear night the sky above the village is properly dark.",
+            "Sanquhar, the nearest town, is about eight miles away down the pass, with shops and a railway station. Wanlockhead suits people who want to walk out of the door into the hills and do not mind driving for a supermarket.",
+        ],
+        metaDescription: "Scotland’s highest village, in the Lowther Hills: lead-mining history, the Southern Upland Way and the Mennock Pass on the doorstep.",
+        thingsToDo: [
+            "The Museum of Lead Mining is the heart of the village — a guided walk into an old mine, the miners’ cottages furnished as they were, and the Miners’ Library, one of the oldest subscription libraries in Europe. Wanlockhead is also gold country, and the museum runs gold panning in the burns.",
+            "The Leadhills and Wanlockhead Railway, Britain’s highest adhesion railway, runs short trips on a narrow-gauge line between the two villages on summer weekends.",
+            "For walking, the Southern Upland Way crosses the village on its way between Sanquhar and Beattock, and the Lowther Hills rise straight behind it. Down the Mennock Pass, Sanquhar has the world’s oldest working post office, open since 1712, and the Tolbooth museum in its eighteenth-century town house.",
+        ],
+        gettingThere: [
+            "Wanlockhead is at the northern edge of the region, on the B797. From the south and west it is about eight miles up the Mennock Pass from the A76 near Sanquhar; from the M74 it is about twenty minutes from junction 13 at Abington, through Leadhills.",
+            "Glasgow is roughly an hour and a quarter, Edinburgh about an hour and a half, Carlisle about an hour and a quarter by the M74. Dumfries is about three quarters of an hour down Nithsdale.",
+            "The nearest railway station is Sanquhar, on the line between Glasgow and Dumfries, eight miles away. There is no practical way to reach the village without a car unless you are walking the Southern Upland Way.",
+        ],
+        faqs: [
+            { question: "Is Wanlockhead really the highest village in Scotland?", answer: "Yes — about 1,500 feet above sea level, a little higher than its neighbour Leadhills just over the hill. Expect cooler weather than on the coast and snow in winter." },
+            { question: "What is there to do in Wanlockhead?", answer: "The Museum of Lead Mining, with its mine tour, miners’ cottages and gold panning, and walking on the Southern Upland Way and the Lowther Hills. The narrow-gauge railway to Leadhills runs on summer weekends." },
+            { question: "Where are the nearest shops?", answer: "Sanquhar, about eight miles down the Mennock Pass, has the nearest shops and a railway station. Bring what you need for the first night." },
+            { question: "Are there dog friendly cottages in Wanlockhead?", answer: "Yes — look for the paw symbol on a listing. The hills start at the edge of the village." },
+        ],
+        nearby: ["moffat", "dumfries"],
     },
     {
         slug: "stranraer",
@@ -602,6 +636,7 @@ const AREA_CENTRES: Record<string, { lat: number; lng: number }> = {
     'moffat': { lat: 55.333, lng: -3.444 },
     'stranraer': { lat: 54.903, lng: -5.024 },
     'portpatrick': { lat: 54.842, lng: -5.116 },
+    'wanlockhead': { lat: 55.397, lng: -3.781 },
 };
 
 /** The approximate centre of the town a listing sits in, or null when its town

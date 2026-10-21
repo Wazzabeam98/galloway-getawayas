@@ -10,7 +10,7 @@ import { BUSINESS_COOKIE, dashboardProviders, pickDashboardProvider, firstProvid
 import { tradeLabel } from '@/lib/serviceProviders';
 import { firstName } from '@/lib/utils';
 import { needsPersonName } from '@/lib/personName';
-import AddNameButton from '@/components/auth/AddNameButton';
+import AskForName from '@/components/auth/AskForName';
 import { ukDateTime } from '@/lib/dayKey';
 import ProviderUpcoming from '@/components/services/ProviderUpcoming';
 import { loadProviderReservations } from '@/lib/providerReservations';
@@ -176,7 +176,7 @@ export default async function ProviderReservationsPage() {
                         {mine.can_calendar && <Link href="/services/dashboard/calendar" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
                             Calendar
                         </Link>}
-                        {mine.can_listing && <Link href="/services/dashboard/edit" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                        {mine.can_listing && <Link href="/services/dashboard/listings" className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
                             Your listing
                         </Link>}
                     </div>
@@ -214,19 +214,11 @@ export default async function ProviderReservationsPage() {
             {/* The agreement, the name guests see and payouts are the owner's. */}
             {mine.isOwner && <AgreementUpdateNotice doc={isTrade ? 'tradesperson' : 'experience_provider'} source="dashboard_notice" className="mb-6" />}
 
-            {mine.isOwner && ownerNeedsName && (
-                <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div>
-                        <h2 className="text-base font-bold text-amber-900">Add your name</h2>
-                        <p className="mt-1 text-sm text-amber-900">
-                            {provider.business_name || 'Your listing'} is live, but guests can’t see who’s hosting. Add your first and last name so they know who they’re booking with.
-                        </p>
-                    </div>
-                    <AddNameButton className="flex-none self-start sm:self-auto rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950">
-                        Add your name
-                    </AddNameButton>
-                </div>
-            )}
+            {/* No first and last name on the account: guests would see the
+                business name where the host's first name belongs. Asked the way a
+                holiday-let owner is asked when they sign in — Finish signing up,
+                straight away — not by a banner (Liam, 21 Oct 2026). */}
+            {mine.isOwner && ownerNeedsName && <AskForName />}
 
             {awaitingPayouts && mine.isOwner && <HeldPayoutsBanner providerId={provider.id} held={held} connected={!!provider.stripe_account_id} />}
 

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { EyeOff, Undo2, Pencil, ExternalLink, Trash2 } from 'lucide-react';
+import { EyeOff, Undo2, Pencil, ExternalLink, Trash2, Gem } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 // One listing on the owner's moderation list. The reason box is the point:
@@ -19,6 +19,7 @@ export default function AdminListingRow({
     isMine,
     liveBookings,
     removal,
+    luxury = false,
 }: {
     id: string;
     title: string;
@@ -34,6 +35,8 @@ export default function AdminListingRow({
      * The route decides again on the click; this is what the confirm says.
      */
     removal: 'delete' | 'hide';
+    /** The admin-only Luxury tag (listings.is_luxury) — a badge and a filter. */
+    luxury?: boolean;
 }) {
     const router = useRouter();
     const [open, setOpen] = useState(false);
@@ -77,6 +80,26 @@ export default function AdminListingRow({
 
     const hidden = status === 'hidden';
     const isDraft = status === 'draft';
+
+    // The Luxury tag: ours to give, one click either way, logged by the route.
+    const [lux, setLux] = useState(luxury);
+    const toggleLuxury = async () => {
+        setWorking(true);
+        const res = await fetch('/api/admin/listings/luxury', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ listingId: id, luxury: !lux }),
+        }).catch(() => null);
+        const data = res ? await res.json().catch(() => null) : null;
+        setWorking(false);
+        if (!data || !data.ok) {
+            toast.error((data && data.error) || 'Could not change that.', { theme: 'colored' });
+            return;
+        }
+        setLux(!!data.luxury);
+        toast.success(data.luxury ? 'Tagged Luxury.' : 'Luxury tag removed.', { theme: 'colored' });
+        router.refresh();
+    };
 
     const apply = async () => {
         setWorking(true);
@@ -151,6 +174,19 @@ export default function AdminListingRow({
                         database's word for it. */}
                     {status === 'pending_review' ? 'waiting' : status}
                 </span>
+
+                <button
+                    type="button"
+                    onClick={toggleLuxury}
+                    disabled={working}
+                    aria-pressed={lux}
+                    className={`h-8 px-3 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-50 ${
+                        lux ? 'bg-stone-900 text-white hover:bg-black' : 'border border-slate-300 hover:border-slate-900 text-slate-700'
+                    }`}
+                >
+                    <Gem className="w-3.5 h-3.5" />
+                    {lux ? 'Luxury' : 'Tag Luxury'}
+                </button>
 
                 {/* A draft is not on the site, so there is nothing to take off it. */}
                 {!isDraft && (

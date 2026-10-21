@@ -89,11 +89,12 @@ export interface FilterState {
     bathrooms: number;
     instantBook: boolean;
     selfCheckIn: boolean;
+    luxury: boolean;          // only places we have tagged Luxury (admin-only)
 }
 
 export const EMPTY_FILTERS: FilterState = {
     amenities: [], types: [], minPrice: null, maxPrice: null,
-    bedrooms: 0, beds: 0, bathrooms: 0, instantBook: false, selfCheckIn: false,
+    bedrooms: 0, beds: 0, bathrooms: 0, instantBook: false, selfCheckIn: false, luxury: false,
 };
 
 // What a card needs for the rule — the columns the grid already selects.
@@ -106,6 +107,7 @@ export interface FilterFacts {
     bathrooms: number | string | null;
     instant_book: boolean | null;
     self_check_in: boolean;
+    is_luxury?: boolean | null;
 }
 
 export function matchesFilters(l: FilterFacts, f: FilterState): boolean {
@@ -120,6 +122,7 @@ export function matchesFilters(l: FilterFacts, f: FilterState): boolean {
     if (f.bathrooms && (Number(l.bathrooms) || 0) < f.bathrooms) return false;
     if (f.instantBook && l.instant_book !== true) return false;
     if (f.selfCheckIn && !l.self_check_in) return false;
+    if (f.luxury && l.is_luxury !== true) return false;
     return true;
 }
 
@@ -127,14 +130,14 @@ export function activeFilterCount(f: FilterState): number {
     return f.amenities.length + f.types.length
         + (f.minPrice != null || f.maxPrice != null ? 1 : 0)
         + (f.bedrooms ? 1 : 0) + (f.beds ? 1 : 0) + (f.bathrooms ? 1 : 0)
-        + (f.instantBook ? 1 : 0) + (f.selfCheckIn ? 1 : 0);
+        + (f.instantBook ? 1 : 0) + (f.selfCheckIn ? 1 : 0) + (f.luxury ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
 // The URL. Filters live in the query string, like the hero's where/when/who,
 // so a filtered grid is a link that can be shared and survives a reload.
 //   am=<amenity> (repeated)   type=<category> (repeated)
-//   pmin / pmax   bedrooms / beds / baths   ib=1   selfci=1
+//   pmin / pmax   bedrooms / beds / baths   ib=1   selfci=1   lux=1
 // The hero's `pets=1` is the same thing as am=Pets allowed and is read as one.
 
 type Params = { [key: string]: string | string[] | undefined };
@@ -163,13 +166,14 @@ export function readFilters(p: Params): FilterState {
         bathrooms: Math.min(num(p.baths) || 0, 20),
         instantBook: p.ib === '1',
         selfCheckIn: p.selfci === '1',
+        luxury: p.lux === '1',
     };
 }
 
 // Writes the filters onto a copy of the current params, keeping where/when/who.
 export function writeFilters(base: URLSearchParams, f: FilterState): URLSearchParams {
     const out = new URLSearchParams(base.toString());
-    ['am', 'type', 'pmin', 'pmax', 'bedrooms', 'beds', 'baths', 'ib', 'selfci', 'pets'].forEach((k) => out.delete(k));
+    ['am', 'type', 'pmin', 'pmax', 'bedrooms', 'beds', 'baths', 'ib', 'selfci', 'lux', 'pets'].forEach((k) => out.delete(k));
     f.amenities.forEach((a) => out.append('am', a));
     f.types.forEach((t) => out.append('type', t));
     if (f.minPrice != null) out.set('pmin', String(f.minPrice));
@@ -179,6 +183,7 @@ export function writeFilters(base: URLSearchParams, f: FilterState): URLSearchPa
     if (f.bathrooms) out.set('baths', String(f.bathrooms));
     if (f.instantBook) out.set('ib', '1');
     if (f.selfCheckIn) out.set('selfci', '1');
+    if (f.luxury) out.set('lux', '1');
     return out;
 }
 

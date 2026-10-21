@@ -133,14 +133,17 @@ test('an experience provider\'s menu is the host\'s, in order, with no "Your tri
     const start = nav.indexOf('{isGuestProvider ? (');
     const end = nav.indexOf(') : (', start);
     const branch = nav.slice(start, end);
+    // The host's order (NavMenu's hostView branch): Listings first, then
+    // Reservations, Calendar, Reviews, Earnings, Co-hosts, Messages — with
+    // "Your listing" where the host's Listings sits (Liam, 21 Oct 2026).
     const order = [
+        "href='/services/dashboard/listings'>Your listing",
         "<RequestsLink label='Reservations' />",   // with the requests-to-confirm badge
         "href='/services/dashboard/calendar'>Calendar",
-        "href='/services/dashboard/edit'>Your listing",
-        '<MessagesLink />',
         "href='/services/dashboard/reviews'>Reviews",
         "href='/services/dashboard/earnings'>Earnings",
         "href='/services/dashboard/people'>Co-hosts",
+        '<MessagesLink />',
     ];
     let at = -1;
     for (const item of order) {
@@ -171,4 +174,27 @@ test('the review queue title opens the experience page, which an admin may previ
     const page = read('app/experiences/browse/[providerId]/page.tsx');
     assert.match(page, /else if \(await isAdmin\(user\.id\)\)/, 'a server-side check of the viewer\'s own is_admin');
     assert.match(page, /viewer="admin"/);
+});
+
+test('the host\'s menu is in the order the provider\'s copies', () => {
+    const nav = read('components/base/NavMenu.tsx');
+    const branch = nav.slice(nav.indexOf('{hostView ? ('), nav.indexOf(') : providerView ? ('));
+    const order = ["href='/dashboard'>Listings", '<BookingsLink />', "href='/dashboard/calendar'>Calendar",
+        "href='/dashboard/reviews'>Reviews", "href='/dashboard/earnings'>Earnings", "href='/dashboard/people'>Co-hosts", '<MessagesLink />'];
+    let at = -1;
+    for (const item of order) {
+        const i = branch.indexOf(item);
+        assert.ok(i > at, item + ' is present, after the one before it — if the host menu moved, move the provider\'s to match');
+        at = i;
+    }
+});
+
+test('"Your listing" is a listings page with a + chooser, like the host\'s', () => {
+    const page = read('app/services/dashboard/listings/page.tsx');
+    assert.match(page, /Your listing<\/h1>/);
+    assert.match(page, /<AddListingChooser/);
+    assert.match(page, /redirect\('\/services\/dashboard\/edit'\)/, 'a trade is sent on to its business editor');
+    const chooser = read('components/services/AddListingChooser.tsx');
+    assert.match(chooser, /href="\/addhome"/, 'a holiday let');
+    assert.match(chooser, /one per account/, 'one experience per account, said rather than refused later');
 });
