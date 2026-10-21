@@ -5,6 +5,7 @@ import { minutesOfDay } from '@/lib/serviceSlots';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { recordCronRun } from '@/lib/cronHeartbeat';
+import { revalidateExperiencePage } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -152,6 +153,8 @@ export async function GET(request: Request) {
         try {
             const clashes = await syncFeed(admin, feed, from, to);
             clashCount += clashes.length;
+            // The imported busy hours close times on the public page's calendar.
+            revalidateExperiencePage(feed.provider_id);
             await admin.from('provider_ical_feeds').update({
                 clashes,
                 last_synced_at: now,

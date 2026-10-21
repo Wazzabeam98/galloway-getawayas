@@ -7,6 +7,7 @@ import { firstName } from '@/lib/utils';
 import { logError } from '@/lib/logError';
 import { experienceReviewReceivedEmail } from '@/lib/experienceReviewEmails';
 import { reviewSubmissionProblem } from '@/lib/experienceReviewRules';
+import { revalidateExperiencePage } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,8 @@ export async function POST(req: Request) {
         try {
             const admin = adminClient();
             const { data: order } = await admin.from('service_orders').select('provider_id').eq('id', orderId).maybeSingle();
+            // The review shows on the provider's public page once published.
+            revalidateExperiencePage(order && order.provider_id);
             const { data: provider } = order && order.provider_id
                 ? await admin.from('service_providers').select('business_name, contact_email').eq('id', order.provider_id).maybeSingle()
                 : { data: null as any };

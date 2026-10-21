@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { londonDayKey } from '@/lib/dayKey';
 import { checkProvider } from '@/lib/providerAccess';
+import { revalidateExperiencePage } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
         const { error } = await admin.from('slot_blocks')
             .upsert({ provider_id: providerId, blocked_date: day }, { onConflict: 'provider_id,blocked_date' });
         if (error) return NextResponse.json({ ok: false, error: 'Could not block that day.' }, { status: 500 });
+        revalidateExperiencePage(providerId);
         return NextResponse.json({ ok: true });
     } catch {
         return NextResponse.json({ ok: false, error: 'Could not block that day.' }, { status: 500 });
@@ -80,6 +82,7 @@ export async function DELETE(request: Request) {
             .delete()
             .eq('provider_id', providerId)
             .eq('blocked_date', day);
+        revalidateExperiencePage(providerId);
         return NextResponse.json({ ok: true });
     } catch {
         return NextResponse.json({ ok: false, error: 'Could not put that day back.' }, { status: 500 });

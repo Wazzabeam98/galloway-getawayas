@@ -6,6 +6,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
 import { stripeProfileForProvider } from '@/lib/serviceOrders';
 import { providerStatementDescriptor } from '@/lib/experienceFunds';
+import { revalidateExperience } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -207,7 +208,7 @@ export async function GET(request: Request) {
         const admin = adminClient();
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, owner_id, stripe_account_id')
+            .select('id, owner_id, stripe_account_id, stripe_payouts_enabled')
             .eq('id', providerId)
             .maybeSingle();
 
@@ -235,6 +236,12 @@ export async function GET(request: Request) {
                 stripe_updated_at: new Date().toISOString(),
             })
             .eq('id', provider.id);
+        // Payouts switching on or off changes the public page (the verified line)
+        // and whether the provider is live at all — refresh it, but only on a
+        // change: the dashboard asks this on every load.
+        if ((provider.stripe_payouts_enabled === true) !== (account.payouts_enabled === true)) {
+            revalidateExperience(provider.id);
+        }
 
         return NextResponse.json({
             ok: true,

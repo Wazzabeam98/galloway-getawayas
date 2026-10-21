@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { minutesOfDay } from '@/lib/serviceSlots';
 import { checkProvider } from '@/lib/providerAccess';
+import { revalidateExperiencePage } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,6 +121,7 @@ export async function POST(request: Request) {
             }
             return NextResponse.json({ ok: false, error: 'Could not block that time.' }, { status: 500 });
         }
+        revalidateExperiencePage(providerId);
         return NextResponse.json({ ok: true, id: inserted?.id });
     } catch {
         return NextResponse.json({ ok: false, error: 'Could not block that time.' }, { status: 500 });
@@ -149,6 +151,7 @@ export async function DELETE(request: Request) {
             // is removed by removing the feed, so a stray delete here can't punch a
             // hole in what the provider's other calendar is holding back.
             .eq('id', id).eq('provider_id', providerId).eq('blocked', true).is('source_feed_id', null);
+        revalidateExperiencePage(providerId);
         return NextResponse.json({ ok: true });
     } catch {
         return NextResponse.json({ ok: false, error: 'Could not remove that block' }, { status: 500 });

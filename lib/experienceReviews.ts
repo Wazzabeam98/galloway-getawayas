@@ -41,6 +41,22 @@ export interface ExperienceReviewsBlock {
     providerFirstName: string;
 }
 
+// May this viewer reply to the provider's reviews? The owner, or a co-host with
+// messages (the reviews policy asks the same). Exported for the experience page's
+// live route: the page itself is edge-cached and loads its reviews with no viewer,
+// so the reply box is switched on after load (components/marketplace/
+// ExperienceViewer).
+export async function viewerCanReply(
+    admin: SupabaseClient,
+    providerId: string,
+    ownerId: string | null,
+    viewerId: string | null,
+): Promise<boolean> {
+    if (!viewerId || !ownerId) return false;
+    if (viewerId === ownerId) return true;
+    return cohostCan(admin, providerId, viewerId, 'can_messages');
+}
+
 export async function loadExperienceReviews(
     admin: SupabaseClient,
     providerId: string,
@@ -75,8 +91,7 @@ export async function loadExperienceReviews(
             .maybeSingle();
         providerFirstName = firstName(op, 'the provider');
     }
-    // The owner, or a co-host with messages (the reviews policy asks the same).
-    const canReply = !!viewerId && !!ownerId && (viewerId === ownerId || (await cohostCan(admin, providerId, viewerId, 'can_messages')));
+    const canReply = await viewerCanReply(admin, providerId, ownerId, viewerId);
 
     if (list.length === 0) {
         return { count: 0, avg: null, items: [], canReply, providerFirstName };
