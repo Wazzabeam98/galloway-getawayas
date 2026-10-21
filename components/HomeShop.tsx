@@ -116,6 +116,7 @@ export default function HomeShop({
                 baths: sp.get('baths') ?? undefined,
                 ib: sp.get('ib') ?? undefined,
                 selfci: sp.get('selfci') ?? undefined,
+                lux: sp.get('lux') ?? undefined,
             }),
         [sp],
     );
@@ -217,6 +218,7 @@ export default function HomeShop({
     if (filters.bathrooms) criteria.push(`${filters.bathrooms}+ bathroom${filters.bathrooms > 1 ? 's' : ''}`);
     if (filters.instantBook) criteria.push('Instant Book');
     if (filters.selfCheckIn) criteria.push('self check-in');
+    if (filters.luxury) criteria.push('Luxury');
 
     return (
         <>
