@@ -3,6 +3,7 @@ import { TEAM_READS_FROM, isInboundFor, isUnreadFor, readPositionsFor, threadKey
 import { listingIdsFor } from '@/lib/access';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { providerIdsWith } from '@/lib/providerAccess';
+import { londonDayKey } from '@/lib/dayKey';
 
 // The two numbers behind the dot on the menu.
 //
@@ -212,33 +213,46 @@ export async function pendingFor(uid: string): Promise<number> {
 }
 
 /**
- * Requests waiting on a trade to answer — the provider mirror of pendingFor.
+ * Work waiting on a provider to answer — the provider mirror of pendingFor.
  *
- * A trade's "Requests" menu line badges the same way a host's "Your reservations"
- * does: the number of enquiries still to answer across every business this
- * account owns. Guest-experience providers confirm orders, not enquiries, so
- * this is nought for them and their menu carries no badge here.
+ * A TRADE: enquiries still to answer ('sent' / 'viewed'), on its "Enquiries"
+ * menu line. A GUEST EXPERIENCE: booking requests still to confirm or decline —
+ * orders 'authorised' (the guest's card held, waiting on the provider) dated
+ * today or later, the same "Needs a reply" figure its Reservations page shows
+ * (lib/providerReservations summary.needsReply). Either way it is the number
+ * on the provider's Reservations/Enquiries line and lights the menu dot, the
+ * way a host's pending booking requests do.
  *
- * Counted with the service key: an enquiry belongs to a provider row this user
- * owns, and 'sent' / 'viewed' are the two states still awaiting the trade.
+ * 'holding' is not counted: that is a guest part-way through paying, with
+ * nothing for the provider to do — the reason a host's badge leaves out
+ * 'pending_payment'.
+ *
+ * Counted with the service key, across every business this account owns or
+ * co-hosts with the bookings permission (lib/providerAccess).
  */
 export async function providerRequestsFor(uid: string): Promise<number> {
     const admin = adminClient();
-    // Owned, or co-hosted with bookings (lib/providerAccess) — trades only.
     const usable = await providerIdsWith(admin, uid, 'can_bookings');
     const { data: providers } = usable.length
-        ? await admin.from('service_providers').select('id').in('id', usable).eq('audience', 'host')
+        ? await admin.from('service_providers').select('id, audience').in('id', usable)
         : { data: [] as any[] };
-    const ids = (providers || []).map((p: any) => p.id);
-    if (ids.length === 0) return 0;
+    const trades = (providers || []).filter((p: any) => p.audience === 'host').map((p: any) => p.id);
+    const experiences = (providers || []).filter((p: any) => p.audience === 'guest').map((p: any) => p.id);
+    if (trades.length === 0 && experiences.length === 0) return 0;
 
-    const { count } = await admin
-        .from('service_enquiries')
-        .select('id', { count: 'exact', head: true })
-        .in('provider_id', ids)
-        .in('status', ['sent', 'viewed']);
+    const [enquiries, requests] = await Promise.all([
+        trades.length
+            ? admin.from('service_enquiries').select('id', { count: 'exact', head: true })
+                .in('provider_id', trades).in('status', ['sent', 'viewed'])
+            : Promise.resolve({ count: 0 } as any),
+        experiences.length
+            ? admin.from('service_orders').select('id', { count: 'exact', head: true })
+                .in('provider_id', experiences).eq('status', 'authorised')
+                .is('parent_order_id', null).gte('service_date', londonDayKey())
+            : Promise.resolve({ count: 0 } as any),
+    ]);
 
-    return count || 0;
+    return ((enquiries && enquiries.count) || 0) + ((requests && requests.count) || 0);
 }
 
 export interface AdminPending {

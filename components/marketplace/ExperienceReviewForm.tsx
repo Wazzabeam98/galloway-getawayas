@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { Star, PartyPopper, X } from 'lucide-react';
+import { reviewSubmissionProblem } from '@/lib/experienceReviewRules';
 
 // The review step: one clean full-screen page, in the shape of Airbnb's sign-up
 // flow — white, uncluttered, one thing on it. The stars, a comment box, a Post
@@ -42,13 +42,13 @@ function BigStars({ value, onChange }: { value: number; onChange: (v: number) =>
 const HINTS = ['Poor', 'Not great', 'Fine', 'Really good', 'Exceptional'];
 
 export default function ExperienceReviewForm({
-    orderId, reviewerId, who,
+    orderId, who,
 }: {
     orderId: string;
-    reviewerId: string;
+    // Kept for the caller's signature; the route saves it as the signed-in guest.
+    reviewerId?: string;
     who: string;
 }) {
-    const supabase = createClientComponentClient();
     const router = useRouter();
 
     const [rating, setRating] = useState(0);
@@ -56,20 +56,27 @@ export default function ExperienceReviewForm({
     const [submitting, setSubmitting] = useState(false);
     const [done, setDone] = useState(false);
 
-    const canPost = rating > 0 && comment.trim().length >= 10;
+    const canPost = reviewSubmissionProblem(orderId, rating, comment) === null;
 
+    // Posted through /api/services/reviews, which saves it as you (the same
+    // review rules as before) and then tells the provider it has arrived.
     const submit = async () => {
         if (!canPost) return;
         setSubmitting(true);
-        const { error } = await supabase.from('reviews').insert({
-            order_id: orderId,
-            reviewer_id: reviewerId,
-            review_type: 'guest_to_provider',
-            rating,
-            comment: comment.trim(),
-        });
+        let error: string | null = null;
+        try {
+            const res = await fetch('/api/services/reviews', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId, rating, comment: comment.trim() }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.ok) error = (d && d.error) || 'We couldn’t post your review. Try again.';
+        } catch {
+            error = 'We couldn’t post your review. Try again.';
+        }
         setSubmitting(false);
-        if (error) { toast.error(error.message, { theme: 'colored' }); return; }
+        if (error) { toast.error(error, { theme: 'colored' }); return; }
         setDone(true);
     };
 

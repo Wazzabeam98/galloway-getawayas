@@ -12,6 +12,7 @@ import {
     Check,
 } from 'lucide-react';
 import VatSettingsCard from '@/components/account/VatSettingsCard';
+import ProviderPayoutsCard from '@/components/services/ProviderPayoutsCard';
 
 interface Status {
     connected: boolean;
@@ -55,6 +56,9 @@ export default function PaymentsSection() {
     const [working, setWorking] = useState(false);
     const [status, setStatus] = useState<Status>({ connected: false });
     const [isHost, setIsHost] = useState(false);
+    // An experience provider's payouts live on their business, not their profile
+    // (ProviderPayoutsCard) — shown here, as a host's are, from the moment they own one.
+    const [ownsExperience, setOwnsExperience] = useState(false);
     const [schedule, setSchedule] = useState<Schedule | null>(null);
     const [bank, setBank] = useState<Bank | null>(null);
     const [timing, setTiming] = useState('');
@@ -72,6 +76,13 @@ export default function PaymentsSection() {
                     .select('id', { count: 'exact', head: true })
                     .eq('host_id', session.user.id);
                 setIsHost((count || 0) > 0);
+                // Their own business rows are readable to them ("owners manage their own provider").
+                const { count: exp } = await supabase
+                    .from('service_providers')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('owner_id', session.user.id)
+                    .eq('audience', 'guest');
+                setOwnsExperience((exp || 0) > 0);
             }
 
             const res = await fetch('/api/stripe/connect');
@@ -181,6 +192,18 @@ export default function PaymentsSection() {
 
     const ready = status.connected && status.payouts_enabled;
     const pending = status.connected && !status.payouts_enabled;
+
+    // An experience provider with no holiday let: their payouts, not a host's
+    // "you don't have a listing yet".
+    if (!isHost && ownsExperience) {
+        return (
+            <div>
+                <h2 className="text-2xl font-bold text-slate-900 mb-1">Payments &amp; payouts</h2>
+                <p className="text-slate-500 text-sm mb-8">How you get paid for your bookings.</p>
+                <ProviderPayoutsCard heading={false} />
+            </div>
+        );
+    }
 
     return (
         <div>
@@ -429,6 +452,13 @@ export default function PaymentsSection() {
             {isHost && (
                 <div className="mt-6">
                     <VatSettingsCard />
+                </div>
+            )}
+
+            {/* A host who also runs an experience: its payouts are its own account. */}
+            {isHost && ownsExperience && (
+                <div className="mt-10 border-t pt-8">
+                    <ProviderPayoutsCard />
                 </div>
             )}
 

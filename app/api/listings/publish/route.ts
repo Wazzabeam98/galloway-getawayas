@@ -9,6 +9,7 @@ import { addressBlockerForPublish, NEW_LISTING_MIN_PHOTOS } from '@/lib/listingR
 import { HOST_TERMS_VERSION, hasAgreedToCurrentTerms, termsProblem } from '@/lib/hostTerms';
 import { recordAcceptance } from '@/lib/agreementRecords';
 import { needsPersonName } from '@/lib/personName';
+import { sendsListingConfirmation, confirmListingSubmission } from '@/lib/listingSubmittedConfirm';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('id, host_id, title, price_per_night, status, images, street_address, postcode, latitude, longitude')
+            .select('id, host_id, title, price_per_night, status, images, street_address, postcode, latitude, longitude, declined_at')
             .eq('id', listingId)
             .maybeSingle();
 
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
         // this is the server holding the line — lib/personName).
         const { data: owner } = await admin
             .from('profiles')
-            .select('first_name, last_name')
+            .select('first_name, last_name, preferred_name, full_name, email')
             .eq('id', user.id)
             .maybeSingle();
         if (needsPersonName(owner)) {
@@ -198,6 +199,21 @@ export async function POST(request: Request) {
                     path: 'api/listings/publish',
                     userId: user.id,
                 });
+            }
+        }
+
+        // "We've got your listing — it's in review", the host twin of the
+        // provider's confirmation (lib/listingSubmittedConfirm): only when this
+        // submit moves the listing INTO review. To the account's address; a
+        // failed send is logged and never un-submits the listing.
+        if (sendsListingConfirmation(listing.status, nextStatus)) {
+            try {
+                const sent = await confirmListingSubmission((owner && (owner as any).email) || user.email, listing, owner as any);
+                if (!sent) {
+                    await logError('listings/publish: the in-review email to the host did not send', null, { path: 'api/listings/publish', userId: user.id });
+                }
+            } catch (mailErr) {
+                await logError('listings/publish: the in-review email to the host did not send', mailErr, { path: 'api/listings/publish', userId: user.id });
             }
         }
 
