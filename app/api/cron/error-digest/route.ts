@@ -4,7 +4,7 @@ import { logError } from '@/lib/logError';
 import { INFO_SOURCE } from '@/lib/logSources';
 import { sendEmailToAll, recipients, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { RETENTION_DAYS, daysWaiting } from '@/lib/serviceApplications';
-import { cronRunOverdue } from '@/lib/cronHeartbeat';
+import { cronRunOverdue, recordCronRun } from '@/lib/cronHeartbeat';
 import { alertDirectorsNow } from '@/lib/moneyAlert';
 import { BACKUP_JOB } from '@/lib/backupVerify';
 
@@ -220,6 +220,39 @@ export async function GET(request: Request) {
         });
     }
 
+    // THE MONEY JOBS. These move real money to real people and, like the runs
+    // above, go silent if they stop firing — a host or guest simply isn't
+    // charged or paid, and nothing says so. Each now stamps a heartbeat
+    // (cron_runs) on every finish, so here we check all three and alert the
+    // directors if one is overdue or its last run failed. host-payouts and
+    // balance-charges run once a day (26h slack); booking-payments runs every
+    // ten minutes, so it is overdue after a couple of hours. (Audit 2026-10-21,
+    // finding F-cron.)
+    const MONEY_JOBS: Array<{ job: string; maxAgeHours: number; headline: string; whileDown: string }> = [
+        { job: 'host-payouts', maxAgeHours: 26, headline: 'The host payout run may have stopped',
+            whileDown: 'While it is not running, hosts are not paid the day after their guests check in.' },
+        { job: 'balance-charges', maxAgeHours: 26, headline: 'The balance-charge run may have stopped',
+            whileDown: 'While it is not running, the remaining balance on a booking is never taken, so a stay stays unpaid.' },
+        { job: 'booking-payments', maxAgeHours: 2, headline: 'The booking-payment reconcile may have stopped',
+            whileDown: 'While it is not running, a paid booking whose webhook was missed is never confirmed — the guest paid and the booking still reads unconfirmed.' },
+    ];
+    for (const m of MONEY_JOBS) {
+        try {
+            const c = await cronRunOverdue(m.job, m.maxAgeHours);
+            if (c.overdue) {
+                await alertDirectorsNow({
+                    headline: m.headline,
+                    lines: ['The ' + m.job + ' cron ' + c.reason + '.', m.whileDown],
+                    facts: { 'last run': c.ranAt || 'never' },
+                });
+            }
+        } catch (e) {
+            await logError('error-digest: could not check the ' + m.job + ' heartbeat', e, {
+                path: '/api/cron/error-digest',
+            });
+        }
+    }
+
     const drillHtml = !drillAlert ? '' : (
         '<div style="border:1px solid #fecaca;background:#fef2f2;border-radius:8px;padding:12px 14px;margin:0 0 16px;">'
         + '<p style="margin:0 0 6px;font-size:16px;font-weight:700;color:#b91c1c;">'
@@ -243,6 +276,7 @@ export async function GET(request: Request) {
     // unreviewed, or a restore drill that failed — and the old early return
     // would have swallowed them.
     if (errors.length === 0 && waiting.length === 0 && reviewQueue.length === 0 && !drillAlert) {
+        await recordCronRun('error-digest', true, 'nothing to report');
         return NextResponse.json({ ok: true, sent: 0, reason: 'nothing to report' });
     }
 
@@ -394,6 +428,7 @@ export async function GET(request: Request) {
             errors: errors.length,
             issues: issues.length,
         });
+        await recordCronRun('error-digest', true, 'nothing emailed; errors=' + errors.length + ' issues=' + issues.length);
         return NextResponse.json({ ok: true, sent: 0, errors: errors.length, issues: issues.length });
     }
 
@@ -547,6 +582,7 @@ export async function GET(request: Request) {
         });
     }
 
+    await recordCronRun('error-digest', true, 'sent=' + sent + ' errors=' + errors.length + ' issues=' + issues.length);
     return NextResponse.json({
         ok: true,
         sent: sent,

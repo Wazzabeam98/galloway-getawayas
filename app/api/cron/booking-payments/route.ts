@@ -3,9 +3,12 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { paidSessionsSince } from '@/lib/bookingPaymentReconcile';
 import { settlePaidBookingSession, bookingIdOf } from '@/lib/settlePaidBooking';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'booking-payments';
 
 // A CHARGED GUEST MUST NOT BE LEFT AT pending_payment.
 //
@@ -48,11 +51,13 @@ export async function GET(request: Request) {
         await logError('[cron/booking-payments] could not read the bookings waiting on payment', waitingError, {
             path: 'cron/booking-payments',
         });
+        await recordCronRun(JOB, false, 'could not read the bookings waiting on payment');
         return NextResponse.json({ ok: false }, { status: 500 });
     }
 
     // Nothing waiting, nothing to ask Stripe.
     if (!waiting || !waiting.length) {
+        await recordCronRun(JOB, true, 'nothing waiting');
         return NextResponse.json({ ok: true, waiting: 0, recovered: 0 });
     }
 
@@ -65,6 +70,7 @@ export async function GET(request: Request) {
         await logError('[cron/booking-payments] could not list paid sessions from Stripe', err, {
             path: 'cron/booking-payments',
         });
+        await recordCronRun(JOB, false, 'could not list paid sessions from Stripe');
         return NextResponse.json({ ok: false }, { status: 500 });
     }
 
@@ -98,5 +104,6 @@ export async function GET(request: Request) {
         }
     }
 
+    await recordCronRun(JOB, true, 'waiting=' + waiting.length + ' recovered=' + recovered.length + ' failed=' + failed.length);
     return NextResponse.json({ ok: true, waiting: waiting.length, recovered: recovered.length, failed: failed.length });
 }

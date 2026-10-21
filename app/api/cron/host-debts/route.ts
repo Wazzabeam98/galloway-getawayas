@@ -8,8 +8,11 @@ import { outstandingOf, round2 } from '@/lib/hostDebt';
 import { DEBT_SELECT, attachBookings, debtTitle, hostHasComingPayouts, type HostDebt } from '@/lib/hostDebtView';
 import { settleHostDebtSession } from '@/lib/hostDebtSettle';
 import { ukDate } from '@/lib/dayKey';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
+
+const JOB = 'host-debts';
 
 // Daily, after the payout run.
 //
@@ -113,5 +116,6 @@ export async function GET(request: Request) {
         await logError('[cron/host-debts] due notices failed', err, { path: 'api/cron/host-debts' });
     }
 
+    await recordCronRun(JOB, true, 'reconciled=' + reconciled + ' noticed=' + noticed);
     return NextResponse.json({ ok: true, reconciled, noticed });
 }

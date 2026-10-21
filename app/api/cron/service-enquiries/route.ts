@@ -3,9 +3,12 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceExpiry } from '@/lib/serviceEnquiryAlert';
 import { settleDue } from '@/lib/serviceEnquirySweep';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'service-enquiries';
 
 // Telling a host that nobody answered.
 //
@@ -70,5 +73,6 @@ export async function GET(request: Request) {
         }
     }
 
+    await recordCronRun(JOB, true, 'expired=' + settled.expired.length + ' told=' + told);
     return NextResponse.json({ ok: true, expired: settled.expired.length, told });
 }

@@ -21,6 +21,7 @@ import { PackageStaysProvider } from '@/components/marketplace/PackageNotice';
 import { loadStayWindows } from '@/lib/packageNotice';
 import { londonDayKey } from '@/lib/dayKey';
 import { getImageUrl } from '@/lib/utils';
+import { guestCategory } from '@/lib/serviceProviders';
 import type { MpProvider } from '@/lib/experiencesData';
 import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
 
@@ -42,16 +43,28 @@ const SITE_URL = 'https://gallowaygetaways.co.uk';
 // is a RANGE, carries NO price: the Product still earns a rating rich result,
 // but we never advertise a price we can't hold the guest to. Pounds, as a
 // number, exactly as the cottage Offer uses price_per_night.
+// The search / social snippet for an experience — built from STRUCTURED facts
+// (the name, its category and where it's based), never the provider's free-text
+// description. The description field has turned out to hold arrival logistics
+// ("We arrive an hour before to set up. We require parking close to the
+// venue…") that read terribly as a search/share snippet and never say what the
+// experience is. This keeps logistics out of every snippet (meta, OG, Twitter
+// and JSON-LD) for every provider (audit 2026-10-21, F6). The provider's full
+// free-text description still shows in the page body (ExperienceListingBody) —
+// only the SNIPPET changed, not the page.
+function experienceSnippet(name: string, category: string | null, basedLine: string | null): string {
+    const what = (category || '').trim() || 'Local experience';
+    const town = (basedLine || '').trim();
+    const where = town && !/^travels\b/i.test(town) ? `${town}, Dumfries & Galloway` : 'Dumfries & Galloway';
+    return `${name} — ${what} in ${where}. Book direct through Galloway Getaways, no booking fee.`;
+}
+
 function experienceJsonLd(p: MpProvider, reviews: ExperienceReviewsBlock, path: string): object[] {
     const url = SITE_URL + path;
     const image = (Array.isArray(p.photos) && p.photos[0])
         || (p.headshot ? getImageUrl(p.headshot) : null);
 
-    const raw = (p.description || p.what_happens || '').replace(/\s+/g, ' ').trim();
-    const where = p.based_line ? ` in ${p.based_line}` : '';
-    const description = raw
-        ? (raw.length > 300 ? raw.slice(0, 297).trimEnd() + '…' : raw)
-        : `${p.business_name} — a local experience${where}, Dumfries & Galloway. Booked and paid securely through Galloway Getaways.`;
+    const description = experienceSnippet(p.business_name, p.category, p.based_line);
 
     // The cheapest option — the same selection the loader uses for p.priceFrom,
     // so a published price equals the displayed "from". Every listed offering
@@ -144,7 +157,7 @@ export async function generateMetadata(
     const admin = adminClient();
     const { data } = await admin
         .from('service_providers')
-        .select('business_name, based_line, description, headshot, photos, status')
+        .select('business_name, based_line, trade, custom_label, stripe_mcc, guest_details, headshot, photos, status')
         .eq('id', params.providerId)
         .maybeSingle();
 
@@ -154,13 +167,10 @@ export async function generateMetadata(
     if (data.status !== 'approved') return { title: data.business_name || 'Experience', robots: { index: false, follow: false } };
 
     const name = data.business_name || 'Experience';
-    const where = data.based_line ? `${data.based_line}, ` : '';
-    // The provider's own blurb, collapsed to one line and clamped, else a
-    // sensible default that still says what and where.
-    const raw = (data.description || '').replace(/\s+/g, ' ').trim();
-    const description = raw
-        ? (raw.length > 155 ? raw.slice(0, 152).trimEnd() + '…' : raw)
-        : `${name} — a local experience in ${where}Dumfries & Galloway. Booked and paid securely through Galloway Getaways.`;
+    // Built from structured facts (name + category + where), never the
+    // provider's free-text description — same helper the JSON-LD uses, so the
+    // snippet is identical everywhere and never carries arrival logistics (F6).
+    const description = experienceSnippet(name, guestCategory(data), data.based_line);
 
     const key = (Array.isArray(data.photos) && data.photos[0]) || data.headshot;
     const image = key ? getImageUrl(key) : undefined;

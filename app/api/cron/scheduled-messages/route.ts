@@ -18,9 +18,12 @@ import {
 import type { BookingLike } from '@/lib/scheduledMessages';
 import { resolveTemplate, customTemplatesFor, CUSTOM_TYPE } from '@/lib/messageTemplates';
 import type { ScopedTemplate } from '@/lib/messageTemplates';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'scheduled-messages';
 
 // Sends the messages hosts have already written.
 //
@@ -239,6 +242,7 @@ export async function GET(request: Request) {
             await logError('scheduled-messages: could not load the templates', templateError, {
                 path: '/api/cron/scheduled-messages',
             });
+            await recordCronRun(JOB, false, 'could not load the templates');
             return NextResponse.json(
                 { ok: false, error: 'Could not load the templates' },
                 { status: 500 }
@@ -250,6 +254,7 @@ export async function GET(request: Request) {
             // No host templates at all — but the check-in floor still runs, and
             // this is the commonest case it exists for.
             const fb = await checkInFallbackPass(admin, now, []);
+            await recordCronRun(JOB, true, 'no templates; fallback sent=' + fb.sent + ' skipped=' + fb.skipped + ' failed=' + fb.failed);
             return NextResponse.json({ ok: true, sent: fb.sent, skipped: fb.skipped, failed: fb.failed });
         }
 
@@ -265,6 +270,7 @@ export async function GET(request: Request) {
             await logError('scheduled-messages: could not load template scopes', scopeError, {
                 path: '/api/cron/scheduled-messages',
             });
+            await recordCronRun(JOB, false, 'could not load the template scopes');
             return NextResponse.json(
                 { ok: false, error: 'Could not load the template scopes' },
                 { status: 500 }
@@ -312,6 +318,7 @@ export async function GET(request: Request) {
             await logError('scheduled-messages: could not load the bookings', bookingError, {
                 path: '/api/cron/scheduled-messages',
             });
+            await recordCronRun(JOB, false, 'could not load the bookings');
             return NextResponse.json(
                 { ok: false, error: 'Could not load the bookings' },
                 { status: 500 }
@@ -347,6 +354,7 @@ export async function GET(request: Request) {
                     recentError,
                     { path: '/api/cron/scheduled-messages' }
                 );
+                await recordCronRun(JOB, false, 'could not load recently accepted bookings');
                 return NextResponse.json(
                     { ok: false, error: 'Could not load the bookings' },
                     { status: 500 }
@@ -371,6 +379,7 @@ export async function GET(request: Request) {
             // No template-anchored sends due — the floor still sweeps every
             // arriving stay, including those whose host has no template.
             const fb = await checkInFallbackPass(admin, now, live);
+            await recordCronRun(JOB, true, 'no bookings due; fallback sent=' + fb.sent + ' skipped=' + fb.skipped + ' failed=' + fb.failed);
             return NextResponse.json({ ok: true, sent: fb.sent, skipped: fb.skipped, failed: fb.failed });
         }
 
@@ -606,6 +615,7 @@ export async function GET(request: Request) {
         }
 
         const fb = await checkInFallbackPass(admin, now, live);
+        await recordCronRun(JOB, true, 'sent=' + (sent + fb.sent) + ' skipped=' + (skipped + fb.skipped) + ' failed=' + (failed + fb.failed));
         return NextResponse.json({
             ok: true,
             sent: sent + fb.sent,
@@ -618,6 +628,7 @@ export async function GET(request: Request) {
             err,
             { path: '/api/cron/scheduled-messages' }
         );
+        await recordCronRun(JOB, false, 'run failed: ' + ((err && err.message) || ''));
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not send scheduled messages' },
             { status: 500 }

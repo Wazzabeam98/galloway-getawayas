@@ -65,11 +65,16 @@ const POLICY_WORDS: Record<FixedPolicyKey, string> = {
 };
 
 // Custom reads from the stamped/chosen day count, in Airbnb's shape: full refund
-// before the host's cutoff, nothing within it.
+// up to the host's cutoff, nothing after it. The boundary is INCLUSIVE — the
+// refund logic (lib/cancellation.ts refundFraction) returns a full refund when
+// daysBefore >= d, so cancelling exactly d days before check-in is still fully
+// refunded. The wording must match that (and the fixed tiers, which say "up to
+// N days before"), not the old "more than d days / within d days", which was
+// off by a day against what the guest is actually refunded.
 export function customPolicyWords(days: number): string {
     const d = customDaysOf(days);
-    return 'Full refund if you cancel more than ' + d + ' day' + (d === 1 ? '' : 's')
-        + ' before check-in. No refund within ' + d + ' day' + (d === 1 ? '' : 's') + '.';
+    return 'Full refund up to ' + d + ' day' + (d === 1 ? '' : 's')
+        + ' before check-in. No refund after that.';
 }
 
 export function cancellationWords(

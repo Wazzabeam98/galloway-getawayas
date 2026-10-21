@@ -11,9 +11,12 @@ import {
     button,
     SITE_URL,
 } from '@/lib/email';
+import { recordCronRun } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const JOB = 'review-reminders';
 
 export async function GET(request: Request) {
     // Vercel Cron sends the secret as a bearer token. Without this, anyone
@@ -182,5 +185,6 @@ export async function GET(request: Request) {
         }
     }
 
+    await recordCronRun(JOB, true, 'considered=' + (bookings || []).length + ' sent=' + sent + ' skipped=' + skipped);
     return NextResponse.json({ ok: true, considered: (bookings || []).length, sent, skipped });
 }
