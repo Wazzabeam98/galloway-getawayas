@@ -28,8 +28,67 @@ const COLUMNS: Record<string, string> = {
 export default async function UnsubscribePage({
     searchParams,
 }: {
-    searchParams: { token?: string; type?: string };
+    searchParams: { token?: string; type?: string; listing?: string };
 }) {
+    // A listing's forwarded-notification address unsubscribing itself from one
+    // property — a different thing from an account changing its own preferences
+    // (below). The token is the row's stable unsubscribe token; it only ever
+    // removes this one address from this one listing, so clicking it just
+    // deletes the row.
+    const listingToken = searchParams.listing || '';
+    if (listingToken) {
+        let done = false;
+        try {
+            const admin = createClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+                process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+                { auth: { persistSession: false } }
+            );
+            const { error } = await admin
+                .from('listing_notification_subscribers')
+                .delete()
+                .eq('unsubscribe_token', listingToken);
+            // A second click finds nothing to delete, which is still "you're off
+            // the list" — so a clean delete is success whether or not it matched
+            // a row. Only a thrown error (bad token shape, no service key) is a
+            // failure worth showing.
+            done = !error;
+        } catch (err) {
+            done = false;
+        }
+
+        return (
+            <div className="max-w-lg mx-auto px-6 py-20 text-center">
+                {done ? (
+                    <>
+                        <CheckCircle2 className="w-12 h-12 text-emerald-700 mx-auto mb-5" />
+                        <h1 className="text-2xl font-bold text-slate-900 mb-2">You&apos;re unsubscribed</h1>
+                        <p className="text-slate-600">
+                            We won&apos;t send you any more emails about this property. The host can add you again if you
+                            change your mind.
+                        </p>
+                    </>
+                ) : (
+                    <>
+                        <AlertCircle className="w-12 h-12 text-slate-400 mx-auto mb-5" />
+                        <h1 className="text-2xl font-bold text-slate-900 mb-2">That link didn&apos;t work</h1>
+                        <p className="text-slate-600">
+                            It may have been copied incompletely. Email us and we&apos;ll take you off straight away.
+                        </p>
+                    </>
+                )}
+                <div className="mt-8">
+                    <Link
+                        href="/"
+                        className="px-5 py-2.5 border border-slate-300 hover:border-slate-500 text-slate-700 text-sm font-semibold rounded-xl transition"
+                    >
+                        Back to the site
+                    </Link>
+                </div>
+            </div>
+        );
+    }
+
     const token = searchParams.token || '';
     const type = searchParams.type && COLUMNS[searchParams.type] ? searchParams.type : 'marketing';
 

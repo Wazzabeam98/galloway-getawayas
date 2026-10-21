@@ -13,6 +13,7 @@ import { ukDate, londonDayKey as dayKeyOf } from '@/lib/dayKey';
 import { recordEmailPush } from '@/lib/pushOutbox';
 import { queueFailedEmail } from '@/lib/emailOutbox';
 import { providerTeamCopies } from '@/lib/providerTeamEmail';
+import { listingNotifyCopies, withListingUnsubscribe } from '@/lib/listingNotifyEmail';
 import type { PushSpec } from '@/lib/pushRules';
 import { randomUUID } from 'crypto';
 
@@ -270,6 +271,17 @@ export async function sendEmail(to: string, subject: string, html: string, push?
         const key = randomUUID();
         if (!(await sendEmailOnly(copy, subject, html, key))) await queueFailedEmail(copy, subject, html, key);
         await recordEmailPush(copy, subject, html, push);
+    }
+    // A listing's extra notification addresses get a copy of exactly the emails
+    // the owner gets for that listing (lib/listingNotifyEmail). Like the co-host
+    // copies above, sent here so a copy never fans out a second time — but each
+    // copy carries its own one-click unsubscribe link, and these addresses are
+    // not account holders, so no push is recorded for them. A failed copy still
+    // retries through the email outbox.
+    for (const sub of await listingNotifyCopies(to, subject, html)) {
+        const key = randomUUID();
+        const copyHtml = withListingUnsubscribe(html, sub.unsubscribeToken);
+        if (!(await sendEmailOnly(sub.email, subject, copyHtml, key))) await queueFailedEmail(sub.email, subject, copyHtml, key);
     }
     return sent;
 }

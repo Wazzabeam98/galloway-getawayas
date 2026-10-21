@@ -41,10 +41,11 @@ import { normaliseArrangements, roomsFromBedroomCount, deriveCounts, sleepingPat
 import { publishProblems } from '@/lib/listingRules';
 import { amountForBox, amountOrNull, amountOrZero } from '@/lib/amountInput';
 import { CalendarSyncCard } from '@/components/IcalFeeds';
+import NotificationEmailsCard from '@/components/listing-editor/NotificationEmailsCard';
 import LeaveListingBtn from '@/components/LeaveListingBtn';
 import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
 import {
-    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen,
+    HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen, Mail,
 } from 'lucide-react';
 
 
@@ -130,6 +131,10 @@ const SECTIONS = [
     // book, only on the Account page).
     { key: 'booking', label: 'Booking settings', short: 'Booking', icon: CalendarRange },
     { key: 'calendar', label: 'Calendar sync', short: 'Calendar sync', icon: RefreshCw },
+    // Extra addresses that get a copy of this listing's booking emails — no
+    // account, no co-host access. Its own section so it never tangles with the
+    // listing's own fields.
+    { key: 'notifications', label: 'Notification emails', short: 'Notifications', icon: Mail },
 ];
 
 const CANCELLATION_POLICIES = [
@@ -146,7 +151,7 @@ const CANCELLATION_POLICIES = [
 // section is shown). On a phone, where every section sits on one page, a block
 // the tab bar can find and scroll to, with the section's heading — Basics and
 // Arrival don't carry one of their own.
-const OWN_HEADING = new Set(['location', 'description', 'amenities', 'photos', 'rates', 'booking', 'calendar']);
+const OWN_HEADING = new Set(['location', 'description', 'amenities', 'photos', 'rates', 'booking', 'calendar', 'notifications']);
 function PhoneSection({ id, phone, children }: { id: string; phone: boolean; children: React.ReactNode }) {
     if (!phone) return <>{children}</>;
     const label = SECTIONS.find((s) => s.key === id)?.label;
@@ -858,6 +863,10 @@ export default function EditListing() {
                                     exportUrl={typeof window !== 'undefined' && icalToken ? `${window.location.origin}/api/ical/${listingId}?token=${icalToken}` : null}
                                 />
                             </section>
+                        </PhoneSection>)}
+
+                        {shows('notifications') && (<PhoneSection id="notifications" phone={isPhone}>
+                            <NotificationEmailsCard listingId={listingId} />
                         </PhoneSection>)}
 
                         {/* A listing that predates a rule keeps saving, so it
