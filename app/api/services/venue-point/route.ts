@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { refreshVenuePoint } from '@/lib/venuePoint';
 import { mayActOn } from '@/lib/providerAccess';
+import { revalidateExperiencePage } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,8 @@ export async function POST(req: Request) {
         }
 
         const outcome = await refreshVenuePoint(admin, providerId);
+        // The "Where you'll be" map on the public page.
+        revalidateExperiencePage(providerId);
         return NextResponse.json({ ok: true, outcome });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not update the map point' }, { status: 500 });

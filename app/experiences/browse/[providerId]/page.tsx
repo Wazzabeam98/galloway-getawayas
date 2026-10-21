@@ -1,32 +1,35 @@
+// Edge-cached (ISR), like the cottage page (/homes/[id]) and the home page. A
+// live experience's page is the same for everyone — the listing, its photos,
+// prices, public reviews and the provider's first name — so it is served from
+// Vercel's cache and rebuilt in the background. Nothing in this file reads the
+// viewer: whether they're signed in, the provider's review-reply box, the
+// viewer's own stays (the package notice) and the live calendar are fetched
+// after load (components/marketplace/ExperienceViewer, /api/experiences/live/
+// [providerId]), so no cached copy can ever carry one person's details.
+//
+// A provider that isn't approved yet is NEVER rendered here. Its cached copy is
+// only a redirect to …/[providerId]/preview, a per-request route that checks the
+// viewer is its owner or an admin before showing anything (and sends anyone else
+// to browse). Reading the session here instead would make Next 13 fail the
+// render ("changed from static to dynamic at runtime"), and would risk an
+// owner's preview being cached for strangers.
+//
+// Every save that changes what this page shows — the editor, hours and day-offs,
+// prices, approval, pause, take-down, reviews — refreshes it on the spot via
+// lib/revalidatePublic; 300s is the background fallback.
+export const revalidate = 300;
+
 import { redirect } from 'next/navigation';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
-import { loadPublicMarketplace, loadPausedProvider, loadOwnerPreviewProvider, pickProvider } from '@/lib/experiencesData';
-import OwnerPreviewBanner from '@/components/services/OwnerPreviewBanner';
-import { isAdmin } from '@/lib/adminAudit';
-import NotTakingBookings from '@/components/NotTakingBookings';
-import { EXPERIENCE_NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
+import { loadLiveProvider, loadPausedProvider } from '@/lib/experiencesData';
 import { loadExperienceReviews } from '@/lib/experienceReviews';
 import { providerResponsiveness } from '@/lib/hostResponsiveness';
-import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
-import StandaloneBookingPanel from '@/components/marketplace/StandaloneBookingPanel';
-import BookingPanel from '@/components/marketplace/BookingPanel';
-import { FoodCartProvider } from '@/components/marketplace/FoodCart';
-import FoodMenu from '@/components/marketplace/FoodMenu';
-import FoodBasket from '@/components/marketplace/FoodBasket';
-import { RequestBookingProvider } from '@/components/marketplace/RequestBookingContext';
-import ChooseMenu from '@/components/marketplace/ChooseMenu';
-import { PackageStaysProvider } from '@/components/marketplace/PackageNotice';
-import { loadStayWindows } from '@/lib/packageNotice';
-import { londonDayKey } from '@/lib/dayKey';
+import { ExperiencePageView, PausedExperienceView } from '@/components/marketplace/ExperiencePageView';
 import { getImageUrl } from '@/lib/utils';
 import { guestCategory } from '@/lib/serviceProviders';
 import type { MpProvider } from '@/lib/experiencesData';
 import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
-
-export const dynamic = 'force-dynamic';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -209,88 +212,78 @@ export async function generateMetadata(
     };
 }
 
+// Pre-render every live experience at build so each is a static, edge-cached
+// page from its first visit. One that goes live after the build renders on demand
+// the first time it is opened and is cached from then (the approval also
+// refreshes it). Not-yet-approved providers are never listed. The GitHub build
+// check runs without Supabase env, so this returns [] there (pages then render on
+// demand and still cache) — the same guard as the cottage page.
+export async function generateStaticParams(): Promise<{ providerId: string }[]> {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return [];
+    if (!guestExperiencesOpen()) return [];
+    try {
+        const { data } = await adminClient()
+            .from('service_providers')
+            .select('id')
+            .eq('audience', 'guest')
+            .eq('status', 'approved')
+            .eq('owner_paused', false)
+            .is('admin_hidden_at', null);
+        return (data || []).map((r: any) => ({ providerId: String(r.id) }));
+    } catch {
+        return [];
+    }
+}
+
 // The PUBLIC (bookingless) listing — readable logged out. Same body as the
 // against-a-stay listing, so the two read as one page. The booking column is the
-// only difference: a slot experience gets the standalone booking box (which
-// prompts sign-in when logged out); a request shape (a chef, a made-to-order
-// baker) is browsable but not standalone-bookable yet, so it says so honestly and
-// points at booking it with a cottage stay — never a checkout that fails.
+// only difference: a slot experience gets the standalone booking box, a request
+// shape the request panel, a made-to-order one the basket; each asks for an
+// account only at checkout (components/marketplace/ExperiencePageView).
 export default async function PublicListingPage({ params }: { params: { providerId: string } }) {
-    const supabase = createServerComponentClient({ cookies });
-    const { data: { user } } = await supabase.auth.getUser();
-
     const admin = adminClient();
-    const mp = await loadPublicMarketplace(admin, guestExperiencesOpen());
-    let p = pickProvider(mp, params.providerId);
-    // THE OWNER'S PREVIEW, before approval: the provider looking at their own
-    // page sees exactly what guests will, with a quiet bar saying no one else
-    // can yet — the same as a host previewing a pending cottage. The loader
-    // matches the owner in its query, so anyone else falls through as before.
-    let preview: { status: string; asAdmin: boolean } | null = null;
-    if (!p && user) {
-        const own = await loadOwnerPreviewProvider(admin, params.providerId, user.id);
-        if (own) {
-            const { data: st } = await admin.from('service_providers').select('status').eq('id', own.id).maybeSingle();
-            p = own;
-            preview = { status: String((st && st.status) || 'draft'), asAdmin: false };
-        } else if (await isAdmin(user.id)) {
-            // AN ADMIN REVIEWING IT: the same real guest page the owner previews
-            // (loaded as its owner would see it), so the review queue's title
-            // opens what guests will get, not a redirect to browse. Server-side
-            // check on the viewer's own is_admin; anyone else falls through.
-            const { data: row } = await admin.from('service_providers').select('owner_id, status').eq('id', params.providerId).maybeSingle();
-            const theirs = row && row.owner_id ? await loadOwnerPreviewProvider(admin, params.providerId, row.owner_id) : null;
-            if (theirs) {
-                p = theirs;
-                preview = { status: String((row && row.status) || 'draft'), asAdmin: true };
-            }
-        }
-    }
-    const banner = preview
-        ? (preview.asAdmin
-            ? <OwnerPreviewBanner status={preview.status} who="guests" viewer="admin" backHref="/admin/providers#experiences" backLabel="Back to the review queue" />
-            : <OwnerPreviewBanner status={preview.status} who="guests" backHref="/services/dashboard/listing" backLabel="Back to your listing" />)
-        : undefined;
+    const open = guestExperiencesOpen();
+    const p = await loadLiveProvider(admin, params.providerId, open);
+
     if (!p) {
-        // Paused by its provider: the old link still opens the page, with the
-        // panel replaced — the same as a hidden cottage. Static "What you get"
-        // list instead of the interactive menu (no basket, no option picker),
-        // so nothing on the page starts a booking. Anything else not live still
-        // goes back to browse.
-        const paused = await loadPausedProvider(admin, params.providerId, guestExperiencesOpen());
-        if (!paused) redirect('/experiences/browse');
-        const pausedReviews = await loadExperienceReviews(admin, paused.id, user?.id ?? null);
-        return (
-            <ExperienceListingBody
-                p={paused}
-                backHref="/experiences/browse"
-                backLabel="All experiences"
-                reviews={pausedReviews}
-                reportable
-                panel={<NotTakingBookings message={EXPERIENCE_NOT_TAKING_BOOKINGS} />}
-            />
-        );
+        // Paused by its provider, or taken down by us: the old link still opens
+        // the page, with the booking panel replaced — the same as a hidden cottage.
+        const paused = await loadPausedProvider(admin, params.providerId, open);
+        if (paused) {
+            const pausedReviews = await loadExperienceReviews(admin, paused.id, null);
+            return <PausedExperienceView p={paused} reviews={pausedReviews} />;
+        }
+        // Not approved yet: only its owner (or an admin reviewing it) may see it,
+        // and only on the per-request preview route. This redirect is all that is
+        // cached for it — no name, no photos, nothing about the provider.
+        const { data: row } = await admin
+            .from('service_providers')
+            .select('status, audience')
+            .eq('id', params.providerId)
+            .maybeSingle();
+        if (row && row.audience === 'guest' && row.status !== 'approved') {
+            redirect(`/experiences/browse/${params.providerId}/preview`);
+        }
+        // Anything else not live goes back to browse.
+        redirect('/experiences/browse');
     }
 
-    const who = p.byline || p.business_name;
     const here = `/experiences/browse/${params.providerId}`;
-    const reviews = await loadExperienceReviews(admin, p.id, user?.id ?? null);
+    // Reviews with no viewer: the reply box is switched on after load for the
+    // provider (ExperienceViewer → ProviderReplyBox).
+    const reviews = await loadExperienceReviews(admin, p.id, null);
     // Response rate and typical reply time for the "Meet your host" card — the same
     // trust lines a cottage host gets, on the same rules (service role; a provider
     // is not a party on their own orders for the visitor's client). Counts their
     // booking requests answered by accepting or declining as well as message
     // replies. Passing it switches the body to the full MeetYourHost card.
     const responsiveness = await providerResponsiveness(admin, p.id, p.ownerId);
-    // The guest's own confirmed, paid stays, as dates only — the checkout draws
-    // the package notice when the picked day falls inside one (lib/packageNotice).
-    const packageStays = await loadStayWindows(admin, user?.id, londonDayKey());
 
-    // Product + LocalBusiness + BreadcrumbList structured data, injected on every live render
-    // below (made-to-order, slot, request, comes-to-you alike). Not on the
-    // paused branch above: a paused provider isn't bookable, so it should not
-    // advertise an offer.
-    // None for the owner's preview: an unapproved page advertises nothing.
-    const ldScripts = (preview ? [] : experienceJsonLd(p, reviews, here)).map((obj, i) => (
+    // Product + LocalBusiness + BreadcrumbList structured data, on every live
+    // page (made-to-order, slot, request, comes-to-you alike). Not on the paused
+    // page above (not bookable, so no offer) nor on the owner's preview (an
+    // unapproved page advertises nothing).
+    const ldScripts = experienceJsonLd(p, reviews, here).map((obj, i) => (
         <script
             key={i}
             type="application/ld+json"
@@ -298,103 +291,5 @@ export default async function PublicListingPage({ params }: { params: { provider
         />
     ));
 
-    // A made-to-order listing reads like a food-ordering site: the MENU leads the
-    // page (photos, prices) and the sidebar is a BASKET, both sharing one cart.
-    if (p.shape === 'made_to_order') {
-        return (
-            <PackageStaysProvider stays={packageStays}>
-            {ldScripts}
-            {/* Only fixed-price offerings go in the orderable menu; a range or
-                price-on-enquiry item is reached through "Message the provider"
-                in the listing body (and refused server-side anyway). */}
-            <FoodCartProvider items={p.items}>
-                <ExperienceListingBody
-                    banner={banner}
-                    p={p}
-                    backHref="/experiences/browse"
-                    backLabel="All experiences"
-                    reviews={reviews}
-                    sticky
-                    responsiveness={responsiveness}
-                    reportable={!preview}
-                    menu={<FoodMenu leadTimeDays={p.lead_time_days} />}
-                    panel={<FoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} standalone providerId={p.id} signedIn={!!user} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} />}
-                />
-            </FoodCartProvider>
-            </PackageStaysProvider>
-        );
-    }
-
-    const panel = p.shape === 'slot' ? (
-        <StandaloneBookingPanel
-            signedIn={!!user}
-            signInNext={here}
-            provider={{
-                id: p.id, who, shape: p.shape, fulfilment: p.fulfilment, isFood: p.isFood,
-                slotCapacity: p.slotCapacity, minPeople: p.minPeople, slotLength: p.slotLength,
-                items: p.items, sessions: p.sessions, declaredSessions: p.declaredSessions,
-                cancellationHours: p.cancellation_window_hours, noRefund: p.noRefund,
-                minAge: p.minAge, everScheduled: p.everScheduled,
-            }}
-        />
-    ) : (
-        // A request shape (chef / made-to-order baker), booked standalone — no stay
-        // needed. The guest picks a date and, if the provider offers them, a time;
-        // a travelling shape asks for an address. The card is held, not charged,
-        // until the provider confirms.
-        <BookingPanel
-            standalone
-            signedIn={!!user}
-            provider={{
-                id: p.id,
-                business_name: p.business_name,
-                who,
-                shape: p.shape,
-                fulfilment: p.fulfilment,
-                isFood: p.isFood,
-                items: p.items,
-                sessions: p.sessions,
-                declaredSessions: p.declaredSessions,
-                leadTimeDays: p.lead_time_days,
-                minPeople: p.minPeople,
-                slotCapacity: p.slotCapacity,
-                slotAvailability: p.slotAvailability,
-                slotBlocks: p.slotBlocks,
-                partialBlocks: p.partialBlocks,
-                bookedDates: p.bookedDates,
-                cancellationHours: p.cancellation_window_hours,
-                noRefund: p.noRefund,
-                minAge: p.minAge,
-                offeredTimes: p.offeredTimes,
-                horizonDays: p.horizonDays,
-                maxGuests: p.maxGuests,
-            }}
-        />
-    );
-
-    // A comes-to-you experience: choose the option on the listing (ChooseMenu),
-    // which opens the panel's dialog on it — wrap the page in the provider that
-    // connects the two.
-    const isComesToYou = p.shape === 'comes_to_you';
-    const body = (
-        <ExperienceListingBody
-            banner={banner}
-            p={p}
-            backHref="/experiences/browse"
-            backLabel="All experiences"
-            panel={panel}
-            sticky
-            responsiveness={responsiveness}
-            reportable={!preview}
-            itemsMenu={isComesToYou ? <ChooseMenu items={p.items} minAge={p.minAge} providerMax={p.maxGuests} /> : undefined}
-            reviews={reviews}
-        />
-    );
-
-    return (
-        <PackageStaysProvider stays={packageStays}>
-            {ldScripts}
-            {isComesToYou ? <RequestBookingProvider>{body}</RequestBookingProvider> : body}
-        </PackageStaysProvider>
-    );
+    return <ExperiencePageView p={p} reviews={reviews} responsiveness={responsiveness} structuredData={ldScripts} />;
 }

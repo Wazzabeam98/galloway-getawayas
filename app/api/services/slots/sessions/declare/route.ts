@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { londonDayKey } from '@/lib/dayKey';
 import { checkProvider } from '@/lib/providerAccess';
+import { revalidateExperiencePage } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,6 +99,7 @@ export async function POST(request: Request) {
         }
 
         const added = results.filter((r) => r.ok).length;
+        if (added > 0) revalidateExperiencePage(providerId);
         return NextResponse.json({ ok: true, added, skipped: results.length - added, results });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not add the sessions' }, { status: 500 });
@@ -129,6 +131,7 @@ export async function DELETE(request: Request) {
         }
 
         await admin.from('slot_sessions').delete().eq('id', id).eq('provider_id', providerId);
+        revalidateExperiencePage(providerId);
         return NextResponse.json({ ok: true });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not remove the session' }, { status: 500 });

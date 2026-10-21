@@ -392,7 +392,10 @@ export async function loadPublicMarketplace(
  * stay, a listing or a guest, so the two callers can't drift apart on
  * eligibility, pricing, seat availability or privacy.
  */
-async function shapeProviders(admin: any, fromKey: string, toKey: string, pausedId?: string, showUnscheduled = false, previewOwnerId?: string): Promise<MpProvider[]> {
+async function shapeProviders(admin: any, fromKey: string, toKey: string, pausedId?: string, showUnscheduled = false, previewOwnerId?: string, liveId?: string): Promise<MpProvider[]> {
+    // liveId: shape just that ONE live provider, with every live gate exactly as
+    // for the whole marketplace — for its own page and its live availability
+    // (loadLiveProvider), without shaping every other provider to pick one out.
     // previewOwnerId: shape that ONE provider (pausedId is its id) for its OWNER
     // to preview before approval — any status but approved, owner-matched in the
     // query, and none of the live-to-guests gates (an MCC is only assigned at
@@ -421,6 +424,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
         query = pausedId
             ? query.eq('id', pausedId).or('owner_paused.eq.true,admin_hidden_at.not.is.null')
             : query.eq('owner_paused', false).is('admin_hidden_at', null);
+        if (liveId && !pausedId) query = query.eq('id', liveId);
     }
     const { data: rows } = await query;
 
@@ -764,6 +768,20 @@ export async function loadOwnerPreviewProvider(admin: any, providerId: string, o
     if (!ownerId || !providerId) return null;
     const fromKey = londonDayKey(new Date());
     const providers = await shapeProviders(admin, fromKey, shiftDayKey(fromKey, PUBLIC_HORIZON_DAYS), providerId, true, ownerId);
+    return providers[0] || null;
+}
+
+/**
+ * One LIVE provider, shaped exactly as the public marketplace shapes it (same
+ * window, same gates, unscheduled kept) — or null when it isn't live to guests
+ * (pending, paused, taken down, payouts off, launch flag off). The public
+ * experience page and its live-availability route read this rather than the
+ * whole marketplace.
+ */
+export async function loadLiveProvider(admin: any, providerId: string, open: boolean): Promise<MpProvider | null> {
+    if (!open || !providerId) return null;
+    const fromKey = londonDayKey(new Date());
+    const providers = await shapeProviders(admin, fromKey, shiftDayKey(fromKey, PUBLIC_HORIZON_DAYS), undefined, true, undefined, providerId);
     return providers[0] || null;
 }
 

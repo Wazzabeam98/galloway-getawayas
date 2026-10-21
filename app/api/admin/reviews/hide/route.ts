@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { isAdmin, cleanReason } from '@/lib/adminAudit';
 import { logError } from '@/lib/logError';
+import { revalidateListingPage, revalidateExperiencePage } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,12 +52,19 @@ export async function POST(req: Request) {
         ? { hidden_at: new Date().toISOString(), hidden_reason: reason, hidden_by: auth.user.id }
         : { hidden_at: null, hidden_reason: null, hidden_by: null };
 
-    const { error } = await admin.from('reviews').update(patch).eq('id', reviewId);
+    const { data: moved, error } = await admin.from('reviews').update(patch).eq('id', reviewId).select('listing_id, provider_id').maybeSingle();
     if (error) {
         await logError('admin/reviews/hide: could not update the review', error, {
             path: '/api/admin/reviews/hide', userId: auth.user.id,
         });
         return NextResponse.json({ ok: false, error: 'Could not update that review.' }, { status: 500 });
+    }
+
+    // Off (or back on) the public page it shows on, at once — a cottage review
+    // on its listing, an experience review on the provider's page.
+    if (moved) {
+        revalidateListingPage(moved.listing_id);
+        revalidateExperiencePage(moved.provider_id);
     }
 
     return NextResponse.json({ ok: true, hidden: hide });

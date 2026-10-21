@@ -35,6 +35,15 @@ export function revalidateListing(listingId?: string) {
     });
 }
 
+// Just one listing's own page — a change that shows only there (a review taken
+// down or put back).
+export function revalidateListingPage(listingId: string | null | undefined) {
+    if (!listingId) return;
+    safe(() => {
+        revalidatePath(`/homes/${listingId}`);
+    });
+}
+
 // Several listings at once (an admin approve-batch, an iCal cron pass). De-duped
 // so the grids are only busted once.
 export function revalidateListings(listingIds: string[]) {
@@ -52,10 +61,32 @@ export function revalidateListings(listingIds: string[]) {
 // An experience provider changed — approved, edited, paused, taken down,
 // relisted, or reordered. Pass the id to refresh that experience's own page too.
 export function revalidateExperience(providerId?: string) {
+    revalidateExperiences(providerId ? [providerId] : []);
+}
+
+// Several providers at once (an admin approve-batch). The grids are busted once,
+// then each provider's own page — which matters for an approval in particular:
+// before it, the page's cached copy is just a redirect to the per-request owner
+// preview, and it must become the real page the moment the provider goes live.
+export function revalidateExperiences(providerIds: string[]) {
     safe(() => {
         revalidateTag('home');
         revalidatePath('/');
         revalidatePath('/experiences/browse');
-        if (providerId) revalidatePath(`/experiences/browse/${providerId}`);
+        for (const id of Array.from(new Set(providerIds)).filter(Boolean)) {
+            revalidatePath(`/experiences/browse/${id}`);
+        }
+    });
+}
+
+// Just one experience's own page — for a change that shows on that page but not
+// on the grids or the home shelf: its calendar (hours, day-offs, part-day blocks,
+// declared sessions, an imported busy feed) or its reviews. Seat counts are
+// fetched live by the page's booking panel anyway (/api/experiences/[id]/live),
+// so this keeps the first paint right rather than being the only guard.
+export function revalidateExperiencePage(providerId: string | null | undefined) {
+    if (!providerId) return;
+    safe(() => {
+        revalidatePath(`/experiences/browse/${providerId}`);
     });
 }

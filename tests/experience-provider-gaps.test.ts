@@ -171,9 +171,13 @@ test('the pages behind it open for an experience in review, not only after appro
 test('the review queue title opens the experience page, which an admin may preview before approval', () => {
     const row = read('components/admin/ProviderReviewRow.tsx');
     assert.match(row, /href=\{'\/experiences\/browse\/' \+ provider\.id\}/);
+    // The public page is edge-cached, so it never renders an unapproved provider:
+    // it sends one to the per-request preview route, where the admin check is.
     const page = read('app/experiences/browse/[providerId]/page.tsx');
-    assert.match(page, /else if \(await isAdmin\(user\.id\)\)/, 'a server-side check of the viewer\'s own is_admin');
-    assert.match(page, /viewer="admin"/);
+    assert.match(page, /redirect\(`\/experiences\/browse\/\$\{params\.providerId\}\/preview`\)/);
+    const preview = read('app/experiences/browse/[providerId]/preview/page.tsx');
+    assert.match(preview, /else if \(await isAdmin\(user\.id\)\)/, 'a server-side check of the viewer\'s own is_admin');
+    assert.match(preview, /viewer="admin"/);
 });
 
 test('the host\'s menu is in the order the provider\'s copies', () => {

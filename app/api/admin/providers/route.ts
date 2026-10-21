@@ -12,7 +12,7 @@ import {
 import { ASSIGNABLE_MCCS } from '@/lib/serviceOrders';
 import { SHAPES, shapeOf } from '@/lib/serviceSlots';
 import { refreshVenuePoint } from '@/lib/venuePoint';
-import { revalidateExperience } from '@/lib/revalidatePublic';
+import { revalidateExperiences } from '@/lib/revalidatePublic';
 import { listingLinkFor } from '@/lib/serviceSubmittedConfirm';
 
 export const dynamic = 'force-dynamic';
@@ -616,13 +616,15 @@ export async function POST(req: Request) {
 
             // Approving/declining/converting a provider changes what the public
             // experiences grid and home shelf show — refresh them at once. One
-            // grid bust covers the batch (lib/revalidatePublic).
-            revalidateExperience();
+            // grid bust covers the batch, plus each provider's own page — before
+            // approval its cached copy is only a redirect to the owner preview
+            // (lib/revalidatePublic).
+            revalidateExperiences(ids);
             return NextResponse.json(result);
         }
 
         const single = await decideOne(requestBody);
-        revalidateExperience();
+        revalidateExperiences(ids);
         return NextResponse.json(single.body, { status: single.status });
     } catch (err: any) {
         await logError('service-provider-decision', err);

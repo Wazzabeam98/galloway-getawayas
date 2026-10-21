@@ -3,6 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkProvider } from '@/lib/providerAccess';
+import { revalidateExperiencePage } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,6 +110,8 @@ export async function POST(request: Request) {
             if (rows.length) await admin.from('slot_blocks').insert(rows);
         }
 
+        // Day-offs show on the public page's calendar.
+        revalidateExperiencePage(providerId);
         return NextResponse.json({ ok: true });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not save the schedule' }, { status: 500 });

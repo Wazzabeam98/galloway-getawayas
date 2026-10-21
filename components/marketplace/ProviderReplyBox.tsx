@@ -4,12 +4,19 @@ import { useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
+import { useExperienceViewer } from '@/components/marketplace/ExperienceViewer';
 
 // The provider's one public reply to a review, mirroring HostReplyBox on the
 // cottage side. It writes host_reply / host_reply_at straight from the browser;
 // the "Providers can reply to reviews about them" policy (reviewee_id =
 // auth.uid()) is what authorises it, so only the provider the review is about
 // can post one. Shown only when the viewer is that provider (canReply).
+//
+// On the public experience page (edge-cached, the same HTML for everyone) the
+// page passes canReply false and the answer arrives after load through
+// ExperienceViewer; the dashboard's reviews page passes it directly. A reply
+// posted there is kept on screen here, and the page's cached copy refreshed, so
+// it doesn't vanish on the router refresh.
 export default function ProviderReplyBox({
     reviewId, existingReply, providerFirstName, canReply,
 }: {
@@ -20,20 +27,24 @@ export default function ProviderReplyBox({
 }) {
     const supabase = createClientComponentClient();
     const router = useRouter();
+    const viewer = useExperienceViewer();
+    const allowed = canReply || !!viewer?.canReply;
+    const [posted, setPosted] = useState<string | null>(null);
     const [replying, setReplying] = useState(false);
     const [text, setText] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
-    if (existingReply) {
+    const shown = existingReply || posted;
+    if (shown) {
         return (
             <div className="mt-3 ml-4 border-l-2 border-slate-200 pl-4">
                 <p className="mb-1 text-xs font-semibold text-slate-500">Response from {providerFirstName}</p>
-                <p className="text-sm text-slate-700">{existingReply}</p>
+                <p className="text-sm text-slate-700">{shown}</p>
             </div>
         );
     }
 
-    if (!canReply) return null;
+    if (!allowed) return null;
 
     if (!replying) {
         return (
@@ -60,6 +71,8 @@ export default function ProviderReplyBox({
             return;
         }
         toast.success('Reply posted.', { theme: 'colored' });
+        setPosted(text.trim());
+        if (viewer) await viewer.refreshPage();
         router.refresh();
     };
 
