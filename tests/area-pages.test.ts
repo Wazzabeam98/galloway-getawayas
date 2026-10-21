@@ -296,3 +296,13 @@ test('the area page sets a canonical URL', () => {
     const body = read('app/holiday-cottages/[area]/page.tsx');
     assert.ok(/alternates:\s*\{\s*canonical/.test(body));
 });
+
+test('an area with a town photo opens on it: banner, priority, same photo as the tile and the share image', () => {
+    const body = read('app/holiday-cottages/[area]/page.tsx');
+    assert.match(body, /const bannerPhoto = townPhoto\(area\.slug\)/, 'the tile\'s own photo (lib/townPhotos)');
+    assert.match(body, /\{bannerPhoto && \(/, 'no photo, no banner');
+    assert.match(body, /priority\s/, 'the LCP is fetched first');
+    assert.match(body, /bg-gradient-to-t from-black/, 'a dark wash under the white words');
+    assert.match(body, /const townPhotoRel = townPhoto\(area\.slug\)/, 'the share image is the same photo');
+    assert.match(read('app/page.tsx'), /from '@\/lib\/townPhotos'/, 'the tile reads the same module');
+});
