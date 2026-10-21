@@ -97,6 +97,12 @@ const ALREADY_RUN_ROUND_HOURS = new Set<string>([
     // CLAUDE.md rule (dry run, apply, read-back), so both ledgers name it.
     // Grandfathered by name for the same reason as the two above.
     '20261005140000_provider_venue_point.sql',
+    // The explicit WITH CHECK on the listings UPDATE policy. Named on a round
+    // hour by hand instead of via new-migration.mjs, and caught here only after
+    // it had been applied to BOTH test and production under the CLAUDE.md rule
+    // (dry run, apply, read-back), so both ledgers name it. Grandfathered by
+    // name for the same reason as the three above, not renamed.
+    '20261021110000_listings_update_policy_explicit_with_check.sql',
 ]);
 
 test('a new migration uses a real clock time, not a round hour', () => {

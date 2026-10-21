@@ -33,12 +33,17 @@ export const metadata: Metadata = {
         title: 'Experiences & Things to Do in Dumfries & Galloway',
         description:
             'Local experiences across Dumfries & Galloway — chefs, bakers, saunas, guides and classes, booked direct.',
+        // Setting our own openGraph replaces the root layout's wholesale, so the
+        // inherited share image was lost and this page shared with a blank card.
+        // Re-add the site default (the same image every area page uses).
+        images: [{ url: '/images/og-default.jpg', width: 1200, height: 630, alt: 'Experiences in Dumfries & Galloway' }],
     },
     twitter: {
         card: 'summary_large_image',
         title: 'Experiences & Things to Do in Dumfries & Galloway',
         description:
             'Local experiences across Dumfries & Galloway — chefs, bakers, saunas, guides and classes.',
+        images: ['/images/og-default.jpg'],
     },
 };
 
