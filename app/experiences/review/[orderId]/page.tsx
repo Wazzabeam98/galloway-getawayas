@@ -4,6 +4,8 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import LoginModel from '@/components/auth/LoginModel';
 import ExperienceReviewForm from '@/components/marketplace/ExperienceReviewForm';
+import { experienceReviewDaysLeft } from '@/lib/experienceReviewRules';
+import { londonDayKey } from '@/lib/dayKey';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +61,10 @@ export default async function ExperienceReviewPage({ params }: { params: { order
     const experienceOver = new Date(String(order.service_date) + 'T00:00:00') < new Date(new Date().toDateString());
     if (!experienceOver) return <Notice title="You can leave a review once the experience has taken place." />;
 
+    // Closes 14 days after the day, as a stay's does after check-out.
+    const daysLeft = experienceReviewDaysLeft(String(order.service_date), londonDayKey());
+    if (daysLeft < 0) return <Notice title="The 14 day window for reviewing this experience has now closed." />;
+
     const { data: existing } = await admin
         .from('reviews')
         .select('id')
@@ -72,6 +78,7 @@ export default async function ExperienceReviewPage({ params }: { params: { order
             orderId={order.id}
             reviewerId={user.id}
             who={order.provider_business_name || 'the provider'}
+            daysLeft={daysLeft}
         />
     );
 }

@@ -42,9 +42,12 @@ function BigStars({ value, onChange }: { value: number; onChange: (v: number) =>
 const HINTS = ['Poor', 'Not great', 'Fine', 'Really good', 'Exceptional'];
 
 export default function ExperienceReviewForm({
-    orderId, who,
+    orderId, who, daysLeft,
 }: {
     orderId: string;
+    // Days left in the 14-day window (0 = the last day), shown near the end
+    // the way a stay's review screen shows it.
+    daysLeft?: number;
     // Kept for the caller's signature; the route saves it as the signed-in guest.
     reviewerId?: string;
     who: string;
@@ -117,6 +120,11 @@ export default function ExperienceReviewForm({
                     <h1 className="text-center text-3xl font-bold leading-snug text-slate-900 md:text-4xl">
                         How was it?
                     </h1>
+                    {daysLeft != null && daysLeft >= 0 && daysLeft <= 3 && (
+                        <p className="mt-3 text-center text-sm font-medium text-amber-700">
+                            {daysLeft === 0 ? 'Last day to review' : `${daysLeft} days left to review`}
+                        </p>
+                    )}
 
                     <div className="mt-10">
                         <BigStars value={rating} onChange={setRating} />

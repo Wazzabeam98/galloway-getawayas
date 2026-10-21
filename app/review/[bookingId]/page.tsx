@@ -227,26 +227,34 @@ export default function ReviewPage() {
 
         setSubmitting(true);
 
-        const { error } = await supabase.from('reviews').insert({
-            booking_id: booking.id,
-            listing_id: booking.listing_id,
-            reviewer_id: session.user.id,
-            reviewee_id: booking.host_id,
-            review_type: 'guest_to_host',
-            rating: Number(average.toFixed(2)),
-            comment: comment.trim(),
-            cleanliness_rating: ratings.cleanliness,
-            accuracy_rating: ratings.accuracy,
-            checkin_rating: ratings.checkin,
-            communication_rating: ratings.communication,
-            location_rating: ratings.location,
-            value_rating: ratings.value,
-        });
+        // Posted through /api/reviews, which saves it as you (the same review
+        // rules as before) and then emails your host that it has arrived.
+        let error: string | null = null;
+        try {
+            const res = await fetch('/api/reviews', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    bookingId: booking.id,
+                    comment: comment.trim(),
+                    cleanliness_rating: ratings.cleanliness,
+                    accuracy_rating: ratings.accuracy,
+                    checkin_rating: ratings.checkin,
+                    communication_rating: ratings.communication,
+                    location_rating: ratings.location,
+                    value_rating: ratings.value,
+                }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || !d.ok) error = (d && d.error) || 'We couldn\u2019t post your review. Try again.';
+        } catch {
+            error = 'We couldn\u2019t post your review. Try again.';
+        }
 
         setSubmitting(false);
 
         if (error) {
-            toast.error(error.message, { theme: 'colored' });
+            toast.error(error, { theme: 'colored' });
             return;
         }
 

@@ -77,6 +77,7 @@ const LIST: CatalogueEntry[] = [
     E('Holiday lets', 'Payouts not set up (arrival close)', 'Host', 'Your guest arrives Friday — add a payout method', '/payouts/setup'),
     E('Holiday lets', 'Calendar sync failing', 'Host', 'One of your calendars has stopped syncing', '/dashboard'),
     E('Holiday lets', 'Review request', 'Guest', 'How was your stay at Rowan Cottage?', '/review/x'),
+    E('Holiday lets', 'Review received', 'Host', 'New review of Rowan Cottage', '/dashboard/reviews'),
     E('Holiday lets', 'Guest waiting on a reply', 'Host', 'A guest is waiting on a reply — Galloway Getaways', '/messages?b=x'),
     E('Holiday lets', 'Added to a trip', 'Companion', 'Morag has added you to a trip', '/trip-invite/x'),
     E('Holiday lets', 'Co-host invitation', 'Invitee', 'You’ve been invited to co-host Rowan Cottage', '/invite/x'),
