@@ -171,6 +171,9 @@ export const RULES: Rule[] = [
     // A provider told a guest reviewed them (/api/services/reviews). Sent with no push of its own (the reviews
     // trigger already pushes the owner); the team rule copies the email to co-hosts with messages.
     { kind: 'review.received.provider', match: R('^New review for (.+)$'), category: 'reviews', title: 'You have a new review', body: '$1 — tap to read it and reply.', team: 'can_messages' },
+    // A host told a guest reviewed their stay (/api/reviews). Sent with no push of its own (the reviews trigger
+    // already pushes the host); the route emails co-hosts with messages itself, as a holiday let has no team rule.
+    { kind: 'review.received.host', match: R('^New review of (.+)$'), category: 'reviews', title: 'You have a new review', body: '$1 — tap to read it.', cohost: 'can_messages' },
     { kind: 'message.waiting.host', match: R('^(A guest is|\\d+ guests are) waiting on a reply'), category: 'messages', title: '$1 waiting on a reply', body: 'Reply soon to keep your response rate up.', cohost: 'can_messages' },
     { kind: 'message.waiting', match: R('^(.+ (is|are) waiting on your reply|\\d+ replies are waiting on you)$'), category: 'messages', title: '$1', body: 'Tap to reply.' },
     { kind: 'trip.added', match: R('^(.+) has added you to a trip$'), category: 'reservations', title: 'You\u2019ve been added to a trip', body: '$1 added you. Tap to see the details.' },

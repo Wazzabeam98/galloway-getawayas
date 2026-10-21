@@ -37,6 +37,7 @@ import { foldOrderFamily } from '@/lib/orderFamily';
 import { venueMapPoint } from '@/lib/venuePoint';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 import { orderCancelTerms } from '@/lib/orderCancelTerms';
+import { experienceReviewDaysLeft } from '@/lib/experienceReviewRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -260,9 +261,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
 
     // Leave a review: the booker's own confirmed booking, after the experience,
     // not yet reviewed — the rule the review gate applies (order_reviewable_by).
-    // The experience twin of a stay's "How was it?" on its trip page.
+    // The experience twin of a stay's "How was it?" on its trip page — and,
+    // like a stay's, it closes 14 days after the day (the database refuses
+    // after that), counting down the same way.
     const experienceOver = String(order.service_date || '').slice(0, 10) < londonDayKey();
-    const { data: myReview } = isBooker && order.status === 'confirmed' && experienceOver && !(order as any).parent_order_id
+    const reviewDaysLeft = experienceReviewDaysLeft(String(order.service_date || ''), londonDayKey());
+    const { data: myReview } = isBooker && order.status === 'confirmed' && experienceOver && reviewDaysLeft >= 0 && !(order as any).parent_order_id
         ? await admin.from('reviews').select('id').eq('order_id', order.id).eq('reviewer_id', user.id).maybeSingle()
         : { data: { id: 'n/a' } as any };
     const canReview = !myReview;
@@ -976,7 +980,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 <section className="mt-4 rounded-2xl border border-slate-200 p-4">
                                     <h2 className="text-lg font-semibold text-slate-900">How was it?</h2>
                                     <p className="mt-1 text-sm text-slate-600">Your review helps the next guest choose, and helps {shortWho} stand out.</p>
-                                    <Link href={`/experiences/review/${order.id}`} className="mt-3 inline-flex items-center rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">Leave a review</Link>
+                                    <div className="mt-3 flex items-center gap-3">
+                                        <Link href={`/experiences/review/${order.id}`} className="inline-flex items-center rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">Leave a review</Link>
+                                        <span className={`text-xs ${reviewDaysLeft <= 3 ? 'font-medium text-amber-700' : 'text-slate-400'}`}>{reviewDaysLeft === 0 ? 'Last day' : `${reviewDaysLeft} days left`}</span>
+                                    </div>
                                 </section>
                             )}
 

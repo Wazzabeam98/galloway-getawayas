@@ -16,7 +16,8 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const { providerPayoutRows } = require('../lib/providerPayoutRows');
 const { scheduleFromBody, PROVIDER_RELEASE_SENTENCE } = require('../lib/payoutScheduleInput');
 const { experienceReviewRequestEmail, experienceReviewReceivedEmail } = require('../lib/experienceReviewEmails');
-const { reviewSubmissionProblem } = require('../lib/experienceReviewRules');
+const { stayReviewReceivedEmail } = require('../lib/stayReviewEmails');
+const { reviewSubmissionProblem, experienceReviewDaysLeft } = require('../lib/experienceReviewRules');
 const { pushForEmail } = require('../lib/pushRules');
 
 // ---------------------------------------------------------------------------
@@ -119,6 +120,38 @@ test('the review-received email: the review, and a link to read and reply', () =
     const push = pushForEmail(subject, html);
     assert.equal(push && push.kind, 'review.received.provider');
     assert.equal((push as any).team, 'can_messages', 'co-hosts with messages get a copy of the email');
+});
+
+test('the stay review-received email: the host hears, without the hidden review', () => {
+    const hidden = stayReviewReceivedEmail({ title: 'Rowan Cottage', reviewerFirst: 'Ailsa', rating: 5, comment: 'Secret <b>words</b>', published: false });
+    assert.equal(hidden.subject, 'New review of Rowan Cottage');
+    assert.match(hidden.html, /Ailsa/);
+    assert.doesNotMatch(hidden.html, /Secret/, 'a double-blind review is not shown before the host has written theirs');
+    assert.doesNotMatch(hidden.html, /5 stars/);
+    assert.match(hidden.html, /Write your review/);
+    assert.match(hidden.html, /\/dashboard\/reviews/);
+    const shown = stayReviewReceivedEmail({ title: 'Rowan Cottage', reviewerFirst: 'Ailsa', rating: 5, comment: 'Lovely <b>stay</b>', published: true });
+    assert.match(shown.html, /5 stars/);
+    assert.match(shown.html, /Lovely &lt;b&gt;stay&lt;\/b&gt;/, 'the guest\'s words are escaped');
+    const push = pushForEmail(hidden.subject, hidden.html);
+    assert.equal(push && push.kind, 'review.received.host');
+    assert.equal((push as any).team, undefined, 'never copied to a business\'s co-hosts, even at a shared address');
+    // The route copies co-hosts with messages and sends no second push.
+    const route = read('app/api/reviews/route.ts');
+    assert.match(route, /listing_access[\s\S]*can_messages/);
+    assert.match(route, /sendEmail\(address, subject, html, false\)/);
+    assert.match(read('app/review/[bookingId]/page.tsx'), /fetch\('\/api\/reviews'/);
+});
+
+test('an experience review closes 14 days after the day, as a stay\'s does', () => {
+    assert.equal(experienceReviewDaysLeft('2026-10-01', '2026-10-02'), 13);
+    assert.equal(experienceReviewDaysLeft('2026-10-01', '2026-10-15'), 0, 'service day + 14 is the last day');
+    assert.equal(experienceReviewDaysLeft('2026-10-01', '2026-10-16'), -1, 'closed the day after');
+    assert.equal(experienceReviewDaysLeft('2026-03-20', '2026-04-03'), 0, 'across the clocks changing');
+    const page = read('app/experiences/order/[orderId]/page.tsx');
+    assert.match(page, /reviewDaysLeft >= 0/);
+    assert.match(page, /'Last day' : `\$\{reviewDaysLeft\} days left`/, 'the stay\'s countdown words');
+    assert.match(read('app/experiences/review/[orderId]/page.tsx'), /The 14 day window for reviewing this experience has now closed\./);
 });
 
 test('one rule for a review\'s shape, in the form and the route', () => {
