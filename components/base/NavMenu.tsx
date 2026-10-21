@@ -97,7 +97,7 @@ const NavMenu = ({
                     aria-label='Your account and menu'
                     className='flex items-center gap-2 border p-1.5 pl-3 rounded-full cursor-pointer hover:shadow-md transition'
                 >
-                    <MenuUnreadDot enabled={session != null} host={isHost} provider={isProvider && !isGuestProvider} admin={isAdmin} />
+                    <MenuUnreadDot enabled={session != null} host={isHost} provider={isProvider} admin={isAdmin} />
                     {session != null ? (
                         <div className='w-8 h-8 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0'>
                             {avatarUrl ? (
@@ -199,7 +199,9 @@ const NavMenu = ({
                                         <>
                                             {providerPerms.can_bookings && (
                                                 <li className={itemClass}>
-                                                    <Link href='/services/dashboard'>Reservations</Link>
+                                                    {/* With the number of booking requests still to
+                                                        confirm — the host's reservations badge. */}
+                                                    <RequestsLink label='Reservations' />
                                                 </li>
                                             )}
                                             {providerPerms.can_calendar && (

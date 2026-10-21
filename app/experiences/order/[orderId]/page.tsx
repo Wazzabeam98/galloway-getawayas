@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import SupplierVat from '@/components/receipt/SupplierVat';
 import Link from 'next/link';
+import { londonDayKey } from '@/lib/dayKey';
 import {
     ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle,
     MessageSquare, ChevronRight, LifeBuoy, BookOpen,
@@ -256,6 +257,15 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const free = charged && !terms.noRefund
         ? guestMayCancelFree(order.shape, String(order.service_date), order.service_time || null, windowHours, new Date())
         : false;
+
+    // Leave a review: the booker's own confirmed booking, after the experience,
+    // not yet reviewed — the rule the review gate applies (order_reviewable_by).
+    // The experience twin of a stay's "How was it?" on its trip page.
+    const experienceOver = String(order.service_date || '').slice(0, 10) < londonDayKey();
+    const { data: myReview } = isBooker && order.status === 'confirmed' && experienceOver && !(order as any).parent_order_id
+        ? await admin.from('reviews').select('id').eq('order_id', order.id).eq('reviewer_id', user.id).maybeSingle()
+        : { data: { id: 'n/a' } as any };
+    const canReview = !myReview;
 
     const meta = STATUS[order.status] || { label: order.status, tone: 'over' as const };
     const live = order.status === 'authorised' || order.status === 'confirmed' || order.status === 'holding';
@@ -960,6 +970,14 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 <div className="mt-4">
                                     <ProviderProposalBanner orderId={order.id} whenLabel={providerProposal} businessName={shortWho} />
                                 </div>
+                            )}
+
+                            {canReview && (
+                                <section className="mt-4 rounded-2xl border border-slate-200 p-4">
+                                    <h2 className="text-lg font-semibold text-slate-900">How was it?</h2>
+                                    <p className="mt-1 text-sm text-slate-600">Your review helps the next guest choose, and helps {shortWho} stand out.</p>
+                                    <Link href={`/experiences/review/${order.id}`} className="mt-3 inline-flex items-center rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">Leave a review</Link>
+                                </section>
                             )}
 
                             <div className="mt-4">

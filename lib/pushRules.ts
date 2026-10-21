@@ -166,6 +166,11 @@ export const RULES: Rule[] = [
     // ------------------------------------------------ holiday lets: other
     { kind: 'calendar.sync_failed', match: R('^One of your calendars has stopped syncing$'), category: 'listings', title: 'Calendar sync stopped', body: 'An imported calendar isn\u2019t syncing. Check it to avoid double bookings.', cohost: 'can_calendar', team: 'can_calendar' },
     { kind: 'review.request.guest', match: R('^How was your stay at (.+)\\?$'), category: 'reviews', title: 'How was your stay?', body: 'Leave a review for $1.' },
+    // An experience's review request (cron experience-review-reminders) — after the stay rule, which is the more specific.
+    { kind: 'review.request.experience_guest', match: R('^How was (.+)\\?$'), category: 'reviews', title: 'How was it?', body: 'Leave a review for $1.' },
+    // A provider told a guest reviewed them (/api/services/reviews). Sent with no push of its own (the reviews
+    // trigger already pushes the owner); the team rule copies the email to co-hosts with messages.
+    { kind: 'review.received.provider', match: R('^New review for (.+)$'), category: 'reviews', title: 'You have a new review', body: '$1 — tap to read it and reply.', team: 'can_messages' },
     { kind: 'message.waiting.host', match: R('^(A guest is|\\d+ guests are) waiting on a reply'), category: 'messages', title: '$1 waiting on a reply', body: 'Reply soon to keep your response rate up.', cohost: 'can_messages' },
     { kind: 'message.waiting', match: R('^(.+ (is|are) waiting on your reply|\\d+ replies are waiting on you)$'), category: 'messages', title: '$1', body: 'Tap to reply.' },
     { kind: 'trip.added', match: R('^(.+) has added you to a trip$'), category: 'reservations', title: 'You\u2019ve been added to a trip', body: '$1 added you. Tap to see the details.' },
@@ -173,6 +178,8 @@ export const RULES: Rule[] = [
     { kind: 'cohost.left', match: R('^(.+) has stepped down as a co-host$'), category: 'listings', title: '$1 stepped down', body: 'They\u2019re no longer a co-host.' },
     { kind: 'cohost.declined', match: R('^(.+) declined your co-host invitation$'), category: 'listings', title: '$1 declined your invitation', body: 'They won\u2019t be co-hosting. You can invite someone else.' },
     { kind: 'cohost.accepted', match: R('^(.+) has accepted your invitation$'), category: 'listings', title: '$1 is now a co-host', body: 'They can help with your listing now.' },
+    // The host's confirmation on submit (lib/listingSubmittedConfirm) — the twin of provider.submitted.
+    { kind: 'listing.submitted', match: R('^We\u2019ve got your listing \u2014 it\u2019s in review$'), category: 'listings', title: 'In review', body: 'We\u2019ve got your listing and we\u2019re checking it. We\u2019ll be in touch.', cohost: 'can_listing' },
     { kind: 'listing.approved', match: R('^(.+) is live on Galloway Getaways$'), category: 'listings', title: 'Your listing is live!', body: '$1 is now on Galloway Getaways.' },
     { kind: 'listing.sent_back', match: R('^A few things to change on (.+)$'), category: 'listings', title: 'Your listing needs a few changes', body: 'We\u2019ve sent $1 back with notes.' },
     { kind: 'account.deactivated', match: R('^Your account has been deactivated$'), category: 'account', title: 'Your account has been deactivated', body: 'If you didn\u2019t do this, reply to our email.' },
