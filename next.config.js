@@ -1,5 +1,19 @@
 /** @type {import('next').NextConfig} */
 
+// The GitHub `test-and-build` check runs `next build` with no Supabase env. Some
+// client components construct createClientComponentClient() during static
+// prerendering, and @supabase/auth-helpers-nextjs THROWS at construction when the
+// public env vars are absent — which fails the build. next.config.js runs before
+// the build, so default the two PUBLIC vars to the same placeholders config/Env.ts
+// already uses for the anon client when they are missing. `||=` keeps the real
+// values on Vercel and in local dev; it only fills in the compile gate (whose
+// build artifact is thrown away) so it never needs live secrets. The secret
+// service-role key is deliberately NOT defaulted — nothing should prerender a
+// service-role read (those paths fail soft, see lib/revalidatePublic and the
+// grid loaders).
+process.env.NEXT_PUBLIC_SUPABASE_URL ||= 'https://placeholder.supabase.co';
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||= 'placeholder';
+
 // Listing photos live in Supabase Storage, and getImageUrl() builds their URLs
 // from NEXT_PUBLIC_SUPABASE_URL — so the host next/image is allowed to load
 // from changes with the environment, and every environment needs listing here.
