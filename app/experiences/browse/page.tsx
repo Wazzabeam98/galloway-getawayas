@@ -5,7 +5,12 @@ import { loadPublicMarketplace } from '@/lib/experiencesData';
 import ProviderCard from '@/components/marketplace/ProviderCard';
 import type { Metadata } from 'next';
 
-export const dynamic = 'force-dynamic';
+// Edge-cached (ISR): this page is the same for everyone (read via the service
+// role, no per-viewer data), so it is served from Vercel's cache and rebuilt in
+// the background. A provider approval, edit, pause or take-down, and an Arrange
+// save, refresh it on the spot via revalidatePath('/experiences/browse')
+// (lib/revalidatePublic). 300s is only the background fallback.
+export const revalidate = 300;
 
 // Without this the page inherited the root layout's default title and
 // description — so this public marketplace went out to Google wearing the home

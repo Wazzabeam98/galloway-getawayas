@@ -1,5 +1,3 @@
-export const dynamic = 'force-dynamic';
-
 import './globals.css';
 import 'react-toastify/dist/ReactToastify.css';
 import Navbar from '@/components/base/Navbar';
@@ -19,8 +17,7 @@ import { Analytics } from '@vercel/analytics/next';
 import { socialUrls } from '@/config/social';
 import { COMPANY } from '@/config/company';
 import type { Metadata } from 'next';
-import { headers } from 'next/headers';
-import { viewportFor } from '@/lib/viewport';
+import ViewportLock from '@/components/base/ViewportLock';
 import localFont from 'next/font/local';
 
 // One typeface on every device: variable Roboto, the face Android draws the
@@ -117,25 +114,20 @@ const baseMetadata: Metadata = {
   },
 };
 
-// The viewport depends on the device: iPhones get maximum-scale=1 +
-// user-scalable=no, which stops iOS Safari zooming the page when a text field
-// is tapped (iOS still lets people pinch); everyone else keeps the plain
-// viewport, because Android obeys those two settings fully and would lose
-// pinch-zoom. Liam's call, 03/10/2026 — see lib/viewport.ts. The layout is
-// force-dynamic, so this runs per request and nothing caches one device's
-// answer for another.
-export async function generateMetadata(): Promise<Metadata> {
-  // theme-color is white, matching the white header, so a phone browser's
-  // chrome blends into the page rather than carrying a coloured band. The
-  // manifest (app/manifest.ts) says the same white for the installed app;
-  // keep the two in step. Set here, alongside the per-request viewport, rather
-  // than on the static baseMetadata only because they are emitted together.
-  return {
-    ...baseMetadata,
-    themeColor: '#ffffff',
-    viewport: viewportFor(headers().get('user-agent')),
-  };
-}
+// Static metadata, so the layout — and every page under it — can be edge-cached.
+// The viewport ships plain (width=device-width, initial-scale=1), the one Android
+// needs so it keeps pinch-zoom; <ViewportLock> upgrades iOS to maximum-scale=1 +
+// user-scalable=no on mount, which is what stops iOS Safari zooming on text-field
+// focus (Liam's call, 03/10/2026 — see lib/viewport.ts). The viewport was chosen
+// per request from the User-Agent, which read headers() and forced every page to
+// render per-request; moving the iOS tweak to the client is what lets the layout
+// cache. theme-color is white, matching the white header, so a phone browser's
+// chrome blends into the page (the manifest, app/manifest.ts, says the same).
+export const metadata: Metadata = {
+  ...baseMetadata,
+  themeColor: '#ffffff',
+  viewport: { width: 'device-width', initialScale: 1 },
+};
 
 export default function RootLayout({
   children,
@@ -200,6 +192,7 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organisationSchema) }}
         />
+        <ViewportLock />
         <ChromeGate><Navbar /></ChromeGate>
         {children}
         {/* Add to Home Screen: signed-in phones only, once, AFTER the page's
