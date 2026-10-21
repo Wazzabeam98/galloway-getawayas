@@ -278,6 +278,16 @@ export default function HomeShop({
                             <>Nothing matches {criteria.join(' · ')} yet. Try removing a filter.</>
                         )}
                     </p>
+                    {/* A town with no stays yet still has its page — the place, and
+                        what is coming — so the search leads there. */}
+                    {where && areaBySlug(where) && (
+                        <Link
+                            href={`/holiday-cottages/${where}`}
+                            className="mt-5 mr-2 inline-block rounded-full border border-stone-300 px-6 py-2.5 text-sm font-semibold text-stone-800 transition hover:border-stone-900"
+                        >
+                            About {areaBySlug(where)!.name}
+                        </Link>
+                    )}
                     <Link
                         href="/"
                         className="inline-block mt-5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-full px-6 py-2.5 transition"
