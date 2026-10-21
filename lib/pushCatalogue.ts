@@ -83,6 +83,7 @@ const LIST: CatalogueEntry[] = [
     E('Holiday lets', 'Co-host steps down', 'Host', 'Callum has stepped down as a co-host', '/dashboard/people'),
     E('Holiday lets', 'Co-host declines', 'Host', 'Callum declined your co-host invitation', '/dashboard/people'),
     E('Holiday lets', 'Co-host accepts', 'Host', 'Callum has accepted your invitation', '/dashboard/people'),
+    E('Holiday lets', 'Sent for review', 'Host', 'We\u2019ve got your listing \u2014 it\u2019s in review', '/edit-listing/x'),
     E('Holiday lets', 'Listing approved', 'Host', 'Rowan Cottage is live on Galloway Getaways', '/homes/x'),
     E('Holiday lets', 'Listing sent back', 'Host', 'A few things to change on Rowan Cottage', '/dashboard'),
     // ---- experiences
@@ -129,6 +130,9 @@ const LIST: CatalogueEntry[] = [
     E('Experiences', 'Calendar sync failing', 'Provider', 'One of your calendars has stopped syncing', '/services/dashboard'),
     V('Experiences', 'Order-thread message', 'Guest or provider', 'messages', 'Solway Smokehouse', 'New message from your provider', '/experiences/order/x'),
     E('Experiences', 'Customer waiting on a reply', 'Provider or trade', 'A customer is waiting on your reply — Galloway Getaways', '/services/messages'),
+    E('Experiences', 'Review request', 'Guest', 'How was Smoked on the Solway?', '/experiences/review/x'),
+    E('Experiences', 'Review received', 'Provider', 'New review for Solway Smokehouse', '/services/dashboard/reviews'),
+    V('Experiences', 'Review published', 'Provider', 'reviews', 'You have a new review', 'Tap to read it.', '/services/dashboard/reviews'),
     E('Experiences', 'Sent for review', 'Provider', 'We\u2019ve got your experience \u2014 it\u2019s in review', '/services/dashboard/listing'),
     E('Experiences', 'Listed / approved', 'Provider or trade', 'You are listed on Galloway Getaways', '/services/join'),
     E('Experiences', 'Application declined', 'Provider or trade', 'About your Galloway Getaways listing', '/services/join'),

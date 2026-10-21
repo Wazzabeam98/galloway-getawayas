@@ -29,6 +29,11 @@ type ServiceOnly = { table: string; migration: string; reason: string };
 
 const SERVICE_ROLE_ONLY: ServiceOnly[] = [
     {
+        table: 'sent_experience_review_reminders',
+        migration: '20261021131054_experience_review_reminders_and_review_push_link.sql',
+        reason: 'which guests have been asked to review an experience; written and read only by the experience-review-reminders cron with the service role',
+    },
+    {
         table: 'push_subscriptions',
         migration: '20261019145415_push_subscriptions.sql',
         reason: 'endpoint + keys are enough to push to that person\'s phone; written by /api/push/subscribe, read by lib/push.ts, both with the service role',

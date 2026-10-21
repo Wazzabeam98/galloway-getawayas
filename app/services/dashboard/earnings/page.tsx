@@ -15,6 +15,9 @@ import { ArrowLeft } from 'lucide-react';
 import { formatGBP } from '@/lib/formatMoney';
 import { supplierFromSnapshot } from '@/lib/vat';
 import VatSettingsCard from '@/components/account/VatSettingsCard';
+import { providerPayoutRows } from '@/lib/providerPayoutRows';
+import { readSchedule, arrivalSentence } from '@/lib/payoutTiming';
+import { PROVIDER_RELEASE_SENTENCE } from '@/lib/payoutScheduleInput';
 
 export const metadata = {
     title: 'Earnings',
@@ -50,7 +53,7 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
     // The provider this account owns (approved first, most recently touched) —
     // the same resolution the dashboard uses.
     // Owned, or co-hosted with the earnings permission (lib/providerAccess).
-    const { rows: providers, access } = await dashboardProviders(admin, user.id, 'can_earnings', 'id, business_name, status, vat_registered, vat_number, vat_name');
+    const { rows: providers, access } = await dashboardProviders(admin, user.id, 'can_earnings', 'id, business_name, status, vat_registered, vat_number, vat_name, stripe_account_id, stripe_payouts_enabled');
     const switchable = (providers as any[]).map((r: any) => ({ id: r.id, name: r.business_name || 'Your business' }));
     const provider: any = pickDashboardProvider(providers, access, cookies().get(BUSINESS_COOKIE)?.value);
     if (!provider) redirect((await firstProviderPageFor(user.id)) || '/services/dashboard');
@@ -136,6 +139,22 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
     }
     const byItem = Array.from(byItemMap.entries()).map(([name, net]) => ({ name, net })).sort((a, b) => b.net - a.net);
 
+    // YOUR PAYOUTS — the host's list, for an experience: what's still to come
+    // (held, unpaid; paid the day after the experience) and what's been paid.
+    // Every date, not just the filtered range, as the host's list is.
+    const { data: heldRows } = await admin
+        .from('service_orders')
+        .select('id, provider_id, status, cancel_ack, service_date, price, commission_rate, amount_refunded, created_at, paid_out_at, funds_flow, item_name, payout_amount')
+        .eq('provider_id', provider.id)
+        .eq('funds_flow', 'held')
+        .in('status', ['confirmed', 'cancelled']);
+    const payouts = providerPayoutRows((heldRows || []) as any[], today);
+    // When it reaches their bank: read off their own Stripe account (it shortens
+    // as the account builds history), the way the host's page says it.
+    const schedule = provider.stripe_account_id ? await readSchedule(provider.stripe_account_id) : null;
+    const arrival = arrivalSentence(schedule ? schedule.delayDays : null);
+    const payoutsOn = provider.stripe_payouts_enabled === true;
+
     const StatCard = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
         <div className="border rounded-2xl p-5">
             <div className="text-sm text-slate-500 mb-1">{label}</div>
@@ -176,6 +195,55 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
                 <MonthlyTrendChart months={months} />
             </div>
 
+            <div className="border rounded-2xl p-6 mb-10">
+                <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
+                    <h2 className="font-bold text-slate-900">Your payouts</h2>
+                    <div className="text-sm text-slate-500">{money(payouts.stillToCome)} still to come</div>
+                </div>
+                <p className="text-sm text-slate-500 mb-5">
+                    {PROVIDER_RELEASE_SENTENCE} {arrival}
+                    {isOwner && (
+                        <> <Link href="/account?section=payments" className="font-semibold text-slate-700 underline underline-offset-2">Payout settings</Link></>
+                    )}
+                </p>
+                {!payoutsOn && payouts.awaiting.length > 0 && (
+                    <p className="text-sm text-amber-800 border border-amber-300 bg-amber-50 rounded-xl px-4 py-3 mb-5">
+                        Your payouts aren&rsquo;t set up yet, so we&rsquo;re holding these safely for you. They&rsquo;re paid on the first run after you set them up.
+                    </p>
+                )}
+                {payouts.awaiting.length === 0 ? (
+                    <p className="text-sm text-slate-400">No payouts on the way.</p>
+                ) : (
+                    <div className="space-y-3">
+                        {payouts.awaiting.map((r) => (
+                            <div key={r.id} className="flex items-start justify-between gap-4 flex-wrap border-b last:border-b-0 pb-3 last:pb-0">
+                                <div className="min-w-0">
+                                    <div className="font-medium text-slate-800 truncate">{r.title}</div>
+                                    <div className="text-sm text-slate-500">Experience on {ukDate(r.date)}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="font-semibold text-slate-900">{money(r.expected)}</div>
+                                    <div className="text-xs text-slate-500">{r.dueNow ? 'Due now' : 'Pays ' + ukDate(r.payDate)}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {payouts.alreadyPaid.length > 0 && (
+                    <div className="mt-6 pt-5 border-t">
+                        <h3 className="text-sm font-semibold text-slate-900 mb-3">Already paid</h3>
+                        <div className="space-y-2">
+                            {payouts.alreadyPaid.slice(0, 10).map((r) => (
+                                <div key={r.id} className="flex justify-between text-sm">
+                                    <span className="text-slate-600 truncate">{r.title} &middot; {ukDate(r.date)}</span>
+                                    <span className="text-slate-900 font-medium whitespace-nowrap ml-3">{money(r.amount)} on {ukDate(r.paidOn)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
             {/* How the money reaches the provider: taken on their behalf (they are
                 the seller, named on the guest's statement), held by us, released
                 the day after the booking, then Stripe to their bank. */}
@@ -184,9 +252,8 @@ export default async function ServiceEarningsPage({ searchParams }: { searchPara
                 <p className="text-sm text-slate-600">
                     You&rsquo;re the seller: each booking is taken in your name, and your business is what the guest sees on
                     their card statement. We hold the guest&rsquo;s payment until the booking has happened, then send you your share &mdash;
-                    what they paid, less our {effectivePercent}% fee &mdash; the day after. Stripe then pays it into your
-                    bank, which usually takes about a week. If a booking is cancelled and refunded before then, the
-                    refund comes from the money we hold.
+                    what they paid, less our {effectivePercent}% fee &mdash; the day after. {arrival} If a booking is
+                    cancelled and refunded before then, the refund comes from the money we hold.
                 </p>
             </div>
 

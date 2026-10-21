@@ -134,7 +134,7 @@ test('an experience provider\'s menu is the host\'s, in order, with no "Your tri
     const end = nav.indexOf(') : (', start);
     const branch = nav.slice(start, end);
     const order = [
-        "href='/services/dashboard'>Reservations",
+        "<RequestsLink label='Reservations' />",   // with the requests-to-confirm badge
         "href='/services/dashboard/calendar'>Calendar",
         "href='/services/dashboard/edit'>Your listing",
         '<MessagesLink />',
