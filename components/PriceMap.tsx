@@ -33,6 +33,16 @@ function pillHtml(price: number | string): string {
     return formatPrice(price);
 }
 
+// Stacking order of the overlapping pills: the tapped-open pin sits in front
+// (6), a hovered pin is lifted (5), everything else takes natural order. Shared
+// by the click handler and the hover-highlight effect so neither clobbers the
+// other.
+function restack(els: Record<string, HTMLElement>, frontId: string | null): void {
+    Object.entries(els).forEach(([id, el]) => {
+        el.style.zIndex = id === frontId ? '6' : el.classList.contains('is-active') ? '5' : '';
+    });
+}
+
 function cardHtml(p: PriceMapPoint): string {
     const esc = (s: string) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     const img = p.image
@@ -64,6 +74,9 @@ export default function PriceMap({
     const mapRef = useRef<any>(null);
     const elsRef = useRef<Record<string, HTMLElement>>({});
     const popupsRef = useRef<Record<string, any>>({});
+    // The pin currently tapped open — it sits in front of its overlapping
+    // neighbours. Kept on a ref so the hover-highlight effect can respect it.
+    const frontRef = useRef<string | null>(null);
 
     useEffect(() => {
         if (!MAPBOX_TOKEN || !points.length) return;
@@ -152,6 +165,10 @@ export default function PriceMap({
                         if (otherId !== p.id && pp.isOpen()) pp.remove();
                     });
                     marker.togglePopup();
+                    // Bring the tapped pin to the front of its overlapping fan
+                    // while its card is open; let it drop back once it closes.
+                    frontRef.current = popup.isOpen() ? p.id : null;
+                    restack(elsRef.current, frontRef.current);
                 });
                 bounds.extend([p.lng, p.lat]);
             });
@@ -187,13 +204,13 @@ export default function PriceMap({
         };
     }, [points, onHover]);
 
-    // Highlight the pin whose card is hovered (and lift it above its neighbours).
+    // Highlight the pin whose card is hovered (and lift it above its neighbours),
+    // without dropping a tapped-open pin out from the front of its fan.
     useEffect(() => {
         Object.entries(elsRef.current).forEach(([id, el]) => {
-            const on = id === highlightId;
-            el.classList.toggle('is-active', on);
-            el.style.zIndex = on ? '5' : '';
+            el.classList.toggle('is-active', id === highlightId);
         });
+        restack(elsRef.current, frontRef.current);
     }, [highlightId]);
 
     if (!MAPBOX_TOKEN) {
