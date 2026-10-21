@@ -152,10 +152,12 @@ export default async function HomePage() {
         (area) => hasCopy(area) && (listingsByArea.get(area.slug)?.length ?? 0) > 0,
     );
 
-    // The hero's "Where" dropdown lists exactly these areas, A to Z — one list,
-    // so the dropdown and the tiles can never disagree about where there is
-    // somewhere to stay (components/base/Hero).
-    const wherePlaces = areaLinks
+    // The hero's "Where" dropdown lists every written area, A to Z — with or
+    // without a listing yet, because properties are coming on in those towns
+    // (Liam, 21 Oct 2026: reversing the listings-only rule of #481). A search
+    // for one with nothing in it yet links to its area page (HomeShop).
+    const wherePlaces = AREAS
+        .filter((area) => hasCopy(area))
         .map((area) => ({ value: area.slug, label: area.name }))
         .sort((a, b) => a.label.localeCompare(b.label, 'en-GB'));
 
