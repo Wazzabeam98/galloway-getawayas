@@ -230,6 +230,8 @@ export const RULES: Rule[] = [
     { kind: 'trade.subscription', match: R('^(Your free period has started|A month left of your free listing|Time to add a card|A week left of your free listing|Your free period ends tomorrow|Your listing comes down in a few days)—(.+)$'), category: 'listings', title: '$1', body: '$2. Tap to manage your subscription.' },
     { kind: 'trade.payment_failed', match: R('^Your Galloway Getaways payment didn’t go through'), category: 'payments', title: 'Subscription payment failed', body: 'Update your card to keep your listing up.' },
     { kind: 'provider.verify', match: R('^Finish listing (.+) on Galloway Getaways$'), category: 'listings', title: 'Finish your listing', body: 'Tap to finish listing $1.' },
+    // The provider's own confirmation on submit (lib/serviceSubmittedConfirm).
+    { kind: 'provider.submitted', match: R('^We\u2019ve got your (experience|application) \u2014 it\u2019s in review$'), category: 'listings', title: 'In review', body: 'We\u2019ve got your listing and we\u2019re checking it. We\u2019ll be in touch.', team: 'can_listing' },
     { kind: 'provider.approved', match: R('^You are listed on Galloway Getaways$'), category: 'listings', title: 'You\u2019re listed!', body: 'Your listing is live on Galloway Getaways.', team: 'can_listing' },
     { kind: 'provider.declined', match: R('^About your Galloway Getaways listing$'), category: 'listings', title: 'About your listing', body: 'We\u2019ve looked at your application. Tap to read our note.', team: 'can_listing' },
     { kind: 'provider.changes_ok', match: R('^Your changes have been checked$'), category: 'listings', title: 'Changes approved', body: 'Your updated listing is live.', team: 'can_listing' },

@@ -48,16 +48,19 @@ export async function readWorkSide(
             .eq('user_id', userId)
             .eq('status', 'active')
             .eq('role', 'co_host'),
-        // Only a live provider: the dashboard bounces a draft back to the wizard.
-        // The audience lets the menu show an experience provider their own sections.
+        // Every business they own, whatever its state — a draft, one in review,
+        // one sent back, or a live one. Like a host with a listing in review,
+        // someone who has applied works from their own side from then on: the
+        // switch and "Your listing", never "Start hosting" again (which only
+        // starts a second application). Until it is live, the menu offers just
+        // the listing and messages (see notLive below). The audience lets the
+        // menu show an experience provider their own sections.
         supabase
             .from('service_providers')
-            .select('audience')
+            .select('audience, status')
             .eq('owner_id', userId)
-            .eq('status', 'approved')
             .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle(),
+            .limit(10),
         // The businesses they co-host (provider_access — the same system, on a
         // trade or an experience), and what each owner let them do. Their own
         // rows only ("people see their own provider access").
@@ -71,8 +74,19 @@ export async function readWorkSide(
     // A business co-host is a provider too — of a live business. Its audience
     // (experience or trade) picks the menu, as an owner's does.
     const providerGrants: any[] = (providerCoHost && providerCoHost.data) || [];
+    // Their own business: the live one when they have one, else the newest —
+    // the same pick as the dashboard (lib/providerAccess pickDashboardProvider).
+    const ownedRows: { audience: string | null; status: string | null }[] = (provider && provider.data) || [];
+    const isLive = (r: { status: string | null }) => r.status === 'approved' || r.status === 'hidden';
+    const owned = ownedRows.find(isLive) || ownedRows[0] || null;
+    // Applied (or part-way through) but not live yet: no bookings, calendar,
+    // earnings or co-hosts to manage — those pages are for a live business and
+    // bounce to the listing — so the menu offers only the listing (where the
+    // review status is) and their messages.
+    const notLive = !!owned && !isLive(owned);
+
     let coProvider: { audience: string } | null = null;
-    if (!provider.data && providerGrants.length > 0) {
+    if (!owned && providerGrants.length > 0) {
         const { data } = await supabase
             .from('service_providers')
             .select('audience')
@@ -83,8 +97,9 @@ export async function readWorkSide(
             .maybeSingle();
         coProvider = data || null;
     }
-    const ownsProvider = !!provider.data;
-    const pcan = (key: keyof HostPerms) => ownsProvider || providerGrants.some((r) => r[key] === true);
+    const ownsProvider = !!owned;
+    const ownerCan = (key: keyof HostPerms) => ownsProvider && (!notLive || key === 'can_listing' || key === 'can_messages');
+    const pcan = (key: keyof HostPerms) => ownerCan(key) || providerGrants.some((r) => r[key] === true);
     const providerPerms: HostPerms = {
         can_calendar: pcan('can_calendar'),
         can_messages: pcan('can_messages'),
@@ -92,7 +107,7 @@ export async function readWorkSide(
         can_listing: pcan('can_listing'),
         can_earnings: pcan('can_earnings'),
     };
-    const providerFullAccess = ownsProvider || providerGrants.some(
+    const providerFullAccess = (ownsProvider && !notLive) || providerGrants.some(
         (r) => r.can_calendar && r.can_messages && r.can_bookings && r.can_listing && r.can_earnings
     );
 
@@ -128,7 +143,7 @@ export async function readWorkSide(
         // owner-approved relationship, so they default onto hosting, as on Airbnb.
         isApprovedHost: (approvedListing.count || 0) > 0 || coHosts,
         isProvider: ownsProvider || !!coProvider,
-        providerAudience: (provider.data && provider.data.audience) || (coProvider && coProvider.audience) || null,
+        providerAudience: (owned && owned.audience) || (coProvider && coProvider.audience) || null,
         providerPerms,
         providerFullAccess,
         ownsAny,

@@ -2,16 +2,17 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { sendEmail, emailLayout, escapeHtml, button, SITE_URL, NEUTRAL_SUBTITLE } from '@/lib/email';
+import { sendEmail, emailLayout, escapeHtml, button, NEUTRAL_SUBTITLE } from '@/lib/email';
 import { logError, logInfo } from '@/lib/logError';
 import { idsFrom, decideBatch, MAX_BATCH } from '@/lib/reviewQueue';
 import {
     reviewDigest, approvalBlockers, needsWeeklyHours, schemeLabel,
-    planForTrade, TRIAL_PERIOD_LABEL, SUBSCRIPTION_MONTHLY,
+    planForTrade, TRIAL_PERIOD_LABEL, SUBSCRIPTION_MONTHLY, commissionRateFor,
 } from '@/lib/serviceProviders';
 import { ASSIGNABLE_MCCS } from '@/lib/serviceOrders';
 import { SHAPES, shapeOf } from '@/lib/serviceSlots';
 import { refreshVenuePoint } from '@/lib/venuePoint';
+import { listingLinkFor } from '@/lib/serviceSubmittedConfirm';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,7 +101,7 @@ export async function POST(req: Request) {
 
             const { data: provider } = await admin
                 .from('service_providers')
-                .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, stripe_payouts_enabled, photos, does_gas, does_oil, plan, trial_ends_at, kind, pricing_choice, billable_hourly_rate, covered_bands, stripe_mcc, stripe_product_description, custom_label, shape')
+                .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, stripe_payouts_enabled, photos, does_gas, does_oil, plan, trial_ends_at, kind, pricing_choice, billable_hourly_rate, covered_bands, stripe_mcc, stripe_product_description, custom_label, shape, commission_rate')
                 .eq('id', id)
                 .maybeSingle();
 
@@ -486,29 +487,55 @@ export async function POST(req: Request) {
                                 + ' all when you do not.</p>';
 
                         subject = 'You are listed on Galloway Getaways';
-                        html = emailLayout(
-                            '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + name
-                                + '</strong> has been approved and is now on the site.</p>'
-                                + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
-                                // An experience provider is live before payouts are
-                                // set up (Airbnb's model); their share is held until then.
-                                + (provider.audience === 'guest' && provider.stripe_payouts_enabled !== true
-                                    ? '<p style="margin:0 0 16px;font-size:16px;">Guests can book you now. Set up payouts from your dashboard so we can pay you — your share of each booking is held safely until you do.</p>'
-                                    : '')
-                                + terms
-                                + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'See your listing'),
-                            FOOT, undefined, NEUTRAL_SUBTITLE
-                        );
+                        html = provider.audience === 'guest'
+                            // An experience is booked and paid through us, by guests
+                            // — not found by hosts looking for a trade — so it gets
+                            // its own words, and "See your listing" opens the listing
+                            // (its editor), never the sign-up wizard's first step.
+                            ? emailLayout(
+                                '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + name
+                                    + '</strong> has been approved and is now live on Galloway Getaways.</p>'
+                                    + '<p style="margin:0 0 16px;font-size:16px;">Guests staying across Dumfries &amp; Galloway can find your experience and book it now. We will email you whenever someone books.</p>'
+                                    // Live before payouts are set up (Airbnb's model);
+                                    // their share is held until then.
+                                    + (provider.stripe_payouts_enabled !== true
+                                        ? '<p style="margin:0 0 16px;font-size:16px;">Set up payouts from your dashboard so we can pay you — your share of each booking is held safely until you do.</p>'
+                                        : '')
+                                    + '<p style="margin:0 0 16px;font-size:16px;">There is nothing to pay to be listed. When a guest books, we keep '
+                                    + Math.round(commissionRateFor(provider) * 100) + '% and pay the rest to you.</p>'
+                                    + button(listingLinkFor(provider), 'See your listing'),
+                                FOOT, undefined, NEUTRAL_SUBTITLE
+                            )
+                            : emailLayout(
+                                '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + name
+                                    + '</strong> has been approved and is now on the site.</p>'
+                                    + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
+                                    + terms
+                                    + button(listingLinkFor(provider), 'See your listing'),
+                                FOOT, undefined, NEUTRAL_SUBTITLE
+                            );
                     } else if (decision === 'decline') {
                         subject = 'About your Galloway Getaways listing';
-                        html = emailLayout(
-                            '<p style="margin:0 0 16px;font-size:16px;">Thanks for sending in <strong>' + name
-                                + '</strong>. We are not able to list it as it stands.</p>'
-                                + quoted(note)
-                                + '<p style="margin:0 0 16px;font-size:16px;">You can change it and send it back to us whenever you like.</p>'
-                                + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'Update your details'),
-                            FOOT, undefined, NEUTRAL_SUBTITLE
-                        );
+                        html = provider.audience === 'guest'
+                            // The reason, then where to fix it: the listing, which
+                            // shows the same note in its "Action required" banner and
+                            // sends it back from there.
+                            ? emailLayout(
+                                '<p style="margin:0 0 16px;font-size:16px;">Thanks for sending us <strong>' + name
+                                    + '</strong>. We couldn’t approve it yet — here’s what to change:</p>'
+                                    + quoted(note)
+                                    + '<p style="margin:0 0 16px;font-size:16px;">Make the changes in your listing — it shows this note at the top — then send it back to us for review.</p>'
+                                    + button(listingLinkFor(provider), 'Make your changes'),
+                                FOOT, undefined, NEUTRAL_SUBTITLE
+                            )
+                            : emailLayout(
+                                '<p style="margin:0 0 16px;font-size:16px;">Thanks for sending in <strong>' + name
+                                    + '</strong>. We are not able to list it as it stands.</p>'
+                                    + quoted(note)
+                                    + '<p style="margin:0 0 16px;font-size:16px;">You can change it and send it back to us whenever you like.</p>'
+                                    + button(listingLinkFor(provider), 'Update your details'),
+                                FOOT, undefined, NEUTRAL_SUBTITLE
+                            );
                     } else if (decision === 'approve_changes') {
                         // They were told we would look and come back to them, so
                         // we do — even though nothing visible changes, because a
@@ -517,7 +544,7 @@ export async function POST(req: Request) {
                         html = emailLayout(
                             '<p style="margin:0 0 16px;font-size:16px;">We have looked at the changes you made to <strong>'
                                 + name + '</strong>. Nothing needs doing — you stayed on the site throughout.</p>'
-                                + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'See your listing'),
+                                + button(listingLinkFor(provider), 'See your listing'),
                             FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     } else {
@@ -531,7 +558,7 @@ export async function POST(req: Request) {
                                     ? 'Your listing is hidden for now. Change it and send it back to us, and we will put it straight back up.'
                                     : 'Your listing is still up. Change it whenever you can and we will take another look.')
                                 + '</p>'
-                                + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'Update your details'),
+                                + button(listingLinkFor(provider), 'Update your details'),
                             FOOT, undefined, NEUTRAL_SUBTITLE
                         );
                     }

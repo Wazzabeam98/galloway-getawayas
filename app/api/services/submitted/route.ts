@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceSubmission } from '@/lib/serviceSubmittedAlert';
+import { confirmSubmissionToProvider } from '@/lib/serviceSubmittedConfirm';
 import { mayActOn } from '@/lib/providerAccess';
 
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, owner_id, business_name, logo, trade, description, audience, photos, contact_email, contact_phone, status, declined_at, approved_digest, changes_pending_at, does_gas, does_oil')
+            .select('id, owner_id, business_name, logo, trade, description, audience, photos, contact_email, contact_phone, status, submitted_at, declined_at, approved_digest, changes_pending_at, does_gas, does_oil')
             .eq('id', id)
             .maybeSingle();
 
@@ -57,7 +58,10 @@ export async function POST(req: Request) {
         }
 
         const result = await announceSubmission(provider);
-        return NextResponse.json(result);
+        // And the provider hears we have it — only for the call that follows a
+        // submit (lib/serviceSubmittedConfirm), never an edit or a re-save.
+        const confirmed = await confirmSubmissionToProvider(provider);
+        return NextResponse.json({ ...result, confirmed });
     } catch (err: any) {
         await logError('service-provider-submitted', err);
         return NextResponse.json({ ok: false, error: 'Something went wrong.' }, { status: 500 });

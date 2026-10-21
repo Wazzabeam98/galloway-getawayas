@@ -129,11 +129,13 @@ const LIST: CatalogueEntry[] = [
     E('Experiences', 'Calendar sync failing', 'Provider', 'One of your calendars has stopped syncing', '/services/dashboard'),
     V('Experiences', 'Order-thread message', 'Guest or provider', 'messages', 'Solway Smokehouse', 'New message from your provider', '/experiences/order/x'),
     E('Experiences', 'Customer waiting on a reply', 'Provider or trade', 'A customer is waiting on your reply — Galloway Getaways', '/services/messages'),
+    E('Experiences', 'Sent for review', 'Provider', 'We\u2019ve got your experience \u2014 it\u2019s in review', '/services/dashboard/listing'),
     E('Experiences', 'Listed / approved', 'Provider or trade', 'You are listed on Galloway Getaways', '/services/join'),
     E('Experiences', 'Application declined', 'Provider or trade', 'About your Galloway Getaways listing', '/services/join'),
     E('Experiences', 'Changes approved', 'Provider or trade', 'Your changes have been checked', '/services/join'),
     E('Experiences', 'Changes sent back', 'Provider or trade', 'About the changes to your listing', '/services/join'),
     // ---- trades
+    E('Trades', 'Sent for review', 'Trade', 'We\u2019ve got your application \u2014 it\u2019s in review', '/services/join?trade=plumber'),
     E('Trades', 'Urgent enquiry', 'Trade', 'URGENT — a property owner in Castle Douglas needs you now (GG-1234)', '/services/enquiry/x'),
     E('Trades', 'New enquiry', 'Trade', 'New enquiry — Plumber, Castle Douglas (GG-1234)', '/services/enquiry/x'),
     E('Trades', 'Enquiry sent', 'Host', 'Sent to Doon Plumbing (GG-1234)', '/dashboard/enquiries'),

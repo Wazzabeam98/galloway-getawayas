@@ -19,6 +19,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
 
 const ROUTE = '@/app/api/services/submitted/route';
 const ALERT = '@/lib/serviceSubmittedAlert';
+const CONFIRM = '@/lib/serviceSubmittedConfirm';
 
 const OWNER = 'owner-1';
 const PROVIDER_ID = 'prov-1';
@@ -33,6 +34,8 @@ function load(options: {
     areas?: any[];
     approvedDigest?: string | null;
     registrations?: any[];
+    submittedAt?: string | null;
+    audience?: string;
 } = {}) {
     const delivered = options.delivered !== false;
     const sent: any[] = [];
@@ -54,11 +57,12 @@ function load(options: {
         contact_email: options.contactEmail || 'hello@solwaysparkle.co.uk',
         contact_phone: null,
         trade: 'sponge',
-        audience: 'host',
+        audience: options.audience || 'host',
         does_gas: false,
         does_oil: false,
         status: options.status || 'pending_review',
         declined_at: options.declinedAt === undefined ? null : options.declinedAt,
+        submitted_at: options.submittedAt === undefined ? null : options.submittedAt,
         description: 'Changeover cleans for holiday cottages across the Stewartry.',
         photos: ['providers/a.jpg'],
         approved_digest: options.approvedDigest === undefined ? null : options.approvedDigest,
@@ -132,6 +136,7 @@ function load(options: {
     // has to be cleared alongside the route or the second load in this file
     // would quietly keep the first one's stubs.
     clearModule(ALERT);
+    clearModule(CONFIRM);
     clearModule(ROUTE);
     const route = require(ROUTE.replace('@/', '../'));
     return { route, sent, logged };
@@ -344,4 +349,59 @@ test('a real address on an ordinary domain is still announced', async () => {
     const { route, sent } = load({ contactEmail: 'jobs@solwaysparkle.co.uk' });
     await route.POST(call());
     assert.equal(sent.length, 1, 'a person applying is still worth an email');
+});
+
+// ---------------------------------------------------------------------------
+// The provider's own "we've got it". Airbnb emails a confirmation the moment an
+// experience is submitted; until this the provider heard nothing until the
+// decision. Only the call that follows a submit sends it — submitted_at is
+// stamped by submit_service_provider() alone — so an edit or a re-save can't
+// send a second one.
+
+const justNow = () => new Date(Date.now() - 30 * 1000).toISOString();
+
+test('a fresh experience submission also tells the provider, linking to their listing', async () => {
+    const { route, sent } = load({ audience: 'guest', submittedAt: justNow() });
+    const res: any = await route.POST(call());
+
+    assert.equal(res.body.confirmed, true);
+    const mine = sent.filter((m) => m.to === 'hello@solwaysparkle.co.uk');
+    assert.equal(mine.length, 1, 'the provider gets one confirmation');
+    assert.match(mine[0].subject, /got your experience.*in review/);
+    assert.match(mine[0].html, /Solway Sparkle/);
+    assert.match(mine[0].html, /usually reply within 48 hours/);
+    assert.match(mine[0].html, /\[See your listing\]\(http:\/\/example\.invalid\/services\/dashboard\/listing\)/,
+        'an experience is managed in its listing editor, never the wizard');
+    assert.ok(sent.some((m) => m.to === 'support@gallowaygetaways.co.uk'), 'and we are still told');
+});
+
+test('a fresh trade submission is confirmed in trade words, linking to their application', async () => {
+    const { route, sent } = load({ submittedAt: justNow() });
+    await route.POST(call());
+
+    const mine = sent.filter((m) => m.to === 'hello@solwaysparkle.co.uk');
+    assert.equal(mine.length, 1);
+    assert.match(mine[0].subject, /got your application.*in review/);
+    assert.match(mine[0].html, /\/services\/join\?trade=sponge/);
+});
+
+test('a sent-back listing sent again is confirmed as a re-send', async () => {
+    const { route, sent } = load({ audience: 'guest', submittedAt: justNow(), declinedAt: '2026-10-01T10:00:00Z' });
+    await route.POST(call());
+
+    const mine = sent.filter((m) => m.to === 'hello@solwaysparkle.co.uk');
+    assert.equal(mine.length, 1);
+    assert.match(mine[0].html, /again with your changes/);
+});
+
+test('no confirmation when the call does not follow a submit', async () => {
+    // Submitted two days ago: this is a later re-save, not a submission.
+    const old = load({ audience: 'guest', submittedAt: new Date(Date.now() - 2 * 864e5).toISOString() });
+    await old.route.POST(call());
+    assert.equal(old.sent.filter((m) => m.to === 'hello@solwaysparkle.co.uk').length, 0, 'an old submission is not confirmed again');
+
+    // Live: a live provider's edit is never a "we've got it".
+    const live = load({ audience: 'guest', status: 'approved', submittedAt: justNow(), approvedDigest: 'x' });
+    await live.route.POST(call());
+    assert.equal(live.sent.filter((m) => m.to === 'hello@solwaysparkle.co.uk').length, 0, 'a live listing is not in review');
 });
