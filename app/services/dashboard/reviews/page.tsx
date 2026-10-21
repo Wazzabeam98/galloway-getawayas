@@ -10,6 +10,7 @@ import { loadExperienceReviews } from '@/lib/experienceReviews';
 import ReviewStars from '@/components/ReviewStars';
 import ProviderReplyBox from '@/components/marketplace/ProviderReplyBox';
 import { capitializeFirst } from '@/lib/utils';
+import { ukDate, londonDayKey } from '@/lib/dayKey';
 
 export const metadata = {
     title: 'Reviews',
@@ -77,7 +78,7 @@ export default async function ProviderReviewsPage() {
                                     {r.itemName ? (
                                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{r.itemName}</span>
                                     ) : null}
-                                    {r.when ? <span className="text-xs text-slate-400">{r.when}</span> : null}
+                                    {r.when ? <span className="text-xs text-slate-400">{ukDate(londonDayKey(new Date(r.when)))}</span> : null}
                                 </div>
                                 <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{r.comment}</p>
                                 <ProviderReplyBox reviewId={r.id} existingReply={r.reply} providerFirstName={who} canReply={reviews.canReply} />

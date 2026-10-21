@@ -198,3 +198,9 @@ test('the menu dot and the Reservations line carry it for an experience provider
     assert.match(nav, /<MenuUnreadDot enabled=\{session != null\} host=\{isHost\} provider=\{isProvider\}/);
     assert.match(nav, /<RequestsLink label='Reservations' \/>/);
 });
+
+test('the provider Reviews page dates each review DD/MM/YYYY, never a raw timestamp', () => {
+    const page = read('app/services/dashboard/reviews/page.tsx');
+    assert.match(page, /ukDate\(londonDayKey\(new Date\(r\.when\)\)\)/);
+    assert.doesNotMatch(page, />\{r\.when\}</);
+});
