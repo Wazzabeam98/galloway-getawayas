@@ -74,26 +74,16 @@ const HERO_IMAGES = [
     },
 ];
 
-// One list, used for the dropdown on both layouts and for naming the chosen
-// place back to the guest in the collapsed mobile pill. The values are what
-// travel in the `where` search param, and the home page matches them against
-// `townKey(listing.location)` — see lib/places.ts.
-const LOCATIONS: { value: string; label: string }[] = [
-  // The empty value is the "show me everything" default, the way Airbnb's
-  // "Anywhere" is — runSearch leaves `where` out of the URL for it, so a bare
-  // search returns every listing. It is the first option, then the towns.
-  { value: '', label: 'Anywhere in Dumfries & Galloway' },
-  { value: 'kirkcudbright', label: 'Kirkcudbright' },
-  { value: 'castle-douglas', label: 'Castle Douglas' },
-  { value: 'gatehouse-of-fleet', label: 'Gatehouse of Fleet' },
-  { value: 'dumfries', label: 'Dumfries' },
-  { value: 'dalbeattie', label: 'Dalbeattie' },
-  { value: 'newton-stewart', label: 'Newton Stewart' },
-  { value: 'moffat', label: 'Moffat' },
-  { value: 'wanlockhead', label: 'Wanlockhead' },
-  { value: 'stranraer', label: 'Stranraer' },
-  { value: 'portpatrick', label: 'Portpatrick' },
-];
+// The "Where" dropdown, on both layouts, and the name of the chosen place in
+// the collapsed mobile pill. "Anywhere" first — the empty value, which leaves
+// `where` out of the URL so a bare search returns every listing, the way
+// Airbnb's "Anywhere" does — then the areas the page hands in: exactly the
+// "Holiday Lets by town" tiles (written, with at least one published listing,
+// app/page.tsx), A to Z. So a guest can never pick a town with nothing in it,
+// and an area joins the list by itself the day it gets its first listing.
+// Each value is the area's slug; the home page matches it with listingInArea
+// (config/areas), which is how Galloway Forest — a region, not a town — works.
+const ANYWHERE = { value: '', label: 'Anywhere in Dumfries & Galloway' };
 
 // The four guest rows are identical apart from their wording and what they do
 // on the way up, and they now appear in two places — the desktop popover and
@@ -155,7 +145,8 @@ function GuestCounter({
   );
 }
 
-export default function Hero() {
+export default function Hero({ places }: { places: { value: string; label: string }[] }) {
+  const LOCATIONS = [ANYWHERE, ...places];
   const router = useRouter();
   const [activePopover, setActivePopover] = useState<'where' | 'when' | 'who' | null>(null);
   // The phone search collapses to a single pill; tapping it opens the full
