@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { SlidersHorizontal, X, Minus, Plus, Check } from 'lucide-react';
 import { amenityIcon } from '@/lib/amenityIcons';
 import { PROPERTY_TYPES } from '@/lib/propertyTypes';
+import { formatPrice } from '@/lib/formatMoney';
 import {
     ACCESSIBILITY_AMENITIES, AMENITY_LABELS, FILTER_AMENITIES, QUICK_CHIPS, RECOMMENDED, EMPTY_FILTERS,
     activeFilterCount, matchesFilters, readFilters, writeFilters,
@@ -401,7 +402,7 @@ function PriceSlider({ floor, ceil, min, max, onChange }: {
                 step={1}
                 value={lo}
                 aria-label="Minimum price"
-                aria-valuetext={`£${lo}`}
+                aria-valuetext={formatPrice(lo)}
                 onChange={(e) => {
                     const v = Math.min(Number(e.target.value), hi);
                     onChange(v <= floor ? null : v, max);
@@ -416,7 +417,7 @@ function PriceSlider({ floor, ceil, min, max, onChange }: {
                 step={1}
                 value={hi}
                 aria-label="Maximum price"
-                aria-valuetext={`£${hi}`}
+                aria-valuetext={formatPrice(hi)}
                 onChange={(e) => {
                     const v = Math.max(Number(e.target.value), lo);
                     onChange(min, v >= ceil ? null : v);

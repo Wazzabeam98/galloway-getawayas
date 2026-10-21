@@ -13,6 +13,7 @@ export const revalidate = 300;
 import React from 'react'
 import type { Metadata } from 'next';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { formatPrice } from '@/lib/formatMoney';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
@@ -256,7 +257,7 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
     const description =
         `${kind.charAt(0).toUpperCase()}${kind.slice(1)} in ${area}. ` +
         `Sleeps ${home.max_guests}, ${home.bedrooms} bedroom${home.bedrooms === 1 ? '' : 's'}, ` +
-        `from £${home.price_per_night} per night.${extras} ` +
+        `from ${formatPrice(home.price_per_night)} per night.${extras} ` +
         `Book direct with a local host.`;
 
     const image = home.images && home.images.length > 0
@@ -280,7 +281,7 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
             locale: 'en_GB',
             url: `${SITE_URL}/homes/${params.id}`,
             siteName: 'Galloway Getaways',
-            title: `${home.title} — from £${home.price_per_night} per night`,
+            title: `${home.title} — from ${formatPrice(home.price_per_night)} per night`,
             description,
             images: [{ url: image, width: 1200, height: 630, alt: home.title }],
         },
@@ -602,7 +603,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         // caching; published listings, anon-safe columns.
         const { data: candidates } = await adminClient()
             .from('listings')
-            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude')
+            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude, max_guests, bedrooms, bathrooms, max_pets')
             .eq('status', 'published')
             .neq('id', home.id)
             .order('created_at', { ascending: false })

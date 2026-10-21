@@ -5,7 +5,7 @@ import { installAliases } from './helpers/stub';
 
 installAliases();
 
-const { formatGBP, formatGBPAmount } = require('@/lib/formatMoney');
+const { formatGBP, formatGBPAmount, formatPrice } = require('@/lib/formatMoney');
 
 test('formatGBP groups thousands and keeps two decimals', () => {
     assert.equal(formatGBP(10550.12), '£10,550.12');
@@ -27,4 +27,15 @@ test('formatGBPAmount is the same number without the £ glyph, for emails', () =
     assert.equal(formatGBPAmount(10550.12), '10,550.12');
     assert.equal(formatGBPAmount(336), '336.00');
     assert.equal(formatGBPAmount(0), '0.00');
+});
+
+test('formatPrice groups thousands but shows pence only when not whole', () => {
+    assert.equal(formatPrice(2040), '£2,040');      // the comma, no .00
+    assert.equal(formatPrice(180), '£180');
+    assert.equal(formatPrice(2040.5), '£2,040.50'); // pence kept when present
+    assert.equal(formatPrice(12.5), '£12.50');
+    assert.equal(formatPrice('1200'), '£1,200');
+    assert.equal(formatPrice(999), '£999');
+    assert.equal(formatPrice(-2040), '-£2,040');
+    assert.equal(formatPrice(null), '£0');
 });

@@ -19,6 +19,8 @@ import DeleteListingBtn from "@/components/DeleteListingBtn";
 import { listingsWithPaidRecords, removalFor } from "@/lib/listingRemoval";
 import Link from "next/link";
 import { ChevronRight, Eye, Home, Plus, Star } from "lucide-react";
+import ListingStats from "@/components/ListingStats";
+import { formatPrice } from "@/lib/formatMoney";
 
 // A guest can be reviewed for 14 days after they check out — the same window the
 // review page and the reminder cron use. After that the chance has passed.
@@ -97,8 +99,18 @@ function ListingCard({
                 </div>
                 <h3 className="font-semibold text-slate-900 mt-3 truncate">{item.title || 'Untitled listing'}</h3>
                 <p className="text-sm text-slate-500 truncate">{item.location ? publicArea(item.location) : 'No location yet'}</p>
+                <div className="mt-1">
+                    <ListingStats
+                        maxGuests={item.max_guests}
+                        bedrooms={item.bedrooms}
+                        bathrooms={item.bathrooms}
+                        petsAllowed={(item.amenities || []).includes('Pets allowed')}
+                        maxPets={item.max_pets}
+                        className="text-slate-500"
+                    />
+                </div>
                 {!isDraft && (
-                    <p className="text-sm font-medium text-slate-700 mt-0.5">£{item.price_per_night} / night</p>
+                    <p className="text-sm font-medium text-slate-700 mt-0.5">{formatPrice(item.price_per_night)} / night</p>
                 )}
                 {isDraft && !sentBack && (
                     <p className="text-sm font-medium text-amber-700 mt-0.5">Click to finish setting up</p>
@@ -187,7 +199,7 @@ export default async function Dashboard() {
     const { data: homes } = allIds.length
         ? await admin
             .from("listings")
-            .select("id, images, title, location, price_per_night, created_at, status, review_note")
+            .select("id, images, title, location, price_per_night, created_at, status, review_note, max_guests, bedrooms, bathrooms, max_pets, amenities")
             .in("id", allIds)
             .order("created_at", { ascending: false })
         : { data: [] };

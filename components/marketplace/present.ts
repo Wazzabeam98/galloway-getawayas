@@ -6,15 +6,16 @@ import type { MpProvider, MpItem } from '@/lib/experiencesData';
 import { extraGuestsLine, hasExtraGuests } from '@/lib/extraGuests';
 import { unitMultiplies, pricedPerHead } from '@/lib/serviceOrders';
 import { durationWords } from '@/lib/durationWords';
+import { formatPrice } from '@/lib/formatMoney';
 import { guestUnitSuffix } from '@/lib/pricingUnits';
 
 // A timed one-price offering (a massage, a private session with its own length)
 // reads by its length, not "/ group" — see guestUnitSuffix.
 const isTimed = (item: { duration_minutes?: number | null }): boolean => item.duration_minutes != null && item.duration_minutes > 0;
 
-/** A money figure, "£45" or "£45.50". */
+/** A money figure, "£45" or "£45.50" — grouped over a thousand ("£1,200"). */
 function money(n: number): string {
-    return '£' + (Number.isInteger(n) ? String(n) : n.toFixed(2));
+    return formatPrice(n);
 }
 
 /** The per-offering price as the guest reads it: "£30 / guest", "£220 / group",

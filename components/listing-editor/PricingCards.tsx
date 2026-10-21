@@ -4,6 +4,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { EditorCard, EditorPanel, PanelSave, saved } from '@/components/listing-editor/EditorPanel';
 import { feeAmount, netOfFee } from '@/lib/fees';
+import { formatPrice, formatGBP } from '@/lib/formatMoney';
 import { amountForBox, cleanAmountInput } from '@/lib/amountInput';
 import { BigAmountInput, NumberStepper } from '@/components/services/wizardKit';
 
@@ -14,8 +15,7 @@ import { BigAmountInput, NumberStepper } from '@/components/services/wizardKit';
 
 
 export function money(value: string | number): string {
-    const n = Number(value);
-    return '£' + (Number.isInteger(n) ? String(n) : n.toFixed(2));
+    return formatPrice(value);
 }
 
 const isSet = (v: string) => v.trim() !== '' && Number(v) > 0;
@@ -105,15 +105,15 @@ export function NightlyPriceCard({ price, feePercent, onSave }: { price: string;
                     {Number(draft) > 0 && (
                         <div className="mx-auto max-w-sm bg-slate-50 rounded-2xl border p-4 text-base">
                             <div className="flex justify-between text-slate-600 mb-1">
-                                <span>Guest pays</span><span className="font-medium text-slate-900">£{Number(draft).toFixed(2)}</span>
+                                <span>Guest pays</span><span className="font-medium text-slate-900">{formatGBP(draft)}</span>
                             </div>
                             <div className="flex justify-between text-slate-600 mb-1">
                                 <span>Host fee ({feePercent}%)</span>
-                                <span className="font-medium text-slate-900">− £{feeAmount(Number(draft), feePercent).toFixed(2)}</span>
+                                <span className="font-medium text-slate-900">− {formatGBP(feeAmount(Number(draft), feePercent))}</span>
                             </div>
                             <div className="flex justify-between pt-1 border-t border-slate-200">
                                 <span className="font-semibold text-slate-900">You receive</span>
-                                <span className="font-bold text-emerald-700">£{netOfFee(Number(draft), feePercent).toFixed(2)}</span>
+                                <span className="font-bold text-emerald-700">{formatGBP(netOfFee(Number(draft), feePercent))}</span>
                             </div>
                         </div>
                     )}

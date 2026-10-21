@@ -10,6 +10,7 @@
 // exactly as a plain flat price: one price, party size is metadata only.
 
 import { normaliseUnit } from './serviceOrders';
+import { formatPrice } from './formatMoney';
 import { childrenAllowed } from './guestAges';
 
 export interface ExtraGuestsItem {
@@ -68,7 +69,7 @@ export function partyPrice(
     return Math.round(Math.max(base, total) * 100) / 100;
 }
 
-const money = (n: number): string => '£' + (Math.round(n * 100) / 100).toFixed(2).replace(/\.00$/, '');
+const money = (n: number): string => formatPrice(Math.round(n * 100) / 100);
 
 // The listing line, e.g. "£220 for up to 4, +£40 per extra adult" (and
 // "+£15 per extra child" where children are allowed). Null when the item has no

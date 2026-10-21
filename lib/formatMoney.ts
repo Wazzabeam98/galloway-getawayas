@@ -33,3 +33,18 @@ export function formatGBP(amount: number | string | null | undefined): string {
 export function formatGBPAmount(amount: number | string | null | undefined): string {
     return GROUPED.format(toNumber(amount));
 }
+
+// "£2,040" / "£2,040.50" — grouped thousands, but pence only when the amount
+// isn't a whole number of pounds. For the many places that show a price the way
+// the site always has (a round nightly rate as "£2,040", a fee as "£12.50"),
+// where forcing "£2,040.00" would change how every round price reads. Same
+// grouping as formatGBP, so a price over £999 gets its comma everywhere.
+export function formatPrice(amount: number | string | null | undefined): string {
+    const n = toNumber(amount);
+    const whole = Number.isInteger(n);
+    const body = new Intl.NumberFormat('en-GB', {
+        minimumFractionDigits: whole ? 0 : 2,
+        maximumFractionDigits: 2,
+    }).format(Math.abs(n));
+    return (n < 0 ? '-£' : '£') + body;
+}

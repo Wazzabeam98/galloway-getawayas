@@ -1,6 +1,7 @@
 'use client';
 
 import { PLATFORMS } from '@/lib/platforms';
+import { formatPrice, formatGBP } from '@/lib/formatMoney';
 import { useEffect, useMemo, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
@@ -856,7 +857,7 @@ export default function CalendarPage() {
                                                             Min. stay<span className="sr-only"> — minimum stay, a gap too short to book</span>
                                                         </span>
                                                     ) : (!isPast && inMonth) ? (
-                                                        <span className="absolute bottom-1 left-1.5 text-[10px] font-medium text-slate-500">£{price}</span>
+                                                        <span className="absolute bottom-1 left-1.5 text-[10px] font-medium text-slate-500">{formatPrice(price)}</span>
                                                     ) : null
                                                 )}
                                             </button>
@@ -1068,7 +1069,7 @@ export default function CalendarPage() {
                                     type="number"
                                     value={panelPrice}
                                     onChange={(e) => setPanelPrice(e.target.value)}
-                                    placeholder={`Default: £${selectedListing?.price_per_night}`}
+                                    placeholder={selectedListing ? `Default: ${formatPrice(selectedListing.price_per_night)}` : 'Default'}
                                     className="w-full p-2.5 border rounded-lg text-sm mb-4"
                                 />
 
@@ -1218,7 +1219,7 @@ export default function CalendarPage() {
                                         {Number(extraGuestAfter) === 1
                                             ? 'One guest is included. '
                                             : 'The first ' + (Number(extraGuestAfter) || 1) + ' guests are included. '}
-                                        After that it&apos;s £{Number(extraGuestFee).toFixed(2)} each
+                                        After that it&apos;s {formatGBP(extraGuestFee)} each
                                         {extraGuestPeriod === 'night' ? ', per night.' : ', for the whole stay.'}
                                     </p>
                                 )}

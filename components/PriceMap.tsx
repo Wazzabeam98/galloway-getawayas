@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { whenNearViewport } from '@/lib/nearViewport';
 import { optimisedSrc } from '@/lib/imageSrc';
+import { formatPrice } from '@/lib/formatMoney';
 
 // The search map — Airbnb's shape. A white price pill for every live property,
 // a mini card (photo, title, price) on click that links to the listing, and a
@@ -28,7 +29,7 @@ export interface PriceMapPoint {
 }
 
 function pillHtml(price: number | string): string {
-    return `£${price}`;
+    return formatPrice(price);
 }
 
 function cardHtml(p: PriceMapPoint): string {
@@ -42,7 +43,7 @@ function cardHtml(p: PriceMapPoint): string {
         + `<div style="padding:9px 11px 11px;">`
         + `<div style="font-weight:600;font-size:14px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(p.title)}</div>`
         + (p.area ? `<div style="font-size:12px;color:#64748b;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(p.area)}</div>` : '')
-        + `<div style="font-size:13px;color:#0f172a;margin-top:4px;"><span style="font-weight:700;">£${esc(String(p.price))}</span> <span style="color:#64748b;">night</span></div>`
+        + `<div style="font-size:13px;color:#0f172a;margin-top:4px;"><span style="font-weight:700;">${formatPrice(p.price)}</span> <span style="color:#64748b;">night</span></div>`
         + `</div></a>`
     );
 }
