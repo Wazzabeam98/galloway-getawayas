@@ -129,6 +129,8 @@ const LIST: CatalogueEntry[] = [
     E('Experiences', 'Money held, payouts not set up', 'Provider', '£120.00 is waiting for you — set up payouts to receive it', '/services/dashboard'),
     E('Experiences', 'Calendar sync failing', 'Provider', 'One of your calendars has stopped syncing', '/services/dashboard'),
     V('Experiences', 'Order-thread message', 'Guest or provider', 'messages', 'Solway Smokehouse', 'New message from your provider', '/experiences/order/x'),
+    E('Experiences', 'Chargeback opened', 'Provider', 'A guest\u2019s bank has disputed a payment for Smokehouse tasting', '/services/dashboard/earnings'),
+    E('Experiences', 'Chargeback closed', 'Provider', 'The payment dispute for Smokehouse tasting has closed', '/services/dashboard/earnings'),
     E('Experiences', 'Customer waiting on a reply', 'Provider or trade', 'A customer is waiting on your reply — Galloway Getaways', '/services/messages'),
     E('Experiences', 'Review request', 'Guest', 'How was Smoked on the Solway?', '/experiences/review/x'),
     E('Experiences', 'Review received', 'Provider', 'New review for Solway Smokehouse', '/services/dashboard/reviews'),
