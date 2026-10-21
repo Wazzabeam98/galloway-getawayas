@@ -77,11 +77,9 @@ const HERO_IMAGES = [
 // The "Where" dropdown, on both layouts, and the name of the chosen place in
 // the collapsed mobile pill. "Anywhere" first — the empty value, which leaves
 // `where` out of the URL so a bare search returns every listing, the way
-// Airbnb's "Anywhere" does — then the areas the page hands in: exactly the
-// "Holiday Lets by town" tiles (written, with at least one published listing,
-// app/page.tsx), A to Z. So a guest can never pick a town with nothing in it,
-// and an area joins the list by itself the day it gets its first listing.
-// Each value is the area's slug; the home page matches it with listingInArea
+// Airbnb's "Anywhere" does — then the areas the page hands in: every written
+// area, A to Z, whether or not it has a listing yet (app/page.tsx). Each value
+// is the area's slug; the home page matches it with listingInArea
 // (config/areas), which is how Galloway Forest — a region, not a town — works.
 const ANYWHERE = { value: '', label: 'Anywhere in Dumfries & Galloway' };
 
