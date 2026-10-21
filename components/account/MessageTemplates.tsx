@@ -7,6 +7,19 @@ import { Clock, Copy, Trash2, Plus, Home } from 'lucide-react';
 import TemplateCoverage from '@/components/account/TemplateCoverage';
 import { TEMPLATE_TYPES, templateDefFor } from '@/lib/templateTypes';
 import { CUSTOM_TYPE } from '@/lib/messageTemplates';
+import { templateCodeHeldFor } from '@/lib/bookingWindows';
+
+// When each property releases its door code, read once from the service-role
+// route so the editor can warn that a {lockbox_code} message timed before the
+// release is held back until the code is live.
+interface CodeTimingListing {
+    listing_id: string;
+    title: string;
+    release_hours: number;
+    release_at_time: string | null;
+    check_in_time: string | null;
+    check_out_time: string | null;
+}
 
 // Scheduled messages.
 //
@@ -329,6 +342,7 @@ export default function MessageTemplates() {
     const [userId, setUserId] = useState('');
     const [rows, setRows] = useState<Template[]>([]);
     const [listings, setListings] = useState<Listing[]>([]);
+    const [codeTiming, setCodeTiming] = useState<CodeTimingListing[]>([]);
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState<string | null>(null);
     const [adding, setAdding] = useState(false);
@@ -395,6 +409,18 @@ export default function MessageTemplates() {
         setListings((listRes.data || [])
             .filter((l: any) => l.status !== 'draft')
             .map((l: any) => ({ id: l.id, title: l.title || 'Untitled listing' })));
+
+        // When each property hands over its code — for the {lockbox_code} hold
+        // warning. Service-role only (the setting lives on the grant-less code
+        // row), so it comes through its own route. A failure here just means no
+        // warning; the sender still holds the message correctly regardless.
+        try {
+            const res = await fetch('/api/message-templates/code-timing');
+            const data = await res.json();
+            if (data && data.ok) setCodeTiming(data.listings || []);
+        } catch (err) {
+            // No warning rather than a broken editor.
+        }
 
         setLoading(false);
     };
@@ -684,6 +710,15 @@ export default function MessageTemplates() {
     // keystroke never remounts the body textarea and drops the caret.
     const renderCard = (tpl: Template, bodyPlaceholder: string, namePlaceholder: string, inModal = false) => {
         const busy = busyId === tpl.id;
+        // The properties this message covers that have a code set (empty scope
+        // means all of them). templateCodeHeldFor returns those for which the
+        // message is timed before the code is released — the sender holds it for
+        // those until the code is live, so the host is told rather than left to
+        // assume the code goes out when the message is scheduled.
+        const relevantCode = tpl.listingIds.length === 0
+            ? codeTiming
+            : codeTiming.filter((c) => tpl.listingIds.indexOf(c.listing_id) !== -1);
+        const codeHeld = templateCodeHeldFor(tpl, relevantCode);
         return (
             <div key={tpl.id} className={inModal ? '' : 'border rounded-xl p-4'}>
                 <input
@@ -800,6 +835,15 @@ export default function MessageTemplates() {
                 {tpl.enabled && hasRealContent(tpl.body) && tpl.anchor === 'none' && (
                     <p className="text-xs text-amber-600 mt-3">
                         Switched on but not scheduled, so nothing will be sent. Pick a time.
+                    </p>
+                )}
+                {codeHeld.length > 0 && (
+                    <p className="text-xs text-amber-600 mt-3">
+                        This message includes <span className="font-mono">{'{lockbox_code}'}</span> but is
+                        timed to send before the door code is released
+                        {codeHeld.length === 1 ? ` for ${codeHeld[0]}` : ` for ${codeHeld.length} of its properties`}.
+                        The code only appears on the guest&rsquo;s reservation and in their messages at the
+                        release time, so this message is held back and sent the moment the code is available.
                     </p>
                 )}
             </div>

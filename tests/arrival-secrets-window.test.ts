@@ -14,8 +14,13 @@ import assert from 'node:assert/strict';
 import {
     arrivalSecretsWindowOpen,
     DEFAULT_CODE_RELEASE_HOURS,
+    MAX_CODE_RELEASE_HOURS,
     CODE_RELEASE_CHOICES,
     normaliseReleaseHours,
+    normaliseReleaseAtTime,
+    normaliseReleaseSetting,
+    codeRevealWhenPhrase,
+    templateCodeHeldFor,
 } from '../lib/bookingWindows';
 import { bookingReleasesPrivateData } from '../lib/bookingEntitlement';
 
@@ -66,12 +71,82 @@ test('checkout day is the London day, not the UTC one', () => {
     assert.equal(arrivalSecretsWindowOpen(stay('2026-09-26', '2026-09-29'), justAfterMidnight), false);
 });
 
-test('an off-list release value falls back to the default', () => {
-    assert.equal(normaliseReleaseHours(999), DEFAULT_CODE_RELEASE_HOURS);
+test('release hours: any whole number in [0, 336], else the default', () => {
+    // Out of range falls back; in range (now including custom values and 0) is
+    // kept as-is, so a host can type "6 hours" or "at check-in time".
+    assert.equal(normaliseReleaseHours(999), DEFAULT_CODE_RELEASE_HOURS, 'above the ceiling falls back');
+    assert.equal(normaliseReleaseHours(-1), DEFAULT_CODE_RELEASE_HOURS, 'below zero falls back');
     assert.equal(normaliseReleaseHours('48'), 48);
+    assert.equal(normaliseReleaseHours(6), 6, 'a custom in-range value is kept, not forced to a preset');
+    assert.equal(normaliseReleaseHours(0), 0, '0 is valid — at check-in time');
+    assert.equal(normaliseReleaseHours(MAX_CODE_RELEASE_HOURS), MAX_CODE_RELEASE_HOURS);
     assert.equal(normaliseReleaseHours(null), DEFAULT_CODE_RELEASE_HOURS);
     assert.equal(normaliseReleaseHours(undefined), DEFAULT_CODE_RELEASE_HOURS);
     assert.ok(CODE_RELEASE_CHOICES.some((c) => c.hours === DEFAULT_CODE_RELEASE_HOURS));
+});
+
+test('release_at_time parses HH:MM and HH:MM:SS, rejects nonsense', () => {
+    assert.equal(normaliseReleaseAtTime('08:00'), '08:00:00');
+    assert.equal(normaliseReleaseAtTime('8:5'), null, 'minutes must be two digits');
+    assert.equal(normaliseReleaseAtTime('09:30:00'), '09:30:00');
+    assert.equal(normaliseReleaseAtTime('24:00'), null, 'hour out of range');
+    assert.equal(normaliseReleaseAtTime('12:60'), null, 'minute out of range');
+    assert.equal(normaliseReleaseAtTime(''), null);
+    assert.equal(normaliseReleaseAtTime(null), null);
+    assert.equal(normaliseReleaseAtTime('not a time'), null);
+});
+
+test('at check-in time (0 hours) opens exactly at the check-in instant', () => {
+    // 3pm check-in on 30/09 is 14:00 UTC (BST). At 0 hours the window opens then.
+    const stay30 = stay('2026-09-30', '2026-10-03');
+    const atCheckIn = new Date('2026-09-30T14:00:00Z');
+    const justBefore = new Date('2026-09-30T13:59:00Z');
+    assert.equal(arrivalSecretsWindowOpen(stay30, justBefore, 0, '15:00:00'), false, 'a minute before check-in: not yet');
+    assert.equal(arrivalSecretsWindowOpen(stay30, atCheckIn, 0, '15:00:00'), true, 'at check-in: open');
+    // Also accepts the object form.
+    assert.equal(arrivalSecretsWindowOpen(stay30, atCheckIn, { releaseHours: 0, releaseAtTime: null }, '15:00:00'), true);
+});
+
+test('an absolute reveal time opens at that clock time on the check-in day, ignoring hours', () => {
+    // Reveal at 08:00 on the check-in day (30/09), whatever the 3pm check-in is.
+    const stay30 = stay('2026-09-30', '2026-10-03');
+    const setting = normaliseReleaseSetting(168, '08:00'); // hours should be ignored
+    const at8 = new Date('2026-09-30T07:00:00Z'); // 08:00 BST
+    const before8 = new Date('2026-09-30T06:30:00Z'); // 07:30 BST
+    assert.equal(arrivalSecretsWindowOpen(stay30, before8, setting, '15:00:00'), false, 'before 8am on the day');
+    assert.equal(arrivalSecretsWindowOpen(stay30, at8, setting, '15:00:00'), true, 'from 8am on the day');
+    // The absolute time wins even though release_hours is a wide week.
+    const weekBefore = new Date('2026-09-23T07:00:00Z');
+    assert.equal(arrivalSecretsWindowOpen(stay30, weekBefore, setting, '15:00:00'), false, 'the 168h hours value is ignored');
+});
+
+test('the guest-facing phrase reads right for all three shapes', () => {
+    assert.equal(codeRevealWhenPhrase(24), '24 hours before you arrive');
+    assert.equal(codeRevealWhenPhrase(48), '2 days before you arrive');
+    assert.equal(codeRevealWhenPhrase(168), 'a week before you arrive');
+    assert.equal(codeRevealWhenPhrase(0), 'when you check in');
+    assert.equal(codeRevealWhenPhrase({ releaseHours: 0, releaseAtTime: '08:00:00' }), 'from 8am on the day you arrive');
+    assert.equal(codeRevealWhenPhrase({ releaseHours: 0, releaseAtTime: '14:30:00' }), 'from 2.30pm on the day you arrive');
+});
+
+test('templateCodeHeldFor: a message timed before the release is flagged, one timed within it is not', () => {
+    const codeListing = { title: 'Harbour Cottage', release_hours: 24, release_at_time: null, check_in_time: '15:00:00', check_out_time: '11:00:00' };
+    // 3 days before check-in, carrying the code, against a 24h release → held.
+    const threeDaysOut = { anchor: 'check_in', days_offset: 3, send_hour: 10, minutes_after: 0, hours_after: 0, hours_before: 0, body: 'The code is {lockbox_code}.' };
+    assert.deepEqual(templateCodeHeldFor(threeDaysOut, [codeListing]), ['Harbour Cottage']);
+
+    // The same message with no lockbox token is never held.
+    const noCode = { ...threeDaysOut, body: 'See you soon!' };
+    assert.deepEqual(templateCodeHeldFor(noCode, [codeListing]), []);
+
+    // After check-in, against an hours-before release, is within the window.
+    const afterCheckIn = { anchor: 'after_check_in', days_offset: 0, send_hour: 9, minutes_after: 0, hours_after: 1, hours_before: 0, body: 'Settled in? Code: {lockbox_code}.' };
+    assert.deepEqual(templateCodeHeldFor(afterCheckIn, [codeListing]), []);
+
+    // But an absolute release LATE on the check-in day holds even an
+    // after-check-in message that lands before it.
+    const lateReveal = { title: 'Harbour Cottage', release_hours: 24, release_at_time: '20:00:00', check_in_time: '15:00:00', check_out_time: '11:00:00' };
+    assert.deepEqual(templateCodeHeldFor(afterCheckIn, [lateReveal]), ['Harbour Cottage']);
 });
 
 test('the window is never enough on its own — an unpaid or unaccepted booking gets nothing', () => {

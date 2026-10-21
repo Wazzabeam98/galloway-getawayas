@@ -5,7 +5,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { firstName } from '@/lib/utils';
-import { stayCountdown, arrivalSecretsWindowOpen, normaliseReleaseHours, releaseHoursLabel, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
+import { stayCountdown, arrivalSecretsWindowOpen, normaliseReleaseSetting, codeRevealWhenPhrase, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import CopyField from '@/components/arrival/CopyField';
@@ -77,14 +77,19 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
         admin.from('listings')
             .select('title, check_in_method, check_in_time')
             .eq('id', booking.listing_id).maybeSingle(),
-        admin.from('listing_access_codes').select('release_hours').eq('listing_id', booking.listing_id).maybeSingle(),
+        admin.from('listing_access_codes').select('release_hours, release_at_time').eq('listing_id', booking.listing_id).maybeSingle(),
     ]);
     if (!listing) redirect('/trips');
 
-    const releaseHours = release ? normaliseReleaseHours((release as any).release_hours) : DEFAULT_CODE_RELEASE_HOURS;
+    // The host's choice: hours before check-in, or an absolute time on the
+    // check-in day that overrides them. Either way it is the one setting the
+    // card, the message and the sender all read.
+    const releaseSetting = release
+        ? normaliseReleaseSetting((release as any).release_hours, (release as any).release_at_time)
+        : normaliseReleaseSetting(DEFAULT_CODE_RELEASE_HOURS, null);
     // From the host's window before the check-in instant until the end of
     // checkout day — not for ever after.
-    const codeReady = arrivalSecretsWindowOpen(booking, now, releaseHours, (listing as any).check_in_time);
+    const codeReady = arrivalSecretsWindowOpen(booking, now, releaseSetting, (listing as any).check_in_time);
 
     // The host name for the fall-back message, the wifi (own grant-less table)
     // and the door code, read under the service role only after the booking
@@ -173,7 +178,7 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
                             <p className="mt-0.5 text-xs text-emerald-700">{phase === 'during' ? 'Shown until you check out' : 'Shown because your check-in is close'}</p>
                         </>
                     ) : hasCode ? (
-                        <p className="mt-1.5 text-sm text-emerald-900/80">{ended ? 'Your stay has ended, so the door code is no longer shown.' : `Your door code shows here ${releaseHoursLabel(releaseHours)} before you arrive.`}</p>
+                        <p className="mt-1.5 text-sm text-emerald-900/80">{ended ? 'Your stay has ended, so the door code is no longer shown.' : `Your door code shows here ${codeRevealWhenPhrase(releaseSetting)}.`}</p>
                     ) : method ? (
                         <div className="mt-1.5 flex items-start gap-2">
                             <DoorOpen className="mt-0.5 h-4 w-4 flex-none text-emerald-700" strokeWidth={1.75} />
@@ -210,7 +215,7 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
                                     <CopyField value={a.wifi_password} label="Copy" />
                                 </div>
                             ) : (
-                                <p className="mt-1.5 text-sm text-stone-500">{ended ? 'Your stay has ended, so the password is no longer shown.' : `The password shows here ${releaseHoursLabel(releaseHours)} before you arrive.`}</p>
+                                <p className="mt-1.5 text-sm text-stone-500">{ended ? 'Your stay has ended, so the password is no longer shown.' : `The password shows here ${codeRevealWhenPhrase(releaseSetting)}.`}</p>
                             )
                         )}
                     </Section>
