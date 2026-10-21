@@ -150,20 +150,36 @@ test('no user id: not a host, nothing granted', async () => {
 
 const NOT_LIVE = ['draft', 'pending_review', 'declined'];
 
+// Changed 21 Oct 2026 (Liam): an EXPERIENCE gets the whole host-shaped menu
+// from the moment it applies — reservations, calendar, reviews, earnings,
+// co-hosts — as a host with a listing in review does. A TRADE still gets only
+// its listing and messages until approved (its other pages bounce to the
+// wizard). Both are looped over every non-live state.
+const FULL = grant({ can_calendar: true, can_messages: true, can_bookings: true, can_listing: true, can_earnings: true });
+
 for (const status of NOT_LIVE) {
-    test(`a provider whose business is ${status} is a provider, offered only their listing and messages`, async () => {
+    test(`an experience whose business is ${status} gets the whole provider menu`, async () => {
         const { client: c } = client({ providerRows: [{ audience: 'guest', status }] });
         const side = await readWorkSide(c, 'eilidh');
 
         assert.equal(side.isProvider, true, 'applied: never the guest menu ("Start hosting") again');
         assert.equal(side.providerAudience, 'guest');
-        assert.equal(side.providerPerms.can_listing, true, '"Your listing" is the way back to the listing');
+        assert.deepEqual(side.providerPerms, FULL, 'every section, before approval as after');
+        assert.equal(side.providerFullAccess, true, 'the owner hands out co-host access from the start');
+    });
+
+    test(`a trade whose business is ${status} is a provider, offered only their listing and messages`, async () => {
+        const { client: c } = client({ providerRows: [{ audience: 'host', status }] });
+        const side = await readWorkSide(c, 'rory');
+
+        assert.equal(side.isProvider, true, 'applied: never the guest menu ("Start hosting") again');
+        assert.equal(side.providerPerms.can_listing, true, '"Your listing" is the way back to the application');
         assert.equal(side.providerPerms.can_messages, true);
-        // The live-business pages bounce a business that is not live yet.
+        // A trade's live-business pages bounce an application that is not live.
         assert.equal(side.providerPerms.can_bookings, false);
         assert.equal(side.providerPerms.can_calendar, false);
         assert.equal(side.providerPerms.can_earnings, false);
-        assert.equal(side.providerFullAccess, false, 'no co-hosts to hand out before it is live');
+        assert.equal(side.providerFullAccess, false);
     });
 }
 

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
 import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
+import { experienceCustomWords, experienceCustomDaysOf } from '@/lib/experienceCancellation';
 import {
     itemPriceLabel, itemPriceDisplay, itemExtrasSubline, itemGuestRange, cancellationSentence, whereLine, locationTag, travelCoverageLine,
     durationLabel, durationSummary, yearsLabel, capacityLabel, fromPriceLabel,
@@ -80,7 +81,7 @@ export default function ExperienceListingBody({
     const where = whereLine(p);
     const tag = locationTag(p);
     const travelCoverage = travelCoverageLine(p);
-    const cancelPolicy = experienceCancellationOption(p.cancellation_window_hours, p.noRefund);
+    const cancelPolicy = experienceCancellationOption(p.cancellation_window_hours, p.noRefund, p.cancellationCustom);
 
     const duration = durationSummary(p);
     // How big a group the experience holds. A SLOT sizes it from the capacity we
@@ -589,7 +590,11 @@ export default function ExperienceListingBody({
                         <p className="mt-2 text-[15px] leading-relaxed text-slate-600">
                             {p.noRefund
                                 ? 'This experience is non-refundable once booked — please be sure of your plans before you pay.'
-                                : cancellationSentence(p.shape, p.cancellation_window_hours, who)}
+                                : p.cancellationCustom
+                                    // Custom, worded as a holiday let words it: the full rule
+                                    // here, while the booking panel just says "Free cancellation".
+                                    ? experienceCustomWords(experienceCustomDaysOf(p.cancellation_window_hours))
+                                    : cancellationSentence(p.shape, p.cancellation_window_hours, who)}
                         </p>
                         {(comesToYou || tag) ? (
                             <p className="mt-3 flex items-start gap-1.5 text-sm text-slate-500">

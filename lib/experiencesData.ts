@@ -177,6 +177,9 @@ export interface MpProvider {
     // Non-refundable once booked — the "No refund" cancellation policy. The
     // window (cancellation_window_hours) still describes the refundable ones.
     noRefund: boolean;
+    // Custom cancellation (guest_details.cancellation_custom): the window is the
+    // provider's own number of days — the listing words it as Custom.
+    cancellationCustom: boolean;
     description: string | null;
     shape: string;
     // The fulfilment direction: 'delivery' = the provider travels to the guest's
@@ -554,8 +557,14 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             sessions = generateSessions(
                 (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time })),
                 (blocksBy[p.id] || []).map((b: any) => b.blocked_date),
-                Number(p.slot_length_minutes) || 60, fromKey, provToKey,
-                undefined, providerPartialBlocks,
+                // A start every session length PLUS the gap between sessions, each
+                // needing only the session itself to fit before closing — the same
+                // grid the booking route accepts (slots/book: step = duration +
+                // turnaround, fit = duration). Stepping by the length alone showed
+                // 11:00, 12:30, 14:00, 15:30 for a 90-minute session with a 30-minute
+                // gap, three of which the server then refused.
+                (Number(p.slot_length_minutes) || 60) + turnaround, fromKey, provToKey,
+                Number(p.slot_length_minutes) || 60, providerPartialBlocks,
             )
                 .filter((s) => new Date(s.date + 'T' + s.time + ':00Z').getTime() > nowMs)
                 .map((s) => ({ date: s.date, time: s.time, row: rowByKey[s.date + ' ' + s.time] || null }))
@@ -650,6 +659,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             parking: (p.guest_details && strOrNull(p.guest_details.parking)) || null,
             amenities: knownExperienceAmenities(p.guest_details && p.guest_details.amenities),
             noRefund: !!(p.guest_details && p.guest_details.no_refund),
+            cancellationCustom: !!(p.guest_details && p.guest_details.cancellation_custom),
             description: p.description,
             shape,
             fulfilment: p.fulfilment || null,

@@ -89,6 +89,7 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
     const [partialBlocks, setPartialBlocks] = useState<Array<{ id: string; date: string; start: string; end: string }>>([]);
     const [declaredSessions, setDeclaredSessions] = useState<DeclaredSession[]>([]);
     const [slotDefaults, setSlotDefaults] = useState<{ duration: number; capacity: number }>({ duration: 60, capacity: 1 });
+    const [turnaround, setTurnaround] = useState(0);
     const [items, setItems] = useState<Array<{ unit: string; capacity: number | null; min_people: number | null; active: boolean; price: number }>>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -130,6 +131,7 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
                 setDeclaredSessions(d.declaredSessions || []);
                 const dur = Number(d.slot_length_minutes) || 60, cap = Number(d.slot_capacity) || 1;
                 setSlotDefaults({ duration: dur, capacity: cap }); setItems(d.items || []);
+                setTurnaround(Math.max(0, Number(d.slot_turnaround_minutes) || 0));
                 setDDur((v) => v === 60 ? dur : v); setDCap((v) => v === 1 ? cap : v);
             }
         } catch { setLoadFailed(true); }
@@ -193,6 +195,7 @@ export default function ProviderSlotDashboard({ providerId, editHref, live: live
     const dayInputs: DayInputs = {
         availabilityRows: availability,
         slotLen: slotDefaults.duration,
+        turnaround,
         blockedDates: blocks,
         partialBlocks: partialBlocks.map((b) => ({ date: b.date, startMin: minutesOf(b.start), endMin: minutesOf(b.end), id: b.id })),
         sessions,

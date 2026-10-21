@@ -269,7 +269,19 @@ export default function ProviderReviewRow({
                             : provider.initials}
                     </div>
                     <div className="min-w-0">
-                    <h3 className="font-bold text-slate-900">{provider.business_name}</h3>
+                    {/* An experience's title opens its page exactly as a guest
+                        will see it — the admin preview on /experiences/browse,
+                        before approval as after. A trade has no such page yet. */}
+                    {provider.audience === 'guest' ? (
+                        <h3 className="font-bold text-slate-900">
+                            <a href={'/experiences/browse/' + provider.id} target="_blank" rel="noopener noreferrer"
+                                className="underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900">
+                                {provider.business_name}
+                            </a>
+                        </h3>
+                    ) : (
+                        <h3 className="font-bold text-slate-900">{provider.business_name}</h3>
+                    )}
                     {/* The listing is titled by its Title now; on a guest row the
                         person's full name (admin-only) says who it belongs to. */}
                     {provider.personName ? (

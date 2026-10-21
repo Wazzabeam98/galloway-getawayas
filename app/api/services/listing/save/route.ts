@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { collectionFieldsForWrite } from '@/lib/serviceProviders';
 import { audienceForTrade, knownExperienceAmenities } from '@/lib/serviceProviders';
+import { experienceCustomDaysProblem } from '@/lib/experienceCancellation';
 import { childrenAllowed } from '@/lib/guestAges';
 import { normaliseTime } from '@/lib/offeredTimes';
 import { refreshVenuePoint } from '@/lib/venuePoint';
@@ -155,11 +156,24 @@ export async function POST(request: Request) {
                 // the non-refundable flag is a guest_details value. The set is
                 // window-based (24h / 48h / 7 days / no refund), not the cottage's
                 // day tiers — a one-hour session doesn't fit "30 days before".
+                // Custom (the holiday-let's Custom): the provider's own number of
+                // days, checked by the same rule the picker runs, stored as that
+                // many days in the window column so orders stamp it and refunds
+                // read it like any other window. The flag makes it read back as
+                // Custom rather than the nearest preset.
+                if (data.custom === true) {
+                    const problem = experienceCustomDaysProblem(data.custom_days);
+                    if (problem) return NextResponse.json({ ok: false, error: problem }, { status: 400 });
+                    patch = { cancellation_window_hours: Number(data.custom_days) * 24 };
+                    gd = { no_refund: null, cancellation_custom: true };
+                    break;
+                }
                 patch = {
                     cancellation_window_hours: Math.max(0, Math.floor(Number(data.cancellation_window_hours) || 0)),
                 };
                 gd = {
                     no_refund: data.no_refund === true ? true : null,
+                    cancellation_custom: null,
                 };
                 break;
 

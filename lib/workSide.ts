@@ -79,11 +79,14 @@ export async function readWorkSide(
     const ownedRows: { audience: string | null; status: string | null }[] = (provider && provider.data) || [];
     const isLive = (r: { status: string | null }) => r.status === 'approved' || r.status === 'hidden';
     const owned = ownedRows.find(isLive) || ownedRows[0] || null;
-    // Applied (or part-way through) but not live yet: no bookings, calendar,
-    // earnings or co-hosts to manage — those pages are for a live business and
-    // bounce to the listing — so the menu offers only the listing (where the
-    // review status is) and their messages.
-    const notLive = !!owned && !isLive(owned);
+    // A TRADE that has applied but is not live yet: its requests, calendar and
+    // earnings pages are for a live business and bounce to the wizard, so the
+    // menu offers only the listing and messages. A GUEST EXPERIENCE gets its whole
+    // menu from the moment it applies, as a host with a listing in review does
+    // (Liam, 21 Oct 2026): reservations, calendar, reviews, earnings and co-hosts
+    // all open before approval — empty until guests can book — so it is never
+    // restricted here.
+    const notLive = !!owned && !isLive(owned) && owned.audience !== 'guest';
 
     let coProvider: { audience: string } | null = null;
     if (!owned && providerGrants.length > 0) {

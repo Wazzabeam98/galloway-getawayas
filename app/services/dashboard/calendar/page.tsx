@@ -67,12 +67,15 @@ export default async function ProviderDashboardPage() {
     const provider: any = pickDashboardProvider(list, access, cookies().get(BUSINESS_COOKIE)?.value);
     const mine = access[provider.id];
 
-    // Not approved yet: the dashboard proper is for a live business. A pending
-    // or returned application belongs where it is finished and fixed — a guest
-    // experience in its listing editor (which shows the review status and the
-    // note), a trade in the wizard, with its note.
-    if (provider.status !== 'approved' && mine.isOwner) {
-        redirect(provider.audience === 'guest' ? '/services/dashboard/listing' : `/services/join?trade=${provider.trade}`);
+    // A guest experience opens its calendar at any stage — in progress, in
+    // review or sent back — the way a host manages a cottage's calendar before
+    // it's approved: the listing editor's "Open calendar" is how a provider
+    // blocks a day, or part of one, before going live. Nothing here takes a
+    // booking (guests can't book until approval) and payouts stay refused until
+    // then (/api/services/connect). A trade's application is still finished and
+    // fixed in the wizard, with its note.
+    if (provider.status !== 'approved' && mine.isOwner && provider.audience !== 'guest') {
+        redirect(`/services/join?trade=${provider.trade}`);
     }
 
     // A GUEST-TRADE PROVIDER GETS A DIFFERENT HOME.

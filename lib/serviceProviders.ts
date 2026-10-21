@@ -294,7 +294,16 @@ export function knownExperienceAmenities(keys: any): string[] {
 // fits a timed session), not the holiday-let's day-before tiers. "No refund" is
 // the new option a bare hours field couldn't express. The window presets set the
 // existing cancellation_window_hours; "No refund" sets a no_refund flag instead.
-export const EXPERIENCE_CANCELLATION_OPTIONS: { key: string; label: string; hours: number; noRefund?: boolean; blurb: string }[] = [
+//
+// "Custom" is the holiday-let's Custom, built the same way (Liam, 21 Oct 2026):
+// the provider picks how many DAYS before the experience cancellations stop
+// being refundable — full refund before, none after, no 50% band. It is stored
+// as that many days in cancellation_window_hours (days × 24), so orders stamp it
+// and refunds read it exactly as they do every other window (lib/orderCancelTerms,
+// guestMayCancelFree), plus a guest_details.cancellation_custom flag so it reads
+// back as Custom rather than the nearest preset.
+export const EXPERIENCE_CANCELLATION_OPTIONS: { key: string; label: string; hours: number; noRefund?: boolean; custom?: boolean; blurb: string }[] = [
+    { key: 'custom', label: 'Custom', hours: 0, custom: true, blurb: 'You choose how many days before the experience cancellations stop being refundable.' },
     { key: 'flexible', label: 'Flexible', hours: 24, blurb: 'Free to cancel up to 24 hours before.' },
     { key: 'standard', label: 'Standard', hours: 48, blurb: 'Free to cancel up to 48 hours before.' },
     { key: 'firm', label: 'Firm', hours: 168, blurb: 'Free to cancel up to 7 days before.' },
@@ -302,13 +311,18 @@ export const EXPERIENCE_CANCELLATION_OPTIONS: { key: string; label: string; hour
 ];
 // The named policy a provider is on, from what's stored — no_refund wins, else
 // the nearest window preset (so a legacy hours value still names cleanly).
-export function experienceCancellationOption(hours: number | null | undefined, noRefund: boolean | null | undefined) {
+export function experienceCancellationOption(hours: number | null | undefined, noRefund: boolean | null | undefined, custom?: boolean | null) {
     if (noRefund) return EXPERIENCE_CANCELLATION_OPTIONS.find((o) => o.key === 'none')!;
+    if (custom) return EXPERIENCE_CANCELLATION_OPTIONS.find((o) => o.key === 'custom')!;
     const h = Math.max(0, Number(hours) || 0);
     return EXPERIENCE_CANCELLATION_OPTIONS
-        .filter((o) => !o.noRefund)
+        .filter((o) => !o.noRefund && !o.custom)
         .reduce((best, o) => (Math.abs(o.hours - h) < Math.abs(best.hours - h) ? o : best));
 }
+
+// Custom's days (the limits, the shared rule, the wording) live in
+// lib/experienceCancellation — kept out of this file, whose pricing guard
+// (tests/service-pricing) refuses any arithmetic on hours here.
 
 export function accessibilityLabel(key: string | null | undefined): string | null {
     return ACCESSIBILITY_OPTIONS.find((o) => o.key === String(key || '').trim())?.label || null;

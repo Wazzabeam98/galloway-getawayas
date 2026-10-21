@@ -57,13 +57,18 @@ test('the "missing a few things" banner never says "going live" of a listing tha
     assert.match(editor, /\{live\s*\?\s*<>None of these stop it going live/);
 });
 
-test('"Your listing", the calendar and the join page take a submitted experience to its listing', () => {
+test('"Your listing" and the join page take a submitted experience to its listing; its calendar opens', () => {
     const edit = read('app/services/dashboard/edit/page.tsx');
     assert.match(edit, /provider\.status !== 'approved' && mine\.isOwner && !isGuestProvider\) redirect\(`\/services\/join/,
         'only a trade is sent back to the wizard from "Your listing"');
 
+    // Changed 21 Oct 2026 (Liam): the calendar used to bounce a not-yet-approved
+    // experience to its listing, which made the editor's "Open calendar" a loop
+    // back to the listing. A provider blocks days before going live, as a host
+    // does, so only a TRADE is sent back from the calendar now.
     const calendar = read('app/services/dashboard/calendar/page.tsx');
-    assert.match(calendar, /provider\.audience === 'guest' \? '\/services\/dashboard\/listing'/);
+    assert.match(calendar, /provider\.status !== 'approved' && mine\.isOwner && provider\.audience !== 'guest'\) \{\s*redirect\(`\/services\/join/,
+        'only a trade is redirected; an experience opens its calendar at any stage');
 
     const join = read('app/services/join/page.tsx');
     assert.match(join, /trade === 'guest' && data\.status !== 'draft'\) \{\s*redirect\('\/services\/dashboard\/listing'\)/,
