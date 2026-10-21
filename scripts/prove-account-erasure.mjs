@@ -30,7 +30,7 @@ const { sealSecret } = createRequire(import.meta.url)('./secretBox.cjs');
 // The migration whose function this proves. Applied INSIDE the rolled-back
 // transaction below, so the proof validates the exact file before it ever
 // reaches a database — and persists nothing.
-const MIGRATION = path.join(ROOT, 'supabase/migrations/20261005094931_complete_account_erasure_across_all_personal_data.sql');
+const MIGRATION = path.join(ROOT, 'supabase/migrations/20261021095312_anonymise_covers_names_vat_and_more_tables.sql');
 
 const env = loadEnv();
 assertTestEnvironment(env);
@@ -90,7 +90,8 @@ async function makeSubject(tag) {
     // so we UPDATE it with sentinels rather than inserting a second one.
     await q(
         `update public.profiles set
-            full_name = 'SENTINEL Full Name', preferred_name = 'SENTINEL Pref', phone = '+447700900123',
+            full_name = 'SENTINEL Full Name', first_name = 'SENTINEL First', last_name = 'SENTINEL Last',
+            vat_name = 'SENTINEL VAT Name', preferred_name = 'SENTINEL Pref', phone = '+447700900123',
             residential_address = 'SENTINEL 1 Castle St, Dumfries DG1 1AA', host_bio = 'SENTINEL bio',
             trading_name = 'SENTINEL Trading', welcome_message = 'SENTINEL welcome', welcome_message_enabled = true,
             avatar_url = 'avatars/'||$1::text||'-123.jpg', show_full_name = true
@@ -161,7 +162,7 @@ try {
         await q(`insert into public.guest_delivery_addresses (guest_id, house, street, town, postcode, line) values ($1,'SENTINEL 9','SENTINEL St','Dumfries','DG9 9ZZ','SENTINEL 9 St, Dumfries')`, [uid]);
         await q(`insert into public.booking_guests (booking_id, user_id, invited_by, email, name) values ($1,$2,$2,'SENTINEL@coguest.test','SENTINEL Coguest')`, [booking, uid]);
         await q(`insert into public.reviews (booking_id, listing_id, reviewer_id, reviewee_id, review_type, rating, comment) values ($1,$2,$3,$4,'guest_to_host',5,'SENTINEL review body')`, [booking, listing, uid, other]);
-        await q(`insert into public.conversation_prefs (user_id, booking_id) values ($1,$2)`, [uid, booking]);
+        await q(`insert into public.conversation_prefs (user_id, booking_id, thread_kind, thread_id) values ($1,$2,'booking',$2)`, [uid, booking]);
         await q(`insert into public.error_log (source, message, user_id, user_agent) values ('client','x',$1,'SENTINEL Mozilla UA')`, [uid]);
         await q(`insert into public.interest_registrations (category, email, name, phone, ip, user_agent, status) values ('holiday_let','guest@gallowaydelete.test','SENTINEL Name','+447700900111','203.0.113.9','SENTINEL UA','new')`);
         await q(`insert into public.rate_limit_hits (bucket, key) values ('login','guest@gallowaydelete.test')`);
@@ -170,6 +171,12 @@ try {
 
         const p = (await q('select * from public.profiles where id=$1', [uid])).rows[0];
         note('guest', 'profiles', 'full_name', p.full_name, cleared(p.full_name, 'SENTINEL'));
+        // first_name is the app's PRIMARY display name since the 19 Oct split;
+        // last_name and vat_name are the other name/business-identity PII the
+        // scrub must null (migration 20261021095312 / PR #468).
+        note('guest', 'profiles', 'first_name', p.first_name, cleared(p.first_name, 'SENTINEL'));
+        note('guest', 'profiles', 'last_name', p.last_name, cleared(p.last_name, 'SENTINEL'));
+        note('guest', 'profiles', 'vat_name', p.vat_name, cleared(p.vat_name, 'SENTINEL'));
         note('guest', 'profiles', 'email', p.email, cleared(p.email, '@gallowaydelete'));
         note('guest', 'profiles', 'phone', p.phone, cleared(p.phone, '447700900123'));
         note('guest', 'profiles', 'residential_address', p.residential_address, cleared(p.residential_address, 'SENTINEL'));
@@ -286,14 +293,19 @@ try {
         const { uid } = await makeSubject('trade');
         const prov = await providerFor(uid, 'plumber');
         // A host (other) enquires with this trade; trade's reply + contact must go.
-        await q(`insert into public.service_enquiries (reference, host_id, provider_id, trade, business_name, summary, expires_at,
+        // status is a terminal, non-blocking value ('declined'): the current
+        // deletion blocker (account_deactivation_blockers) refuses to close a
+        // trade that still has an OPEN enquiry (status sent/viewed/accepted), so
+        // the real flow deals with them first. The rows are kept so the scrub's
+        // host-side and provider-side field clearing is still asserted below.
+        await q(`insert into public.service_enquiries (reference, host_id, provider_id, trade, business_name, summary, expires_at, status,
                     host_name, host_phone, host_email, access_note, when_note, provider_reply, provider_phone, provider_email)
-                 values ('REF-'||substr(gen_random_uuid()::text,1,8), $1, $2, 'plumber', 'SENTINEL Biz', 'SENTINEL summary', now()+interval '7 days',
+                 values ('REF-'||substr(gen_random_uuid()::text,1,8), $1, $2, 'plumber', 'SENTINEL Biz', 'SENTINEL summary', now()+interval '7 days', 'declined',
                     'OTHER host','+447700000001','otherhost@x.test','host access','host when','SENTINEL provider reply','+447700900999','SENTINEL@prov.test')`, [other, prov]);
         // And one where this trade's owner is themselves the host side (rare but possible).
-        await q(`insert into public.service_enquiries (reference, host_id, provider_id, trade, business_name, summary, expires_at,
+        await q(`insert into public.service_enquiries (reference, host_id, provider_id, trade, business_name, summary, expires_at, status,
                     host_name, host_phone, host_email, access_note, when_note)
-                 values ('REF-'||substr(gen_random_uuid()::text,1,8), $1, $2, 'plumber', 'B', 'SENTINEL host-side summary', now()+interval '7 days',
+                 values ('REF-'||substr(gen_random_uuid()::text,1,8), $1, $2, 'plumber', 'B', 'SENTINEL host-side summary', now()+interval '7 days', 'declined',
                     'SENTINEL Host Name','+447700900444','SENTINEL@host.test','SENTINEL access','SENTINEL when')`, [uid, prov]);
         await anonymise(uid);
         const provSide = (await q(`select provider_reply, provider_phone, provider_email from public.service_enquiries where provider_id=$1 and host_id=$2`, [prov, other])).rows[0];
