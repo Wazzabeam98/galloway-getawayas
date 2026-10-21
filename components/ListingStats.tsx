@@ -65,26 +65,19 @@ export default function ListingStats({
         );
     }
 
-    // Pets: a paw with the count when allowed and we know it; a paw alone when
-    // allowed with no number stored; a struck-through paw when not allowed.
+    // Pets: only listings that accept pets show a paw — with the number when we
+    // have it, the paw alone when we don't. A listing that doesn't take pets
+    // shows no pet icon at all, so the row is just guests, bedrooms, bathrooms.
     const pets = Number(maxPets);
-    const haveCount = petsAllowed && Number.isFinite(pets) && pets > 0;
-    const petLabel = !petsAllowed
-        ? 'No pets'
-        : haveCount
-            ? `${pets} ${pets === 1 ? 'pet' : 'pets'}`
-            : 'Pets allowed';
-    items.push(
-        <span key="pets" className="inline-flex items-center gap-1" aria-label={petLabel}>
-            <span className="relative inline-flex">
+    const haveCount = Number.isFinite(pets) && pets > 0;
+    if (petsAllowed) {
+        items.push(
+            <span key="pets" className="inline-flex items-center gap-1" aria-label={haveCount ? `${pets} ${pets === 1 ? 'pet' : 'pets'}` : 'Pets allowed'}>
                 <PawPrint aria-hidden className="h-3.5 w-3.5" />
-                {!petsAllowed && (
-                    <span aria-hidden className="absolute left-1/2 top-1/2 h-px w-[135%] -translate-x-1/2 -translate-y-1/2 rotate-45 rounded bg-current" />
-                )}
-            </span>
-            {haveCount && <span>{pets}</span>}
-        </span>,
-    );
+                {haveCount && <span>{pets}</span>}
+            </span>,
+        );
+    }
 
     return (
         <div className={`flex items-center gap-2 whitespace-nowrap text-xs ${className}`}>
