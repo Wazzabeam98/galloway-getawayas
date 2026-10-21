@@ -937,6 +937,22 @@ export async function POST(request: Request) {
                 bookingId = (booking && booking.id) || null;
             }
 
+            // Not a stay: an EXPERIENCE order paid with that payment intent (the
+            // booking itself before an add-places row). Recorded on the dispute
+            // so the provider is told about it the way a host is — by the
+            // disputes table's trigger and the push job, never by this file.
+            let orderId: string | null = null;
+            if (!bookingId && d.payment_intent) {
+                const { data: orders } = await admin
+                    .from('service_orders')
+                    .select('id, parent_order_id')
+                    .eq('stripe_payment_intent_id', d.payment_intent)
+                    .limit(5);
+                const rows = orders || [];
+                const order = rows.find((o: any) => !o.parent_order_id) || rows[0] || null;
+                orderId = (order && order.id) || null;
+            }
+
             const dueBy = d.evidence_details && d.evidence_details.due_by
                 ? new Date(d.evidence_details.due_by * 1000).toISOString()
                 : null;
@@ -951,6 +967,7 @@ export async function POST(request: Request) {
                 .upsert(
                     {
                         booking_id: bookingId,
+                        order_id: orderId,
                         stripe_dispute_id: d.id,
                         stripe_charge_id: d.charge || null,
                         stripe_payment_intent_id: d.payment_intent || null,
