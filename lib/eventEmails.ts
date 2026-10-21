@@ -78,6 +78,52 @@ export function chargebackMail(input: {
     };
 }
 
+// The same, for an EXPERIENCE (a dispute tied to a service order): to the
+// provider's contact address, linking to their earnings — the twin of a host's
+// chargeback email. Its own subjects (a host's say "— <listing>") so the push
+// rule can copy it to co-hosts with the earnings permission (team rule).
+const PROVIDER_FOOT = 'You’re receiving this because you run an experience on Galloway Getaways.';
+
+export function providerChargebackMail(input: {
+    stage: 'opened' | 'closed';
+    outcome?: string | null;
+    what: string;
+    date: string | null;
+    amount: number;
+}): { subject: string; html: string } {
+    const what = escapeHtml(input.what);
+    const when = input.date ? ' on ' + ukDate(input.date) : '';
+    const link = button(SITE_URL + '/services/dashboard/earnings', 'View your earnings');
+    if (input.stage === 'opened') {
+        return {
+            subject: 'A guest’s bank has disputed a payment for ' + input.what,
+            html: emailLayout(
+                H('A payment has been disputed') +
+                P('The guest’s bank has raised a dispute (a chargeback) about the ' + formatGBP(input.amount) + ' paid for ' + what + when + '.') +
+                P('We’re handling it with the bank. You don’t need to do anything unless we get in touch. If your share for this booking hasn’t been paid out yet, we hold it until the dispute is settled.') +
+                link,
+                PROVIDER_FOOT, undefined, NEUTRAL_SUBTITLE,
+            ),
+        };
+    }
+    const won = input.outcome === 'won';
+    const lost = input.outcome === 'lost';
+    return {
+        subject: 'The payment dispute for ' + input.what + ' has closed',
+        html: emailLayout(
+            H(won ? 'Dispute closed in our favour' : lost ? 'Dispute closed in the guest’s favour' : 'Dispute closed') +
+            P('The guest’s bank has closed its dispute about the ' + formatGBP(input.amount) + ' paid for ' + what + when + '.') +
+            P(won
+                ? 'The bank decided in our favour, so the payment stands.'
+                : lost
+                    ? 'The bank decided in the guest’s favour. We’ll be in touch if it affects your payout.'
+                    : 'We’ll be in touch if there’s anything you need to know.') +
+            link,
+            PROVIDER_FOOT, undefined, NEUTRAL_SUBTITLE,
+        ),
+    };
+}
+
 // ----------------------------------------------------------- money request declined
 
 export function moneyDeclinedMail(input: { amount: number; listingTitle: string; bookingId: string }): { subject: string; html: string } {
@@ -208,13 +254,22 @@ export async function eventMail(admin: any, row: any): Promise<RowOutcome | null
     const mails: Mail[] = [];
 
     if (row.kind === 'notify.chargeback') {
-        const { data: d } = await admin.from('disputes').select('id, booking_id, amount, status').eq('id', ctx.dispute_id).maybeSingle();
-        if (!d || !d.booking_id) return { status: 'skipped', result: { reason: 'no booking on the dispute' } };
-        const { data: b } = await admin.from('bookings').select('id, host_id, listing_id').eq('id', d.booking_id).maybeSingle();
-        const to = await authEmail(admin, b && b.host_id);
-        if (b && to) {
-            const m = chargebackMail({ stage: ctx.stage === 'closed' ? 'closed' : 'opened', outcome: d.status, listingTitle: await listingTitle(admin, b.listing_id), amount: Number(d.amount || 0), bookingId: b.id });
-            mails.push({ to, ...m });
+        const { data: d } = await admin.from('disputes').select('id, booking_id, order_id, amount, status').eq('id', ctx.dispute_id).maybeSingle();
+        if (!d || (!d.booking_id && !d.order_id)) return { status: 'skipped', result: { reason: 'no booking on the dispute' } };
+        const stage = ctx.stage === 'closed' ? 'closed' : 'opened';
+        if (d.booking_id) {
+            const { data: b } = await admin.from('bookings').select('id, host_id, listing_id').eq('id', d.booking_id).maybeSingle();
+            const to = await authEmail(admin, b && b.host_id);
+            if (b && to) {
+                const m = chargebackMail({ stage, outcome: d.status, listingTitle: await listingTitle(admin, b.listing_id), amount: Number(d.amount || 0), bookingId: b.id });
+                mails.push({ to, ...m });
+            }
+        } else {
+            // An experience: the provider, at their contact address.
+            const parts = await orderParts(admin, d.order_id);
+            if (parts && parts.providerEmail) {
+                mails.push({ to: parts.providerEmail, ...providerChargebackMail({ stage, outcome: d.status, what: parts.what, date: parts.o.service_date || null, amount: Number(d.amount || 0) }) });
+            }
         }
     } else if (row.kind === 'notify.money_declined') {
         const { data: r } = await admin.from('booking_resolutions').select('id, booking_id, host_id, amount').eq('id', ctx.resolution_id).maybeSingle();
