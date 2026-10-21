@@ -6,6 +6,8 @@ import { publicArea } from '@/lib/places';
 import { hasPublicScore } from '@/lib/reviews';
 import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
 import { propertyTypeLabel } from '@/lib/listingFilters';
+import ListingStats from '@/components/ListingStats';
+import { formatPrice } from '@/lib/formatMoney';
 
 // One property card, used by the home page grid and by the area pages.
 //
@@ -48,6 +50,15 @@ export interface CardListing {
     approx_longitude?: number | string | null;
     /** The category the host picked at sign-up ("Cottages", "Townhouses"…). */
     property_type?: string | null;
+    /**
+     * The counts shown in the small stats row under the location. Optional, so a
+     * grid that doesn't select them simply omits the items it hasn't got;
+     * `max_pets` is null when pets aren't allowed or no number is stored.
+     */
+    max_guests?: number | string | null;
+    bedrooms?: number | string | null;
+    bathrooms?: number | string | null;
+    max_pets?: number | string | null;
 }
 
 // Which icon and colour draws which badge. The rule and the cap live in
@@ -158,8 +169,15 @@ export default function ListingCard({ listing, priority = false }: { listing: Ca
             {near && (
                 <p className="text-xs text-stone-400 truncate -mt-1">{nearestTownLabel(near)}</p>
             )}
+            <ListingStats
+                maxGuests={listing.max_guests}
+                bedrooms={listing.bedrooms}
+                bathrooms={listing.bathrooms}
+                petsAllowed={(listing.amenities || []).includes('Pets allowed')}
+                maxPets={listing.max_pets}
+            />
             <p className="text-sm font-semibold text-stone-900">
-                £{listing.price_per_night} <span className="font-normal text-stone-500">night</span>
+                {formatPrice(listing.price_per_night)} <span className="font-normal text-stone-500">night</span>
             </p>
         </div>
     );

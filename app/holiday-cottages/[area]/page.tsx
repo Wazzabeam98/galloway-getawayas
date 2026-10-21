@@ -52,7 +52,7 @@ async function listingsForArea(area: Area): Promise<CardListing[]> {
     const { data } = await orderPublishedListings(
         supabase
             .from('listings')
-            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude, property_type, display_order')
+            .select('id, title, location, price_per_night, images, rating_avg, rating_count, amenities, approx_latitude, approx_longitude, property_type, max_guests, bedrooms, bathrooms, max_pets, display_order')
             .eq('status', 'published'),
     );
 

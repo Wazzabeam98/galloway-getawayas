@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { Accessibility as AccessibilityIcon } from 'lucide-react';
 import { ACCESSIBILITY_AMENITIES } from '@/lib/listingFilters';
+import { formatGBP } from '@/lib/formatMoney';
 import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -1290,18 +1291,18 @@ export default function AddHome() {
                             <div className="bg-slate-50 rounded-2xl border p-5 mb-8 max-w-xs text-sm">
                                 <div className="flex justify-between text-slate-600 mb-2">
                                     <span>Guest pays</span>
-                                    <span className="font-medium text-slate-900">£{Number(price).toFixed(2)} / night</span>
+                                    <span className="font-medium text-slate-900">{formatGBP(price)} / night</span>
                                 </div>
                                 <div className="flex justify-between text-slate-600 mb-2">
                                     <span>Host fee ({HOST_FEE_PERCENT}%)</span>
                                     <span className="font-medium text-slate-900">
-                                        − £{feeAmount(Number(price), HOST_FEE_PERCENT).toFixed(2)}
+                                        − {formatGBP(feeAmount(Number(price), HOST_FEE_PERCENT))}
                                     </span>
                                 </div>
                                 <div className="flex justify-between pt-2 border-t border-slate-200">
                                     <span className="font-semibold text-slate-900">You receive</span>
                                     <span className="font-bold text-emerald-700">
-                                        £{netOfFee(Number(price), HOST_FEE_PERCENT).toFixed(2)} / night
+                                        {formatGBP(netOfFee(Number(price), HOST_FEE_PERCENT))} / night
                                     </span>
                                 </div>
                                 <p className="text-xs text-slate-400 mt-3">

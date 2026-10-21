@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { formatGBP } from '@/lib/formatMoney';
+import { formatGBP, formatPrice } from '@/lib/formatMoney';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
 import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
 import { addMonths } from 'date-fns';
@@ -871,9 +871,9 @@ export default function BookingWidget({
     // the panel footer.
     const priceHeader = (
         <div className="mb-4">
-            <span className="text-2xl font-bold text-slate-900">£{pricePerNight}</span>
+            <span className="text-2xl font-bold text-slate-900">{formatPrice(pricePerNight)}</span>
             <span className="text-slate-500"> / night</span>
-            {weekendPrice && <span className="text-xs text-slate-400 block mt-0.5">£{weekendPrice} on Fri &amp; Sat nights</span>}
+            {weekendPrice && <span className="text-xs text-slate-400 block mt-0.5">{formatPrice(weekendPrice)} on Fri &amp; Sat nights</span>}
         </div>
     );
 

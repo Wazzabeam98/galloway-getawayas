@@ -15,6 +15,7 @@ import {
     type FilterFacts,
 } from '@/lib/listingFilters';
 import { townKey } from '@/lib/places';
+import { formatPrice } from '@/lib/formatMoney';
 import { isSelfCheckIn } from '@/lib/checkInMethods';
 
 // The home page's property shop, run in the browser.
@@ -204,10 +205,10 @@ export default function HomeShop({
     if (filters.minPrice != null || filters.maxPrice != null) {
         criteria.push(
             filters.maxPrice == null
-                ? `from £${filters.minPrice}`
+                ? `from ${formatPrice(filters.minPrice)}`
                 : filters.minPrice == null
-                  ? `up to £${filters.maxPrice}`
-                  : `£${filters.minPrice}–£${filters.maxPrice}`,
+                  ? `up to ${formatPrice(filters.maxPrice)}`
+                  : `${formatPrice(filters.minPrice)}–${formatPrice(filters.maxPrice)}`,
         );
     }
     if (filters.bedrooms) criteria.push(`${filters.bedrooms}+ bedroom${filters.bedrooms > 1 ? 's' : ''}`);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Star } from 'lucide-react';
+import { formatPrice } from '@/lib/formatMoney';
 
 // The desktop section bar, Airbnb's way. On a listing page the main nav scrolls
 // away (ChromeGate un-sticks it), and this takes its place at the very top once
@@ -130,7 +131,7 @@ export default function ListingStickyHeader({
                                 <span className="font-bold text-slate-900">{priceLabel}</span>
                             ) : (
                                 <>
-                                    <span className="font-bold text-slate-900">£{pricePerNight}</span>{' '}
+                                    <span className="font-bold text-slate-900">{formatPrice(pricePerNight)}</span>{' '}
                                     <span className="text-slate-500">/ night</span>
                                 </>
                             )}

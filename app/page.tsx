@@ -108,7 +108,7 @@ const cachedPublishedListings = unstable_cache(
         const { data, error } = await orderPublishedListings(
             anon
                 .from('listings')
-                .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude, property_type, bedrooms, beds, bathrooms, instant_book, check_in_method, display_order')
+                .select('id, title, location, price_per_night, images, rating_avg, rating_count, max_guests, amenities, approx_latitude, approx_longitude, property_type, bedrooms, beds, bathrooms, max_pets, instant_book, check_in_method, display_order')
                 .eq('status', 'published'),
         );
         // Thrown, so a failed read is never cached as "no listings".
