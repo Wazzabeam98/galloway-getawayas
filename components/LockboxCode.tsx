@@ -108,6 +108,19 @@ export function useDoorCode(listingId: string) {
 // and the scheduled check-in message, so they can never hand the code over at
 // different moments. Only meaningful once a code exists, so it waits for one.
 export function DoorCodeRelease({ door }: { door: ReturnType<typeof useDoorCode> }) {
+    // What the host is currently typing into the free-text custom fields, held
+    // locally and committed only when they leave the field (or tap the step's
+    // Save, which blurs it first) — exactly like the lockbox code field above.
+    // A controlled input whose value is re-derived from the saved setting on
+    // every keystroke snaps back to the stored value after the first digit, so
+    // a two-digit time or hours count could never be typed (the live-site bug
+    // #486 shipped). null means "not editing — show the saved value".
+    const [timeDraft, setTimeDraft] = useState<string | null>(null);
+    const [hoursDraft, setHoursDraft] = useState<string | null>(null);
+    // Drafts belong to one editing session on one field; drop them whenever a
+    // discrete control (the select, a radio) moves the setting elsewhere.
+    const clearDrafts = () => { setTimeDraft(null); setHoursDraft(null); };
+
     if (door.loading) return null;
     // Keyed off the SAVED code, not an in-progress edit: the window applies to
     // the code that is actually stored.
@@ -115,11 +128,10 @@ export function DoorCodeRelease({ door }: { door: ReturnType<typeof useDoorCode>
     const disabled = !hasCode || door.saving;
 
     const PRESET_HOURS = CODE_RELEASE_CHOICES.map((c) => c.hours);
-    // The whole control is derived from the saved setting — there is no separate
-    // local draft that could drift from what is stored (the trap that makes a
-    // calendar tab show a value it never saved). "Custom" is whatever the five
-    // presets and "at check-in time" do not cover: an absolute time, or an
-    // hours-before value that is not one of the presets.
+    // Which shape the SAVED setting is — the select and the panel's open/closed
+    // state read this, never the in-progress draft, so typing a value that
+    // momentarily looks like a preset can't collapse the panel mid-keystroke.
+    // "Custom" is whatever the five presets and "at check-in time" do not cover.
     const isCustom = door.releaseAtTime !== null
         || (door.releaseHours !== 0 && PRESET_HOURS.indexOf(door.releaseHours) === -1);
     const selectValue = isCustom
@@ -127,16 +139,19 @@ export function DoorCodeRelease({ door }: { door: ReturnType<typeof useDoorCode>
         : door.releaseHours === 0 ? 'checkin' : 'h:' + door.releaseHours;
     // Within custom: an absolute time means "on the day"; otherwise "N hours".
     const customMode: 'onday' | 'hours' = door.releaseAtTime !== null ? 'onday' : 'hours';
-    // A native time input reads back 'HH:MM'; the stored value is 'HH:MM:SS'.
-    const timeValue = (door.releaseAtTime || '08:00').slice(0, 5);
     // The "N hours before" field keeps a real custom value, but seeds to a
     // non-preset default (6) otherwise — a preset value would read as identical
     // to the preset and collapse the panel, so the host could never type one.
     const customHours = door.releaseHours > 0 && PRESET_HOURS.indexOf(door.releaseHours) === -1
         ? door.releaseHours : 6;
-    const hoursValue = customMode === 'hours' ? (door.releaseHours > 0 ? door.releaseHours : 6) : customHours;
+    // What each field SHOWS: the live draft while typing, else the saved value.
+    // A native time input reads back 'HH:MM'; the stored value is 'HH:MM:SS'.
+    const timeValue = timeDraft !== null ? timeDraft : (door.releaseAtTime || '08:00').slice(0, 5);
+    const savedHours = customMode === 'hours' ? (door.releaseHours > 0 ? door.releaseHours : 6) : customHours;
+    const hoursValue = hoursDraft !== null ? hoursDraft : String(savedHours);
 
     const onSelect = (value: string) => {
+        clearDrafts();
         if (value === 'custom') {
             // Seed the headline custom shape — a time on the check-in day — so
             // the choice is meaningful the instant it is picked. The host can
@@ -147,6 +162,28 @@ export function DoorCodeRelease({ door }: { door: ReturnType<typeof useDoorCode>
         } else {
             door.save(door.saved, { releaseHours: normaliseReleaseHours(value.slice(2)), releaseAtTime: null });
         }
+    };
+
+    // Commit the typed time: normalise it, fall back to the saved value (or 8am)
+    // if it is blank or nonsense, mirror it into the hook so the display doesn't
+    // flash while the save round-trips, then persist and end the editing session.
+    const commitTime = () => {
+        if (timeDraft === null) return;
+        const t = normaliseReleaseAtTime(timeDraft) || door.releaseAtTime || '08:00:00';
+        setTimeDraft(null);
+        door.setReleaseAtTime(t);
+        door.save(door.saved, { releaseHours: door.releaseHours, releaseAtTime: t });
+    };
+
+    const commitHours = () => {
+        if (hoursDraft === null) return;
+        const parsed = Math.round(Number(hoursDraft));
+        const n = Number.isFinite(parsed) && parsed >= 1
+            ? Math.min(parsed, MAX_CODE_RELEASE_HOURS)
+            : (door.releaseHours > 0 ? door.releaseHours : customHours);
+        setHoursDraft(null);
+        door.setReleaseHours(n);
+        door.save(door.saved, { releaseHours: n, releaseAtTime: null });
     };
 
     return (
@@ -181,10 +218,13 @@ export function DoorCodeRelease({ door }: { door: ReturnType<typeof useDoorCode>
                             className="mt-0.5"
                             checked={customMode === 'onday'}
                             disabled={disabled}
-                            onChange={() => door.save(door.saved, {
-                                releaseHours: door.releaseHours,
-                                releaseAtTime: normaliseReleaseAtTime(timeValue) || '08:00:00',
-                            })}
+                            onChange={() => {
+                                clearDrafts();
+                                door.save(door.saved, {
+                                    releaseHours: door.releaseHours,
+                                    releaseAtTime: door.releaseAtTime || '08:00:00',
+                                });
+                            }}
                         />
                         <span className="flex flex-wrap items-center gap-2">
                             On the day of check-in at
@@ -192,10 +232,11 @@ export function DoorCodeRelease({ door }: { door: ReturnType<typeof useDoorCode>
                                 type="time"
                                 value={timeValue}
                                 disabled={disabled || customMode !== 'onday'}
-                                onChange={(e) => {
-                                    const t = normaliseReleaseAtTime(e.target.value);
-                                    if (t) door.save(door.saved, { releaseHours: door.releaseHours, releaseAtTime: t });
-                                }}
+                                // Typing updates only the local draft — never the
+                                // saved setting — so the field is not reset
+                                // between digits. Committed on blur.
+                                onChange={(e) => setTimeDraft(e.target.value)}
+                                onBlur={commitTime}
                                 className="border border-slate-300 rounded-md px-2 py-1 text-sm bg-white disabled:opacity-50 focus-visible:border-slate-900 focus-visible:outline-none"
                             />
                         </span>
@@ -208,10 +249,10 @@ export function DoorCodeRelease({ door }: { door: ReturnType<typeof useDoorCode>
                             className="mt-0.5"
                             checked={customMode === 'hours'}
                             disabled={disabled}
-                            onChange={() => door.save(door.saved, {
-                                releaseHours: customHours,
-                                releaseAtTime: null,
-                            })}
+                            onChange={() => {
+                                clearDrafts();
+                                door.save(door.saved, { releaseHours: customHours, releaseAtTime: null });
+                            }}
                         />
                         <span className="flex flex-wrap items-center gap-2">
                             <input
@@ -220,10 +261,9 @@ export function DoorCodeRelease({ door }: { door: ReturnType<typeof useDoorCode>
                                 max={MAX_CODE_RELEASE_HOURS}
                                 value={hoursValue}
                                 disabled={disabled || customMode !== 'hours'}
-                                onChange={(e) => {
-                                    const n = Math.min(Math.max(1, Math.round(Number(e.target.value) || 0)), MAX_CODE_RELEASE_HOURS);
-                                    door.save(door.saved, { releaseHours: n, releaseAtTime: null });
-                                }}
+                                // Local draft while typing; clamped and saved on blur.
+                                onChange={(e) => setHoursDraft(e.target.value)}
+                                onBlur={commitHours}
                                 className="w-20 border border-slate-300 rounded-md px-2 py-1 text-sm bg-white disabled:opacity-50 focus-visible:border-slate-900 focus-visible:outline-none"
                             />
                             hours before check-in
