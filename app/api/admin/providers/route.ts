@@ -12,6 +12,7 @@ import {
 import { ASSIGNABLE_MCCS } from '@/lib/serviceOrders';
 import { SHAPES, shapeOf } from '@/lib/serviceSlots';
 import { refreshVenuePoint } from '@/lib/venuePoint';
+import { revalidateExperience } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -586,10 +587,15 @@ export async function POST(req: Request) {
                 };
             });
 
+            // Approving/declining/converting a provider changes what the public
+            // experiences grid and home shelf show — refresh them at once. One
+            // grid bust covers the batch (lib/revalidatePublic).
+            revalidateExperience();
             return NextResponse.json(result);
         }
 
         const single = await decideOne(requestBody);
+        revalidateExperience();
         return NextResponse.json(single.body, { status: single.status });
     } catch (err: any) {
         await logError('service-provider-decision', err);

@@ -2,7 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { revalidateTag } from 'next/cache';
+import { revalidateListing, revalidateExperience } from '@/lib/revalidatePublic';
 import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
@@ -85,13 +85,12 @@ export async function POST(req: Request) {
             if (error) throw error;
         }
 
-        // The home grid is served from a 5-minute data cache tagged 'listings'
-        // (app/page.tsx); the home experiences shelf is tagged 'home'. Bust both
-        // so a new order is live on the home page at once, not in up to 5 minutes.
-        // The area pages and the experiences browse page are force-dynamic, so
-        // they already read the new order on the next request.
-        revalidateTag('listings');
-        revalidateTag('home');
+        // Refresh every public grid that shows this order at once, rather than
+        // waiting for the background rebuild: the home page, the area pages and
+        // the experiences browse page (lib/revalidatePublic). No id — a reorder
+        // changes the grids, not any individual listing/experience page.
+        if (kind === 'listings') revalidateListing();
+        else revalidateExperience();
 
         return NextResponse.json({ ok: true, count: ids.length });
     } catch (err: any) {
