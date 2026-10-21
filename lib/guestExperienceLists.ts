@@ -4,6 +4,7 @@ import { getImageUrl } from '@/lib/utils';
 import { directionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { experienceBookingTitle } from '@/lib/experienceBookingTitle';
 import { REVIEW_WINDOW_DAYS } from '@/lib/experienceReviewRules';
+import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 
 // A guest's own experience orders, either side of today — read with the
 // service role because a guest has no read on service_orders.
@@ -27,10 +28,13 @@ export async function guestExperienceLists(userId: string): Promise<{ items: any
     }
 
     const admin = adminClient();
-    const today = new Date().toISOString().slice(0, 10);
+    // UK day keys, like the two review pages and the rest of the site — not a
+    // raw toISOString slice, which would flip the day across the BST-midnight
+    // edge and show (or hide) a review-prompt card a day early.
+    const today = londonDayKey();
     // A review can be left for 14 days after the day (REVIEW_WINDOW_DAYS, the
     // database's window); a prompt for an older one would only be refused.
-    const windowOpenFrom = new Date(Date.parse(today + 'T00:00:00Z') - REVIEW_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+    const windowOpenFrom = shiftDayKey(today, -REVIEW_WINDOW_DAYS);
 
     // Past (to review) and future (upcoming), in one round trip each.
     const [{ data: pastOrders }, { data: futureOrders }] = await Promise.all([
