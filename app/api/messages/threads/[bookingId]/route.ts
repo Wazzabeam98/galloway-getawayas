@@ -7,7 +7,7 @@ import { contactNumberVisible } from '@/lib/stayWindow';
 import { firstName, getImageUrl, formatTime, hostByline } from '@/lib/utils';
 import { groupLabel, cancellationWords } from '@/lib/bookingDisplay';
 import { cancellationPosition } from '@/lib/cancellationView';
-import { ukDate, ukWeekday, daysBetweenKeys } from '@/lib/dayKey';
+import { ukDate, ukWeekday, daysBetweenKeys, londonDayKey } from '@/lib/dayKey';
 import { stayCountdown, arrivalSecretsWindowOpen, normaliseReleaseSetting, DEFAULT_CODE_RELEASE_HOURS } from '@/lib/bookingWindows';
 import type { CodeReleaseSetting } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
@@ -332,7 +332,11 @@ export async function GET(
     // placeholders (lib/messageSecrets). Filled in here, only for a viewer the
     // gate above already lets see them; a guest outside the window is told when
     // they will show, and anyone else gets the plain words.
-    const today = new Date().toISOString().slice(0, 10);
+    // The London day key, not toISOString (which is UTC): at the BST-midnight edge
+    // a UTC slice reads the wrong day, and this chooses the "before/after check-in"
+    // wording a guest sees. The reveal gate itself is separate and server-side; this
+    // is only the words. (CLAUDE.md: user-facing dates come from the shared formatter.)
+    const today = londonDayKey(new Date());
     const secretView: SecretView = arrival
         ? { doorCode: arrival.doorCode, wifiPassword: arrival.wifiPassword }
         : isGuest ? (String(booking.check_in) > today ? 'before' : 'after') : 'preview';

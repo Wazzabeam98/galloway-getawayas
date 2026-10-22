@@ -97,11 +97,19 @@ export default async function ProviderDashboardPage() {
         // lib/experiencesData, and the order route refuses a booking on a blocked
         // day), so a whole-day block made here is real, not cosmetic.
         const isComesToYou = shapeOf(provider) === 'comes_to_you';
-        let comesToYouBlocks: string[] = [];
-        if (isComesToYou) {
+        // A MADE-TO-ORDER provider (a baker, a hamper maker) also needs a diary to
+        // mark the days they can't fulfil. It has no per-session calendar and no
+        // travel radius, but its availability now honours slot_blocks the same way
+        // (lib/experiencesData surfaces them, and the order route refuses an order
+        // on a blocked day), so a whole-day block made here is real, not cosmetic —
+        // the gap the overnight audit flagged (a baker who is away could not stop an
+        // order landing). Shown as a block calendar BELOW its orders inbox.
+        const isMadeToOrder = shapeOf(provider) === 'made_to_order';
+        let wholeDayBlocks: string[] = [];
+        if (isComesToYou || isMadeToOrder) {
             const { data: blk } = await admin
                 .from('slot_blocks').select('blocked_date').eq('provider_id', provider.id).gte('blocked_date', todayKey());
-            comesToYouBlocks = (blk || []).map((b: any) => String(b.blocked_date).slice(0, 10));
+            wholeDayBlocks = (blk || []).map((b: any) => String(b.blocked_date).slice(0, 10));
         }
         // The export secret for the iCal panel — read here under the service role
         // (it's revoked from the browser roles) and handed to the provider's own
@@ -116,7 +124,7 @@ export default async function ProviderDashboardPage() {
         const awaitingPayouts = isAwaitingConnect(provider);
         const held = awaitingPayouts ? heldSummary(await loadHeldOrders(admin, [provider.id]).catch(() => []), todayKey()) : null;
         return (
-            <div className={`${isSlotHome ? 'max-w-6xl' : isComesToYou ? 'max-w-3xl' : 'max-w-2xl'} mx-auto px-4 sm:px-6 py-8 pb-24`}>
+            <div className={`${isSlotHome ? 'max-w-6xl' : (isComesToYou || isMadeToOrder) ? 'max-w-3xl' : 'max-w-2xl'} mx-auto px-4 sm:px-6 py-8 pb-24`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
@@ -171,10 +179,26 @@ export default async function ProviderDashboardPage() {
                                 you&rsquo;ve blocked — your confirmed bookings stay as they are, and you&rsquo;ll
                                 find them on your Reservations page.
                             </p>
-                            <TradeCalendar providerId={provider.id} jobs={[]} blockedDays={comesToYouBlocks} variant="guest" />
+                            <TradeCalendar providerId={provider.id} jobs={[]} blockedDays={wholeDayBlocks} variant="guest" />
                         </div>
                     )
-                    : <ProviderExperienceDashboard providerId={provider.id} live={isLiveToGuests(provider)} payoutsReady={!awaitingPayouts} />}
+                    : (
+                        <div className="space-y-6">
+                            <ProviderExperienceDashboard providerId={provider.id} live={isLiveToGuests(provider)} payoutsReady={!awaitingPayouts} />
+                            {/* A made-to-order provider's days off — the same whole-day
+                                block the comes-to-you diary uses, so a baker who is away
+                                stops orders landing on a day they can't fulfil. */}
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+                                <h2 className="text-base font-bold text-slate-900">Days off</h2>
+                                <p className="mb-4 mt-1 text-sm text-slate-600">
+                                    Tap a day to mark yourself unavailable. Guests can&rsquo;t order for a day
+                                    you&rsquo;ve blocked — orders already placed stay as they are, and you&rsquo;ll
+                                    find them on your Reservations page.
+                                </p>
+                                <TradeCalendar providerId={provider.id} jobs={[]} blockedDays={wholeDayBlocks} variant="guest" />
+                            </div>
+                        </div>
+                    )}
                 {/* A co-host can step away without asking the owner, as on a holiday let. */}
                 {!mine.isOwner && (
                     <div className="mt-12 border-t border-slate-200 pt-6">

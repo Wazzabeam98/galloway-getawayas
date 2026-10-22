@@ -43,13 +43,17 @@ const maxKey = (a: string, b: string) => (a > b ? a : b);
 export default function FoodBasket({
     who, isFood, fulfilment, deliveryFee = 0, bookingId, standalone: standaloneProp,
     checkIn, checkOut, leadTimeDays = 0, horizonDays = 90, cancellationHours, noRefund,
-    providerId, signedIn = false,
+    providerId, signedIn = false, slotBlocks = [],
 }: {
     who: string; isFood: boolean; fulfilment?: string | null; deliveryFee?: number;
     bookingId?: string; standalone?: boolean; checkIn?: string; checkOut?: string;
     leadTimeDays?: number; horizonDays?: number;
     cancellationHours?: number | null; noRefund?: boolean | null;
     providerId: string; signedIn?: boolean;
+    // Whole days the provider has blocked off (a day away / already full). These
+    // are greyed and unpickable in the date dialog; the order route refuses one
+    // server-side too, so the browser is never the last word on availability.
+    slotBlocks?: string[];
 }) {
     const { lines, total: itemsTotal, count, hasCustom } = useFoodCart();
     const standalone = standaloneProp ?? !bookingId;
@@ -103,11 +107,15 @@ export default function FoodBasket({
     const lead = Math.max(0, Math.floor(Number(leadTimeDays) || 0));
     const minDate = standalone ? dayKeyFromNow(lead) : maxKey(String(checkIn).slice(0, 10), dayKeyFromNow(lead));
     const maxDate = standalone ? dayKeyFromNow(Math.max(1, horizonDays || 90)) : lastNight(String(checkOut));
+    // Blocked days are dropped from the pickable set, so they show greyed and
+    // disabled in the date dialog — the same treatment the slot and comes-to-you
+    // calendars give a day off.
+    const blockedSet = useMemo(() => new Set((slotBlocks || []).map((d) => String(d).slice(0, 10))), [slotBlocks]);
     const availableDays = useMemo(() => {
         const set = new Set<string>(); let d = minDate;
-        for (let i = 0; i < 366 && d <= maxDate; i++) { set.add(d); d = shiftDayKey(d, 1); }
+        for (let i = 0; i < 366 && d <= maxDate; i++) { if (!blockedSet.has(d)) set.add(d); d = shiftDayKey(d, 1); }
         return set;
-    }, [minDate, maxDate]);
+    }, [minDate, maxDate, blockedSet]);
 
     const fee = delivers ? Math.max(0, Number(deliveryFee) || 0) : 0;
     const total = itemsTotal + fee;

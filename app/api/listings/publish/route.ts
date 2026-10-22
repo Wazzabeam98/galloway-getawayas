@@ -9,6 +9,7 @@ import { addressBlockerForPublish, NEW_LISTING_MIN_PHOTOS } from '@/lib/listingR
 import { HOST_TERMS_VERSION, hasAgreedToCurrentTerms, termsProblem } from '@/lib/hostTerms';
 import { recordAcceptance } from '@/lib/agreementRecords';
 import { needsPersonName } from '@/lib/personName';
+import { checkListing } from '@/lib/access';
 import { sendsListingConfirmation, confirmListingSubmission } from '@/lib/listingSubmittedConfirm';
 
 export const dynamic = 'force-dynamic';
@@ -72,10 +73,24 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'No such listing' }, { status: 404 });
         }
 
-        // Only the owner publishes their own listing. Checked against the
-        // verified user id, so a forged cookie cannot publish someone else's.
-        if (listing.host_id !== user.id) {
-            return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
+        // Who may publish: the owner, OR a co-host the owner trusted with the
+        // listing (can_listing) — exactly as the owner, matching the sibling
+        // writes /api/listings/save and /api/listings/visibility, and the
+        // provider twin /api/services/submitted. checkListing returns owner
+        // access when host_id matches, so this one gate covers both. The update
+        // below is a service-role write (adminClient), so row-level security is
+        // NOT in the path and this route — not a table policy — is the authority
+        // on who may publish; checked against the verified user id so a forged
+        // cookie cannot publish for someone else. (The #440 class — a page that
+        // opens for a co-host while the save behind it is refused — is exactly
+        // what this closes: a full-access co-host could edit every field and open
+        // the wizard, then hit a 403 on "Submit for review".)
+        const access = await checkListing(user.id, listingId, 'can_listing');
+        if (!access) {
+            return NextResponse.json(
+                { ok: false, error: 'You don’t have permission to publish this listing.' },
+                { status: 403 }
+            );
         }
 
         // The same completeness the database constraint enforces
@@ -110,13 +125,16 @@ export async function POST(request: Request) {
             );
         }
 
-        // THE HOST'S NAME. Guests see "Hosted by" and a first name; an account
-        // with no first and last name cannot publish (the wizard asks first,
-        // this is the server holding the line — lib/personName).
+        // THE HOST'S NAME. Guests see "Hosted by" and a first name; a listing
+        // whose OWNER has no first and last name cannot publish (the wizard asks
+        // first, this is the server holding the line — lib/personName). Keyed to
+        // the listing's owner, not the publisher: a co-host publishing on the
+        // owner's behalf does not stand in for the owner's name, and the owner is
+        // who guests see. Also carries the owner's host-terms version, read below.
         const { data: owner } = await admin
             .from('profiles')
-            .select('first_name, last_name, preferred_name, full_name, email')
-            .eq('id', user.id)
+            .select('first_name, last_name, preferred_name, full_name, email, host_terms_version')
+            .eq('id', listing.host_id)
             .maybeSingle();
         if (needsPersonName(owner)) {
             return NextResponse.json(
@@ -141,22 +159,33 @@ export async function POST(request: Request) {
         // recorded — version and server time — on their profile. Only a first-
         // time submission asks; a listing that has been live before was
         // submitted (and agreed to) already.
+        // The terms are the OWNER's agreement for their own property, so they are
+        // read from — and recorded against — the listing's owner, not whoever is
+        // pressing submit. When the owner is doing it themselves, the box they
+        // ticked (agreedTermsVersion) records their agreement. When a co-host is
+        // publishing on the owner's behalf, they cannot agree for the owner: the
+        // owner must already be on the current terms (the normal case — a host
+        // agrees to them when they finish signing up), or the publish is refused
+        // with an explained message rather than a silent 403.
         let recordTerms = false;
         if (!everPublished) {
-            const { data: hostProfile } = await admin
-                .from('profiles')
-                .select('host_terms_version')
-                .eq('id', user.id)
-                .maybeSingle();
-            const recorded = hostProfile ? hostProfile.host_terms_version : null;
-            const problem = termsProblem(recorded, agreedTermsVersion);
-            if (problem) {
-                return NextResponse.json(
-                    { ok: false, needsTerms: true, termsVersion: HOST_TERMS_VERSION, error: problem },
-                    { status: 400 }
-                );
+            const recorded = owner ? (owner as any).host_terms_version : null;
+            if (!hasAgreedToCurrentTerms(recorded)) {
+                if (!access.isOwner) {
+                    return NextResponse.json(
+                        { ok: false, error: 'The listing’s owner needs to accept the current host terms before it can go live.' },
+                        { status: 400 }
+                    );
+                }
+                const problem = termsProblem(recorded, agreedTermsVersion);
+                if (problem) {
+                    return NextResponse.json(
+                        { ok: false, needsTerms: true, termsVersion: HOST_TERMS_VERSION, error: problem },
+                        { status: 400 }
+                    );
+                }
+                recordTerms = true;
             }
-            recordTerms = !hasAgreedToCurrentTerms(recorded);
         }
 
         // First time live waits for an owner; see THE REVIEW GATE above.
@@ -193,7 +222,10 @@ export async function POST(request: Request) {
             // Both records at once: agreement_acceptances (the registry's
             // store, read by the sign-in prompt) and profiles.host_terms_*
             // (read above on the next submit).
-            const { error: termsError } = await recordAcceptance(admin, user.id, 'host', 'listing_publish');
+            // Against the owner — whose terms these are (recordTerms is only ever
+            // set when the owner is the one publishing, so user.id === host_id
+            // here, but the owner id is the honest subject of the record).
+            const { error: termsError } = await recordAcceptance(admin, listing.host_id, 'host', 'listing_publish');
             if (termsError) {
                 await logError('listings/publish: host terms agreement not recorded', termsError, {
                     path: 'api/listings/publish',

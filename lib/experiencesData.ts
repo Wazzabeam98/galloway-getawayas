@@ -690,7 +690,12 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             slotAvailability: (shape === 'slot' || shape === 'comes_to_you')
                 ? (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time }))
                 : [],
-            slotBlocks: (shape === 'slot' || shape === 'comes_to_you') ? (blocksBy[p.id] || []).map((b: any) => b.blocked_date) : [],
+            // Whole-day blocks are carried for a slot, a comes-to-you AND a
+            // made-to-order provider: the food basket greys a blocked day in its
+            // date picker exactly as the other shapes do, and the order route
+            // refuses one server-side (app/api/services/order). A block is a day
+            // the provider cannot fulfil, whatever the shape.
+            slotBlocks: (shape === 'slot' || shape === 'comes_to_you' || shape === 'made_to_order') ? (blocksBy[p.id] || []).map((b: any) => b.blocked_date) : [],
             // Dates a comes-to-you provider is already booked on (one booking a day),
             // so the booking dialog greys and disables them. Slots handle a booked
             // TIME through bookedBlocks instead, so this stays empty for them.

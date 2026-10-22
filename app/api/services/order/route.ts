@@ -241,6 +241,20 @@ export async function POST(request: Request) {
                 if (serviceKey < startKey || serviceKey >= endKey) return NextResponse.json({ ok: false, error: 'Pick a date during your stay.' }, { status: 400 });
             }
 
+            // A WHOLE-DAY BLOCK the provider set (a day off, away, already full) —
+            // refused here, before any card is charged, the same gate comes_to_you
+            // already applies (route.ts, the TIME section) now honoured for
+            // made_to_order too. A block is a whole day for the provider, not per
+            // item, so one row for the day refuses the order. Service-role read: a
+            // blocked day is not bookable whatever the basket showed (it greys them
+            // too — components/marketplace/FoodBasket — but the browser is never the
+            // authority on availability).
+            const { data: cartBlocks } = await admin.from('slot_blocks')
+                .select('blocked_date').eq('provider_id', providerId).eq('blocked_date', serviceKey);
+            if (cartBlocks && cartBlocks.length) {
+                return NextResponse.json({ ok: false, error: 'They’re not available that day — try another date.' }, { status: 409 });
+            }
+
             // Delivery travels to an address; collection does not. A provider fixed to
             // one honours that; a "both" provider takes the guest's choice from the
             // basket. The preferred time is FREE TEXT (no fixed slots for food).
@@ -488,6 +502,19 @@ export async function POST(request: Request) {
             const endKey = String(booking.check_out).slice(0, 10);
             if (serviceKeyS < startKey || serviceKeyS >= endKey) {
                 return NextResponse.json({ ok: false, error: 'Pick a date during your stay.' }, { status: 400 });
+            }
+        }
+
+        // A MADE-TO-ORDER whole-day block, honoured on the single-item path too (a
+        // direct single-item order for a food provider, not only the cart). The
+        // comes_to_you block check lives inside the TIME section below; made_to_order
+        // has no time, so it is gated here, right after the date is settled. Slot is
+        // gated by its own session seats, not by this.
+        if (provider.shape === 'made_to_order') {
+            const { data: dayBlocks } = await admin.from('slot_blocks')
+                .select('blocked_date').eq('provider_id', provider.id).eq('blocked_date', dateKey(when));
+            if (dayBlocks && dayBlocks.length) {
+                return NextResponse.json({ ok: false, error: 'They’re not available that day — try another date.' }, { status: 409 });
             }
         }
 
