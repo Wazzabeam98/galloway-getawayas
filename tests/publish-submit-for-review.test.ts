@@ -22,7 +22,7 @@ const ROUTE = '@/app/api/listings/publish/route';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { HOST_TERMS_VERSION } = require('../lib/hostTerms');
 
-function loadPublish({ status, payoutsEnabled = false, termsVersion = null, named = true, declinedAt = null }: { status: string; payoutsEnabled?: boolean; termsVersion?: string | null; named?: boolean; declinedAt?: string | null }) {
+function loadPublish({ status, payoutsEnabled = false, termsVersion = null, named = true, declinedAt = null, actorId = HOST, coHostPermission = null }: { status: string; payoutsEnabled?: boolean; termsVersion?: string | null; named?: boolean; declinedAt?: string | null; actorId?: string; coHostPermission?: boolean | null }) {
     const updates: any[] = [];
     const sent: any[] = [];
     const listing = {
@@ -36,12 +36,23 @@ function loadPublish({ status, payoutsEnabled = false, termsVersion = null, name
         first_name: named ? 'Morag' : null, last_name: named ? 'MacLellan' : null,
         email: 'morag@heroncottage.co.uk',
     };
+    // The listing_access row checkListing reads for a non-owner actor. A
+    // full-access co-host has every permission; coHostPermission:false models a
+    // co-host WITHOUT can_listing.
+    const accessRow = coHostPermission === null ? null : {
+        id: 'acc-1', role: 'co_host',
+        can_calendar: true, can_messages: true, can_bookings: true,
+        can_listing: coHostPermission, can_earnings: true,
+    };
 
     const admin: any = {
         from(table: string) {
             const chain: any = new Proxy({}, {
                 get(_t, prop: string) {
-                    if (prop === 'maybeSingle') return async () => ({ data: table === 'profiles' ? profile : listing, error: null });
+                    if (prop === 'maybeSingle') return async () => ({
+                        data: table === 'profiles' ? profile : table === 'listing_access' ? accessRow : listing,
+                        error: null,
+                    });
                     if (prop === 'update') return (patch: any) => { updates.push({ table, patch }); return chain; };
                     if (prop === 'then') return (resolve: any) => resolve({ data: null, error: null });
                     return () => chain;
@@ -53,7 +64,8 @@ function loadPublish({ status, payoutsEnabled = false, termsVersion = null, name
 
     stubModule('@supabase/supabase-js', { createClient: () => admin });
     stubModule('@supabase/auth-helpers-nextjs', {
-        createRouteHandlerClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: HOST } } }) } }),
+        createRouteHandlerClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: actorId } } }) } }),
+        createServerComponentClient: () => ({ auth: { getUser: async () => ({ data: { user: null } }) } }),
     });
     stubModule('next/headers', { cookies: () => ({}) });
     stubModule('next/server', { NextResponse: { json: (body: any, init?: any) => ({ body, status: (init && init.status) || 200 }) } });
@@ -72,6 +84,9 @@ function loadPublish({ status, payoutsEnabled = false, termsVersion = null, name
     });
 
     clearModule('@/lib/supabaseAdmin');
+    // access.ts binds adminClient at import; re-require it each time so checkListing
+    // reads through THIS test's admin stub, not a stale one.
+    clearModule('@/lib/access');
     clearModule('@/lib/listingSubmittedConfirm');
     clearModule(ROUTE);
     return { route: require(ROUTE), updates, sent };
@@ -168,6 +183,46 @@ test('a host with no first and last name cannot publish, and nothing changes', a
     const res = await route.POST(post());
     assert.equal(res.status, 400);
     assert.equal(res.body.needsName, true);
+    assert.equal(updates.length, 0);
+});
+
+/* --------------------------------------------- a co-host submits a draft */
+// A full-access co-host (can_listing) may submit the owner's draft for review,
+// exactly as the owner would — the #440 class, where the page opens for the
+// co-host but the write behind it is refused. The owner's name and terms are
+// already on record (the normal onboarding case), so nothing walls it.
+const COHOST = 'cohost-1';
+
+test('a full-access co-host can submit the owner’s draft for review', async () => {
+    const { route, updates } = loadPublish({ status: 'draft', termsVersion: HOST_TERMS_VERSION, actorId: COHOST, coHostPermission: true });
+    const res = await route.POST(post());
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.status, 'pending_review');
+    assert.ok(updates.some((u) => u.table === 'listings' && u.patch.status === 'pending_review'));
+});
+
+test('a co-host WITHOUT can_listing is refused', async () => {
+    const { route, updates } = loadPublish({ status: 'draft', termsVersion: HOST_TERMS_VERSION, actorId: COHOST, coHostPermission: false });
+    const res = await route.POST(post());
+    assert.equal(res.status, 403);
+    assert.equal(updates.length, 0);
+});
+
+test('a stranger with no access is refused', async () => {
+    const { route, updates } = loadPublish({ status: 'draft', termsVersion: HOST_TERMS_VERSION, actorId: 'stranger', coHostPermission: null });
+    const res = await route.POST(post());
+    assert.equal(res.status, 403);
+    assert.equal(updates.length, 0);
+});
+
+test('a co-host cannot submit when the OWNER has not accepted the current terms', async () => {
+    // The co-host cannot agree for the owner; refused with an explained message,
+    // not a silent 403, and nothing changes.
+    const { route, updates } = loadPublish({ status: 'draft', termsVersion: null, actorId: COHOST, coHostPermission: true });
+    const res = await route.POST(post({ termsVersion: HOST_TERMS_VERSION }));
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /owner needs to accept/i);
+    assert.equal(res.body.needsTerms, undefined, 'the co-host is not shown the owner’s agree box');
     assert.equal(updates.length, 0);
 });
 

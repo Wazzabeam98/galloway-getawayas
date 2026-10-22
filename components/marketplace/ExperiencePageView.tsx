@@ -56,7 +56,7 @@ export function ExperiencePageView({ p, reviews, responsiveness, banner, preview
                     responsiveness={responsiveness}
                     reportable={!preview}
                     menu={<FoodMenu leadTimeDays={p.lead_time_days} />}
-                    panel={<LiveFoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} standalone providerId={p.id} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} />}
+                    panel={<LiveFoodBasket who={who} isFood={p.isFood} fulfilment={p.fulfilment} deliveryFee={p.deliveryFee} standalone providerId={p.id} leadTimeDays={p.lead_time_days} horizonDays={p.horizonDays} cancellationHours={p.cancellation_window_hours} noRefund={p.noRefund} slotBlocks={p.slotBlocks} />}
                 />
             </FoodCartProvider>
             </ExperienceViewerProvider>

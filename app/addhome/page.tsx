@@ -74,6 +74,8 @@ export default function AddHome() {
     // Airbnb-style wizard state
     const [step, setStep] = useState(1);
     const TOTAL_STEPS = 10;
+    // The photos step. Next greys here until the promised five are added.
+    const PHOTOS_STEP = 6;
     // Safety details, just before the price and review (Airbnb's order).
     const SAFETY_STEP = 9;
     const [propertyType, setPropertyType] = useState('');
@@ -1365,7 +1367,7 @@ export default function AddHome() {
 
                 {/* Nav buttons (all steps except the last, which has its own submit button above) */}
                 {step !== TOTAL_STEPS && (
-                    <div className="flex justify-between items-center mt-10 pt-6 border-t">
+                    <div className="flex items-center gap-3 mt-10 pt-6 border-t">
                         <button
                             type="button"
                             onClick={goBack}
@@ -1373,10 +1375,26 @@ export default function AddHome() {
                         >
                             <ChevronLeftIcon className="w-4 h-4 mr-1" /> Back
                         </button>
+                        {/* The photos step promises "at least 5", so Next greys until
+                            there are five — the warning says what's short, bottom-left,
+                            the same greyed-Next pattern the provider sign-up uses. The
+                            server refuses fewer on publish regardless (lib/listingRules
+                            NEW_LISTING_MIN_PHOTOS), and an already-live listing with
+                            fewer is grandfathered — this gate is only the new wizard. */}
+                        {step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS && (
+                            <p className="text-sm font-medium text-amber-700 pr-1">
+                                Add at least {NEW_LISTING_MIN_PHOTOS} photos — you have {photos.length}.
+                            </p>
+                        )}
+                        <div className="flex-1" />
                         <button
                             type="button"
                             onClick={goNext}
-                            className="ml-auto px-8 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-xl transition"
+                            disabled={step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS}
+                            className={'px-8 py-3 font-bold rounded-xl transition '
+                                + (step === PHOTOS_STEP && photos.length < NEW_LISTING_MIN_PHOTOS
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                    : 'bg-slate-900 hover:bg-black text-white')}
                         >
                             Next
                         </button>
