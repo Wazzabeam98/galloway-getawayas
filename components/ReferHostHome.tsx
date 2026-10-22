@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 // The home-page "Refer a host" band, styled like "Run an experience?"
-// (ExperiencesForBusinesses) above it: a white card on the page's stone tint,
+// (ExperiencesForBusinesses): a white card on the page's stone tint,
 // its own heading, a lead line, and a stone-900 CTA. No decorative image stack —
 // nothing to show and the repo holds no raster blobs.
 export function ReferHostBand() {
