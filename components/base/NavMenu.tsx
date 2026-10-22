@@ -282,6 +282,9 @@ const NavMenu = ({
                                             <li className={itemClass}>
                                                 <Link href='/trips'>Your trips</Link>
                                             </li>
+                                            <li className={itemClass}>
+                                                <Link href='/wishlists'>Wishlists</Link>
+                                            </li>
                                         </>
                                     )}
                                 </>
@@ -289,6 +292,9 @@ const NavMenu = ({
                                 <>
                                     <li className={itemClass}>
                                         <Link href='/trips'>Your trips</Link>
+                                    </li>
+                                    <li className={itemClass}>
+                                        <Link href='/wishlists'>Wishlists</Link>
                                     </li>
                                     {/* Nothing to show until a stay is finished. */}
                                     {hasCompletedStay && (
