@@ -31,6 +31,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // Only properties they may see money for. A co-host without the earnings
     // permission sees nothing here, even for a listing they otherwise manage.
     const allowed = await listingIdsFor(user.user?.id || '', 'can_earnings');
+    const viewerId = user.user?.id || '';
 
     const admin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -88,7 +89,12 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         ? Math.round((feeTotal / grossTotal) * 1000) / 10
         : DEFAULT_COMMISSION_PERCENT;
 
-    const upcomingNet = netOfBookings(upcoming);
+    // "Upcoming payout" is money coming to the viewer: stays on listings they
+    // own (host_id is who the payout run pays). A co-host with the earnings
+    // permission still sees the co-hosted listing's revenue above, but its
+    // payout goes to that listing's owner, never into their own figure.
+    const upcomingOwn = upcoming.filter((b) => b.host_id === viewerId);
+    const upcomingNet = netOfBookings(upcomingOwn);
     const completedNet = netOfBookings(completed);
     const pendingGross = pending.reduce((sum, b) => sum + Number(b.total_price), 0);
 
@@ -167,8 +173,15 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         };
     });
 
-    const awaiting = schedule.filter((r) => !r.paidOutAt);
-    const alreadyPaid = schedule.filter((r) => r.paidOutAt).reverse();
+    // "Your payouts" is only what is paid to the viewer — the stays on listings
+    // they own. A co-hosted listing's payouts go to its owner (the payout run
+    // pays booking.host_id), so they are listed apart as the owner's, never
+    // added to "still to come". A co-host who also owns a listing would
+    // otherwise see the owner's money counted as theirs.
+    const awaitingAll = schedule.filter((r) => !r.paidOutAt);
+    const awaiting = awaitingAll.filter((r) => r.hostId === viewerId);
+    const ownersAwaiting = awaitingAll.filter((r) => r.hostId !== viewerId);
+    const alreadyPaid = schedule.filter((r) => r.paidOutAt && r.hostId === viewerId).reverse();
 
     // What this person owes back, and which of their coming payouts it will
     // come off — the same allocation the payout run performs, so the figure
@@ -178,7 +191,6 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // on a booking, and this page can show listings belonging to other people:
     // a co-host with the earnings permission must not be shown the owner's
     // debts, nor have someone else's deducted from what they are told.
-    const viewerId = user.user?.id || '';
 
     // Read the settlement wait off the viewer's own connected account rather
     // than printing a number. This page used to say a payout landed "within a
@@ -211,8 +223,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     const debts = await outstandingDebts(admin, viewerId);
     const owedTotal = debts.reduce((sum, d) => round2(sum + outstandingOf(d)), 0);
 
-    const myAwaiting = awaiting.filter((r) => r.hostId === viewerId);
-    const deductions = owedTotal > 0 ? debtAgainstStays(owedTotal, myAwaiting) : {};
+    const deductions = owedTotal > 0 ? debtAgainstStays(owedTotal, awaiting) : {};
 
     const awaitingTotal = awaiting.reduce((sum, r) => sum + r.expected, 0);
     const deductionTotal = Object.keys(deductions).reduce(
@@ -230,7 +241,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // has been recovered, what is left — with Pay now and Dispute. Due now when
     // nothing coming can take it (no stay waiting to pay out, or more owed than
     // those stays cover). See lib/hostDebtView.
-    const hasComing = myAwaiting.length > 0;
+    const hasComing = awaiting.length > 0;
     const dueNow = owedTotal > 0 && (!hasComing || owedBeyondQueue > 0);
     const debtCards: DebtCard[] = (await hostDebtsForHost(admin, viewerId)).map((d) => {
         const f = debtFigures(d);
@@ -286,7 +297,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 <StatCard label="Cancellation rate" value={`${cancellationRate.toFixed(2)}%`} sub={`${cancelled.length} of ${everAccepted} accepted`} />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-10">
-                <StatCard label="Upcoming payout" value={formatGBP(upcomingNet)} sub={`${upcoming.length} stay${upcoming.length !== 1 ? 's' : ''}`} />
+                <StatCard label="Upcoming payout" value={formatGBP(upcomingNet)} sub={`${upcomingOwn.length} stay${upcomingOwn.length !== 1 ? 's' : ''}`} />
                 <StatCard label="Completed stays" value={formatGBP(completedNet)} sub={`${completed.length} stay${completed.length !== 1 ? 's' : ''}`} />
                 <StatCard label="Pending requests" value={formatGBP(pendingGross)} sub={`${pending.length} awaiting response`} />
             </div>
@@ -386,6 +397,27 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                     <span className="text-slate-900 font-medium whitespace-nowrap ml-3">
                                         {formatGBP(r.payoutAmount || 0)} on{' '}
                                         {formatUk(new Date(r.paidOutAt))}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Listings they co-host: the payout goes to the owner, so it is
+                    shown for the schedule but kept out of "still to come". */}
+                {ownersAwaiting.length > 0 && (
+                    <div className="mt-6 pt-5 border-t">
+                        <h3 className="text-sm font-semibold text-slate-900 mb-1">Paid to the listing&apos;s owner</h3>
+                        <p className="text-xs text-slate-500 mb-3">Listings you co-host. These payouts go to the owner, not to you.</p>
+                        <div className="space-y-2">
+                            {ownersAwaiting.map((r) => (
+                                <div key={r.id} className="flex justify-between text-sm">
+                                    <span className="text-slate-600 truncate">
+                                        {r.title} &middot; Guest arrives {formatUk(new Date(r.checkIn))}
+                                    </span>
+                                    <span className="text-slate-900 font-medium whitespace-nowrap ml-3">
+                                        {formatGBP(r.expected)} &middot; {r.due <= todayStart ? 'Due now' : 'Pays ' + formatUk(r.due)}
                                     </span>
                                 </div>
                             ))}

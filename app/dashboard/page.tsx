@@ -33,6 +33,7 @@ function ListingCard({
     canEdit = true,
     canHide = true,
     canDelete = true,
+    cohosting = false,
 }: {
     item: any;
     isDraft: boolean;
@@ -43,6 +44,9 @@ function ListingCard({
     canEdit?: boolean;
     canHide?: boolean;
     canDelete?: boolean;
+    // Someone else's listing this person co-hosts. Said on the card, so a
+    // co-host who also owns a listing can tell which is theirs at a glance.
+    cohosting?: boolean;
 }) {
     const editHref = isDraft
         ? `/addhome?draft=${item.id}`
@@ -111,6 +115,9 @@ function ListingCard({
                 </div>
                 {!isDraft && (
                     <p className="text-sm font-medium text-slate-700 mt-0.5">{formatPrice(item.price_per_night)} / night</p>
+                )}
+                {cohosting && (
+                    <p className="text-sm text-slate-500 mt-0.5">You co-host this listing</p>
                 )}
                 {isDraft && !sentBack && (
                     <p className="text-sm font-medium text-amber-700 mt-0.5">Click to finish setting up</p>
@@ -445,6 +452,7 @@ export default async function Dashboard() {
                                     canEdit={canEditOf(item.id)}
                                     canHide={canHideOf(item.id)}
                                     canDelete={false}
+                                    cohosting
                                 />
                             ))}
                         </div>
