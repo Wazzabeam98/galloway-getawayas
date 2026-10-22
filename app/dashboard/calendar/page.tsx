@@ -13,9 +13,9 @@ import {
 import {
     minNightsFor, prepBufferNights, prepDays, earliestCheckInKey,
     latestCheckOutKey, londonTodayKey, addDaysKey, nightsBetweenKeys,
-    unsellableNights, cleanWeekdays, ALL_WEEKDAYS, WEEKDAY_NAMES,
+    unsellableNights, cleanWeekdays, ALL_WEEKDAYS, WEEKDAY_NAMES, weekdayList,
 } from '@/lib/stayRules';
-import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
 import { firstName, getImageUrl } from "@/lib/utils";
 import { ukDate } from '@/lib/dayKey';
 import { checkOverridePatch } from '@/lib/calendarOverrides';
@@ -162,18 +162,27 @@ const WEEK_MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
 const daysKey = (days: number[] | null | undefined) => (cleanWeekdays(days) || ALL_WEEKDAYS).join(',');
 
 // One row of seven day toggles — "Restrict check-in days" / "Restrict checkout
-// days". A ticked day is one guests may arrive (or leave) on.
-function WeekdayPicker({ label, note, value, onChange }: { label: string; note: string; value: number[]; onChange: (v: number[]) => void }) {
+// days". A day guests may use is emerald with a tick; a day they may not is
+// white with its name struck through, so allowed and not-allowed can never be
+// mistaken for each other (they were black and white, and Liam couldn't tell
+// which meant allowed). The line underneath says it in words as they tap.
+function WeekdayPicker({ label, verb, value, onChange }: { label: string; verb: 'arrive' | 'leave'; value: number[]; onChange: (v: number[]) => void }) {
+    const [lastDayNote, setLastDayNote] = useState(false);
     const toggle = (d: number) => {
         const on = value.indexOf(d) !== -1;
         // Never untick the last day: a guest must always have one.
-        if (on && value.length === 1) return;
+        if (on && value.length === 1) {
+            setLastDayNote(true);
+            return;
+        }
+        setLastDayNote(false);
         onChange(on ? value.filter((x) => x !== d) : value.concat(d).sort((a, b) => a - b));
     };
+    const days = weekdayList(value, 'and');
+    const summary = days ? `Guests can ${verb} on ${days} only` : `Guests can ${verb} any day`;
     return (
         <fieldset>
-            <legend className="block text-sm font-semibold text-slate-800 mb-1">{label}</legend>
-            <p className="text-xs text-slate-400 mb-2">{note}</p>
+            <legend className="block text-sm font-semibold text-slate-800 mb-2">{label}</legend>
             <div className="grid grid-cols-7 gap-1">
                 {WEEK_MON_FIRST.map((d) => {
                     const on = value.indexOf(d) !== -1;
@@ -186,16 +195,25 @@ function WeekdayPicker({ label, note, value, onChange }: { label: string; note: 
                             aria-label={WEEKDAY_NAMES[d]}
                             onClick={() => toggle(d)}
                             className={[
-                                'h-9 rounded-lg border text-xs font-semibold transition',
-                                'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400',
-                                on ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-400 hover:border-slate-400',
+                                'relative h-10 rounded-lg border text-xs font-semibold transition',
+                                'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-emerald-600',
+                                on
+                                    ? 'border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800'
+                                    : 'border-slate-200 bg-white text-slate-400 line-through decoration-slate-400 hover:border-slate-400',
                             ].join(' ')}
                         >
+                            {on && <Check aria-hidden="true" strokeWidth={3} className="absolute right-0.5 top-0.5 h-2.5 w-2.5" />}
                             {WEEKDAY_NAMES[d].slice(0, 2)}
                         </button>
                     );
                 })}
             </div>
+            <p className="mt-2 text-sm text-slate-600" aria-live="polite">{summary}</p>
+            {lastDayNote && (
+                <p className="mt-1 text-xs text-amber-700" role="alert">
+                    Keep at least one day ticked — guests need a day to {verb}.
+                </p>
+            )}
         </fieldset>
     );
 }
@@ -1445,13 +1463,13 @@ export default function CalendarPage() {
                             <div className="border-t pt-5 space-y-5">
                                 <WeekdayPicker
                                     label="Restrict check-in days"
-                                    note="Guests can only arrive on the days ticked."
+                                    verb="arrive"
                                     value={checkinDays}
                                     onChange={setCheckinDays}
                                 />
                                 <WeekdayPicker
                                     label="Restrict checkout days"
-                                    note="Guests can only leave on the days ticked."
+                                    verb="leave"
                                     value={checkoutDays}
                                     onChange={setCheckoutDays}
                                 />
