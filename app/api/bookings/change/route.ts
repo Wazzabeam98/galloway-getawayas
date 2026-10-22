@@ -11,6 +11,7 @@ import { quoteChangeMoney } from '@/lib/quoteChange';
 import { applyBookingChange } from '@/lib/applyBookingChange';
 import { displayName } from '@/lib/utils';
 import { formatGBP } from '@/lib/formatMoney';
+import { changeoverProblem } from '@/lib/stayRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
         }
 
         const { data: listing } = await admin
-            .from('listings').select('max_guests, amenities').eq('id', booking.listing_id).maybeSingle();
+            .from('listings').select('max_guests, amenities, checkin_days, checkout_days').eq('id', booking.listing_id).maybeSingle();
         const petsAllowed = Array.isArray(listing?.amenities) && listing!.amenities.indexOf('Pets allowed') !== -1;
 
         const oldStay: StaySnapshot = {
@@ -97,6 +98,16 @@ export async function POST(request: Request) {
 
         const check = validateChange(oldStay, next, { maxGuests: Number(listing?.max_guests || 1), petsAllowed }, londonDayKey());
         if (!check.ok) return NextResponse.json({ ok: false, error: check.error }, { status: 400 });
+
+        // The host's changeover days (Restrict check-in / checkout days), on
+        // the end that MOVES. A booking made before the host restricted a
+        // weekday keeps its own check-in or checkout when the other end, or
+        // only the guest count, changes — the same allowance the picker makes.
+        const changeover = listing ? changeoverProblem(listing as any, next.checkIn, next.checkOut, {
+            checkIn: next.checkIn !== oldStay.checkIn,
+            checkOut: next.checkOut !== oldStay.checkOut,
+        }) : null;
+        if (changeover) return NextResponse.json({ ok: false, error: changeover }, { status: 400 });
 
         // One open change at a time (partial unique index enforces it too).
         const { data: existing } = await admin

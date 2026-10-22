@@ -28,7 +28,7 @@ import { petsProblem } from '@/lib/listingSafety';
 import {
     stayProblem, prepBufferNights, prepDays, minNightsFor, maxNightsFor, earliestCheckInKey,
     latestCheckOutKey, stayLengthNote, londonTodayKey, nightsBetweenKeys,
-    checkInPickable, checkoutPickable, addDaysKey,
+    checkInPickable, checkoutPickable, addDaysKey, changeoverNote,
     type StayRulesListing, type StayRange,
 } from '@/lib/stayRules';
 
@@ -371,7 +371,7 @@ export default function BookingWidget({
         // A taken night is struck through — unless, while a checkout is being
         // chosen, that day is a checkout the guest can have.
         const struck = unavailableNights.has(key)
-            && !(choosingCheckout && startKey && checkoutPickable(startKey, key, unavailableNights, minForStay, maxForStay));
+            && !(choosingCheckout && startKey && checkoutPickable(startKey, key, unavailableNights, minForStay, maxForStay, rules));
         // data-d carries the day's key to the aria-labelling observer below,
         // which reads it to give the day button the full date as its label —
         // react-date-range renders the button with the day number alone
@@ -639,11 +639,14 @@ export default function BookingWidget({
     const stayDisabledDay = (date: Date) => {
         const key = dateToKey(date) as string;
         if (choosingCheckout && startKey && nightsBetweenKeys(startKey, key) > 0) {
-            return !checkoutPickable(startKey, key, unavailableNights, minForStay, maxForStay);
+            return !checkoutPickable(startKey, key, unavailableNights, minForStay, maxForStay, rules);
         }
-        return !checkInPickable(key, unavailableNights);
+        // The host's changeover days grey out a day guests may not arrive on.
+        return !checkInPickable(key, unavailableNights, rules);
     };
-    const stayNote = stayLengthNote(minForStay, maxForStay);
+    // "3-night minimum · Check-in Monday or Friday", so a greyed-out day has a
+    // reason on screen rather than looking like a taken one.
+    const stayNote = [stayLengthNote(minForStay, maxForStay), changeoverNote(rules)].filter(Boolean).join(' · ');
 
     const handleSelect = (ranges: RangeKeyDict) => {
         setError('');
