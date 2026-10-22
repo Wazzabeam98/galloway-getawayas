@@ -65,9 +65,11 @@ export default function ReferHost({
     signedIn: boolean;
     link: string | null;
     items: ReferralListItem[];
-    defaultType: ReferralType;
+    defaultType: ReferralType | null;
 }) {
-    const [selected, setSelected] = useState<ReferralType>(defaultType);
+    // Nothing chosen to begin with (unless a ?type= link chose it): the reward
+    // line stays hidden and Share stays greyed out until a card is picked.
+    const [selected, setSelected] = useState<ReferralType | null>(defaultType);
     const [shareOpen, setShareOpen] = useState(false);
     const [qrOpen, setQrOpen] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -87,6 +89,7 @@ export default function ReferHost({
     };
 
     const onShare = () => {
+        if (!selected) return;
         if (signedIn) setShareOpen(true);
         else signInThen(selected);
     };
@@ -116,7 +119,7 @@ export default function ReferHost({
         }
     };
 
-    const selectedCard = CARDS.find((c) => c.type === selected) || CARDS[0];
+    const selectedCard = CARDS.find((c) => c.type === selected) || null;
     const tile = 'flex flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-3 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50';
 
     return (
@@ -161,19 +164,21 @@ export default function ReferHost({
                 })}
             </div>
 
-            {/* Signed in, the chosen card's line. */}
-            {signedIn && (
+            {/* Signed in, the chosen card's line — once a card is chosen. */}
+            {signedIn && selectedCard && (
                 <p className="text-sm text-slate-600">
                     You’ll earn <strong>£{selectedCard.reward}</strong> when someone you refer {selectedCard.earns}.
                     They get a great deal too — no commission on their first booking{selectedCard.type === 'trade' ? ', and six months free' : ''}.
                 </p>
             )}
 
-            {/* The one big button. */}
+            {/* The one big button, in the brand green; greyed out and
+                unclickable until a card is chosen. */}
             <button
                 type="button"
                 onClick={onShare}
-                className="w-full rounded-xl bg-slate-900 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-slate-700"
+                disabled={!selected}
+                className="w-full rounded-xl bg-emerald-700 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
             >
                 Share referral link
             </button>
