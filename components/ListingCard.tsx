@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Star, PawPrint, Bath, ThermometerSun, Check, Gem, type LucideIcon } from 'lucide-react';
+import { Star, PawPrint, Bath, ThermometerSun, Waves, Check, Gem, type LucideIcon } from 'lucide-react';
 import ListingImage from '@/components/ListingImage';
 import { cardBadges } from '@/lib/listingRules';
 import { publicArea } from '@/lib/places';
@@ -65,15 +65,16 @@ export interface CardListing {
 
 // Which icon and colour draws which badge. The rule and the cap live in
 // lib/listingRules.ts (cardBadges, BADGE_AMENITIES); this is the only part
-// that belongs to the card. Each colour is a Tailwind 700 so the three sit in
+// that belongs to the card. Each colour is a Tailwind 700 so they sit in
 // one family on the near-white pill (bg-white/95): sky-700 5.9:1, emerald-700
-// 5.5:1 and amber-700 5.0:1 against white — all clear of the 4.5:1 AA floor,
+// 5.5:1, cyan-700 5.4:1 and amber-700 5.0:1 against white — all clear of the 4.5:1 AA floor,
 // white being the worst case. A badge amenity with no entry here draws a
 // neutral tick rather than the wrong icon (the old ternary gave everything
 // that was not a hot tub a green paw).
 const BADGE_STYLE: Record<string, { Icon: LucideIcon; color: string }> = {
     'Hot tub': { Icon: Bath, color: 'text-sky-700' },
     'Pets allowed': { Icon: PawPrint, color: 'text-emerald-700' },
+    'Pool': { Icon: Waves, color: 'text-cyan-700' },
     'Sauna': { Icon: ThermometerSun, color: 'text-amber-700' },
 };
 

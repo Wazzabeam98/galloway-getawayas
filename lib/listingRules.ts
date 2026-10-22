@@ -91,6 +91,10 @@ export const NEW_LISTING_MIN_PHOTOS = 5;
 // furniture, but nowhere near hot tub or dog-friendly, so it ranks last and is
 // the first to be dropped when a listing has all three.
 //
+// Pool sits between dog-friendly and sauna: the same agencies keep a standing
+// "cottages with a pool" landing page (Sykes, cottages.com, Snaptrip) and
+// Airbnb keeps a Pool filter — ranked above sauna, below hot tub and dogs.
+//
 // So this list is a claim about search demand, not about quality, AND IT IS IN
 // DEMAND ORDER, highest first. cardBadges() below keeps the two highest-ranked
 // that a listing actually has — so a sauna lodge with no hot tub shows a sauna
@@ -108,6 +112,7 @@ export const NEW_LISTING_MIN_PHOTOS = 5;
 export const BADGE_AMENITIES: Array<{ amenity: string; label: string; title: string }> = [
     { amenity: 'Hot tub', label: 'Hot tub', title: 'Hot tub' },
     { amenity: 'Pets allowed', label: 'Pet friendly', title: 'Dogs welcome' },
+    { amenity: 'Pool', label: 'Pool', title: 'Pool' },
     { amenity: 'Sauna', label: 'Sauna', title: 'Sauna' },
 ];
 

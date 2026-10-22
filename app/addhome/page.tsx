@@ -28,6 +28,8 @@ import { listingLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import { plural } from '@/lib/plural';
 import { YesNo } from '@/components/listing-editor/ArrivalCards';
+import PoolDetails from '@/components/listing-editor/PoolDetails';
+import { cleanPoolAccess, cleanPoolSetting, cleanPoolDetails, hasPool, type PoolAccess, type PoolSetting } from '@/lib/poolDetails';
 import {
     PETS_AMENITY, MAX_PETS_CAP, DEFAULT_MAX_PETS, withPetsAmenity, withAlarmAmenities, clampMaxPets,
     guestSafetyProblem, SAFETY_DETAILS_MAX, type GuestSafety,
@@ -92,6 +94,9 @@ export default function AddHome() {
     const [maxPets, setMaxPets] = useState(DEFAULT_MAX_PETS);
     const [safety, setSafety] = useState<GuestSafety>({});
     const allAmenities = withAlarmAmenities(withPetsAmenity(amenities, petsAllowed), safety);
+    // The pool's two answers, asked once Pool is ticked (lib/poolDetails).
+    const [poolAccess, setPoolAccess] = useState<PoolAccess | null>(null);
+    const [poolSetting, setPoolSetting] = useState<PoolSetting | null>(null);
     const [checkInMethod, setCheckInMethod] = useState('');
     // Seeded with the old silent defaults, but now visible and changeable
     // before the listing is created rather than assumed afterwards.
@@ -270,6 +275,8 @@ export default function AddHome() {
                         for (const k of ['smoke_alarm', 'co_alarm', 'security_camera']) if (stored[k]) gs[k] = stored[k];
                         for (const [name, key] of Object.entries(ALARMS)) if (saved.indexOf(name) !== -1) gs[key] = { yes: true };
                         setSafety(gs);
+                        setPoolAccess(cleanPoolAccess(draft.pool_access));
+                        setPoolSetting(cleanPoolSetting(draft.pool_setting));
                     }
                     // This used to be setCity(location.split(',')[0]) and
                     // setState(location) — the whole string into the region
@@ -365,14 +372,15 @@ export default function AddHome() {
         writeLock.current = run;
         return run;
     };
-    // The pets maximum and the safety answers aren't columns the browser may
-    // write; they go through /api/listings/save, as the editor's cards do.
+    // The pets maximum, the safety answers and the pool's two answers aren't
+    // columns the browser may write; they go through /api/listings/save, as the
+    // editor's cards do.
     const saveExtras = async (id: string): Promise<string | null> => {
         try {
             const res = await fetch('/api/listings/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId: id, patch: { amenities: allAmenities, max_pets: petsAllowed ? maxPets : null, guest_safety: safety } }),
+                body: JSON.stringify({ listingId: id, patch: { amenities: allAmenities, max_pets: petsAllowed ? maxPets : null, guest_safety: safety, ...cleanPoolDetails(allAmenities, poolAccess, poolSetting) } }),
             });
             const body = await res.json().catch(() => ({}));
             return body && body.ok ? null : (body && body.error) || 'Could not save the pets and safety details.';
@@ -1020,6 +1028,15 @@ export default function AddHome() {
                                 </div>
                             ))}
                         </div>
+
+                        {/* The pool's two answers, once Pool is ticked — saved
+                            through /api/listings/save with the pets and safety. */}
+                        {hasPool(amenities) && (
+                            <div className="mt-8">
+                                <PoolDetails access={poolAccess} setting={poolSetting}
+                                    onChange={(a, st) => { setPoolAccess(a); setPoolSetting(st); }} />
+                            </div>
+                        )}
 
                         {/* Pets — saved where the editor's House rules card saves them. */}
                         <div className="mt-10 border-t pt-8">
