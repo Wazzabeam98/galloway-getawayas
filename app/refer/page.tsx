@@ -5,7 +5,6 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { getOrCreateReferralCode, ReferralRow, ReferralType, REFERRAL_REWARD_MAX } from '@/lib/referrals';
 import { SITE_URL } from '@/lib/email';
 import { greetingName } from '@/lib/utils';
-import { readWorkSide } from '@/lib/workSide';
 import ReferHost, { ReferralListItem } from '@/components/referrals/ReferHost';
 
 export const dynamic = 'force-dynamic';
@@ -25,10 +24,11 @@ export default async function ReferPage({ searchParams }: { searchParams: { type
     const { data: userData } = await supabase.auth.getUser();
     const uid = userData && userData.user && userData.user.id;
 
-    // The card to start on: an explicit ?type= (set when a signed-out visitor
-    // picks a card and signs in), else the kind that fits what they already do.
+    // No card is chosen until the person picks one (like Airbnb's). The only
+    // preselection is an explicit ?type= — set when a signed-out visitor picks a
+    // card and signs in, or on a link straight to one kind.
     const paramType = searchParams && searchParams.type;
-    let defaultType: ReferralType = VALID_TYPES.includes(paramType as ReferralType) ? (paramType as ReferralType) : 'stay';
+    const defaultType: ReferralType | null = VALID_TYPES.includes(paramType as ReferralType) ? (paramType as ReferralType) : null;
 
     if (!uid) {
         return (
@@ -41,22 +41,6 @@ export default async function ReferPage({ searchParams }: { searchParams: { type
     }
 
     const admin = adminClient();
-
-    // If no explicit card was asked for, start on the one that fits their role.
-    if (!VALID_TYPES.includes(paramType as ReferralType)) {
-        try {
-            const work = await readWorkSide(supabase, uid);
-            // Holiday let is the flagship, so a host (even one who also provides)
-            // starts there; a provider who isn't a host starts on their own kind.
-            if (work && work.isHost) {
-                defaultType = 'stay';
-            } else if (work && work.isProvider) {
-                defaultType = work.providerAudience === 'guest' ? 'experience' : 'trade';
-            }
-        } catch {
-            // role read is a nicety; fall back to 'stay'
-        }
-    }
 
     const code = await getOrCreateReferralCode(admin, uid);
     const link = (SITE_URL || '') + '/refer/' + (code || '');
