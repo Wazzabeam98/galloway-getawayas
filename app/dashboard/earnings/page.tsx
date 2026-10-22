@@ -12,6 +12,7 @@ import { listingIdsFor } from '@/lib/access';
 import { outstandingDebts, outstandingOf, debtAgainstStays, round2 } from '@/lib/hostDebt';
 import { readSchedule, payoutTimingText } from '@/lib/payoutTiming';
 import { formatGBP } from '@/lib/formatMoney';
+import { firstName, displayName } from '@/lib/utils';
 import { ukDate, londonDayKey } from '@/lib/dayKey';
 import { defaultEarningsPeriod } from '@/lib/earningsPeriod';
 import { hostDebtsForHost, debtFigures, debtStatusLabel, debtTitle } from '@/lib/hostDebtView';
@@ -31,6 +32,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // Only properties they may see money for. A co-host without the earnings
     // permission sees nothing here, even for a listing they otherwise manage.
     const allowed = await listingIdsFor(user.user?.id || '', 'can_earnings');
+    const viewerId = user.user?.id || '';
 
     const admin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -88,7 +90,11 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         ? Math.round((feeTotal / grossTotal) * 1000) / 10
         : DEFAULT_COMMISSION_PERCENT;
 
-    const upcomingNet = netOfBookings(upcoming);
+    // "Upcoming payout" is money coming into the viewer's own bank: stays whose
+    // host_id is theirs (who the payout run pays). Revenue for every listing
+    // they can see is above; a stay paid to another account is not theirs.
+    const upcomingOwn = upcoming.filter((b) => b.host_id === viewerId);
+    const upcomingNet = netOfBookings(upcomingOwn);
     const completedNet = netOfBookings(completed);
     const pendingGross = pending.reduce((sum, b) => sum + Number(b.total_price), 0);
 
@@ -167,8 +173,22 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         };
     });
 
-    const awaiting = schedule.filter((r) => !r.paidOutAt);
+    // Every stay is listed, but only money paid into the viewer's own bank —
+    // stays whose booking.host_id is theirs, which is who the payout run pays —
+    // counts towards "still to come" and debt deductions. A stay paid to
+    // someone else's account says so by their first name (paidToOf below).
+    const awaitingAll = schedule.filter((r) => !r.paidOutAt);
+    const awaiting = awaitingAll.filter((r) => r.hostId === viewerId);
     const alreadyPaid = schedule.filter((r) => r.paidOutAt).reverse();
+
+    const otherPayeeIds = Array.from(new Set(schedule.map((r) => r.hostId).filter((id) => id && id !== viewerId)));
+    const { data: otherPayees } = otherPayeeIds.length
+        ? await admin.from('profiles').select('id, first_name, last_name, preferred_name, full_name, show_full_name').in('id', otherPayeeIds)
+        : { data: [] };
+    const payeeNames = new Map((otherPayees || []).map((p: any) => [p.id, firstName(p, displayName(p, 'someone else'))]));
+    // Null for the viewer's own payout; otherwise the first name it goes to.
+    const paidToOf = (r: { hostId: string }) =>
+        r.hostId === viewerId ? null : payeeNames.get(r.hostId) || 'someone else';
 
     // What this person owes back, and which of their coming payouts it will
     // come off — the same allocation the payout run performs, so the figure
@@ -178,7 +198,6 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // on a booking, and this page can show listings belonging to other people:
     // a co-host with the earnings permission must not be shown the owner's
     // debts, nor have someone else's deducted from what they are told.
-    const viewerId = user.user?.id || '';
 
     // Read the settlement wait off the viewer's own connected account rather
     // than printing a number. This page used to say a payout landed "within a
@@ -211,8 +230,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     const debts = await outstandingDebts(admin, viewerId);
     const owedTotal = debts.reduce((sum, d) => round2(sum + outstandingOf(d)), 0);
 
-    const myAwaiting = awaiting.filter((r) => r.hostId === viewerId);
-    const deductions = owedTotal > 0 ? debtAgainstStays(owedTotal, myAwaiting) : {};
+    const deductions = owedTotal > 0 ? debtAgainstStays(owedTotal, awaiting) : {};
 
     const awaitingTotal = awaiting.reduce((sum, r) => sum + r.expected, 0);
     const deductionTotal = Object.keys(deductions).reduce(
@@ -230,7 +248,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // has been recovered, what is left — with Pay now and Dispute. Due now when
     // nothing coming can take it (no stay waiting to pay out, or more owed than
     // those stays cover). See lib/hostDebtView.
-    const hasComing = myAwaiting.length > 0;
+    const hasComing = awaiting.length > 0;
     const dueNow = owedTotal > 0 && (!hasComing || owedBeyondQueue > 0);
     const debtCards: DebtCard[] = (await hostDebtsForHost(admin, viewerId)).map((d) => {
         const f = debtFigures(d);
@@ -286,7 +304,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 <StatCard label="Cancellation rate" value={`${cancellationRate.toFixed(2)}%`} sub={`${cancelled.length} of ${everAccepted} accepted`} />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-10">
-                <StatCard label="Upcoming payout" value={formatGBP(upcomingNet)} sub={`${upcoming.length} stay${upcoming.length !== 1 ? 's' : ''}`} />
+                <StatCard label="Upcoming payout" value={formatGBP(upcomingNet)} sub={`${upcomingOwn.length} stay${upcomingOwn.length !== 1 ? 's' : ''}`} />
                 <StatCard label="Completed stays" value={formatGBP(completedNet)} sub={`${completed.length} stay${completed.length !== 1 ? 's' : ''}`} />
                 <StatCard label="Pending requests" value={formatGBP(pendingGross)} sub={`${pending.length} awaiting response`} />
             </div>
@@ -326,11 +344,11 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                     </p>
                 )}
 
-                {awaiting.length === 0 ? (
+                {awaitingAll.length === 0 ? (
                     <p className="text-sm text-slate-400">No payouts on the way.</p>
                 ) : (
                     <div className="space-y-3">
-                        {awaiting.map((r) => (
+                        {awaitingAll.map((r) => (
                             <div
                                 key={r.id}
                                 className="flex items-start justify-between gap-4 flex-wrap border-b last:border-b-0 pb-3 last:pb-0"
@@ -366,7 +384,9 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                         </div>
                                     )}
                                     <div className="text-xs text-slate-500">
-                                        {r.due <= todayStart ? 'Due now' : 'Pays ' + formatUk(r.due)}
+                                        {paidToOf(r)
+                                            ? 'Paid out to ' + paidToOf(r)
+                                            : r.due <= todayStart ? 'Due now' : 'Pays ' + formatUk(r.due)}
                                     </div>
                                 </div>
                             </div>
@@ -384,7 +404,8 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                         {r.title} &middot; {formatUk(new Date(r.checkIn))}
                                     </span>
                                     <span className="text-slate-900 font-medium whitespace-nowrap ml-3">
-                                        {formatGBP(r.payoutAmount || 0)} on{' '}
+                                        {formatGBP(r.payoutAmount || 0)}{' '}
+                                        {paidToOf(r) ? 'paid out to ' + paidToOf(r) + ' on' : 'on'}{' '}
                                         {formatUk(new Date(r.paidOutAt))}
                                     </span>
                                 </div>
