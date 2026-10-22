@@ -334,8 +334,16 @@ test('BADGE_AMENITIES is held in demand order, highest first', () => {
     // order is load-bearing, not cosmetic.
     assert.deepEqual(
         BADGE_AMENITIES.map((b: any) => b.amenity),
-        ['Hot tub', 'Pets allowed', 'Sauna'],
+        ['Hot tub', 'Pets allowed', 'Pool', 'Sauna'],
     );
+});
+
+test('a pool earns a badge, ranked below hot tub and dogs and above sauna', () => {
+    // Asked for 22 Oct 2026: Pool is done exactly like Hot tub and Sauna.
+    assert.deepEqual(cardBadges(['Wifi', 'Pool']).map((b: any) => b.label), ['Pool']);
+    assert.deepEqual(cardBadges(['Sauna', 'Pool']).map((b: any) => b.label), ['Pool', 'Sauna']);
+    assert.deepEqual(cardBadges(['Pool', 'Hot tub']).map((b: any) => b.label), ['Hot tub', 'Pool']);
+    assert.deepEqual(cardBadges(['Pool', 'Pets allowed', 'Hot tub']).map((b: any) => b.label), ['Hot tub', 'Pet friendly']);
 });
 
 test('a cottage with neither gets no badges at all', () => {
@@ -352,7 +360,7 @@ test('nothing else on the amenity list earns a badge', () => {
     const badges = cardBadges([
         'Wifi', 'Kitchen', 'Washing machine', 'TV', 'Heating', 'Cot',
         'Dedicated workspace', 'EV charger', 'Free parking on premises',
-        'Gym', 'Indoor fireplace', 'Outdoor furniture', 'Pool',
+        'Gym', 'Indoor fireplace', 'Outdoor furniture',
         'Beach access', 'Waterfront', 'Carbon monoxide alarm', 'Smoke alarm',
     ]);
 

@@ -8,7 +8,7 @@ import { amenityIcon } from '@/lib/amenityIcons';
 import { PROPERTY_TYPES } from '@/lib/propertyTypes';
 import { formatPrice } from '@/lib/formatMoney';
 import {
-    ACCESSIBILITY_AMENITIES, AMENITY_LABELS, FILTER_AMENITIES, QUICK_CHIPS, RECOMMENDED, EMPTY_FILTERS,
+    ACCESSIBILITY_AMENITIES, ALWAYS_AMENITIES, AMENITY_LABELS, FILTER_AMENITIES, QUICK_CHIPS, RECOMMENDED, EMPTY_FILTERS,
     activeFilterCount, matchesFilters, readFilters, writeFilters,
     type FilterFacts, type FilterState,
 } from '@/lib/listingFilters';
@@ -48,18 +48,20 @@ export default function PropertyFilters({ pool }: { pool: FilterFacts[] }) {
     const [accessOpen, setAccessOpen] = useState(false);
 
     // What the listings in view actually have, so a filter that could only
-    // ever return nothing is not offered. Pets, hot tub, sauna and step-free
-    // access are always offered — the ones a guest arrives asking about (sauna
-    // joined hot tub, done exactly like it, 21 Oct 2026).
+    // ever return nothing is not offered. Pets, hot tub, sauna, pool and
+    // step-free access are always offered — the ones a guest arrives asking
+    // about (sauna joined hot tub, done exactly like it, 21 Oct 2026; pool the
+    // same way, 22 Oct 2026). ALWAYS_AMENITIES (lib/listingFilters) is the one
+    // list both lines below read.
     const present = useMemo(() => {
         const s = new Set<string>();
         pool.forEach((l) => (l.amenities || []).forEach((a) => s.add(a)));
         return s;
     }, [pool]);
-    const ALWAYS = ['Pets allowed', 'Hot tub', 'Sauna', 'Step-free guest entrance'];
+    const ALWAYS = ['Pets allowed', ...ALWAYS_AMENITIES, 'Step-free guest entrance'];
     const chips = QUICK_CHIPS.filter((c) => ALWAYS.indexOf(c.amenity) !== -1 || present.has(c.amenity));
     const recommended = RECOMMENDED.filter((r) => ALWAYS.indexOf(r.amenity) !== -1 || present.has(r.amenity)).slice(0, 4);
-    const amenityOptions = FILTER_AMENITIES.filter((a) => a === 'Hot tub' || a === 'Sauna' || present.has(a));
+    const amenityOptions = FILTER_AMENITIES.filter((a) => ALWAYS_AMENITIES.indexOf(a) !== -1 || present.has(a));
     // Every type a listing in view actually has — legacy ones included, so an
     // old 'Coastal Stays' listing can still be filtered to.
     const typesPresent = PROPERTY_TYPES.filter((c) => pool.some((l) => l.property_type === c.name));

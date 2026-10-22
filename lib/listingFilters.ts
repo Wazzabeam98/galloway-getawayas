@@ -27,6 +27,7 @@ export const ACCESSIBILITY_AMENITIES = [
 export const FILTER_AMENITIES = [
     'Hot tub',
     'Sauna',
+    'Pool',
     'Cold plunge',
     'Outdoor shower',
     'Free parking on premises',
@@ -41,8 +42,12 @@ export const FILTER_AMENITIES = [
     'Cot',
     'Beach access',
     'Waterfront',
-    'Pool',
 ] as const;
+
+// Offered as a chip and in the panel's Amenities even when no listing in view
+// has them yet — the features a guest arrives asking about. Hot tub first,
+// Sauna done exactly like it (21 Oct 2026), Pool the same way (22 Oct 2026).
+export const ALWAYS_AMENITIES: string[] = ['Hot tub', 'Sauna', 'Pool'];
 
 // The quick chips beside the Filters button — Airbnb puts the few most-used
 // filters one tap away. Each is an amenity the panel also offers.
@@ -50,6 +55,7 @@ export const QUICK_CHIPS: { amenity: string; label: string }[] = [
     { amenity: 'Pets allowed', label: 'Dog friendly' },
     { amenity: 'Hot tub', label: 'Hot tub' },
     { amenity: 'Sauna', label: 'Sauna' },
+    { amenity: 'Pool', label: 'Pool' },
     { amenity: 'Cold plunge', label: 'Cold plunge' },
     { amenity: 'Outdoor shower', label: 'Outdoor shower' },
     { amenity: 'Step-free guest entrance', label: 'Step-free access' },

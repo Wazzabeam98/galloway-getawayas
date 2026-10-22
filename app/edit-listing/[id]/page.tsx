@@ -44,6 +44,8 @@ import { CalendarSyncCard } from '@/components/IcalFeeds';
 import NotificationEmailsCard from '@/components/listing-editor/NotificationEmailsCard';
 import LeaveListingBtn from '@/components/LeaveListingBtn';
 import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
+import PoolDetails from '@/components/listing-editor/PoolDetails';
+import { cleanPoolAccess, cleanPoolSetting, hasPool, type PoolAccess, type PoolSetting } from '@/lib/poolDetails';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Flame, Armchair, Umbrella, Anchor, LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange, RefreshCw, DoorOpen, Mail,
 } from 'lucide-react';
@@ -219,6 +221,9 @@ export default function EditListing() {
     const [sleeping, setSleeping] = useState<Room[]>([]);
     const [neighbourhood, setNeighbourhood] = useState('');
     const [amenities, setAmenities] = useState<string[]>([]);
+    // The pool's two answers, asked once Pool is ticked (lib/poolDetails).
+    const [poolAccess, setPoolAccess] = useState<PoolAccess | null>(null);
+    const [poolSetting, setPoolSetting] = useState<PoolSetting | null>(null);
     // Saved paths, cover first.
     const [photos, setPhotos] = useState<string[]>([]);
     const [checkInMethod, setCheckInMethod] = useState('');
@@ -349,6 +354,8 @@ export default function EditListing() {
             }
             setNeighbourhood(listing.neighbourhood || '');
             setAmenities(listing.amenities || []);
+            setPoolAccess(cleanPoolAccess(listing.pool_access));
+            setPoolSetting(cleanPoolSetting(listing.pool_setting));
             setPhotos(listing.images || []);
             photosRef.current = listing.images || [];
             setNewListingPromo(listing.new_listing_promo ?? true);
@@ -477,7 +484,20 @@ export default function EditListing() {
         const before = amenities;
         const next = before.includes(name) ? before.filter((a) => a !== name) : [...before, name];
         setAmenities(next);
-        persist({ amenities: next }).then((ok) => { if (!ok) setAmenities(before); });
+        persist({ amenities: next }).then((ok) => {
+            if (!ok) setAmenities(before);
+            else if (!hasPool(next)) poolCleared();
+        });
+    };
+    // The save route clears the pool's answers when Pool is unticked; mirror it.
+    const poolCleared = () => { setPoolAccess(null); setPoolSetting(null); };
+    // A pool answer saves on the tap, like a desktop amenity tile.
+    const savePool = (a: PoolAccess | null, st: PoolSetting | null) => {
+        const before = [poolAccess, poolSetting] as const;
+        setPoolAccess(a); setPoolSetting(st);
+        persist({ pool_access: a, pool_setting: st }).then((ok) => {
+            if (!ok) { setPoolAccess(before[0]); setPoolSetting(before[1]); }
+        });
     };
     const photosRef = useRef<string[]>([]);
     const savePhotos = (change: (current: string[]) => string[]) => {
@@ -796,13 +816,18 @@ export default function EditListing() {
                                     // toggle a tile; its sheet saves on Save.
                                     <div className="mt-3">
                                         <AmenitiesCard categories={AMENITY_CATEGORIES} amenities={amenities}
-                                            onSave={(next) => saveThen({ amenities: next }, () => setAmenities(next))} />
+                                            onSave={(next) => saveThen({ amenities: next }, () => { setAmenities(next); if (!hasPool(next)) poolCleared(); })} />
                                     </div>
                                 ) : (
                                     <>
                                         <p className="text-sm text-slate-400 mb-4">{amenities.length} selected</p>
                                         <AmenityGrid categories={AMENITY_CATEGORIES} selected={amenities} onToggle={toggleAmenity} />
                                     </>
+                                )}
+                                {hasPool(amenities) && (
+                                    <div className="mt-6">
+                                        <PoolDetails access={poolAccess} setting={poolSetting} onChange={savePool} />
+                                    </div>
                                 )}
                             </section>
                         </PhoneSection>)}

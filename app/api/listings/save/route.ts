@@ -10,6 +10,7 @@ import {
     cleanGuestSafety, guestSafetyProblem, withAlarmAmenities, cleanCheckoutTasks, cleanCheckoutNote,
     clampMaxPets, petsAllowed,
 } from '@/lib/listingSafety';
+import { cleanPoolDetails } from '@/lib/poolDetails';
 import { checkListing } from '@/lib/access';
 import { isAdmin, recordAdminAction, cleanReason, REMOVED_BUCKET } from '@/lib/adminAudit';
 import { fromRow, newProblems } from '@/lib/listingRules';
@@ -126,6 +127,16 @@ export async function POST(request: Request) {
         if ('max_pets' in safe || 'amenities' in safe) {
             const amenities = Array.isArray(safe.amenities) ? safe.amenities : (before.amenities || []);
             safe.max_pets = petsAllowed({ amenities }) ? clampMaxPets('max_pets' in safe ? safe.max_pets : before.max_pets) : null;
+        }
+        // The pool's two answers (private/shared, indoor/outdoor), cleaned by the
+        // same helper the wizard and editor use, and cleared with the amenity.
+        if ('pool_access' in safe || 'pool_setting' in safe || 'amenities' in safe) {
+            const amenities = Array.isArray(safe.amenities) ? safe.amenities : (before.amenities || []);
+            Object.assign(safe, cleanPoolDetails(
+                amenities,
+                'pool_access' in safe ? safe.pool_access : before.pool_access,
+                'pool_setting' in safe ? safe.pool_setting : before.pool_setting,
+            ));
         }
 
         // "Show the precise location" is a yes/no and nothing else — anything
