@@ -42,7 +42,7 @@ export async function POST(request: Request) {
             .from('referrals')
             .update({ status: 'reward_paid', reward_paid_at: paidAt, updated_at: paidAt })
             .eq('id', referralId)
-            .eq('status', 'first_stay_done')
+            .eq('status', 'reward_due')
             .select('id, status, reward_paid_at')
             .maybeSingle();
 

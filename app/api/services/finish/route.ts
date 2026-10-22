@@ -7,6 +7,8 @@ import { hasSlotCapacity } from '@/lib/serviceSlots';
 import { normaliseUnit, unitMultiplies } from '@/lib/serviceOrders';
 import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, GUEST_CONTENT_KEYS, pickColumns } from '@/lib/serviceApplications';
 import { signedInCaller } from '@/lib/signedInCaller';
+import { cookies } from 'next/headers';
+import { attachReferral, REFERRAL_COOKIE } from '@/lib/referrals';
 
 export const dynamic = 'force-dynamic';
 
@@ -265,6 +267,20 @@ export async function POST(req: Request) {
         }
 
         const id = provider.id;
+
+        // REFERRAL: the unsigned create-account-and-submit twin of the signed-in
+        // submit in signup/save — the moment this person has gone on to run an
+        // experience (£25) or a trade (£15). Owner-scoped (owner is the account
+        // we just made/resolved for this submission) and best-effort.
+        try {
+            const refCode = cookies().get(REFERRAL_COOKIE)?.value || '';
+            if (refCode) {
+                const refType = provider.audience === 'guest' ? 'experience' : 'trade';
+                await attachReferral(admin, { code: refCode, referredUserId: provider.owner_id, stage: 'active', type: refType });
+            }
+        } catch (referralErr) {
+            await logError('service-finish: could not record the referral', { message: referralErr instanceof Error ? referralErr.message : String(referralErr) });
+        }
 
         // The children. Written after the parent so a failure here leaves a
         // real application rather than an orphan.

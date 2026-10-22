@@ -252,7 +252,7 @@ export async function POST(request: Request) {
 
         // REFERRAL: they have gone on to list a property. The first time a
         // listing goes INTO review is the moment the owner becomes a host, so
-        // a referral is recorded (or advanced from 'invited' to 'listed') here.
+        // a referral is recorded (or advanced from 'invited' to 'active') here.
         // Only when the owner is the one publishing, in their own browser with
         // their own referral cookie — a co-host publishing someone else's
         // listing must never attribute the owner to the co-host's referrer.
@@ -261,7 +261,7 @@ export async function POST(request: Request) {
             try {
                 const refCode = cookies().get(REFERRAL_COOKIE)?.value || '';
                 if (refCode) {
-                    await attachReferral(admin, { code: refCode, referredUserId: user.id, stage: 'listed' });
+                    await attachReferral(admin, { code: refCode, referredUserId: user.id, stage: 'active', type: 'stay' });
                 }
             } catch (referralErr) {
                 await logError('listings/publish: could not record the referral', referralErr, {

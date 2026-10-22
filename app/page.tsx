@@ -33,6 +33,7 @@ import Env from '@/config/Env';
 import Link from 'next/link';
 import ListingCard from '@/components/ListingCard';
 import HomeExperiences, { liveHomeProviders, ExperiencesForBusinesses } from '@/components/HomeExperiences';
+import { ReferHostBand } from '@/components/ReferHostHome';
 import TownsCarousel from '@/components/TownsCarousel';
 import { AREAS, hasCopy, listingInArea } from '@/config/areas';
 import { unstable_cache } from 'next/cache';
@@ -169,6 +170,9 @@ export default async function HomePage() {
             {/* The "offer an experience" panel for local businesses, below the
                 towns row and above the map — always, live experiences or not. */}
             <ExperiencesForBusinesses />
+
+            {/* Refer a host, experience or service — earn up to £50. */}
+            <ReferHostBand />
 
             {/* Every live property on one map — Airbnb's search map. Below the
                 towns carousel: the places to stay lead, the map is for somebody

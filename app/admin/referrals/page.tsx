@@ -15,7 +15,7 @@ export default async function ReferralsAdminPage() {
 
     const { data: rows } = await admin
         .from('referrals')
-        .select('id, referrer_id, referred_user_id, status, reward_amount, waived_commission, reward_due_at, reward_paid_at, created_at')
+        .select('id, referrer_id, referred_user_id, type, status, reward_amount, waived_commission, reward_due_at, reward_paid_at, created_at')
         .order('created_at', { ascending: false });
 
     const referrals = rows || [];
@@ -38,6 +38,7 @@ export default async function ReferralsAdminPage() {
         id: r.id,
         referrerName: nameById[r.referrer_id] || 'User',
         referredName: nameById[r.referred_user_id] || 'User',
+        type: r.type,
         status: r.status,
         rewardAmount: r.reward_amount,
         waivedCommission: r.waived_commission,

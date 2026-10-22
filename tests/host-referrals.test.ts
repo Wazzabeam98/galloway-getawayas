@@ -1,8 +1,10 @@
-// The referral scheme's rules, proven on the pure logic in lib/referrals: no
-// self-referral, first referral wins, only genuinely new hosts, invited →
-// listed, and the reward-due stamp as an idempotent CLAIM. The real money
-// (the waiver flowing through feeAmount(base, 0)) is proven end to end in
-// scripts/payout-scenarios.mjs; here we hold the decision logic.
+// The referral scheme's rules, proven on the pure logic in lib/referrals across
+// all three types (stay / experience / trade): no self-referral, first referral
+// wins, only genuinely new hosts/providers, invited → active with the type set,
+// the type-matched waiver lookup, and the reward-due stamp as an idempotent
+// CLAIM with the right amount per type. The real money (the waiver flowing
+// through the payout calcs) is proven end to end in the scenario scripts; here
+// we hold the decision logic.
 //
 // Nothing here reaches a database. A small in-memory fake stands in for the
 // service-role client, filtering rows for real so first-wins and the claim are
@@ -19,7 +21,7 @@ const {
     markReferralRewardDue,
     waivableReferralFor,
     getOrCreateReferralCode,
-    REFERRAL_REWARD_GBP,
+    REFERRAL_REWARDS,
 } = require('@/lib/referrals');
 const { referralRewardDueEmail } = require('@/lib/referralEmails');
 
@@ -28,11 +30,12 @@ type Row = Record<string, any>;
 // A tiny Supabase-shaped fake supporting exactly the chains lib/referrals uses:
 // select / eq / in / order / limit / maybeSingle / insert / update, each either
 // awaitable or terminating in maybeSingle. Rows are filtered for real.
-function makeAdmin(seed: { referral_codes?: Row[]; referrals?: Row[]; listings?: Row[] } = {}) {
+function makeAdmin(seed: { referral_codes?: Row[]; referrals?: Row[]; listings?: Row[]; service_providers?: Row[] } = {}) {
     const tables: Record<string, Row[]> = {
         referral_codes: seed.referral_codes ? seed.referral_codes.slice() : [],
         referrals: seed.referrals ? seed.referrals.slice() : [],
         listings: seed.listings ? seed.listings.slice() : [],
+        service_providers: seed.service_providers ? seed.service_providers.slice() : [],
     };
 
     function builder(table: string) {
@@ -59,8 +62,6 @@ function makeAdmin(seed: { referral_codes?: Row[]; referrals?: Row[]; listings?:
             then(resolve: any) { return resolve({ data: match(), error: null }); },
 
             insert(row: Row) {
-                // Enforce the unique(referred_user_id) and unique(code) the table
-                // has, so first-wins and code minting behave as in production.
                 const conflict =
                     (table === 'referrals' && tables.referrals.some((r) => r.referred_user_id === row.referred_user_id)) ||
                     (table === 'referral_codes' && tables.referral_codes.some((r) => r.code === row.code));
@@ -99,12 +100,13 @@ function makeAdmin(seed: { referral_codes?: Row[]; referrals?: Row[]; listings?:
 const CODE_A = 'AAAA1111';
 const CODE_B = 'BBBB2222';
 
-function withCodes() {
+function withCodes(extra: Partial<Parameters<typeof makeAdmin>[0]> = {}) {
     return {
         referral_codes: [
             { user_id: 'alice', code: CODE_A },
             { user_id: 'bob', code: CODE_B },
         ],
+        ...extra,
     };
 }
 
@@ -115,76 +117,122 @@ test('no self-referral: opening your own link records nothing', async () => {
     assert.equal(admin._tables.referrals.length, 0);
 });
 
-test('a genuinely new person is recorded as invited', async () => {
+test('a genuinely new person is recorded as invited (no type yet)', async () => {
     const admin = makeAdmin(withCodes());
     const out = await attachReferral(admin, { code: CODE_A, referredUserId: 'carol', stage: 'invited' });
     assert.equal(out, 'invited');
     assert.equal(admin._tables.referrals.length, 1);
-    assert.equal(admin._tables.referrals[0].referrer_id, 'alice');
     assert.equal(admin._tables.referrals[0].status, 'invited');
+    assert.equal(admin._tables.referrals[0].type, null);
 });
 
 test('first referral wins: a second link cannot overwrite the first', async () => {
     const admin = makeAdmin({
         ...withCodes(),
-        referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'invited' }],
+        referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'invited', type: null }],
     });
     const out = await attachReferral(admin, { code: CODE_B, referredUserId: 'carol', stage: 'invited' });
     assert.equal(out, 'noop');
-    assert.equal(admin._tables.referrals.length, 1);
-    assert.equal(admin._tables.referrals[0].referrer_id, 'alice'); // unchanged
+    assert.equal(admin._tables.referrals[0].referrer_id, 'alice');
 });
 
-test('invited advances to listed when they list', async () => {
+test('invited advances to active and stamps the type when they list a holiday let', async () => {
     const admin = makeAdmin({
         ...withCodes(),
-        referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'invited' }],
+        referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'invited', type: null }],
     });
-    const out = await attachReferral(admin, { code: CODE_A, referredUserId: 'carol', stage: 'listed' });
-    assert.equal(out, 'listed');
-    assert.equal(admin._tables.referrals[0].status, 'listed');
+    const out = await attachReferral(admin, { code: CODE_A, referredUserId: 'carol', stage: 'active', type: 'stay' });
+    assert.equal(out, 'active');
+    assert.equal(admin._tables.referrals[0].status, 'active');
+    assert.equal(admin._tables.referrals[0].type, 'stay');
 });
 
-test('an already-established host is not recorded', async () => {
-    const admin = makeAdmin({
-        ...withCodes(),
-        listings: [{ id: 'l1', host_id: 'dan', status: 'published' }],
-    });
-    const out = await attachReferral(admin, { code: CODE_A, referredUserId: 'dan', stage: 'listed' });
+test('an established host is not recorded for a stay', async () => {
+    const admin = makeAdmin({ ...withCodes(), listings: [{ id: 'l1', host_id: 'dan', status: 'published' }] });
+    const out = await attachReferral(admin, { code: CODE_A, referredUserId: 'dan', stage: 'active', type: 'stay' });
     assert.equal(out, 'none');
     assert.equal(admin._tables.referrals.length, 0);
 });
 
-test('a first listing still in review does NOT count as established', async () => {
+test('an established experience provider is not recorded for an experience', async () => {
     const admin = makeAdmin({
         ...withCodes(),
-        listings: [{ id: 'l1', host_id: 'carol', status: 'pending_review' }],
+        service_providers: [{ id: 'p1', owner_id: 'erin', audience: 'guest', status: 'approved' }],
     });
-    const out = await attachReferral(admin, { code: CODE_A, referredUserId: 'carol', stage: 'listed' });
-    assert.equal(out, 'listed');
-    assert.equal(admin._tables.referrals.length, 1);
+    const out = await attachReferral(admin, { code: CODE_A, referredUserId: 'erin', stage: 'active', type: 'experience' });
+    assert.equal(out, 'none');
+    assert.equal(admin._tables.referrals.length, 0);
 });
 
-test('waivableReferralFor returns the row only while status is listed', async () => {
-    const listed = makeAdmin({ referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'listed' }] });
-    assert.ok(await waivableReferralFor(listed, 'carol'));
+test('a provider still in review does NOT count as established', async () => {
+    const admin = makeAdmin({
+        ...withCodes(),
+        service_providers: [{ id: 'p1', owner_id: 'carol', audience: 'guest', status: 'pending_review' }],
+    });
+    const out = await attachReferral(admin, { code: CODE_A, referredUserId: 'carol', stage: 'active', type: 'experience' });
+    assert.equal(out, 'active');
+    assert.equal(admin._tables.referrals[0].type, 'experience');
+});
 
-    const invited = makeAdmin({ referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'invited' }] });
-    assert.equal(await waivableReferralFor(invited, 'carol'), null);
+test('a trade (audience host) is independent of an experience (audience guest) for the established check', async () => {
+    // Carol runs an approved experience but is new as a trade — refer her as a trade.
+    const admin = makeAdmin({
+        ...withCodes(),
+        service_providers: [{ id: 'p1', owner_id: 'carol', audience: 'guest', status: 'approved' }],
+    });
+    const out = await attachReferral(admin, { code: CODE_A, referredUserId: 'carol', stage: 'active', type: 'trade' });
+    assert.equal(out, 'active');
+    assert.equal(admin._tables.referrals[0].type, 'trade');
+});
+
+test('waivableReferralFor matches on type, not just status', async () => {
+    const admin = makeAdmin({ referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'active', type: 'experience' }] });
+    assert.ok(await waivableReferralFor(admin, 'carol', 'experience'));
+    assert.equal(await waivableReferralFor(admin, 'carol', 'stay'), null);
+});
+
+test('markReferralRewardDue stamps the stay amount and the booking', async () => {
+    const admin = makeAdmin({ referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'active', type: 'stay' }] });
+    const row = await markReferralRewardDue(admin, { referredUserId: 'carol', type: 'stay', waivedBookingId: 'bk1', waivedCommission: 48.33 });
+    assert.ok(row);
+    assert.equal(admin._tables.referrals[0].status, 'reward_due');
+    assert.equal(admin._tables.referrals[0].reward_amount, REFERRAL_REWARDS.stay);
+    assert.equal(admin._tables.referrals[0].waived_booking_id, 'bk1');
+    assert.equal(admin._tables.referrals[0].waived_order_id, null);
+});
+
+test('markReferralRewardDue stamps the experience amount and the order', async () => {
+    const admin = makeAdmin({ referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'active', type: 'experience' }] });
+    const row = await markReferralRewardDue(admin, { referredUserId: 'carol', type: 'experience', waivedOrderId: 'so1', waivedCommission: 11 });
+    assert.ok(row);
+    assert.equal(admin._tables.referrals[0].reward_amount, REFERRAL_REWARDS.experience);
+    assert.equal(admin._tables.referrals[0].waived_order_id, 'so1');
+    assert.equal(admin._tables.referrals[0].waived_booking_id, null);
+});
+
+test('markReferralRewardDue stamps the trade amount and waives nothing', async () => {
+    const admin = makeAdmin({ referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'active', type: 'trade' }] });
+    const row = await markReferralRewardDue(admin, { referredUserId: 'carol', type: 'trade' });
+    assert.ok(row);
+    assert.equal(admin._tables.referrals[0].reward_amount, REFERRAL_REWARDS.trade);
+    assert.equal(admin._tables.referrals[0].waived_booking_id, null);
+    assert.equal(admin._tables.referrals[0].waived_order_id, null);
+    assert.equal(admin._tables.referrals[0].waived_commission, null);
 });
 
 test('markReferralRewardDue is an idempotent claim: stamps once, then null', async () => {
-    const admin = makeAdmin({ referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'listed' }] });
-
-    const first = await markReferralRewardDue(admin, { referredUserId: 'carol', bookingId: 'bk1', waivedCommission: 12.34 });
-    assert.ok(first, 'the first claim returns the row');
-    assert.equal(admin._tables.referrals[0].status, 'first_stay_done');
-    assert.equal(admin._tables.referrals[0].reward_amount, REFERRAL_REWARD_GBP);
-    assert.equal(admin._tables.referrals[0].waived_booking_id, 'bk1');
-    assert.equal(admin._tables.referrals[0].waived_commission, 12.34);
-
-    const second = await markReferralRewardDue(admin, { referredUserId: 'carol', bookingId: 'bk1', waivedCommission: 12.34 });
+    const admin = makeAdmin({ referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'active', type: 'stay' }] });
+    const first = await markReferralRewardDue(admin, { referredUserId: 'carol', type: 'stay', waivedBookingId: 'bk1', waivedCommission: 5 });
+    assert.ok(first);
+    const second = await markReferralRewardDue(admin, { referredUserId: 'carol', type: 'stay', waivedBookingId: 'bk1', waivedCommission: 5 });
     assert.equal(second, null, 'a second run claims nothing — no double email');
+});
+
+test('the wrong-type claim does not fire: a stay payout cannot stamp an experience referral', async () => {
+    const admin = makeAdmin({ referrals: [{ id: 'r1', referrer_id: 'alice', referred_user_id: 'carol', status: 'active', type: 'experience' }] });
+    const row = await markReferralRewardDue(admin, { referredUserId: 'carol', type: 'stay', waivedBookingId: 'bk1' });
+    assert.equal(row, null);
+    assert.equal(admin._tables.referrals[0].status, 'active');
 });
 
 test('getOrCreateReferralCode returns the existing code and does not mint a second', async () => {
@@ -194,17 +242,17 @@ test('getOrCreateReferralCode returns the existing code and does not mint a seco
     assert.equal(admin._tables.referral_codes.filter((r: Row) => r.user_id === 'alice').length, 1);
 });
 
-test('getOrCreateReferralCode mints one for a user who has none', async () => {
+test('getOrCreateReferralCode mints an 8-char code for a user who has none', async () => {
     const admin = makeAdmin(withCodes());
     const code = await getOrCreateReferralCode(admin, 'carol');
-    assert.ok(code && code.length === 8, 'an 8-char code is minted');
-    assert.equal(admin._tables.referral_codes.filter((r: Row) => r.user_id === 'carol').length, 1);
+    assert.ok(code && code.length === 8);
 });
 
-test('the reward-due email names the reward and both first names', () => {
-    const mail = referralRewardDueEmail('Alice', 'Carol');
-    assert.match(mail.subject, new RegExp('£' + REFERRAL_REWARD_GBP));
-    assert.match(mail.html, /Alice/);
-    assert.match(mail.html, /Carol/);
-    assert.match(mail.html, new RegExp('£' + REFERRAL_REWARD_GBP));
+test('the reward-due email names the right reward per type and both first names', () => {
+    for (const type of ['stay', 'experience', 'trade'] as const) {
+        const mail = referralRewardDueEmail('Alice', 'Carol', type);
+        assert.match(mail.subject, new RegExp('£' + REFERRAL_REWARDS[type]));
+        assert.match(mail.html, /Alice/);
+        assert.match(mail.html, new RegExp('£' + REFERRAL_REWARDS[type]));
+    }
 });

@@ -3,12 +3,13 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { ukDate } from '@/lib/dayKey';
-import type { ReferralStatus } from '@/lib/referrals';
+import type { ReferralStatus, ReferralType } from '@/lib/referrals';
 
 export interface AdminReferralRow {
     id: string;
     referrerName: string;
     referredName: string;
+    type: ReferralType | null;
     status: ReferralStatus;
     rewardAmount: number | null;
     waivedCommission: number | null;
@@ -21,15 +22,25 @@ function statusText(status: ReferralStatus): { text: string; tone: string } {
     switch (status) {
         case 'invited':
             return { text: 'Invited', tone: 'bg-slate-100 text-slate-600' };
-        case 'listed':
-            return { text: 'Listed', tone: 'bg-sky-100 text-sky-800' };
-        case 'first_stay_done':
+        case 'active':
+            return { text: 'Active', tone: 'bg-sky-100 text-sky-800' };
+        case 'reward_due':
             return { text: 'Reward due', tone: 'bg-amber-100 text-amber-800' };
         case 'reward_paid':
             return { text: 'Paid', tone: 'bg-emerald-100 text-emerald-800' };
         default:
             return { text: status, tone: 'bg-slate-100 text-slate-600' };
     }
+}
+
+const TYPE_LABEL: Record<ReferralType, string> = {
+    stay: 'Holiday let',
+    experience: 'Experience',
+    trade: 'Service',
+};
+
+function typeText(type: ReferralType | null): string {
+    return type ? TYPE_LABEL[type] : '—';
 }
 
 function money(n: number | null): string {
@@ -67,7 +78,7 @@ export default function ReferralsAdmin({ rows: initial }: { rows: AdminReferralR
         setSavingId(null);
     };
 
-    const due = rows.filter((r) => r.status === 'first_stay_done');
+    const due = rows.filter((r) => r.status === 'reward_due');
 
     return (
         <div className="max-w-4xl mx-auto px-6 py-10">
@@ -103,8 +114,8 @@ export default function ReferralsAdmin({ rows: initial }: { rows: AdminReferralR
                                         {r.referredName}
                                     </div>
                                     <div className="text-sm text-slate-500">
-                                        Referred {ukDate(r.createdAt)}
-                                        {r.status === 'first_stay_done' || r.status === 'reward_paid' ? (
+                                        {typeText(r.type)} · referred {ukDate(r.createdAt)}
+                                        {r.status === 'reward_due' || r.status === 'reward_paid' ? (
                                             <>
                                                 {' · reward '}{money(r.rewardAmount)}
                                                 {r.waivedCommission !== null && r.waivedCommission !== undefined && (
@@ -120,7 +131,7 @@ export default function ReferralsAdmin({ rows: initial }: { rows: AdminReferralR
                                     <span className={'rounded-full px-3 py-1 text-xs font-semibold ' + s.tone}>
                                         {s.text}
                                     </span>
-                                    {r.status === 'first_stay_done' && (
+                                    {r.status === 'reward_due' && (
                                         <button
                                             type="button"
                                             onClick={() => markPaid(r.id)}
