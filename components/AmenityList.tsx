@@ -12,13 +12,13 @@ import { groupAmenities } from '@/lib/amenityGroups';
 const DECIDES_ON = [
     'Hot tub',
     'Sauna',
+    'Pool',
     'Cold plunge',
     'Outdoor shower',
     'Wifi',
     'Free parking on premises',
     'Free street parking',
     'Pets allowed',
-    'Pool',
     'Waterfront',
     'Beach access',
     'Indoor fireplace',
@@ -39,17 +39,20 @@ const DECIDES_ON = [
 const SHOWN = 10;
 const PHONE_SHOWN = 5;
 
-function Row({ name, display = 'flex' }: { name: string; display?: string }) {
+function Row({ name, label, display = 'flex' }: { name: string; label?: string; display?: string }) {
     const Icon = amenityIcon(name);
     return (
         <div className={`${display} items-center gap-4 py-3.5 border-b border-slate-100`}>
             <Icon className="h-6 w-6 flex-none text-slate-700" strokeWidth={1.5} />
-            <span className="text-[15px] text-slate-800">{name}</span>
+            <span className="text-[15px] text-slate-800">{label || name}</span>
         </div>
     );
 }
 
-export default function AmenityList({ amenities }: { amenities: string[] }) {
+// `labels` words an amenity more fully than its stored name, as Airbnb does —
+// "Pool" reads "Private outdoor pool" once the host has said (lib/poolDetails).
+// The icon and the ranking still go by the stored name.
+export default function AmenityList({ amenities, labels = {} }: { amenities: string[]; labels?: Record<string, string> }) {
     const [open, setOpen] = useState(false);
 
     const rank = (a: string) => {
@@ -88,7 +91,7 @@ export default function AmenityList({ amenities }: { amenities: string[] }) {
         <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10">
                 {shown.map((a, i) => (
-                    <Row key={a} name={a} display={i >= PHONE_SHOWN ? 'hidden sm:flex' : 'flex'} />
+                    <Row key={a} name={a} label={labels[a]} display={i >= PHONE_SHOWN ? 'hidden sm:flex' : 'flex'} />
                 ))}
             </div>
 
@@ -136,7 +139,7 @@ export default function AmenityList({ amenities }: { amenities: string[] }) {
                                     <h4 className="text-base font-semibold text-slate-900">{group.label}</h4>
                                     <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-10">
                                         {group.items.map((a) => (
-                                            <Row key={a} name={a} />
+                                            <Row key={a} name={a} label={labels[a]} />
                                         ))}
                                     </div>
                                 </div>

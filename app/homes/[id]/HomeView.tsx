@@ -26,6 +26,7 @@ import { areaForTownKey, areaBySlug, hasCopy, areaCentroid } from '@/config/area
 import ListingCard, { CardListing } from '@/components/ListingCard';
 import PropertyMap from '@/components/PropertyMap';
 import AmenityList from '@/components/AmenityList';
+import { poolLabel, poolBlurb } from '@/lib/poolDetails';
 import NotTakingBookings from '@/components/NotTakingBookings';
 import { isListingBookable, NOT_TAKING_BOOKINGS } from '@/lib/listingBookable';
 import AreaExperiences from '@/components/AreaExperiences';
@@ -103,6 +104,9 @@ function propertyHighlights(home: any): { title: string; detail: string; icon: a
     if (has('Hot tub')) {
         out.push({ title: 'Hot tub', detail: 'Unwind in the hot tub after a day out.', icon: Bath });
     }
+    if (has('Pool')) {
+        out.push({ title: poolLabel(home.pool_access, home.pool_setting), detail: poolBlurb(home.pool_access, home.pool_setting), icon: Waves });
+    }
     if (has('Sauna')) {
         out.push({ title: 'Sauna', detail: 'Warm up in the sauna after a day out.', icon: ThermometerSun });
     }
@@ -173,7 +177,7 @@ export const SITE_URL = 'https://gallowaygetaways.co.uk';
 // the account-deletion migration promises nothing of theirs is left reachable.
 // What /homes/[id] reads. A constant, not inline, so the old-link fallback
 // reads exactly the same columns as the visitor's own query.
-export const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, cancellation_custom_days, non_refundable_option, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood, min_nights, max_nights, advance_notice, preparation_time, max_pets, checkout_tasks, checkout_note, guest_safety, is_luxury';
+export const LISTING_PAGE_COLUMNS = 'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, cancellation_custom_days, non_refundable_option, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value, sleeping_arrangements, neighbourhood, min_nights, max_nights, advance_notice, preparation_time, max_pets, checkout_tasks, checkout_note, guest_safety, is_luxury, pool_access, pool_setting';
 
 // Which statuses a stranger may see, named rather than excluded.
 //
@@ -815,7 +819,7 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                         {home.amenities && home.amenities.length > 0 && (
                             <div id='amenities' className='mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0 scroll-mt-24'>
                                 <h2 className='text-xl font-semibold mb-3'>What this place offers</h2>
-                                <AmenityList amenities={home.amenities} />
+                                <AmenityList amenities={home.amenities} labels={{ Pool: poolLabel(home.pool_access, home.pool_setting) }} />
                             </div>
                         )}
 

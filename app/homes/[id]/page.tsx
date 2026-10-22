@@ -100,6 +100,7 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
     const amenities: string[] = home.amenities || [];
     const highlights: string[] = [];
     if (amenities.indexOf('Hot tub') !== -1) highlights.push('hot tub');
+    if (amenities.indexOf('Pool') !== -1) highlights.push('pool');
     if (amenities.indexOf('Sauna') !== -1) highlights.push('sauna');
     if (amenities.indexOf('Pets allowed') !== -1) highlights.push('dog friendly');
     if (amenities.indexOf('Wifi') !== -1) highlights.push('wifi');
