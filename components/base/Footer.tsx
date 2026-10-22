@@ -48,6 +48,7 @@ const Footer = () => {
                             <li><Link href="/business" className="hover:text-slate-900">Become a host</Link></li>
                             <li><Link href="/dashboard" className="hover:text-slate-900">Host dashboard</Link></li>
                             <li><Link href="/services" className="hover:text-slate-900">Property services</Link></li>
+                            <li><Link href="/refer" className="hover:text-slate-900">Refer a host</Link></li>
                         </ul>
                     </div>
 

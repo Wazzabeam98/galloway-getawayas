@@ -372,6 +372,11 @@ const NavMenu = ({
                             <li className={itemClass}>
                                 <Link href='/business'>Start hosting</Link>
                             </li>
+                            {/* Public page — a signed-out visitor can see the offer
+                                and is asked to sign in when they pick a card. */}
+                            <li className={itemClass}>
+                                <Link href='/refer'>Refer a host</Link>
+                            </li>
                         </>
                     )}
                 </ul>

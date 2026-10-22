@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { COVERAGE_TOWNS } from '@/lib/serviceProviders';
 import { logError } from '@/lib/logError';
+import { attachReferral, REFERRAL_COOKIE } from '@/lib/referrals';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,6 +117,23 @@ export async function POST(request: Request) {
             // owns the row, and the name trigger only runs for a signed-in caller.
             const { error } = await supabase.rpc('submit_service_provider', { p_id: id });
             if (error) return NextResponse.json({ ok: false, error: String(error.message || 'Could not send that.') }, { status: 400 });
+
+            // REFERRAL: submitting a provider is the experience/trade twin of
+            // publishing a listing — the moment they've gone on to run something.
+            // A guest experience (trade 'guest') earns the referrer £25; a host
+            // trade earns £15. Best-effort and owner-scoped (owned() confirmed
+            // provider.owner_id === user.id), so a referral never blocks a submit.
+            try {
+                const refCode = cookies().get(REFERRAL_COOKIE)?.value || '';
+                if (refCode) {
+                    const refType = provider.trade === 'guest' ? 'experience' : 'trade';
+                    await attachReferral(admin, { code: refCode, referredUserId: user.id, stage: 'active', type: refType });
+                }
+            } catch (referralErr) {
+                await logError('services/signup/save: could not record the referral', referralErr, {
+                    path: 'api/services/signup/save', userId: user.id,
+                });
+            }
             return NextResponse.json({ ok: true });
         }
 

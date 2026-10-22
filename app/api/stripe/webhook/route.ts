@@ -20,6 +20,9 @@ import { topUpHostForIncrease } from '@/lib/changePayout';
 import { settleHostDebtSession } from '@/lib/hostDebtSettle';
 import { notifyPaymentFailed } from '@/lib/serviceSubscriptionAlert';
 import { endedByOwnCancellation } from '@/lib/subscriptionCancel';
+import { markReferralRewardDue } from '@/lib/referrals';
+import { referralRewardDueEmail } from '@/lib/referralEmails';
+import { isAutomatedTestAddress } from '@/lib/testAddresses';
 
 export const dynamic = 'force-dynamic';
 
@@ -874,6 +877,15 @@ export async function POST(request: Request) {
             }
 
             if (subscriptionId) {
+                // Read the current state first, so a FIRST paid month (a trade
+                // moving trialing → active) can be told apart from a recovery
+                // (past_due → active), which is not a new reward.
+                const { data: beforeSub } = await admin
+                    .from('service_providers')
+                    .select('owner_id, subscription_status')
+                    .eq('stripe_subscription_id', subscriptionId)
+                    .maybeSingle();
+
                 const { error: statusError } = await admin
                     .from('service_providers')
                     .update(patch)
@@ -885,6 +897,46 @@ export async function POST(request: Request) {
                         statusError,
                         { path: 'stripe/webhook' }
                     );
+                }
+
+                // TRADE REFERRAL REWARD: their first paid month. When a referred
+                // trade first pays — the move from trialing to active, after the
+                // six free months — the referrer's £15 falls due. There is NO
+                // commission waiver: six months free is the trade's own offer, so
+                // the referred trade gets nothing extra, only the referrer is
+                // paid. Best-effort, and a claim (markReferralRewardDue only
+                // matches an 'active' row of type 'trade'), so Stripe firing this
+                // event more than once cannot pay twice.
+                if (!statusError
+                    && event.type === 'customer.subscription.updated'
+                    && status === 'active'
+                    && beforeSub && beforeSub.subscription_status === 'trialing'
+                    && beforeSub.owner_id) {
+                    try {
+                        const claimed = await markReferralRewardDue(admin, {
+                            referredUserId: beforeSub.owner_id,
+                            type: 'trade',
+                        });
+                        if (claimed) {
+                            const { data: referrerUser } = await admin.auth.admin.getUserById(claimed.referrer_id);
+                            const rawReferrerEmail = (referrerUser && referrerUser.user && referrerUser.user.email) || '';
+                            const referrerEmail = isAutomatedTestAddress(rawReferrerEmail) ? '' : rawReferrerEmail;
+                            if (referrerEmail) {
+                                const { data: names } = await admin
+                                    .from('profiles')
+                                    .select('id, first_name, preferred_name')
+                                    .in('id', [claimed.referrer_id, beforeSub.owner_id]);
+                                const byId: Record<string, any> = {};
+                                (names || []).forEach((p: any) => { byId[p.id] = p; });
+                                const referrerName = (byId[claimed.referrer_id] && (byId[claimed.referrer_id].preferred_name || byId[claimed.referrer_id].first_name)) || '';
+                                const referredName = (byId[beforeSub.owner_id] && (byId[beforeSub.owner_id].preferred_name || byId[beforeSub.owner_id].first_name)) || '';
+                                const mail = referralRewardDueEmail(referrerName, referredName, 'trade');
+                                await sendEmail(referrerEmail, mail.subject, mail.html);
+                            }
+                        }
+                    } catch (referralErr) {
+                        await logError('[webhook] trade paid but could not stamp or notify the referral reward', referralErr, { path: 'stripe/webhook' });
+                    }
                 }
             }
         }

@@ -9,6 +9,8 @@ import { readSchedule, arrivalSentence } from '@/lib/payoutTiming';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { providerSharePence } from '@/lib/experienceFunds';
 import { recordCronRun } from '@/lib/cronHeartbeat';
+import { waivableReferralFor, markReferralRewardDue, ReferralRow } from '@/lib/referrals';
+import { referralRewardDueEmail } from '@/lib/referralEmails';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -169,7 +171,7 @@ export async function GET(request: Request) {
             if (provider === undefined) {
                 const { data: p } = await admin
                     .from('service_providers')
-                    .select('id, business_name, contact_email, stripe_account_id, stripe_payouts_enabled')
+                    .select('id, owner_id, business_name, contact_email, stripe_account_id, stripe_payouts_enabled')
                     .eq('id', order.provider_id)
                     .maybeSingle();
                 provider = p || null;
@@ -233,12 +235,29 @@ export async function GET(request: Request) {
             const platformFeePence = order.platform_fee === null || order.platform_fee === undefined
                 ? null
                 : Math.round(Number(order.platform_fee) * 100);
-            const sharePence = providerSharePence({
+
+            // THE REFERRAL WAIVER, the experience twin of host-payouts. If this
+            // provider was referred and their referral is still at 'active', this
+            // order — the first of theirs to pay out — has its commission waived:
+            // the provider keeps the whole kept amount, and the referrer's £25
+            // reward falls due. Done by forcing the fee to zero through the SAME
+            // providerSharePence call (platformFeePence 0 AND commissionRate 0,
+            // because it prefers the frozen fee), so the transfer, its fee
+            // metadata and the clawback ceiling stay consistent. Keyed on the
+            // provider's owner (referrals key on a user id). Stamped only AFTER
+            // the payout is recorded, so a failed run waives again next time.
+            const waivedReferral: ReferralRow | null = await waivableReferralFor(admin, provider.owner_id, 'experience');
+            const normalSharePence = providerSharePence({
                 amountPence,
                 refundedPence,
                 platformFeePence,
                 commissionRate: order.commission_rate,
             });
+            const sharePence = waivedReferral
+                ? providerSharePence({ amountPence, refundedPence, platformFeePence: 0, commissionRate: 0 })
+                : normalSharePence;
+            // What the commission would have been, for the referral record.
+            const waivedCommissionPounds = waivedReferral ? r2((Math.max(0, amountPence - refundedPence) - normalSharePence) / 100) : 0;
 
             if (sharePence <= 0) {
                 // Refunded in full (in the app or the Stripe dashboard): nothing
@@ -327,6 +346,41 @@ export async function GET(request: Request) {
                     );
                 } catch (mailErr) {
                     console.error('[cron/experience-payouts] payout email failed', order.id, mailErr);
+                }
+            }
+
+            // THE REFERRAL REWARD BECOMES DUE. The payout is recorded, so this
+            // experience has completed — if its commission was waived, stamp the
+            // referral reward_due and tell the referrer their £25 is coming. The
+            // update is the claim (only matches a row still 'active' of type
+            // 'experience'), so overlapping runs can't double-email. Best-effort.
+            if (waivedReferral) {
+                try {
+                    const claimed = await markReferralRewardDue(admin, {
+                        referredUserId: provider.owner_id,
+                        type: 'experience',
+                        waivedOrderId: order.id,
+                        waivedCommission: waivedCommissionPounds,
+                    });
+                    if (claimed) {
+                        const { data: referrerUser } = await admin.auth.admin.getUserById(claimed.referrer_id);
+                        const rawReferrerEmail = (referrerUser && referrerUser.user && referrerUser.user.email) || '';
+                        const referrerEmail = isAutomatedTestAddress(rawReferrerEmail) ? '' : rawReferrerEmail;
+                        if (referrerEmail) {
+                            const { data: names } = await admin
+                                .from('profiles')
+                                .select('id, first_name, preferred_name')
+                                .in('id', [claimed.referrer_id, provider.owner_id]);
+                            const byId: Record<string, any> = {};
+                            (names || []).forEach((p: any) => { byId[p.id] = p; });
+                            const referrerName = (byId[claimed.referrer_id] && (byId[claimed.referrer_id].preferred_name || byId[claimed.referrer_id].first_name)) || '';
+                            const referredName = (byId[provider.owner_id] && (byId[provider.owner_id].preferred_name || byId[provider.owner_id].first_name)) || '';
+                            const mail = referralRewardDueEmail(referrerName, referredName, 'experience');
+                            await sendEmail(referrerEmail, mail.subject, mail.html);
+                        }
+                    }
+                } catch (referralErr) {
+                    await logError('experience-payouts: paid the provider but could not stamp or notify the referral reward', referralErr, { path: '/api/cron/experience-payouts' });
                 }
             }
         } catch (err: any) {

@@ -290,17 +290,17 @@ export async function GET(request: Request) {
             }
 
             // THE REFERRAL WAIVER. If this host was referred and their referral
-            // is still sitting at 'listed', this stay — the first of theirs to
+            // is still sitting at 'active', this stay — the first of theirs to
             // reach payout — has its commission waived: the referred host keeps
             // the whole collected amount, and the referrer's reward falls due.
             // Done by forcing the rate to 0 and letting the SAME arithmetic
             // below run (feeAmount(base, 0) is 0), so the transfer, its
             // metadata, the host email and the clawback ceiling all stay
             // consistent through the one existing path — no parallel code. The
-            // referral is stamped to 'first_stay_done' only AFTER the payout is
+            // referral is stamped to 'reward_due' only AFTER the payout is
             // recorded (further down), so a run that fails to pay leaves it
-            // 'listed' and the next run waives again rather than losing it.
-            const waivedReferral: ReferralRow | null = await waivableReferralFor(admin, booking.host_id);
+            // 'active' and the next run waives again rather than losing it.
+            const waivedReferral: ReferralRow | null = await waivableReferralFor(admin, booking.host_id, 'stay');
 
             // Commission comes off the STAY only, never a host-sold extra (the
             // host's own supply — we take nothing on it). commissionableCollected
@@ -576,16 +576,17 @@ export async function GET(request: Request) {
 
             // THE REFERRAL REWARD BECOMES DUE. The payout is recorded, so this
             // stay has completed — if its commission was waived, stamp the
-            // referral 'first_stay_done' and tell the referrer their £50 is
+            // referral 'reward_due' and tell the referrer their £50 is
             // coming. The update is itself the claim: it only matches a row
-            // still at 'listed', so two overlapping runs cannot both email.
+            // still at 'active', so two overlapping runs cannot both email.
             // After the money, like every other step here, and best-effort — a
             // failure is logged, never un-pays a host.
             if (waivedReferral) {
                 try {
                     const claimed = await markReferralRewardDue(admin, {
                         referredUserId: booking.host_id,
-                        bookingId: booking.id,
+                        type: 'stay',
+                        waivedBookingId: booking.id,
                         waivedCommission,
                     });
                     if (claimed) {
@@ -601,7 +602,7 @@ export async function GET(request: Request) {
                             (names || []).forEach((p: any) => { byId[p.id] = p; });
                             const referrerName = (byId[claimed.referrer_id] && (byId[claimed.referrer_id].preferred_name || byId[claimed.referrer_id].first_name)) || '';
                             const referredName = (byId[booking.host_id] && (byId[booking.host_id].preferred_name || byId[booking.host_id].first_name)) || '';
-                            const mail = referralRewardDueEmail(referrerName, referredName);
+                            const mail = referralRewardDueEmail(referrerName, referredName, 'stay');
                             await sendEmail(referrerEmail, mail.subject, mail.html);
                         }
                     }
