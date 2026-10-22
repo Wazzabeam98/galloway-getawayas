@@ -17,13 +17,15 @@ installAliases();
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
-const { checkOverridePatch, checkOverrideDates } = require('../lib/calendarOverrides');
+const { checkOverridePatch, checkOverrideDates, mergeOverrides } = require('../lib/calendarOverrides');
 
 test('the shared check: prices, minimum stays and dates', () => {
     const ok = checkOverridePatch({ dates: ['2026-12-14', '2026-12-15', '2026-12-14'], is_blocked: false, price_override: '150', min_nights_override: '3' });
     assert.deepEqual(ok, { ok: true, patch: { dates: ['2026-12-14', '2026-12-15'], is_blocked: false, price_override: 150, min_nights_override: 3 } });
     assert.deepEqual(checkOverridePatch({ dates: ['2026-12-14'], price_override: '', min_nights_override: '' }).patch,
-        { dates: ['2026-12-14'], is_blocked: false, price_override: null, min_nights_override: null }, 'blank means the default');
+        { dates: ['2026-12-14'], price_override: null, min_nights_override: null }, 'blank means the default');
+    assert.deepEqual(checkOverridePatch({ dates: ['2026-12-14'], price_override: '90' }).patch,
+        { dates: ['2026-12-14'], price_override: 90 }, 'a field not sent is left alone — not defaulted');
     assert.equal(checkOverridePatch({ dates: ['2026-12-14'], is_blocked: true }).patch.is_blocked, true);
     for (const bad of [
         { dates: [] },
@@ -36,6 +38,25 @@ test('the shared check: prices, minimum stays and dates', () => {
         { dates: Array.from({ length: 401 }, (_, i) => '2027-01-01') },
     ]) assert.equal(checkOverridePatch(bad).ok, false, JSON.stringify(bad).slice(0, 80));
     assert.deepEqual(checkOverrideDates({ dates: ['2026-12-14'] }), { ok: true, dates: ['2026-12-14'] });
+});
+
+// James (Silver Birch, 22/10/2026): setting a price must not force a minimum
+// stay, and a price set across a month must not unblock its blocked nights.
+test('each setting stands on its own: a price leaves blocks and minimum stays alone', () => {
+    const existing = {
+        '2026-12-14': { is_blocked: true, price_override: null, min_nights_override: null },
+        '2026-12-15': { is_blocked: false, price_override: 120, min_nights_override: 4 },
+    };
+    const price = mergeOverrides({ dates: ['2026-12-14', '2026-12-15', '2026-12-16'], price_override: 99 }, existing);
+    assert.deepEqual(price.upsert, [
+        { date: '2026-12-14', is_blocked: true, price_override: 99, min_nights_override: null },
+        { date: '2026-12-15', is_blocked: false, price_override: 99, min_nights_override: 4 },
+        { date: '2026-12-16', is_blocked: false, price_override: 99, min_nights_override: null },
+    ]);
+    const min = mergeOverrides({ dates: ['2026-12-15'], min_nights_override: 7 }, existing);
+    assert.equal(min.upsert[0].price_override, 120, 'a minimum stay leaves the price alone');
+    const back = mergeOverrides({ dates: ['2026-12-15'], price_override: null, min_nights_override: null }, existing);
+    assert.deepEqual(back, { upsert: [], clear: ['2026-12-15'] }, 'a date back on every default is cleared, not kept empty');
 });
 
 test('the page no longer writes calendar_overrides from the browser, and checks before sending', () => {
@@ -66,6 +87,7 @@ function load() {
         return lid === LISTING && (uid === 'owner' || uid === 'calendar-cohost') ? { listingId: lid } : null;
     } });
     stubModule('@/lib/supabaseAdmin', { adminClient: () => ({ from: (t: string) => ({
+        select: () => ({ eq: () => ({ in: async () => ({ data: [], error: null }) }) }),
         upsert: async (rows: any) => { written.push({ t, rows }); return { error: null }; },
         delete: () => ({ eq: () => ({ in: async (_c: string, d: string[]) => { written.push({ t, deleted: d }); return { error: null }; } }) }),
     }) }) });

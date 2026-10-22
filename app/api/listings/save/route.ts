@@ -15,6 +15,7 @@ import { checkListing } from '@/lib/access';
 import { isAdmin, recordAdminAction, cleanReason, REMOVED_BUCKET } from '@/lib/adminAudit';
 import { fromRow, newProblems } from '@/lib/listingRules';
 import { cancelDaysProblem } from '@/lib/cancellation';
+import { cleanWeekdays } from '@/lib/stayRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -137,6 +138,48 @@ export async function POST(request: Request) {
                 'pool_access' in safe ? safe.pool_access : before.pool_access,
                 'pool_setting' in safe ? safe.pool_setting : before.pool_setting,
             ));
+        }
+
+        // Changeover days (Restrict check-in / checkout days): a non-empty list
+        // of weekdays 0–6, cleaned by the same helper the calendar's
+        // Availability tab uses (lib/stayRules) — a guest must always have at
+        // least one day to arrive and one to leave.
+        for (const key of ['checkin_days', 'checkout_days']) {
+            if (!(key in safe)) continue;
+            const days = cleanWeekdays(safe[key]);
+            if (!days) {
+                return NextResponse.json({ ok: false, error: key === 'checkin_days'
+                    ? 'Tick at least one day guests can check in.'
+                    : 'Tick at least one day guests can check out.' }, { status: 400 });
+            }
+            safe[key] = days;
+        }
+
+        // The rest of the Availability tab, checked here too rather than only in
+        // the browser. Each setting is saved on its own: a minimum stay is never
+        // filled in because something else (a price) was saved alongside it.
+        if ('min_nights' in safe) {
+            const n = Number(safe.min_nights);
+            if (!Number.isInteger(n) || n < 1 || n > 365) {
+                return NextResponse.json({ ok: false, error: 'The minimum stay must be a whole number of nights, from 1 to 365.' }, { status: 400 });
+            }
+            safe.min_nights = n;
+        }
+        if ('max_nights' in safe && safe.max_nights !== null && safe.max_nights !== '') {
+            const n = Number(safe.max_nights);
+            if (!Number.isInteger(n) || n < 1 || n > 365) {
+                return NextResponse.json({ ok: false, error: 'The maximum stay must be a whole number of nights, from 1 to 365.' }, { status: 400 });
+            }
+            safe.max_nights = n;
+        } else if ('max_nights' in safe) {
+            safe.max_nights = null;
+        }
+        if ('min_nights' in safe || 'max_nights' in safe) {
+            const min = 'min_nights' in safe ? safe.min_nights : Number(before.min_nights || 1);
+            const max = 'max_nights' in safe ? safe.max_nights : before.max_nights;
+            if (max && min > max) {
+                return NextResponse.json({ ok: false, error: 'The minimum stay can’t be longer than the maximum.' }, { status: 400 });
+            }
         }
 
         // "Show the precise location" is a yes/no and nothing else — anything

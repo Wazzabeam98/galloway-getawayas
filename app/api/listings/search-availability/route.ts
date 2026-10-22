@@ -2,6 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { icalBlockedListingIds } from '@/lib/availability';
+import { changeoverProblem } from '@/lib/stayRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,11 +66,23 @@ export async function POST(request: Request) {
         // inside that call because some carry a guest name or reservation link.
         const icalBlocked = await icalBlockedListingIds(ids, from, to);
 
+        // The host's changeover days (lib/stayRules): a Tuesday arrival is not
+        // free at a place that only takes Monday and Friday changeovers, so it
+        // isn't offered for those dates — the booking card would grey them out.
+        const { data: rules } = await supabase
+            .from('listings')
+            .select('id, checkin_days, checkout_days')
+            .in('id', ids);
+        const wrongDay = (rules || [])
+            .filter((l: any) => changeoverProblem(l, from, to) !== null)
+            .map((l: any) => l.id);
+
         const unavailable = Array.from(
             new Set<string>([
                 ...(clashing || []).map((b: any) => b.listing_id),
                 ...(blocked || []).map((b: any) => b.listing_id),
                 ...Array.from(icalBlocked),
+                ...wrongDay,
             ]),
         );
 

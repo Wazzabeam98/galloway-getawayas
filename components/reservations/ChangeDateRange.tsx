@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
 import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
-import { checkInPickable, checkoutPickable, nightsBetweenKeys } from '@/lib/stayRules';
+import { checkInPickable, checkoutPickable, nightsBetweenKeys, arrivalAllowed, departureAllowed, changeoverNote, type StayRulesListing } from '@/lib/stayRules';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 
@@ -54,6 +54,10 @@ export default function ChangeDateRange({
     // before then, because an empty set would show every night as free. A set
     // of NIGHT keys (not days), the same shape the booking widget reasons about.
     const [unavailable, setUnavailable] = useState<Set<string> | null>(null);
+    // The host's changeover days. They apply to a date being MOVED to: the
+    // booking's own check-in and checkout stay pickable whatever the host has
+    // ticked since, the same allowance the change route makes.
+    const [changeover, setChangeover] = useState<StayRulesListing>({});
 
     // The booking's own nights, which stay pickable.
     const ownNights = useMemo(() => {
@@ -77,7 +81,11 @@ export default function ChangeDateRange({
             const nights = new Set<string>();
             try {
                 const res = await fetch('/api/listings/calendar?listing=' + encodeURIComponent(listingId));
-                if (res.ok) { const data = await res.json(); (data.blockedNights || []).forEach((k: string) => nights.add(k)); }
+                if (res.ok) {
+                    const data = await res.json();
+                    (data.blockedNights || []).forEach((k: string) => nights.add(k));
+                    if (live) setChangeover({ checkin_days: data.checkinDays || null, checkout_days: data.checkoutDays || null });
+                }
             } catch { /* fall through with what we have; the change route re-checks */ }
             // The guest already holds their own nights — never strike those out.
             ownNights.forEach((k) => nights.delete(k));
@@ -96,10 +104,13 @@ export default function ChangeDateRange({
     const dayPickable = (k: string): boolean => {
         if (!unavailable) return true;
         if (choosingCheckout && startKey && nightsBetweenKeys(startKey, k) > 0) {
+            if (k !== ownCheckOut.slice(0, 10) && !departureAllowed(changeover, k)) return false;
             return checkoutPickable(startKey, k, unavailable, 1, null);
         }
+        if (k !== ownCheckIn.slice(0, 10) && !arrivalAllowed(changeover, k)) return false;
         return checkInPickable(k, unavailable);
     };
+    const changeoverLine = changeoverNote(changeover);
 
     // Struck-through numbers on nights the stay can't use — the same treatment
     // the booking widget uses, so grey is never the only signal. A taken night
@@ -138,7 +149,7 @@ export default function ChangeDateRange({
         // picks a check-in (checkout days are decided per check-in).
         observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
         return () => observer.disconnect();
-    }, [unavailable, choosingCheckout, startKey]);
+    }, [unavailable, choosingCheckout, startKey, changeover]);
 
     const range: Range = {
         startDate: checkIn ? fromKey(checkIn) : undefined,
@@ -192,6 +203,9 @@ export default function ChangeDateRange({
                 inputRanges={[]}
                 dayContentRenderer={renderDay}
             />
+            {changeoverLine && (
+                <p className="border-t px-4 py-2 text-xs text-slate-500">{changeoverLine}</p>
+            )}
         </div>
     );
 }

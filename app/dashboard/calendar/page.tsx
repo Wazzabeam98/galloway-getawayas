@@ -13,7 +13,7 @@ import {
 import {
     minNightsFor, prepBufferNights, prepDays, earliestCheckInKey,
     latestCheckOutKey, londonTodayKey, addDaysKey, nightsBetweenKeys,
-    unsellableNights,
+    unsellableNights, cleanWeekdays, ALL_WEEKDAYS, WEEKDAY_NAMES,
 } from '@/lib/stayRules';
 import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
 import { firstName, getImageUrl } from "@/lib/utils";
@@ -97,6 +97,8 @@ interface Listing {
     advance_notice: string;
     preparation_time: string;
     availability_window: string;
+    checkin_days: number[] | null;
+    checkout_days: number[] | null;
 }
 
 interface Override {
@@ -153,6 +155,51 @@ const ADVANCE_NOTICE_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '7 days
 const PREP_TIME_OPTIONS = ['None', '1 day', '2 days', '3 days'];
 const AVAILABILITY_WINDOW_OPTIONS = ['3 months', '6 months', '9 months', '12 months', 'All future dates'];
 
+// Monday-first, as the calendar grid is.
+const WEEK_MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
+
+// A listing's ticked days as a stable string, for the unsaved-edit comparison.
+const daysKey = (days: number[] | null | undefined) => (cleanWeekdays(days) || ALL_WEEKDAYS).join(',');
+
+// One row of seven day toggles — "Restrict check-in days" / "Restrict checkout
+// days". A ticked day is one guests may arrive (or leave) on.
+function WeekdayPicker({ label, note, value, onChange }: { label: string; note: string; value: number[]; onChange: (v: number[]) => void }) {
+    const toggle = (d: number) => {
+        const on = value.indexOf(d) !== -1;
+        // Never untick the last day: a guest must always have one.
+        if (on && value.length === 1) return;
+        onChange(on ? value.filter((x) => x !== d) : value.concat(d).sort((a, b) => a - b));
+    };
+    return (
+        <fieldset>
+            <legend className="block text-sm font-semibold text-slate-800 mb-1">{label}</legend>
+            <p className="text-xs text-slate-400 mb-2">{note}</p>
+            <div className="grid grid-cols-7 gap-1">
+                {WEEK_MON_FIRST.map((d) => {
+                    const on = value.indexOf(d) !== -1;
+                    return (
+                        <button
+                            key={d}
+                            type="button"
+                            role="checkbox"
+                            aria-checked={on}
+                            aria-label={WEEKDAY_NAMES[d]}
+                            onClick={() => toggle(d)}
+                            className={[
+                                'h-9 rounded-lg border text-xs font-semibold transition',
+                                'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400',
+                                on ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-400 hover:border-slate-400',
+                            ].join(' ')}
+                        >
+                            {WEEKDAY_NAMES[d].slice(0, 2)}
+                        </button>
+                    );
+                })}
+            </div>
+        </fieldset>
+    );
+}
+
 // Shown on a listing-settings tab (Pricing, Fees, Availability) whenever its
 // form holds an edit that has not been saved. One note, used by all three, so a
 // typed-but-unsaved value — a 3-night minimum, a new price, a cleaning fee —
@@ -204,6 +251,12 @@ export default function CalendarPage() {
     const [panelBlocked, setPanelBlocked] = useState(false);
     const [panelPrice, setPanelPrice] = useState('');
     const [panelMinNights, setPanelMinNights] = useState('');
+    // What the panel opened with, so Save sends ONLY what the host changed
+    // (lib/calendarOverrides): a price set over a month must not unblock the
+    // blocked nights in it or stamp a minimum stay on every one of them.
+    // 'mixed' = the selected dates differ, shown as "Mixed" until changed.
+    const [panelBlockedTouched, setPanelBlockedTouched] = useState(false);
+    const [panelStart, setPanelStart] = useState<{ blocked: boolean | 'mixed'; price: string; min: string }>({ blocked: false, price: '', min: '' });
     const [saving, setSaving] = useState(false);
 
     // Listing-wide settings form state (Pricing / Fees / Availability tabs)
@@ -220,6 +273,8 @@ export default function CalendarPage() {
     const [advanceNotice, setAdvanceNotice] = useState('Same day');
     const [preparationTime, setPreparationTime] = useState('None');
     const [availabilityWindow, setAvailabilityWindow] = useState('9 months');
+    const [checkinDays, setCheckinDays] = useState<number[]>(ALL_WEEKDAYS);
+    const [checkoutDays, setCheckoutDays] = useState<number[]>(ALL_WEEKDAYS);
     const [savingSettings, setSavingSettings] = useState(false);
 
     const selectedListing = listings.find((l) => l.id === selectedListingId);
@@ -243,7 +298,7 @@ export default function CalendarPage() {
                 const { data } = ids.length
                     ? await supabase
                         .from('listings')
-                        .select('id, title, price_per_night, min_nights, max_nights, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, damage_deposit, advance_notice, preparation_time, availability_window')
+                        .select('id, title, price_per_night, min_nights, max_nights, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, damage_deposit, advance_notice, preparation_time, availability_window, checkin_days, checkout_days')
                         .in('id', ids)
                         // A hidden listing still has guests arriving, so its
                         // calendar has to stay reachable.
@@ -274,6 +329,8 @@ export default function CalendarPage() {
         setAdvanceNotice(selectedListing.advance_notice || 'Same day');
         setPreparationTime(selectedListing.preparation_time || 'None');
         setAvailabilityWindow(selectedListing.availability_window || '9 months');
+        setCheckinDays(cleanWeekdays(selectedListing.checkin_days) || ALL_WEEKDAYS);
+        setCheckoutDays(cleanWeekdays(selectedListing.checkout_days) || ALL_WEEKDAYS);
     }, [selectedListingId, selectedListing]);
 
     // Switching to a property they only have calendar access to must not leave
@@ -529,27 +586,77 @@ export default function CalendarPage() {
         return key >= lo && key <= hi;
     };
 
+    // Every day key from lo to hi, inclusive.
+    const keysBetween = (a: string, b: string) => {
+        const lo = a < b ? a : b;
+        const hi = a < b ? b : a;
+        const out: string[] = [];
+        for (let k = lo; k <= hi; k = addDaysKey(k, 1)) out.push(k);
+        return out;
+    };
+
+    // Open the panel on a run of dates, showing what they share. Where the
+    // dates differ (one blocked, one not; two different prices) the field reads
+    // "Mixed" and is left alone on save unless the host changes it.
+    const openPanelOn = (start: string, end: string) => {
+        const keys = keysBetween(start, end);
+        const same = (vals: string[]) => (vals.every((v) => v === vals[0]) ? vals[0] : null);
+        const blockedVals = keys.map((k) => (overrides[k]?.is_blocked ? '1' : ''));
+        const priceVals = keys.map((k) => (overrides[k]?.price_override ? String(overrides[k].price_override) : ''));
+        const minVals = keys.map((k) => (overrides[k]?.min_nights_override ? String(overrides[k].min_nights_override) : ''));
+        const b = same(blockedVals);
+        const pr = same(priceVals);
+        const mn = same(minVals);
+        const startState = {
+            blocked: b === null ? 'mixed' as const : b === '1',
+            price: pr === null ? 'mixed' : pr,
+            min: mn === null ? 'mixed' : mn,
+        };
+        setPanelStart(startState);
+        setPanelBlockedTouched(false);
+        setPanelBlocked(startState.blocked === true);
+        setPanelPrice(pr === null ? '' : pr);
+        setPanelMinNights(mn === null ? '' : mn);
+        setPanelOpen(true);
+        setRightTab('manage');
+        // On a phone the panel sits under the calendar — bring it up.
+        if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) {
+            setTimeout(() => document.getElementById('dates-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+        }
+    };
+
+    // As on Airbnb: a tap opens the panel on that day; a second tap makes it a
+    // run from the first day to this one; the next tap starts again. Nights
+    // already taken can't be the day you tap, but a run may pass over them —
+    // a price or a minimum stay set across a booked or synced night simply
+    // waits there for the next time it is free.
     const handleDayClick = (key: string) => {
         if (key < todayKey) return;
         if (takenByNight[key]) return;
 
-        if (!selectionStart || selectionEnd) {
-            setSelectionStart(key);
-            setSelectionEnd(null);
+        if (panelOpen && selectionStart && (!selectionEnd || selectionEnd === selectionStart) && key !== selectionStart) {
+            const start = key < selectionStart ? key : selectionStart;
+            const end = key < selectionStart ? selectionStart : key;
+            setSelectionStart(start);
+            setSelectionEnd(end);
+            openPanelOn(start, end);
             return;
         }
 
-        const start = key < selectionStart ? key : selectionStart;
-        const end = key < selectionStart ? selectionStart : key;
-        setSelectionStart(start);
-        setSelectionEnd(end);
+        setSelectionStart(key);
+        setSelectionEnd(key);
+        openPanelOn(key, key);
+    };
 
-        const existing = overrides[start];
-        setPanelBlocked(existing?.is_blocked || false);
-        setPanelPrice(existing?.price_override ? String(existing.price_override) : '');
-        setPanelMinNights(existing?.min_nights_override ? String(existing.min_nights_override) : '');
-        setPanelOpen(true);
-        setRightTab('manage');
+    // The whole month on screen, from today if it has started.
+    const selectWholeMonth = () => {
+        const first = format(startOfMonth(month), 'yyyy-MM-dd');
+        const last = format(endOfMonth(month), 'yyyy-MM-dd');
+        const start = first < todayKey ? todayKey : first;
+        if (start > last) return;
+        setSelectionStart(start);
+        setSelectionEnd(last);
+        openPanelOn(start, last);
     };
 
     const closePanel = () => {
@@ -578,12 +685,16 @@ export default function CalendarPage() {
     const saveOverrides = async () => {
         if (!selectionStart) return;
 
-        const checked = checkOverridePatch({
-            dates: selectedKeys(),
-            is_blocked: panelBlocked,
-            price_override: panelPrice,
-            min_nights_override: panelMinNights,
-        });
+        // Only what was changed — see panelStart.
+        const changes: Record<string, any> = { dates: selectedKeys() };
+        if (panelBlocked !== (panelStart.blocked === true) || (panelStart.blocked === 'mixed' && panelBlockedTouched)) changes.is_blocked = panelBlocked;
+        if (panelPrice.trim() !== (panelStart.price === 'mixed' ? '' : panelStart.price)) changes.price_override = panelPrice.trim();
+        if (panelMinNights.trim() !== (panelStart.min === 'mixed' ? '' : panelStart.min)) changes.min_nights_override = panelMinNights.trim();
+        if (Object.keys(changes).length === 1) {
+            toast.info('Nothing has changed for those dates.', { theme: 'colored' });
+            return;
+        }
+        const checked = checkOverridePatch(changes);
         if (!checked.ok) {
             toast.error((checked as { error: string }).error, { theme: 'colored' });
             return;
@@ -604,6 +715,7 @@ export default function CalendarPage() {
 
             const map = { ...overrides };
             (data.rows || []).forEach((r: any) => { map[r.date] = r as Override; });
+            (data.cleared || []).forEach((d: string) => { delete map[d]; });
             setOverrides(map);
 
             toast.success('Calendar updated.', { theme: 'colored' });
@@ -744,13 +856,31 @@ export default function CalendarPage() {
         notice: selectedListing?.advance_notice || 'Same day',
         prep: selectedListing?.preparation_time || 'None',
         window: selectedListing?.availability_window || '9 months',
+        checkin: daysKey(selectedListing?.checkin_days),
+        checkout: daysKey(selectedListing?.checkout_days),
     };
     const availabilityDirty =
         minNightsGlobal !== savedAvailability.min ||
         maxNightsGlobal !== savedAvailability.max ||
         advanceNotice !== savedAvailability.notice ||
         preparationTime !== savedAvailability.prep ||
-        availabilityWindow !== savedAvailability.window;
+        availabilityWindow !== savedAvailability.window ||
+        daysKey(checkinDays) !== savedAvailability.checkin ||
+        daysKey(checkoutDays) !== savedAvailability.checkout;
+
+    // Each Availability setting is saved on its own: only the ones changed go
+    // to the server, so saving one never re-writes (or defaults) another.
+    const availabilityChanges = () => {
+        const out: Record<string, any> = {};
+        if (minNightsGlobal !== savedAvailability.min) out.min_nights = Math.max(1, Number(minNightsGlobal) || 1);
+        if (maxNightsGlobal !== savedAvailability.max) out.max_nights = maxNightsGlobal ? Number(maxNightsGlobal) : null;
+        if (advanceNotice !== savedAvailability.notice) out.advance_notice = advanceNotice;
+        if (preparationTime !== savedAvailability.prep) out.preparation_time = preparationTime;
+        if (availabilityWindow !== savedAvailability.window) out.availability_window = availabilityWindow;
+        if (daysKey(checkinDays) !== savedAvailability.checkin) out.checkin_days = checkinDays;
+        if (daysKey(checkoutDays) !== savedAvailability.checkout) out.checkout_days = checkoutDays;
+        return out;
+    };
 
     // The same unsaved-edit trap on the Pricing and Fees tabs — the form holds
     // local state until Save, so a typed price or fee can sit there looking set.
@@ -787,7 +917,18 @@ export default function CalendarPage() {
                         <button type="button" onClick={() => setMonth(subMonths(month, 1))} className="p-2 rounded-full hover:bg-slate-100">
                             <ChevronLeft className="w-5 h-5" />
                         </button>
-                        <h2 className="text-lg font-bold text-slate-900">{format(month, 'MMMM yyyy')}</h2>
+                        <div className="flex flex-col items-center">
+                            <h2 className="text-lg font-bold text-slate-900">{format(month, 'MMMM yyyy')}</h2>
+                            {format(endOfMonth(month), 'yyyy-MM-dd') >= todayKey && (
+                                <button
+                                    type="button"
+                                    onClick={selectWholeMonth}
+                                    className="mt-0.5 text-xs font-semibold text-slate-600 underline underline-offset-2 hover:text-slate-900"
+                                >
+                                    Select all of {format(month, 'MMMM')}
+                                </button>
+                            )}
+                        </div>
                         <button type="button" onClick={() => setMonth(addMonths(month, 1))} className="p-2 rounded-full hover:bg-slate-100">
                             <ChevronRight className="w-5 h-5" />
                         </button>
@@ -835,9 +976,11 @@ export default function CalendarPage() {
                                                     'relative h-[4.75rem] border border-slate-100 p-1.5 text-left align-top transition',
                                                     // Focus ring for keyboard users only — a click must not leave one behind.
                                                     'focus:outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400',
-                                                    !inMonth ? 'bg-slate-50/70' : 'bg-white',
-                                                    clickable ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default',
-                                                    selected ? 'z-10 ring-2 ring-inset ring-slate-900' : '',
+                                                    // Selected: a flat tint under the bars, never raised over
+                                                    // them, so a month selected across booked and synced
+                                                    // stays still shows every stay.
+                                                    selected ? 'bg-slate-200/70' : !inMonth ? 'bg-slate-50/70' : 'bg-white',
+                                                    clickable ? (selected ? 'cursor-pointer' : 'hover:bg-slate-50 cursor-pointer') : 'cursor-default',
                                                 ].join(' ')}
                                                 style={orphan ? { backgroundImage: MIN_STAY_HATCH } : undefined}
                                             >
@@ -1011,7 +1154,7 @@ export default function CalendarPage() {
                         </div>
                     </div>
 
-                    <p className="text-xs text-slate-400 mt-3">Click a free date, then another, to set a price, a minimum stay or to block those nights.</p>
+                    <p className="text-xs text-slate-400 mt-3">Tap a date to change it, or tap a second date to change every night in between. Nights booked here or on another calendar keep their booking.</p>
                 </div>
 
                 {/* Right column: tabs + panel */}
@@ -1031,7 +1174,7 @@ export default function CalendarPage() {
 
                     {rightTab === 'manage' && (
                         panelOpen && selectionStart ? (
-                            <div className="border rounded-2xl p-5">
+                            <div id="dates-panel" className="border rounded-2xl p-5 scroll-mt-24">
                                 {/* The dates this panel is about, named at the top (from → to, our
                                     usual DD/MM/YYYY) as Airbnb does, so the controls below are never
                                     ambiguous about which nights they change. */}
@@ -1052,10 +1195,16 @@ export default function CalendarPage() {
                                 <div className="flex items-center justify-between mb-4 p-3 border rounded-xl">
                                     <span className="text-sm font-medium text-slate-800">
                                         Block these dates <span className="font-normal text-slate-400">({rangeLabel(selectionStart, selectionEnd)})</span>
+                                        {panelStart.blocked === 'mixed' && !panelBlockedTouched && (
+                                            <span className="block text-xs font-normal text-slate-400">Some are blocked — left as they are unless you change this.</span>
+                                        )}
                                     </span>
                                     <button
                                         type="button"
-                                        onClick={() => setPanelBlocked(!panelBlocked)}
+                                        role="switch"
+                                        aria-checked={panelBlocked}
+                                        aria-label="Block these dates"
+                                        onClick={() => { setPanelBlocked(!panelBlocked); setPanelBlockedTouched(true); }}
                                         className={`w-11 h-6 rounded-full relative transition ${panelBlocked ? 'bg-slate-900' : 'bg-slate-300'}`}
                                     >
                                         <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${panelBlocked ? 'left-5' : 'left-0.5'}`} />
@@ -1069,7 +1218,7 @@ export default function CalendarPage() {
                                     type="number"
                                     value={panelPrice}
                                     onChange={(e) => setPanelPrice(e.target.value)}
-                                    placeholder={selectedListing ? `Default: ${formatPrice(selectedListing.price_per_night)}` : 'Default'}
+                                    placeholder={panelStart.price === 'mixed' ? 'Mixed — left as they are' : selectedListing ? `Default: ${formatPrice(selectedListing.price_per_night)}` : 'Default'}
                                     className="w-full p-2.5 border rounded-lg text-sm mb-4"
                                 />
 
@@ -1081,9 +1230,12 @@ export default function CalendarPage() {
                                     min={1}
                                     value={panelMinNights}
                                     onChange={(e) => setPanelMinNights(e.target.value)}
-                                    placeholder={`Default: ${selectedListing?.min_nights || 1} night(s)`}
-                                    className="w-full p-2.5 border rounded-lg text-sm mb-6"
+                                    placeholder={panelStart.min === 'mixed' ? 'Mixed — left as they are' : `Default: ${selectedListing?.min_nights || 1} night(s)`}
+                                    className="w-full p-2.5 border rounded-lg text-sm mb-2"
                                 />
+                                <p className="text-xs text-slate-400 mb-6">
+                                    Each one is saved on its own — a price leaves the minimum stay alone, and the other way round. Leave a box empty to use your default.
+                                </p>
 
                                 <button
                                     type="button"
@@ -1104,7 +1256,7 @@ export default function CalendarPage() {
                             </div>
                         ) : (
                             <div className="border rounded-2xl p-6 text-center text-sm text-slate-400">
-                                Select a date (or a range) on the calendar to manage it.
+                                Tap a date on the calendar — or a second one for a run of dates — to change the price, the minimum stay or block it.
                             </div>
                         )
                     )}
@@ -1290,16 +1442,24 @@ export default function CalendarPage() {
                                     {AVAILABILITY_WINDOW_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                                 </select>
                             </div>
+                            <div className="border-t pt-5 space-y-5">
+                                <WeekdayPicker
+                                    label="Restrict check-in days"
+                                    note="Guests can only arrive on the days ticked."
+                                    value={checkinDays}
+                                    onChange={setCheckinDays}
+                                />
+                                <WeekdayPicker
+                                    label="Restrict checkout days"
+                                    note="Guests can only leave on the days ticked."
+                                    value={checkoutDays}
+                                    onChange={setCheckoutDays}
+                                />
+                            </div>
                             <button
                                 type="button"
                                 disabled={savingSettings || !availabilityDirty}
-                                onClick={() => saveListingSettings({
-                                    min_nights: Math.max(1, Number(minNightsGlobal) || 1),
-                                    max_nights: maxNightsGlobal ? Number(maxNightsGlobal) : null,
-                                    advance_notice: advanceNotice,
-                                    preparation_time: preparationTime,
-                                    availability_window: availabilityWindow,
-                                })}
+                                onClick={() => saveListingSettings(availabilityChanges())}
                                 className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
                                 {savingSettings ? 'Saving...' : availabilityDirty ? 'Save' : 'Saved'}
