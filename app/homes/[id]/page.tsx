@@ -16,7 +16,7 @@ export const revalidate = 300;
 import type { Metadata } from 'next';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { formatPrice } from '@/lib/formatMoney';
-import { getImageUrl } from '@/lib/utils';
+import { shareImageUrl } from '@/lib/utils';
 import { listingSeoTitle } from '@/lib/seoTitle';
 import { describePlace } from '@/lib/propertyTypes';
 import HomeView, { placeSummary, SITE_URL } from './HomeView';
@@ -112,8 +112,10 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
         `from ${formatPrice(home.price_per_night)} per night.${extras} ` +
         `Book direct with a local host.`;
 
+    // The cover photo, resized to a 1200×630 JPEG the social scrapers will fetch
+    // (see shareImageUrl). The logo is the fallback ONLY when there is no photo.
     const image = home.images && home.images.length > 0
-        ? getImageUrl(home.images[0])
+        ? shareImageUrl(home.images[0])
         : `${SITE_URL}/images/og-default.jpg`;
 
     // Only a published listing belongs in the index. A hidden one is

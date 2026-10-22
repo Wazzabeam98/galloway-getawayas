@@ -26,7 +26,7 @@ import { loadLiveProvider, loadPausedProvider } from '@/lib/experiencesData';
 import { loadExperienceReviews } from '@/lib/experienceReviews';
 import { providerResponsiveness } from '@/lib/hostResponsiveness';
 import { ExperiencePageView, PausedExperienceView } from '@/components/marketplace/ExperiencePageView';
-import { getImageUrl } from '@/lib/utils';
+import { getImageUrl, shareImageUrl } from '@/lib/utils';
 import { guestCategory } from '@/lib/serviceProviders';
 import type { MpProvider } from '@/lib/experiencesData';
 import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
@@ -187,8 +187,11 @@ export async function generateMetadata(
     // snippet is identical everywhere and never carries arrival logistics (F6).
     const description = experienceSnippet(name, guestCategory(data), data.based_line);
 
+    // The cover photo (or the host's headshot), resized to a 1200×630 JPEG the
+    // social scrapers will fetch (shareImageUrl). No photo at all falls back to
+    // the site logo from the root layout, exactly as a listing with no photos.
     const key = (Array.isArray(data.photos) && data.photos[0]) || data.headshot;
-    const image = key ? getImageUrl(key) : undefined;
+    const image = key ? shareImageUrl(key) : undefined;
 
     return {
         title: name,
@@ -201,7 +204,7 @@ export async function generateMetadata(
             siteName: 'Galloway Getaways',
             title: name,
             description,
-            ...(image ? { images: [{ url: image, alt: name }] } : {}),
+            ...(image ? { images: [{ url: image, width: 1200, height: 630, alt: name }] } : {}),
         },
         twitter: {
             card: 'summary_large_image',
