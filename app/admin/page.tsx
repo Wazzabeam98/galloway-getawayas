@@ -31,6 +31,11 @@ const tools = [
         blurb: 'What each property is charged. Blank means the standard rate.',
     },
     {
+        href: '/admin/referrals',
+        title: 'Referrals',
+        blurb: 'Who referred whom, and the £50 rewards due. Mark one paid once you’ve sent the bank transfer.',
+    },
+    {
         href: '/admin/earnings',
         title: 'Earnings by property',
         blurb: 'Every property ranked by what it has taken this year.',

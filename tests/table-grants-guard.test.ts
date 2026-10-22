@@ -58,6 +58,16 @@ const SERVICE_ROLE_ONLY: ServiceOnly[] = [
         migration: '20261021160837_listing_notification_subscribers.sql',
         reason: 'extra addresses an owner forwards a listing\'s booking emails to, plus the one-time confirm-token hash; written and read only through app/api/listings/[id]/notification-emails (owner or full-access co-host) and the confirm/unsubscribe pages, all with the service role',
     },
+    {
+        table: 'referral_codes',
+        migration: '20261022111408_host_referrals.sql',
+        reason: 'each user\'s stable personal referral-link code; minted and read by lib/referrals through server routes only, never touched by the browser',
+    },
+    {
+        table: 'referrals',
+        migration: '20261022111408_host_referrals.sql',
+        reason: 'who referred whom plus the reward ledger (reward_amount is a money column); attached by the auth callback and listings/publish, waived+stamped by the host-payouts cron, marked paid via /api/admin/referrals, all with the service role',
+    },
 ];
 
 const code = (sql: string) => sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
