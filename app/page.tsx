@@ -157,8 +157,9 @@ export default async function HomePage() {
 
     // The browse-only sections, server-rendered once and handed to the shop:
     // live experiences straight under the grid, then the towns row, the
-    // "offer an experience" panel and the map. HomeShop shows these only when
-    // no search is on, exactly as the page did behind `!searching`.
+    // "offer an experience" panel, the map and the "Refer a host" band.
+    // HomeShop shows these only when no search is on, exactly as the page did
+    // behind `!searching`.
     const browseSections = (
         <>
             {/* Live experiences sit straight under the properties, the second
@@ -170,9 +171,6 @@ export default async function HomePage() {
             {/* The "offer an experience" panel for local businesses, below the
                 towns row and above the map — always, live experiences or not. */}
             <ExperiencesForBusinesses />
-
-            {/* Refer a host, experience or service — earn up to £50. */}
-            <ReferHostBand />
 
             {/* Every live property on one map — Airbnb's search map. Below the
                 towns carousel: the places to stay lead, the map is for somebody
@@ -187,6 +185,10 @@ export default async function HomePage() {
                     <PriceMap points={mapPoints} frameClassName="h-[440px] md:h-[560px]" />
                 </section>
             ) : null}
+
+            {/* Refer a host, experience or service — earn up to £50. Directly
+                below the map. */}
+            <ReferHostBand />
         </>
     );
 
