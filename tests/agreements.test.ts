@@ -52,8 +52,13 @@ test('the host wrapper still answers as lib/hostTerms did', () => {
     const v = A.AGREEMENTS.host.version;
     assert.equal(hostTerms.HOST_TERMS_VERSION, v, 'the wrapper reads the registry');
     assert.equal(hostTerms.hasAgreedToCurrentTerms(v), true);
-    assert.equal(hostTerms.hasAgreedToCurrentTerms('2026-09-28'), false, 'the pre-final host terms are asked again');
     assert.equal(hostTerms.hasAgreedToCurrentTerms(null), false);
+    // An older version: asked again when the switch is on; counts while it is off.
+    assert.equal(A.hostAgreementCounts('2026-09-28', true), false, 'switch on: the earlier host terms are asked again');
+    assert.equal(A.hostAgreementCounts('2026-09-28', false), true, 'switch off: an earlier agreement still counts');
+    assert.equal(A.hostAgreementCounts(null, false), false, 'switch off: a new host still has to agree');
+    assert.equal(A.hostAgreementCounts(v, true), true);
+    assert.equal(hostTerms.hasAgreedToCurrentTerms('2026-09-28'), !A.ASK_HOSTS_TO_REACCEPT_HOST_AGREEMENT, 'the wrapper follows the switch');
     assert.ok(hostTerms.termsProblem(null, undefined));
     assert.equal(hostTerms.termsProblem(null, v), null);
     assert.equal(hostTerms.TERMS_LAST_UPDATED, '08/10/2026', 'DD/MM/YYYY from the day key');
@@ -212,8 +217,10 @@ test('the update notice asks only a role holder who has not agreed to the curren
     assert.equal(N('host', { agreed: false, earlier: true, required: false }), null, 'not a host: nothing shown');
     assert.equal(N('host', null), null, 'status unknown: nothing shown');
     assert.equal(N('guest', { agreed: false, earlier: true, required: true }), null, 'the Guest Terms are asked at checkout');
-    const update = N('host', { agreed: false, earlier: true, required: true });
-    assert.ok(update && update.earlier, 'an older version on record: shown as an update');
+    const update = N('host', { agreed: false, earlier: true, required: true }, true);
+    assert.ok(update && update.earlier, 'switch on: an older version on record is shown as an update');
+    assert.equal(N('host', { agreed: false, earlier: true, required: true }, false), null, 'switch off: no Host Agreement update notice');
+    assert.ok(N('host', { agreed: false, earlier: false, required: true }, false), 'switch off: a host with nothing on record is still asked');
     assert.equal(update.summary, A.AGREEMENTS.host.changeSummary, 'with what changed');
     const fresh = N('tradesperson', { agreed: false, earlier: false, required: true });
     assert.ok(fresh && !fresh.earlier && fresh.summary === '', 'never agreed: asked plainly, no "what changed"');

@@ -9,15 +9,17 @@
 // profile (host_terms_version, host_terms_agreed_at) and in
 // agreement_acceptances.
 
-import { AGREEMENTS, agreementProblem, hasAgreed } from './agreements';
+import { AGREEMENTS, agreementProblem, hostAgreementCounts } from './agreements';
 import { ukDate } from './dayKey';
 
 export const HOST_TERMS_VERSION = AGREEMENTS.host.version;
 export const TERMS_LAST_UPDATED = ukDate(AGREEMENTS.host.lastUpdated);
 
-// Whether a host has agreed to the host terms as they stand now.
+// Whether a host's agreement on record lets them submit without ticking again:
+// the current version, or — while ASK_HOSTS_TO_REACCEPT_HOST_AGREEMENT is off —
+// any earlier one (lib/agreements).
 export function hasAgreedToCurrentTerms(recordedVersion: string | null | undefined): boolean {
-    return hasAgreed('host', recordedVersion);
+    return hostAgreementCounts(recordedVersion);
 }
 
 // What a submit must carry — the shared rule, for the host document.

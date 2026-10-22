@@ -107,6 +107,30 @@ export const AGREEMENTS: Record<AgreementKey, Agreement> = {
     },
 };
 
+// THE SWITCH for asking existing hosts to re-accept the Host Agreement.
+//
+// OFF (false) for now, while the updated terms are finalised: a host who agreed
+// to ANY earlier Host Agreement counts as agreed — no dashboard update notice,
+// no agree box when they add another listing, and their submit goes through as
+// before. Someone with no Host Agreement on record (a new host) still ticks the
+// current version, exactly as at sign-up. Nothing is recorded on their behalf.
+//
+// Turn it back ON (true) when the new wording is ready: every host on an older
+// version then sees the update notice, and is asked again on their next first
+// submit. This is the only place to change.
+export const ASK_HOSTS_TO_REACCEPT_HOST_AGREEMENT = false;
+
+// Whether a host's recorded Host Agreement counts — the current version always;
+// an earlier one too while re-acceptance is switched off (above). `reask` is
+// the switch, a parameter so the tests can prove both states.
+export function hostAgreementCounts(
+    recordedVersion: string | null | undefined,
+    reask: boolean = ASK_HOSTS_TO_REACCEPT_HOST_AGREEMENT,
+): boolean {
+    if (hasAgreed('host', recordedVersion)) return true;
+    return !reask && !!recordedVersion;
+}
+
 // The order they are asked in, when somebody owes more than one: the general
 // terms first, then the role agreements.
 export const AGREEMENT_ORDER: AgreementKey[] = ['guest', 'host', 'experience_provider', 'tradesperson'];
@@ -206,12 +230,16 @@ export function nextRoleOwed(
 // (listing submit, provider submit); this just asks, until they agree.
 // `earlier` says whether they agreed to an older version (an update) or never
 // did (asked plainly). The Guest Terms are not here: they are asked at checkout.
+// The Host Agreement update (an earlier version on record) is held back while
+// ASK_HOSTS_TO_REACCEPT_HOST_AGREEMENT is off; `reaskHosts` is that switch.
 export function agreementUpdateNotice(
     key: AgreementKey,
     status: { agreed: boolean; earlier: boolean; required?: boolean } | null | undefined,
+    reaskHosts: boolean = ASK_HOSTS_TO_REACCEPT_HOST_AGREEMENT,
 ): null | { earlier: boolean; summary: string } {
     if (key === 'guest' || !status) return null;
     if (!status.required || status.agreed) return null;
+    if (key === 'host' && status.earlier && !reaskHosts) return null;
     return { earlier: !!status.earlier, summary: status.earlier ? AGREEMENTS[key].changeSummary : '' };
 }
 
