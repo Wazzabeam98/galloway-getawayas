@@ -151,10 +151,12 @@ function ListingCard({
                     photos will look cropped without seeing the real page, so let
                     them preview it exactly as a guest would — the listing page
                     already lets an owner open their own pending listing, and it
-                    wears a "Preview" banner saying guests can't see it yet. */}
+                    wears a "Preview" banner saying guests can't see it yet. That
+                    is the per-request preview route (the public page is
+                    edge-cached and only redirects there). */}
                 {isWaiting && (
                     <Link
-                        href={`/homes/${item.id}`}
+                        href={`/homes/${item.id}/preview`}
                         title="Preview how guests will see it"
                         className="h-8 px-3 rounded-full bg-white/95 hover:bg-white shadow-sm flex items-center gap-1.5 text-xs font-semibold text-slate-700"
                     >

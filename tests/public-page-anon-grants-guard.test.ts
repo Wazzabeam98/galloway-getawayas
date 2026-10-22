@@ -44,7 +44,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 type Source = { file: string; table: string; label: string; pattern: RegExp };
 const SOURCES: Source[] = [
     {
-        file: 'app/homes/[id]/page.tsx',
+        file: 'app/homes/[id]/HomeView.tsx',
         table: 'listings',
         label: 'LISTING_PAGE_COLUMNS (the listing page)',
         pattern: /const LISTING_PAGE_COLUMNS = '([^']*)'/,
