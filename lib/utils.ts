@@ -24,6 +24,20 @@ export function getImageUrl(image: string): string {
   return `${Env.SUPABASE_URL}/storage/v1/object/public/${Env.S3_BUCKET}/${image}`;
 }
 
+// The SHARE image (og:image / twitter:image) for a listing or experience cover.
+//
+// A host's original is a 1–2 MB phone photo, which WhatsApp and Messenger refuse
+// to fetch for a link preview — so the preview fell back to the site logo. This
+// runs the same photo through Supabase's image transformation (our image
+// optimisation): cropped to exactly 1200×630 and re-encoded small (~100 KB), it
+// sits well under the size the social scrapers accept. It is an absolute https
+// URL on the storage origin, and the scrapers (which send `Accept: */*`, not
+// `image/webp`) are served JPEG. 1200×630 is the 1.91:1 ratio Facebook, WhatsApp
+// and X all use for a large summary card.
+export function shareImageUrl(image: string): string {
+  return `${Env.SUPABASE_URL}/storage/v1/render/image/public/${Env.S3_BUCKET}/${image}?width=1200&height=630&resize=cover&quality=80`;
+}
+
 export function capitializeFirst(data: string): string {
   return `${data.charAt(0).toUpperCase()}${data.slice(1)}`;
 }
