@@ -161,7 +161,7 @@ export default function ListingReviewQueue({ items }: { items: QueueItem[] }) {
                                 : <div className="w-20 h-16 rounded-lg bg-slate-200 flex-shrink-0" />}
 
                             <div className="flex-1 min-w-[12rem]">
-                                <Link href={`/homes/${item.id}`} className="font-semibold text-slate-900 hover:underline">
+                                <Link href={`/homes/${item.id}/preview`} className="font-semibold text-slate-900 hover:underline">
                                     {item.title}
                                 </Link>
                                 <p className="text-sm text-slate-500">

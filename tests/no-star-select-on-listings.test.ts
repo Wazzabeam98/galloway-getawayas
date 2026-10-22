@@ -142,7 +142,10 @@ test('the public listing page names its columns', () => {
     // The one that actually broke. Asserted by name rather than left to the
     // rule above, so a failure says which page is down rather than which rule
     // was tripped.
-    const page = fs.readFileSync(path.join(ROOT, 'app/homes/[id]/page.tsx'), 'utf8');
+    // The route file (generateMetadata) and the page body it renders (HomeView,
+    // shared with the preview route), read as one.
+    const page = ['app/homes/[id]/page.tsx', 'app/homes/[id]/HomeView.tsx']
+        .map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 
     assert.match(page, /approx_latitude/, 'the public page must read the rounded pin');
     assert.doesNotMatch(page, /home\.latitude|home\.longitude/,
@@ -229,7 +232,7 @@ test('the reviews exception list has not rotted', () => {
 test('the public listing page does not leak who reviewed which booking', () => {
     // The specific regression, named, so a failure says what came back rather
     // than only that a rule was broken.
-    const page = fs.readFileSync(path.join(ROOT, 'app/homes/[id]/page.tsx'), 'utf8');
+    const page = fs.readFileSync(path.join(ROOT, 'app/homes/[id]/HomeView.tsx'), 'utf8');
     const read = /from\(\s*'reviews'\s*\)[\s\S]{0,400}?\.select\(\s*'([^']*)'/.exec(page);
 
     assert.ok(read, 'the reviews read has moved — this test needs updating deliberately');

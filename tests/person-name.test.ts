@@ -108,7 +108,7 @@ test('an email greets the account by its own first name, never "Hi The"', () => 
 /* ------------------------------------------- where the rule has to hold */
 
 test('the listing page never cuts the host name down to its first word', () => {
-    const src = read('app/homes/[id]/page.tsx');
+    const src = read('app/homes/[id]/HomeView.tsx');
     assert.equal(/hostName\.split\(/.test(src), false, 'the listing page splits the host name again');
     assert.ok(src.indexOf('hostByline(') !== -1);
 });

@@ -152,7 +152,9 @@ test('the public listing page names what is visible rather than what is not', ()
     // for cookies and Supabase before it decides anything — loading it here
     // would test the stubs, not the rule. What matters is the SHAPE: an
     // allow-list, so a status added later is invisible by default.
-    const page = read('app/homes/[id]/page.tsx');
+    // The allow-list lives with the page body (HomeView), shared by the cached
+    // page and the per-request preview route.
+    const page = read('app/homes/[id]/HomeView.tsx');
 
     assert.match(page, /PUBLICLY_VISIBLE\s*=\s*\[[^\]]*'published'[^\]]*\]/,
         'published must be on the visible list');

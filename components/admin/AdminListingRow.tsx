@@ -143,7 +143,9 @@ export default function AdminListingRow({
 
                 <div className="flex items-center gap-3 mt-2">
                     <Link
-                        href={'/homes/' + id}
+                        // Not public yet (draft / waiting): straight to the
+                        // per-request preview, which lets an admin in.
+                        href={status === 'published' || status === 'hidden' ? '/homes/' + id : '/homes/' + id + '/preview'}
                         className="text-xs font-semibold text-slate-500 underline hover:text-slate-800 inline-flex items-center gap-1"
                     >
                         <ExternalLink className="w-3 h-3" /> View
