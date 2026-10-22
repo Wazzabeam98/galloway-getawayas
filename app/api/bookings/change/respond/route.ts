@@ -11,6 +11,7 @@ import { clawBackPayout } from '@/lib/clawback';
 import { whoAnswers, refundForDecrease, balanceAfter, round2 } from '@/lib/bookingChange';
 import { applyBookingChange } from '@/lib/applyBookingChange';
 import { formatGBP } from '@/lib/formatMoney';
+import { changeoverProblem } from '@/lib/stayRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,6 +72,23 @@ export async function POST(request: Request) {
         }
 
         // ---- ACCEPT ----
+
+        // The host's changeover days, checked again before anything is paid or
+        // applied: the host may have restricted a weekday since this change was
+        // proposed. Only the end(s) that move are checked (see bookings/change).
+        {
+            const { data: b } = await admin.from('bookings').select('listing_id, check_in, check_out').eq('id', chg.booking_id).maybeSingle();
+            const { data: l } = b
+                ? await admin.from('listings').select('checkin_days, checkout_days').eq('id', b.listing_id).maybeSingle()
+                : { data: null };
+            const newIn = String(chg.new_check_in).slice(0, 10);
+            const newOut = String(chg.new_check_out).slice(0, 10);
+            const problem = b && l ? changeoverProblem(l as any, newIn, newOut, {
+                checkIn: newIn !== String(b.check_in).slice(0, 10),
+                checkOut: newOut !== String(b.check_out).slice(0, 10),
+            }) : null;
+            if (problem) return NextResponse.json({ ok: false, error: problem }, { status: 409 });
+        }
 
         // The GUEST paying, after a guest proposal the host already approved.
         if (chg.status === 'awaiting_guest_payment') {

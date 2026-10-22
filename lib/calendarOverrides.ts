@@ -2,6 +2,13 @@
 // stay and whether the dates are blocked, for a run of dates. One check, used
 // by the panel before it sends and by /api/listings/calendar before it writes,
 // so the browser and the server can never disagree about what is allowed.
+//
+// EACH SETTING STANDS ON ITS OWN. A field left out of the patch is left as it
+// is on every date — so setting a price across a month neither unblocks the
+// blocked nights in it nor wipes (or stamps) a minimum stay, and setting a
+// minimum stay leaves each night's price alone. A field sent blank ('' or
+// null) goes back to the listing's default. Airbnb's calendar behaves the same:
+// editing the price of a run of dates touches nothing but the price.
 
 import { MAX_PRICE_PER_NIGHT } from './listingRules';
 
@@ -10,10 +17,20 @@ export const MAX_MIN_NIGHTS = 365;
 
 export type OverridePatch = {
     dates: string[];
+    // Absent = leave each date as it is.
+    is_blocked?: boolean;
+    price_override?: number | null;
+    min_nights_override?: number | null;
+};
+
+export type OverrideRow = {
+    date: string;
     is_blocked: boolean;
     price_override: number | null;
     min_nights_override: number | null;
 };
+
+const has = (o: any, k: string) => !!o && Object.prototype.hasOwnProperty.call(o, k) && o[k] !== undefined;
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -46,15 +63,42 @@ export function checkOverridePatch(input: any): { ok: true; patch: OverridePatch
         }
     }
 
-    return {
-        ok: true,
-        patch: {
-            dates: Array.from(new Set(dates as string[])),
-            is_blocked: input.is_blocked === true,
-            price_override: price,
-            min_nights_override: minNights,
-        },
-    };
+    const patch: OverridePatch = { dates: Array.from(new Set(dates as string[])) };
+    if (has(input, 'is_blocked')) patch.is_blocked = input.is_blocked === true;
+    if (has(input, 'price_override')) patch.price_override = price;
+    if (has(input, 'min_nights_override')) patch.min_nights_override = minNights;
+    return { ok: true, patch };
+}
+
+/** Does the patch change anything at all? */
+export function patchChangesSomething(patch: OverridePatch): boolean {
+    return patch.is_blocked !== undefined || patch.price_override !== undefined || patch.min_nights_override !== undefined;
+}
+
+/**
+ * The rows to write for a patch, merged over what each date already holds:
+ * only the fields in the patch change. A date left with nothing on it (not
+ * blocked, default price, default minimum) comes back in `clear` instead, so
+ * it is deleted rather than kept as an empty row.
+ */
+export function mergeOverrides(
+    patch: OverridePatch,
+    existing: Record<string, Partial<OverrideRow>>,
+): { upsert: OverrideRow[]; clear: string[] } {
+    const upsert: OverrideRow[] = [];
+    const clear: string[] = [];
+    for (const date of patch.dates) {
+        const was = existing[date] || {};
+        const row: OverrideRow = {
+            date,
+            is_blocked: patch.is_blocked !== undefined ? patch.is_blocked : !!was.is_blocked,
+            price_override: patch.price_override !== undefined ? patch.price_override : (was.price_override != null ? Number(was.price_override) : null),
+            min_nights_override: patch.min_nights_override !== undefined ? patch.min_nights_override : (was.min_nights_override != null ? Number(was.min_nights_override) : null),
+        };
+        if (!row.is_blocked && row.price_override == null && row.min_nights_override == null) clear.push(date);
+        else upsert.push(row);
+    }
+    return { upsert, clear };
 }
 
 /** For a reset: just the dates, checked the same way. */

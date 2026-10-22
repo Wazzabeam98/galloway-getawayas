@@ -107,11 +107,15 @@ export interface GuestCalendar {
     // which preparation time keeps nights free around.
     minNightsOverrides: Record<string, number>;
     stayRanges: { start: string; end: string }[];
+    // The host's changeover days (lib/stayRules arrivalAllowed /
+    // departureAllowed): weekdays 0 = Sunday … 6 = Saturday; null = any day.
+    checkinDays: number[] | null;
+    checkoutDays: number[] | null;
 }
 
 export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
     const admin = adminClient();
-    const [busy, overrides, feeds] = await Promise.all([
+    const [busy, overrides, feeds, rules] = await Promise.all([
         admin.from('listing_busy_nights')
             .select('check_in, check_out')
             .eq('listing_id', listingId)
@@ -122,6 +126,10 @@ export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
         admin.from('listing_ical_feeds')
             .select('events')
             .eq('listing_id', listingId),
+        admin.from('listings')
+            .select('checkin_days, checkout_days')
+            .eq('id', listingId)
+            .maybeSingle(),
     ]);
 
     const events: IcalEvent[] = [];
@@ -144,6 +152,8 @@ export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
         stayRanges: events
             .filter((e) => e && e.start && e.end)
             .map((e) => ({ start: String(e.start).slice(0, 10), end: String(e.end).slice(0, 10) })),
+        checkinDays: ((rules.data as any) && (rules.data as any).checkin_days) || null,
+        checkoutDays: ((rules.data as any) && (rules.data as any).checkout_days) || null,
     };
 }
 

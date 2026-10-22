@@ -55,12 +55,6 @@ const PLATFORM_ONLY: Record<string, string> = {
     sleeping_arrangements: 'editor via service route', neighbourhood: 'editor via service route',
     show_precise_location: 'editor via service route',
     pool_access: 'editor via service route', pool_setting: 'editor via service route',
-    // Changeover days (checkin_days/checkout_days): added to the listings table by
-    // the concurrent #503 (20261022150607_listing_changeover_days.sql), which is
-    // already on the shared TEST database. Its migration grants the browser SELECT
-    // only (no UPDATE), so they are platform-written via the service route — the
-    // same classification #503 itself records. Mirrored here so this guard matches
-    // the live TEST schema; #503's own copy of this line reconciles on its merge.
     checkin_days: 'editor via service route', checkout_days: 'editor via service route',
     max_pets: 'editor via service route', checkout_tasks: 'editor via service route',
     checkout_note: 'editor via service route', guest_safety: 'editor via service route',

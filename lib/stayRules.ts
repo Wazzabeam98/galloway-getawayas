@@ -14,6 +14,11 @@
 //                       other stay (bookings here and on other platforms).
 //   availability window how far ahead guests can book; the checkout date may
 //                       not be later than today + the window.
+//   check-in days       the weekdays a guest may ARRIVE on (Airbnb's "Restrict
+//   checkout days       check-in days" / "Restrict checkout days"). Unset or all
+//                       seven = any day. The gap-filling exception to the
+//                       minimum does NOT lift these — a changeover day is about
+//                       when the host can turn the place round, not its length.
 //
 // Framework-free and relative imports only: the client card, the server route
 // and the unit test all run it. Day keys are 'yyyy-mm-dd', and "today" is the
@@ -25,6 +30,10 @@ export interface StayRulesListing {
     advance_notice?: string | null;
     preparation_time?: string | null;
     availability_window?: string | null;
+    // Weekdays, 0 = Sunday … 6 = Saturday (JavaScript's getDay and Postgres's
+    // dow). Null, missing or all seven means any day.
+    checkin_days?: number[] | null;
+    checkout_days?: number[] | null;
 }
 
 export type StayRange = { start: string; end: string };
@@ -114,6 +123,88 @@ export function prepBufferNights(ranges: StayRange[], days: number): Set<string>
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// CHANGEOVER DAYS
+// ---------------------------------------------------------------------------
+
+export const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+export const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+
+/** The weekday of a day key, 0 = Sunday, without going through a local Date. */
+export function weekdayOfKey(key: string): number {
+    return keyToUtc(key).getUTCDay();
+}
+
+/**
+ * A host's ticked weekdays, cleaned: whole numbers 0–6, no repeats, sorted.
+ * Null when the input isn't a usable list (nothing ticked, or not a list) — a
+ * listing must always leave guests at least one day to arrive and one to leave.
+ */
+export function cleanWeekdays(value: unknown): number[] | null {
+    if (!Array.isArray(value)) return null;
+    const out: number[] = [];
+    for (const v of value) {
+        const n = Number(v);
+        if (!Number.isInteger(n) || n < 0 || n > 6) return null;
+        if (out.indexOf(n) === -1) out.push(n);
+    }
+    return out.length ? out.sort((a, b) => a - b) : null;
+}
+
+// The days actually allowed: the stored list, or every day when it is unset.
+function allowedDays(value: number[] | null | undefined): number[] {
+    return cleanWeekdays(value) || ALL_WEEKDAYS;
+}
+
+export function arrivalAllowed(listing: StayRulesListing, key: string): boolean {
+    return allowedDays(listing.checkin_days).indexOf(weekdayOfKey(key)) !== -1;
+}
+
+export function departureAllowed(listing: StayRulesListing, key: string): boolean {
+    return allowedDays(listing.checkout_days).indexOf(weekdayOfKey(key)) !== -1;
+}
+
+/** "Monday and Friday", "Monday, Wednesday or Friday" — '' when every day is allowed. */
+export function weekdayList(value: number[] | null | undefined, joiner: 'and' | 'or' = 'or'): string {
+    const days = allowedDays(value);
+    if (days.length === 7) return '';
+    // Monday-first, the way the calendar and a British reader order a week.
+    const names = days.slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => WEEKDAY_NAMES[d]);
+    if (names.length === 1) return names[0];
+    return names.slice(0, -1).join(', ') + ' ' + joiner + ' ' + names[names.length - 1];
+}
+
+/** "Check-in Monday or Friday · Checkout Monday or Friday", or ''. */
+export function changeoverNote(listing: StayRulesListing): string {
+    const parts: string[] = [];
+    const inDays = weekdayList(listing.checkin_days);
+    const outDays = weekdayList(listing.checkout_days);
+    if (inDays) parts.push(`Check-in ${inDays}`);
+    if (outDays) parts.push(`Checkout ${outDays}`);
+    return parts.join(' · ');
+}
+
+/**
+ * Why these dates break the host's changeover days, in the guest's words — or
+ * null. `only` limits the check to the end(s) that are actually being chosen:
+ * a change request that keeps a booking's original checkout must not be
+ * refused because the host has since restricted that weekday.
+ */
+export function changeoverProblem(
+    listing: StayRulesListing,
+    checkIn: string,
+    checkOut: string,
+    only: { checkIn?: boolean; checkOut?: boolean } = { checkIn: true, checkOut: true },
+): string | null {
+    if (only.checkIn !== false && !arrivalAllowed(listing, checkIn)) {
+        return `Check-in is only on ${weekdayList(listing.checkin_days)} at this place. Please pick a different check-in date.`;
+    }
+    if (only.checkOut !== false && !departureAllowed(listing, checkOut)) {
+        return `Checkout is only on ${weekdayList(listing.checkout_days)} at this place. Please pick a different checkout date.`;
+    }
+    return null;
+}
+
 /** "3-night minimum · 14-night maximum", or '' when there is nothing to say. */
 export function stayLengthNote(min: number, max: number | null): string {
     const parts: string[] = [];
@@ -156,6 +247,9 @@ export function stayProblem(input: {
         return 'This host only accepts bookings within their availability window. Please pick earlier dates.';
     }
 
+    const changeover = changeoverProblem(listing, checkIn, checkOut);
+    if (changeover) return changeover;
+
     const min = minNightsFor(listing, input.minOverrides, checkIn);
     // A stay shorter than the minimum is refused UNLESS it fills a gap between
     // two unavailable periods exactly — the night before check-in and the
@@ -191,8 +285,12 @@ export function stayProblem(input: {
 // `unavailable` is every unavailable night (taken, blocked, preparation time).
 // ---------------------------------------------------------------------------
 
-/** A day can be a check-in if its own night is free. */
-export function checkInPickable(key: string, unavailable: Set<string>): boolean {
+/**
+ * A day can be a check-in if its own night is free — and, when the host's
+ * changeover days are passed, if guests may arrive that weekday.
+ */
+export function checkInPickable(key: string, unavailable: Set<string>, rules?: StayRulesListing | null): boolean {
+    if (rules && !arrivalAllowed(rules, key)) return false;
     return !unavailable.has(key);
 }
 
@@ -219,10 +317,15 @@ export function fillsGapExactly(checkIn: string, checkOut: string, unavailable?:
     return unavailable.has(addDaysKey(checkIn, -1)) && unavailable.has(checkOut);
 }
 
-/** A day can be the checkout for a stay starting `startKey` if every night is free and the length fits. */
-export function checkoutPickable(startKey: string, key: string, unavailable: Set<string>, min: number, max: number | null): boolean {
+/**
+ * A day can be the checkout for a stay starting `startKey` if every night is
+ * free and the length fits — and, when the host's changeover days are passed,
+ * if guests may leave that weekday.
+ */
+export function checkoutPickable(startKey: string, key: string, unavailable: Set<string>, min: number, max: number | null, rules?: StayRulesListing | null): boolean {
     const nights = nightsBetweenKeys(startKey, key);
     if (nights <= 0) return false;
+    if (rules && !departureAllowed(rules, key)) return false;
     if (max !== null && nights > max) return false;
     for (let i = 0; i < nights; i++) {
         if (unavailable.has(addDaysKey(startKey, i))) return false;

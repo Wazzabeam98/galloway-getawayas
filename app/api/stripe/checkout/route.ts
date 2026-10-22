@@ -101,7 +101,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('status, title, cancellation_policy, cancellation_custom_days, non_refundable_option, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, min_nights, max_nights, advance_notice, preparation_time, availability_window, amenities, max_pets')
+            .select('status, title, cancellation_policy, cancellation_custom_days, non_refundable_option, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, max_guests, commission_rate, damage_deposit, new_listing_promo, last_minute_discount, weekly_discount, monthly_discount, min_nights, max_nights, advance_notice, preparation_time, availability_window, checkin_days, checkout_days, amenities, max_pets')
             .eq('id', booking.listing_id)
             .maybeSingle();
 

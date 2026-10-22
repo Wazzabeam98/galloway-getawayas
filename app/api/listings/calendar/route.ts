@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { checkListing } from '@/lib/access';
 import { guestCalendar } from '@/lib/availability';
-import { checkOverridePatch, checkOverrideDates } from '@/lib/calendarOverrides';
+import { checkOverridePatch, checkOverrideDates, mergeOverrides, patchChangesSomething } from '@/lib/calendarOverrides';
 import { logError } from '@/lib/logError';
 import { revalidateListing } from '@/lib/revalidatePublic';
 
@@ -90,24 +90,54 @@ export async function POST(request: Request) {
     if (!checked.ok) return NextResponse.json({ ok: false, error: (checked as { error: string }).error }, { status: 400 });
     const p = (checked as { patch: import('@/lib/calendarOverrides').OverridePatch }).patch;
 
-    const rows = p.dates.map((date) => ({
-        listing_id: body.listingId,
-        date,
-        is_blocked: p.is_blocked,
-        price_override: p.price_override,
-        min_nights_override: p.min_nights_override,
-    }));
-    const { error } = await adminClient()
+    if (!patchChangesSomething(p)) {
+        return NextResponse.json({ ok: false, error: 'Change the price, the minimum stay or the block first.' }, { status: 400 });
+    }
+
+    // Only what the host changed is written; every other setting on each date
+    // stays as it was (lib/calendarOverrides mergeOverrides). So a price set
+    // across a month leaves its blocked nights blocked — including nights an
+    // imported calendar holds, which live in the feed, not here — and leaves
+    // each night's own minimum stay alone.
+    const admin = adminClient();
+    const { data: current, error: readError } = await admin
         .from('calendar_overrides')
-        .upsert(rows, { onConflict: 'listing_id,date' });
-    if (error) {
-        await logError('[calendar] could not save calendar dates', error, { path: 'api/listings/calendar', userId: gate.user.id });
+        .select('date, is_blocked, price_override, min_nights_override')
+        .eq('listing_id', body.listingId)
+        .in('date', p.dates);
+    if (readError) {
+        await logError('[calendar] could not read calendar dates', readError, { path: 'api/listings/calendar', userId: gate.user.id });
         return NextResponse.json({ ok: false, error: 'Those dates couldn’t be saved. Please try again.' }, { status: 500 });
+    }
+    const existing: Record<string, any> = {};
+    ((current as any[]) || []).forEach((r) => { existing[String(r.date).slice(0, 10)] = r; });
+    const merged = mergeOverrides(p, existing);
+
+    const rows = merged.upsert.map((r) => ({ listing_id: body.listingId, ...r }));
+    if (rows.length) {
+        const { error } = await admin
+            .from('calendar_overrides')
+            .upsert(rows, { onConflict: 'listing_id,date' });
+        if (error) {
+            await logError('[calendar] could not save calendar dates', error, { path: 'api/listings/calendar', userId: gate.user.id });
+            return NextResponse.json({ ok: false, error: 'Those dates couldn’t be saved. Please try again.' }, { status: 500 });
+        }
+    }
+    if (merged.clear.length) {
+        const { error } = await admin
+            .from('calendar_overrides')
+            .delete()
+            .eq('listing_id', body.listingId)
+            .in('date', merged.clear);
+        if (error) {
+            await logError('[calendar] could not clear calendar dates', error, { path: 'api/listings/calendar', userId: gate.user.id });
+            return NextResponse.json({ ok: false, error: 'Those dates couldn’t be saved. Please try again.' }, { status: 500 });
+        }
     }
     // Blocked nights and per-date price/min-nights are baked into the listing
     // page's calendar — refresh it so the change shows at once.
     revalidateListing(body.listingId);
-    return NextResponse.json({ ok: true, rows });
+    return NextResponse.json({ ok: true, rows, cleared: merged.clear });
 }
 
 export async function DELETE(request: Request) {
