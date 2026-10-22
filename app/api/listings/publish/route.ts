@@ -11,6 +11,7 @@ import { recordAcceptance } from '@/lib/agreementRecords';
 import { needsPersonName } from '@/lib/personName';
 import { checkListing } from '@/lib/access';
 import { sendsListingConfirmation, confirmListingSubmission } from '@/lib/listingSubmittedConfirm';
+import { attachReferral, REFERRAL_COOKIE } from '@/lib/referrals';
 
 export const dynamic = 'force-dynamic';
 
@@ -246,6 +247,27 @@ export async function POST(request: Request) {
                 }
             } catch (mailErr) {
                 await logError('listings/publish: the in-review email to the host did not send', mailErr, { path: 'api/listings/publish', userId: user.id });
+            }
+        }
+
+        // REFERRAL: they have gone on to list a property. The first time a
+        // listing goes INTO review is the moment the owner becomes a host, so
+        // a referral is recorded (or advanced from 'invited' to 'listed') here.
+        // Only when the owner is the one publishing, in their own browser with
+        // their own referral cookie — a co-host publishing someone else's
+        // listing must never attribute the owner to the co-host's referrer.
+        // Best-effort: a referral never gets in the way of a listing going live.
+        if (sendsListingConfirmation(listing.status, nextStatus) && user.id === listing.host_id) {
+            try {
+                const refCode = cookies().get(REFERRAL_COOKIE)?.value || '';
+                if (refCode) {
+                    await attachReferral(admin, { code: refCode, referredUserId: user.id, stage: 'listed' });
+                }
+            } catch (referralErr) {
+                await logError('listings/publish: could not record the referral', referralErr, {
+                    path: 'api/listings/publish',
+                    userId: user.id,
+                });
             }
         }
 

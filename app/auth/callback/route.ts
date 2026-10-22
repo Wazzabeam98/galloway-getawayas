@@ -2,6 +2,8 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse, NextRequest } from 'next/server'
 import type { EmailOtpType } from '@supabase/supabase-js'
+import { adminClient } from '@/lib/supabaseAdmin'
+import { attachReferral, REFERRAL_COOKIE } from '@/lib/referrals'
 
 export const dynamic = 'force-dynamic'
 
@@ -136,6 +138,25 @@ async function complete(
                 origin,
                 'That link did not sign you in. Ask for a new one here and it will work.'
             )
+        }
+
+        // REFERRAL CAPTURE, surviving sign-up. If this browser carries a
+        // referral code (set on the /refer/<code> landing) and the person is
+        // genuinely new, record them as 'invited' against the referrer.
+        // Best-effort and idempotent: a returning sign-in that still has the
+        // cookie is a no-op, and a failure here must never get between someone
+        // and signing in — so it has its own try/catch inside this one.
+        try {
+            const refCode = cookies().get(REFERRAL_COOKIE)?.value || ''
+            if (refCode && session.user && session.user.id) {
+                await attachReferral(adminClient(), {
+                    code: refCode,
+                    referredUserId: session.user.id,
+                    stage: 'invited',
+                })
+            }
+        } catch {
+            // A referral is a nicety; signing in is not.
         }
     } catch (err: unknown) {
         const message: string = (err instanceof Error && err.message) || 'That link could not be used.'

@@ -312,6 +312,13 @@ const NavMenu = ({
                                 <Link href='/account'>Account settings</Link>
                             </li>
 
+                            {/* Anyone signed in can refer a host — guest or host
+                                alike — so it sits in the common part of the menu,
+                                next to Account settings. */}
+                            <li className={itemClass}>
+                                <Link href='/refer'>Refer a host</Link>
+                            </li>
+
                             {isAdmin && (
                                 <>
                                     <div className='border-t my-1' />

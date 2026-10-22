@@ -11,6 +11,8 @@ import { readSchedule, arrivalSentence } from '@/lib/payoutTiming';
 import { chargeToDrawOn } from '@/lib/payoutSource';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { recordCronRun } from '@/lib/cronHeartbeat';
+import { waivableReferralFor, markReferralRewardDue, ReferralRow } from '@/lib/referrals';
+import { referralRewardDueEmail } from '@/lib/referralEmails';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -269,7 +271,7 @@ export async function GET(request: Request) {
                 .eq('id', booking.listing_id)
                 .maybeSingle();
 
-            const rate =
+            let rate =
                 booking.commission_rate === null || booking.commission_rate === undefined
                     ? (listing && listing.commission_rate !== null && listing.commission_rate !== undefined
                         ? Number(listing.commission_rate)
@@ -287,6 +289,19 @@ export async function GET(request: Request) {
                 continue;
             }
 
+            // THE REFERRAL WAIVER. If this host was referred and their referral
+            // is still sitting at 'listed', this stay — the first of theirs to
+            // reach payout — has its commission waived: the referred host keeps
+            // the whole collected amount, and the referrer's reward falls due.
+            // Done by forcing the rate to 0 and letting the SAME arithmetic
+            // below run (feeAmount(base, 0) is 0), so the transfer, its
+            // metadata, the host email and the clawback ceiling all stay
+            // consistent through the one existing path — no parallel code. The
+            // referral is stamped to 'first_stay_done' only AFTER the payout is
+            // recorded (further down), so a run that fails to pay leaves it
+            // 'listed' and the next run waives again rather than losing it.
+            const waivedReferral: ReferralRow | null = await waivableReferralFor(admin, booking.host_id);
+
             // Commission comes off the STAY only, never a host-sold extra (the
             // host's own supply — we take nothing on it). commissionableCollected
             // removes the extras' proportional share of what was collected; with
@@ -298,6 +313,10 @@ export async function GET(request: Request) {
                 Number(booking.total_price || 0),
                 Number(booking.extras_total || 0)
             );
+            // What the commission would have been, kept for the referral record
+            // before the rate is waived to 0.
+            const waivedCommission = waivedReferral ? feeAmount(commissionBase, rate) : 0;
+            if (waivedReferral) rate = 0;
             const commission = feeAmount(commissionBase, rate);
             const hostShare = round2(collected - commission);
 
@@ -552,6 +571,45 @@ export async function GET(request: Request) {
                         err,
                         { path: '/api/cron/host-payouts' }
                     );
+                }
+            }
+
+            // THE REFERRAL REWARD BECOMES DUE. The payout is recorded, so this
+            // stay has completed — if its commission was waived, stamp the
+            // referral 'first_stay_done' and tell the referrer their £50 is
+            // coming. The update is itself the claim: it only matches a row
+            // still at 'listed', so two overlapping runs cannot both email.
+            // After the money, like every other step here, and best-effort — a
+            // failure is logged, never un-pays a host.
+            if (waivedReferral) {
+                try {
+                    const claimed = await markReferralRewardDue(admin, {
+                        referredUserId: booking.host_id,
+                        bookingId: booking.id,
+                        waivedCommission,
+                    });
+                    if (claimed) {
+                        const { data: referrerUser } = await admin.auth.admin.getUserById(claimed.referrer_id);
+                        const rawReferrerEmail = (referrerUser && referrerUser.user && referrerUser.user.email) || '';
+                        const referrerEmail = isAutomatedTestAddress(rawReferrerEmail) ? '' : rawReferrerEmail;
+                        if (referrerEmail) {
+                            const { data: names } = await admin
+                                .from('profiles')
+                                .select('id, first_name, preferred_name')
+                                .in('id', [claimed.referrer_id, booking.host_id]);
+                            const byId: Record<string, any> = {};
+                            (names || []).forEach((p: any) => { byId[p.id] = p; });
+                            const referrerName = (byId[claimed.referrer_id] && (byId[claimed.referrer_id].preferred_name || byId[claimed.referrer_id].first_name)) || '';
+                            const referredName = (byId[booking.host_id] && (byId[booking.host_id].preferred_name || byId[booking.host_id].first_name)) || '';
+                            const mail = referralRewardDueEmail(referrerName, referredName);
+                            await sendEmail(referrerEmail, mail.subject, mail.html);
+                        }
+                    }
+                } catch (referralErr) {
+                    await logError('host-payouts: paid the referred host but could not stamp or notify the referral reward', referralErr, {
+                        path: '/api/cron/host-payouts',
+                        userId: booking.host_id,
+                    });
                 }
             }
 

@@ -355,6 +355,23 @@ export default async function Dashboard() {
                 </div>
             )}
 
+            {/* Refer a host. A surface you act on, so it lifts. Shown to anyone
+                on the host dashboard — the reward is theirs to earn whether or
+                not they have listings live yet. */}
+            <div className="max-w-7xl mx-auto px-6 pt-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                        <h2 className="font-semibold text-slate-900">Know another host? Refer them and get £50</h2>
+                        <p className="text-sm text-slate-700 mt-0.5">
+                            Refer someone with a holiday let and get £50 when they host their first stay. They’ll pay no commission on their first booking.
+                        </p>
+                    </div>
+                    <Link href="/refer" className="flex-none self-start sm:self-auto rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+                        Refer a host
+                    </Link>
+                </div>
+            </div>
+
             {/* Your follow-ups — a review to leave for each guest who has just
                 checked out, before the 14-day window closes. Airbnb's shape: the
                 guest's photo, "Leave [name] a review", the property and the days
