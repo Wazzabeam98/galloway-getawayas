@@ -41,6 +41,7 @@ import MeetYourHost from '@/components/MeetYourHost';
 import ListingStickyHeader from '@/components/ListingStickyHeader';
 import { hostResponsiveness } from '@/lib/hostResponsiveness';
 import { describePlace } from '@/lib/propertyTypes';
+import ShareSaveButtons from '@/components/save/ShareSaveButtons';
 import { KeyRound, Zap, Car, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Gem } from 'lucide-react';
 
 // "Entire flat" / "Private room in a static caravan" — the type words live in
@@ -609,7 +610,24 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                         Luxury
                     </span>
                 )}
-                <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
+                <div className='flex items-start justify-between gap-3'>
+                    <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
+                    {/* Share + Save, top-right like Airbnb. */}
+                    <ShareSaveButtons
+                        kind='stay'
+                        id={home.id}
+                        href={`/homes/${home.id}`}
+                        shareTitle='Share this holiday let'
+                        shareSummary={
+                            describePlace(home.privacy_type, home.property_type)
+                            + (placeSummary(home.location) ? ` in ${placeSummary(home.location)}` : '')
+                            + ` · ${home.bedrooms} bedroom${home.bedrooms === 1 ? '' : 's'}`
+                            + ` · ${home.beds} bed${home.beds === 1 ? '' : 's'}`
+                            + ` · ${home.bathrooms} bathroom${home.bathrooms === 1 ? '' : 's'}`
+                        }
+                        sharePhoto={home.images && home.images[0] ? getImageUrl(home.images[0]) : null}
+                    />
+                </div>
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (
                         <>

@@ -8,6 +8,7 @@ import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
 import { propertyTypeLabel } from '@/lib/listingFilters';
 import ListingStats from '@/components/ListingStats';
 import { formatPrice } from '@/lib/formatMoney';
+import HeartButton from '@/components/save/HeartButton';
 
 // One property card, used by the home page grid and by the area pages.
 //
@@ -114,6 +115,12 @@ export default function ListingCard({ listing, priority = false }: { listing: Ca
                     priority={priority}
                     className="object-cover group-hover:scale-105 transition duration-300"
                 />
+
+                {/* Save heart, top-right of the photo, above the stretched title
+                    link. Loads its saved state on the client. */}
+                <div className="absolute top-2 right-2 z-10">
+                    <HeartButton kind="stay" id={listing.id} href={`/homes/${listing.id}`} variant="card" />
+                </div>
 
                 {(badges.length > 0 || listing.is_luxury === true) && (
                     // Wraps rather than overflowing: two pills and a narrow

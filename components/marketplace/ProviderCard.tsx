@@ -4,6 +4,7 @@ import { shapeCue } from '@/lib/serviceSlots';
 import { BadgeCheck, MapPin } from 'lucide-react';
 import { fromPriceLabel, nextSessionLabel, cardLocationLine } from '@/components/marketplace/present';
 import type { MpProvider } from '@/lib/experiencesData';
+import HeartButton from '@/components/save/HeartButton';
 
 // One provider card, shared by the against-a-stay grid and the public browse
 // grid — same shop window either way. The only difference is where it links, so
@@ -31,6 +32,10 @@ export default function ProviderCard({ p, href }: { p: MpProvider; href: string 
                 <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-slate-700 backdrop-blur ring-1 ring-black/5">
                     {shapeCue(p.shape)}
                 </span>
+                {/* Save heart, top-right; stops the card link from firing. */}
+                <div className="absolute right-3 top-3 z-10">
+                    <HeartButton kind="experience" id={p.id} href={`/experiences/browse/${p.id}`} variant="card" />
+                </div>
             </div>
 
             <div className="flex flex-1 flex-col p-4 sm:p-5">
