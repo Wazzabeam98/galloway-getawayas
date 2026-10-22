@@ -21,6 +21,7 @@ const HOST = 'host-1';
 const ROUTE = '@/app/api/listings/publish/route';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { HOST_TERMS_VERSION } = require('../lib/hostTerms');
+const { ASK_HOSTS_TO_REACCEPT_HOST_AGREEMENT } = require('../lib/agreements');
 
 function loadPublish({ status, payoutsEnabled = false, termsVersion = null, named = true, declinedAt = null, actorId = HOST, coHostPermission = null }: { status: string; payoutsEnabled?: boolean; termsVersion?: string | null; named?: boolean; declinedAt?: string | null; actorId?: string; coHostPermission?: boolean | null }) {
     const updates: any[] = [];
@@ -120,12 +121,21 @@ test('ticking the box records the version and the time, and submits for review',
     assert.ok(!Number.isNaN(Date.parse(w.patch.host_terms_agreed_at)), 'with a real timestamp, set by the server');
 });
 
-test('an agreement to an OLD version does not count — the host must agree again', async () => {
+// An agreement to an OLD version follows ASK_HOSTS_TO_REACCEPT_HOST_AGREEMENT:
+// switched on, the host must agree again; switched off (re-acceptance paused),
+// they submit as before and nothing is re-stamped. The rule itself is proved in
+// both states in agreements.test.ts (hostAgreementCounts).
+test('an agreement to an OLD version: asked again only when re-acceptance is switched on', async () => {
     const { route, updates } = loadPublish({ status: 'draft', termsVersion: '2020-01-01' });
     const res = await route.POST(post());
-    assert.equal(res.status, 400);
-    assert.equal(res.body.needsTerms, true);
-    assert.deepEqual(updates, []);
+    if (ASK_HOSTS_TO_REACCEPT_HOST_AGREEMENT) {
+        assert.equal(res.status, 400);
+        assert.equal(res.body.needsTerms, true);
+        assert.deepEqual(updates, []);
+    } else {
+        assert.equal(res.body.ok, true, 'paused: the existing host is not blocked');
+        assert.equal(termsWrite(updates), undefined, 'and no new agreement is recorded for them');
+    }
 });
 
 test('a stale page sending an old version is refused rather than recording it', async () => {
