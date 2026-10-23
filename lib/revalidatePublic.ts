@@ -79,6 +79,18 @@ export function revalidateExperiences(providerIds: string[]) {
     });
 }
 
+// A host's public profile page (/hosts/[id]) — refreshed when anything it shows
+// changes: the host edits their profile (name, photo, bio), or one of their
+// listings/experiences is saved, published, repriced, hidden or reviewed (which
+// moves the grid and the combined review score on the profile). Pass the host's
+// user id. 300s is the background fallback for anything that doesn't call this.
+export function revalidateHostProfile(hostId: string | null | undefined) {
+    if (!hostId) return;
+    safe(() => {
+        revalidatePath(`/hosts/${hostId}`);
+    });
+}
+
 // Just one experience's own page — for a change that shows on that page but not
 // on the grids or the home shelf: its calendar (hours, day-offs, part-day blocks,
 // declared sessions, an imported busy feed) or its reviews. Seat counts are

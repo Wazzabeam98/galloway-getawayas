@@ -11,7 +11,7 @@ import { refreshVenuePoint } from '@/lib/venuePoint';
 import { normaliseVatTreatment } from '@/lib/vat';
 import { normaliseUnit } from '@/lib/serviceOrders';
 import { mayActOn } from '@/lib/providerAccess';
-import { revalidateExperience } from '@/lib/revalidatePublic';
+import { revalidateExperience, revalidateHostProfile } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -467,6 +467,9 @@ export async function POST(request: Request) {
         // An edit to a live experience changes its public page and the grid —
         // refresh them at once (lib/revalidatePublic).
         revalidateExperience(providerId);
+        // The owner's public host profile lists this experience and scores it,
+        // so refresh that page too.
+        revalidateHostProfile(p.owner_id);
 
         return NextResponse.json({ ok: true });
     } catch (err: any) {

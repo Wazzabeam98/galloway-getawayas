@@ -581,6 +581,7 @@ export default function ExperienceListingBody({
                                 coHosts={[]}
                                 responseRatePercent={responsiveness.responseRatePercent}
                                 typicalLabel={responsiveness.typicalLabel}
+                                profileHref={p.ownerId ? `/hosts/${p.ownerId}` : null}
                             />
                             {hasCredentials && (
                                 <div className="mt-6">

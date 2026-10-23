@@ -332,6 +332,14 @@ export default function AccountSettings() {
         router.refresh();
     };
 
+    // After a profile field the public host profile shows (bio, photo, and —
+    // via /api/account/name — the name) is saved straight from the browser,
+    // nudge the server to rebuild that edge-cached page so the change shows at
+    // once. Fire-and-forget: a cache hint must never block or fail a save.
+    const refreshHostProfile = () => {
+        fetch('/api/host-profile/revalidate', { method: 'POST' }).catch(() => {});
+    };
+
     const saveBio = async () => {
         if (!session?.user) return;
         setSavingBio(true);
@@ -347,6 +355,7 @@ export default function AccountSettings() {
         }
         setSavedBio(value);
         setHostBio(value);
+        refreshHostProfile();
         toast.success('Saved. This shows on your listings.', { theme: 'colored' });
         router.refresh();
     };
@@ -570,6 +579,7 @@ export default function AccountSettings() {
         }
 
         setAvatarUrl(path);
+        refreshHostProfile();
         router.refresh();
         toast.success('Profile photo updated.', { theme: 'colored' });
     };
@@ -589,6 +599,7 @@ export default function AccountSettings() {
             return;
         }
         setAvatarUrl(null);
+        refreshHostProfile();
         router.refresh();
     };
 

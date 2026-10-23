@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { validatePersonName } from '@/lib/personName';
+import { revalidateHostProfile } from '@/lib/revalidatePublic';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,9 @@ export async function POST(req: Request) {
             await logError('account name save failed', error.message, { path: '/api/account/name', userId: user.id });
             return NextResponse.json({ ok: false, error: 'We couldn’t save your name. Try again.' }, { status: 500 });
         }
+        // Their public host profile shows this first name — refresh its
+        // edge-cached copy so the change shows at once (lib/revalidatePublic).
+        revalidateHostProfile(user.id);
         return NextResponse.json({ ok: true, first: check.first, last: check.last });
     } catch (err: any) {
         await logError('account name save failed', String((err && err.message) || err), { path: '/api/account/name', userId: userId || undefined });

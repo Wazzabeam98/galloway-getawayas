@@ -1,5 +1,5 @@
 import { logError } from '@/lib/logError';
-import { revalidateListing } from '@/lib/revalidatePublic';
+import { revalidateListing, revalidateHostProfile } from '@/lib/revalidatePublic';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -248,6 +248,10 @@ export async function POST(request: Request) {
         // Refresh this listing's edge-cached page and the grids so an edit shows
         // at once (lib/revalidatePublic). Best-effort; never fails the save.
         revalidateListing(listingId);
+        // The owner's public host profile shows this listing and a review score
+        // drawn from it, so refresh that too — the owner, not the editor (a
+        // co-host editing doesn't change whose profile it is).
+        revalidateHostProfile(before.host_id);
 
         if (!moderating) {
             return NextResponse.json({ ok: true });
