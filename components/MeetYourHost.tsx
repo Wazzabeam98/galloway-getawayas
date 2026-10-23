@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import Link from 'next/link';
 import { BadgeCheck, Star, ShieldCheck } from 'lucide-react';
 import { getImageUrl } from '@/lib/utils';
 
@@ -27,6 +28,7 @@ export default function MeetYourHost({
     coHosts,
     responseRatePercent,
     typicalLabel,
+    profileHref,
 }: {
     firstName: string;
     avatarUrl: string | null;
@@ -40,6 +42,10 @@ export default function MeetYourHost({
     coHosts: CoHost[];
     responseRatePercent: number;
     typicalLabel: string;
+    // The host's public profile page. When set, the photo and name link to it,
+    // the way Airbnb's host card does. Omitted (null) leaves them static — e.g.
+    // on a preview, where there is no public profile yet.
+    profileHref?: string | null;
 }) {
     // A host with no name at all: show no name and no initial rather than a
     // fabricated one. `hostNoun` stands in for the name in the verified sentences
@@ -117,16 +123,35 @@ export default function MeetYourHost({
                                     render neither rather than an invented name or initial. The
                                     avatar still shows when there's a photo but no name. */}
                                 {(hasName || avatarUrl) && (
-                                    <div className="relative">
-                                        <Avatar url={avatarUrl} name={firstName} size={104} />
-                                        {verified && (
-                                            <span className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-white">
-                                                <BadgeCheck className="h-7 w-7 fill-emerald-600 text-white" />
-                                            </span>
-                                        )}
-                                    </div>
+                                    profileHref ? (
+                                        <Link href={profileHref} aria-label={hasName ? `View ${firstName}'s profile` : 'View host profile'} className="relative rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+                                            <Avatar url={avatarUrl} name={firstName} size={104} />
+                                            {verified && (
+                                                <span className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-white">
+                                                    <BadgeCheck className="h-7 w-7 fill-emerald-600 text-white" />
+                                                </span>
+                                            )}
+                                        </Link>
+                                    ) : (
+                                        <div className="relative">
+                                            <Avatar url={avatarUrl} name={firstName} size={104} />
+                                            {verified && (
+                                                <span className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-white">
+                                                    <BadgeCheck className="h-7 w-7 fill-emerald-600 text-white" />
+                                                </span>
+                                            )}
+                                        </div>
+                                    )
                                 )}
-                                {hasName && <div className="mt-3 text-2xl font-bold text-slate-900">{firstName}</div>}
+                                {hasName && (
+                                    profileHref ? (
+                                        <Link href={profileHref} className="mt-3 text-2xl font-bold text-slate-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 rounded">
+                                            {firstName}
+                                        </Link>
+                                    ) : (
+                                        <div className="mt-3 text-2xl font-bold text-slate-900">{firstName}</div>
+                                    )
+                                )}
                                 {hasName && <div className="text-xs font-medium text-slate-500">Host</div>}
                             </div>
 

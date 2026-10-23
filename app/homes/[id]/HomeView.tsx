@@ -1079,6 +1079,7 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                         coHosts={coHosts}
                         responseRatePercent={responsiveness.responseRatePercent}
                         typicalLabel={responsiveness.typicalLabel}
+                        profileHref={home?.host_id ? `/hosts/${home.host_id}` : null}
                     />
                 </div>
             </div>
