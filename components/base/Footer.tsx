@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { SOCIAL } from '@/config/social';
+import { SUPPORTERS } from '@/config/supporters';
 import { COMPANY, REGISTERED_OFFICE } from '@/config/company';
 import { GooseMark } from '@/components/base/Logo';
 
@@ -56,11 +57,47 @@ const Footer = () => {
                         <p className="text-sm font-semibold text-slate-900 mb-3">Company</p>
                         <ul className="space-y-2 text-sm text-slate-600">
                             <li><Link href="/contact" className="hover:text-slate-900">Contact us</Link></li>
+                            <li><Link href="/local-commitment" className="hover:text-slate-900">Our local commitment</Link></li>
                             <li><Link href="/terms" className="hover:text-slate-900">Terms &amp; conditions</Link></li>
                             <li><Link href="/privacy" className="hover:text-slate-900">Privacy policy</Link></li>
                         </ul>
                     </div>
                 </div>
+
+                {/* Proud supporters of — the organisations and schemes we back,
+                    each badge the third party's own artwork linking to their
+                    site. Driven entirely by config/supporters.ts: an empty list
+                    renders nothing here, not an empty heading. A badge is shown
+                    at a set height (h-20 ≈ 80px); width/height on the img reserve
+                    the box so the row doesn't jump as it loads. */}
+                {SUPPORTERS.length > 0 && (
+                    <div className="border-t pt-6 mb-6">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-4">
+                            Proud supporters of
+                        </p>
+                        <div className="flex flex-wrap items-center gap-6">
+                            {SUPPORTERS.map((s) => (
+                                <a
+                                    key={s.name}
+                                    href={s.href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label={s.alt}
+                                    className="inline-block rounded-md transition hover:opacity-80"
+                                >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                        src={s.src}
+                                        alt={s.alt}
+                                        width={s.width}
+                                        height={s.height}
+                                        className="h-20 w-auto"
+                                    />
+                                </a>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <div className="border-t pt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <p className="text-xs text-slate-500">

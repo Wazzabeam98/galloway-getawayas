@@ -83,6 +83,7 @@ export async function GET() {
         { loc: `${SITE_URL}/experiences/browse`, lastmod: now, changefreq: 'weekly', priority: '0.6' },
         { loc: `${SITE_URL}/business`, lastmod: now, changefreq: 'monthly', priority: '0.4' },
         { loc: `${SITE_URL}/contact`, lastmod: now, changefreq: 'yearly', priority: '0.4' },
+        { loc: `${SITE_URL}/local-commitment`, lastmod: now, changefreq: 'yearly', priority: '0.3' },
         { loc: `${SITE_URL}/terms`, lastmod: now, changefreq: 'yearly', priority: '0.3' },
         { loc: `${SITE_URL}/privacy`, lastmod: now, changefreq: 'yearly', priority: '0.3' },
         { loc: `${SITE_URL}/cancellation-policy`, lastmod: now, changefreq: 'yearly', priority: '0.4' },
