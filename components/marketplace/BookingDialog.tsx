@@ -6,6 +6,8 @@ import { formatGBP } from '@/lib/formatMoney';
 import { optionAvailability, seatConfig } from '@/lib/serviceSlots';
 import { unitMultiplies, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { childrenAllowed } from '@/lib/guestAges';
+import { resolveProviderSelection, priceProviderExtras, providerUnitLabel, extraQtyCap, type ProviderExtra, type ProviderExtraSelection } from '@/lib/providerExtras';
+import { getImageUrl } from '@/lib/utils';
 import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
 import PackageNotice from '@/components/marketplace/PackageNotice';
 import { itemPriceLabel, timeLabel, monthYearLabel, dayHeadingLabel } from '@/components/marketplace/present';
@@ -21,7 +23,7 @@ export interface DialogItem { id: string; name: string; price: number; unit: str
 export interface DialogOpenSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 export interface DialogDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 
-export interface BookArgs { itemId: string; date: string; time: string; quantity: number; attendees?: number; adults?: number; children?: number; serviceAddress?: string; allergy?: string; }
+export interface BookArgs { itemId: string; date: string; time: string; quantity: number; attendees?: number; adults?: number; children?: number; serviceAddress?: string; allergy?: string; extras?: ProviderExtraSelection[]; }
 
 // A merged, sortable offering — an open-hours slot or a declared session — so the
 // dialog reads one chronological timetable per day.
@@ -41,9 +43,12 @@ interface Offering {
 // Selecting a slot and pressing Book goes straight to Stripe Checkout — the panel's
 // onBook does the POST + redirect; no contact is collected here (Checkout does that).
 export default function BookingDialog({
-    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, minAge, initialDate, prefillAdults, prefillChildren, hasStay, needsGuestTerms, slotLength, busy, error, onBook, onClose,
+    who, items, extras, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, minAge, initialDate, prefillAdults, prefillChildren, hasStay, needsGuestTerms, slotLength, busy, error, onBook, onClose,
 }: {
     who: string;
+    // The provider's optional paid extras a guest may add (per booking / per
+    // person). Empty or absent when the provider offers none.
+    extras?: ProviderExtra[];
     // The provider's session length in minutes — an open-hours time's length when
     // the item has no duration of its own (the phone sheet shows the range).
     slotLength?: number | null;
@@ -305,6 +310,28 @@ export default function BookingDialog({
     const lineTotal = item ? (perPerson ? item.price * people : item.price) : 0;
     const priceEach = item ? itemPriceLabel(item.price, item.unit, (item.duration_minutes ?? 0) > 0) : '';
 
+    // Optional paid extras. Priced with the SAME helper the slot book route
+    // uses, so the total shown is the total charged. A per-person extra
+    // multiplies by the session head count (`people`). Folded into the grand
+    // total; the chosen extras ride to the route in the Book args.
+    const [extraQtys, setExtraQtys] = useState<Record<string, number>>({});
+    const activeExtras = useMemo(() => (extras || []).filter((e) => e && e.active !== false), [extras]);
+    const extrasSelection: ProviderExtraSelection[] = useMemo(
+        () => activeExtras.map((e) => ({ extra_id: e.id, qty: Math.max(0, Math.floor(Number(extraQtys[e.id]) || 0)) })).filter((s) => s.qty > 0),
+        [activeExtras, extraQtys],
+    );
+    const extrasPriced = useMemo(
+        () => priceProviderExtras(resolveProviderSelection(extrasSelection, activeExtras), Math.max(1, people)),
+        [extrasSelection, activeExtras, people],
+    );
+    const grandTotal = Math.round((lineTotal + extrasPriced.total) * 100) / 100;
+    const setExtraQty = (id: string, n: number, cap: number) =>
+        setExtraQtys((q) => {
+            const next = Math.max(0, Math.min(cap, Math.floor(Number(n) || 0)));
+            if (next <= 0) { const { [id]: _d, ...rest } = q; return rest; }
+            return { ...q, [id]: next };
+        });
+
     const submit = () => {
         if (!selected || !item) return;
         if (travels && !address.trim()) return;
@@ -316,6 +343,7 @@ export default function BookingDialog({
             adults, children,
             serviceAddress: travels ? address.trim() : undefined,
             allergy: isFood ? (allergy.trim() || undefined) : undefined,
+            extras: extrasSelection,
         });
     };
 
@@ -603,6 +631,46 @@ export default function BookingDialog({
                             />
                         )}
 
+                        {/* Optional paid extras the provider offers — tickable, with a
+                            quantity stepper; the total below updates as they're added.
+                            A per-person extra is charged for the whole party. */}
+                        {activeExtras.length > 0 && (
+                            <div className="border-t border-slate-100 px-5 py-4">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add an extra <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></div>
+                                <ul className="mt-2 space-y-2">
+                                    {activeExtras.map((e) => {
+                                        const n = Math.max(0, Math.floor(Number(extraQtys[e.id]) || 0));
+                                        const cap = extraQtyCap(e);
+                                        return (
+                                            <li key={e.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-2.5">
+                                                {e.photo ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img src={getImageUrl(e.photo)} alt="" loading="lazy" className="h-12 w-16 flex-none rounded-lg object-cover" />
+                                                ) : null}
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="truncate text-sm font-semibold text-slate-900">{e.label}</div>
+                                                    <div className="text-xs text-slate-500">{formatGBP(Number(e.price))} <span className="text-slate-400">{providerUnitLabel(e.unit)}</span></div>
+                                                    {e.description && <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{e.description}</p>}
+                                                </div>
+                                                {n > 0 ? (
+                                                    <span className="inline-flex flex-none items-center gap-1 rounded-full ring-1 ring-slate-200">
+                                                        <button type="button" aria-label={'Fewer ' + e.label} onClick={() => setExtraQty(e.id, n - 1, cap)}
+                                                            className="flex h-8 w-8 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50"><Minus className="h-4 w-4" /></button>
+                                                        <span className="min-w-[1.1rem] text-center text-sm font-bold tabular-nums text-slate-900">{n}</span>
+                                                        <button type="button" aria-label={'More ' + e.label} disabled={n >= cap} onClick={() => setExtraQty(e.id, n + 1, cap)}
+                                                            className="flex h-8 w-8 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:text-slate-300"><Plus className="h-4 w-4" /></button>
+                                                    </span>
+                                                ) : (
+                                                    <button type="button" aria-label={'Add ' + e.label} onClick={() => setExtraQty(e.id, 1, cap)}
+                                                        className="flex-none rounded-full px-3 py-1.5 text-sm font-semibold text-emerald-700 ring-1 ring-slate-200 hover:ring-emerald-600">Add</button>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </div>
+                        )}
+
                         {/* Footer: total + one CTA → Stripe Checkout */}
                         <div className="border-t border-slate-100 px-5 py-4">
                             {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
@@ -622,7 +690,7 @@ export default function BookingDialog({
                             <div className="flex items-center justify-between gap-3">
                                 <div className="text-sm text-slate-600">
                                     {selected
-                                        ? <><span className="font-semibold text-slate-900">{formatGBP(lineTotal)}</span> total</>
+                                        ? <><span className="font-semibold text-slate-900">{formatGBP(grandTotal)}</span> total</>
                                         : <span className="text-slate-400">Pick a time</span>}
                                 </div>
                                 <button type="button" onClick={submit} disabled={!canBook || busy || (!!needsGuestTerms && !guestTicked)}

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { priceParts, cancellationBadge, bookingOptions, optionTarget } from '@/components/marketplace/present';
 import BookingDialog, { type BookArgs } from '@/components/marketplace/BookingDialog';
+import type { ProviderExtra } from '@/lib/providerExtras';
 import DatePreview from '@/components/marketplace/DatePreview';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
 import { fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
@@ -28,6 +29,8 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
     provider: {
         id: string; who: string; shape: string; fulfilment?: string | null; isFood?: boolean;
         slotCapacity: number; minPeople: number; slotLength?: number; items: PanelItem[]; sessions: PanelSession[];
+        // The provider's optional paid extras (per booking / per person).
+        extras?: ProviderExtra[];
         declaredSessions?: PanelDeclared[];
         cancellationHours?: number | null; noRefund?: boolean | null;
         minAge?: number | null;
@@ -126,6 +129,7 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
                     quantity: args.quantity, attendees: args.attendees,
                     adults: args.adults, children: args.children,
                     serviceAddress: args.serviceAddress, allergy: args.allergy,
+                    extras: args.extras,
                     guestTermsVersion,
                 }),
             });
@@ -212,6 +216,7 @@ export default function StandaloneBookingPanel({ provider, signedIn }: {
                     slotLength={provider.slotLength}
                     who={provider.who}
                     items={bookingOptions(provider.items)}
+                    extras={provider.extras}
                     sessions={provider.sessions}
                     declaredSessions={declaredSessions}
                     providerCapacity={provider.slotCapacity}

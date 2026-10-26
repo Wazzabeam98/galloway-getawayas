@@ -198,6 +198,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                     providerId: provider.id, ...optionTarget(args.itemId), bookingId, sessionDate: args.date, sessionTime: args.time,
                     quantity: args.quantity, attendees: args.attendees,
                     adults: args.adults, children: args.children, allergy: args.allergy,
+                    extras: args.extras,
                     ...gt,
                 }),
             });
@@ -378,6 +379,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                         slotLength={provider.slotLength}
                         who={provider.who}
                         items={options}
+                        extras={provider.extras}
                         sessions={provider.sessions}
                         sessionsForItem={provider.perItemDurations ? sessionsForItem : undefined}
                         declaredSessions={declaredSessions}
