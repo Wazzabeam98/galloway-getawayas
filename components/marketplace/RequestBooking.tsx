@@ -6,6 +6,8 @@ import { formatGBP } from '@/lib/formatMoney';
 import { orderTotal, MAX_ORDER_QUANTITY, pricedPerHead, pricedByQuantity, quantityQuestion, unitNoun } from '@/lib/serviceOrders';
 import { hasExtraGuests, partyPrice, partyCeiling, extraGuestsLine } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
+import { resolveProviderSelection, priceProviderExtras, providerUnitLabel, extraQtyCap, type ProviderExtra, type ProviderExtraSelection } from '@/lib/providerExtras';
+import { getImageUrl } from '@/lib/utils';
 import LinkedTravelNotice from '@/components/marketplace/LinkedTravelNotice';
 import PackageNotice from '@/components/marketplace/PackageNotice';
 import { prettyTime } from '@/lib/offeredTimes';
@@ -95,6 +97,8 @@ export interface RequestBookArgs {
     // The party as a split; the caller derives the money fields it sends from the
     // item's own kind so the request matches the total shown.
     adults: number; children: number;
+    // The guest's chosen extras — which extra, how many. Priced server-side.
+    extras: ProviderExtraSelection[];
     // Hours or items picked, for a per-hour / per-item offering (else 1).
     quantity: number;
     address: string; allergy: string;
@@ -106,10 +110,13 @@ export interface RequestBookArgs {
 // top, then a scrolling LIST of the next available days (a calendar icon by the
 // month heading opens the full month grid), each day expanding to its times.
 export function RequestBookingDialog({
-    who, items, minAge, isFood, needsAddress, calDays, timesByDate, providerMax, prefillAdults, prefillChildren,
+    who, items, extras, minAge, isFood, needsAddress, calDays, timesByDate, providerMax, prefillAdults, prefillChildren,
     initialDate, lockedItemId, hasStay, needsGuestTerms, busy, error, onBook, onClose,
 }: {
     who: string;
+    // The provider's optional paid extras a guest may add (per booking / per
+    // person). Empty or absent when the provider offers none.
+    extras?: ProviderExtra[];
     // True when booked against a confirmed stay — gates the linked-travel notice.
     hasStay?: boolean;
     // True when this guest still owes the Guest Terms — a one-line tick above the
@@ -147,6 +154,8 @@ export function RequestBookingDialog({
     const [adults, setAdults] = useState<number>(Math.max(itemMinPeople(initialItem), Number(prefillAdults) || 1));
     const [children, setChildren] = useState<number>(Math.max(0, Number(prefillChildren) || 0));
     const [childrenShown, setChildrenShown] = useState<boolean>(!!(prefillChildren && prefillChildren > 0));
+    // Chosen quantity per extra id. Priced from the catalogue, never from here.
+    const [extraQtys, setExtraQtys] = useState<Record<string, number>>({});
     const [date, setDate] = useState<string>('');
     const [time, setTime] = useState<string>('');
     // The address is captured through TravelAddressModal now. `address` stays
@@ -201,6 +210,35 @@ export function RequestBookingDialog({
     const incDisabled = Number.isFinite(partyCap) && people >= (partyCap as number);
 
     const total = requestPrice(item, adults, kidsOk ? children : 0, minAge ?? null, qty);
+
+    // Optional paid extras. Priced off the catalogue with the SAME helper the
+    // order route uses, so the total shown is the total charged. A per-person
+    // extra multiplies by the party head count (`people`). Folded into the
+    // grand total and itemised in the breakdown below.
+    const activeExtras = useMemo(() => (extras || []).filter((e) => e && e.active !== false), [extras]);
+    const extrasSelection: ProviderExtraSelection[] = useMemo(
+        () => activeExtras.map((e) => ({ extra_id: e.id, qty: Math.max(0, Math.floor(Number(extraQtys[e.id]) || 0)) })).filter((s) => s.qty > 0),
+        [activeExtras, extraQtys],
+    );
+    const extrasPriced = useMemo(
+        () => priceProviderExtras(resolveProviderSelection(extrasSelection, activeExtras), Math.max(1, people)),
+        [extrasSelection, activeExtras, people],
+    );
+    const extrasTotal = extrasPriced.total;
+    const grandTotal = Math.round((total + extrasTotal) * 100) / 100;
+    const extrasBreakdownLines = useMemo(() => extrasPriced.lines.map((l) => ({
+        label: l.label + (l.unit === 'person'
+            ? ' · ' + l.units + ' ' + (l.units === 1 ? 'guest' : 'guests') + (l.qty > 1 ? ' × ' + l.qty : '')
+            : (l.qty > 1 ? ' × ' + l.qty : '')),
+        amount: l.lineTotal,
+    })), [extrasPriced]);
+    const setExtraQty = (id: string, n: number, cap: number) =>
+        setExtraQtys((q) => {
+            const next = Math.max(0, Math.min(cap, Math.floor(Number(n) || 0)));
+            if (next <= 0) { const { [id]: _d, ...rest } = q; return rest; }
+            return { ...q, [id]: next };
+        });
+
     const egText = eg ? extraGuestsLine(eg as any, minAge ?? null) : null;
     const priceEach = item ? itemPriceLabel(item.price, item.unit) : '';
 
@@ -302,7 +340,7 @@ export function RequestBookingDialog({
     const step1Done = !!item && !!date && !!time;
     const submit = () => {
         if (!canBook || !item) return;
-        onBook({ itemId: item.id, date, time, adults, children: kidsOk ? children : 0, quantity: byQuantity ? qty : 1, address: address.trim(), allergy: allergy.trim() });
+        onBook({ itemId: item.id, date, time, adults, children: kidsOk ? children : 0, quantity: byQuantity ? qty : 1, address: address.trim(), allergy: allergy.trim(), extras: extrasSelection });
     };
 
     return (
@@ -521,6 +559,46 @@ export function RequestBookingDialog({
                                     )}
                                 </div>
                             )}
+
+                            {/* Optional paid extras the provider offers — tickable, with
+                                a quantity stepper; the total above updates as they're
+                                added. A per-person extra is charged for the whole party. */}
+                            {activeExtras.length > 0 && (
+                                <div className="mt-4">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add an extra <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></div>
+                                    <ul className="mt-2 space-y-2">
+                                        {activeExtras.map((e) => {
+                                            const n = Math.max(0, Math.floor(Number(extraQtys[e.id]) || 0));
+                                            const cap = extraQtyCap(e);
+                                            return (
+                                                <li key={e.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-2.5">
+                                                    {e.photo ? (
+                                                        // eslint-disable-next-line @next/next/no-img-element
+                                                        <img src={getImageUrl(e.photo)} alt="" loading="lazy" className="h-12 w-16 flex-none rounded-lg object-cover" />
+                                                    ) : null}
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="truncate text-sm font-semibold text-slate-900">{e.label}</div>
+                                                        <div className="text-xs text-slate-500">{formatGBP(Number(e.price))} <span className="text-slate-400">{providerUnitLabel(e.unit)}</span></div>
+                                                        {e.description && <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{e.description}</p>}
+                                                    </div>
+                                                    {n > 0 ? (
+                                                        <span className="inline-flex flex-none items-center gap-1 rounded-full ring-1 ring-slate-200">
+                                                            <button type="button" aria-label={'Fewer ' + e.label} onClick={() => setExtraQty(e.id, n - 1, cap)}
+                                                                className="flex h-8 w-8 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50"><Minus className="h-4 w-4" /></button>
+                                                            <span className="min-w-[1.1rem] text-center text-sm font-bold tabular-nums text-slate-900">{n}</span>
+                                                            <button type="button" aria-label={'More ' + e.label} disabled={n >= cap} onClick={() => setExtraQty(e.id, n + 1, cap)}
+                                                                className="flex h-8 w-8 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:text-slate-300"><Plus className="h-4 w-4" /></button>
+                                                        </span>
+                                                    ) : (
+                                                        <button type="button" aria-label={'Add ' + e.label} onClick={() => setExtraQty(e.id, 1, cap)}
+                                                            className="flex-none rounded-full px-3 py-1.5 text-sm font-semibold text-emerald-700 ring-1 ring-slate-200 hover:ring-emerald-600">Add</button>
+                                                    )}
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
+                            )}
                         </div>
 
                         {needsAddress && addrModalOpen && (
@@ -537,11 +615,12 @@ export function RequestBookingDialog({
                             {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
                             <div className="flex items-baseline justify-between">
                                 <span className="text-sm font-medium text-slate-600">Total</span>
-                                <span className="text-lg font-semibold text-slate-900">{formatGBP(total)}</span>
+                                <span className="text-lg font-semibold text-slate-900">{formatGBP(grandTotal)}</span>
                             </div>
                             {/* The itemised breakdown, the same shape (and lines) as the
-                                confirmed booking page — a <details> so it needs no state. */}
-                            {breakdownLines.length > 0 && (
+                                confirmed booking page — a <details> so it needs no state.
+                                Any chosen extras are their own lines after the item. */}
+                            {(breakdownLines.length > 0 || extrasBreakdownLines.length > 0) && (
                                 <details className="group mb-3 mt-1">
                                     <summary className="cursor-pointer list-none text-xs font-medium text-slate-500 underline hover:text-slate-800 [&::-webkit-details-marker]:hidden">
                                         <span className="group-open:hidden">Show breakdown</span>
@@ -549,13 +628,13 @@ export function RequestBookingDialog({
                                     </summary>
                                     <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
                                         <div className="space-y-1.5 text-sm">
-                                            {breakdownLines.map((l, i) => (
+                                            {[...breakdownLines, ...extrasBreakdownLines].map((l, i) => (
                                                 <div key={i} className="flex items-baseline justify-between text-slate-600">
                                                     <span>{l.label}</span>
                                                     <span className="tabular-nums">{formatGBP(l.amount)}</span>
                                                 </div>
                                             ))}
-                                            <div className="flex items-baseline justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">{formatGBP(total)}</span></div>
+                                            <div className="flex items-baseline justify-between border-t border-slate-200 pt-1.5 font-semibold text-slate-900"><span>Total</span><span className="tabular-nums">{formatGBP(grandTotal)}</span></div>
                                         </div>
                                     </div>
                                 </details>

@@ -10,6 +10,7 @@ import { normaliseTime } from '@/lib/offeredTimes';
 import { refreshVenuePoint } from '@/lib/venuePoint';
 import { normaliseVatTreatment } from '@/lib/vat';
 import { normaliseUnit } from '@/lib/serviceOrders';
+import { providerExtraProblem, normaliseProviderUnit } from '@/lib/providerExtras';
 import { mayActOn } from '@/lib/providerAccess';
 import { revalidateExperience, revalidateHostProfile } from '@/lib/revalidatePublic';
 
@@ -445,6 +446,46 @@ export async function POST(request: Request) {
                 }
                 const remove = Array.from(existingIds).filter((id) => !keep.has(id as string));
                 if (remove.length) await admin.from('service_provider_items').delete().in('id', remove).eq('provider_id', providerId);
+                break;
+            }
+
+            case 'extras': {
+                // The provider's optional paid extras, written the same way as the
+                // items above: reconcile the incoming set against what is stored,
+                // insert/update/delete. Each row is validated server-side with the
+                // SAME helper the editor uses (providerExtraProblem) — a bad row is
+                // skipped, never trusted from the browser. RLS on provider_extras
+                // also gates this to the owner/listing co-host, but the ownership
+                // check above is the real wall and the admin client does the write.
+                const incoming: any[] = Array.isArray(data.extras) ? data.extras : [];
+                const { data: existing } = await admin.from('provider_extras').select('id').eq('provider_id', providerId);
+                const existingIds = new Set((existing || []).map((r: any) => r.id));
+                const keep = new Set<string>();
+                for (let i = 0; i < incoming.length; i++) {
+                    const ex = incoming[i];
+                    if (providerExtraProblem({ label: ex.label, description: ex.description, price: ex.price, unit: ex.unit, vat_treatment: ex.vat_treatment, max_qty: ex.max_qty })) continue;
+                    const row: any = {
+                        label: String(ex.label).trim(),
+                        description: strOrNull(ex.description),
+                        price: Number(ex.price),
+                        unit: normaliseProviderUnit(ex.unit),
+                        vat_treatment: normaliseVatTreatment(ex.vat_treatment) === 'zero' ? 'zero' : 'standard',
+                        active: ex.active !== false,
+                        sort_order: i,
+                        max_qty: (ex.max_qty != null && String(ex.max_qty).trim() !== '') ? Math.floor(Number(ex.max_qty)) : null,
+                        photo: strOrNull(ex.photo),
+                    };
+                    if (ex.id && existingIds.has(ex.id)) {
+                        keep.add(ex.id);
+                        await admin.from('provider_extras').update(row).eq('id', ex.id).eq('provider_id', providerId);
+                    } else {
+                        const { data: ins } = await admin.from('provider_extras')
+                            .insert({ ...row, provider_id: providerId }).select('id').maybeSingle();
+                        if (ins?.id) keep.add(ins.id);
+                    }
+                }
+                const removeEx = Array.from(existingIds).filter((id) => !keep.has(id as string));
+                if (removeEx.length) await admin.from('provider_extras').delete().in('id', removeEx).eq('provider_id', providerId);
                 break;
             }
 

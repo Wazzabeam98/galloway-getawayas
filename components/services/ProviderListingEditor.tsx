@@ -21,6 +21,7 @@ import { NumberStepper, BigTextInput, ChoiceTiles, wizardAreaCls } from './wizar
 import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
 import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
 import { AddItemFlow, ItemDetailCard, rowFromItem, uploadImage, priceRowValid, type MenuRow, type ItemCtx } from './ExperienceItemEditor';
+import ProviderExtrasEditor from './ProviderExtrasEditor';
 import { chargeUnitsFor, needsCapacity } from '@/lib/pricingUnits';
 import { SinglePhotoSheet } from './SinglePhotoSheet';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -1133,6 +1134,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             <div className="space-y-4 pt-2">
                                 <NoticeCard leadDays={leadDays} onSave={(v) => runThen('booking', bookingPayload({ leadDays: v }), () => setLeadDays(v))} />
                                 <HorizonCard horizonDays={horizonDays} onSave={(v) => runThen('booking', bookingPayload({ horizonDays: v }), () => setHorizonDays(v))} />
+                            </div>
+                        )}
+                        {/* Optional paid extras a guest ticks on when they book — a
+                            sauna pack, club hire. Offered on comes-to-you experiences
+                            (the shape whose checkout charges them); slots and food
+                            carts come later. */}
+                        {p.shape === 'comes_to_you' && (
+                            <div className="pt-2">
+                                <ProviderExtrasEditor providerId={p.id} vatRegistered={p.vat_registered} />
                             </div>
                         )}
                     </>), menu.length > 0 && (

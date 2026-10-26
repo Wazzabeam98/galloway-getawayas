@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { unitMultiplies, pricedPerHead, pricedByQuantity } from '@/lib/serviceOrders';
 import { hasExtraGuests } from '@/lib/extraGuests';
+import type { ProviderExtra } from '@/lib/providerExtras';
 import { generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
 import { dateLabel, priceParts, cancellationBadge, bookingOptions, optionTarget } from '@/components/marketplace/present';
 import { childrenAllowed } from '@/lib/guestAges';
@@ -62,6 +63,9 @@ interface PanelProvider {
     offeredTimes?: string[];
     horizonDays?: number;
     maxGuests?: number | null;
+    // The provider's optional paid extras (per booking / per person). Shown in
+    // the request dialog; absent when none are offered.
+    extras?: ProviderExtra[];
 }
 
 const dayKeyFromNow = (days: number) => shiftDayKey(londonDayKey(), days);
@@ -296,6 +300,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                         : { quantity: perPerson ? Math.max(1, args.adults + kids) : byQuantity ? Math.max(1, args.quantity) : 1 }),
                     serviceAddress: needsAddress ? args.address : undefined,
                     allergy: provider.isFood ? args.allergy : '',
+                    extras: args.extras,
                     ...gt,
                 }),
             });
@@ -453,6 +458,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdul
                 <RequestBookingDialog
                     who={provider.who}
                     items={options}
+                    extras={provider.extras}
                     minAge={provider.minAge}
                     isFood={provider.isFood}
                     needsAddress={needsAddress}

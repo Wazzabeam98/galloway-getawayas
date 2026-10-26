@@ -325,8 +325,13 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     let cartLineItems: any[] | null = null;
     if (role === 'booker') {
         // A made-to-order cart carries its lines on the order; itemise those.
-        const { data: money } = await admin.from('service_orders').select('line_items').eq('id', order.id).maybeSingle();
+        // Guest-selectable extras (comes-to-you) are frozen on the order too and
+        // are ALREADY inside `price`, so the item line shows price minus them and
+        // each extra reads as its own line below.
+        const { data: money } = await admin.from('service_orders').select('line_items, extras_breakdown, extras_total').eq('id', order.id).maybeSingle();
         cartLineItems = money && Array.isArray(money.line_items) ? money.line_items : null;
+        const extrasBreakdown: any[] = money && Array.isArray(money.extras_breakdown) ? money.extras_breakdown : [];
+        const extrasTotal = Math.round((Number(money?.extras_total) || 0) * 100) / 100;
         const { data: item } = order.item_id
             ? await admin.from('service_provider_items').select('unit, price, included_guests, extra_adult_fee, extra_child_fee').eq('id', order.item_id).maybeSingle()
             : { data: null };
@@ -350,9 +355,17 @@ export default async function OrderPage({ params, searchParams }: { params: { or
             if (extraAdults > 0) breakdownLines.push({ label: 'Extra adults × ' + extraAdults, amount: extraAdults * (Number(item.extra_adult_fee) || 0) });
             if (extraChildren > 0) breakdownLines.push({ label: 'Extra children × ' + extraChildren, amount: extraChildren * (Number(item.extra_child_fee) || 0) });
         } else if (isPerPersonParent) {
-            breakdownLines.push({ label: nm + (family.headcount ? ' · ' + family.headcount + ' ' + (family.headcount === 1 ? 'place' : 'places') : ''), amount: parentPrice });
+            breakdownLines.push({ label: nm + (family.headcount ? ' · ' + family.headcount + ' ' + (family.headcount === 1 ? 'place' : 'places') : ''), amount: Math.round((parentPrice - extrasTotal) * 100) / 100 });
         } else {
-            breakdownLines.push({ label: nm, amount: parentPrice });
+            breakdownLines.push({ label: nm, amount: Math.round((parentPrice - extrasTotal) * 100) / 100 });
+        }
+        // The chosen extras, each its own line at the price frozen on the order.
+        for (const e of extrasBreakdown) {
+            if (!(Number(e?.lineTotal) > 0)) continue;
+            const suffix = e.unit === 'person'
+                ? ' · ' + e.units + ' ' + (Number(e.units) === 1 ? 'guest' : 'guests') + (Number(e.qty) > 1 ? ' × ' + e.qty : '')
+                : (Number(e.qty) > 1 ? ' × ' + e.qty : '');
+            breakdownLines.push({ label: String(e.label || 'Extra') + suffix, amount: Number(e.lineTotal) });
         }
         breakdownTotal += parentPrice;
         for (const kid of (paidKids as any[]) || []) {

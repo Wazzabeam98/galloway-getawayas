@@ -12,6 +12,7 @@ import { heldChargeMetadata, heldChargeSeller } from '@/lib/experienceFunds';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { hasExtraGuests, partyPrice, partyCeiling } from '@/lib/extraGuests';
+import { resolveProviderSelection, priceProviderExtras, type ProviderExtraLine } from '@/lib/providerExtras';
 import { childrenAllowed } from '@/lib/guestAges';
 import { itemTravels } from '@/lib/serviceProviders';
 import { offeredTimes as providerOfferedTimes, isOfferedTime, normaliseTime } from '@/lib/offeredTimes';
@@ -626,9 +627,35 @@ export async function POST(request: Request) {
             }
         }
 
+        // Guest-selectable paid extras (provider_extras). Priced server-side off
+        // the provider's LIVE catalogue — never the browser's figure — and folded
+        // into `total` so the charge, our commission and the payout all include
+        // them. Unlike a stay (where an extra is commission-free), an experience
+        // extra carries our normal commission; folding it in is what applies it,
+        // because priceOrder commissions the whole band. A per-person extra is
+        // charged once per guest on the order; `extrasHead` is that head count.
+        const extrasHead = hasExtraGuests(item)
+            ? (Math.max(1, reqAdults || 1) + (childrenAllowed(minAge) ? reqChildrenRaw : 0))
+            : (pricedPerHead(unit) ? quantity : Math.max(1, (reqAdults + reqChildrenRaw) || 1));
+        let extrasLines: ProviderExtraLine[] = [];
+        let extrasTotal = 0;
+        const submittedExtras = Array.isArray(body && body.extras) ? body.extras.slice(0, 30) : [];
+        if (submittedExtras.length) {
+            const { data: extraRows } = await admin
+                .from('provider_extras')
+                .select('id, label, price, unit, vat_treatment, active, max_qty')
+                .eq('provider_id', provider.id);
+            const resolved = resolveProviderSelection(submittedExtras, extraRows || []);
+            const priced = priceProviderExtras(resolved, extrasHead);
+            extrasLines = priced.lines;
+            extrasTotal = priced.total;
+            total = Math.round((total + extrasTotal) * 100) / 100;
+        }
+
         // The TOTAL is what Stripe holds and what the 10% fee is taken from, so
-        // it is what priceOrder is handed. unit price × quantity, computed here
-        // and never trusted from the browser.
+        // it is what priceOrder is handed. unit price × quantity (plus any
+        // extras, folded in above), computed here and never trusted from the
+        // browser.
         const pricing = priceOrder(provider, { bandPrice: total }, []);
 
         const business = (provider.business_name || 'Your experience');
@@ -682,6 +709,16 @@ export async function POST(request: Request) {
             item_unit: unit,
             unit_price: String(unitPrice),
             quantity: String(quantity),
+            // Guest-selectable extras, frozen compactly ("id:qty:unit:units:
+            // unitPrice:vat,...") for Stripe's 500-char limit. requestOrder
+            // rebuilds the breakdown from this, the label re-read from the
+            // catalogue. Already inside the charged total above.
+            ...(extrasLines.length ? {
+                extras: extrasLines
+                    .map((l) => [l.id, l.qty, l.unit, l.units, l.unitPrice, l.vat_treatment].join(':'))
+                    .join(','),
+                extras_total: String(extrasTotal),
+            } : {}),
             ...packageNoticeMetadata(packageNotice),
             ...guestTermsMeta,
         };
