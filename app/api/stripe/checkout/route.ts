@@ -166,7 +166,7 @@ export async function POST(request: Request) {
         // nothing (resolveSelection), so a stale tab cannot buy a withdrawn one.
         const { data: extraRows } = await admin
             .from('listing_extras')
-            .select('id, label, price, unit, vat_treatment, active')
+            .select('id, label, price, unit, vat_treatment, active, max_qty')
             .eq('listing_id', booking.listing_id);
         const resolvedExtras = resolveSelection(
             Array.isArray(booking.extras_selection) ? booking.extras_selection : [],

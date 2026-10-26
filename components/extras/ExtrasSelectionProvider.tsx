@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { ListingExtra } from '@/lib/listingExtras';
+import { EXTRA_DEFAULT_QTY_CAP, EXTRA_MAX_QTY_CEILING, type ListingExtra } from '@/lib/listingExtras';
 
 // The one place a guest's choice of extras lives on a listing page, so the
 // "Extras this host offers" cards and the booking panel are the SAME selection:
@@ -14,11 +14,12 @@ import type { ListingExtra } from '@/lib/listingExtras';
 // them (registered by BookingWidget) so a card tapped before dates exist opens
 // the date picker the way the rest of the flow does.
 
-const MAX_EXTRA_QTY = 10;
-
 interface ExtrasSelectionValue {
     qtys: Record<string, number>;
-    setQty: (id: string, n: number) => void;
+    // `max` is the per-extra cap (the host's max_qty, or the platform default);
+    // the caller passes the one for this extra so the stepper never buys past
+    // it. A hard ceiling backstops a missing cap.
+    setQty: (id: string, n: number, max?: number) => void;
     // True once a valid stay is picked. BookingWidget owns the dates and reports
     // this up; the cards read it to decide whether adding should prompt.
     hasDates: boolean;
@@ -38,8 +39,9 @@ export function ExtrasSelectionProvider({ children }: { extras?: ListingExtra[];
 
     const value = useMemo<ExtrasSelectionValue>(() => ({
         qtys,
-        setQty: (id, n) => setQtys((q) => {
-            const next = Math.max(0, Math.min(MAX_EXTRA_QTY, Math.floor(Number(n) || 0)));
+        setQty: (id, n, max) => setQtys((q) => {
+            const cap = Math.min(EXTRA_MAX_QTY_CEILING, (max && max > 0) ? Math.floor(max) : EXTRA_DEFAULT_QTY_CAP);
+            const next = Math.max(0, Math.min(cap, Math.floor(Number(n) || 0)));
             if (next <= 0) {
                 const { [id]: _drop, ...rest } = q;
                 return rest;

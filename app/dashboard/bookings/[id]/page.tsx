@@ -453,6 +453,18 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // money owed from before that comes off it, and the damage deposit note.
     const feeAmount = round2((grossDue > 0 ? grossDue : 0) - yours);
     const moneyRows: MoneyDetailRow[] = [{ label: 'Guest paid', value: money(total) }];
+    // Host-sold extras the guest added, itemised at the price frozen on the
+    // booking, so the host sees each one named (a sauna pack, a hamper). They
+    // are already inside "Guest paid"; commission is taken on the whole, extras
+    // included, exactly as on the stay.
+    const extrasBreakdown: any[] = Array.isArray((booking as any).extras_breakdown) ? (booking as any).extras_breakdown : [];
+    extrasBreakdown
+        .filter((e: any) => e && Number(e.lineTotal) > 0)
+        .forEach((e: any) => moneyRows.push({
+            label: 'incl. ' + e.label + (Number(e.qty) > 1 ? ' × ' + e.qty : ''),
+            value: money(Number(e.lineTotal)),
+            muted: true,
+        }));
     if (refunded > 0) moneyRows.push({ label: 'Refunded to guest', value: '−' + money(refunded) });
     moneyRows.push({ label: 'Paid so far', value: money(paid) });
     if (outstanding > 0) moneyRows.push({ label: 'Balance still due', value: money(outstanding) + (booking.balance_due_date ? ', charged ' + formatUk(dateFromKey(booking.balance_due_date)) : '') });

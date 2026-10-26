@@ -432,7 +432,7 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
     // re-prices, and shown as an informational section below.
     const { data: extraRows } = await adminClient()
         .from('listing_extras')
-        .select('id, label, description, price, unit, vat_treatment, active, sort_order, photo')
+        .select('id, label, description, price, unit, vat_treatment, active, sort_order, photo, max_qty')
         .eq('listing_id', home.id)
         .eq('active', true)
         .order('sort_order', { ascending: true })

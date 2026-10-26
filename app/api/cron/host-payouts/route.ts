@@ -302,17 +302,11 @@ export async function GET(request: Request) {
             // 'active' and the next run waives again rather than losing it.
             const waivedReferral: ReferralRow | null = await waivableReferralFor(admin, booking.host_id, 'stay');
 
-            // Commission comes off the STAY only, never a host-sold extra (the
-            // host's own supply — we take nothing on it). commissionableCollected
-            // removes the extras' proportional share of what was collected; with
-            // no extras it is the whole figure, so a stay without extras pays out
-            // exactly as before. The host keeps the full extras plus the net of
-            // the rest, so hostShare is collected minus that commission.
-            const commissionBase = commissionableCollected(
-                collected,
-                Number(booking.total_price || 0),
-                Number(booking.extras_total || 0)
-            );
+            // Commission is taken on the WHOLE of what was collected, a
+            // host-sold extra included, exactly as on the stay itself (owner's
+            // decision of 26 October 2026 — see lib/fees.ts). The host keeps
+            // what was collected minus that commission.
+            const commissionBase = commissionableCollected(collected);
             // What the commission would have been, kept for the referral record
             // before the rate is waived to 0.
             const waivedCommission = waivedReferral ? feeAmount(commissionBase, rate) : 0;

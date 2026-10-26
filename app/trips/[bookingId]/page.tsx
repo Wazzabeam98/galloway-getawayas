@@ -601,6 +601,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                                                 <span>
                                                                     {e.label}
                                                                     {e.unit === 'night' && Number(e.units) > 1 && <span className="ml-1.5 text-slate-400">· {formatGBP(Number(e.unitPrice))} × {e.units} nights{Number(e.qty) > 1 ? ' × ' + e.qty : ''}</span>}
+                                                                    {e.unit === 'person' && <span className="ml-1.5 text-slate-400">· {formatGBP(Number(e.unitPrice))} × {e.units} {Number(e.units) === 1 ? 'guest' : 'guests'}{Number(e.qty) > 1 ? ' × ' + e.qty : ''}</span>}
                                                                     {e.unit === 'stay' && Number(e.qty) > 1 && <span className="ml-1.5 text-slate-400">· {formatGBP(Number(e.unitPrice))} × {e.qty}</span>}
                                                                 </span>
                                                                 <span className="tabular-nums">{formatGBP(Number(e.lineTotal))}</span>
