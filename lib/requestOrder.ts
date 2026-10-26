@@ -1,5 +1,6 @@
 import { stripeRequest } from '@/lib/stripe';
 import { expiryFrom } from '@/lib/serviceOrders';
+import { parseFrozenExtras } from '@/lib/providerExtras';
 import { resolveGuestForPaidOrder, supabaseGuestStore } from '@/lib/guestAccount';
 import { anonGuestTermsFromMetadata } from '@/lib/agreements';
 import { recordOrderGuestTerms } from '@/lib/agreementRecords';
@@ -145,6 +146,26 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
         if (deliveryFee > 0) lineItems.push({ item_id: null, name: 'Delivery', unit: 'flat', qty: 1, unit_price: deliveryFee, line_total: deliveryFee, is_custom: false });
     }
 
+    // Guest-selectable extras, frozen on the order. Carried compactly in the
+    // metadata ("id:qty:unit:units:unitPrice:vat,...") and rebuilt here into the
+    // breakdown the receipt reads, with the label re-read from the catalogue.
+    // They are already inside `price` (amount_total), so this is display only.
+    let extrasBreakdown: any[] | null = null;
+    let extrasSelection: any[] | null = null;
+    let extrasTotalRow: number | null = null;
+    if (md.extras) {
+        const exIds = Array.from(new Set(String(md.extras).split(',').map((s: string) => (s.split(':')[0] || '').trim()).filter(Boolean)));
+        const { data: exRows } = exIds.length
+            ? await admin.from('provider_extras').select('id, label').in('id', exIds)
+            : { data: [] };
+        const labelsById: Record<string, string> = {};
+        for (const e of exRows || []) labelsById[e.id] = e.label;
+        const parsed = parseFrozenExtras(md.extras, labelsById);
+        extrasBreakdown = parsed.breakdown;
+        extrasSelection = parsed.selection;
+        extrasTotalRow = parsed.total;
+    }
+
     const { data: order, error: orderErr } = await admin
         .from('service_orders')
         .insert({
@@ -231,6 +252,9 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             // quantity is NOT NULL; a cart's real breakdown is in line_items, so the
             // order-level quantity is just 1 (one order).
             quantity: isCart ? 1 : (md.quantity ? parseInt(md.quantity, 10) : 1),
+            extras_selection: extrasSelection,
+            extras_total: extrasTotalRow,
+            extras_breakdown: extrasBreakdown,
             stripe_payment_intent_id: piId,
             expires_at: expiryFrom(nowIso),
             created_at: nowIso,

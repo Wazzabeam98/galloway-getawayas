@@ -102,6 +102,7 @@ export default async function ListingPage(
                         fulfilment: p.fulfilment,
                         isFood: p.isFood,
                         items: p.items,
+                        extras: p.extras,
                         sessions: p.sessions,
                         declaredSessions: p.declaredSessions,
                         leadTimeDays: p.lead_time_days,

@@ -14,6 +14,7 @@ import { offeredTimes } from '@/lib/offeredTimes';
 import { venueMapPoint } from '@/lib/venuePoint';
 import { shiftDayKey, londonDayKey } from '@/lib/dayKey';
 import { byDisplayOrder } from '@/lib/listingOrder';
+import type { ProviderExtra } from '@/lib/providerExtras';
 
 // Only a FIXED price is listed (9 Oct 2026). Ranges and price on enquiry were
 // dropped; price_mode/price_max stay on the table but are no longer written, and
@@ -194,6 +195,8 @@ export interface MpProvider {
     priceFrom: number;
     // A slot provider's per-person vs whole-slot reading comes off the item unit.
     items: MpItem[];
+    // The provider's optional paid extras (per booking / per person).
+    extras: ProviderExtra[];
     // Slots only: the next bookable sessions in the stay (future, seats left).
     sessions: MpSession[];
     declaredSessions: MpDeclaredSession[];
@@ -440,7 +443,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     const profileById: Record<string, any> = {};
     for (const pr of ownerProfiles || []) profileById[pr.id] = pr;
 
-    const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
+    const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }, { data: extraRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label, centre_lat, centre_lng').in('provider_id', ids),
         admin.from('service_provider_items').select('id, provider_id, name, description, price, group_price, min_hours, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people, included_guests, extra_adult_fee, extra_child_fee, max_party, is_custom, ingredients, allergens, category')
             // Listed only with a real, fixed price — an older range or
@@ -457,6 +460,12 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
         // confirmed order on a date blocks that whole day in the booking dialog —
         // greyed and unpickable, not a clash reported only after Send.
         admin.from('service_orders').select('provider_id, status, service_date').in('provider_id', ids).in('status', ['authorised', 'confirmed']),
+        // The provider's optional paid extras (comes-to-you only reads them, but
+        // harmless to carry for all) — shown as tickable add-ons in the booking
+        // dialog and priced server-side at order time.
+        admin.from('provider_extras').select('id, provider_id, label, description, price, unit, vat_treatment, active, sort_order, photo, max_qty')
+            .in('provider_id', ids).eq('active', true)
+            .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
     ]);
 
     const by = <T,>(list: any[], key: string) => {
@@ -479,6 +488,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
     const availBy = by<any>(avail, 'provider_id');
     const blocksBy = by<any>(blocks, 'provider_id');
     const sessBy = by<any>(sessRows, 'provider_id');
+    const extrasBy = by<any>(extraRows, 'provider_id');
 
     const nowMs = Date.now();
 
@@ -670,6 +680,15 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             deliveryFee: Number(p.delivery_fee) || 0,
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),
             items,
+            // The provider's optional paid extras (per booking / per person),
+            // shown as tickable add-ons in the comes-to-you booking dialog.
+            extras: (extrasBy[p.id] || []).map((e: any) => ({
+                id: e.id, label: e.label, description: e.description,
+                price: Number(e.price), unit: e.unit === 'person' ? 'person' : 'booking',
+                vat_treatment: e.vat_treatment === 'zero' ? 'zero' : 'standard',
+                active: e.active !== false, sort_order: e.sort_order,
+                photo: e.photo || null, max_qty: e.max_qty == null ? null : Number(e.max_qty),
+            })),
             sessions,
             declaredSessions,
             // The per-person minimum for the whole slot (the helper applies it only
