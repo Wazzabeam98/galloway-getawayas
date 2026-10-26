@@ -1,8 +1,9 @@
-// Host-sold optional extras on a stay (Stage 1). The money rules, pinned:
-//   * an extra is priced from the catalogue, per stay or per night;
+// Host-sold optional extras on a stay. The money rules, pinned:
+//   * an extra is priced from the catalogue, per stay, per night or per person;
 //   * it is added to the total but never discounted;
-//   * it carries NO commission (the payout's commissionable base excludes it);
-//   * a selection can only ever buy a live extra on the listing;
+//   * it carries our normal commission, exactly as the stay does (reversed from
+//     the original "no commission on an extra" decision on 26 October 2026);
+//   * a selection can only ever buy a live extra on the listing, up to its cap;
 //   * the VAT treatment rides on the frozen line.
 
 import { test } from 'node:test';
@@ -95,23 +96,33 @@ test('resolveSelection never trusts a browser price, and drops anything not live
     assert.equal(resolved[0].unitPrice, 40); // the catalogue's price, not 5
 });
 
-test('commission is taken on the stay only, never on an extra', () => {
+test('commission is taken on the whole collected figure, extras included', () => {
     // £340 collected: £300 stay + £40 extra, at 10%. Commission is 10% of the
-    // £300 stay (= £30), not of the £340. The host keeps £310.
-    const base = commissionableCollected(340, 340, 40);
-    assert.equal(base, 300);
-    assert.equal(feeAmount(base, 10), 30);
+    // whole £340 (= £34), exactly as on any other line. The host keeps £306.
+    const base = commissionableCollected(340);
+    assert.equal(base, 340);
+    assert.equal(feeAmount(base, 10), 34);
 });
 
-test('commissionableCollected returns the whole figure when there are no extras', () => {
-    assert.equal(commissionableCollected(300, 300, 0), 300);
-    assert.equal(commissionableCollected(150, 300, 0), 150); // a part-paid booking
+test('commissionableCollected is simply what was collected', () => {
+    assert.equal(commissionableCollected(300), 300);
+    assert.equal(commissionableCollected(150), 150); // a part-paid booking
+    assert.equal(commissionableCollected(0), 0);
 });
 
-test('the extras-free share holds under a partial refund, in proportion', () => {
-    // £170 collected of a £340 total (half). The extras are still 40/340 of it,
-    // so the commissionable part is half of £300 = £150.
-    assert.equal(commissionableCollected(170, 340, 40), 150);
+test('a per-person extra is charged once for each guest on the booking', () => {
+    const CLUB: ListingExtra = { id: 'club', label: 'Club hire', price: 5, unit: 'person', vat_treatment: 'standard', active: true };
+    // 3 nights, a party of four (3 adults + 1 child): £5 × 4 guests = £20, once.
+    const q = quoteBooking(BASE, {}, CHECK_IN, CHECK_OUT, 3, 1, 0, {}, resolveSelection([{ extra_id: 'club', qty: 1 }], [CLUB]));
+    assert.equal(q.extrasTotal, 20);
+    assert.equal(q.extras[0].units, 4);
+});
+
+test('resolveSelection clamps a tampered quantity to the extra\'s cap', () => {
+    const CAPPED: ListingExtra = { id: 'cap', label: 'Towels', price: 3, unit: 'stay', vat_treatment: 'standard', active: true, max_qty: 2 };
+    const resolved = resolveSelection([{ extra_id: 'cap', qty: 99 }], [CAPPED]);
+    assert.equal(resolved.length, 1);
+    assert.equal(resolved[0].qty, 2); // clamped to max_qty, not 99
 });
 
 test('extraProblem rejects the bad and passes the good', () => {

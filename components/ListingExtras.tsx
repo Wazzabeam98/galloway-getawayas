@@ -3,7 +3,7 @@
 import { formatGBP } from '@/lib/formatMoney';
 import { getImageUrl } from '@/lib/utils';
 import { Plus, Minus, Gift } from 'lucide-react';
-import { unitLabel, type ListingExtra } from '@/lib/listingExtras';
+import { unitLabel, extraQtyCap, type ListingExtra } from '@/lib/listingExtras';
 import { useExtrasSelection } from '@/components/extras/ExtrasSelectionProvider';
 
 // "Extras this host offers" — the SAME card the experiences bakery menu uses
@@ -22,10 +22,10 @@ export default function ListingExtras({ extras }: { extras: ListingExtra[] }) {
     if (!live.length) return null;
 
     const qtyOf = (id: string) => (sel ? sel.qtys[id] || 0 : 0);
-    const setQty = (id: string, n: number) => {
+    const setQty = (id: string, n: number, max: number) => {
         if (!sel) return;
         const adding = n > qtyOf(id);
-        sel.setQty(id, n);
+        sel.setQty(id, n, max);
         // Adding before a stay is chosen: record it, then prompt for dates so the
         // guest can finish — the price lands once the dates do.
         if (adding && !sel.hasDates) sel.requestDates();
@@ -38,6 +38,7 @@ export default function ListingExtras({ extras }: { extras: ListingExtra[] }) {
             <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {live.map((e) => {
                     const n = qtyOf(e.id);
+                    const cap = extraQtyCap(e);
                     return (
                         <li key={e.id}>
                             <div className="flex h-full gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
@@ -66,18 +67,18 @@ export default function ListingExtras({ extras }: { extras: ListingExtra[] }) {
                                     <div className="absolute -bottom-2.5 right-1">
                                         {n > 0 ? (
                                             <span className="inline-flex items-center gap-1 rounded-full bg-white px-1 py-1 shadow-md ring-1 ring-slate-200">
-                                                <button type="button" aria-label={'Fewer ' + e.label} onClick={() => setQty(e.id, n - 1)}
+                                                <button type="button" aria-label={'Fewer ' + e.label} onClick={() => setQty(e.id, n - 1, cap)}
                                                     className="flex h-7 w-7 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50">
                                                     <Minus className="h-4 w-4" />
                                                 </button>
                                                 <span className="min-w-[1.1rem] text-center text-sm font-bold tabular-nums text-slate-900">{n}</span>
-                                                <button type="button" aria-label={'More ' + e.label} onClick={() => setQty(e.id, n + 1)}
-                                                    className="flex h-7 w-7 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50">
+                                                <button type="button" aria-label={'More ' + e.label} disabled={n >= cap} onClick={() => setQty(e.id, n + 1, cap)}
+                                                    className="flex h-7 w-7 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent">
                                                     <Plus className="h-4 w-4" />
                                                 </button>
                                             </span>
                                         ) : (
-                                            <button type="button" aria-label={'Add ' + e.label} onClick={() => setQty(e.id, 1)}
+                                            <button type="button" aria-label={'Add ' + e.label} onClick={() => setQty(e.id, 1, cap)}
                                                 className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-emerald-700 shadow-md ring-1 ring-slate-200 transition hover:ring-emerald-600">
                                                 <Plus className="h-5 w-5" />
                                             </button>

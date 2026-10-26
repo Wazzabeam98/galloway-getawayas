@@ -5,7 +5,7 @@
 // anything. Because both call the same code, the two can never drift apart —
 // and a total posted from the browser can never be taken on trust.
 
-import type { QuoteExtra, ExtraUnit, ExtraVat } from './listingExtras';
+import { normaliseUnit, type QuoteExtra, type ExtraUnit, type ExtraVat } from './listingExtras';
 
 export interface PricingListing {
     price_per_night: number;
@@ -123,7 +123,8 @@ export interface PriceQuote {
     cleaningFeeTotal: number;
     // Host-sold optional extras. extrasTotal is already inside `total`; `extras`
     // is the per-line series behind it, for the breakdown and the snapshot. An
-    // extra is never discounted and never commissioned (the host's own supply).
+    // extra is never discounted; commission is taken on it exactly as on the
+    // stay (see lib/fees.ts and app/api/cron/host-payouts).
     extrasTotal: number;
     extras: ExtraLine[];
     // The one discount that applies, or null. The money off is in `amount`, and
@@ -349,11 +350,12 @@ export function quoteBooking(
         : 0;
 
     // Host-sold extras. A per-stay extra is charged once; a per-night extra once
-    // for each night of the stay. Priced from the catalogue's unit price (passed
-    // in already resolved against the live catalogue — never the browser's
-    // figure), never discounted, and summed into the total after the discount so
-    // a weekly discount can't quietly come off a sauna pack. Each line also
-    // carries its VAT treatment, frozen for the receipt.
+    // for each night of the stay; a per-person extra once for each guest on the
+    // booking (a party of one still pays for one). Priced from the catalogue's
+    // unit price (passed in already resolved against the live catalogue — never
+    // the browser's figure), never discounted, and summed into the total after
+    // the discount so a weekly discount can't quietly come off a sauna pack.
+    // Each line also carries its VAT treatment, frozen for the receipt.
     const extraLines: ExtraLine[] = [];
     let extrasTotal = 0;
     for (const e of extras || []) {
@@ -361,12 +363,14 @@ export function quoteBooking(
         const qty = Math.floor(Number(e.qty) || 0);
         const unitPrice = Number(e.unitPrice) || 0;
         if (!(qty > 0) || !(unitPrice > 0)) continue;
-        const units = e.unit === 'night' ? nights : 1;
+        const units = e.unit === 'night' ? nights
+            : e.unit === 'person' ? Math.max(1, totalGuests)
+            : 1;
         const lineTotal = money(unitPrice * qty * units);
         extraLines.push({
             id: String(e.id),
             label: String(e.label),
-            unit: e.unit === 'night' ? 'night' : 'stay',
+            unit: normaliseUnit(e.unit),
             unitPrice: money(unitPrice),
             qty,
             units,

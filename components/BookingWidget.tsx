@@ -17,7 +17,7 @@ import { ukDate, ukLongDate, ukWeekday } from '@/lib/dayKey';
 import { notify } from '@/lib/notify';
 import { formatUk, cancellationSummary } from '@/lib/cancellation';
 import { quoteBooking, dateKey, dateFromKey } from '@/lib/pricing';
-import { resolveSelection, unitLabel, type ListingExtra } from '@/lib/listingExtras';
+import { resolveSelection, unitLabel, extraQtyCap, type ListingExtra } from '@/lib/listingExtras';
 import { getImageUrl } from '@/lib/utils';
 import { EXTRA_CROP_ASPECT } from '@/lib/photoRules';
 import { useExtrasSelection } from '@/components/extras/ExtrasSelectionProvider';
@@ -396,8 +396,8 @@ export default function BookingWidget({
     const extrasSel = useExtrasSelection();
     const [localExtraQtys, setLocalExtraQtys] = useState<Record<string, number>>({});
     const extraQtys = extrasSel ? extrasSel.qtys : localExtraQtys;
-    const setExtraQty = (id: string, v: number) =>
-        extrasSel ? extrasSel.setQty(id, v) : setLocalExtraQtys((q) => ({ ...q, [id]: v }));
+    const setExtraQty = (id: string, v: number, max?: number) =>
+        extrasSel ? extrasSel.setQty(id, v, max) : setLocalExtraQtys((q) => ({ ...q, [id]: Math.min(v, max || v) }));
     const [dateRange, setDateRange] = useState<Range>({
         startDate: undefined,
         endDate: undefined,
@@ -964,6 +964,7 @@ export default function BookingWidget({
                     <span>
                         {e.label}
                         {e.unit === 'night' && e.units > 1 && <span className="text-slate-400"> · {formatGBP(e.unitPrice)} × {e.units} nights{e.qty > 1 ? ' × ' + e.qty : ''}</span>}
+                        {e.unit === 'person' && <span className="text-slate-400"> · {formatGBP(e.unitPrice)} × {e.units} {e.units === 1 ? 'guest' : 'guests'}{e.qty > 1 ? ' × ' + e.qty : ''}</span>}
                         {e.unit === 'stay' && e.qty > 1 && <span className="text-slate-400"> · {formatGBP(e.unitPrice)} × {e.qty}</span>}
                     </span>
                     <span>{formatGBP(e.lineTotal)}</span>
@@ -993,9 +994,9 @@ export default function BookingWidget({
                         label={e.label}
                         sub={formatGBP(Number(e.price)) + ' ' + unitLabel(e.unit)}
                         value={extraQtys[e.id] || 0}
-                        onChange={(v) => setExtraQty(e.id, v)}
+                        onChange={(v) => setExtraQty(e.id, v, extraQtyCap(e))}
                         min={0}
-                        max={10}
+                        max={extraQtyCap(e)}
                         leading={e.photo ? (
                             <div className="relative w-14 flex-none overflow-hidden rounded-lg bg-slate-100" style={{ aspectRatio: EXTRA_CROP_ASPECT }}>
                                 {/* eslint-disable-next-line @next/next/no-img-element */}

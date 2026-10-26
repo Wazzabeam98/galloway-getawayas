@@ -33,7 +33,7 @@ export default async function BookingConfirmed({
         { auth: { persistSession: false } }
     );
 
-    const COLUMNS = 'id, listing_id, check_in, check_out, guests, total_price, status, payment_status, amount_paid, balance_amount, balance_due_date, cancellation_policy, cancellation_custom_days, non_refundable, created_at';
+    const COLUMNS = 'id, listing_id, check_in, check_out, guests, total_price, status, payment_status, amount_paid, balance_amount, balance_due_date, cancellation_policy, cancellation_custom_days, non_refundable, created_at, extras_total, extras_breakdown';
 
     let { data: booking } = await admin
         .from('bookings')
@@ -145,6 +145,28 @@ export default async function BookingConfirmed({
                         </div>
                     )}
                 </div>
+
+                {(() => {
+                    // Extras the guest added, itemised at the price frozen on the
+                    // booking (extras_breakdown), so the confirmation names each
+                    // one exactly as the trip page and the receipt do.
+                    const extras: any[] = Array.isArray((booking as any).extras_breakdown) ? (booking as any).extras_breakdown : [];
+                    const lines = extras.filter((e) => e && Number(e.lineTotal) > 0);
+                    if (!lines.length) return null;
+                    return (
+                        <div className="border-t pt-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Extras added</div>
+                            <div className="space-y-1">
+                                {lines.map((e: any, i: number) => (
+                                    <div key={'extra-' + (e.id || i)} className="flex items-baseline justify-between text-slate-800">
+                                        <span>{e.label}{Number(e.qty) > 1 ? ' × ' + e.qty : ''}</span>
+                                        <span className="tabular-nums">{formatGBP(Number(e.lineTotal))}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 <div className="border-t pt-4">
                     <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Paid today</div>

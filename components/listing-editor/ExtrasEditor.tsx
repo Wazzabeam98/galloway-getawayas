@@ -37,7 +37,12 @@ import {
 const UNIT_OPTIONS = [
     { value: 'stay', label: 'Per stay', hint: 'Charged once' },
     { value: 'night', label: 'Per night', hint: 'Once a night' },
+    { value: 'person', label: 'Per person', hint: 'Once a guest' },
 ];
+
+// The commission/refund note shown under the price, on both the add wizard and
+// the edit card, so the host sees the same facts in both places.
+const PRICE_NOTE = 'We take our usual commission on this, the same as the nightly price. Refunded on the same terms as the stay if the guest cancels.';
 
 const QUESTIONS = {
     name: 'What’s the extra called?',
@@ -134,27 +139,50 @@ function NameCard({ extra, save }: { extra: ListingExtra; save: (patch: Partial<
     );
 }
 
+// A small optional "most a guest can add" number box, shared by the price card
+// and the wizard. Blank means no cap (the platform default applies).
+function MaxQtyField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    return (
+        <div className="mx-auto mt-8 w-full max-w-xs">
+            <label className="block text-sm font-medium text-slate-700">Most a guest can add (optional)</label>
+            <input
+                type="text" inputMode="numeric" aria-label="Maximum quantity" placeholder="No limit"
+                value={value}
+                onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ''))}
+                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+            />
+            <p className="mt-1.5 text-xs text-slate-400">Leave blank for no limit.</p>
+        </div>
+    );
+}
+
 function PriceCard({ extra, save }: { extra: ListingExtra; save: (patch: Partial<ListingExtra>) => Promise<boolean> }) {
-    const c = useCardSheet<{ price: string; unit: ExtraUnit }>(
-        { price: extra.price != null ? String(extra.price) : '', unit: extra.unit === 'night' ? 'night' : 'stay' },
+    const c = useCardSheet<{ price: string; unit: ExtraUnit; maxQty: string }>(
+        {
+            price: extra.price != null ? String(extra.price) : '',
+            unit: extra.unit === 'night' ? 'night' : extra.unit === 'person' ? 'person' : 'stay',
+            maxQty: extra.max_qty != null ? String(extra.max_qty) : '',
+        },
         (d) => {
-            const problem = extraProblem({ ...extra, price: d.price, unit: d.unit });
+            const problem = extraProblem({ ...extra, price: d.price, unit: d.unit, max_qty: d.maxQty });
             if (problem) { toast.error(problem, { theme: 'colored' }); return false; }
-            return save({ price: Number(d.price), unit: d.unit });
+            return save({ price: Number(d.price), unit: d.unit, max_qty: d.maxQty.trim() ? Number(d.maxQty) : null });
         },
     );
+    const capNote = extra.max_qty ? ` · up to ${extra.max_qty}` : '';
     return (
         <>
-            <EditorCard title="Price" summary={`${formatGBP(Number(extra.price))} ${unitLabel(extra.unit)}`} onClick={c.start} />
+            <EditorCard title="Price" summary={`${formatGBP(Number(extra.price))} ${unitLabel(extra.unit)}${capNote}`} onClick={c.start} />
             {c.open && (
                 <EditorPanel title={QUESTIONS.price} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <BigAmountInput autoFocus numeric={false} ariaLabel="Price" value={c.draft.price}
                         onChange={(raw) => c.setDraft({ ...c.draft, price: raw.replace(/[^0-9.]/g, '') })} />
                     <div className="mx-auto mt-8 w-full max-w-xs">
-                        <ChoiceTiles options={UNIT_OPTIONS} value={c.draft.unit} onChange={(v) => c.setDraft({ ...c.draft, unit: v as ExtraUnit })} />
+                        <ChoiceTiles cols={3} options={UNIT_OPTIONS} value={c.draft.unit} onChange={(v) => c.setDraft({ ...c.draft, unit: v as ExtraUnit })} />
                     </div>
+                    <MaxQtyField value={c.draft.maxQty} onChange={(v) => c.setDraft({ ...c.draft, maxQty: v })} />
                     <p className="mx-auto mt-6 max-w-xs text-center text-xs text-slate-500">
-                        You keep the full price — we take no commission. Refunded on the same terms as the stay if the guest cancels.
+                        {PRICE_NOTE}
                     </p>
                 </EditorPanel>
             )}
@@ -282,7 +310,7 @@ function ExtraEditPanel({ extra, supabase, vatRegistered, onBack, onChanged, onD
 
 // ---------------------------------------------------------------- add wizard
 
-interface WizardDraft { label: string; description: string; price: string; unit: ExtraUnit; photo: string | null }
+interface WizardDraft { label: string; description: string; price: string; unit: ExtraUnit; photo: string | null; maxQty: string }
 
 function AddExtraWizard({ supabase, onClose, onAdd }: {
     supabase: any;
@@ -293,7 +321,7 @@ function AddExtraWizard({ supabase, onClose, onAdd }: {
     const [idx, setIdx] = useState(0);
     const [busy, setBusy] = useState(false);
     const [uploading, setUploading] = useState(false);
-    const [d, setD] = useState<WizardDraft>({ label: '', description: '', price: '', unit: 'stay', photo: null });
+    const [d, setD] = useState<WizardDraft>({ label: '', description: '', price: '', unit: 'stay', photo: null, maxQty: '' });
     const set = (patch: Partial<WizardDraft>) => setD((cur) => ({ ...cur, ...patch }));
 
     const key = STEPS[idx];
@@ -301,7 +329,7 @@ function AddExtraWizard({ supabase, onClose, onAdd }: {
 
     const valid = (): boolean => {
         if (key === 'name') return !extraProblem({ label: d.label, price: '1', unit: d.unit, vat_treatment: 'standard' });
-        if (key === 'price') return !extraProblem({ label: d.label || 'x', price: d.price, unit: d.unit, vat_treatment: 'standard' });
+        if (key === 'price') return !extraProblem({ label: d.label || 'x', price: d.price, unit: d.unit, vat_treatment: 'standard', max_qty: d.maxQty });
         return true; // describe, photo, review
     };
 
@@ -355,10 +383,11 @@ function AddExtraWizard({ supabase, onClose, onAdd }: {
                     <BigAmountInput autoFocus numeric={false} ariaLabel="Price" value={d.price}
                         onChange={(raw) => set({ price: raw.replace(/[^0-9.]/g, '') })} />
                     <div className="mx-auto mt-8 w-full max-w-xs">
-                        <ChoiceTiles options={UNIT_OPTIONS} value={d.unit} onChange={(v) => set({ unit: v as ExtraUnit })} />
+                        <ChoiceTiles cols={3} options={UNIT_OPTIONS} value={d.unit} onChange={(v) => set({ unit: v as ExtraUnit })} />
                     </div>
+                    <MaxQtyField value={d.maxQty} onChange={(v) => set({ maxQty: v })} />
                     <p className="mx-auto mt-6 max-w-xs text-center text-xs text-slate-500">
-                        You keep the full price — we take no commission. Refunded on the same terms as the stay if the guest cancels.
+                        {PRICE_NOTE}
                     </p>
                 </div>
             )}
@@ -404,7 +433,7 @@ export default function ExtrasEditor({ listingId }: { listingId: string }) {
     const load = async () => {
         const { data } = await supabase
             .from('listing_extras')
-            .select('id, label, description, price, unit, vat_treatment, active, sort_order, photo')
+            .select('id, label, description, price, unit, vat_treatment, active, sort_order, photo, max_qty')
             .eq('listing_id', listingId)
             .order('sort_order', { ascending: true })
             .order('created_at', { ascending: true });
@@ -426,7 +455,7 @@ export default function ExtrasEditor({ listingId }: { listingId: string }) {
     }, []);
 
     const addExtra = async (d: WizardDraft): Promise<boolean> => {
-        const problem = extraProblem({ label: d.label, description: d.description, price: d.price, unit: d.unit, vat_treatment: 'standard' });
+        const problem = extraProblem({ label: d.label, description: d.description, price: d.price, unit: d.unit, vat_treatment: 'standard', max_qty: d.maxQty });
         if (problem) { toast.error(problem, { theme: 'colored' }); return false; }
         const { error } = await supabase.from('listing_extras').insert({
             listing_id: listingId,
@@ -438,6 +467,7 @@ export default function ExtrasEditor({ listingId }: { listingId: string }) {
             active: true,
             sort_order: rows.length,
             photo: d.photo,
+            max_qty: d.maxQty.trim() ? Number(d.maxQty) : null,
         });
         if (error) { toast.error(error.message, { theme: 'colored' }); return false; }
         await load();
