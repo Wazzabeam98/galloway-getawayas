@@ -18,6 +18,7 @@ import { itemFulfilment } from '@/lib/serviceProviders';
 import { agreementProblem, anonGuestTermsRecord } from '@/lib/agreements';
 import { requireGuestTerms } from '@/lib/agreementRecords';
 import { childrenAllowed } from '@/lib/guestAges';
+import { resolveProviderSelection, priceProviderExtras, type ProviderExtraLine } from '@/lib/providerExtras';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { ltaNoticeRecord } from '@/lib/linkedTravelNotice';
@@ -89,6 +90,9 @@ export async function POST(request: Request) {
         // current version sends none. A string or null; never trusted beyond them.
         const submittedGuestTerms: string | null =
             body && typeof body.guestTermsVersion === 'string' ? body.guestTermsVersion : null;
+        // The guest's chosen paid extras — which extra, how many. Priced
+        // server-side off the live catalogue below; never trusted for money.
+        const submittedExtras = Array.isArray(body && body.extras) ? body.extras.slice(0, 30) : [];
 
         if (!providerId || !sessionDate || !sessionTime) {
             return NextResponse.json({ ok: false, error: 'Missing details' }, { status: 400 });
@@ -550,7 +554,29 @@ export async function POST(request: Request) {
         };
 
         const unitPrice = bookAsGroup ? Number(item.group_price) : Number(item.price);
-        const total = orderTotal(unitPrice, quantity);
+        let total = orderTotal(unitPrice, quantity);
+
+        // Guest-selectable paid extras (provider_extras). Priced server-side off
+        // the provider's LIVE catalogue — never the browser's figure — and folded
+        // into `total` so the charge, our commission and the payout all include
+        // them (the extra carries our normal commission, like the session). A
+        // per-person extra is charged once per guest on the order; `headcount` is
+        // the session head count. The priced lines are frozen onto the order row
+        // below (no webhook round-trip — a slot order is written here).
+        let extrasLines: ProviderExtraLine[] = [];
+        let extrasTotal = 0;
+        if (submittedExtras.length) {
+            const { data: extraRows } = await admin
+                .from('provider_extras')
+                .select('id, label, price, unit, vat_treatment, active, max_qty')
+                .eq('provider_id', provider.id);
+            const resolved = resolveProviderSelection(submittedExtras, extraRows || []);
+            const priced = priceProviderExtras(resolved, Math.max(1, Number(headcount) || 1));
+            extrasLines = priced.lines;
+            extrasTotal = priced.total;
+            total = Math.round((total + extrasTotal) * 100) / 100;
+        }
+
         const pricing = priceOrder(provider, { bandPrice: total }, []);
         const business = provider.business_name || 'Your experience';
         const itemName = (item.name || business) + (bookAsGroup ? ' — whole group' : '');
@@ -673,6 +699,13 @@ export async function POST(request: Request) {
                 unit_price: unitPrice,
                 item_unit: unit,
                 price: total,
+                // Guest-selectable extras, frozen on the order at the price they
+                // were charged (already inside `price`/the held charge). No
+                // webhook round-trip — the slot order is written here, so the
+                // priced lines are stamped directly for the receipt and payout.
+                extras_selection: extrasLines.length ? extrasLines.map((l) => ({ extra_id: l.id, qty: l.qty })) : null,
+                extras_total: extrasLines.length ? extrasTotal : null,
+                extras_breakdown: extrasLines.length ? extrasLines : null,
                 commission_rate: pricing.commissionRate,
                 // A platform charge, held by us until the day after the session
                 // (lib/experienceFunds) — written with the row, before Checkout.

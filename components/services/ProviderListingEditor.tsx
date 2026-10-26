@@ -1137,10 +1137,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             </div>
                         )}
                         {/* Optional paid extras a guest ticks on when they book — a
-                            sauna pack, club hire. Offered on comes-to-you experiences
-                            (the shape whose checkout charges them); slots and food
-                            carts come later. */}
-                        {p.shape === 'comes_to_you' && (
+                            sauna pack, club hire. Offered on comes-to-you and SLOT
+                            experiences (the shapes whose checkout charges them); the
+                            made-to-order food cart comes later. */}
+                        {(p.shape === 'comes_to_you' || p.shape === 'slot') && (
                             <div className="pt-2">
                                 <ProviderExtrasEditor providerId={p.id} vatRegistered={p.vat_registered} />
                             </div>
