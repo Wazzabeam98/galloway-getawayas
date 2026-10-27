@@ -13,7 +13,7 @@ import AboutThisPlace from '@/components/AboutThisPlace';
 import ReportListing from '@/components/ReportListing';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
-import { MapPin, Clock, Users, User, BadgeCheck, Activity, Backpack, ShieldAlert, ShieldCheck, Accessibility, Car, Check, Utensils } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Activity, Backpack, ShieldAlert, ShieldCheck, Accessibility, Car, Check, Utensils, Info } from 'lucide-react';
 import { experienceSteps } from '@/lib/experienceSteps';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
@@ -361,7 +361,8 @@ export default function ExperienceListingBody({
                             if (p.shape === 'made_to_order') return null;
                             const activity = (p.activityLevel || '').trim();
                             const bring = (p.whatToBring || '').trim();
-                            if (p.minAge == null && !activity && !bring) return null;
+                            const visitor = (p.visitorInfo || '').trim();
+                            if (p.minAge == null && !activity && !bring && !visitor) return null;
                             return (
                                 <section className="mt-8 border-t border-slate-200 pt-8">
                                     <h2 className="text-xl md:text-2xl font-bold text-slate-900">Things to know</h2>
@@ -385,6 +386,12 @@ export default function ExperienceListingBody({
                                             <div className="flex items-start gap-3">
                                                 <Backpack className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
                                                 <div><div className="font-semibold text-slate-900">What to bring</div><p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{bring}</p></div>
+                                            </div>
+                                        ) : null}
+                                        {visitor ? (
+                                            <div className="flex items-start gap-3">
+                                                <Info className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                                <div><div className="font-semibold text-slate-900">Visitor information</div><p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{visitor}</p></div>
                                             </div>
                                         ) : null}
                                     </div>

@@ -176,6 +176,7 @@ export interface GuestGroup { key: string; label: string; icon: string; }
 export const GUEST_GROUPS: GuestGroup[] = [
     { key: 'food', label: 'Food & drink', icon: 'chef' },
     { key: 'outdoors', label: 'Outdoors & water', icon: 'outdoors' },
+    { key: 'golf', label: 'Golf', icon: 'golf' },
     { key: 'wellness', label: 'Wellness & spa', icon: 'wellness' },
     { key: 'crafts', label: 'Arts & crafts', icon: 'crafts' },
     { key: 'other', label: 'Something else', icon: 'other' },
@@ -204,6 +205,16 @@ export const GUEST_CATEGORIES: GuestCategory[] = [
     { key: 'pottery', group: 'crafts', label: 'Pottery', hint: 'Wheel-throwing, hand-building', icon: 'crafts', food: false, shape: 'slot' },
     { key: 'painting', group: 'crafts', label: 'Painting & drawing', hint: 'Watercolour, sketching, life classes', icon: 'crafts', food: false, shape: 'slot' },
     { key: 'workshops', group: 'crafts', label: 'Make-your-own workshops', hint: 'Candles, prints, willow, jewellery', icon: 'crafts', food: false, shape: 'slot' },
+    // Golf, five sub-types. Every one is a timed slot — a tee time, a bay, a
+    // lesson — booked like sauna or yoga. The venue types (course, pitch & putt,
+    // mini golf, range) skip the owner-CV screens like sauna; lessons keep them,
+    // since a coach's background is the draw. A booking is a party of 1–4 on a
+    // per-player item (capacity 4); a lesson is per session (a flat item).
+    { key: 'golf_course', group: 'golf', label: 'Golf course', hint: 'Tee times — 9 or 18 holes', icon: 'golf', food: false, shape: 'slot' },
+    { key: 'golf_pitch_putt', group: 'golf', label: 'Pitch & putt / par 3', hint: 'A short course, booked by the round', icon: 'golf', food: false, shape: 'slot' },
+    { key: 'golf_mini', group: 'golf', label: 'Mini golf', hint: 'Crazy golf, adventure golf', icon: 'golf', food: false, shape: 'slot' },
+    { key: 'golf_range', group: 'golf', label: 'Driving range', hint: 'Practice bays and buckets of balls', icon: 'golf', food: false, shape: 'slot' },
+    { key: 'golf_lessons', group: 'golf', label: 'Golf lessons', hint: 'Coaching with a pro, by the session', icon: 'golf', food: false, shape: 'slot' },
     // Always last, the storefront icon: the generic template for whatever the
     // groups above don't cover. Its group has no sub-type screen.
     { key: 'other', group: 'other', label: '', hint: 'Anything else a guest would book for their stay', icon: 'other', food: false, shape: null },
@@ -276,6 +287,23 @@ export const EXPERIENCE_AMENITY_GROUPS: { group: string; items: { key: string; l
             { key: 'seating', label: 'Seating area' },
             { key: 'lockers', label: 'Lockers / storage' },
             { key: 'wifi', label: 'Wifi' },
+        ],
+    },
+    // Golf. The list is shared across every category (there is no per-category
+    // gating), so a non-golf provider simply leaves these unticked; a golf venue
+    // ticks the ones it has. "Dress code" and "Handicap certificate required"
+    // are facts a golfer checks before booking; the SPECIFICS (what the dress
+    // code is) go in the free-text Visitor information field, not here.
+    {
+        group: 'Golf',
+        items: [
+            { key: 'clubhouse', label: 'Clubhouse' },
+            { key: 'bar_cafe', label: 'Bar / café' },
+            { key: 'pro_shop', label: 'Pro shop' },
+            { key: 'practice_green', label: 'Practice green' },
+            { key: 'buggies', label: 'Buggies available' },
+            { key: 'dress_code', label: 'Dress code applies' },
+            { key: 'handicap_required', label: 'Handicap certificate required' },
         ],
     },
 ];
@@ -454,13 +482,13 @@ export function itemTravels(
 //
 // Keyed off the category, so the wizard, its Next gate and any later review all
 // read the same rule.
-const GUEST_QUALS_PROMPTED = ['outdoors', 'water', 'massage', 'yoga'];
+const GUEST_QUALS_PROMPTED = ['outdoors', 'water', 'massage', 'yoga', 'golf_lessons'];
 // Years required, qualifications optional, for the food experiences where the
 // person is the draw: the private chef in your kitchen, the tasting host whose
 // knowledge is the product, and the cooking class where you're paying to be
 // taught. (Cooking class is treated the same as the other two — flagged to Liam
 // in case a formal qualification should be required there instead.)
-const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef', 'tastings', 'cooking'];
+const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef', 'tastings', 'cooking', 'golf_lessons'];
 
 // Sauna is the ONLY sub-type that skips the years and expertise screens: nobody
 // books a hot barrel by the water for the owner's CV, and its heat-and-cold
@@ -470,7 +498,10 @@ const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef', 't
 // so they get both screens again (years asked, qualifications optional).
 //
 // This is ONLY about the years/qualifications screens.
-const GUEST_EXPERTISE_SKIP = ['sauna'];
+// The golf VENUE types join sauna here: a round of mini golf or a tee time is
+// booked for the course, not the owner's CV. Golf LESSONS stay off the list —
+// a coach's years and expertise are the draw, like a yoga teacher's.
+const GUEST_EXPERTISE_SKIP = ['sauna', 'golf_course', 'golf_pitch_putt', 'golf_mini', 'golf_range'];
 
 // Whether the years + expertise screens are shown at all. Off for the skip list
 // above (just sauna); on for everyone else, including made-to-order food and
