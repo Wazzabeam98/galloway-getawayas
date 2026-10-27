@@ -3814,7 +3814,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // else. The narrower choice is screen two (g_subtype). No
                     // instructions, no Stripe line — the question carries it.
                     return (
-                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                             {GUEST_GROUPS.map((g) => {
                                 const Icon = TRADE_ICONS[g.icon] || Sparkles;
                                 // Select, don't advance: the card takes an emerald
