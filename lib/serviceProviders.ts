@@ -173,12 +173,18 @@ export interface GuestCategory {
 // name, Airbnb-style. Choosing one opens a second screen of the narrower
 // categories that sit under it; 'other' has no sub-type and goes straight on.
 export interface GuestGroup { key: string; label: string; icon: string; }
+// The order here is the order of the tiles on the sign-up group picker
+// (ProviderSignUp "What experience are you offering?"), and that is the ONLY
+// place that reads this order — the two other readers (guestGroupByKey and the
+// filter at ProviderSignUp:~4001) look a group up by key. In a 3-wide desktop
+// grid this is two rows of three; in a 2-wide phone grid it is three rows of
+// two, which puts Golf bottom-left with Something else beside it.
 export const GUEST_GROUPS: GuestGroup[] = [
     { key: 'food', label: 'Food & drink', icon: 'chef' },
     { key: 'outdoors', label: 'Outdoors & water', icon: 'outdoors' },
-    { key: 'golf', label: 'Golf', icon: 'golf' },
     { key: 'wellness', label: 'Wellness & spa', icon: 'wellness' },
     { key: 'crafts', label: 'Arts & crafts', icon: 'crafts' },
+    { key: 'golf', label: 'Golf', icon: 'golf' },
     { key: 'other', label: 'Something else', icon: 'other' },
 ];
 
