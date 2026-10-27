@@ -137,6 +137,9 @@ export async function POST(request: Request) {
                     min_age: intOrNull(data.min_age),
                     activity_level: strOrNull(data.activity_level),
                     what_to_bring: strOrNull(data.what_to_bring),
+                    // Free-text visitor information — a dress code, a handicap
+                    // requirement, buggy rules. Shown to guests under Good to know.
+                    visitor_info: strOrNull(data.visitor_info),
                 };
                 break;
 

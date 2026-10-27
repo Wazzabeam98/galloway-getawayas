@@ -2,7 +2,7 @@ import Link from 'next/link';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket,
     Store, Trash2, Zap, Hammer, Home, Paintbrush, ShowerHead,
-    Gift, Wine, Compass, Sailboat, Flower2, Palette,
+    Gift, Wine, Compass, Sailboat, Flower2, Palette, Flag,
 } from 'lucide-react';
 
 // One tile, used by both places that offer a trade.
@@ -43,6 +43,7 @@ export const TRADE_ICONS: Record<string, any> = {
     water: Sailboat,
     wellness: Flower2,
     crafts: Palette,
+    golf: Flag,
     // "Something else" — a storefront stands in for a business we have not named.
     other: Store,
     bin: Trash2,

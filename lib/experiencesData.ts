@@ -168,6 +168,9 @@ export interface MpProvider {
     minAge: number | null;
     activityLevel: string | null;
     whatToBring: string | null;
+    // Free-text visitor information (a dress code, a handicap requirement) shown
+    // under Good to know. Null when unset.
+    visitorInfo: string | null;
     // Optional practical facts a provider can add. Accessibility matters most —
     // a guest who needs it really needs it — so it leads. Null when unset.
     accessibility: string | null;
@@ -669,6 +672,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string, paused
             minAge: intOrNull(p.guest_details && p.guest_details.min_age),
             activityLevel: (p.guest_details && strOrNull(p.guest_details.activity_level)) || null,
             whatToBring: (p.guest_details && strOrNull(p.guest_details.what_to_bring)) || null,
+            visitorInfo: (p.guest_details && strOrNull(p.guest_details.visitor_info)) || null,
             accessibility: (p.guest_details && strOrNull(p.guest_details.accessibility)) || null,
             parking: (p.guest_details && strOrNull(p.guest_details.parking)) || null,
             amenities: knownExperienceAmenities(p.guest_details && p.guest_details.amenities),

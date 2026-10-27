@@ -136,6 +136,7 @@ export default async function ProviderListingPage() {
                 min_age: gd.min_age ?? null,
                 activity_level: gd.activity_level || '',
                 what_to_bring: gd.what_to_bring || '',
+                visitor_info: gd.visitor_info || '',
                 accessibility: gd.accessibility || '',
                 parking: gd.parking || '',
                 amenities: Array.isArray(gd.amenities) ? gd.amenities : [],

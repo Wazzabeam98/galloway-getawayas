@@ -67,7 +67,7 @@ export interface EditorProvider {
     offered_times: string[];
     professional_title: string; years_experience: string; qualifications: string; recognition: string;
     what_to_expect: string; itinerary: Array<{ title?: string | null; detail?: string | null }>;
-    min_age: number | null; activity_level: string; what_to_bring: string;
+    min_age: number | null; activity_level: string; what_to_bring: string; visitor_info: string;
     accessibility: string; parking: string; no_refund: boolean;
     // Custom cancellation (guest_details.cancellation_custom): the window is the
     // provider's own number of days, read back as Custom, not the nearest preset.
@@ -220,6 +220,23 @@ function WhatToBringCard({ whatToBring, onSave }: { whatToBring: string; onSave:
             {c.open && (
                 <EditorPanel title="What should guests bring?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <AutoTextarea className={bigAreaCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)} aria-label="What to bring" placeholder="Warm layers, sturdy shoes, a towel…" />
+                </EditorPanel>
+            )}
+        </>
+    );
+}
+
+// Free-text visitor information — anything a guest should know before they turn
+// up: a dress code (collared shirts, no denim), a handicap requirement, buggy
+// or trolley rules, a pace-of-play note. Shown on the listing under Good to know.
+function VisitorInfoCard({ visitorInfo, onSave }: { visitorInfo: string; onSave: (v: string) => unknown }) {
+    const c = useCardSheet(visitorInfo, onSave);
+    return (
+        <>
+            <EditorCard title="Visitor information" summary={visitorInfo.trim() || 'Nothing listed'} onClick={c.start} />
+            {c.open && (
+                <EditorPanel title="Anything visitors should know?" onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
+                    <AutoTextarea className={bigAreaCls} rows={3} value={c.draft} onChange={(e) => c.setDraft(e.target.value)} aria-label="Visitor information" placeholder="Dress code, handicap requirement, buggy rules…" />
                 </EditorPanel>
             )}
         </>
@@ -716,6 +733,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [minAge, setMinAge] = useState(p.min_age != null ? String(p.min_age) : '');
     const [activity, setActivity] = useState(p.activity_level);
     const [whatToBring, setWhatToBring] = useState(p.what_to_bring);
+    const [visitorInfo, setVisitorInfo] = useState(p.visitor_info);
     const [accessibility, setAccessibility] = useState(p.accessibility);
     const [parking, setParking] = useState(p.parking);
     const [amenities, setAmenities] = useState<string[]>(p.amenities || []);
@@ -779,8 +797,9 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         const ph = o.phases ?? phases;
         return { what_to_expect: o.whatToExpect ?? whatToExpect, itinerary: headings.map((h, i) => ({ title: h.title, detail: ph[i] })) };
     };
-    const thingsPayload = (o: Partial<{ minAge: string; activity: string; whatToBring: string }> = {}) => ({
+    const thingsPayload = (o: Partial<{ minAge: string; activity: string; whatToBring: string; visitorInfo: string }> = {}) => ({
         min_age: o.minAge ?? minAge, activity_level: o.activity ?? activity, what_to_bring: o.whatToBring ?? whatToBring,
+        visitor_info: o.visitorInfo ?? visitorInfo,
     });
     const amenitiesPayload = (o: Partial<AmenityDraft> = {}) => ({
         amenities: o.amenities ?? amenities, accessibility: o.accessibility ?? accessibility, parking: o.parking ?? parking,
@@ -1083,6 +1102,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         <MinimumAgeCard minAge={minAge} onSave={(v) => runThen('things', thingsPayload({ minAge: v }), () => setMinAge(v))} />
                         <ActivityLevelCard activity={activity} onSave={(v) => runThen('things', thingsPayload({ activity: v }), () => setActivity(v))} />
                         <WhatToBringCard whatToBring={whatToBring} onSave={(v) => runThen('things', thingsPayload({ whatToBring: v }), () => setWhatToBring(v))} />
+                        <VisitorInfoCard visitorInfo={visitorInfo} onSave={(v) => runThen('things', thingsPayload({ visitorInfo: v }), () => setVisitorInfo(v))} />
                     </>))}
 
                     {sec('location', (<>

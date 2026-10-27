@@ -54,6 +54,7 @@ async function wipeExperiences() {
         await db.remove('service_orders', '?provider_id=eq.' + p.id).catch(() => {});
         // Provider children.
         for (const t of ['reviews', 'service_areas', 'provider_ical_feeds', 'service_provider_extras',
+            'provider_extras',
             'service_provider_prices', 'service_provider_registrations', 'service_provider_skills',
             'service_applications', 'service_provider_items', 'slot_sessions', 'slot_availability', 'slot_blocks']) {
             await db.remove(t, '?provider_id=eq.' + p.id).catch(() => {});
@@ -132,7 +133,7 @@ async function makeProvider(spec) {
         guest_details: {
             category: spec.category,
             professional_title: spec.professional_title,
-            years_experience: String(spec.years),
+            years_experience: spec.years != null ? String(spec.years) : null,
             qualifications: spec.qualifications,
             recognition: spec.recognition ?? null,
             what_to_expect: spec.what_to_expect,
@@ -140,6 +141,7 @@ async function makeProvider(spec) {
             min_age: spec.minAge ?? null,
             activity_level: spec.activityLevel ?? null,
             what_to_bring: spec.whatToBring ?? null,
+            visitor_info: spec.visitorInfo ?? null,
             amenities: spec.amenities ?? [],
             accessibility: spec.accessibility ?? null,
             parking: spec.parking ?? null,
@@ -162,6 +164,16 @@ async function makeProvider(spec) {
             is_custom: it.isCustom ?? false,
             ingredients: it.ingredients ?? null, allergens: it.allergens ?? null,
             category: it.category ?? null,
+            duration_minutes: it.duration ?? null,
+        });
+    }
+    // Optional paid extras (provider_extras, #508/#509) — club hire, a buggy, a
+    // sleeve of balls. Per booking or per person, with our normal commission.
+    for (const ex of (spec.extras || [])) {
+        await db.insert('provider_extras', {
+            provider_id: p.id, label: ex.label, description: ex.description ?? null,
+            price: ex.price, unit: ex.unit ?? 'booking', vat_treatment: ex.vat ?? 'standard',
+            active: true, sort_order: ex.sort ?? 0, max_qty: ex.maxQty ?? null, photo: ex.photo ?? null,
         });
     }
     if (spec.availability) {
@@ -293,6 +305,67 @@ async function main() {
     });
     const yogaItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + yoga.id);
     created.push({ label: 'Harbour Yoga (yoga · slot, per-person class)', ...yogaOwner, providerId: yoga.id });
+
+    /* 2b. GOLF COURSE (slot) — 9 & 18 holes as two per-player options, with extras. */
+    const golfOwner = await ownerFor('golf', 'Struan (Solway Links)');
+    const golf = await makeProvider({
+        owner: golfOwner, business_name: 'Solway Links Golf Club', provider_name: 'Struan', trade: 'guest', category: 'golf_course', mcc: '7997', shape: 'slot',
+        slotLength: 60, turnaround: 0, slotCapacity: 4, slotMin: 1, cancelHours: 24, horizonDays: 60,
+        fulfilment: 'collection', street: 'Links Road', town: 'Kirkcudbright', postcode: 'DG6 4XX', mapLat: 54.8290, mapLng: -4.0600,
+        professional_title: 'A coastal links on the Solway', years: null,
+        qualifications: null, recognition: null,
+        what_to_expect: 'A classic coastal links — book a tee time for 9 or 18 holes, up to four players.',
+        itinerary: [
+            { title: 'Arrive', detail: 'Check in at the pro shop; hire clubs or a buggy if you need them.' },
+            { title: 'Play', detail: 'Off the first tee at your booked time — 9 or 18 holes along the shore.' },
+            { title: 'After', detail: 'A drink and a bite in the clubhouse looking back over the course.' },
+        ],
+        minAge: null, activityLevel: 'moderate', whatToBring: 'Your own clubs (or hire a set), golf shoes and weatherproofs.',
+        visitorInfo: 'Smart golf dress — collared shirts, tailored trousers or shorts, soft spikes only. A current handicap certificate is required to play 18 holes.',
+        amenities: ['clubhouse', 'bar_cafe', 'pro_shop', 'practice_green', 'buggies', 'dress_code', 'handicap_required'],
+        accessibility: 'some_steps', parking: 'on_site',
+        availability: { days: [1, 2, 3, 4, 5, 6, 0], open: '08:00', close: '16:00' },
+        items: [
+            { name: '9 holes', description: 'A round of nine, per player.', price: 25, unit: 'person', capacity: 4, min: 1, duration: 90, sort: 0 },
+            { name: '18 holes', description: 'The full eighteen, per player.', price: 45, unit: 'person', capacity: 4, min: 1, duration: 180, sort: 1 },
+        ],
+        extras: [
+            { label: 'Club hire (full set)', description: 'A full set of hire clubs for your round.', price: 20, unit: 'person', maxQty: 4, sort: 0 },
+            { label: 'Buggy / cart hire', description: 'One ride-on buggy for the round.', price: 30, unit: 'booking', maxQty: 2, sort: 1 },
+            { label: 'Trolley hire', description: 'A push trolley.', price: 6, unit: 'person', maxQty: 4, sort: 2 },
+            { label: 'Sleeve of balls', description: 'Three branded golf balls.', price: 8, unit: 'person', maxQty: 4, sort: 3 },
+        ],
+    });
+    created.push({ label: 'Solway Links Golf Club (golf course · slot, 9 & 18 holes + extras)', ...golfOwner, providerId: golf.id });
+
+    /* 2c. MINI GOLF (slot) — one per-player round, with extras. */
+    const miniOwner = await ownerFor('minigolf', 'Pat (Adventure Golf)');
+    const mini = await makeProvider({
+        owner: miniOwner, business_name: 'Kirkcudbright Adventure Golf', provider_name: 'Pat', trade: 'guest', category: 'golf_mini', mcc: '7997', shape: 'slot',
+        slotLength: 45, turnaround: 15, slotCapacity: 4, slotMin: 1, cancelHours: 12, horizonDays: 45,
+        fulfilment: 'collection', street: 'Harbour Square', town: 'Kirkcudbright', postcode: 'DG6 4HY', mapLat: 54.8348, mapLng: -4.0530,
+        professional_title: 'Seaside adventure golf by the harbour', years: null,
+        qualifications: null, recognition: null,
+        what_to_expect: 'An 18-hole adventure course by the harbour — windmills, water features and a loop-the-loop.',
+        itinerary: [
+            { title: 'Tee off', detail: 'Grab a club and a ball at the kiosk and start at hole one.' },
+            { title: 'Play round', detail: 'Eighteen holes of seaside fun — good for all ages.' },
+            { title: 'Finish', detail: 'Hand back your club and grab an ice cream at the kiosk.' },
+        ],
+        minAge: null, activityLevel: 'gentle', whatToBring: 'Nothing — clubs and balls are provided at the kiosk.',
+        visitorInfo: 'Great for families; under-5s play free with a paying adult. Please return clubs and balls to the kiosk after your round.',
+        amenities: ['clubhouse', 'bar_cafe', 'seating', 'toilets'],
+        accessibility: 'step_free', parking: 'nearby',
+        availability: { days: [1, 2, 3, 4, 5, 6, 0], open: '10:00', close: '18:00' },
+        items: [
+            { name: 'Round of mini golf', description: 'Eighteen holes, per player.', price: 6, unit: 'person', capacity: 4, min: 1, duration: 45, sort: 0 },
+        ],
+        extras: [
+            { label: 'Glow round upgrade', description: 'Glow balls and the UV course for your round.', price: 3, unit: 'person', maxQty: 4, sort: 0 },
+            { label: 'Ice cream each', description: 'A 99 from the kiosk after your round.', price: 3, unit: 'person', maxQty: 4, sort: 1 },
+        ],
+    });
+    created.push({ label: 'Kirkcudbright Adventure Golf (mini golf · slot + extras)', ...miniOwner, providerId: mini.id });
 
     /* 3. CHEF (comes_to_you). */
     const chefOwner = await ownerFor('chef', 'Rory (Solway Table)');
