@@ -484,23 +484,41 @@ test('a guest with no context still sees the old three steps', () => {
 // address, and the phone lives on the profile) and NO checks step (the
 // per-category checks collapsed to one responsibility confirmation folded onto
 // the finish screen). So an applicant with a sub-type walks these keys.
+// No longer literally ten: the base guest flow now also carries the optional
+// EXTRAS screen (g_extras, after the menu) and two more Details screens —
+// amenities (g_amenities) and the cancellation policy (g_cancel), after
+// "what happens" (g_expect) — so a listing is complete enough to go live from
+// sign-up (Liam, 28 Oct 2026). Weekly hours (g_slot_hours) are shape-dependent
+// and spliced in by withHours below, not part of this base.
 const TEN = [
     'trade', 'g_subtype', 'g_title', 'g_you', 'g_creds', 'g_area', 'g_photos',
-    'g_menu', 'g_expect', 'finish',
+    'g_menu', 'g_extras', 'g_expect', 'g_amenities', 'g_cancel', 'finish',
 ];
 
 // A comes-to-you or slot category also has a max-guests step (g_capacity) at the
 // head of the Pricing section, just before g_menu. A made-to-order product
-// (cakes, hampers) and 'other' have no guest count, so they keep the ten.
+// (cakes, hampers) and 'other' have no guest count, so they keep the base.
 const withCapacity = (keys: string[]) => {
     const out = keys.slice();
     out.splice(out.indexOf('g_menu'), 0, 'g_capacity');
     return out;
 };
 
+// A slot OR comes-to-you experience collects its weekly hours (g_slot_hours) in
+// the wizard now — both are bookable off the template, so both set it here (and
+// submit for review from the wizard, no editor detour). It sits in the When
+// section, after the location. A made-to-order product has no hours.
+const withHours = (keys: string[]) => {
+    const out = keys.slice();
+    out.splice(out.indexOf('g_photos'), 0, 'g_slot_hours');
+    return out;
+};
+
 test('a chef (food, comes to them) walks the flow, with a capacity step, and never sees the business step', () => {
     const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
-    assert.deepEqual(gkeys(ctx), withCapacity(TEN));
+    // A comes-to-you experience now also collects its weekly hours (when it can
+    // travel) in the wizard, so withHours wraps the capacity flow.
+    assert.deepEqual(gkeys(ctx), withHours(withCapacity(TEN)));
     // The old "how do guests get it?" screen is gone — the shape is inferred.
     assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a chef sets a largest group');
@@ -580,10 +598,12 @@ const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boole
     keys.push('g_area');
     // The one-at-a-time shape (massage) asks length PER TREATMENT in the pricing
     // sub-flow, so it drops the single provider-length screen — the MIXED shape
-    // keeps it (its group classes need one). WEEKLY HOURS are no longer a wizard
-    // step: they moved to the listing editor's Availability section, so a slot
-    // sets a length at sign-up and its hours in the editor after.
+    // keeps it (its group classes need one).
     if (!opts.perItemDuration) keys.push('g_slot_length');
+    // WEEKLY HOURS are back in the wizard (Liam, 28 Oct 2026): every slot collects
+    // them here and submits for review from the wizard, no editor detour. They sit
+    // after the session length, before the photos.
+    keys.push('g_slot_hours');
     keys.push('g_photos');
     // massage drops the pricing BASIS and the capacity (both fixed for it). The
     // mixed shape drops the basis only — each item picks shared-class vs
@@ -593,7 +613,9 @@ const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boole
     // The per-person minimum screen was removed at sign-up (Liam, 9 Oct 2026), so
     // no slot flow carries g_slot_min any more. perPerson/mixed are kept as options
     // only for the length/capacity/basis branching above.
-    keys.push('g_menu', 'g_expect', 'finish');
+    // The Pricing section ends with the optional extras screen; Details is "what
+    // happens", then amenities, then the cancellation policy (Liam, 28 Oct 2026).
+    keys.push('g_menu', 'g_extras', 'g_expect', 'g_amenities', 'g_cancel', 'finish');
     return keys;
 };
 
@@ -608,7 +630,7 @@ test('a potter (slot, fixed come-to-me) walks the location + When split, no fork
     assert.deepEqual(gkeys(ctx), slotFlow({ mixed: true }));
     assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, 'a fixed come-to-me slot skips the where fork');
     assert.equal(stepApplies('g_slot_length', 'guest', ctx), true, 'a mixed slot keeps a session length for its classes');
-    assert.equal(stepApplies('g_slot_hours', 'guest', ctx), false, 'weekly hours moved to the listing editor — not asked at sign-up');
+    assert.equal(stepApplies('g_slot_hours', 'guest', ctx), true, 'a slot collects its weekly hours in the wizard');
     assert.equal(stepApplies('g_slot_basis', 'guest', ctx), false, 'a mixed slot decides shared-vs-1:1 per item, not a provider basis');
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a mixed slot keeps a capacity for its classes');
     assert.ok(!gkeys(ctx).includes('g_slot_min'), 'the per-person minimum screen was removed at sign-up');
@@ -633,7 +655,7 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     assert.equal(stepApplies('g_slot_length', 'guest', massage), false, 'massage asks duration per treatment, not a provider length');
     assert.equal(stepApplies('g_slot_basis', 'guest', massage), false, 'massage is fixed private, not asked');
     assert.equal(stepApplies('g_capacity', 'guest', massage), false, 'massage is one at a time, not asked');
-    assert.equal(stepApplies('g_slot_hours', 'guest', massage), false, 'weekly hours moved to the listing editor — not asked at sign-up');
+    assert.equal(stepApplies('g_slot_hours', 'guest', massage), true, 'a slot collects its weekly hours in the wizard');
     // A mixed category (yoga) keeps length + capacity but has no provider basis.
     // (No fulfilment ⇒ treated as come-to-me for the screens it declares.)
     const mixed = { group: 'wellness', category: 'yoga', shape: 'slot' };
@@ -664,7 +686,7 @@ test('a TRAVELLING mixed provider drops the session-length and capacity screens'
     assert.equal(stepApplies('g_slot_length', 'guest', travels), false, 'a traveller sets the length per private session');
     assert.equal(stepApplies('g_capacity', 'guest', travels), false, 'a traveller declares no class capacity');
     assert.ok(!gkeys(travels).includes('g_slot_min'), 'the per-person minimum screen was removed at sign-up');
-    assert.equal(stepApplies('g_slot_hours', 'guest', travels), false, 'weekly hours moved to the listing editor — not asked at sign-up');
+    assert.equal(stepApplies('g_slot_hours', 'guest', travels), true, 'a travelling slot still collects its availability');
     // The traveller rule is mixed-only — a non-mixed slot is unaffected.
     const tastingTravels = { group: 'food', category: 'tastings', shape: 'slot', fulfilment: 'delivery' };
     assert.equal(stepApplies('g_capacity', 'guest', tastingTravels), true, 'the traveller rule is mixed-only');
@@ -769,9 +791,11 @@ test('the something-else group skips the sub-type screen but is asked its shape'
     assert.equal(stepApplies('g_shape', 'guest', { group: 'wellness', category: 'sauna', shape: 'slot' }), false, 'a real category already has a shape');
     // g_shape is the second picker, before About-you and the location step; the
     // naming step (g_title) opens About you, right after it.
+    // Shape null (not yet answered) ⇒ no weekly-hours screen, but the always-on
+    // content screens (extras, amenities, cancellation) are present like every guest.
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'g_shape', 'g_title', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'finish'],
+        ['trade', 'g_shape', 'g_title', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_extras', 'g_expect', 'g_amenities', 'g_cancel', 'finish'],
     );
     // And like the other pickers it sits before the rail, in no section.
     assert.equal(sectionForStep('g_shape'), null, 'the shape picker is pre-rail');
@@ -802,11 +826,15 @@ test('guest movement and the last step honour the context', () => {
     // Location (g_area).
     assert.equal(nextStep('guest', 'g_title', ctx), 'g_area');
     assert.equal(previousStep('guest', 'g_title', ctx), 'g_subtype');
-    // The Details section is now just what-happens, straight after the price.
-    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_expect');
-    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_menu');
+    // After the price comes the optional extras screen, then what-happens; the
+    // Details section runs what-happens → amenities → cancellation.
+    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_extras');
+    assert.equal(nextStep('guest', 'g_extras', ctx), 'g_expect');
+    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_extras');
+    assert.equal(nextStep('guest', 'g_expect', ctx), 'g_amenities');
+    assert.equal(nextStep('guest', 'g_amenities', ctx), 'g_cancel');
     assert.equal(isLastStep('guest', 'finish', ctx), true);
-    assert.equal(isLastStep('guest', 'g_expect', ctx), false);
+    assert.equal(isLastStep('guest', 'g_cancel', ctx), false);
     // The business step is off for a guest-with-context, so it resolves back to
     // a real one rather than stranding them.
     assert.equal(resolveStep('guest', 'business', ctx), 'finish');
@@ -818,18 +846,20 @@ test('guest movement and the last step honour the context', () => {
 // and the per-screen eyebrow both read from sectionsFor / sectionForStep, so
 // they can't disagree about the flow.
 
-test('the guest flow is six named sections, in Airbnb order', () => {
+test('the guest flow is seven named sections, in Airbnb order', () => {
     const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
     const secs = sectionsFor('guest', ctx);
-    // Six sections. The naming step opens About you now (it used to open a
-    // separate Details-leading step); Details is left with just what-happens.
+    // Seven sections now: a comes-to-you experience has a When section too (the
+    // days it can travel), collected in the wizard so it submits from there.
     assert.deepEqual(secs.map((s: any) => s.key),
-        ['about', 'location', 'photos', 'pricing', 'details', 'finish']);
-    // About you opens with the name, then the years screen and the expertise hub;
-    // every other content section is a single screen; Finish gathers the wrap-up.
+        ['about', 'location', 'when', 'photos', 'pricing', 'details', 'finish']);
+    // About you opens with the name, then the years screen and the expertise hub.
     assert.deepEqual(secs.find((s: any) => s.key === 'about').steps, ['g_title', 'g_you', 'g_creds']);
-    // Pricing leads with the capacity step, then the priced offerings.
-    assert.deepEqual(secs.find((s: any) => s.key === 'pricing').steps, ['g_capacity', 'g_menu']);
+    // Pricing leads with the capacity step, then the priced offerings, then the
+    // optional extras screen.
+    assert.deepEqual(secs.find((s: any) => s.key === 'pricing').steps, ['g_capacity', 'g_menu', 'g_extras']);
+    // Details is what-happens, then amenities, then the cancellation policy.
+    assert.deepEqual(secs.find((s: any) => s.key === 'details').steps, ['g_expect', 'g_amenities', 'g_cancel']);
     // Finish is now a single screen — the checks and contact steps that used to
     // share it are gone (checks folded to one box on the finish screen; contact
     // removed, the account address is the contact address).
@@ -850,12 +880,15 @@ test('a section with no live screens drops out of the rail entirely', () => {
     assert.deepEqual(sauna.map((s: any) => s.key),
         ['about', 'location', 'when', 'photos', 'pricing', 'details', 'finish']);
     // A made-to-order guest's When is its notice period (since 5 Oct 2026), and a
-    // traveller has neither screen — proof the section still drops out for a
-    // shape with nothing in it.
+    // comes-to-you guest's When is its weekly hours (back in the wizard, 28 Oct
+    // 2026). The section still DROPS OUT for a shape with nothing in it — "other"
+    // before a shape is picked (null) has no length, no hours and no notice.
     const baker = sectionsFor('guest', { group: 'food', category: 'food_order', shape: 'made_to_order' });
     assert.deepEqual(baker.filter((s: any) => s.key === 'when').map((s: any) => s.steps), [['g_notice']], 'made-to-order: When is the notice');
     const chef = sectionsFor('guest', { group: 'food', category: 'chef', shape: 'comes_to_you' });
-    assert.equal(chef.some((s: any) => s.key === 'when'), false, 'a traveller has no When section');
+    assert.deepEqual(chef.filter((s: any) => s.key === 'when').map((s: any) => s.steps), [['g_slot_hours']], 'comes-to-you: When is the weekly hours');
+    const other = sectionsFor('guest', { group: 'other', category: 'other', shape: null });
+    assert.equal(other.some((s: any) => s.key === 'when'), false, 'no shape yet: the When section drops out');
 });
 
 test('the pickers sit before the rail; the name step opens About you', () => {

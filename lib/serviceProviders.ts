@@ -315,6 +315,21 @@ export const EXPERIENCE_AMENITY_GROUPS: { group: string; items: { key: string; l
 ];
 export const EXPERIENCE_AMENITIES = EXPERIENCE_AMENITY_GROUPS.flatMap((g) => g.items);
 const EXPERIENCE_AMENITY_KEYS = new Set(EXPERIENCE_AMENITIES.map((a) => a.key));
+
+// Which amenity groups a given category shows AT SIGN-UP. The listing editor
+// shows every group to everyone (a stored key is always honoured), but the
+// wizard is narrower so a sauna owner isn't asked about a clubhouse and a golf
+// venue isn't buried under craft materials: the two GENERAL groups show for
+// every experience, and a CATEGORY-SPECIFIC group (the Golf group) shows only
+// for its categories. Add a row here to give another category its own group.
+const CATEGORY_AMENITY_GROUP: Record<string, string> = {
+    golf_course: 'Golf', golf_pitch_putt: 'Golf', golf_mini: 'Golf', golf_range: 'Golf', golf_lessons: 'Golf',
+};
+const CATEGORY_SPECIFIC_AMENITY_GROUPS = new Set(Object.values(CATEGORY_AMENITY_GROUP));
+export function amenityGroupsForCategory(category: string | null | undefined) {
+    const mine = CATEGORY_AMENITY_GROUP[String(category || '')] || null;
+    return EXPERIENCE_AMENITY_GROUPS.filter((g) => !CATEGORY_SPECIFIC_AMENITY_GROUPS.has(g.group) || g.group === mine);
+}
 export function experienceAmenityLabel(key: string | null | undefined): string | null {
     return EXPERIENCE_AMENITIES.find((a) => a.key === String(key || '').trim())?.label || null;
 }

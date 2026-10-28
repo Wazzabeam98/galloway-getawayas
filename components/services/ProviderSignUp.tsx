@@ -84,7 +84,14 @@ import {
     collectionFieldsForWrite,
     DIETARY_OPTIONS,
     DEFAULT_SERVICE_COMMISSION,
+    amenityGroupsForCategory,
+    knownExperienceAmenities,
+    experienceAmenityLabel,
+    EXPERIENCE_CANCELLATION_OPTIONS,
+    experienceCancellationOption,
 } from '@/lib/serviceProviders';
+import { experienceCustomDaysProblem } from '@/lib/experienceCancellation';
+import { providerExtraProblem, EXTRA_LABEL_MAX, type ProviderExtraUnit } from '@/lib/providerExtras';
 import { serviceCommission } from '@/lib/pricing';
 import { AGREEMENTS, agreementProblem, versionForTick } from '@/lib/agreements';
 import AgreementTick, { AGREEMENTS_CHANGED, fetchAgreementStatus, recordAgreement } from '@/components/legal/AgreementTick';
@@ -337,6 +344,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // providerId is what tells it a category is no longer needed
     // (guestNeedsCategory). The client load still refreshes all of this.
     const [providerId, setProviderId] = useState<string | null>(initialResume?.id ?? null);
+    // The id as soon as the row save returns it — a ref, not state, so the preview
+    // handler can read it synchronously right after awaiting save (state wouldn't
+    // have flushed yet).
+    const savedIdRef = useRef<string | null>(initialResume?.id ?? null);
     const [status, setStatus] = useState(initialResume?.status || 'draft');
     const [reviewNote, setReviewNote] = useState<string | null>(null);
 
@@ -679,6 +690,30 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     // wizard neither shows nor writes them. The hours control and its
     // shared-hours/'simple'-vs-'perday' mode state were removed with that cut.
     const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
+    // The amenity ticks ("What's included") and the free-text "Good to know"
+    // (visitor information) — both stored in guest_details, both shown on the
+    // listing. The golf group shows only for a golf venue (amenityGroupsForCategory).
+    const [amenities, setAmenities] = useState<string[]>([]);
+    const [visitorInfo, setVisitorInfo] = useState('');
+    // The cancellation policy — the named key (flexible/standard/firm/none/custom)
+    // and, for Custom, the provider's own number of days. The same set the listing
+    // editor offers; written to cancellation_window_hours + guest_details.
+    const [cancelKey, setCancelKey] = useState('standard');
+    const [cancelCustomDays, setCancelCustomDays] = useState('');
+    // Whether they actually chose a cancellation policy this session. The exact
+    // window is a column the wizard can't read back, so for an EXISTING listing we
+    // only write cancellation when they touched it — otherwise a returning
+    // provider's real policy would be clobbered by the 'standard' default.
+    const [cancelTouched, setCancelTouched] = useState(false);
+    // A brand-new sign-up (no row loaded) always writes its cancellation default;
+    // an edit of an existing listing writes it only when touched (above).
+    const isNewSignup = !initialResume?.id;
+    // The optional paid extras (the #509 provider_extras mechanism), collected in
+    // the wizard and written at submit — a local list with temp ids, like `items`.
+    // Photo/VAT/max-qty are left to the editor; the sign-up keeps it to the three
+    // fields that matter (name, price, per booking/person).
+    type SignupExtra = { id: string; label: string; price: string; unit: ProviderExtraUnit; description: string };
+    const [signupExtras, setSignupExtras] = useState<SignupExtra[]>([]);
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string; quote?: boolean }>>({});
@@ -1016,6 +1051,19 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             ]);
                         }
                         if (Array.isArray(gd.dietary_options)) setDietaryOptions(gd.dietary_options as string[]);
+                        // What's included (the amenity ticks) and the free-text
+                        // "Good to know" — both in guest_details, restored for edit.
+                        if (Array.isArray(gd.amenities)) setAmenities(knownExperienceAmenities(gd.amenities));
+                        if (gd.visitor_info) setVisitorInfo(String(gd.visitor_info));
+                        // Cancellation: the exact window (cancellation_window_hours)
+                        // is a service-role-only column the wizard can't read back, so
+                        // only the flags in guest_details restore here — "No refund"
+                        // from no_refund. Everything else shows the default ('standard')
+                        // and, crucially, the cancellation write at submit is skipped
+                        // for an existing listing unless they actually change it
+                        // (cancelTouched), so a returning provider's real policy is
+                        // never clobbered by a default they didn't choose.
+                        if (gd.no_refund) setCancelKey('none');
                         // Max guests for a comes-to-you chef rides here (a slot's
                         // is loaded from slot_capacity above). Only set it when the
                         // column didn't already provide it, so a slot keeps its
@@ -1040,6 +1088,26 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                             close: String(r.close_time || '').slice(0, 5),
                         }));
                         setSchedule(rows);
+                    }
+
+                    // The optional paid extras (provider_extras) — the owner reads
+                    // their own back through RLS, so a returning provider edits the
+                    // ones they set (kept by id so a re-save reconciles, not dupes).
+                    if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
+                        const { data: exRows } = await supabase
+                            .from('provider_extras')
+                            .select('id, label, description, price, unit')
+                            .eq('provider_id', existing.id)
+                            .order('sort_order', { ascending: true });
+                        if (exRows && exRows.length) {
+                            setSignupExtras(exRows.map((r: any) => ({
+                                id: String(r.id),
+                                label: String(r.label || ''),
+                                price: r.price != null ? String(r.price) : '',
+                                unit: (r.unit === 'person' ? 'person' : 'booking') as ProviderExtraUnit,
+                                description: String(r.description || ''),
+                            })));
+                        }
                     }
                     // The numbers only. Whether one has been checked is not
                     // read here and not shown here — it is not theirs to see
@@ -1308,6 +1376,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             if (d.capacityNA) setCapacityNA(true);
             if (d.slotLength) setSlotLength(d.slotLength);
             if (Array.isArray(d.schedule)) setSchedule(d.schedule);
+            if (Array.isArray(d.amenities)) setAmenities(d.amenities);
+            if (typeof d.visitorInfo === 'string') setVisitorInfo(d.visitorInfo);
+            if (typeof d.cancelKey === 'string') setCancelKey(d.cancelKey);
+            if (typeof d.cancelCustomDays === 'string') setCancelCustomDays(d.cancelCustomDays);
+            if (d.cancelTouched) setCancelTouched(true);
+            if (Array.isArray(d.signupExtras)) setSignupExtras(d.signupExtras);
 
             // Whether there is anything in here worth calling kept work.
             //
@@ -1475,6 +1549,9 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     // — never shared, and it's a private column server-side.
                     fulfilment, collectionStreet, collectionTown, collectionPostcode,
                     slotOffer, chargeUnits, maxGuests, capacityNA, slotLength, schedule,
+                    // What's included, the "Good to know" text, the cancellation
+                    // policy and the optional extras — the new sign-up sections.
+                    amenities, visitorInfo, cancelKey, cancelCustomDays, cancelTouched, signupExtras,
                     // The checks they've ticked so far.
                     declarations,
                 })
@@ -1495,6 +1572,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         guestGroup, guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
         slotOffer, chargeUnits, maxGuests, capacityNA, slotLength, schedule,
+        amenities, visitorInfo, cancelKey, cancelCustomDays, cancelTouched, signupExtras,
         declarations,
     ]);
 
@@ -1567,6 +1645,25 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             && collectionTown.trim() !== ''
             && collectionPostcode.trim() !== '',
     });
+
+    // Two guest-only gates the shared submitProblems does not own, appended here
+    // so Next and "go to first problem" land on the right new screen:
+    //   availability — a slot or comes-to-you experience is bookable off its
+    //     weekly hours, so submit_service_provider refuses an empty template; the
+    //     'availability' field maps to g_slot_hours (GUEST_STEP_FIELDS).
+    //   cancellation — a Custom policy needs a valid number of days (the same rule
+    //     the save route and the DB enforce); it maps to g_cancel.
+    const isGuestDraft = audienceForTrade(trade) === 'guest';
+    const hoursNeeded = isGuestDraft && (shape === 'slot' || shape === 'comes_to_you');
+    const hoursSet = schedule.filter((r) => r.open && r.close && r.open < r.close).length > 0;
+    const customCancelProblem = (isGuestDraft && cancelKey === 'custom')
+        ? experienceCustomDaysProblem(cancelCustomDays) : null;
+    if (hoursNeeded && !hoursSet) {
+        problems.push({ field: 'availability', message: 'Set your weekly opening hours before sending — guests book from them, so there’s nothing to book without them.' });
+    }
+    if (customCancelProblem) {
+        problems.push({ field: 'cancellation', message: customCancelProblem });
+    }
 
     // The optional address lookup (Ideal Postcodes) for the collection address,
     // reusing the shared /api/address routes and helpers. Manual entry is the
@@ -2378,6 +2475,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         setPhases(['', '', '']);
         setDietaryNote('');
         setDietaryOptions([]);
+        // The new sign-up sections — amenities differ by category (the golf group),
+        // the "Good to know", the extras and the cancellation default all reset so a
+        // change of category doesn't carry stale answers across.
+        setAmenities([]);
+        setVisitorInfo('');
+        setSignupExtras([]);
+        setCancelKey('standard');
+        setCancelCustomDays('');
+        setCancelTouched(false);
         clearShapeDependentAnswers();
         // The STRUCTURAL answers, not just the offering's contents. shape and
         // fulfilment decide which screens render and how the location screen reads,
@@ -2857,6 +2963,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             // when "Not applicable" is ticked — a one-at-a-time provider has no
             // ceiling (comes-to-you only; a slot always has a number).
             max_guests: capacityNA ? null : t(maxGuests),
+            // What's included (the amenity ticks), sanitised to known keys, and the
+            // free-text "Good to know" (visitor information) — both read by the
+            // listing and the Finish preview. Empty stays null so the stored object
+            // is clean and mergedGuestDetails drops it.
+            amenities: amenities.length ? knownExperienceAmenities(amenities) : null,
+            visitor_info: t(visitorInfo),
         };
     };
 
@@ -3005,15 +3117,15 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         // write goes through `submit_service_provider`, which re-checks
         // ownership and the approved case in the database. Sending any of
         // those three here would now be refused outright, which is the point.
-        // A guest experience no longer submits from the wizard. Availability left
-        // the wizard (it's set in the listing editor's Availability section), so a
-        // new guest is handed to that editor to set it and submit from the end of
-        // it — Airbnb's "build the listing, then publish". So for a guest we save
-        // the row and record their agreement here, but DON'T flip the status; the
-        // editor's Submit does that (through the same RPC, which now also checks
-        // the weekly hours). A host trade still submits straight from the wizard.
-        const routeGuestToEditor = submit && isGuest && status !== 'approved';
-        const statusPatch = (submit && !routeGuestToEditor) ? submitStatusPatch(status, now) : {};
+        // A guest experience submits straight from the wizard again (Liam, 28 Oct
+        // 2026): the wizard now collects the weekly hours (g_slot_hours), the
+        // amenities, the cancellation policy and the optional extras, so a listing
+        // is complete enough to send without a detour through the listing editor.
+        // submit_service_provider still guards it — the hours, the description and
+        // the current-version agreement — so a slot/comes-to-you that somehow
+        // reaches here with an empty template is refused and surfaced on the hours
+        // screen. A host trade submits here too, as before.
+        const statusPatch = submit ? submitStatusPatch(status, now) : {};
 
         // Every write goes through /api/services/signup/save (ownership-checked,
         // column allow-listed) — nothing writes straight from the browser. The
@@ -3026,19 +3138,64 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             return;
         }
         const id: string = rowRes.id;
+        savedIdRef.current = id;
         if (id !== providerId) setProviderId(id);
 
-        // A guest handed to the editor still agrees to the Experience Provider
-        // Agreement here, at the end of the wizard, so it's on record before the
-        // editor's Submit (the RPC refuses a submit with no acceptance). Recorded
-        // the same way the submit path below does, just without the status flip.
-        if (routeGuestToEditor && needsAgreementTick) {
-            const failed = await recordAgreement(agreementDoc, 'experience_signup');
-            if (failed) {
-                setSaving(false);
-                setTermsError(failed);
-                return;
+        // The parts a child write refused — named back to the provider rather than
+        // a silent success. Declared up here (it used to sit lower) because the
+        // guest listing-sections below can fail too, and they run before submit.
+        const savedButFailed: string[] = [];
+
+        // GUEST listing-sections — availability, cancellation and extras — written
+        // through the listing editor's own save route (owner-gated, service role),
+        // for a draft save and before submit alike. They MUST run before the submit
+        // block: submit_service_provider refuses a slot/comes-to-you with no weekly
+        // hours, so the template has to be written first. Amenities and the
+        // "Good to know" text are not here — they ride the row's guest_details
+        // (guestContentFields), already saved above.
+        if (isGuest) {
+            const listingSave = (section: string, data: any) => fetch('/api/services/listing/save', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providerId: id, section, data }),
+            }).then((r) => r.json()).catch(() => ({ ok: false }));
+
+            // Weekly hours — slot and comes-to-you. Only well-formed rows (open
+            // before close) are sent; the route replaces the whole template.
+            if (shape === 'slot' || shape === 'comes_to_you') {
+                const availRows = schedule
+                    .filter((r) => r.open && r.close && r.open < r.close)
+                    .map((r) => ({ day_of_week: r.day, open_time: r.open, close_time: r.close }));
+                const res = await listingSave('availability', { availability: availRows });
+                if (!res.ok) savedButFailed.push('your opening hours');
             }
+
+            // Cancellation — only for a new sign-up, or when they changed it. The
+            // exact window is a service-role-only column the wizard can't read back,
+            // so an untouched existing policy is left exactly as it is.
+            if (isNewSignup || cancelTouched) {
+                const data = cancelKey === 'custom'
+                    ? { custom: true, custom_days: Number(cancelCustomDays) || 0 }
+                    : cancelKey === 'none'
+                        ? { cancellation_window_hours: 0, no_refund: true }
+                        : { cancellation_window_hours: (EXPERIENCE_CANCELLATION_OPTIONS.find((o) => o.key === cancelKey)?.hours ?? 48), no_refund: false };
+                const res = await listingSave('cancellation', data);
+                if (!res.ok) savedButFailed.push('your cancellation policy');
+            }
+
+            // Extras — reconciled by id, so an existing extra keeps its id rather
+            // than duplicating; a blank row (no name or no price) is dropped. Sent
+            // even when empty so removing every extra clears them.
+            const extraPayload = signupExtras.map((e, i) => ({
+                id: e.id.startsWith('new_') ? undefined : e.id,
+                label: e.label.trim(),
+                description: e.description.trim() || null,
+                price: Number(e.price),
+                unit: e.unit,
+                vat_treatment: 'standard',
+                sort_order: i,
+            })).filter((e) => e.label && Number(e.price) > 0);
+            const res = await listingSave('extras', { extras: extraPayload });
+            if (!res.ok) savedButFailed.push('your extras');
         }
 
         // Submitting is its own step now, after the row exists and its columns
@@ -3102,7 +3259,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         //
         // A refused child write doesn't abort the save (the row is written); the
         // route names it and the warning below says so, never a silent success.
-        const savedButFailed: string[] = [];
+        // (savedButFailed is declared above, before the guest listing-sections.)
 
         const registrationRows = showableSchemes
             .map((scheme) => ({ scheme, number: String(registrations[scheme] || '').trim() }))
@@ -3242,11 +3399,10 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             } catch { /* the map is optional */ }
         }
 
-        // Weekly opening hours are NOT written here any more. They moved out of
-        // the wizard to the listing editor's Availability section, which is the
-        // single home for the weekly template — so the wizard neither asks for
-        // hours nor writes slot_availability. A new slot provider sets them in the
-        // editor after create; the diary still owns the dated exceptions.
+        // Weekly opening hours ARE written now — in the guest listing-sections
+        // block above (slot_availability, via the listing save route), before the
+        // submit so the RPC's weekly-hours check passes. The diary still owns the
+        // dated exceptions (days off, partial blocks).
 
         // Skills go through a route rather than being written from here.
         //
@@ -3295,9 +3451,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         //
         // Nothing here is shown to them if it fails. They have done their
         // part; a problem reaching us is ours, and the route logs it.
-        // Not for a guest being handed to the editor — they haven't submitted yet,
-        // so there's nothing to announce; the editor's Submit fires this.
-        if ((submit && !routeGuestToEditor) || status === 'approved') {
+        if (submit || status === 'approved') {
             try {
                 await fetch('/api/services/submitted', {
                     method: 'POST',
@@ -3316,13 +3470,6 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
 
         setSaving(false);
 
-        if (routeGuestToEditor) {
-            // Into the listing editor to set availability and submit from its end.
-            toast.success('Saved. Set your availability, then submit for review.', { theme: 'colored' });
-            router.push('/services/dashboard/listing');
-            return;
-        }
-
         if (submit && status === 'approved') {
             toast.success('Saved. You are still live.', { theme: 'colored' });
         } else if (submit) {
@@ -3330,6 +3477,28 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
             toast.success('Sent to us for review.', { theme: 'colored' });
         } else {
             toast.success('Saved.', { theme: 'colored' });
+        }
+    };
+
+    // "Show preview" on the Finish screen — Airbnb's own pattern. It saves the
+    // current answers as a draft first (so the preview reflects them), then opens
+    // the real listing page in preview mode (owner-only, nothing bookable). The
+    // blank tab is opened synchronously, inside the click, so the pop-up blocker
+    // doesn't swallow it across the await; its URL is set once the id is known.
+    const [previewing, setPreviewing] = useState(false);
+    const openPreview = async () => {
+        if (previewing) return;
+        setPreviewing(true);
+        const w = window.open('', '_blank');
+        try {
+            await save(false);
+            const pid = savedIdRef.current;
+            if (pid && w && !w.closed) w.location.href = '/experiences/browse/' + pid + '/preview';
+            else if (w && !w.closed) w.close();
+        } catch {
+            if (w && !w.closed) w.close();
+        } finally {
+            setPreviewing(false);
         }
     };
 
@@ -4226,7 +4395,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                        guide") is guest copy — it must not leak onto a
                                        trade page. A trade just gets the field under
                                        its "Your title" heading, no placeholder. */
-                                    placeholder={isGuest ? GUEST_SCREEN_COPY.titlePlaceholder : ''}
+                                    placeholder={isGuest ? (GUEST_SCREEN_COPY.guestCategoryPlaceholders[guestCategory]?.role || '') : ''}
                                     className={bigInput}
                                 />
                                 <span className={counterField}>{professionalTitle.length}/40</span>
@@ -4890,6 +5059,187 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 </section>
                 )}
 
+                {/* WEEKLY HOURS — back in the wizard (Liam, 28 Oct 2026). A slot
+                    books its sessions off this template and a comes-to-you reads it
+                    for the dates a guest may request, so both collect it here and
+                    submit from the wizard rather than being handed to the editor.
+                    Mirrors the editor's Availability grid (same 0..6 day index,
+                    same slot_availability rows). The dated exceptions (days off,
+                    partial blocks) still live in the calendar. */}
+                {onStep('g_slot_hours') && isGuest && (shape === 'slot' || shape === 'comes_to_you') && (() => {
+                    const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    const rowFor = (d: number) => schedule.find((r) => r.day === d) || null;
+                    const setDay = (d: number, patch: Partial<{ open: string; close: string }> | null) => setSchedule((prev) => {
+                        const has = prev.some((r) => r.day === d);
+                        const next = patch === null
+                            ? prev.filter((r) => r.day !== d)
+                            : !has
+                                ? [...prev, { day: d, open: '09:00', close: '17:00', ...patch }]
+                                : prev.map((r) => (r.day === d ? { ...r, ...patch } : r));
+                        return next.slice().sort((a, b) => a.day - b.day);
+                    });
+                    const travel = shape === 'comes_to_you';
+                    return (
+                    <section className="mb-8 md:max-w-xl md:mx-auto w-full">
+                        <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl mb-2">
+                            {travel ? GUEST_SCREEN_COPY.slotHoursQuestionTravel : GUEST_SCREEN_COPY.slotHoursQuestion}
+                        </h1>
+                        <p className="text-sm text-slate-500 [text-wrap:balance] mb-8">
+                            {travel ? GUEST_SCREEN_COPY.slotHoursSubtextTravel : GUEST_SCREEN_COPY.slotHoursSubtext}
+                        </p>
+                        <span className="block text-base font-semibold text-slate-800">{GUEST_SCREEN_COPY.slotHoursWeekly}</span>
+                        <div className="mt-3 space-y-2">
+                            {DAYS.map((name, d) => {
+                                const row = rowFor(d);
+                                const on = !!row;
+                                return (
+                                    <div key={d} className="flex items-center gap-3">
+                                        <button type="button" onClick={() => setDay(d, on ? null : {})} aria-pressed={on}
+                                            className={'w-28 flex-none rounded-xl border-2 px-3 py-2.5 text-left text-base font-semibold transition '
+                                                + (on ? 'border-emerald-600 bg-emerald-50/60 text-slate-900' : 'border-slate-200 text-slate-400 hover:border-slate-300')}>
+                                            {name}
+                                        </button>
+                                        {on && row ? (
+                                            <>
+                                                <input type="time" aria-label={name + ' open'} value={row.open} onChange={(e) => setDay(d, { open: e.target.value })}
+                                                    className="rounded-lg border border-slate-300 p-2 text-sm focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200" />
+                                                <span className="text-slate-400">to</span>
+                                                <input type="time" aria-label={name + ' close'} value={row.close} onChange={(e) => setDay(d, { close: e.target.value })}
+                                                    className="rounded-lg border border-slate-300 p-2 text-sm focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200" />
+                                            </>
+                                        ) : <span className="text-sm text-slate-400">{GUEST_SCREEN_COPY.slotHoursClosed}</span>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+                    );
+                })()}
+
+                {/* AMENITIES — what's included, as ticks ("What's included" on the
+                    listing), plus the free-text "Good to know" (visitor info). The
+                    golf group shows only for a golf venue (amenityGroupsForCategory);
+                    the general groups show for every experience. Saved to
+                    guest_details exactly as the listing editor saves it. */}
+                {onStep('g_amenities') && isGuest && (() => {
+                    const groups = amenityGroupsForCategory(guestCategory);
+                    const toggle = (k: string) => setAmenities((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
+                    return (
+                    <section className="mb-8 md:max-w-2xl md:mx-auto w-full">
+                        <p className="-mt-6 mb-8 text-sm text-slate-500 [text-wrap:balance]">{GUEST_SCREEN_COPY.amenitiesSubtext}</p>
+                        <div className="space-y-6">
+                            {groups.map((grp) => (
+                                <div key={grp.group}>
+                                    <h3 className="mb-2 text-sm font-semibold text-slate-800">{grp.group}</h3>
+                                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                        {grp.items.map((a) => {
+                                            const on = amenities.includes(a.key);
+                                            return (
+                                                <button key={a.key} type="button" onClick={() => toggle(a.key)} aria-pressed={on}
+                                                    className={'relative rounded-2xl border-2 p-3 text-left text-sm transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-400')}>
+                                                    <span className="font-semibold text-slate-900">{a.label}</span>
+                                                    {on && <Check className="absolute right-3 top-3 h-4 w-4 text-emerald-700" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                            <div>
+                                <label htmlFor="good-to-know" className="block text-sm font-semibold text-slate-800">{GUEST_SCREEN_COPY.amenitiesGoodToKnowLabel}</label>
+                                <p className="mt-0.5 text-xs text-slate-400 [text-wrap:balance]">{GUEST_SCREEN_COPY.amenitiesGoodToKnowHint}</p>
+                                <textarea id="good-to-know" value={visitorInfo} onChange={(e) => setVisitorInfo(e.target.value.slice(0, 500))} rows={3}
+                                    placeholder={GUEST_SCREEN_COPY.amenitiesGoodToKnowPlaceholder}
+                                    className="mt-2 w-full rounded-xl border border-slate-300 p-3 text-sm placeholder:text-slate-300 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200" />
+                            </div>
+                        </div>
+                    </section>
+                    );
+                })()}
+
+                {/* CANCELLATION — the named policy, the same set the listing editor
+                    offers. Custom lets them pick their own number of days. Written to
+                    cancellation_window_hours + guest_details at submit (for a new
+                    sign-up, or when they change it on an existing listing). */}
+                {onStep('g_cancel') && isGuest && (() => {
+                    const opts = [...EXPERIENCE_CANCELLATION_OPTIONS].sort((a, b) => (a.custom ? 1 : 0) - (b.custom ? 1 : 0));
+                    return (
+                    <section className="mb-8 md:max-w-xl md:mx-auto w-full">
+                        <p className="-mt-6 mb-8 text-sm text-slate-500 [text-wrap:balance]">{GUEST_SCREEN_COPY.cancelSubtext}</p>
+                        <div className="grid gap-3">
+                            {opts.map((o) => (
+                                <ChoiceCard key={o.key} selected={cancelKey === o.key}
+                                    onSelect={() => { setCancelKey(o.key); setCancelTouched(true); }}
+                                    title={o.label} hint={o.blurb} />
+                            ))}
+                        </div>
+                        {cancelKey === 'custom' && (
+                            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                <label htmlFor="cancel-days" className="block text-sm font-semibold text-slate-800">{GUEST_SCREEN_COPY.cancelCustomDaysLabel}</label>
+                                <input id="cancel-days" inputMode="numeric" aria-label={GUEST_SCREEN_COPY.cancelCustomDaysLabel}
+                                    value={cancelCustomDays} onChange={(e) => { setCancelCustomDays(e.target.value.replace(/[^0-9]/g, '')); setCancelTouched(true); }}
+                                    className="mt-2 w-24 rounded-xl border border-slate-300 px-3 py-2 text-base focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200" />
+                                <p className="mt-1.5 text-xs text-slate-400">{GUEST_SCREEN_COPY.cancelCustomDaysHint}</p>
+                            </div>
+                        )}
+                    </section>
+                    );
+                })()}
+
+                {/* EXTRAS — optional paid add-ons (the #509 provider_extras
+                    mechanism), collected here and written at submit. Skippable: a
+                    venue with nothing to add just presses Next. Photo/VAT/max-qty are
+                    left to the listing editor; this keeps it to name + price + unit. */}
+                {onStep('g_extras') && isGuest && (() => {
+                    const addExtra = () => setSignupExtras((prev) => [...prev, { id: 'new_' + Date.now() + '_' + prev.length, label: '', price: '', unit: 'booking' as ProviderExtraUnit, description: '' }]);
+                    const setEx = (id: string, patch: Partial<SignupExtra>) => setSignupExtras((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+                    const removeEx = (id: string) => setSignupExtras((prev) => prev.filter((e) => e.id !== id));
+                    const unitBtn = (active: boolean) => 'rounded-xl border-2 px-3 py-2 text-sm font-semibold transition '
+                        + (active ? 'border-emerald-600 bg-emerald-50/60 text-slate-900' : 'border-slate-200 text-slate-500 hover:border-slate-300');
+                    return (
+                    <section className="mb-8 md:max-w-xl md:mx-auto w-full">
+                        <p className="-mt-6 mb-6 text-sm text-slate-500 [text-wrap:balance]">{GUEST_SCREEN_COPY.extrasSubtext}</p>
+                        <div className="space-y-4">
+                            {signupExtras.length === 0 && (
+                                <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-400">{GUEST_SCREEN_COPY.extrasEmpty}</p>
+                            )}
+                            {signupExtras.map((ex) => (
+                                <div key={ex.id} className="space-y-3 rounded-2xl border border-slate-200 p-4">
+                                    <div className="flex items-center gap-2">
+                                        <input value={ex.label} onChange={(e) => setEx(ex.id, { label: e.target.value.slice(0, EXTRA_LABEL_MAX) })}
+                                            placeholder={GUEST_SCREEN_COPY.extrasNamePlaceholder} aria-label="Extra name"
+                                            className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-base placeholder:text-slate-300 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200" />
+                                        <button type="button" onClick={() => removeEx(ex.id)} aria-label="Remove extra"
+                                            className="flex-none rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <div className="flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-2">
+                                            <span className="text-slate-400">£</span>
+                                            <input inputMode="decimal" value={ex.price} onChange={(e) => setEx(ex.id, { price: e.target.value.replace(/[^0-9.]/g, '') })}
+                                                placeholder={GUEST_SCREEN_COPY.extrasPricePlaceholder} aria-label="Extra price"
+                                                className="w-16 bg-transparent text-base tabular-nums placeholder:text-slate-300 focus:outline-none" />
+                                        </div>
+                                        <button type="button" onClick={() => setEx(ex.id, { unit: 'booking' })} className={unitBtn(ex.unit === 'booking')}>{GUEST_SCREEN_COPY.extrasUnitBooking}</button>
+                                        <button type="button" onClick={() => setEx(ex.id, { unit: 'person' })} className={unitBtn(ex.unit === 'person')}>{GUEST_SCREEN_COPY.extrasUnitPerson}</button>
+                                    </div>
+                                    <input value={ex.description} onChange={(e) => setEx(ex.id, { description: e.target.value.slice(0, 300) })}
+                                        placeholder="Describe it (optional)" aria-label="Extra description"
+                                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm placeholder:text-slate-300 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200" />
+                                </div>
+                            ))}
+                            <button type="button" onClick={addExtra}
+                                className="flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-emerald-400 hover:text-emerald-700">
+                                <Plus className="h-4 w-4" /> {GUEST_SCREEN_COPY.extrasAdd}
+                            </button>
+                            <p className="text-xs text-slate-400 [text-wrap:balance]">{GUEST_SCREEN_COPY.extrasPriceNote}</p>
+                        </div>
+                    </section>
+                    );
+                })()}
+
 
                 {/* Who they are — a guest trade only. A guest is choosing
                     someone to come into the cottage they are staying in, so the
@@ -5012,7 +5362,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                 type="text"
                                 value={listingTitle}
                                 onChange={(e) => setListingTitle(e.target.value.slice(0, 60))}
-                                placeholder={GUEST_SCREEN_COPY.experienceTitlePlaceholder}
+                                placeholder={GUEST_SCREEN_COPY.guestCategoryPlaceholders[guestCategory]?.name || ''}
                                 className="w-full bg-transparent pr-12 text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none"
                                 autoFocus
                             />
@@ -5092,7 +5442,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                                 value={phases[i]}
                                                 onChange={(e) => setPhases((prev) => { const next = [...prev] as [string, string, string]; next[i] = e.target.value; return next; })}
                                                 rows={2}
-                                                placeholder={GUEST_SCREEN_COPY.expectFlowPlaceholders[i]}
+                                                placeholder={(i === 0 ? (GUEST_SCREEN_COPY.guestCategoryPlaceholders[guestCategory]?.happens || '') : '') || GUEST_SCREEN_COPY.expectFlowPlaceholders[i]}
                                                 aria-label={h.title}
                                                 className="mt-1 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-[15px] leading-relaxed text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none"
                                             />
@@ -6225,11 +6575,14 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                 // until there is a time to show (they add them before going
                 // live). A made-to-order or comes-to-you shape always has a When.
                 const slotCount = (schedule || []).length;
-                const whenVal = shape === 'slot'
-                    ? (slotCount ? `${slotCount} weekly time${slotCount === 1 ? '' : 's'}` : null)
+                const whenVal = (shape === 'slot' || shape === 'comes_to_you')
+                    ? (slotCount ? `${slotCount} day${slotCount === 1 ? '' : 's'} a week` : null)
                     : shape === 'made_to_order'
                         ? `${String(leadTimeDays || '0').trim()} days’ notice`
                         : 'arranged per booking';
+                // The amenity labels and the chosen cancellation policy, for the recap.
+                const amenityLabels = amenities.map((k) => experienceAmenityLabel(k)).filter((l): l is string => !!l);
+                const cancelVal = EXPERIENCE_CANCELLATION_OPTIONS.find((o) => o.key === cancelKey)?.label || null;
                 // Up to THREE photos in the hero space, in listing order so the
                 // cover leads. More than three crams; one or two fill the space
                 // rather than leaving gaps (see the layout below).
@@ -6238,12 +6591,17 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     [GUEST_SCREEN_COPY.finishSummaryPrice, priceVal],
                     [GUEST_SCREEN_COPY.finishSummaryCoverage, coverageVal],
                     [GUEST_SCREEN_COPY.finishSummaryWhen, whenVal],
+                    ['Cancellation', cancelVal],
                     [GUEST_SCREEN_COPY.finishSummaryPhotos, String((photos || []).length)],
                 ] as [string, string | null][]).filter((e): e is [string, string] => e[1] != null);
                 const wrote: [string, string][] = ([
                     [GUEST_SCREEN_COPY.finishWroteTitle, professionalTitle.trim()],
                     // "What happens" is the flow now; show the steps, else the box.
                     [GUEST_SCREEN_COPY.finishWroteExpect, phases.map((p) => p.trim()).filter(Boolean).join(' · ') || whatToExpect.trim()],
+                    // What's included (the amenity ticks) and the free-text "Good to
+                    // know" — shown on the recap exactly as they'll appear on the listing.
+                    ['What’s included', amenityLabels.join(', ')],
+                    ['Good to know', visitorInfo.trim()],
                     [GUEST_SCREEN_COPY.finishWroteQuals, qualifications.trim()],
                     [GUEST_SCREEN_COPY.finishWroteDietary, dietaryNote.trim()],
                 ] as [string, string][]).filter(([, v]) => v);
@@ -6296,10 +6654,24 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                 sits beneath, and the provider's own photo + first
                                 name is the byline (who a guest is booking) — never a
                                 surname. */}
-                            <h3 className="text-2xl font-bold text-slate-900 [text-wrap:balance] sm:text-3xl">
-                                {listingTitle.trim() || '—'}
-                            </h3>
-                            <p className="mt-1 text-slate-500">{catLabel}</p>
+                            {/* The title opens the real listing in PREVIEW mode —
+                                Airbnb's "Show preview": the full page a guest will
+                                see, owner-only, with nothing bookable. It saves the
+                                current answers as a draft first, so the preview is
+                                what they've actually filled in. */}
+                            <button type="button" onClick={openPreview} disabled={previewing}
+                                className="group block text-left [text-wrap:balance] focus-visible:outline-none">
+                                <h3 className="text-2xl font-bold text-slate-900 underline decoration-slate-300 decoration-2 underline-offset-4 transition group-hover:decoration-slate-900 group-focus-visible:decoration-slate-900 sm:text-3xl">
+                                    {listingTitle.trim() || '—'}
+                                </h3>
+                            </button>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <p className="text-slate-500">{catLabel}</p>
+                                <button type="button" onClick={openPreview} disabled={previewing}
+                                    className="text-sm font-semibold text-emerald-700 hover:underline disabled:opacity-50">
+                                    {previewing ? 'Opening…' : 'Show preview →'}
+                                </button>
+                            </div>
 
                             {summaryByline ? (
                                 <div className="mt-4 flex items-center gap-2.5">

@@ -239,10 +239,44 @@ export const GUEST_SCREEN_COPY = {
         pottery: 'Wheel-throwing taster',
         painting: 'Watercolour afternoon',
         workshops: 'Candle-making workshop',
+        // Golf prices by the round / the session, so the example is a real line
+        // a venue would list — and this is where 9 vs 18 holes is expressed, each
+        // its own priced item (there is no separate "holes" picker).
+        golf_course: '18 holes, weekday',
+        golf_pitch_putt: 'A round of 18',
+        golf_mini: 'A round for one',
+        golf_range: 'A bucket of 100 balls',
+        golf_lessons: '1-hour lesson',
     } as Record<string, string>,
     // "Something else" has no category example, so it gets a real one rather
     // than an instruction sitting where an example should be.
     menuNameExampleFallback: 'e.g. Sunrise sea swim',
+
+    // Category-specific placeholders for the free-text boxes that used to read
+    // "wild swim" / "cold-water swimming" whatever the category. Keyed on the
+    // sub-type: `name` is the listing-name box (g_title), `role` the professional
+    // title (g_creds), `happens` the first "what happens" box (g_expect). A
+    // category with no entry shows NO placeholder (an empty box beats a wrong
+    // example), so `guestPlaceholder()` returns '' rather than a generic.
+    guestCategoryPlaceholders: {
+        chef:         { name: 'e.g. “Galloway Private Dining”', role: 'e.g. “Private chef”', happens: 'e.g. A four-course dinner cooked in your cottage, using Galloway produce.' },
+        food_order:   { name: 'e.g. “The Solway Bakehouse”', role: 'e.g. “Baker”', happens: 'e.g. Made-to-order celebration cakes, delivered to your door.' },
+        tastings:     { name: 'e.g. “Galloway Whisky Tastings”', role: 'e.g. “Whisky host”', happens: 'e.g. A guided tasting of six Scottish whiskies, with tasting notes.' },
+        cooking:      { name: 'e.g. “Dumfries Cookery School”', role: 'e.g. “Cookery tutor”', happens: 'e.g. A hands-on class making fresh pasta from scratch.' },
+        outdoors:     { name: 'e.g. “Galloway Guided Walks”', role: 'e.g. “Walking guide”', happens: 'e.g. A half-day guided walk through the Galloway hills.' },
+        water:        { name: 'e.g. “Solway Kayak Tours”', role: 'e.g. “Kayak guide”', happens: 'e.g. A sunset paddle along the Solway coast, all kit provided.' },
+        massage:      { name: 'e.g. “Riverside Massage & Therapy”', role: 'e.g. “Massage therapist”', happens: 'e.g. A 60-minute deep-tissue massage in a calm studio.' },
+        sauna:        { name: 'e.g. “Loch Ken Wood-Fired Sauna”', role: 'e.g. “Sauna host”', happens: 'e.g. A private wood-fired sauna session beside the loch, with a cold dip.' },
+        yoga:         { name: 'e.g. “Galloway Yoga Studio”', role: 'e.g. “Yoga teacher”', happens: 'e.g. A gentle morning yoga class suitable for all levels.' },
+        pottery:      { name: 'e.g. “Kirkcudbright Pottery”', role: 'e.g. “Potter”', happens: 'e.g. A wheel-throwing taster — make a mug to take home.' },
+        painting:     { name: 'e.g. “Solway Coast Art Classes”', role: 'e.g. “Artist”', happens: 'e.g. A watercolour afternoon painting the Galloway coast.' },
+        workshops:    { name: 'e.g. “The Galloway Makery”', role: 'e.g. “Maker”', happens: 'e.g. A candle-making workshop — pour and scent your own.' },
+        golf_course:      { name: 'e.g. “Solway Links Golf Club”', happens: 'e.g. An 18-hole links course on the Solway coast, open to visitors.' },
+        golf_pitch_putt:  { name: 'e.g. “Seaside Pitch & Putt”', happens: 'e.g. A friendly 18-hole pitch & putt, clubs available to hire.' },
+        golf_mini:        { name: 'e.g. “Galloway Adventure Golf”', happens: 'e.g. An 18-hole adventure golf course, great for families.' },
+        golf_range:       { name: 'e.g. “Solway Driving Range”', happens: 'e.g. Covered practice bays with buckets of balls and club hire.' },
+        golf_lessons:     { name: 'e.g. “Galloway Golf Coaching”', role: 'e.g. “PGA golf coach”', happens: 'e.g. One-to-one coaching with a PGA pro, all levels welcome.' },
+    } as Record<string, { name?: string; role?: string; happens?: string }>,
     menuPriceTitle: 'What does it cost?',
     menuPricePlaceholder: '45',        // the big numeral's placeholder — an example price
     menuPriceTypeLabel: 'How this is priced',   // the current-choice row on the price step
@@ -448,7 +482,43 @@ export const GUEST_SCREEN_COPY = {
     slotLengthSubtext: 'Roughly how long a guest is with you — you can change it later.',
     slotLengthSuffix: 'minutes',
     slotHoursQuestion: 'When can guests book?',
-    slotHoursSubtext: 'The days and hours you run sessions. Block off the odd date below.',
+    slotHoursSubtext: 'The days and hours you run sessions. Guests book from these, so a listing can’t go live without them. Block off the odd date later, in your calendar.',
+    // The comes-to-you variant of the hours screen: the days you can travel. Same
+    // grid, different framing (you're not holding sessions, you're saying when
+    // you're free to come out). Guests request dates inside these.
+    slotHoursQuestionTravel: 'When are you available?',
+    slotHoursSubtextTravel: 'The days and hours you can travel to guests. They request dates inside these, so a listing can’t go live without them.',
+    slotHoursClosed: 'Closed',
+    slotHoursWeekly: 'Weekly hours',
+
+    // Amenities — the ticks a guest reads as "What’s included". The golf group
+    // shows only for a golf venue; the general groups show for every experience.
+    amenitiesQuestion: 'What’s included?',
+    amenitiesSubtext: 'Tick what a guest gets or will find when they arrive. All optional — leave anything you don’t offer unticked.',
+    // Visitor information — the free-text "Good to know" that sits with amenities.
+    // For golf this is where the dress code, handicap rule and buggy rules go; the
+    // tickable facts (dress code applies / handicap required) are the amenities.
+    amenitiesGoodToKnowLabel: 'Good to know',
+    amenitiesGoodToKnowHint: 'Anything a guest should know before booking — a dress code, a handicap requirement, what to bring. Optional.',
+    amenitiesGoodToKnowPlaceholder: 'e.g. Soft spikes only, collared shirts; handicap certificate required for the main course.',
+
+    // Cancellation — the named policy, the same set the listing editor offers.
+    cancelQuestion: 'What’s your cancellation policy?',
+    cancelSubtext: 'How long before the session a guest can cancel for a full refund. You can change it later; it only ever applies to bookings made afterwards.',
+    cancelCustomDaysLabel: 'Days before the session',
+    cancelCustomDaysHint: 'A full refund before this many days, none after.',
+
+    // Extras — optional paid add-ons, the #509 mechanism. Skippable: a venue with
+    // nothing to add just presses Next.
+    extrasQuestion: 'Any paid extras?',
+    extrasSubtext: 'Optional add-ons a guest can buy with their booking — club hire, a buggy, a lesson add-on. You can add or change these any time. Skip it if you have none.',
+    extrasAdd: 'Add an extra',
+    extrasNamePlaceholder: 'e.g. Club hire',
+    extrasPricePlaceholder: '20',
+    extrasEmpty: 'No extras yet — this step is optional.',
+    extrasUnitBooking: 'Per booking',
+    extrasUnitPerson: 'Per person',
+    extrasPriceNote: 'We take our usual commission on an extra, the same as the experience price.',
 
     // The collection address. The hint DESCRIBES what we do — not a guarantee it
     // can't reach anyone else (a provider who messages their address to a guest is
