@@ -49,6 +49,15 @@ export function NumberStepper({
     const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, snap(n)))));
     const nudge = (dir: number) => ((solid || has) ? commit(shown + dir * step) : commit(suggestion ?? min));
 
+    // Auto-size the numeric box to its content so it never clips a long number
+    // ("120" used to spill out of the fixed width and read as "12("). With
+    // tabular-nums every digit is 1ch wide, so the string's length in ch fits it
+    // exactly; +1 leaves room for the caret, and the min-width below keeps a
+    // short number from looking cramped. (The formatted display is a span that
+    // already grows on its own.)
+    const sizeStr = (solid || has) ? String(shown) : (suggestion !== undefined ? String(suggestion) : '');
+    const inputWidthCh = Math.max(1, sizeStr.length) + 1;
+
     const lg = size === 'lg';
     const circle =
         (lg ? 'h-14 w-14 sm:h-16 sm:w-16 ' : 'h-11 w-11 ')
@@ -57,13 +66,17 @@ export function NumberStepper({
         + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300';
     const glyph = lg ? 'h-5 w-5 sm:h-6 sm:w-6' : 'h-4 w-4';
     const numberField = lg
-        ? 'w-28 sm:w-44 bg-transparent text-center text-7xl sm:text-9xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
-        : 'w-16 bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
+        ? 'min-w-[6rem] sm:min-w-[9rem] max-w-full bg-transparent text-center text-7xl sm:text-9xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+        : 'min-w-[3.5rem] max-w-full bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
     // A formatted display (e.g. a duration) is read-only text, sized to fit the
-    // longer label rather than a single numeral.
+    // longer label rather than a single numeral — and kept on ONE line
+    // (whitespace-nowrap, growing past the min-width) so "1 hr 30 min" reads the
+    // Airbnb way rather than wrapping "min" onto a second line. A notch smaller
+    // than a single numeral so the longest label ("7 hr 45 min") still fits a
+    // phone between the ± buttons.
     const labelField = lg
-        ? 'min-w-[8rem] sm:min-w-[14rem] text-center text-4xl sm:text-6xl font-extrabold tabular-nums text-slate-900'
-        : 'min-w-[6rem] text-center text-2xl font-extrabold tabular-nums text-slate-900';
+        ? 'min-w-[8rem] sm:min-w-[12rem] whitespace-nowrap text-center text-3xl sm:text-5xl font-extrabold tabular-nums text-slate-900'
+        : 'min-w-[6rem] whitespace-nowrap text-center text-2xl font-extrabold tabular-nums text-slate-900';
 
     return (
         <div className={'flex items-center ' + (lg ? 'gap-4 sm:gap-10' : 'gap-4')}>
@@ -80,6 +93,7 @@ export function NumberStepper({
                     value={solid ? String(shown) : (has ? String(shown) : '')}
                     placeholder={solid ? undefined : (suggestion !== undefined ? String(suggestion) : '')}
                     onChange={(e) => onChange(e.target.value)}
+                    style={{ width: inputWidthCh + 'ch' }}
                     className={numberField}
                 />
             )}
@@ -134,6 +148,11 @@ export function BigAmountInput({ value, onChange, placeholder = '0', ariaLabel, 
     numeric?: boolean;
     autoFocus?: boolean;
 }) {
+    // Auto-size to the amount so a long price never clips, the same way the
+    // NumberStepper box does; a min-width keeps a short price from looking
+    // cramped. tabular-nums makes each digit 1ch; +1 leaves room for the caret.
+    const amountStr = (value && value.trim()) ? value : String(placeholder || '');
+    const amountWidthCh = Math.max(2, amountStr.length) + 1;
     return (
         <div className="flex items-baseline justify-center gap-2">
             <span className="text-4xl font-extrabold text-slate-400 sm:text-5xl">£</span>
@@ -143,7 +162,8 @@ export function BigAmountInput({ value, onChange, placeholder = '0', ariaLabel, 
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
                 aria-label={ariaLabel}
-                className="w-48 bg-transparent text-center text-6xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none sm:text-7xl"
+                style={{ width: amountWidthCh + 'ch' }}
+                className="min-w-[6rem] max-w-full bg-transparent text-center text-6xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none sm:text-7xl"
             />
         </div>
     );
