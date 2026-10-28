@@ -46,7 +46,7 @@ import { needsCapacity } from '@/lib/pricingUnits';
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'business' | 'b_area'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_charge' | 'g_capacity' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_charge' | 'g_capacity' | 'g_menu' | 'g_extras' | 'g_title' | 'g_expect' | 'g_amenities' | 'g_cancel' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -75,7 +75,7 @@ const GUEST_STEP_KEYS: StepKey[] = [
     // a listed key). It is retired for guests too, by its case returning false and
     // by its removal from the When section rail; it is never shown, but it must
     // remain listed here or it leaks into host flows.
-    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_charge', 'g_capacity', 'g_menu', 'g_title', 'g_expect',
+    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_charge', 'g_capacity', 'g_menu', 'g_extras', 'g_title', 'g_expect', 'g_amenities', 'g_cancel',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -198,10 +198,22 @@ const ALL_STEPS: Step[] = [
     { key: 'g_charge', label: 'Charging', title: GUEST_SCREEN_COPY.chargeQuestion },
     { key: 'g_capacity', label: 'Guests', title: 'How many guests?' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
+    // Optional paid add-ons (club hire, a buggy, a lesson add-on), the same
+    // provider_extras mechanism the listing editor uses. The last screen of
+    // Pricing, and skippable — a venue with nothing to add just presses Next.
+    { key: 'g_extras', label: 'Extras', title: GUEST_SCREEN_COPY.extrasQuestion },
     // g_title (the listing's name) used to sit HERE, first in the Details section
     // near the end. It moved to the top of the About-you section (see above) so a
     // provider names their experience early, not after every other answer.
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
+    // What's included (the amenity ticks) and the free-text "Good to know" —
+    // the golf group shows only for a golf venue; the general groups for every
+    // experience. Part of the Details section, after "what happens".
+    { key: 'g_amenities', label: 'Included', title: GUEST_SCREEN_COPY.amenitiesQuestion },
+    // The cancellation policy — the same named set the listing editor offers.
+    // Every guest experience has one; it's set here so an approved listing is
+    // bookable on sensible terms without a trip to the editor.
+    { key: 'g_cancel', label: 'Cancellation', title: GUEST_SCREEN_COPY.cancelQuestion },
     // Not "Registration". Registration and skills never co-occur across the
     // trade list — the electrician and plumber give numbers, the handyman gives
     // skills, nobody does both — so a step called Registration was wrong for
@@ -299,9 +311,16 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // (g_expect) and the photos (g_photos). No contact step (the account
             // address is the contact address) and no checks step (collapsed to one
             // confirmation on the finish screen).
+            // Asked of every guest. g_amenities (what's included + good-to-know),
+            // g_cancel (the cancellation policy) and g_extras (optional paid
+            // add-ons, skippable) join the always-on content screens so a listing
+            // is complete enough to go live from sign-up — no editor detour.
             case 'g_menu':
+            case 'g_extras':
             case 'g_title':
             case 'g_expect':
+            case 'g_amenities':
+            case 'g_cancel':
             case 'g_photos':
                 return true;
             // Maximum guests. Only where a group size means something: the
@@ -357,10 +376,15 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // with its own length). Both still set weekly hours.
             case 'g_slot_length':
                 return shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx);
-            // g_slot_hours retired from the wizard — weekly hours are set in the
-            // listing editor's Availability section, not at sign-up.
+            // Weekly hours are back in the wizard (Liam, 28 Oct 2026): a slot and
+            // a comes-to-you experience are both bookable off the weekly template
+            // (submit_service_provider refuses either with an empty one), so the
+            // wizard collects them and submits for review itself — no detour to the
+            // listing editor to set them. A made-to-order product has no hours. A
+            // travelling mixed slot still has availability (when it can travel), so
+            // it is NOT excluded here the way the per-session length screen is.
             case 'g_slot_hours':
-                return false;
+                return shape === 'slot' || shape === 'comes_to_you';
             default:
                 return false;
         }
@@ -445,10 +469,13 @@ const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     // (sectionsFor filters by stepApplies), so a made-to-order or comes-to-you
     // guest never sees a "When" section at all.
     // A made-to-order's notice period is its When.
-    { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_notice', 'g_slot_length'] },
+    // The When section: a made-to-order's notice, a slot's session length, and
+    // the weekly hours (slot AND comes-to-you — both book off the template, so
+    // both set it here now rather than in the editor).
+    { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_notice', 'g_slot_length', 'g_slot_hours'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
-    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_charge', 'g_capacity', 'g_menu'] },
-    { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
+    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_charge', 'g_capacity', 'g_menu', 'g_extras'] },
+    { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect', 'g_amenities', 'g_cancel'] },
     // Finish is now a single screen: the account, with one responsibility
     // confirmation folded in above submit. The old checks and contact steps that
     // shared this section are gone.
@@ -607,8 +634,11 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_charge: [],
     g_capacity: [],
     g_menu: [],
+    g_extras: [],
     g_title: [],
     g_expect: [],
+    g_amenities: [],
+    g_cancel: [],
     g_photos: [],
     g_notice: [],
     g_slot_where: [],
@@ -638,6 +668,9 @@ const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     // there rather than back on the location screen.
     g_area: ['areas', 'fulfilment', 'collection_address'],
     g_slot_hours: ['availability'],
+    // A Custom cancellation policy with no (or a bad) number of days — the error
+    // lands on the cancellation screen so the fix is in front of them.
+    g_cancel: ['cancellation'],
     // The priced-item requirement belongs to the pricing step, so a greyed Next
     // and "go to first problem" both land here.
     g_menu: ['menu'],
