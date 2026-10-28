@@ -4882,7 +4882,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     while the first control asked session length. */}
                 {onStep('g_slot_length') && isGuest && shape === 'slot' && (
                 <section className="flex-1 flex flex-col items-center justify-center">
-                    <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} size="lg" solid suffix={GUEST_SCREEN_COPY.slotLengthSuffix} />
+                    {/* Shown as hours & minutes ("1 hr 30 min") via the formatted
+                        display, which also grows to fit so a long length never
+                        clips. Steps in 15-min increments up to 8 hours; the stored
+                        value stays minutes. */}
+                    <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} size="lg" solid format={durationLabel} />
                 </section>
                 )}
 
