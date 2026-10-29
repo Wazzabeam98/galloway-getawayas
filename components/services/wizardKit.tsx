@@ -19,13 +19,17 @@ import { minutesLabel } from './editorControls';
 // empty. The first nudge adopts the suggestion, and typing sets any number
 // directly. The value stays a string to match the fields it replaced.
 export function NumberStepper({
-    value, onChange, min = 0, max = 999, step = 1, suffix, suggestion, size = 'md', solid = false, format,
+    value, onChange, min = 0, max = 999, step = 1, nextStep, suffix, suggestion, size = 'md', solid = false, format,
 }: {
     value: string;
     onChange: (v: string) => void;
     min?: number;
     max?: number;
     step?: number;
+    // A variable step: given the current value and the direction (+1 up, −1 down),
+    // return how much to move by. Used for session length, which steps in 5 up to
+    // 60 and 10 above it. Overrides `step` when set.
+    nextStep?: (current: number, dir: 1 | -1) => number;
     suffix?: string;
     suggestion?: number;
     // 'lg' is the whole-screen opener: a huge display numeral and larger
@@ -47,7 +51,8 @@ export function NumberStepper({
     // where it is rather than being rounded off it.
     const snap = (n: number) => (Number.isInteger(shown) ? Math.round(n) : n);
     const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, snap(n)))));
-    const nudge = (dir: number) => ((solid || has) ? commit(shown + dir * step) : commit(suggestion ?? min));
+    const delta = (dir: 1 | -1) => (nextStep ? nextStep(shown, dir) : step);
+    const nudge = (dir: 1 | -1) => ((solid || has) ? commit(shown + dir * delta(dir)) : commit(suggestion ?? min));
 
     // Auto-size the numeric box to its content so it never clips a long number
     // ("120" used to spill out of the fixed width and read as "12("). With

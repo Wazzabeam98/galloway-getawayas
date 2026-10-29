@@ -66,3 +66,24 @@ export const SESSION_LENGTH_OPTIONS = [30, 45, 60, 90, 120];
 export function minutesLabel(m: number): string {
     return durationWords(m);
 }
+
+// Session length is set on a PLAIN-MINUTES counter now (Liam, 28 Oct 2026): a
+// big number and a "minutes" label, the same control everywhere a provider sets
+// a length — the sign-up wizard, the listing editor and each per-option duration
+// — so sign-up and the editor match. (Guest-facing listing pages still read a
+// length as "1 hr 30 min" via durationWords.) The counter steps in 5 up to an
+// hour and 10 from an hour upwards, so an 18-hole round (240) is as quick to dial
+// in as a 20-minute taster. Going DOWN at exactly 60 steps by 5 (to 55), so the
+// grid below the hour stays on fives.
+export const SESSION_LENGTH_MIN = 15;
+export const SESSION_LENGTH_MAX = 480;
+export const SESSION_LENGTH_SUFFIX = 'minutes';
+export function sessionLengthStep(current: number, dir: 1 | -1): number {
+    return dir > 0 ? (current < 60 ? 5 : 10) : (current <= 60 ? 5 : 10);
+}
+// The PROVIDER-facing label for an already-set length — plain minutes ("90 min"),
+// matching the counter. Distinct from durationWords, which the guest listing uses
+// ("1 hr 30 min").
+export function sessionMinutesLabel(m: number): string {
+    return `${Math.round(Number(m) || 0)} min`;
+}
