@@ -11,7 +11,8 @@ import {
     ImagePlus, User, Pencil,
     MapPin, Tag, ListChecks, Flag, Image as ImageIcon,
 } from 'lucide-react';
-import { NumberStepper, ChoiceCard, BigAmountInput, durationLabel } from './wizardKit';
+import { NumberStepper, ChoiceCard, BigAmountInput } from './wizardKit';
+import { sessionLengthStep, sessionMinutesLabel, SESSION_LENGTH_MIN, SESSION_LENGTH_MAX } from './editorControls';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, firstName } from '@/lib/utils';
@@ -4524,7 +4525,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         // reads by its length; a shared class reads by its unit.
                         const timedRow = perItemShape || (mixedShape && String(r.unit) === 'flat');
                         const qualifier = timedRow
-                            ? (Number(r.duration) > 0 ? durationLabel(Number(r.duration)) : '')
+                            ? (Number(r.duration) > 0 ? sessionMinutesLabel(Number(r.duration)) : '')
                             : unitWord(r);
                         const group = String(r.unit) === 'person' && Number(r.groupPrice) > 0 ? ' · £' + String(r.groupPrice) + ' per group' : '';
                         return '£' + p + (qualifier ? (timedRow ? ' · ' : ' ') + qualifier : '') + group;
@@ -4818,10 +4819,11 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                     )}
                                     {stepKind === 'duration' && (
                                         // The one added screen for the per-treatment
-                                        // shape — the same NumberStepper the single
-                                        // provider-length used, now per treatment, in
-                                        // 15-minute steps. The guest sees this length;
-                                        // the day reserves it (plus any reset gap).
+                                        // shape — the same plain-minutes NumberStepper
+                                        // the single provider-length uses, now per
+                                        // treatment (5-min steps up to an hour, 10
+                                        // above). The guest sees this length; the day
+                                        // reserves it (plus any reset gap).
                                         //
                                         // NOT solid: this is the one gated stepper — its
                                         // Next is disabled until a duration is set
@@ -4833,8 +4835,8 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                             <NumberStepper
                                                 value={it.duration || ''}
                                                 onChange={(v: string) => setField(menuIndex, 'duration', v)}
-                                                min={15} max={480} step={15} suggestion={60}
-                                                size="lg" format={durationLabel}
+                                                min={SESSION_LENGTH_MIN} max={SESSION_LENGTH_MAX} nextStep={sessionLengthStep} suggestion={60}
+                                                size="lg" suffix="minutes"
                                             />
                                             <p className="mt-4 text-center text-sm text-slate-500">How long a guest books this treatment for.</p>
                                         </div>
@@ -5051,11 +5053,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                     while the first control asked session length. */}
                 {onStep('g_slot_length') && isGuest && shape === 'slot' && (
                 <section className="flex-1 flex flex-col items-center justify-center">
-                    {/* Shown as hours & minutes ("1 hr 30 min") via the formatted
-                        display, which also grows to fit so a long length never
-                        clips. Steps in 15-min increments up to 8 hours; the stored
-                        value stays minutes. */}
-                    <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} size="lg" solid format={durationLabel} />
+                    {/* Plain minutes — the big number and a "minutes" label, the same
+                        size and position as the years and capacity steppers. The
+                        number auto-grows so three digits (100, 120, 480) never clip,
+                        on desktop or phone. Steps 5 up to an hour, 10 above. The
+                        guest listing still reads a length as "1 hr 30 min". */}
+                    <NumberStepper value={slotLength} onChange={setSlotLength} min={SESSION_LENGTH_MIN} max={SESSION_LENGTH_MAX} nextStep={sessionLengthStep} suggestion={60} size="lg" solid suffix={GUEST_SCREEN_COPY.slotLengthSuffix} />
                 </section>
                 )}
 

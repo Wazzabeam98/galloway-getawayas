@@ -9,7 +9,8 @@ import { compressImage } from '@/lib/compressImage';
 import { cleanAmountInput, amountForBox } from '@/lib/amountInput';
 import AutoTextarea from '@/components/AutoTextarea';
 import { EditorCard, EditorPanel, saved } from '@/components/listing-editor/EditorPanel';
-import { NumberStepper, ChoiceCard, ChoiceTiles, WizardShell, BigAmountInput, BigTextInput, durationLabel, wizardAreaCls } from './wizardKit';
+import { NumberStepper, ChoiceCard, ChoiceTiles, WizardShell, BigAmountInput, BigTextInput, wizardAreaCls } from './wizardKit';
+import { sessionLengthStep, sessionMinutesLabel, SESSION_LENGTH_MIN, SESSION_LENGTH_MAX, SESSION_LENGTH_SUFFIX } from './editorControls';
 import { SheetFooter, useCardSheet } from './editorSheet';
 import { ImageIcon, Image as ImageIconLucide, User, Users, CalendarDays, Package, Trash2, Check, Clock } from 'lucide-react';
 import { UNIT_NAME, UNIT_HINT, unitChoices, unitPer, priceQuestion } from '@/lib/pricingUnits';
@@ -68,7 +69,7 @@ export function itemSummary(r: MenuRow, isSlot: boolean, timed = false, shape = 
     bits.push(priceWords(r.price, shape === 'made_to_order' ? 'item' : r.unit, timed));
     if (r.unit === 'person' && Number(r.groupPrice) > 0) bits.push(`£${r.groupPrice} per group`);
     if (r.unit === 'hour' && Number(r.minHours) > 1) bits.push(`minimum ${r.minHours} hours`);
-    if (isSlot && r.duration) bits.push(durationLabel(Number(r.duration)));
+    if (isSlot && r.duration) bits.push(sessionMinutesLabel(Number(r.duration)));
     if (!r.active) bits.push('hidden');
     return bits.join(' · ');
 }
@@ -302,7 +303,7 @@ export function AddItemFlow({ ctx, onClose, onAdd }: { ctx: ItemCtx; onClose: ()
 
             {key === 'duration' && (
                 <div className="flex justify-center">
-                    <NumberStepper value={r.duration} onChange={(v) => set({ duration: v })} min={15} max={480} step={15} suggestion={60} size="lg" solid format={durationLabel} />
+                    <NumberStepper value={r.duration} onChange={(v) => set({ duration: v })} min={SESSION_LENGTH_MIN} max={SESSION_LENGTH_MAX} nextStep={sessionLengthStep} suggestion={60} size="lg" solid suffix={SESSION_LENGTH_SUFFIX} />
                 </div>
             )}
 
@@ -404,8 +405,8 @@ function PriceCard({ ctx, row, perItemLocation, onSave }: { ctx: ItemCtx; row: M
     );
 }
 
-function StepperCard({ title, question, summary, value, suggestion, suffix, min, step, format, onSave }: {
-    title: string; question: string; summary: string; value: string; suggestion: number; suffix?: string; min: number; step?: number; format?: (n: number) => string; onSave: (v: string) => unknown;
+function StepperCard({ title, question, summary, value, suggestion, suffix, min, max, step, nextStep, format, onSave }: {
+    title: string; question: string; summary: string; value: string; suggestion: number; suffix?: string; min: number; max?: number; step?: number; nextStep?: (current: number, dir: 1 | -1) => number; format?: (n: number) => string; onSave: (v: string) => unknown;
 }) {
     const c = useCardSheet(value, onSave);
     return (
@@ -414,7 +415,7 @@ function StepperCard({ title, question, summary, value, suggestion, suffix, min,
             {c.open && (
                 <EditorPanel title={question} onClose={c.close} footer={<SheetFooter busy={c.busy} onCancel={c.close} onSave={c.save} />}>
                     <div className="flex justify-center py-4">
-                        <NumberStepper value={c.draft} onChange={c.setDraft} min={min} max={format ? 480 : 60} step={step || 1} suggestion={suggestion} size="lg" solid suffix={suffix} format={format} />
+                        <NumberStepper value={c.draft} onChange={c.setDraft} min={min} max={max ?? (format ? 480 : 60)} step={step || 1} nextStep={nextStep} suggestion={suggestion} size="lg" solid suffix={suffix} format={format} />
                     </div>
                 </EditorPanel>
             )}
@@ -526,7 +527,7 @@ export function ItemDetailCard({ ctx, row, onSave, onDelete, selecting, selected
                         <NameCard row={row} onSave={onSave} />
                         <PriceCard ctx={ctx} row={row} perItemLocation={perItemLocation} onSave={onSave} />
                         {ctx.isSlot && (
-                            <StepperCard title="Duration" question={STEP_QUESTIONS.duration} summary={row.duration ? durationLabel(Number(row.duration)) : 'Not set'} value={row.duration} suggestion={60} min={15} step={15} format={durationLabel}
+                            <StepperCard title="Duration" question={STEP_QUESTIONS.duration} summary={row.duration ? sessionMinutesLabel(Number(row.duration)) : 'Not set'} value={row.duration} suggestion={60} min={SESSION_LENGTH_MIN} max={SESSION_LENGTH_MAX} nextStep={sessionLengthStep} suffix={SESSION_LENGTH_SUFFIX}
                                 onSave={(v) => onSave({ ...row, duration: v })} />
                         )}
                         {ctx.isSlot && perPerson && (

@@ -16,7 +16,7 @@ import { AddressCard, LocationSharingCard } from '@/components/listing-editor/Lo
 import PropertyMap from '@/components/PropertyMap';
 import PhotosEditor, { PhotosCard, type SavePhotos } from '@/components/listing-editor/PhotosEditor';
 import PhoneSectionTabs, { goToEditorSection } from '@/components/listing-editor/PhoneSectionTabs';
-import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
+import { OptionPills, Stepper, sessionLengthStep, SESSION_LENGTH_MIN, SESSION_LENGTH_MAX, SESSION_LENGTH_SUFFIX } from './editorControls';
 import { NumberStepper, BigTextInput, ChoiceTiles, wizardAreaCls } from './wizardKit';
 import { QuestionSheetContext } from '@/components/listing-editor/questionSheets';
 import { Field, SheetFooter, useCardSheet, inputCls } from './editorSheet';
@@ -485,8 +485,14 @@ function AvailabilityCard({ isSlot, comesToYou, hours, slotLength, turnaround, l
                         {isSlot && (
                             <>
                                 <Field label="Session length">
-                                    <OptionPills options={SESSION_LENGTH_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) }))}
-                                        value={String(c.draft.slotLength)} onChange={(v) => c.setDraft({ ...c.draft, slotLength: Number(v) })} />
+                                    {/* The same plain-minutes counter as the sign-up
+                                        wizard (Liam, 28 Oct 2026) — a number and a
+                                        "minutes" label, stepping 5 up to an hour and 10
+                                        above — so sign-up and the editor match, and a
+                                        longer round (an 18-hole, say) can be set past the
+                                        old 120-minute pill ceiling. */}
+                                    <NumberStepper value={String(c.draft.slotLength)} onChange={(v) => c.setDraft({ ...c.draft, slotLength: Number(v) || 0 })}
+                                        min={SESSION_LENGTH_MIN} max={SESSION_LENGTH_MAX} nextStep={sessionLengthStep} suggestion={60} solid suffix={SESSION_LENGTH_SUFFIX} />
                                 </Field>
                                 <Field label="Gap between sessions">
                                     <OptionPills options={TURNAROUND_OPTIONS.map((m) => ({ value: String(m), label: m === 0 ? 'None' : `${m} min` }))}
