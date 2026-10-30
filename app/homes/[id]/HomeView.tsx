@@ -42,7 +42,7 @@ import ListingStickyHeader from '@/components/ListingStickyHeader';
 import { hostResponsiveness } from '@/lib/hostResponsiveness';
 import { describePlace } from '@/lib/propertyTypes';
 import ShareSaveButtons from '@/components/save/ShareSaveButtons';
-import { KeyRound, Zap, Car, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Gem } from 'lucide-react';
+import { KeyRound, Zap, Car, Bath, ThermometerSun, ThermometerSnowflake, ShowerHead, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Gem, Star } from 'lucide-react';
 
 // "Entire flat" / "Private room in a static caravan" — the type words live in
 // lib/propertyTypes.ts, with every other place a type is shown.
@@ -640,17 +640,20 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                         </Link>
                     </nav>
                 )}
-                {/* Our Luxury tag (admin-only) — the card's dark pill, above the title. */}
+                {/* Our Luxury tag (admin-only) — the card's dark pill, above the
+                    title. Desktop only: on mobile the Luxury badge sits in the
+                    stats row inside the header panel (below). */}
                 {home.is_luxury === true && (
-                    <span className='mb-2 inline-flex items-center gap-1 rounded-full bg-stone-900 px-2.5 py-1 text-xs font-semibold text-white' title='Luxury — chosen by Galloway Getaways'>
+                    <span className='mb-2 hidden md:inline-flex items-center gap-1 rounded-full bg-stone-900 px-2.5 py-1 text-xs font-semibold text-white' title='Luxury — chosen by Galloway Getaways'>
                         <Gem className='h-3.5 w-3.5 text-amber-300' />
                         Luxury
                     </span>
                 )}
-                {/* The title takes the full width on mobile; Share/Save move to
-                    round icons over the photo (below). On desktop (md+) the text
-                    Share/Save pair sits top-right of the title, as before. */}
-                <div className='flex items-start justify-between gap-3'>
+                {/* DESKTOP header: the title with the Share/Save pair to its right,
+                    then the rating line. On mobile this is replaced by the centred
+                    header panel below (Airbnb's mobile listing header), so the whole
+                    desktop title row and rating line are hidden there. */}
+                <div className='hidden md:flex items-start justify-between gap-3'>
                     {/* An arbitrary mobile size (24px/line-32) rather than text-2xl,
                         so globals.css doesn't lift it to 32px below 640px — at 32px a
                         long title stacked to one word per line once a phone's text
@@ -669,7 +672,7 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                         />
                     </div>
                 </div>
-                <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
+                <div className='hidden md:flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (
                         <>
                             <ReviewStars value={Math.round(ratingAvg)} size={15} />
@@ -794,19 +797,91 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                         }
                     />
                 </div>
+
+                {/* MOBILE header panel — Airbnb's mobile listing header. A white
+                    sheet with a rounded top that overlaps the bottom of the photo;
+                    the title and the one-line facts are centred; then a three-column
+                    stats row (rating · a badge · reviews) with thin dividers — or a
+                    single "★ New" when there are no reviews, in place of a separate
+                    New pill — then a divider and the host. md:hidden: desktop keeps
+                    its own left-aligned header above. */}
+                <section className='md:hidden -mx-4 -mt-6 relative z-10 rounded-t-3xl bg-white px-5 pt-7 pb-5'>
+                    <div className='text-center'>
+                        <h1 className='text-[1.5rem]/8 font-bold text-slate-900 [text-wrap:pretty]'>{home.title}</h1>
+                        <p className='mt-2 text-slate-500 [text-wrap:pretty]'>
+                            {describePlace(home.privacy_type, home.property_type)}
+                            {placeSummary(home.location) ? ` in ${placeSummary(home.location)}` : ''}
+                        </p>
+                        <p className='mt-0.5 text-slate-500'>
+                            {plural(home.max_guests, 'guest')} · {plural(home.bedrooms, 'bedroom')} · {plural(home.beds, 'bed')} · {plural(home.bathrooms, 'bathroom')}
+                        </p>
+                    </div>
+
+                    {showScore ? (
+                        <div className='mt-6 flex items-stretch justify-center divide-x divide-slate-200 text-slate-900'>
+                            <div className='flex flex-col items-center px-5'>
+                                <span className='text-lg font-bold leading-none'>{ratingAvg.toFixed(2)}</span>
+                                <span className='mt-1'><ReviewStars value={Math.round(ratingAvg)} size={12} /></span>
+                            </div>
+                            {home.is_luxury === true && (
+                                <div className='flex items-center justify-center gap-1 px-5 text-center text-sm font-semibold'>
+                                    <Gem className='h-4 w-4 flex-none text-amber-500' /> Luxury
+                                </div>
+                            )}
+                            <div className='flex flex-col items-center px-5'>
+                                <span className='text-lg font-bold leading-none'>{ratingCount}</span>
+                                <span className='mt-1 text-xs text-slate-500'>{ratingCount === 1 ? 'Review' : 'Reviews'}</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className='mt-5 flex items-center justify-center gap-1.5 text-sm font-semibold text-slate-900'>
+                            <Star className='h-4 w-4 flex-none fill-slate-900 text-slate-900' />
+                            New
+                            {ratingCount > 0 && <span className='font-normal text-slate-500'>· {ratingCount} review{ratingCount === 1 ? '' : 's'} so far</span>}
+                        </div>
+                    )}
+
+                    <div className='mt-5 flex items-center gap-3 border-t border-slate-200 pt-5'>
+                        <div className='h-11 w-11 flex-none overflow-hidden rounded-full bg-slate-900 text-white flex items-center justify-center font-semibold'>
+                            {hostAvatar ? (
+                                <Image src={getImageUrl(hostAvatar)} alt={`${hostFirstName}, host`} width={44} height={44} className='w-full h-full object-cover' />
+                            ) : (
+                                hostFirstName.charAt(0)
+                            )}
+                        </div>
+                        <div>
+                            <div className='flex items-center gap-2 flex-wrap'>
+                                <span className='font-semibold text-slate-900'>Hosted by {hostFirstName}</span>
+                                {hostVerified && (
+                                    <span className='inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5'>
+                                        <BadgeCheck className='w-3.5 h-3.5' />
+                                        Verified host
+                                    </span>
+                                )}
+                            </div>
+                            {hostSinceYear && (
+                                <div className='text-sm text-slate-500'>Hosting since {hostSinceYear}</div>
+                            )}
+                        </div>
+                    </div>
+                </section>
+
                 {/* Just below the photos: when this scrolls up past the nav, the
                     desktop sticky header fades in (ListingStickyHeader watches it). */}
                 <div id="sticky-sentinel" aria-hidden="true" />
 
                 <ExtrasSelectionProvider>
-                <div className='grid grid-cols-1 lg:grid-cols-3 gap-10 mt-5'>
+                <div className='grid grid-cols-1 lg:grid-cols-3 lg:gap-10 mt-0 lg:mt-5'>
                     <div className='order-2 lg:order-1 lg:col-span-2'>
-                        <h2 className='text-xl md:text-2xl font-bold text-slate-900'>
+                        {/* The place summary, the facts and the host line are the
+                            DESKTOP header's lead-in; on mobile they live in the
+                            centred header panel above, so they're hidden here. */}
+                        <h2 className='hidden md:block text-xl md:text-2xl font-bold text-slate-900'>
                             {describePlace(home.privacy_type, home.property_type)}
                             {placeSummary(home.location) ? ` in ${placeSummary(home.location)}` : ''}
                         </h2>
 
-                        <p className='mt-1 text-slate-600'>
+                        <p className='hidden md:block mt-1 text-slate-600'>
                             {plural(home.max_guests, 'guest')} · {plural(home.bedrooms, 'bedroom')} · {plural(home.beds, 'bed')} · {plural(home.bathrooms, 'bathroom')}
                         </p>
                         {(() => {
@@ -814,7 +889,7 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                             // outside it — see lib/nearestTown.
                             const near = nearestTown(home.location, home.approx_latitude, home.approx_longitude);
                             return near ? (
-                                <p className='mt-1 text-sm text-slate-500'>{nearestTownLabel(near)}</p>
+                                <p className='hidden md:block mt-1 text-sm text-slate-500'>{nearestTownLabel(near)}</p>
                             ) : null;
                         })()}
 
@@ -829,7 +904,7 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                             circle, and a plain tag ships whatever the host
                             uploaded at full size — one real avatar was 2,173 KB,
                             99% of this page's image weight on a phone. */}
-                        <div className='flex items-center gap-3 mt-5 pt-5 border-t'>
+                        <div className='hidden md:flex items-center gap-3 mt-5 pt-5 border-t'>
                             <div className='w-11 h-11 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center font-semibold flex-shrink-0'>
                                 {hostAvatar ? (
                                     <Image
@@ -866,7 +941,7 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                             before 11:00 am"), the way Airbnb shows the times. */}
 
                         {highlights.length > 0 && (
-                            <div className='mt-8 pt-8 lg:mt-5 lg:pt-5 border-t space-y-4'>
+                            <div className='mt-0 pt-6 lg:mt-5 lg:pt-5 border-t space-y-4'>
                                 {highlights.map((h) => (
                                     <div key={h.title} className='flex items-start gap-4'>
                                         <h.icon className='w-6 h-6 text-slate-700 flex-shrink-0 mt-0.5' strokeWidth={1.5} />

@@ -217,15 +217,25 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-10 mt-2">
+                {/* MOBILE header panel — the same overlapping white sheet as the
+                    cottage and experience pages, with the trade and name centred.
+                    md:hidden; desktop keeps its left-aligned header below. */}
+                <section className="md:hidden -mx-4 -mt-6 relative z-10 rounded-t-3xl bg-white px-5 pt-7 pb-5 text-center">
+                    <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-emerald-700">{tradeLabel(provider.trade)}</p>
+                    <h1 className="mt-1.5 text-[1.5rem]/8 font-bold text-slate-900 [text-wrap:pretty]">{provider.business_name}</h1>
+                    {title ? <p className="mt-1.5 text-slate-500 [text-wrap:pretty]">{title}</p> : null}
+                </section>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 lg:gap-10 mt-0 lg:mt-2">
                     <div className="lg:col-span-2 min-w-0">
-                        <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-emerald-700">{tradeLabel(provider.trade)}</p>
+                        <p className="hidden md:block text-[13px] font-semibold uppercase tracking-[0.14em] text-emerald-700">{tradeLabel(provider.trade)}</p>
                         {/* Mobile size is arbitrary (24px) so globals.css doesn't lift
                             it to 32px below 640px (long titles stacked one word per line
                             at bigger phone text); pretty packs the words. Desktop keeps
-                            text-3xl. */}
-                        <h1 className="mt-1.5 text-[1.5rem]/8 md:text-3xl font-bold text-slate-900 [text-wrap:pretty]">{provider.business_name}</h1>
-                        {title ? <p className="mt-1.5 text-slate-500">{title}</p> : null}
+                            text-3xl. On mobile the trade/name/title are centred in the
+                            header panel above, so these are hidden. */}
+                        <h1 className="hidden md:block mt-1.5 text-[1.5rem]/8 md:text-3xl font-bold text-slate-900 [text-wrap:pretty]">{provider.business_name}</h1>
+                        {title ? <p className="hidden md:block mt-1.5 text-slate-500">{title}</p> : null}
 
                         {provider.description ? (
                             <p className="mt-5 whitespace-pre-line text-base md:text-lg leading-relaxed text-slate-700">{provider.description}</p>
