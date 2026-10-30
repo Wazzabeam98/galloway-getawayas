@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { getImageUrl } from '@/lib/utils';
 
 // The listing photo gallery — the same on every cottage and experience page.
@@ -23,6 +24,8 @@ export default function PhotoGallery({
     title,
     area,
     kind = 'self-catering accommodation',
+    backHref,
+    overlay,
 }: {
     images: string[];
     title: string;
@@ -30,6 +33,12 @@ export default function PhotoGallery({
     // What the place is, for the first photo's alt. Cottages keep the default;
     // an experience passes its own word ("foraging walk"), which is not a stay.
     kind?: string;
+    // MOBILE-ONLY overlays on the full-bleed hero, Airbnb-style (desktop is
+    // untouched). backHref renders a round back button top-left; overlay is the
+    // top-right controls (the Share/Save pair, as round icon buttons). Both sit
+    // only inside the md:hidden hero, so they never show on desktop.
+    backHref?: string;
+    overlay?: React.ReactNode;
 }) {
     const place = (area || '').trim() || 'Dumfries & Galloway';
     const describe = (n: number) =>
@@ -103,8 +112,25 @@ export default function PhotoGallery({
                             </button>
                         ))}
                     </div>
+                    {/* Airbnb's mobile hero controls, over the photo: a round back
+                        button top-left, the Share/Save pair top-right. Rendered only
+                        here, inside the md:hidden hero, so desktop keeps its layout. */}
+                    {backHref && (
+                        <Link
+                            href={backHref}
+                            aria-label="Back"
+                            className="absolute left-4 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-slate-800 shadow-[0_2px_8px_rgba(0,0,0,0.3)] backdrop-blur transition hover:bg-white active:scale-95"
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-5 w-5"><path d="M15 18l-6-6 6-6" /></svg>
+                        </Link>
+                    )}
+                    {overlay && (
+                        <div className="absolute right-4 top-3 z-10">{overlay}</div>
+                    )}
+                    {/* The counter moves to the bottom-right so it never clashes with
+                        the Share/Save pair now sitting top-right (Airbnb's position). */}
                     {n > 1 && (
-                        <div className="pointer-events-none absolute right-6 top-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-semibold text-white tabular-nums">
+                        <div className="pointer-events-none absolute bottom-3 right-4 rounded-full bg-black/60 px-2.5 py-1 text-xs font-semibold text-white tabular-nums">
                             {current + 1} / {n}
                         </div>
                     )}

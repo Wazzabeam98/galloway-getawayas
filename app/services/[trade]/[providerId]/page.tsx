@@ -197,7 +197,11 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
         <div className="min-h-screen bg-slate-50">
             {ld && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }} />}
             <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-5 sm:pt-6 pb-24">
-                <Link href={backHref} className="text-sm font-medium text-slate-500 hover:text-slate-800">
+                {/* Desktop keeps the text back-link; on mobile it's a round button
+                    over the photo (Airbnb's pattern). A trade isn't savable, so there
+                    is no Share/Save pair — just the back control. With no photo to
+                    carry the button, the text link stays on mobile too. */}
+                <Link href={backHref} className={(photos.length ? 'hidden md:inline-block' : 'inline-block') + ' text-sm font-medium text-slate-500 hover:text-slate-800'}>
                     ← All {tradeLabel(provider.trade).toLowerCase()}s
                 </Link>
 
@@ -206,7 +210,7 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                 )}
 
                 {photos.length ? (
-                    <PhotoGallery images={photos} title={provider.business_name} area={coverage || undefined} />
+                    <PhotoGallery images={photos} title={provider.business_name} area={coverage || undefined} backHref={backHref} />
                 ) : (
                     <div className="my-4 flex h-[280px] w-full items-center justify-center rounded-2xl bg-slate-100 text-5xl font-semibold text-slate-300 md:h-[420px]">
                         {(provider.business_name || '?').slice(0, 1)}
@@ -216,7 +220,11 @@ export default async function TradeProfilePage({ params }: { params: { trade: st
                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-10 mt-2">
                     <div className="lg:col-span-2 min-w-0">
                         <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-emerald-700">{tradeLabel(provider.trade)}</p>
-                        <h1 className="mt-1.5 text-2xl md:text-3xl font-bold text-slate-900">{provider.business_name}</h1>
+                        {/* Mobile size is arbitrary (24px) so globals.css doesn't lift
+                            it to 32px below 640px (long titles stacked one word per line
+                            at bigger phone text); pretty packs the words. Desktop keeps
+                            text-3xl. */}
+                        <h1 className="mt-1.5 text-[1.5rem]/8 md:text-3xl font-bold text-slate-900 [text-wrap:pretty]">{provider.business_name}</h1>
                         {title ? <p className="mt-1.5 text-slate-500">{title}</p> : null}
 
                         {provider.description ? (

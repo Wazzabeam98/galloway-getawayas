@@ -524,6 +524,18 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
     const area = areaForListing(home);
     const showArea = area !== null && hasCopy(area);
 
+    // The one-line summary shared by the Share pop-up on desktop and the mobile
+    // photo-overlay Share, so both describe the place the same way.
+    const shareSummary =
+        describePlace(home.privacy_type, home.property_type)
+        + (placeSummary(home.location) ? ` in ${placeSummary(home.location)}` : '')
+        + ` · ${home.bedrooms} bedroom${home.bedrooms === 1 ? '' : 's'}`
+        + ` · ${home.beds} bed${home.beds === 1 ? '' : 's'}`
+        + ` · ${home.bathrooms} bathroom${home.bathrooms === 1 ? '' : 's'}`;
+    // Where "Back" goes on the mobile photo overlay: the area index when this
+    // listing has one, otherwise home.
+    const backHref = showArea && area ? `/holiday-cottages/${area.slug}` : '/';
+
     const breadcrumbSchema = {
         '@context': 'https://schema.org',
         '@type': 'BreadcrumbList',
@@ -610,9 +622,12 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                     )}
                 </div>
             )}
-            <div className='mt-4'>
+            {/* Mobile (below md) stacks as a flex column so the photo can float to
+                the top (order-first) — Airbnb's mobile listing order: photo, then
+                full-width title. Desktop stays a plain block, exactly as before. */}
+            <div className='mt-4 flex flex-col md:block'>
                 {showArea && area && (
-                    <nav aria-label="Breadcrumb" className='mb-3 -my-1.5 flex flex-wrap items-center text-sm text-slate-500'>
+                    <nav aria-label="Breadcrumb" className='mb-3 -my-1.5 hidden md:flex flex-wrap items-center text-sm text-slate-500'>
                         <Link href="/" className='inline-flex items-center min-h-[44px] py-1.5 hover:text-slate-900 underline underline-offset-4'>
                             Home
                         </Link>
@@ -632,23 +647,27 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                         Luxury
                     </span>
                 )}
+                {/* The title takes the full width on mobile; Share/Save move to
+                    round icons over the photo (below). On desktop (md+) the text
+                    Share/Save pair sits top-right of the title, as before. */}
                 <div className='flex items-start justify-between gap-3'>
-                    <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
-                    {/* Share + Save, top-right like Airbnb. */}
-                    <ShareSaveButtons
-                        kind='stay'
-                        id={home.id}
-                        href={`/homes/${home.id}`}
-                        shareTitle='Share this holiday let'
-                        shareSummary={
-                            describePlace(home.privacy_type, home.property_type)
-                            + (placeSummary(home.location) ? ` in ${placeSummary(home.location)}` : '')
-                            + ` · ${home.bedrooms} bedroom${home.bedrooms === 1 ? '' : 's'}`
-                            + ` · ${home.beds} bed${home.beds === 1 ? '' : 's'}`
-                            + ` · ${home.bathrooms} bathroom${home.bathrooms === 1 ? '' : 's'}`
-                        }
-                        sharePhoto={home.images && home.images[0] ? getImageUrl(home.images[0]) : null}
-                    />
+                    {/* An arbitrary mobile size (24px/line-32) rather than text-2xl,
+                        so globals.css doesn't lift it to 32px below 640px — at 32px a
+                        long title stacked to one word per line once a phone's text
+                        size was turned up (Facebook's in-app browser). text-wrap:pretty
+                        packs the words so two always share a line. Desktop (md+) keeps
+                        text-3xl exactly as before. */}
+                    <h1 className='min-w-0 flex-1 text-[1.5rem]/8 md:text-3xl font-bold text-slate-900 [text-wrap:pretty]'>{home.title}</h1>
+                    <div className='hidden md:flex flex-none'>
+                        <ShareSaveButtons
+                            kind='stay'
+                            id={home.id}
+                            href={`/homes/${home.id}`}
+                            shareTitle='Share this holiday let'
+                            shareSummary={shareSummary}
+                            sharePhoto={home.images && home.images[0] ? getImageUrl(home.images[0]) : null}
+                        />
+                    </div>
                 </div>
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (
@@ -756,8 +775,24 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                     }}
                 />
 
-                <div id="photos" className="scroll-mt-24">
-                    <PhotoGallery images={images} title={home.title} area={placeSummary(home.location)} />
+                <div id="photos" className="scroll-mt-24 order-first md:order-none">
+                    <PhotoGallery
+                        images={images}
+                        title={home.title}
+                        area={placeSummary(home.location)}
+                        backHref={backHref}
+                        overlay={
+                            <ShareSaveButtons
+                                variant='overlay'
+                                kind='stay'
+                                id={home.id}
+                                href={`/homes/${home.id}`}
+                                shareTitle='Share this holiday let'
+                                shareSummary={shareSummary}
+                                sharePhoto={home.images && home.images[0] ? getImageUrl(home.images[0]) : null}
+                            />
+                        }
+                    />
                 </div>
                 {/* Just below the photos: when this scrolls up past the nav, the
                     desktop sticky header fades in (ListingStickyHeader watches it). */}

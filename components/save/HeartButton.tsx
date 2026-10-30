@@ -20,7 +20,10 @@ export default function HeartButton({
     kind: SavedKind;
     id: string;
     href: string;      // the item's detail page, used to resume a save after sign-in
-    variant?: 'card' | 'button';
+    // 'card' — the small round heart over a listing card. 'button' — the text
+    // "Save" in a page's top-right row (desktop). 'overlay' — a round white icon
+    // button over the photo on a mobile listing page (Airbnb's mobile pattern).
+    variant?: 'card' | 'button' | 'overlay';
     autoOpen?: boolean; // open the Save sheet on mount (the ?save=1 resume)
     className?: string;
 }) {
@@ -64,9 +67,27 @@ export default function HeartButton({
         </svg>
     );
 
+    // A round white icon button, ~40px, over the photo — a dark heart outline that
+    // fills red when saved (Airbnb's mobile hero control).
+    const overlayHeart = (
+        <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill={saved ? '#e11d48' : 'none'} stroke={saved ? '#e11d48' : 'currentColor'} strokeWidth="2.2" aria-hidden="true">
+            <path d="M12 21s-7.5-4.6-10-9A5.3 5.3 0 0 1 12 5a5.3 5.3 0 0 1 10 7c-2.5 4.4-10 9-10 9Z" />
+        </svg>
+    );
+
     return (
         <>
-            {variant === 'card' ? (
+            {variant === 'overlay' ? (
+                <button
+                    type="button"
+                    onClick={onClick}
+                    aria-label={saved ? 'Remove from wishlist' : 'Save to wishlist'}
+                    aria-pressed={saved}
+                    className={'flex h-9 w-9 flex-none items-center justify-center rounded-full bg-white/95 text-slate-800 shadow-[0_2px_8px_rgba(0,0,0,0.3)] backdrop-blur transition hover:bg-white active:scale-95 ' + (className || '')}
+                >
+                    {overlayHeart}
+                </button>
+            ) : variant === 'card' ? (
                 <button
                     type="button"
                     onClick={onClick}
