@@ -185,7 +185,11 @@ export default function ExperienceListingBody({
                 />
             )}
             <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-5 sm:pt-6">
-                <Link href={backHref} className="text-sm font-medium text-slate-500 hover:text-slate-800">
+                {/* Desktop keeps the text back-link above the gallery; on mobile the
+                    back control is a round button over the photo (Airbnb's pattern).
+                    When there's no photo gallery to carry that button, the text link
+                    stays on mobile too, so there is always a way back. */}
+                <Link href={backHref} className={(p.galleryKeys.length ? 'hidden md:inline-block' : 'inline-block') + ' text-sm font-medium text-slate-500 hover:text-slate-800'}>
                     ← {backLabel}
                 </Link>
 
@@ -193,7 +197,24 @@ export default function ExperienceListingBody({
 
                 <div id="photos" className="scroll-mt-24">
                     {p.galleryKeys.length ? (
-                        <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} kind={(p.category || 'experience').toLowerCase()} />
+                        <PhotoGallery
+                            images={p.galleryKeys}
+                            title={p.business_name}
+                            area={tag || undefined}
+                            kind={(p.category || 'experience').toLowerCase()}
+                            backHref={backHref}
+                            overlay={
+                                <ShareSaveButtons
+                                    variant="overlay"
+                                    kind="experience"
+                                    id={p.id}
+                                    href={`/experiences/browse/${p.id}`}
+                                    shareTitle="Share this experience"
+                                    shareSummary={p.category + (p.based_line ? ` · ${p.based_line}` : '')}
+                                    sharePhoto={p.hero || (p.galleryKeys && p.galleryKeys[0] ? getImageUrl(p.galleryKeys[0]) : null)}
+                                />
+                            }
+                        />
                     ) : (
                         <div className="my-4 flex h-[300px] w-full items-center justify-center rounded-2xl bg-slate-100 text-5xl font-semibold text-slate-300 md:h-[460px]">
                             {who.slice(0, 1)}
@@ -207,17 +228,24 @@ export default function ExperienceListingBody({
                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-10 mt-2">
                     <div className="lg:col-span-2 min-w-0">
                         <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-emerald-700">{p.category}</p>
+                        {/* Full-width title on mobile; the text Share/Save pair shows
+                            only on desktop (on mobile it's the round icons on the photo). */}
                         <div className="flex items-start justify-between gap-3">
-                            <h1 className="mt-1.5 text-2xl md:text-3xl font-bold text-slate-900">{p.business_name}</h1>
-                            {/* Share + Save, top-right like Airbnb. */}
-                            <ShareSaveButtons
-                                kind="experience"
-                                id={p.id}
-                                href={`/experiences/browse/${p.id}`}
-                                shareTitle="Share this experience"
-                                shareSummary={p.category + (p.based_line ? ` · ${p.based_line}` : '')}
-                                sharePhoto={p.hero || (p.galleryKeys && p.galleryKeys[0] ? getImageUrl(p.galleryKeys[0]) : null)}
-                            />
+                            {/* Mobile size is arbitrary (24px) so globals.css doesn't
+                                lift it to 32px below 640px, where a long title stacked
+                                one word per line at bigger phone text; pretty packs the
+                                words. Desktop (md+) keeps text-3xl. */}
+                            <h1 className="mt-1.5 min-w-0 flex-1 text-[1.5rem]/8 md:text-3xl font-bold text-slate-900 [text-wrap:pretty]">{p.business_name}</h1>
+                            <div className="hidden md:flex flex-none">
+                                <ShareSaveButtons
+                                    kind="experience"
+                                    id={p.id}
+                                    href={`/experiences/browse/${p.id}`}
+                                    shareTitle="Share this experience"
+                                    shareSummary={p.category + (p.based_line ? ` · ${p.based_line}` : '')}
+                                    sharePhoto={p.hero || (p.galleryKeys && p.galleryKeys[0] ? getImageUrl(p.galleryKeys[0]) : null)}
+                                />
+                            </div>
                         </div>
                         <span className="mt-2 inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                             {shapeCue(p.shape)}
