@@ -12,6 +12,11 @@ import { round2, whoAnswers, refundSplit } from '@/lib/bookingChange';
 import ChangeRequestActions from '@/components/reservations/ChangeRequestActions';
 import { formatGBP } from '@/lib/formatMoney';
 
+// Private to the person it belongs to, so never a search result. Said here
+// rather than left to robots.txt: a crawler that finds the URL can still read
+// a noindex, and without one this page had neither a canonical nor a noindex.
+export const metadata = { robots: { index: false, follow: false } };
+
 // The review page for a proposed change, shown to whoever must act on it — the
 // guest (for a host proposal) or the host (for a guest proposal). Read through
 // the service role and gated to the two parties on the booking.

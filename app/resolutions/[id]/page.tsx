@@ -11,6 +11,11 @@ import { Paperclip } from 'lucide-react';
 import { formatGBP } from '@/lib/formatMoney';
 import { reasonLabel, type ResolutionReason } from '@/lib/resolutions';
 
+// Private to the person it belongs to, so never a search result. Said here
+// rather than left to robots.txt: a crawler that finds the URL can still read
+// a noindex, and without one this page had neither a canonical nor a noindex.
+export const metadata = { robots: { index: false, follow: false } };
+
 // The guest's view of a money request from their host. Read through the service
 // role (the table is service-role only) and gated to the guest it belongs to.
 export default async function ResolutionPage({ params }: { params: { id: string } }) {

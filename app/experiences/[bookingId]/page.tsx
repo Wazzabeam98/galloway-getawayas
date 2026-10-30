@@ -9,6 +9,11 @@ import { shapeCue } from '@/lib/serviceSlots';
 import { BadgeCheck, MapPin } from 'lucide-react';
 import { townFromLocation, fromPriceLabel, nextSessionLabel, cardLocationLine } from '@/components/marketplace/present';
 
+// Private to the person it belongs to, so never a search result. Said here
+// rather than left to robots.txt: a crawler that finds the URL can still read
+// a noindex, and without one this page had neither a canonical nor a noindex.
+export const metadata = { robots: { index: false, follow: false } };
+
 export const dynamic = 'force-dynamic';
 
 // The marketplace — everything a guest can book for one of their stays, browsed

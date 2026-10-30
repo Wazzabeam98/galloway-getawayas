@@ -10,6 +10,11 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
     title: 'You’ve been invited to Galloway Getaways',
     description: 'List a holiday let or experience and pay no commission on your first booking, or offer a service and get six months free.',
+    // One page per referral code, all saying the same thing: a crowd of
+    // near-duplicates Google flagged as "duplicate without user-selected
+    // canonical". It is an invitation, not a search result — the public page
+    // is /refer — so noindex, but follow so the links on it still count.
+    robots: { index: false, follow: true },
 };
 
 // The page a referral link lands on. It explains the offer to the person being

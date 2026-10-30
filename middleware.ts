@@ -43,7 +43,20 @@ import {
 //    matcher covers the subpages too. /addhome is deliberately not guarded: it
 //    handles a signed-out visitor itself, with the log in box on the page.
 
+// 4. A TRUE Date HEADER. A page served from Vercel's edge cache (every ISR
+//    page — the home page, listings, area pages, host profiles) replays the
+//    Date it was BUILT with, hours old: the home page said 22:15 GMT at 00:42.
+//    Seobility reads that as a server clock that is wrong, and a crawler that
+//    trusts Date against Last-Modified/Age gets a muddled picture of freshness.
+//    The middleware runs on every page request, cache hit or not, so it stamps
+//    the real time on whatever it lets through.
 export async function middleware(request: NextRequest, event: NextFetchEvent) {
+  const response = await handle(request, event);
+  response.headers.set("date", new Date().toUTCString());
+  return response;
+}
+
+async function handle(request: NextRequest, event: NextFetchEvent): Promise<NextResponse> {
   const path = request.nextUrl.pathname;
   const isDashboard = path === "/dashboard" || path.startsWith("/dashboard/");
   const secure = request.nextUrl.protocol === "https:";

@@ -4,6 +4,11 @@ import { SUBSCRIPTION_MONTHLY, TRIAL_PERIOD_LABEL, tradeLabel } from '@/lib/serv
 import { hasCard, GRACE_DAYS } from '@/lib/serviceSubscription';
 import BillingStart from '@/components/services/BillingStart';
 
+// Private to the person it belongs to, so never a search result. Said here
+// rather than left to robots.txt: a crawler that finds the URL can still read
+// a noindex, and without one this page had neither a canonical nor a noindex.
+export const metadata = { robots: { index: false, follow: false } };
+
 export const dynamic = 'force-dynamic';
 
 // What a tradesman sees when he presses "add a card" in his email.

@@ -12,7 +12,12 @@ import { usePathname } from 'next/navigation';
 //
 // Matches the route and anything under it, so /services/join and its children
 // (and query strings, which usePathname drops) are all covered.
-export const TAKEOVER_ROUTES = ['/services/join', '/business', '/addhome'];
+//
+// /business itself is NOT one any more: it is the host landing page, an
+// ordinary page with the site header and footer. The fork moved to
+// /business/start, and the guest-experience sign-up lives at
+// /business/experience.
+export const TAKEOVER_ROUTES = ['/services/join', '/business/start', '/business/experience', '/addhome'];
 
 export function isTakeoverRoute(pathname: string): boolean {
     return TAKEOVER_ROUTES.some((p) => pathname === p || pathname.startsWith(p + '/'));

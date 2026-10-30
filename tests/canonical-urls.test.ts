@@ -108,3 +108,49 @@ test('the trade layout does not name a per-trade URL as canonical', () => {
     // tell Google the profile pages under it are really a redirect.
     assert.ok(!/canonical/.test(code('app/services/[trade]/layout.tsx')));
 });
+
+test('every crawlable page either names its canonical or says noindex', () => {
+    // The list above is the pages we MEAN to offer Google. This is the net
+    // under it: walk every page the site has and refuse any that a crawler can
+    // reach (not in robots.txt's Disallow list) with neither a canonical nor a
+    // noindex — the state /refer and /refer/<code> were in when Search Console
+    // reported them as "duplicate without user-selected canonical" (Oct 2026).
+    // A query string (?utm_ from a QR code, ?ref=, anything) can be put on any
+    // URL; a page with its own canonical names the clean one, and a noindexed
+    // page is not a duplicate of anything because it is not in the index.
+    const robots = code('app/robots.ts');
+    const disallow: string[] = (robots.match(/'\/[^']*'/g) || [])
+        .map((s: string) => s.slice(1, -1).replace(/\/$/, ''))
+        .filter((s: string) => s !== '');
+    const blocked = (route: string) =>
+        disallow.some((d) => route === d || route.startsWith(d + '/'));
+
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+        for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+            if (entry.isDirectory()) { walk(dir + '/' + entry.name); continue; }
+            if (entry.name !== 'page.tsx') continue;
+            const route = dir === 'app' ? '/' : dir.slice(3);
+            if (route.startsWith('/api') || blocked(route)) continue;
+            const page = dir + '/page.tsx';
+            if (/canonical/.test(code(page))) continue;
+            // noindex on the page or on any layout above it (not the root one,
+            // which sets the site default of index).
+            let noindex = /index:\s*false/.test(code(page));
+            for (let d = dir; !noindex && d !== 'app'; d = path.posix.dirname(d)) {
+                const layout = d + '/layout.tsx';
+                if (exists(layout) && /index:\s*false/.test(code(layout))) noindex = true;
+            }
+            // A route next.config redirects never renders.
+            const redirected = new RegExp("source:\\s*'" + route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "'").test(read('next.config.js'));
+            if (!noindex && !redirected) offenders.push(route);
+        }
+    };
+    walk('app');
+
+    assert.deepEqual(
+        offenders, [],
+        'Crawlable, with no canonical and no noindex:\n  ' + offenders.join('\n  ')
+        + '\n\nGive a public page alternates: { canonical } and a private one robots: { index: false }.'
+    );
+});

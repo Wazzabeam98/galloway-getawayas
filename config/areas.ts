@@ -556,7 +556,7 @@ export const AREAS: Area[] = [
 // the home page, the area pages and the sitemap, so it keeps its own tiny
 // standalone version rather than reaching into that module. Same haversine,
 // kilometres, nothing to drift.
-function kmBetween(lat1: number, lng1: number, lat2: number, lng2: number): number {
+export function kmBetween(lat1: number, lng1: number, lat2: number, lng2: number): number {
     const EARTH_KM = 6371;
     const toRad = (d: number) => (d * Math.PI) / 180;
     const dLat = toRad(lat2 - lat1);
@@ -609,6 +609,31 @@ export function areaBySlug(slug: string): Area | null {
 }
 
 /** The area a town belongs to, or null. Takes a townKey(), not a raw address. */
+// The area a listing belongs to: by town name first, then — for a geographic
+// area like Galloway Forest, whose members are named after villages no area
+// lists — by the listing's own approximate coordinates, the same rule the
+// sitemap uses (listingInArea). Only areas that are written and not held,
+// since this decides where a listing links up to.
+export function areaForListing(listing: {
+    location: string | null;
+    approx_latitude?: number | string | null;
+    approx_longitude?: number | string | null;
+}): Area | null {
+    const byTown = areaForTownKey(townKey(listing.location));
+    if (byTown) return byTown;
+    const lat = listing.approx_latitude == null ? NaN : Number(listing.approx_latitude);
+    const lng = listing.approx_longitude == null ? NaN : Number(listing.approx_longitude);
+    if (!isFinite(lat) || !isFinite(lng)) return null;
+    for (let i = 0; i < AREAS.length; i++) {
+        const area = AREAS[i];
+        if (area.geo && hasCopy(area) && !area.hold
+            && listingInArea(area, { location: listing.location, approx_latitude: lat, approx_longitude: lng })) {
+            return area;
+        }
+    }
+    return null;
+}
+
 export function areaForTownKey(key: string): Area | null {
     if (!key) return null;
     for (let i = 0; i < AREAS.length; i++) {

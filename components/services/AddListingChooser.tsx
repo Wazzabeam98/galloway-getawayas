@@ -67,7 +67,7 @@ export default function AddListingChooser({ ownsExperience }: { ownsExperience: 
                                     </span>
                                 </div>
                             ) : (
-                                <Link href="/services/join?trade=guest" className={tile}>
+                                <Link href="/business/experience" className={tile}>
                                     <Sparkles className="h-7 w-7 flex-none text-slate-700" />
                                     <span>
                                         <span className="block font-semibold text-slate-900">An experience</span>

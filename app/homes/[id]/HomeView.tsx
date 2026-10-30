@@ -22,7 +22,7 @@ import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
 import { plural } from '@/lib/plural';
 import { nearestTown, nearestTownLabel } from '@/lib/nearestTown';
-import { areaForTownKey, areaBySlug, hasCopy, areaCentroid } from '@/config/areas';
+import { areaForListing, areaBySlug, hasCopy, areaCentroid, kmBetween } from '@/config/areas';
 import ListingCard, { CardListing } from '@/components/ListingCard';
 import PropertyMap from '@/components/PropertyMap';
 import AmenityList from '@/components/AmenityList';
@@ -464,7 +464,7 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
     // names (area.nearby), capped at a tidy row. Named columns only — anon has
     // no table grant, and the card needs just these.
     const townForNearby = townKey(home.location);
-    const areaForNearby = areaForTownKey(townForNearby);
+    const areaForNearby = areaForListing(home);
     const nearbyKeys = new Set<string>();
     if (areaForNearby) {
         areaForNearby.townKeys.forEach((k) => nearbyKeys.add(k));
@@ -476,8 +476,18 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
         nearbyKeys.add(townForNearby);
     }
 
+    // Airbnb's "more places to stay nearby" is by distance, not by town, and
+    // that is the fallback here: a listing whose town no area names (the dark-
+    // sky cabin near Straiton linked to nothing at all) — or an area with fewer
+    // than four other places — is topped up with the closest published listings
+    // by approximate coordinates, within NEARBY_MAX_KM so "nearby" stays true.
+    const NEARBY_MAX_KM = 60;
+    const homeLat = home.approx_latitude == null ? NaN : Number(home.approx_latitude);
+    const homeLng = home.approx_longitude == null ? NaN : Number(home.approx_longitude);
+    const homeHasPoint = isFinite(homeLat) && isFinite(homeLng);
+
     let nearbyListings: CardListing[] = [];
-    if (nearbyKeys.size) {
+    if (nearbyKeys.size || homeHasPoint) {
         // Cookieless (service role) so this read doesn't opt the page out of
         // caching; published listings, anon-safe columns.
         const { data: candidates } = await adminClient()
@@ -487,11 +497,23 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
             .neq('id', home.id)
             .order('created_at', { ascending: false })
             .limit(60);
-        const inArea = (candidates || []).filter((l: any) => nearbyKeys.has(townKey(l.location)));
+        const all = candidates || [];
+        const inArea = all.filter((l: any) => nearbyKeys.has(townKey(l.location)));
         // Same town ahead of a neighbouring one, so the closest places show first.
         const sameTown = inArea.filter((l: any) => townKey(l.location) === townForNearby);
         const neighbour = inArea.filter((l: any) => townKey(l.location) !== townForNearby);
-        nearbyListings = sameTown.concat(neighbour).slice(0, 4);
+        const picked = sameTown.concat(neighbour);
+        if (picked.length < 4 && homeHasPoint) {
+            const taken = new Set(picked.map((l: any) => l.id));
+            const byDistance = all
+                .filter((l: any) => !taken.has(l.id) && l.approx_latitude != null && l.approx_longitude != null)
+                .map((l: any) => ({ l, km: kmBetween(homeLat, homeLng, Number(l.approx_latitude), Number(l.approx_longitude)) }))
+                .filter((x) => isFinite(x.km) && x.km <= NEARBY_MAX_KM)
+                .sort((a, b) => a.km - b.km)
+                .map((x) => x.l);
+            picked.push(...byDistance);
+        }
+        nearbyListings = picked.slice(0, 4);
     }
 
     // The way back up. Until the area pages existed a listing linked to
@@ -499,7 +521,7 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
     // and for a crawler. Only shown for an area that has actually been
     // written: linking to a page that is noindex would hand Google a link to
     // follow to nothing.
-    const area = areaForTownKey(townKey(home.location));
+    const area = areaForListing(home);
     const showArea = area !== null && hasCopy(area);
 
     const breadcrumbSchema = {

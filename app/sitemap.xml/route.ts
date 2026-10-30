@@ -117,7 +117,7 @@ export async function GET() {
             // right now, not from a list baked in at build time. The approximate
             // coordinates ride along for the same reason — a geographic area
             // (Galloway Forest) decides its members by them, not by town name.
-            .select('id, created_at, approved_at, status, location, approx_latitude, approx_longitude')
+            .select('id, host_id, created_at, approved_at, status, location, approx_latitude, approx_longitude')
             .eq('status', 'published');
 
         // supabase-js does NOT throw on a failed query — it hands the error
@@ -193,8 +193,11 @@ export async function GET() {
         // and area pages above it.
         // ---------------------------------------------------------------
         let experiencePages: Entry[] = [];
+        // Owners of the live experiences, for the host profiles below.
+        let experienceOwnerIds: string[] = [];
         try {
             const mp = await loadPublicMarketplace(adminClient(), guestExperiencesOpen());
+            experienceOwnerIds = (mp.providers || []).map((p: any) => String(p.ownerId || '')).filter(Boolean);
             experiencePages = (mp.providers || []).map((p: any) => ({
                 loc: `${SITE_URL}/experiences/browse/${p.id}`,
                 lastmod: now,
@@ -231,12 +234,45 @@ export async function GET() {
             await logError('[sitemap] trades omitted', err, { path: 'sitemap.xml' });
         }
 
+        // ---------------------------------------------------------------
+        // The host profiles (/hosts/<id>). Every published listing and live
+        // experience links to its host's profile, so Google was finding them
+        // anyway — eight showed up as "Discovered – currently not indexed"
+        // (Oct 2026), found by link but never offered. Same rule as the page
+        // (lib/hostProfile): someone who owns a published listing or a live
+        // experience, whose account is not closed. A profile that would 404
+        // is never listed.
+        // ---------------------------------------------------------------
+        let hostPages: Entry[] = [];
+        try {
+            const ids = Array.from(new Set(
+                (listings || []).map((l: any) => String(l.host_id || '')).filter(Boolean).concat(experienceOwnerIds)
+            ));
+            if (ids.length) {
+                const { data: open, error: hostErr } = await adminClient()
+                    .from('profiles')
+                    .select('id')
+                    .in('id', ids)
+                    .is('anonymised_at', null)
+                    .is('deactivated_at', null);
+                if (hostErr) throw hostErr;
+                hostPages = (open || []).map((p: any) => ({
+                    loc: `${SITE_URL}/hosts/${p.id}`,
+                    lastmod: now,
+                    changefreq: 'weekly',
+                    priority: '0.5',
+                }));
+            }
+        } catch (err) {
+            await logError('[sitemap] host profiles omitted', err, { path: 'sitemap.xml' });
+        }
+
         // Deliberately NOT reporting an empty list. "No listings yet" is a
         // true state before launch, and this route runs once per crawler hit,
         // so reporting it would fill /admin/errors with the same row. A query
         // that FAILED is a different thing and is caught above.
         return new NextResponse(
-            render(knownPages.concat(areaPages).concat(listingPages).concat(experiencePages).concat(tradePages)),
+            render(knownPages.concat(areaPages).concat(listingPages).concat(experiencePages).concat(tradePages).concat(hostPages)),
             { headers }
         );
     } catch (err) {

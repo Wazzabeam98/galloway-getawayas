@@ -124,7 +124,7 @@ export function ExperienceCard({ p }: { p: MpProvider }) {
 // public/images/experience-photos/README.md).
 export function ExperiencesForBusinesses() {
     const href = businessSignupsOpen()
-        ? '/services/join?trade=guest'
+        ? '/business/experience'
         : '/register-interest?type=guest_experience';
 
     return (
