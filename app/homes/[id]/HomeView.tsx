@@ -65,6 +65,25 @@ export function placeSummary(location: string | null): string {
     return kept.join(', ');
 }
 
+// The TOWN on its own, for the MOBILE header summary. The full place summary
+// ("Gatehouse of Fleet, Dumfries and Galloway") wraps awkwardly on a phone and
+// strands "and Galloway" on its own line, so mobile reads just the property type
+// and town ("Entire lodge in Gatehouse of Fleet"). Empty when the listing has no
+// town (its summary is the region alone), so the caller falls back to the region.
+// Desktop and the SEO text (title, meta, structured data) keep the full summary.
+export function townOnly(location: string | null): string {
+    const summary = placeSummary(location);
+    if (!summary) return '';
+    const first = summary.split(',')[0].trim();
+    // A listing with no town summarises to the region alone — that's not a town.
+    if (/^dumfries\s*(?:and|&)\s*galloway$/i.test(first)) return '';
+    return first;
+}
+
+// "Dumfries & Galloway" held together with non-breaking spaces, so the mobile
+// fallback never splits "& Galloway" onto a line of its own.
+const REGION_NBSP = 'Dumfries & Galloway';
+
 // Things worth calling out at a glance. Every one is derived from real
 // data on the listing — nothing here is decorative.
 function propertyHighlights(home: any): { title: string; detail: string; icon: any }[] {
@@ -808,9 +827,14 @@ export default async function HomeView({ id, preview }: { id: string; preview?: 
                 <section className='md:hidden -mx-4 -mt-6 relative z-10 rounded-t-3xl bg-white px-5 pt-7 pb-5'>
                     <div className='text-center'>
                         <h1 className='text-[1.5rem]/8 font-bold text-slate-900 [text-wrap:pretty]'>{home.title}</h1>
+                        {/* Mobile reads the property type + TOWN only (the region is
+                            dropped so it doesn't strand "and Galloway" on its own
+                            line); with no town it falls back to the region, held
+                            together with non-breaking spaces. The desktop h2 below
+                            keeps the full place summary. */}
                         <p className='mt-2 text-slate-500 [text-wrap:pretty]'>
                             {describePlace(home.privacy_type, home.property_type)}
-                            {placeSummary(home.location) ? ` in ${placeSummary(home.location)}` : ''}
+                            {` in ${townOnly(home.location) || REGION_NBSP}`}
                         </p>
                         <p className='mt-0.5 text-slate-500'>
                             {plural(home.max_guests, 'guest')} · {plural(home.bedrooms, 'bedroom')} · {plural(home.beds, 'bed')} · {plural(home.bathrooms, 'bathroom')}
