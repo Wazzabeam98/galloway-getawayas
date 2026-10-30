@@ -25,6 +25,9 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { hasPublicScore, meanTo2dp } from '@/lib/reviews';
 import { hostByline, capitializeFirst, firstName } from '@/lib/utils';
 import { loadPublicMarketplace, type MpProvider } from '@/lib/experiencesData';
+import { hostResponsiveness, type HostResponsiveness } from '@/lib/hostResponsiveness';
+import { areaForListing, areaForTownKey, hasCopy } from '@/config/areas';
+import { townOf, townKey } from '@/lib/places';
 
 // The listing-card fields the grid needs. Shaped to match ListingCard's
 // CardListing, but declared here rather than imported from that component: this
@@ -81,6 +84,16 @@ export interface HostProfile {
     listings: HostListingCard[];
     experiences: MpProvider[];
     reviews: HostReviewItem[];
+    // Airbnb's "confirmed information", from what we actually hold: the same
+    // Verified host badge the listing page shows (Stripe has confirmed their
+    // identity and bank), as a boolean — the Stripe flag itself never leaves.
+    verified: boolean;
+    // The same response rate and reply time the listing page's host card shows.
+    responsiveness: HostResponsiveness;
+    // Where they host, one entry per area or town, linked to the area page
+    // when there is a written one — the internal links a crawler follows from
+    // a profile out to the rest of the site.
+    places: { name: string; href: string | null }[];
 }
 
 // Whole months between a join date and now — the same reckoning the listing
@@ -109,7 +122,7 @@ export async function loadHostProfile(hostId: string): Promise<HostProfile | nul
     // columns are not selected at all.
     const { data: profile } = await admin
         .from('profiles')
-        .select('id, first_name, last_name, preferred_name, show_full_name, trading_name, full_name, avatar_url, created_at, host_bio, anonymised_at, deactivated_at')
+        .select('id, first_name, last_name, preferred_name, show_full_name, trading_name, full_name, avatar_url, created_at, host_bio, stripe_payouts_enabled, anonymised_at, deactivated_at')
         .eq('id', hostId)
         .maybeSingle();
 
@@ -214,6 +227,31 @@ export async function loadHostProfile(hostId: string): Promise<HostProfile | nul
         when: r.created_at,
     }));
 
+    // Where they host. An area with written copy links to its page; anywhere
+    // else is just the town's name. Listings by town or (Galloway Forest) by
+    // coordinates; experiences by the town they're based in.
+    const places: { name: string; href: string | null }[] = [];
+    const seenPlace = new Set<string>();
+    const addPlace = (name: string, href: string | null) => {
+        const key = name.toLowerCase();
+        if (!name || seenPlace.has(key)) return;
+        seenPlace.add(key);
+        places.push({ name, href });
+    };
+    listings.forEach((l) => {
+        const area = areaForListing(l);
+        if (area && hasCopy(area) && !area.hold) addPlace(area.name, `/holiday-cottages/${area.slug}`);
+        else addPlace(townOf(l.location), null);
+    });
+    experiences.forEach((p) => {
+        if (!p.based_line) return;
+        const area = areaForTownKey(townKey(p.based_line));
+        if (area && hasCopy(area) && !area.hold) addPlace(area.name, `/holiday-cottages/${area.slug}`);
+        else addPlace(townOf(p.based_line), null);
+    });
+
+    const responsiveness = await hostResponsiveness(admin, hostId);
+
     const ratings = raw.map((r) => Number(r.rating));
     const ratingCount = ratings.length;
     const ratingAvg = hasPublicScore(ratingCount) ? meanTo2dp(ratings) : null;
@@ -230,5 +268,8 @@ export async function loadHostProfile(hostId: string): Promise<HostProfile | nul
         listings,
         experiences,
         reviews,
+        verified: profile.stripe_payouts_enabled === true,
+        responsiveness,
+        places,
     };
 }

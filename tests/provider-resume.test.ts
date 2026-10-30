@@ -31,28 +31,36 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 test('the join page resolves the signed-in owner\'s record server-side', () => {
-    const page = read('app/services/join/page.tsx');
-
-    // Cookies are read, so it cannot be statically rendered.
-    assert.match(page, /export const dynamic = 'force-dynamic'/,
-        'the page reads cookies and must be dynamic');
+    // The lookup moved into lib/joinResume.ts (Oct 2026) so the clean
+    // guest-experience address, /business/experience, resolves a returning
+    // applicant exactly as /services/join does. Both pages must still call it,
+    // stay dynamic, and hand the record to the form; the lookup itself is held
+    // to the same rules as before, in its new home.
+    const lookup = read('lib/joinResume.ts');
+    for (const rel of ['app/services/join/page.tsx', 'app/business/experience/page.tsx']) {
+        const page = read(rel);
+        // Cookies are read, so it cannot be statically rendered.
+        assert.match(page, /export const dynamic = 'force-dynamic'/,
+            rel + ' reads cookies and must be dynamic');
+        assert.match(page, /await resolveJoinResume\(/,
+            rel + ' must resolve the applicant server-side');
+        // And handed to the form as its starting point.
+        assert.match(page, /initialResume=\{initialResume\}/,
+            rel + ': the resolved record must be passed to ProviderSignUp');
+    }
 
     // The identity is verified against the auth server, not a forgeable cookie.
-    assert.match(page, /getUser\(\)/,
+    assert.match(lookup, /getUser\(\)/,
         'the owner must be resolved with getUser(), not getSession()');
 
     // One business per trade: the record is keyed on owner AND the trade asked
     // for, so it is exactly the application this page is showing — never another
     // person's row, and never a different trade of the same person's.
-    assert.match(page, /from\('service_providers'\)/);
-    assert.match(page, /\.eq\('owner_id'/,
+    assert.match(lookup, /from\('service_providers'\)/);
+    assert.match(lookup, /\.eq\('owner_id'/,
         'the lookup must be scoped to the signed-in owner, so no one is seeded with another owner\'s application');
-    assert.match(page, /\.eq\('trade'/,
+    assert.match(lookup, /\.eq\('trade'/,
         'the lookup must be scoped to the trade in the URL');
-
-    // And handed to the form as its starting point.
-    assert.match(page, /initialResume=\{/,
-        'the resolved record must be passed to ProviderSignUp');
 });
 
 test('the form opens from the resolved record, never on the picker when one exists', () => {

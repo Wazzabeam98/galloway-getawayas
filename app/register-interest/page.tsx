@@ -12,6 +12,7 @@ export const metadata: Metadata = {
     description:
         'Tell us you’d like to list a holiday let, host a guest experience, or offer a service in '
         + 'Dumfries & Galloway, and we’ll be in touch when we open.',
+    alternates: { canonical: '/register-interest' },
 };
 
 // A full-screen takeover, the same shape as /business and the provider wizard.

@@ -5,6 +5,11 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 
+// Private to the person it belongs to, so never a search result. Said here
+// rather than left to robots.txt: a crawler that finds the URL can still read
+// a noindex, and without one this page had neither a canonical nor a noindex.
+export const metadata = { robots: { index: false, follow: false } };
+
 export const dynamic = 'force-dynamic';
 
 // The moment a held request lands back from Stripe. A request isn't confirmed —

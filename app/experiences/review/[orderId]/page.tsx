@@ -7,6 +7,11 @@ import ExperienceReviewForm from '@/components/marketplace/ExperienceReviewForm'
 import { experienceReviewDaysLeft } from '@/lib/experienceReviewRules';
 import { londonDayKey } from '@/lib/dayKey';
 
+// Private to the person it belongs to, so never a search result. Said here
+// rather than left to robots.txt: a crawler that finds the URL can still read
+// a noindex, and without one this page had neither a canonical nor a noindex.
+export const metadata = { robots: { index: false, follow: false } };
+
 export const dynamic = 'force-dynamic';
 
 // Leave a review for a completed experience. The twin of app/review/[bookingId]

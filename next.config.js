@@ -96,6 +96,21 @@ const nextConfig = {
                 permanent: true,
             },
 
+            // /experiences has never been a page — the marketplace is at
+            // /experiences/browse and /experiences/<bookingId> is a guest's own
+            // booking — so the bare path 404'd, and it is the address people
+            // type, the one Search Console listed as "Not found (404)" (Oct
+            // 2026), and the one a printed beer-mat QR code nearly pointed at.
+            // An explicit 301 rather than `permanent` (308) because 301 is what
+            // was asked for; Google treats the two alike. Exact source, so
+            // /experiences/<anything> is untouched, and any ?utm_ query is
+            // carried across.
+            {
+                source: '/experiences',
+                destination: '/experiences/browse',
+                statusCode: 301,
+            },
+
             // THE OLD SERVICES PAGES. /services/property (the trade-tile grid)
             // and /services/<trade> (one shop page per trade) were real,
             // indexable pages; they are now the one list at /services, with

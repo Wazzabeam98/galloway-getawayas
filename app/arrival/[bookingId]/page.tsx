@@ -11,6 +11,11 @@ import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import CopyField from '@/components/arrival/CopyField';
 import { revealSecret } from '@/lib/listingSecrets';
 
+// Private to the person it belongs to, so never a search result. Said here
+// rather than left to robots.txt: a crawler that finds the URL can still read
+// a noindex, and without one this page had neither a canonical nor a noindex.
+export const metadata = { robots: { index: false, follow: false } };
+
 export const dynamic = 'force-dynamic';
 
 // "Getting there" — now the SECRETS screen and nothing else. The whole approach

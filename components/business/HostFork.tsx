@@ -30,7 +30,7 @@ type Choice = {
 // set, not three unrelated colours. The glyph stays the only colour on screen.
 const CHOICES: Choice[] = [
     { key: 'home', href: '/addhome', title: 'List a holiday let', Icon: Home },
-    { key: 'guest', href: '/services/join?trade=guest', title: 'Host a guest experience', Icon: Sparkles },
+    { key: 'guest', href: '/business/experience', title: 'Host a guest experience', Icon: Sparkles },
     { key: 'service', href: '/services/join', title: 'Offer a service', Icon: Wrench },
 ];
 

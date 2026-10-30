@@ -310,14 +310,17 @@ const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
     prices: Tag,
 };
 
-function ApplicationForm({ initialResume = null }: { initialResume?: InitialResume | null }) {
+function ApplicationForm({ initialResume = null, defaultTrade = '' }: { initialResume?: InitialResume | null; defaultTrade?: string }) {
     const router = useRouter();
     const params = useSearchParams();
 
     // Chosen on step one and carried in the URL, so signing in halfway does
     // not lose it. A saved record wins once it loads — except when they have
     // just come back through "change", where the new pick is the point.
-    const tradeFromUrl = String(params.get('trade') || '');
+    // /business/experience is the guest sign-up at a clean address — no
+    // ?trade=guest for Google to see as a second copy of the page — so the
+    // route hands the trade in instead. A ?trade= in the URL still wins.
+    const tradeFromUrl = String(params.get('trade') || defaultTrade || '');
     // A deliberate "come back to my draft" signal. A guest experience starts FRESH
     // every time (Liam, 9 Oct 2026) — a half-filled browser draft used to restore
     // silently on a plain open, skipping the opening pages so someone starting a
@@ -2763,7 +2766,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
         toast.success('Removed.', { theme: 'colored' });
         // Back to the right step one to re-pick: a guest re-chooses a category
         // (only reachable via ?trade=guest), a trade re-picks off the grid.
-        router.push(trade === 'guest' ? '/services/join?trade=guest' : '/services/join');
+        router.push(trade === 'guest' ? '/business/experience' : '/services/join');
     };
 
     // The tradesman area sub-flow: open to add (null) or to edit a row, commit
@@ -3598,7 +3601,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                                     <ChevronLeft className="w-5 h-5" /> Back
                                 </button>
                             ) : (
-                                <Link href="/business" className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
+                                <Link href="/business/start" className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
                                     <ChevronLeft className="w-5 h-5" /> Back
                                 </Link>
                             )}
@@ -6846,7 +6849,7 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
                         </button>
                     ) : (
                         <Link
-                            href="/business"
+                            href="/business/start"
                             className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition"
                         >
                             <ChevronLeft className="w-4 h-4" />
@@ -7007,12 +7010,12 @@ function ApplicationForm({ initialResume = null }: { initialResume?: InitialResu
     );
 }
 
-export default function ProviderSignUp({ initialResume = null }: { initialResume?: InitialResume | null }) {
+export default function ProviderSignUp({ initialResume = null, defaultTrade = '' }: { initialResume?: InitialResume | null; defaultTrade?: string }) {
     // useSearchParams needs a boundary, the same as the query-string reader in
     // the root layout.
     return (
         <Suspense fallback={<div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-slate-500">Loading…</div>}>
-            <ApplicationForm initialResume={initialResume} />
+            <ApplicationForm initialResume={initialResume} defaultTrade={defaultTrade} />
         </Suspense>
     );
 }

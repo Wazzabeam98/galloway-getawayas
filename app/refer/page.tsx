@@ -10,8 +10,11 @@ import ReferHost, { ReferralListItem } from '@/components/referrals/ReferHost';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-    title: 'Refer a host, earn cash · Galloway Getaways',
+    // The root layout appends ' | Galloway Getaways'; saying it here as well
+    // put the brand in the title twice.
+    title: 'Refer a host, earn cash',
     description: 'Refer a holiday let, experience or service to Galloway Getaways and earn up to £' + REFERRAL_REWARD_MAX + '.',
+    alternates: { canonical: '/refer' },
 };
 
 const VALID_TYPES: ReferralType[] = ['stay', 'experience', 'trade'];
