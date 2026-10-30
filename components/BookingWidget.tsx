@@ -28,7 +28,8 @@ import { petsProblem } from '@/lib/listingSafety';
 import {
     stayProblem, prepBufferNights, prepDays, minNightsFor, maxNightsFor, earliestCheckInKey,
     latestCheckOutKey, stayLengthNote, londonTodayKey, nightsBetweenKeys,
-    checkInPickable, checkoutPickable, addDaysKey, changeoverNote,
+    addDaysKey, changeoverNote,
+    checkoutAvailable, checkInAvailable, checkoutTapProblem, checkInTapProblem, weekdayListPlural,
     type StayRulesListing, type StayRange,
 } from '@/lib/stayRules';
 
@@ -167,7 +168,7 @@ const NO_DATES: Date[] = [];
 function CottageCalendar({
     hasSelection, calendarKey, ranges, shownMonth, onChange, minDate, maxDate,
     disabledDates, renderDay, onClear, scroll = false, scrollHeight = 480, showClear = true,
-    disabledDay, note,
+    disabledDay, note, focusedRange, onRangeFocusChange,
 }: {
     hasSelection: boolean;
     calendarKey: number;
@@ -179,6 +180,10 @@ function CottageCalendar({
     disabledDates: Date[];
     renderDay: (date: Date) => JSX.Element;
     onClear: () => void;
+    // Controlled focus, so a refused checkout can keep the picker on the checkout
+    // end instead of the library completing or restarting the range.
+    focusedRange?: [number, 0 | 1];
+    onRangeFocusChange?: (r: [number, 0 | 1]) => void;
     // The phone sheet uses Airbnb's vertical scrolling calendar: the weekday
     // row M T W T F S S stays fixed at the top and the labelled months scroll
     // beneath it. The desktop card keeps its single month with arrows, so this
@@ -261,6 +266,8 @@ function CottageCalendar({
                 shownDate={shownMonth.current}
                 onShownDateChange={(d: Date) => { shownMonth.current = d; }}
                 onChange={onChange}
+                {...(focusedRange ? { focusedRange } : {})}
+                onRangeFocusChange={onRangeFocusChange}
                 minDate={minDate}
                 maxDate={maxDate}
                 disabledDates={disabledDates}
@@ -369,19 +376,30 @@ export default function BookingWidget({
             + '-' + String(date.getDate()).padStart(2, '0');
 
         // A taken night is struck through — unless, while a checkout is being
-        // chosen, that day is a checkout the guest can have.
+        // chosen, that day is a checkout the guest can have (its stay nights are
+        // free). Only genuine unavailability strikes a day; the minimum stay and
+        // changeover days never do.
         const struck = unavailableNights.has(key)
-            && !(choosingCheckout && startKey && checkoutPickable(startKey, key, unavailableNights, minForStay, maxForStay, rules));
+            && !(choosingCheckout && startKey && checkoutAvailable(startKey, key, unavailableNights));
+        // Airbnb's little bubble over the CHECK-IN day while the guest is being
+        // told their chosen checkout is too soon for the minimum.
+        const showMinTip = stayHint?.kind === 'min' && !!startKey && key === startKey;
+        const tip = showMinTip ? (
+            <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-semibold text-white shadow-lg">
+                {stayHint!.min}-night minimum
+            </span>
+        ) : null;
         // data-d carries the day's key to the aria-labelling observer below,
         // which reads it to give the day button the full date as its label —
         // react-date-range renders the button with the day number alone
         // ("15"), which a screen reader reads with no month or year.
-        if (!struck) return <span data-d={key}>{date.getDate()}</span>;
+        if (!struck) return <span data-d={key} className={showMinTip ? 'relative' : undefined}>{date.getDate()}{tip}</span>;
 
         return (
-            <span data-d={key} className="line-through decoration-2 decoration-slate-400">
+            <span data-d={key} className={'line-through decoration-2 decoration-slate-400' + (showMinTip ? ' relative' : '')}>
                 {date.getDate()}
                 <span className="sr-only"> unavailable</span>
+                {tip}
             </span>
         );
     };
@@ -406,6 +424,15 @@ export default function BookingWidget({
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [requested, setRequested] = useState(false);
+    // react-date-range's focus is CONTROLLED so a too-soon or wrong-changeover
+    // checkout can be refused without ending the pick: we keep the focus on the
+    // checkout end ([0,1]) and show a note, instead of the library completing the
+    // range. [0,0] = choosing check-in, [0,1] = choosing checkout.
+    const [focusedRange, setFocusedRange] = useState<[number, 0 | 1]>([0, 0]);
+    // The Airbnb-style note shown when a guest taps a checkout that's too soon or
+    // on the wrong changeover day — a "N-night minimum" tooltip over the check-in
+    // and a dismissable bar. null when there's nothing to say.
+    const [stayHint, setStayHint] = useState<{ kind: 'min' | 'max' | 'changeover-out' | 'changeover-in'; min: number; max: number | null } | null>(null);
 
     // The phone flow. Below lg the inline card is hidden; a fixed bottom bar
     // carries the price and opens a bottom sheet, exactly as Airbnb's mobile
@@ -633,30 +660,76 @@ export default function BookingWidget({
     // before the check-in stays pickable as a fresh check-in. The minimum is the
     // check-in date's own, if the host set one for that day on the calendar.
     const startKey = dateToKey(dateRange.startDate);
-    const choosingCheckout = !!(startKey && dateToKey(dateRange.endDate) === startKey);
+    // Choosing the checkout now when the controlled focus is on the end AND a
+    // check-in is set. Driven by focus, not endDate===startDate, so a refused
+    // checkout keeps us choosing-checkout instead of the library moving on.
+    const choosingCheckout = focusedRange[1] === 1 && !!startKey && !!dateRange.endDate;
     const minForStay = minNightsFor(rules, minNightsOverrides, startKey || null);
     const maxForStay = maxNightsFor(rules);
+    // A day is greyed/struck ONLY when it is genuinely unavailable — taken,
+    // blocked, prep-held or past the next booked night. The minimum stay and the
+    // host's changeover days do NOT grey a day: those look normal and are
+    // explained when tapped (Airbnb's behaviour), via stayHint below.
     const stayDisabledDay = (date: Date) => {
         const key = dateToKey(date) as string;
         if (choosingCheckout && startKey && nightsBetweenKeys(startKey, key) > 0) {
-            return !checkoutPickable(startKey, key, unavailableNights, minForStay, maxForStay, rules);
+            return !checkoutAvailable(startKey, key, unavailableNights);
         }
-        // The host's changeover days grey out a day guests may not arrive on.
-        return !checkInPickable(key, unavailableNights, rules);
+        return !checkInAvailable(key, unavailableNights);
     };
-    // "3-night minimum · Check-in Monday or Friday", so a greyed-out day has a
-    // reason on screen rather than looking like a taken one.
+    // The minimum and changeover days as a quiet line under the calendar — the
+    // reassuring version; the loud note only appears when a guest taps a date
+    // that breaks one (stayHint).
     const stayNote = [stayLengthNote(minForStay, maxForStay), changeoverNote(rules)].filter(Boolean).join(' · ');
+
+    // Start (or restart) the pick on a check-in, honouring the changeover arrival
+    // day — a non-arrival day isn't greyed, it shows a note and doesn't start.
+    const startOnCheckIn = (day: Date, key: string) => {
+        if (checkInTapProblem(key, rules)) {
+            setStayHint({ kind: 'changeover-in', min: minForStay, max: maxForStay });
+            setFocusedRange([0, 0]);
+            return;
+        }
+        setStayHint(null);
+        setDateRange({ startDate: day, endDate: day, key: 'selection' });
+        setFocusedRange([0, 1]);
+    };
 
     const handleSelect = (ranges: RangeKeyDict) => {
         setError('');
         const next = ranges.selection;
-        // Choosing a checkout, the guest tapped a day BEFORE the check-in: the
-        // picker would make that day..check-in a stay, across nights nobody
-        // checked. Treat it as a fresh check-in instead, as Airbnb does.
         const nextStart = dateToKey(next.startDate);
-        if (choosingCheckout && startKey && nextStart && nextStart < startKey && dateToKey(next.endDate) === startKey) {
-            setDateRange({ startDate: next.startDate, endDate: next.startDate, key: 'selection' });
+        const nextEnd = dateToKey(next.endDate);
+
+        if (choosingCheckout && startKey) {
+            // Tapped a day BEFORE the check-in → restart on it as a fresh
+            // check-in, as Airbnb does, then keep choosing the checkout.
+            if (nextStart && nextStart < startKey) {
+                startOnCheckIn(next.startDate as Date, nextStart);
+                return;
+            }
+            if (nextEnd && nextEnd > startKey) {
+                const problem = checkoutTapProblem(startKey, nextEnd, unavailableNights, minForStay, maxForStay, rules);
+                if (problem) {
+                    // Don't select it: keep the check-in, keep choosing checkout,
+                    // and say why (the tooltip over the check-in + the bar).
+                    setStayHint({ kind: problem === 'changeover' ? 'changeover-out' : problem, min: minForStay, max: maxForStay });
+                    setDateRange({ startDate: dateRange.startDate, endDate: dateRange.startDate, key: 'selection' });
+                    setFocusedRange([0, 1]);
+                    return;
+                }
+                setStayHint(null);
+                setDateRange(next);
+                setFocusedRange([0, 0]);
+                return;
+            }
+            // Re-tapped the check-in day itself — nothing to do.
+            return;
+        }
+
+        // Choosing a check-in (fresh, or after a completed selection).
+        if (nextStart) {
+            startOnCheckIn(next.startDate as Date, nextStart);
             return;
         }
         setDateRange(next);
@@ -683,7 +756,9 @@ export default function BookingWidget({
 
     const clearDates = () => {
         setError('');
+        setStayHint(null);
         setDateRange({ startDate: undefined, endDate: undefined, key: 'selection' });
+        setFocusedRange([0, 0]);
         setCalendarKey((k) => k + 1);
     };
 
@@ -880,6 +955,30 @@ export default function BookingWidget({
         </div>
     );
 
+    // We drive the picker's focus ourselves (handleSelect), so the library's own
+    // focus moves are ignored.
+    const noopFocus = () => {};
+
+    // Airbnb's note when a guest taps a date that breaks a rule — the exact
+    // wording Liam asked for. Shown as a dismissable bar at the bottom of the
+    // picker (and a "N-night minimum" tooltip over the check-in for the min case).
+    const stayHintText = !stayHint ? '' :
+        stayHint.kind === 'min'
+            ? `Minimum stay: ${stayHint.min} night${stayHint.min === 1 ? '' : 's'}. This date does not meet the minimum stay requirement.`
+            : stayHint.kind === 'max'
+                ? `Maximum stay: ${stayHint.max} night${stayHint.max === 1 ? '' : 's'}. This date is past the maximum stay.`
+                : stayHint.kind === 'changeover-out'
+                    ? `Check-out is only available on ${weekdayListPlural(rules.checkout_days)}.`
+                    : `Check-in is only available on ${weekdayListPlural(rules.checkin_days)}.`;
+    const stayHintBar = stayHint ? (
+        <div role="alert" className="flex items-start gap-3 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+            <span className="flex-1">{stayHintText}</span>
+            <button type="button" onClick={() => setStayHint(null)} aria-label="Dismiss" className="-m-1 flex-none rounded p-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900">
+                <X className="h-4 w-4" />
+            </button>
+        </div>
+    ) : null;
+
     const calendarEl = (
         <CottageCalendar
             hasSelection={!!dateRange.startDate}
@@ -894,6 +993,8 @@ export default function BookingWidget({
             note={stayNote}
             renderDay={renderDay}
             onClear={clearDates}
+            focusedRange={focusedRange}
+            onRangeFocusChange={noopFocus}
         />
     );
 
@@ -1191,6 +1292,8 @@ export default function BookingWidget({
             disabledDay={stayDisabledDay}
             renderDay={renderDay}
             onClear={clearDates}
+            focusedRange={focusedRange}
+            onRangeFocusChange={noopFocus}
         />
     );
 
@@ -1272,6 +1375,7 @@ export default function BookingWidget({
                                 <div className="flex-1 min-h-0 overflow-hidden px-2">
                                     {sheetCalendarEl}
                                 </div>
+                                {stayHintBar && <div className="px-4 pt-2 shrink-0">{stayHintBar}</div>}
                                 <div className="border-t border-slate-200 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 flex items-center justify-between gap-4">
                                     <div className="min-w-0">
                                         {datesChosen ? (
@@ -1332,6 +1436,7 @@ export default function BookingWidget({
             <div id="booking-card" className="hidden lg:block bg-white border border-slate-200 rounded-2xl p-4 lg:p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
                 {priceHeader}
                 {calendarEl}
+                {stayHintBar && <div className="mb-4">{stayHintBar}</div>}
                 {guestsBlock}
                 {extrasBlock}
                 {breakdownBlock}

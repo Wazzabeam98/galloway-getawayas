@@ -169,3 +169,62 @@ test('unsellableNights marks orphan runs and leaves fillable gaps alone', () => 
     // The long open run after the second stay is sellable.
     assert.equal(out.has('2026-11-20'), false);
 });
+
+// The picker's split between "is this day AVAILABLE?" (greys/strikes it) and
+// "why can't I pick it?" (a note on tap). Airbnb greys a day only when it is
+// genuinely taken — the minimum stay and the host's changeover days look
+// normal and are explained when tapped. checkoutAvailable / checkInAvailable
+// decide the grey; checkoutTapProblem / checkInTapProblem decide the note.
+import {
+    checkoutAvailable, checkInAvailable, checkoutTapProblem, checkInTapProblem, weekdayListPlural,
+} from '../lib/stayRules';
+
+test('checkInAvailable is just "this night is free"', () => {
+    assert.equal(checkInAvailable('2026-11-13', GAP_UNAVAILABLE), true);
+    assert.equal(checkInAvailable('2026-11-10', GAP_UNAVAILABLE), false);
+});
+
+test('checkoutAvailable asks only whether every night of the stay is free — not the minimum', () => {
+    // 13th → 15th: both gap nights free, so available even though a stay would
+    // not need to reach the 3-night minimum to be AVAILABLE here.
+    assert.equal(checkoutAvailable('2026-11-13', '2026-11-15', GAP_UNAVAILABLE), true);
+    // 13th → 14th: one free night — available (the minimum is NOT its concern).
+    assert.equal(checkoutAvailable('2026-11-13', '2026-11-14', GAP_UNAVAILABLE), true);
+    // Reaching across a taken night (the 15th) is not available.
+    assert.equal(checkoutAvailable('2026-11-13', '2026-11-16', GAP_UNAVAILABLE), false);
+    // A zero-or-negative span is never a checkout.
+    assert.equal(checkoutAvailable('2026-11-13', '2026-11-13', GAP_UNAVAILABLE), false);
+});
+
+test('checkoutTapProblem names the minimum, the maximum and the changeover day', () => {
+    // A too-soon checkout: under the 3-night minimum, no gap to fill → "min".
+    assert.equal(checkoutTapProblem('2026-11-01', '2026-11-02', new Set(), 3, null), 'min');
+    // Meets the minimum → no problem.
+    assert.equal(checkoutTapProblem('2026-11-01', '2026-11-04', new Set(), 3, null), null);
+    // Past the maximum → "max".
+    assert.equal(checkoutTapProblem('2026-11-01', '2026-11-10', new Set(), 1, 5), 'max');
+    // The exact gap fill is allowed even under the minimum (no problem).
+    assert.equal(checkoutTapProblem('2026-11-13', '2026-11-15', GAP_UNAVAILABLE, 3, null), null);
+    // Changeover beats the minimum: a Friday-only checkout tapped on a Monday
+    // reports the changeover even when the span is long enough.
+    const friOnly = { checkout_days: [5] };
+    assert.equal(checkoutTapProblem('2026-11-20', '2026-11-23', new Set(), 3, null, friOnly), 'changeover');
+    // A Friday checkout that meets the minimum is fine.
+    assert.equal(checkoutTapProblem('2026-11-20', '2026-11-27', new Set(), 3, null, friOnly), null);
+});
+
+test('checkInTapProblem flags a non-arrival weekday', () => {
+    const monFri = { checkin_days: [1, 5] };
+    assert.equal(checkInTapProblem('2026-11-18', monFri), 'changeover'); // a Wednesday
+    assert.equal(checkInTapProblem('2026-11-20', monFri), null);         // a Friday
+    assert.equal(checkInTapProblem('2026-11-18'), null);                 // no rule set
+});
+
+test('weekdayListPlural reads the changeover days as Airbnb-style plurals', () => {
+    assert.equal(weekdayListPlural([5]), 'Fridays');
+    assert.equal(weekdayListPlural([1, 5]), 'Mondays and Fridays');
+    assert.equal(weekdayListPlural([1, 3, 5], 'or'), 'Mondays, Wednesdays or Fridays');
+    // Every day (or none set) means no restriction to name.
+    assert.equal(weekdayListPlural([0, 1, 2, 3, 4, 5, 6]), '');
+    assert.equal(weekdayListPlural(null), '');
+});

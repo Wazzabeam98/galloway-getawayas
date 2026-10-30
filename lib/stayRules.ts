@@ -335,6 +335,73 @@ export function checkoutPickable(startKey: string, key: string, unavailable: Set
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// AIRBNB-STYLE MINIMUM-STAY UX (Liam, 30 Oct 2026)
+//
+// A day is only STRUCK/greyed in the picker when it is genuinely unavailable —
+// taken, blocked, prep-held, or past the next booked night. The minimum stay and
+// the host's changeover days do NOT grey a day: those days look normal and, when
+// a guest taps one as a checkout, a tooltip / note explains why instead of the
+// day having silently looked unavailable. The helpers below split "is this day
+// AVAILABLE?" (what greys a day) from "why can't this AVAILABLE day be picked?"
+// (what the tooltip says). The server (stayProblem) is unchanged — it is still
+// the wall; these only change what the picker shows.
+// ---------------------------------------------------------------------------
+
+/**
+ * A day can be a CHECKOUT purely on availability: it is after the check-in and
+ * every night of the stay [start, key) is free. This is what greys/strikes a
+ * checkout day — NOT the minimum stay or the changeover day. (The checkout day's
+ * OWN night may be taken — that's a stay butting onto the next booking.)
+ */
+export function checkoutAvailable(startKey: string, key: string, unavailable: Set<string>): boolean {
+    const nights = nightsBetweenKeys(startKey, key);
+    if (nights <= 0) return false;
+    for (let i = 0; i < nights; i++) {
+        if (unavailable.has(addDaysKey(startKey, i))) return false;
+    }
+    return true;
+}
+
+/** A day can be a CHECK-IN purely on availability: its own night is free. The
+ *  changeover arrival day is NOT applied here — it's explained on tap instead. */
+export function checkInAvailable(key: string, unavailable: Set<string>): boolean {
+    return !unavailable.has(key);
+}
+
+export type CheckoutTapProblem = 'min' | 'max' | 'changeover' | null;
+/**
+ * Why an AVAILABLE checkout day still can't be picked — too short (min), too long
+ * (max), or the wrong changeover weekday — or null when it's fine. Drives the
+ * "N-night minimum" tooltip and the changeover note shown on tap, in place of
+ * greying the day. Mirrors stayProblem's order and its gap-fill exception.
+ */
+export function checkoutTapProblem(startKey: string, key: string, unavailable: Set<string>, min: number, max: number | null, rules?: StayRulesListing | null): CheckoutTapProblem {
+    const nights = nightsBetweenKeys(startKey, key);
+    if (nights <= 0) return 'min';
+    if (rules && !departureAllowed(rules, key)) return 'changeover';
+    if (max !== null && nights > max) return 'max';
+    if (nights < min && !fillsGapExactly(startKey, key, unavailable)) return 'min';
+    return null;
+}
+
+/** Why an AVAILABLE day can't be a CHECK-IN — only the changeover arrival day —
+ *  or null. */
+export function checkInTapProblem(key: string, rules?: StayRulesListing | null): 'changeover' | null {
+    if (rules && !arrivalAllowed(rules, key)) return 'changeover';
+    return null;
+}
+
+/** "Fridays", "Fridays and Saturdays" — the plural weekday list for a note like
+ *  "Check-out is only available on Fridays". '' when every day is allowed. */
+export function weekdayListPlural(value: number[] | null | undefined, joiner: 'and' | 'or' = 'and'): string {
+    const days = allowedDays(value);
+    if (days.length === 7) return '';
+    const names = days.slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => WEEKDAY_NAMES[d] + 's');
+    if (names.length === 1) return names[0];
+    return names.slice(0, -1).join(', ') + ' ' + joiner + ' ' + names[names.length - 1];
+}
+
 /**
  * Which of these free nights the host cannot sell to anyone.
  *
