@@ -225,12 +225,26 @@ export default function ExperienceListingBody({
                 {/* The bar appears once the photos have scrolled off the top. */}
                 {sticky && <div id="sticky-sentinel" aria-hidden />}
 
-                <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-10 mt-2">
+                {/* MOBILE header panel — the same overlapping white sheet as the
+                    cottage (Airbnb's mobile listing header), with the category and
+                    title centred. md:hidden; desktop keeps its left-aligned header
+                    in the grid below. */}
+                <section className="md:hidden -mx-4 -mt-6 relative z-10 rounded-t-3xl bg-white px-5 pt-7 pb-5 text-center">
+                    <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-emerald-700">{p.category}</p>
+                    <h1 className="mt-1.5 text-[1.5rem]/8 font-bold text-slate-900 [text-wrap:pretty]">{p.business_name}</h1>
+                    <div className="mt-3">
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{shapeCue(p.shape)}</span>
+                    </div>
+                </section>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 lg:gap-10 mt-0 lg:mt-2">
                     <div className="lg:col-span-2 min-w-0">
-                        <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-emerald-700">{p.category}</p>
+                        <p className="hidden md:block text-[13px] font-semibold uppercase tracking-[0.14em] text-emerald-700">{p.category}</p>
                         {/* Full-width title on mobile; the text Share/Save pair shows
-                            only on desktop (on mobile it's the round icons on the photo). */}
-                        <div className="flex items-start justify-between gap-3">
+                            only on desktop (on mobile it's the round icons on the photo).
+                            On mobile the title is centred in the header panel above, so
+                            this whole row is hidden. */}
+                        <div className="hidden md:flex items-start justify-between gap-3">
                             {/* Mobile size is arbitrary (24px) so globals.css doesn't
                                 lift it to 32px below 640px, where a long title stacked
                                 one word per line at bigger phone text; pretty packs the
@@ -247,7 +261,7 @@ export default function ExperienceListingBody({
                                 />
                             </div>
                         </div>
-                        <span className="mt-2 inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                        <span className="mt-2 hidden md:inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                             {shapeCue(p.shape)}
                         </span>
 
