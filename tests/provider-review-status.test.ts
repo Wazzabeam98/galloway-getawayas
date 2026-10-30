@@ -70,7 +70,9 @@ test('"Your listing" and the join page take a submitted experience to its listin
     assert.match(calendar, /provider\.status !== 'approved' && mine\.isOwner && provider\.audience !== 'guest'\) \{\s*redirect\(`\/services\/join/,
         'only a trade is redirected; an experience opens its calendar at any stage');
 
-    const join = read('app/services/join/page.tsx');
+    // The lookup lives in lib/joinResume.ts, shared by /services/join and
+    // /business/experience (Oct 2026).
+    const join = read('lib/joinResume.ts');
     assert.match(join, /trade === 'guest' && data\.status !== 'draft'\) \{\s*redirect\('\/services\/dashboard\/listing'\)/,
         'a sent experience (in review, sent back or live) is not re-created in the wizard');
 });
