@@ -21,6 +21,9 @@ export interface QuotedBooking {
     listing_id: string;
     check_in: string;
     check_out: string;
+    // The earliest check-in the booking has ever held — the cancellation window
+    // anchors here, not a later date a change moved it to (AUDIT 2026-10-31 C2).
+    earliest_check_in?: string | null;
     guests: number;
     pets: number;
     total_price: number | string;
@@ -106,7 +109,10 @@ export async function quoteChangeMoney(admin: any, booking: QuotedBooking, input
     // outside it. Fees always settle in full.
     const fraction = decreaseRefundFraction(
         ctx.initiatedBy || 'guest',
-        String(booking.check_in).slice(0, 10),
+        // The ORIGINAL booking's check-in (earliest it has ever held), so a guest
+        // can't move the stay out to escape the cancellation window on the nights
+        // they give back (AUDIT 2026-10-31 C2). Falls back to check_in.
+        String(booking.earliest_check_in || booking.check_in).slice(0, 10),
         booking.cancellation_policy,
         ctx.now,
         booking.cancellation_custom_days,
