@@ -117,7 +117,13 @@ export async function POST(request: Request) {
         // and the change-dates picker use (guestCalendar), with this booking's
         // OWN nights removed — they're being vacated, so a change butting onto
         // its old dates isn't treated as filling a gap against itself.
-        if (listing) {
+        //
+        // Only when the DATES move — like the changeover check above. A stay
+        // booked under an older, shorter minimum keeps its length when just the
+        // guest count or pets change; the minimum is re-applied only to dates
+        // the guest actually picks anew.
+        const datesChanged = next.checkIn !== oldStay.checkIn || next.checkOut !== oldStay.checkOut;
+        if (listing && datesChanged) {
             const cal = await guestCalendar(booking.listing_id);
             const unavailable = new Set(cal.blockedNights);
             for (let k = oldStay.checkIn; k < oldStay.checkOut; k = addDaysKey(k, 1)) {
