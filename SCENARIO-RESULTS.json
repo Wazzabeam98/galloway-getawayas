@@ -1,8 +1,8 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-10-26T15:25:24.909Z",
-      "target": "http://localhost:3000",
+      "ranAt": "2026-10-31T19:20:26.928Z",
+      "target": "http://localhost:3100",
       "passed": 7,
       "failed": 0,
       "untestable": 0,
@@ -52,8 +52,8 @@
       ]
     },
     "refund": {
-      "ranAt": "2026-10-26T15:27:09.309Z",
-      "target": "http://localhost:3000",
+      "ranAt": "2026-10-31T19:22:04.198Z",
+      "target": "http://localhost:3100",
       "passed": 14,
       "failed": 0,
       "untestable": 0,
@@ -145,8 +145,8 @@
       ]
     },
     "balance": {
-      "ranAt": "2026-10-26T15:28:20.800Z",
-      "target": "http://localhost:3000",
+      "ranAt": "2026-10-31T19:23:12.334Z",
+      "target": "http://localhost:3100",
       "passed": 8,
       "failed": 0,
       "untestable": 0,
@@ -202,8 +202,8 @@
       ]
     },
     "crosscutting": {
-      "ranAt": "2026-10-26T15:31:37.439Z",
-      "target": "http://localhost:3000",
+      "ranAt": "2026-10-31T19:26:33.949Z",
+      "target": "http://localhost:3100",
       "passed": 8,
       "failed": 0,
       "untestable": 0,
@@ -259,12 +259,30 @@
       ]
     },
     "change": {
-      "ranAt": "2026-10-31T01:29:55.562Z",
+      "ranAt": "2026-10-31T19:24:36.133Z",
       "target": "http://localhost:3100",
-      "passed": 6,
+      "passed": 9,
       "failed": 0,
       "untestable": 0,
       "scenarios": [
+        {
+          "number": "cx1",
+          "title": "A date change cannot move a stay onto a host-blocked night (availability wall, C2)",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cx2",
+          "title": "A zero-cost MOVE on a request-to-book listing needs host approval (C2)",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "cx3",
+          "title": "The cancellation window anchors on the original check-in, not a later move (C2)",
+          "status": "passed",
+          "failedChecks": []
+        },
         {
           "number": "cg1",
           "title": "Guest shortens a deposit booking — balance drops, no card refund",
@@ -304,7 +322,7 @@
       ]
     }
   },
-  "updatedAt": "2026-10-31T01:29:55.562Z",
+  "updatedAt": "2026-10-31T19:26:33.949Z",
   "fingerprint": {
     "app/api/cron/host-payouts/route.ts": "4c7a6a00ace96ca7",
     "app/api/cron/balance-charges/route.ts": "54929b42ff053026",
@@ -314,7 +332,7 @@
     "lib/settlePaidBooking.ts": "a57514e54eaafda0",
     "lib/bookingPaymentReconcile.ts": "ab21bb02f3adbf0c",
     "app/api/cron/booking-payments/route.ts": "d84700372cfc228f",
-    "app/api/bookings/cancel/route.ts": "fb0a13c800d4ca1a",
+    "app/api/bookings/cancel/route.ts": "ddbaa283916704db",
     "app/api/bookings/host-refund/route.ts": "aa70e4b409b800b3",
     "lib/clawback.ts": "ffc6fbe7ed85de29",
     "lib/payoutSource.ts": "b00c942802e9f678",
@@ -326,12 +344,12 @@
     "lib/listingExtras.ts": "cb996ad1a4f904c6",
     "lib/cancellation.ts": "73089af94e03d48d",
     "lib/changeMoney.ts": "4c017db0168381f2",
-    "lib/quoteChange.ts": "e9846b03ffc59b22",
-    "lib/bookingChange.ts": "48857d7167d8ae51",
+    "lib/quoteChange.ts": "de6d9ad9562e75b4",
+    "lib/bookingChange.ts": "7f377a6a77c9261d",
     "lib/applyBookingChange.ts": "21926d3799a439c8",
-    "app/api/bookings/change/route.ts": "e3e8f7f0751141df",
-    "app/api/bookings/change/quote/route.ts": "d04bd67dd1494800",
-    "app/api/bookings/change/respond/route.ts": "bdbcfccfb1c88313",
+    "app/api/bookings/change/route.ts": "e7575e1c376e5973",
+    "app/api/bookings/change/quote/route.ts": "da17d89ff53fad35",
+    "app/api/bookings/change/respond/route.ts": "01e91f3832ed064d",
     "lib/resolutions.ts": "c74b513840d49807",
     "app/api/bookings/resolutions/route.ts": "da1da258081f142f",
     "app/api/bookings/resolutions/respond/route.ts": "907c8533d6489e58",
@@ -340,7 +358,7 @@
     "scripts/payout-scenarios.mjs": "1a0e0552c7156022",
     "scripts/refund-scenarios.mjs": "2987b8ae8bc5b75b",
     "scripts/balance-scenarios.mjs": "cd9d045653faf651",
-    "scripts/change-scenarios.mjs": "fedc558161c3c6fe",
+    "scripts/change-scenarios.mjs": "d76a530d6447af76",
     "scripts/crosscutting-scenarios.mjs": "24d89c436a1a18b5"
   }
 }
