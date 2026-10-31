@@ -259,8 +259,8 @@
       ]
     },
     "change": {
-      "ranAt": "2026-10-26T15:29:41.861Z",
-      "target": "http://localhost:3000",
+      "ranAt": "2026-10-31T01:25:10.887Z",
+      "target": "http://localhost:3100",
       "passed": 6,
       "failed": 0,
       "untestable": 0,
@@ -304,7 +304,7 @@
       ]
     }
   },
-  "updatedAt": "2026-10-26T15:31:37.439Z",
+  "updatedAt": "2026-10-31T01:25:10.887Z",
   "fingerprint": {
     "app/api/cron/host-payouts/route.ts": "4c7a6a00ace96ca7",
     "app/api/cron/balance-charges/route.ts": "54929b42ff053026",
@@ -329,7 +329,7 @@
     "lib/quoteChange.ts": "e9846b03ffc59b22",
     "lib/bookingChange.ts": "48857d7167d8ae51",
     "lib/applyBookingChange.ts": "21926d3799a439c8",
-    "app/api/bookings/change/route.ts": "6fdcfd03a078c388",
+    "app/api/bookings/change/route.ts": "5a5d13ba9043bcf0",
     "app/api/bookings/change/quote/route.ts": "d04bd67dd1494800",
     "app/api/bookings/change/respond/route.ts": "bdbcfccfb1c88313",
     "lib/resolutions.ts": "c74b513840d49807",

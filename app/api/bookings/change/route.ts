@@ -11,7 +11,8 @@ import { quoteChangeMoney } from '@/lib/quoteChange';
 import { applyBookingChange } from '@/lib/applyBookingChange';
 import { displayName } from '@/lib/utils';
 import { formatGBP } from '@/lib/formatMoney';
-import { changeoverProblem } from '@/lib/stayRules';
+import { changeoverProblem, minStayProblem, addDaysKey } from '@/lib/stayRules';
+import { guestCalendar } from '@/lib/availability';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
         }
 
         const { data: listing } = await admin
-            .from('listings').select('max_guests, amenities, checkin_days, checkout_days').eq('id', booking.listing_id).maybeSingle();
+            .from('listings').select('max_guests, amenities, checkin_days, checkout_days, min_nights').eq('id', booking.listing_id).maybeSingle();
         const petsAllowed = Array.isArray(listing?.amenities) && listing!.amenities.indexOf('Pets allowed') !== -1;
 
         const oldStay: StaySnapshot = {
@@ -108,6 +109,23 @@ export async function POST(request: Request) {
             checkOut: next.checkOut !== oldStay.checkOut,
         }) : null;
         if (changeover) return NextResponse.json({ ok: false, error: changeover }, { status: 400 });
+
+        // The minimum stay, enforced exactly as a NEW booking does (lib/stayRules
+        // minStayProblem, the same helper checkout calls): the listing's minimum
+        // or a per-date override for the new check-in day, with the gap-fill
+        // exception. The calendar is read from the same source the booking card
+        // and the change-dates picker use (guestCalendar), with this booking's
+        // OWN nights removed — they're being vacated, so a change butting onto
+        // its old dates isn't treated as filling a gap against itself.
+        if (listing) {
+            const cal = await guestCalendar(booking.listing_id);
+            const unavailable = new Set(cal.blockedNights);
+            for (let k = oldStay.checkIn; k < oldStay.checkOut; k = addDaysKey(k, 1)) {
+                unavailable.delete(k);
+            }
+            const minProblem = minStayProblem(listing as any, next.checkIn, next.checkOut, cal.minNightsOverrides, unavailable);
+            if (minProblem) return NextResponse.json({ ok: false, error: minProblem }, { status: 400 });
+        }
 
         // One open change at a time (partial unique index enforces it too).
         const { data: existing } = await admin

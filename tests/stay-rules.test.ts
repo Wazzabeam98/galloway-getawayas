@@ -220,6 +220,27 @@ test('checkInTapProblem flags a non-arrival weekday', () => {
     assert.equal(checkInTapProblem('2026-11-18'), null);                 // no rule set
 });
 
+import { minStayProblem } from '../lib/stayRules';
+
+test('minStayProblem is the shared minimum-stay rule a new booking and a change both use', () => {
+    const l = { min_nights: 3 };
+    // Under the minimum, no gap to fill → the booking message, verbatim.
+    assert.equal(minStayProblem(l, '2026-11-01', '2026-11-02'), 'This place has a 3-night minimum for those dates.');
+    // Meets the minimum → no problem.
+    assert.equal(minStayProblem(l, '2026-11-01', '2026-11-04'), null);
+    // A per-date override for the check-in day wins.
+    assert.equal(minStayProblem(l, '2026-11-01', '2026-11-04', { '2026-11-01': 5 }),
+        'This place has a 5-night minimum for those dates.');
+    // The exact gap fill is allowed under the minimum when the unavailable set
+    // is passed (same exception stayProblem makes).
+    assert.equal(minStayProblem(l, '2026-11-13', '2026-11-15', null, GAP_UNAVAILABLE), null);
+    // The same below-minimum stay with no unavailable set has no exception.
+    assert.equal(minStayProblem(l, '2026-11-13', '2026-11-15'),
+        'This place has a 3-night minimum for those dates.');
+    // No minimum set means one night is always fine.
+    assert.equal(minStayProblem({}, '2026-11-01', '2026-11-02'), null);
+});
+
 test('weekdayListPlural reads the changeover days as Airbnb-style plurals', () => {
     assert.equal(weekdayListPlural([5]), 'Fridays');
     assert.equal(weekdayListPlural([1, 5]), 'Mondays and Fridays');

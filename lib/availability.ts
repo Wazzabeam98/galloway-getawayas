@@ -111,6 +111,10 @@ export interface GuestCalendar {
     // departureAllowed): weekdays 0 = Sunday … 6 = Saturday; null = any day.
     checkinDays: number[] | null;
     checkoutDays: number[] | null;
+    // The listing's base minimum stay (nights), for callers with no server
+    // parent to read it (the change-dates picker). A per-date override in
+    // minNightsOverrides wins for a stay checking in that day.
+    minNights: number | null;
 }
 
 export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
@@ -127,7 +131,7 @@ export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
             .select('events')
             .eq('listing_id', listingId),
         admin.from('listings')
-            .select('checkin_days, checkout_days')
+            .select('checkin_days, checkout_days, min_nights')
             .eq('id', listingId)
             .maybeSingle(),
     ]);
@@ -154,6 +158,7 @@ export async function guestCalendar(listingId: string): Promise<GuestCalendar> {
             .map((e) => ({ start: String(e.start).slice(0, 10), end: String(e.end).slice(0, 10) })),
         checkinDays: ((rules.data as any) && (rules.data as any).checkin_days) || null,
         checkoutDays: ((rules.data as any) && (rules.data as any).checkout_days) || null,
+        minNights: ((rules.data as any) && (rules.data as any).min_nights) ?? null,
     };
 }
 
