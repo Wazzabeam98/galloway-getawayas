@@ -279,6 +279,22 @@ async function main() {
 
     console.log('\n5. What stays the owner’s');
     {
+        // C1 (AUDIT 2026-10-31): a listing co-host must NOT be able to seize the
+        // business by writing owner_id to themselves. Jamie has FULL access
+        // (can_listing) on the sauna — the strongest co-host there is — so this
+        // is the exact hole the audit found. Two locks are proved: the column
+        // grant (the browser PATCH is refused) and the trigger (even the service
+        // role cannot move owner_id).
+        const ownerOf = async () => (await db.select('service_providers', '?id=eq.' + sauna.id + '&select=owner_id'))[0].owner_id;
+        const beforeOwner = await ownerOf();
+        const seize = await rls(jamie, 'PATCH', '/service_providers?id=eq.' + sauna.id, { owner_id: jamie.session.user.id }, 'return=minimal');
+        check('ownership: a full-access co-host cannot seize the business from the browser — owner_id is not writable [C1]',
+            seize.status >= 400 && (await ownerOf()) === beforeOwner, seize.status + ' ' + JSON.stringify(seize.data).slice(0, 160));
+        let svcErr = null;
+        try { await db.update('service_providers', '?id=eq.' + sauna.id, { owner_id: jamie.session.user.id }); } catch (e) { svcErr = e; }
+        check('ownership: the BEFORE UPDATE trigger refuses an owner_id change even via the service role [C1]',
+            (await ownerOf()) === beforeOwner, svcErr ? String(svcErr.message || svcErr).slice(0, 160) : 'no error raised and owner_id moved');
+
         const c = await api(jamie, 'POST', '/api/services/connect', { providerId: chef.id });
         check('payouts: Jamie cannot set up the chef’s Stripe payouts', c.status === 403, String(c.status));
         const s = await api(jamie, 'POST', '/api/services/subscription', { providerId: plumber.id, action: 'cancel' });
