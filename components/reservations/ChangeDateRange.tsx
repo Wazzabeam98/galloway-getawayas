@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
 import { X } from 'lucide-react';
 import { MONTH_ARROW_LABELS } from '@/lib/calendarLabels';
-import { checkoutAvailable, checkInAvailable, nightsBetweenKeys, arrivalAllowed, departureAllowed, changeoverNote, weekdayListPlural, type StayRulesListing } from '@/lib/stayRules';
+import { checkoutAvailable, checkInAvailable, nightsBetweenKeys, arrivalAllowed, departureAllowed, changeoverNote, weekdayListPlural, minNightsFor, minStayProblem, stayLengthNote, type StayRulesListing } from '@/lib/stayRules';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 
@@ -28,15 +28,17 @@ import 'react-date-range/dist/theme/default.css';
 // disabledDay, exactly as the booking widget decides it.
 //
 // Only GENUINELY unavailable nights are greyed/struck. The host's changeover
-// days (check-in / check-out weekdays) do NOT grey a day — Airbnb's behaviour,
-// and the booking widget's: those days look normal, and tapping one that breaks
-// the rule shows a dismissable note ("Check-out is only available on Fridays")
-// without selecting it, rather than the day sitting silently struck. The change
-// route (app/api/bookings/change) is the real wall for changeover; it does NOT
-// enforce a minimum stay on a change, so — unlike the booking widget — the
-// picker shows no minimum-stay note here. The booking's own current check-in /
-// checkout stay pickable whatever the host has restricted since, the same
-// allowance the change route makes.
+// days (check-in / check-out weekdays) and the minimum stay do NOT grey a day —
+// Airbnb's behaviour, and the booking widget's: those days look normal, and
+// tapping one that breaks a rule shows a dismissable note ("Check-out is only
+// available on Fridays", or "Minimum stay: 3 nights…") without selecting it,
+// rather than the day sitting silently struck. The change route
+// (app/api/bookings/change) is the real wall: it enforces changeover AND the
+// minimum stay (lib/stayRules minStayProblem, the same helper checkout calls,
+// including the per-date override and the gap-fill exception), so the picker
+// shows both notes, exactly as the booking widget does. The booking's own
+// current check-in / checkout stay pickable whatever the host has restricted
+// since, the same allowance the change route makes for the changeover days.
 //
 // Focus is controlled (focusedRange + a no-op onRangeFocusChange) so a refused
 // checkout keeps the guest choosing a checkout instead of react-date-range
@@ -74,14 +76,19 @@ export default function ChangeDateRange({
     // booking's own check-in and checkout stay pickable whatever the host has
     // ticked since, the same allowance the change route makes.
     const [changeover, setChangeover] = useState<StayRulesListing>({});
+    // The listing's minimum stay and any per-date overrides (#504), read from the
+    // same calendar source. minNightsFor resolves them for a given check-in day.
+    const [minNights, setMinNights] = useState<number | null>(null);
+    const [minOverrides, setMinOverrides] = useState<Record<string, number>>({});
     // Which end react-date-range is editing: [0,0] choosing the check-in, [0,1]
     // choosing the checkout. Controlled so a refused checkout stays on the
     // checkout step (see the header note). onRangeFocusChange is a no-op; focus
     // is driven entirely from handleSelect.
     const [focusedRange, setFocusedRange] = useState<[number, 0 | 1]>([0, 0]);
     // The loud note shown when a guest taps a day that breaks the host's
-    // changeover rule — a dismissable bar at the foot of the picker.
-    const [stayHint, setStayHint] = useState<{ kind: 'changeover-out' | 'changeover-in' } | null>(null);
+    // changeover rule or the minimum stay — a dismissable bar at the foot of the
+    // picker, with a "N-night minimum" tooltip over the check-in for the minimum.
+    const [stayHint, setStayHint] = useState<{ kind: 'changeover-out' | 'changeover-in' | 'min' } | null>(null);
 
     // The booking's own nights, which stay pickable.
     const ownNights = useMemo(() => {
@@ -108,7 +115,11 @@ export default function ChangeDateRange({
                 if (res.ok) {
                     const data = await res.json();
                     (data.blockedNights || []).forEach((k: string) => nights.add(k));
-                    if (live) setChangeover({ checkin_days: data.checkinDays || null, checkout_days: data.checkoutDays || null });
+                    if (live) {
+                        setChangeover({ checkin_days: data.checkinDays || null, checkout_days: data.checkoutDays || null });
+                        setMinNights(typeof data.minNights === 'number' ? data.minNights : null);
+                        setMinOverrides(data.minNightsOverrides || {});
+                    }
                 }
             } catch { /* fall through with what we have; the change route re-checks */ }
             // The guest already holds their own nights — never strike those out.
@@ -121,11 +132,17 @@ export default function ChangeDateRange({
     // Which end the guest is choosing: driven by the controlled focus, not by
     // endDate === startDate, so a refused checkout keeps us choosing-checkout
     // instead of the library moving on (the same test the booking widget uses).
-    // Only availability is enforced in the picker — the minimum stay is left to
-    // the change route (which doesn't impose one on a change), and changeover
-    // days are explained on tap rather than greyed.
+    // Availability greys a day; the minimum stay and the changeover days don't —
+    // they look normal and are explained on tap, exactly as the booking widget
+    // (and Airbnb) do.
     const startKey = checkIn || '';
     const choosingCheckout = focusedRange[1] === 1 && !!checkIn && !!checkOut;
+
+    // The minimum for a stay checking in on the current check-in day — the
+    // listing's, or a per-date override. The listing object the shared helpers
+    // read: changeover days plus the base minimum.
+    const rules: StayRulesListing = { ...changeover, min_nights: minNights };
+    const minForStay = minNightsFor(rules, minOverrides, startKey || null);
 
     // Would moving the check-in TO this day break the host's changeover rule?
     // The booking's own current check-in is exempt — a stay made before the
@@ -143,22 +160,35 @@ export default function ChangeDateRange({
         }
         return checkInAvailable(k, unavailable);
     };
-    const changeoverLine = changeoverNote(changeover);
+    // The quiet reassuring version — the minimum and the changeover days as a
+    // line under the calendar; the loud note only appears on a tap that breaks
+    // one (stayHint). Same as the booking widget.
+    const stayNote = [stayLengthNote(minForStay, null), changeoverNote(changeover)].filter(Boolean).join(' · ');
 
     // Struck-through numbers on nights the stay can't use — the same treatment
     // the booking widget uses, so grey is never the only signal. A taken night
     // that is a valid checkout for the check-in being chosen is not struck, and
-    // a changeover day is never struck (it looks normal, explained on tap).
+    // a changeover or minimum-stay day is never struck (it looks normal,
+    // explained on tap).
     const renderDay = (date: Date) => {
         const k = key(date);
         const struck = !!unavailable
             && unavailable.has(k)
             && !(choosingCheckout && startKey && checkoutAvailable(startKey, k, unavailable));
-        if (!struck) return <span>{date.getDate()}</span>;
+        // Airbnb's little bubble over the CHECK-IN day while the guest is being
+        // told their chosen checkout is too soon for the minimum.
+        const showMinTip = stayHint?.kind === 'min' && !!startKey && k === startKey;
+        const tip = showMinTip ? (
+            <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] font-semibold text-white shadow-lg">
+                {minForStay}-night minimum
+            </span>
+        ) : null;
+        if (!struck) return <span className={showMinTip ? 'relative' : undefined}>{date.getDate()}{tip}</span>;
         return (
-            <span className="line-through decoration-2 decoration-slate-400">
+            <span className={'line-through decoration-2 decoration-slate-400' + (showMinTip ? ' relative' : '')}>
                 {date.getDate()}
                 <span className="sr-only"> unavailable</span>
+                {tip}
             </span>
         );
     };
@@ -177,9 +207,11 @@ export default function ChangeDateRange({
     };
 
     const stayHintText = !stayHint ? '' :
-        stayHint.kind === 'changeover-out'
-            ? `Check-out is only available on ${weekdayListPlural(changeover.checkout_days)}.`
-            : `Check-in is only available on ${weekdayListPlural(changeover.checkin_days)}.`;
+        stayHint.kind === 'min'
+            ? `Minimum stay: ${minForStay} night${minForStay === 1 ? '' : 's'}. This date does not meet the minimum stay requirement.`
+            : stayHint.kind === 'changeover-out'
+                ? `Check-out is only available on ${weekdayListPlural(changeover.checkout_days)}.`
+                : `Check-in is only available on ${weekdayListPlural(changeover.checkin_days)}.`;
     const stayHintBar = stayHint ? (
         <div role="alert" className="flex items-start gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
             <span className="flex-1">{stayHintText}</span>
@@ -234,10 +266,20 @@ export default function ChangeDateRange({
                 return;
             }
             if (nextEnd > startKey) {
-                // A changeover day that isn't a valid checkout: don't select it,
-                // keep the check-in, keep choosing the checkout, and say why.
+                // A checkout that breaks the changeover day or the minimum stay:
+                // don't select it, keep the check-in, keep choosing the checkout,
+                // and say why. Changeover is reported first (it beats the
+                // minimum), the same order the booking widget uses. The minimum
+                // is the same helper the change route enforces with, including
+                // the per-date override and the gap-fill exception.
                 if (checkoutChangeoverProblem(nextEnd)) {
                     setStayHint({ kind: 'changeover-out' });
+                    onChange(startKey, startKey);
+                    setFocusedRange([0, 1]);
+                    return;
+                }
+                if (unavailable && minStayProblem(rules, startKey, nextEnd, minOverrides, unavailable)) {
+                    setStayHint({ kind: 'min' });
                     onChange(startKey, startKey);
                     setFocusedRange([0, 1]);
                     return;
@@ -288,8 +330,8 @@ export default function ChangeDateRange({
                 dayContentRenderer={renderDay}
             />
             {stayHintBar}
-            {changeoverLine && (
-                <p className="border-t px-4 py-2 text-xs text-slate-500">{changeoverLine}</p>
+            {stayNote && (
+                <p className="border-t px-4 py-2 text-xs text-slate-500">{stayNote}</p>
             )}
         </div>
     );

@@ -217,6 +217,34 @@ export function stayLengthNote(min: number, max: number | null): string {
  * Why this stay breaks the host's rules, in the guest's words — or null.
  * `prepBuffer` is prepBufferNights() over the OTHER stays on the listing.
  */
+/**
+ * The minimum-stay rule on its own: a stay shorter than the host's minimum (the
+ * listing's, or a per-date override for the check-in day) is refused UNLESS it
+ * fills a gap between two unavailable periods exactly — the night before
+ * check-in and the checkout night are both taken — so nothing bookable is
+ * orphaned either side. Airbnb does the same: a 2-night stay can take the only
+ * 2 free nights between two bookings even where the minimum is 3.
+ *
+ * Extracted so a NEW booking (stayProblem, via checkout) and a CHANGE to an
+ * existing one (the change route) enforce the minimum identically — same
+ * message, same override, same gap-fill exception. Pass `unavailable` to allow
+ * the gap-fill; omit it and the minimum is enforced with no exception.
+ */
+export function minStayProblem(
+    listing: StayRulesListing,
+    checkIn: string,
+    checkOut: string,
+    minOverrides?: Record<string, number> | null,
+    unavailable?: Set<string> | null,
+): string | null {
+    const nights = nightsBetweenKeys(checkIn, checkOut);
+    const min = minNightsFor(listing, minOverrides, checkIn);
+    if (nights < min && !fillsGapExactly(checkIn, checkOut, unavailable)) {
+        return `This place has a ${min}-night minimum for those dates.`;
+    }
+    return null;
+}
+
 export function stayProblem(input: {
     listing: StayRulesListing;
     checkIn: string;
@@ -250,15 +278,8 @@ export function stayProblem(input: {
     const changeover = changeoverProblem(listing, checkIn, checkOut);
     if (changeover) return changeover;
 
-    const min = minNightsFor(listing, input.minOverrides, checkIn);
-    // A stay shorter than the minimum is refused UNLESS it fills a gap between
-    // two unavailable periods exactly — the night before check-in and the
-    // checkout night are both taken — so nothing bookable is orphaned either
-    // side. Airbnb does the same: a 2-night stay can take the only 2 free
-    // nights between two bookings even where the minimum is 3.
-    if (nights < min && !fillsGapExactly(checkIn, checkOut, input.unavailable)) {
-        return `This place has a ${min}-night minimum for those dates.`;
-    }
+    const minProblem = minStayProblem(listing, checkIn, checkOut, input.minOverrides, input.unavailable);
+    if (minProblem) return minProblem;
 
     const max = maxNightsFor(listing);
     if (max && nights > max) return `This place has a ${max}-night maximum.`;
