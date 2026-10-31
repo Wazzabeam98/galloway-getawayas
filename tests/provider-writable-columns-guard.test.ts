@@ -39,12 +39,23 @@ const PROVIDER_WRITABLE = new Set([
     'contact_email', 'contact_phone', 'covered_bands', 'custom_label', 'declarations',
     'description', 'dietary_note', 'does_emergency', 'does_gas', 'does_oil', 'does_scheduled', 'exclusive_per_date',
     'experience_price', 'flat_fee', 'fulfilment', 'guest_details', 'headshot', 'hourly_rate',
-    'lead_time_days', 'logo', 'owner_id', 'photos', 'pricing_choice', 'provider_name',
+    'lead_time_days', 'logo', 'photos', 'pricing_choice', 'provider_name',
     'provides_quote', 'registration_number',
     'shape', 'slot_capacity', 'slot_length_minutes', 'slot_min_people',
     'slot_turnaround_minutes', 'sms_opt_out',
     'trade', 'updated_at',
 ]);
+
+// Set ONCE at sign-up and never changed afterwards: a signed-in provider may
+// INSERT it (the row policy pins owner_id = auth.uid(), so they cannot hand the
+// business to anyone else even at creation), but UPDATE is REVOKED and a BEFORE
+// UPDATE trigger blocks any change. This is the C1 fix (AUDIT 2026-10-31): a
+// listing co-host could set owner_id to themselves and seize the business +
+// redirect its Stripe payouts. INSERT-grantable, never UPDATE-grantable — if a
+// later migration re-grants owner_id UPDATE, the DB half below fails by name.
+const INSERT_ONLY: Record<string, string> = {
+    owner_id: 'the business owner — set once at sign-up (INSERT, pinned owner_id = auth.uid()), never changed; UPDATE is revoked and a BEFORE UPDATE trigger (lock_service_providers_owner_id) refuses any change, so a listing co-host cannot seize the business (C1)',
+};
 
 // Everything else on service_providers: the platform sets it, never a browser
 // write. The value is the reason — the decision, in writing. Keep them true.
@@ -102,14 +113,18 @@ const PLATFORM_ONLY: Record<string, string> = {
     stripe_updated_at: 'Stripe sync timestamp; service role only',
 };
 
-test('provider-writable and platform-only lists are disjoint', () => {
-    const overlap = [...PROVIDER_WRITABLE].filter((c) => c in PLATFORM_ONLY);
-    assert.deepEqual(overlap, [], 'a column is in BOTH lists — decide which: ' + overlap.join(', '));
+test('provider-writable, insert-only and platform-only lists are disjoint', () => {
+    const inWritableAndPlatform = [...PROVIDER_WRITABLE].filter((c) => c in PLATFORM_ONLY);
+    const inWritableAndInsertOnly = [...PROVIDER_WRITABLE].filter((c) => c in INSERT_ONLY);
+    const inInsertOnlyAndPlatform = Object.keys(INSERT_ONLY).filter((c) => c in PLATFORM_ONLY);
+    const overlap = [...inWritableAndPlatform, ...inWritableAndInsertOnly, ...inInsertOnlyAndPlatform];
+    assert.deepEqual(overlap, [], 'a column is in more than one list — decide which: ' + overlap.join(', '));
 });
 
-test('every platform-only column carries a written reason', () => {
-    const blank = Object.entries(PLATFORM_ONLY).filter(([, r]) => !String(r || '').trim()).map(([c]) => c);
-    assert.deepEqual(blank, [], 'these columns are platform-only with no reason: ' + blank.join(', '));
+test('every platform-only and insert-only column carries a written reason', () => {
+    const blank = [...Object.entries(PLATFORM_ONLY), ...Object.entries(INSERT_ONLY)]
+        .filter(([, r]) => !String(r || '').trim()).map(([c]) => c);
+    assert.deepEqual(blank, [], 'these columns have no reason: ' + blank.join(', '));
 });
 
 test('the write sweep migration grants exactly the columns it should', () => {
@@ -141,28 +156,38 @@ test('service_providers: every live column has a WRITE decision, matching the li
         }));
 
         // (1) every live column is bucketed — a new one forces a decision.
-        const unclassified = cols.filter((c) => !PROVIDER_WRITABLE.has(c) && !(c in PLATFORM_ONLY));
+        const unclassified = cols.filter((c) => !PROVIDER_WRITABLE.has(c) && !(c in INSERT_ONLY) && !(c in PLATFORM_ONLY));
         assert.deepEqual(
             unclassified, [],
-            'These service_providers columns are in neither PROVIDER_WRITABLE nor PLATFORM_ONLY — decide\n'
-            + 'whether a signed-in provider may write each (add to the grant sweep + PROVIDER_WRITABLE, or to\n'
-            + 'PLATFORM_ONLY with a reason):\n  ' + unclassified.join('\n  '),
+            'These service_providers columns are in none of PROVIDER_WRITABLE, INSERT_ONLY or PLATFORM_ONLY —\n'
+            + 'decide whether a signed-in provider may write each (add to the grant sweep + PROVIDER_WRITABLE, to\n'
+            + 'INSERT_ONLY if it is set once at creation, or to PLATFORM_ONLY with a reason):\n  ' + unclassified.join('\n  '),
         );
 
-        // (2) the decision matches reality, in both directions, for INSERT and UPDATE.
+        // (2) the decision matches reality, in both directions. PROVIDER_WRITABLE
+        // is INSERT- and UPDATE-grantable; INSERT_ONLY (owner_id) is INSERT-grantable
+        // but never UPDATE-grantable — the C1 lock — and PLATFORM_ONLY is neither.
+        const expected = {
+            INSERT: new Set([...PROVIDER_WRITABLE, ...Object.keys(INSERT_ONLY)]),
+            UPDATE: PROVIDER_WRITABLE,
+        } as const;
+        const forbidden = {
+            INSERT: new Set(Object.keys(PLATFORM_ONLY)),
+            UPDATE: new Set([...Object.keys(PLATFORM_ONLY), ...Object.keys(INSERT_ONLY)]),
+        } as const;
         for (const [priv, live] of [['INSERT', liveInsert], ['UPDATE', liveUpdate]] as const) {
-            const writableButNotGranted = [...PROVIDER_WRITABLE].filter((c) => cols.includes(c) && !live.has(c));
+            const expectedButNotGranted = [...expected[priv]].filter((c) => cols.includes(c) && !live.has(c));
             assert.deepEqual(
-                writableButNotGranted, [],
-                `These columns are in PROVIDER_WRITABLE but authenticated cannot ${priv} them live — the grant\n`
-                + `migration is missing or was reverted:\n  ` + writableButNotGranted.join('\n  '),
+                expectedButNotGranted, [],
+                `These columns should be ${priv}-grantable to authenticated but are not live — the grant\n`
+                + `migration is missing or was reverted:\n  ` + expectedButNotGranted.join('\n  '),
             );
-            const platformButGranted = Object.keys(PLATFORM_ONLY).filter((c) => live.has(c));
+            const forbiddenButGranted = [...forbidden[priv]].filter((c) => live.has(c));
             assert.deepEqual(
-                platformButGranted, [],
-                `These columns are marked PLATFORM_ONLY but authenticated CAN ${priv} them live — a grant leaked\n`
-                + `them; revoke it, or move the column to PROVIDER_WRITABLE if the write is intended:\n  `
-                + platformButGranted.join('\n  '),
+                forbiddenButGranted, [],
+                `These columns must NOT be ${priv}-grantable to authenticated but CAN be written live — a grant\n`
+                + `leaked them (for owner_id this is the C1 seizure hole); revoke it, or re-bucket the column:\n  `
+                + forbiddenButGranted.join('\n  '),
             );
         }
     });
