@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { deletionBlockers, revalidateOwnedPublicPages } from '@/lib/deactivateAccount';
+import { PHOTO_BUCKET } from '@/lib/messagePhotos';
 
 // Closing an account ANONYMISES it — it never deletes the profile or auth row,
 // because bookings/payments/payouts/orders are RESTRICT-linked to them and must
@@ -96,6 +97,13 @@ export async function POST() {
         await sweep('avatars', (name) => name.startsWith(`${uid}-`));
         await sweep('providers', (name) => name.includes(uid));
 
+        // Photos they sent in booking messages (private bucket). The scrub
+        // blanks the words of their messages; the photos go with them.
+        const { data: sentPhotos } = await admin
+            .from('message_attachments').select('id, path, thumb_path').eq('uploaded_by', uid);
+        const photoKeys: string[] = [];
+        (sentPhotos || []).forEach((a: any) => { if (a.path) photoKeys.push(a.path); if (a.thumb_path) photoKeys.push(a.thumb_path); });
+
         // 2. Scrub the account. Re-runs the same blocker set as its hard guard
         //    first, so if anything went live between the pre-check and now this
         //    raises and NOTHING — including their images — is touched.
@@ -126,6 +134,15 @@ export async function POST() {
             const { error: rmRemovedError } = await admin.storage.from(REMOVED_BUCKET).remove(keys);
             if (rmRemovedError) {
                 await logError('anonymise: removed-bucket removal failed', rmRemovedError, { path: '/api/account/delete' });
+            }
+        }
+
+        if (photoKeys.length) {
+            const { error: photoRmError } = await admin.storage.from(PHOTO_BUCKET).remove(photoKeys);
+            if (photoRmError) {
+                await logError('anonymise: message photo removal failed', photoRmError, { path: '/api/account/delete' });
+            } else {
+                await admin.from('message_attachments').delete().eq('uploaded_by', uid);
             }
         }
 

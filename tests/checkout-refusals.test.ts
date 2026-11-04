@@ -128,25 +128,28 @@ function listingRow(overrides: any = {}) {
     };
 }
 
-// Three midweek nights in a month with no weekend in the way: 2026-11-02 is a
-// Monday, so the 2nd, 3rd and 4th are all £100 and the total is £300. Fixed
+// Three midweek nights in a month with no weekend in the way: 2027-11-01 is a
+// Monday, so the 1st, 2nd and 3rd are all £100 and the total is £300. Fixed
 // dates rather than offsets from today, so the arithmetic cannot start failing
-// on a Friday.
+// on a Friday. They must stay in the FUTURE, though: the route refuses a stay
+// that has started, so these went red on 2 November 2026 when the old dates
+// (2026-11-02) passed. Moved on 364 days (same weekdays) on 4 November 2026 —
+// move them again before November 2027.
 function bookingRow(overrides: any = {}) {
     return {
         id: 'b-1',
         listing_id: 'l-1',
         guest_id: GUEST,
         host_id: HOST,
-        check_in: '2026-11-02',
-        check_out: '2026-11-05',
+        check_in: '2027-11-01',
+        check_out: '2027-11-04',
         total_price: 300,
         status: 'pending',
         payment_status: 'unpaid',
         adults: 2,
         children: 0,
         pets: 0,
-        created_at: '2026-11-01T10:00:00Z',
+        created_at: '2027-10-31T10:00:00Z',
         ...overrides,
     };
 }
@@ -189,7 +192,7 @@ function load(opts: {
                         // normal state for somebody at checkout. The route walls
                         // on it (requireGuestTerms) before anything below.
                         if (table === 'agreement_acceptances') {
-                            return { data: { version: 'current', accepted_at: '2026-11-01T09:00:00Z' }, error: null };
+                            return { data: { version: 'current', accepted_at: '2027-10-31T09:00:00Z' }, error: null };
                         }
                         return { data: null, error: null };
                     };
@@ -351,7 +354,7 @@ test('a price that moved by a penny is still refused', async () => {
 
 test('a night blocked on the calendar stops the charge', async () => {
     const { route, stripeCalls } = load({
-        overrides: [{ date: '2026-11-03', is_blocked: true, price_override: null }],
+        overrides: [{ date: '2027-11-02', is_blocked: true, price_override: null }],
     });
     const res: any = await route.POST(post({ bookingId: 'b-1' }));
 
@@ -365,7 +368,7 @@ test('a night sold on Airbnb since the guest looked stops the charge', async () 
     // publish a file and tell us nothing, so the guest's calendar may be hours
     // stale. This is the last chance to catch it.
     const { route, stripeCalls } = load({
-        feeds: [{ id: 'f-1', label: 'Airbnb', events: [{ start: '2026-11-03', end: '2026-11-05' }] }],
+        feeds: [{ id: 'f-1', label: 'Airbnb', events: [{ start: '2027-11-02', end: '2027-11-04' }] }],
     });
     const res: any = await route.POST(post({ bookingId: 'b-1' }));
 
@@ -379,7 +382,7 @@ test('a feed blocking the checkout morning does not stop the charge', async () =
     // turns paying guests away, which is a failure nobody reports as a bug —
     // so it is asserted from the permissive side on purpose.
     const { route, stripeCalls } = load({
-        feeds: [{ id: 'f-1', label: 'Airbnb', events: [{ start: '2026-11-05', end: '2026-11-07' }] }],
+        feeds: [{ id: 'f-1', label: 'Airbnb', events: [{ start: '2027-11-04', end: '2027-11-06' }] }],
     });
     const res: any = await route.POST(post({ bookingId: 'b-1' }));
 
@@ -529,7 +532,7 @@ test('a listing that has gone is refused', async () => {
 
 test('dates that are not a stay are refused', async () => {
     const { route, stripeCalls } = load({
-        booking: bookingRow({ check_in: '2026-11-05', check_out: '2026-11-05', total_price: 0 }),
+        booking: bookingRow({ check_in: '2027-11-04', check_out: '2027-11-04', total_price: 0 }),
     });
     const res: any = await route.POST(post({ bookingId: 'b-1' }));
 
@@ -563,7 +566,7 @@ test('a deposit that would leave a half under the minimum is taken in full', asy
     // Far enough out that a deposit is offered (balance due 30 days before).
     // 30p a night, three nights: 90p. A quarter is 23p — under the minimum —
     // so the whole 90p is taken now and there is no balance to fail later.
-    const far = { check_in: '2027-03-01', check_out: '2027-03-04' };
+    const far = { check_in: '2028-02-28', check_out: '2028-03-02' };
     const small = load({
         listing: listingRow({ price_per_night: 0.3 }),
         booking: bookingRow({ ...far, total_price: 0.9 }),

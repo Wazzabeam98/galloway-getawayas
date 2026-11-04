@@ -116,6 +116,13 @@ test('the migration fixes the root cause: postgres default privileges drop the b
     assert.match(MIGRATION, /alter default privileges for role postgres in schema public revoke execute on functions from public, anon, authenticated;/);
 });
 
+// (#527 added an ON_TEST_FROM_UNMERGED_BRANCH exception on master so master's
+// live guard would tolerate has_hotel_permission appearing on shared TEST before
+// the hotel migration was on master. It is removed HERE on purpose: feat/hotels
+// carries migration 20261104070128, so the function is granted by a migration on
+// this branch and is decided in ALLOWED above — which is exactly what that
+// exception's own self-check instructed once its migration is on the checkout.)
+
 // DB half — the gate. Reads the live TEST grants, so a function created later
 // that nobody decided about fails by name.
 const url = testDbUrl();

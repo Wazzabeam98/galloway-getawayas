@@ -71,7 +71,12 @@ const SERVICE_ROLE_ONLY: ServiceOnly[] = [
     {
         table: 'hotel_access',
         migration: '20261104070128_hotels_phase_one_tables.sql',
-        reason: 'co-host grants on a hotel (owner_id\'s equals-by-permission), mirroring listing_access; service-role only in phase one — there is no co-host UI yet — and read only inside has_hotel_permission (SECURITY DEFINER), so it needs no browser grant',
+        reason: 'co-host grants on a hotel (owner\'s equals-by-permission), mirroring listing_access; service-role only in phase one — there is no co-host UI yet — and read only inside has_hotel_permission (SECURITY DEFINER), so it needs no browser grant',
+    },
+    {
+        table: 'message_attachments',
+        migration: '20261104093000_message_photos.sql',
+        reason: 'where each photo sent in a booking\'s messages is stored in the private message-attachments bucket; written by app/api/messages/threads/[bookingId]/photos and read by app/api/messages/photos/[id] (guest, host, co-host with messages, admin), both with the service role',
     },
 ];
 
