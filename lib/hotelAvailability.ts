@@ -87,6 +87,32 @@ function counts(b: OverlapBooking, holdCutoff: Date): boolean {
     return false;
 }
 
+// Rooms left on each night of a range, for the owner calendar: inventory minus
+// the rooms held that night, or 0 when the room type is closed (an is_blocked
+// override). `blocked` is the set of night keys the owner has closed.
+export function roomsLeftByNight(
+    bookings: OverlapBooking[],
+    inventory: number,
+    nightKeys: string[],
+    blocked: Set<string>,
+    now: Date = new Date(),
+): Record<string, number> {
+    const held: Record<string, number> = {};
+    const holdCutoff = new Date(now.getTime() - HOLD_MINUTES * 60_000);
+    for (const b of bookings) {
+        if (!counts(b, holdCutoff)) continue;
+        const rooms = Math.max(1, Math.floor(b.rooms_booked || 1));
+        for (const night of nightKeys) {
+            if (night >= b.check_in && night < b.check_out) held[night] = (held[night] || 0) + rooms;
+        }
+    }
+    const out: Record<string, number> = {};
+    for (const night of nightKeys) {
+        out[night] = blocked.has(night) ? 0 : Math.max(0, inventory - (held[night] || 0));
+    }
+    return out;
+}
+
 export interface Availability {
     available: boolean;
     roomsFree: number; // free on the tightest night of the stay

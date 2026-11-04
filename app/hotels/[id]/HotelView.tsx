@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Star, MapPin, Users, Maximize, Check, Coffee, BedDouble, Bath, Eye, Car, UtensilsCrossed } from 'lucide-react';
+import { Star, MapPin, Users, Maximize, Check, Coffee, BedDouble, Bath, Eye, Car, UtensilsCrossed, PawPrint } from 'lucide-react';
 import { getImageUrl } from '@/lib/utils';
 import { AGREEMENTS } from '@/lib/agreements';
 import AgreementTick from '@/components/legal/AgreementTick';
@@ -178,6 +178,9 @@ export default function HotelView({ hotel, roomTypes, preview = false }: { hotel
                                 )}
                                 {hotel.restaurant_hours && (
                                     <p className="mt-1 inline-flex items-center gap-2 text-sm text-slate-700"><UtensilsCrossed className="h-4 w-4 text-emerald-700" /> Restaurant: {hotel.restaurant_hours}</p>
+                                )}
+                                {(hotel.facilities || []).includes('Pets allowed') && (
+                                    <p className="mt-1 inline-flex items-center gap-2 text-sm text-slate-700"><PawPrint className="h-4 w-4 text-emerald-700" /> Pets allowed</p>
                                 )}
                             </section>
                         )}

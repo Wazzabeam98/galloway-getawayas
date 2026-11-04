@@ -444,6 +444,10 @@ export default function AddHome() {
         try { window.localStorage.setItem('gg.addhome.step.' + draftId, String(step)); } catch { /* ignore */ }
     }, [draftId, step]);
 
+    // Every step opens at the top of the page (Liam's walkthrough — same as the
+    // hotel wizard).
+    useEffect(() => { try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch { /* ignore */ } }, [step]);
+
     // Warn before leaving only while a change is genuinely unsaved.
     useEffect(() => {
         const warn = (e: BeforeUnloadEvent) => {

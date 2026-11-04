@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { getImageUrl } from '@/lib/utils';
-import { Pencil, Eye, Calendar, MessageSquare, Check } from 'lucide-react';
+import { Pencil, Eye, Calendar, CalendarCheck, MessageSquare, Check } from 'lucide-react';
 
 type Room = { id: string; name: string; inventory_count: number; price_per_night: number; breakfast_included: boolean };
 type Hotel = { id: string; name: string; status: string; property_type: string; location: string | null; images: string[] | null };
@@ -63,7 +63,8 @@ function HotelCard({ hotel, rooms, bookings }: { hotel: Hotel; rooms: Room[]; bo
                     <div className="mt-2 flex flex-wrap gap-2">
                         <Link href={`/addhotel?draft=${hotel.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Pencil className="h-3.5 w-3.5" /> Edit</Link>
                         {hotel.status === 'published' && <Link href={`/hotels/${hotel.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Eye className="h-3.5 w-3.5" /> View</Link>}
-                        <Link href={`/hotels/dashboard/bookings?hotel=${hotel.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Calendar className="h-3.5 w-3.5" /> Bookings</Link>
+                        <Link href={`/hotels/dashboard/calendar?hotel=${hotel.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Calendar className="h-3.5 w-3.5" /> Availability</Link>
+                        <Link href={`/hotels/dashboard/bookings?hotel=${hotel.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><CalendarCheck className="h-3.5 w-3.5" /> Bookings</Link>
                         <Link href="/messages" className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageSquare className="h-3.5 w-3.5" /> Messages</Link>
                     </div>
                 </div>

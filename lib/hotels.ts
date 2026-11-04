@@ -77,22 +77,19 @@ export const HOTEL_FACILITIES: string[] = [
     'EV charging',
 ];
 
-// Booking.com's bed types (their largest is "Extra-large double / King"). We
-// keep super king too — a deliberate addition over Booking.com's set.
-export const BED_TYPES = ['single', 'twin', 'double', 'queen', 'king', 'super_king', 'sofa_bed', 'bunk', 'futon', 'cot'] as const;
+// The bed types a room can have (Liam's list). Each bed row in the editor is a
+// type picked from here plus a count.
+export const BED_TYPES = ['single', 'double', 'king', 'super_king', 'sofa_bed', 'bunk', 'cot'] as const;
 export type BedType = (typeof BED_TYPES)[number];
 
 export const BED_LABELS: Record<BedType, string> = {
     single: 'Single bed',
-    twin: 'Twin beds',
     double: 'Double bed',
-    queen: 'Queen bed',
     king: 'King bed',
     super_king: 'Super king bed',
     sofa_bed: 'Sofa bed',
     bunk: 'Bunk bed',
-    futon: 'Futon',
-    cot: 'Cot / crib',
+    cot: 'Cot',
 };
 
 export type BedConfigEntry = { type: BedType; count: number };

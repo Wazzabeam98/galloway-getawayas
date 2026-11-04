@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import Env from '@/config/Env';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage, readImageDimensions } from '@/lib/compressImage';
-import { photoDimensionProblem } from '@/lib/photoRules';
+import { tinyImageProblem } from '@/lib/photoRules';
 import EmailFirstStep from '@/components/auth/EmailFirstStep';
 import { requireName } from '@/components/auth/FinishSignUpGate';
 import AgreementTick, { recordAgreement } from '@/components/legal/AgreementTick';
@@ -18,13 +18,22 @@ import {
     type DraftRoomType, type PublishableHotel,
 } from '@/lib/hotels';
 import { HOTEL_FACILITY_CATEGORIES, PARKING_OPTIONS } from '@/lib/hotelFacilities';
-import { Counter, TimeSelect, PillChoice, bigInputCls } from '@/components/hotel-wizard/parts';
+import { PillChoice, bigInputCls } from '@/components/hotel-wizard/parts';
 import RoomEditor from '@/components/hotel-wizard/RoomEditor';
+import RestaurantHours, { restaurantSummary, type RestaurantSchedule } from '@/components/hotel-wizard/RestaurantHours';
+import { HouseRulesCard, type HouseRules } from '@/components/listing-editor/ArrivalCards';
+import { CUSTOM_MIN_DAYS, CUSTOM_MAX_DAYS } from '@/lib/cancellation';
 import HotelView from '@/app/hotels/[id]/HotelView';
-import { Trash2, Plus, Star, Pencil, Check } from 'lucide-react';
+import { Trash2, Plus, Star, Pencil, Check, ChevronLeft } from 'lucide-react';
 
 type RoomDraft = Partial<DraftRoomType> & { id?: string };
-const CANCELLATION_KEYS = ['Flexible', 'Moderate', 'Limited', 'Firm'] as const;
+const CANCELLATION_KEYS = ['Flexible', 'Moderate', 'Limited', 'Firm', 'Custom'] as const;
+
+const EMPTY_HOUSE_RULES: HouseRules = {
+    petsAllowed: false, maxPets: 2, eventsAllowed: false, smokingAllowed: false,
+    commercialPhotographyAllowed: false, quietHoursEnabled: false,
+    quietHoursStart: '22:00', quietHoursEnd: '07:00', additionalRules: '',
+};
 
 export default function AddHotelPage() {
     const [userId, setUserId] = useState<string | null>(null);
@@ -82,15 +91,17 @@ function Wizard({ userId }: { userId: string }) {
     const [facilities, setFacilities] = useState<string[]>([]);
     const [parkingType, setParkingType] = useState('none');
     const [parkingPrice, setParkingPrice] = useState<number | ''>('');
-    const [restaurantHours, setRestaurantHours] = useState('');
+    const [restaurantSchedule, setRestaurantSchedule] = useState<RestaurantSchedule>({});
     const [photos, setPhotos] = useState<string[]>([]);
     const [checkIn, setCheckIn] = useState('15:00');
+    const [checkInEnd, setCheckInEnd] = useState('');
     const [checkOut, setCheckOut] = useState('11:00');
     const [cancellation, setCancellation] = useState('Flexible');
+    const [customDays, setCustomDays] = useState(30);
     const [description, setDescription] = useState('');
     const [vatRegistered, setVatRegistered] = useState(false);
     const [vatNumber, setVatNumber] = useState('');
-    const [houseRules, setHouseRules] = useState('');
+    const [houseRules, setHouseRules] = useState<HouseRules>(EMPTY_HOUSE_RULES);
     const [agreed, setAgreed] = useState(false);
     const [rooms, setRooms] = useState<RoomDraft[]>([]);
     const [roomEditor, setRoomEditor] = useState<{ index: number | null } | null>(null);
@@ -98,15 +109,30 @@ function Wizard({ userId }: { userId: string }) {
     const streetAddress = [flat, street].filter(Boolean).join(', ');
     const location = city ? `${city}, Dumfries and Galloway` : '';
 
+    // Pets are a house rule (asked once); store it as the 'Pets allowed' facility
+    // so the public page lists it, keeping the facilities array the single home
+    // for the chips the grid shows.
+    const facilitiesOut = [...facilities.filter((f) => f !== 'Pets allowed'), ...(houseRules.petsAllowed ? ['Pets allowed'] : [])];
+
     function patch() {
         return {
             name, property_type: propertyType || null, star_rating: star === '' ? null : Number(star),
             street_address: streetAddress || null, postcode: postcode || null, location: location || null,
-            facilities, parking_type: parkingType, parking_price: parkingPrice === '' ? null : Number(parkingPrice),
-            restaurant_hours: restaurantHours || null, images: photos,
-            check_in_time: checkIn, check_out_time: checkOut,
-            cancellation_policy: cancellation, description: description || null,
-            vat_registered: vatRegistered, vat_number: vatNumber || null, house_rules: houseRules || null,
+            facilities: facilitiesOut, parking_type: parkingType, parking_price: parkingPrice === '' ? null : Number(parkingPrice),
+            restaurant_schedule: restaurantSchedule, restaurant_hours: restaurantSummary(restaurantSchedule) || null,
+            images: photos,
+            check_in_time: checkIn, check_in_end_time: checkInEnd || null, check_out_time: checkOut,
+            cancellation_policy: cancellation,
+            cancellation_custom_days: cancellation === 'Custom' ? customDays : null,
+            description: description || null,
+            vat_registered: vatRegistered, vat_number: vatNumber || null,
+            // House rules (parity with the holiday-let HouseRulesCard).
+            events_allowed: houseRules.eventsAllowed, smoking_allowed: houseRules.smokingAllowed,
+            commercial_photography_allowed: houseRules.commercialPhotographyAllowed,
+            quiet_hours_enabled: houseRules.quietHoursEnabled, quiet_hours_start: houseRules.quietHoursStart,
+            quiet_hours_end: houseRules.quietHoursEnd, additional_rules: houseRules.additionalRules || null,
+            max_pets: houseRules.petsAllowed ? houseRules.maxPets : null,
+            house_rules: houseRules.additionalRules || null,
         };
     }
     function hotelForRules(): PublishableHotel {
@@ -130,7 +156,7 @@ function Wizard({ userId }: { userId: string }) {
         try { savedStep = Number(window.localStorage.getItem('gg.addhotel.step.' + draft)); } catch { /* ignore */ }
         (async () => {
             const { data: h } = await supabase.from('hotels')
-                .select('name, property_type, star_rating, street_address, postcode, location, facilities, parking_type, parking_price, restaurant_hours, images, check_in_time, check_out_time, cancellation_policy, description, vat_registered, house_rules')
+                .select('name, property_type, star_rating, street_address, postcode, location, facilities, parking_type, parking_price, restaurant_schedule, images, check_in_time, check_in_end_time, check_out_time, cancellation_policy, cancellation_custom_days, description, vat_registered, additional_rules, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, max_pets')
                 .eq('id', draft).maybeSingle();
             if (!h) return;
             setHotelId(draft);
@@ -139,12 +165,21 @@ function Wizard({ userId }: { userId: string }) {
             const sa = (h.street_address || '').split(', ');
             if (sa.length > 1) { setFlat(sa[0]); setStreet(sa.slice(1).join(', ')); } else setStreet(h.street_address || '');
             setCity((h.location || '').replace(/, Dumfries and Galloway$/, ''));
-            setPostcode(h.postcode || ''); setFacilities(h.facilities || []);
+            setPostcode(h.postcode || '');
+            const loadedFacilities: string[] = h.facilities || [];
+            setFacilities(loadedFacilities);
             setParkingType(h.parking_type || 'none'); setParkingPrice(h.parking_price ?? '');
-            setRestaurantHours(h.restaurant_hours || ''); setPhotos((h.images || []).filter(Boolean));
-            setCheckIn((h.check_in_time || '15:00').slice(0, 5)); setCheckOut((h.check_out_time || '11:00').slice(0, 5));
-            setCancellation(h.cancellation_policy || 'Flexible'); setDescription(h.description || '');
-            setVatRegistered(!!h.vat_registered); setHouseRules(h.house_rules || '');
+            setRestaurantSchedule((h.restaurant_schedule as any) || {}); setPhotos((h.images || []).filter(Boolean));
+            setCheckIn((h.check_in_time || '15:00').slice(0, 5)); setCheckInEnd((h.check_in_end_time || '').slice(0, 5)); setCheckOut((h.check_out_time || '11:00').slice(0, 5));
+            setCancellation(h.cancellation_policy || 'Flexible'); setCustomDays(h.cancellation_custom_days ?? 30); setDescription(h.description || '');
+            setVatRegistered(!!h.vat_registered);
+            setHouseRules({
+                petsAllowed: loadedFacilities.includes('Pets allowed'), maxPets: h.max_pets ?? 2,
+                eventsAllowed: !!h.events_allowed, smokingAllowed: !!h.smoking_allowed,
+                commercialPhotographyAllowed: !!h.commercial_photography_allowed,
+                quietHoursEnabled: !!h.quiet_hours_enabled, quietHoursStart: (h.quiet_hours_start || '22:00').slice(0, 5),
+                quietHoursEnd: (h.quiet_hours_end || '07:00').slice(0, 5), additionalRules: h.additional_rules || '',
+            });
             const { data: rt } = await supabase.from('hotel_room_types').select('*').eq('hotel_id', draft).order('sort_order', { ascending: true });
             if (rt) setRooms(rt as any);
             if (savedStep >= 1 && savedStep <= HOTEL_TOTAL_STEPS) setStep(savedStep);
@@ -202,6 +237,9 @@ function Wizard({ userId }: { userId: string }) {
         return () => window.removeEventListener('beforeunload', warn);
     }, [autosave]);
 
+    // Every step opens at the top of the page (Liam's walkthrough).
+    useEffect(() => { try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch { /* ignore */ } }, [step]);
+
     // ---- rooms: save on add/edit/remove ---------------------------------------
     async function commitRooms(next: RoomDraft[]) {
         setRooms(next);
@@ -225,7 +263,7 @@ function Wizard({ userId }: { userId: string }) {
         for (const file of Array.from(files)) {
             try {
                 const dim = await readImageDimensions(file);
-                const dimProblem = photoDimensionProblem(dim.width, dim.height);
+                const dimProblem = tinyImageProblem(dim.width, dim.height);
                 if (dimProblem) { setFormError(dimProblem); continue; }
                 const ready = await compressImage(file);
                 const path = `hotel-${Date.now()}_${generateRandomNumber()}.jpg`;
@@ -269,9 +307,10 @@ function Wizard({ userId }: { userId: string }) {
     const previewHotel = {
         id: hotelId || 'preview', name, description: description || null, star_rating: star === '' ? null : Number(star),
         property_type: propertyType || null, location, street_address: streetAddress,
-        check_in_time: checkIn, check_out_time: checkOut, facilities, house_rules: houseRules || null,
+        check_in_time: checkIn, check_out_time: checkOut, facilities: facilitiesOut, house_rules: houseRules.additionalRules || null,
         cancellation_policy: cancellation, images: photos, parking_type: parkingType,
-        parking_price: parkingPrice === '' ? null : Number(parkingPrice), restaurant_hours: restaurantHours || null,
+        parking_price: parkingPrice === '' ? null : Number(parkingPrice),
+        restaurant_hours: restaurantSummary(restaurantSchedule) || null,
     };
     const previewRooms = rooms.map((r, i) => ({
         id: r.id || 'r' + i, name: r.name || 'Room', description: r.description || null,
@@ -286,6 +325,11 @@ function Wizard({ userId }: { userId: string }) {
     return (
         <main className="min-h-screen bg-slate-50">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 w-full">
+                {/* Back, top-left of every step (Liam's walkthrough). */}
+                <button type="button" onClick={goBack} disabled={publishing}
+                    className="mb-4 inline-flex items-center gap-1 text-sm font-semibold text-slate-600 hover:text-slate-900">
+                    <ChevronLeft className="h-4 w-4" /> Back
+                </button>
                 {/* Segmented progress bar, as /addhome */}
                 <div className="flex space-x-1 mb-2">
                     {Array.from({ length: HOTEL_TOTAL_STEPS }).map((_, i) => (
@@ -378,9 +422,10 @@ function Wizard({ userId }: { userId: string }) {
                                 </Field>
                             )}
                             {facilities.includes('Restaurant') && (
-                                <Field label="Restaurant opening hours">
-                                    <input value={restaurantHours} onChange={(e) => setRestaurantHours(e.target.value)} placeholder="e.g. Breakfast 7–10, Dinner 6–9" className={bigInputCls} />
-                                </Field>
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Restaurant opening hours</label>
+                                    <RestaurantHours value={restaurantSchedule} onChange={setRestaurantSchedule} />
+                                </div>
                             )}
                         </div>
                     </Step>
@@ -408,15 +453,27 @@ function Wizard({ userId }: { userId: string }) {
                 )}
 
                 {step === HOTEL_STEPS.TIMES && (
-                    <Step title="Check-in and check-out">
-                        <div className="grid grid-cols-2 gap-3">
-                            <Field label="Check-in from"><TimeSelect value={checkIn} onChange={setCheckIn} /></Field>
-                            <Field label="Check-out by"><TimeSelect value={checkOut} onChange={setCheckOut} /></Field>
+                    <Step title="Check-in and house rules" hint="Guests see these on your listing and in their booking confirmation.">
+                        {/* The holiday-let flow's exact time fields — native inputs. */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg">
+                            <div>
+                                <label className="text-xs text-slate-500">Check-in from</label>
+                                <input type="time" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-500">Check-in until</label>
+                                <input type="time" value={checkInEnd} onChange={(e) => setCheckInEnd(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                <p className="text-xs text-slate-400 mt-1">Optional.</p>
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-500">Checkout by</label>
+                                <input type="time" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                            </div>
                         </div>
-                        <div className="mt-6">
-                            <Field label="House rules (optional)">
-                                <textarea value={houseRules} onChange={(e) => setHouseRules(e.target.value)} rows={3} className={bigInputCls} placeholder="No smoking indoors. Well-behaved dogs welcome." />
-                            </Field>
+                        {/* The holiday-let House rules component, reused as-is. */}
+                        <div className="mt-8">
+                            <h3 className="text-base font-bold text-slate-900 mb-2">House rules</h3>
+                            <HouseRulesCard rules={houseRules} onSave={(r) => { setHouseRules(r); return true; }} />
                         </div>
                     </Step>
                 )}
@@ -425,18 +482,27 @@ function Wizard({ userId }: { userId: string }) {
                     <Step title="Cancellation policy" hint="The same policies as our holiday lets.">
                         <div className="space-y-3">
                             {CANCELLATION_KEYS.map((key) => {
-                                const d = cancellationDisplay(key);
+                                const d = cancellationDisplay(key, key === 'Custom' ? customDays : undefined);
                                 const on = cancellation === key;
                                 return (
                                     <button key={key} type="button" onClick={() => setCancellation(key)}
                                         className={`w-full text-left rounded-2xl border-2 p-4 transition ${on ? 'border-emerald-700 bg-emerald-50/40' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                                         <div className="flex items-center justify-between">
-                                            <span className="font-semibold text-slate-900">{key}</span>
+                                            <span className="font-semibold text-slate-900">{key === 'Custom' ? 'Custom' : key}</span>
                                             {on && <Check className="h-5 w-5 text-emerald-700" />}
                                         </div>
                                         <ul className="mt-1 space-y-0.5">
                                             {d.bullets.map((b) => <li key={b} className="text-sm text-slate-600">· {b}</li>)}
                                         </ul>
+                                        {key === 'Custom' && on && (
+                                            <div className="mt-3 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                                <span className="text-sm text-slate-600">Full refund up to</span>
+                                                <input type="number" min={CUSTOM_MIN_DAYS} max={CUSTOM_MAX_DAYS} value={customDays}
+                                                    onChange={(e) => setCustomDays(Math.max(CUSTOM_MIN_DAYS, Math.min(CUSTOM_MAX_DAYS, Number(e.target.value))))}
+                                                    className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                                                <span className="text-sm text-slate-600">days before check-in</span>
+                                            </div>
+                                        )}
                                     </button>
                                 );
                             })}
@@ -455,8 +521,8 @@ function Wizard({ userId }: { userId: string }) {
                     </Step>
                 )}
 
-                <div className="mt-8 flex items-center justify-between">
-                    <button type="button" onClick={goBack} disabled={publishing} className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100">Back</button>
+                {/* Next / Publish, bottom-right (Back is at the top). */}
+                <div className="mt-8 flex justify-end">
                     {step < HOTEL_TOTAL_STEPS ? (
                         <button type="button" onClick={goNext} className="rounded-xl bg-emerald-700 px-6 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">Next</button>
                     ) : (

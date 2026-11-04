@@ -87,6 +87,25 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: `This room has a minimum stay of ${roomType.min_nights} night(s).` }, { status: 400 });
         }
 
+        // The room-type calendar: any night the owner CLOSED blocks the booking,
+        // and seasonal price overrides are applied to the quote below.
+        const { data: overrideRows } = await admin
+            .from('hotel_room_overrides')
+            .select('date, is_blocked, price_override')
+            .eq('room_type_id', roomType.id)
+            .gte('date', checkIn)
+            .lt('date', checkOut);
+        const priceOverrides: Record<string, number> = {};
+        let anyBlocked = false;
+        (overrideRows || []).forEach((r: any) => {
+            const key = String(r.date).slice(0, 10);
+            if (r.is_blocked) anyBlocked = true;
+            if (r.price_override != null) priceOverrides[key] = Number(r.price_override);
+        });
+        if (anyBlocked) {
+            return NextResponse.json({ ok: false, error: 'Sorry — that room is closed for one of those nights.' }, { status: 409 });
+        }
+
         // Are there rooms of this type free across every night? (Counting, not
         // the cottage uniqueness constraint — lib/hotelAvailability.)
         const avail = await roomsAvailable(admin, { id: roomType.id, inventory_count: roomType.inventory_count }, checkIn, checkOut, 1);
@@ -107,8 +126,9 @@ export async function POST(request: Request) {
         if (!terms.ok) return NextResponse.json(terms.body, { status: terms.status });
         const guestTermsMeta = anonGuestTermsMetadata(terms.stamp!);
 
-        // Recompute the price from the room type. The browser never sets the total.
-        const quote = quoteHotelStay({ price_per_night: Number(roomType.price_per_night) }, checkIn, checkOut, 1);
+        // Recompute the price from the room type, with any seasonal overrides.
+        // The browser never sets the total.
+        const quote = quoteHotelStay({ price_per_night: Number(roomType.price_per_night) }, checkIn, checkOut, 1, priceOverrides);
 
         // Commission is frozen onto the booking now (hotel's rate, else the 10%
         // default), exactly as a cottage freezes rateFor(listing). The payout

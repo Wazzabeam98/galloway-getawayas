@@ -91,14 +91,20 @@ export default function RoomEditor({ initial, onSave, onClose }: {
                     </div>
 
                     <Section title="Beds">
+                        <p className="-mt-1 mb-2 text-xs text-slate-500">Pick a bed type and how many of it this room has.</p>
                         <div className="space-y-2">
                             {beds.map((b, i) => (
                                 <div key={i} className="flex items-center gap-2">
-                                    <select value={b.type} onChange={(e) => set({ bed_config: beds.map((x, idx) => idx === i ? { ...x, type: e.target.value as any } : x) })} className={`${bigInputCls} flex-1`}>
+                                    {/* flex-1 + min-w-0 so the type select keeps its width; the count
+                                        is a fixed box — NOT bigInputCls, whose w-full would collapse the select. */}
+                                    <select value={b.type} onChange={(e) => set({ bed_config: beds.map((x, idx) => idx === i ? { ...x, type: e.target.value as any } : x) })}
+                                        className="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 bg-white">
                                         {BED_TYPES.map((t) => <option key={t} value={t}>{BED_LABELS[t]}</option>)}
                                     </select>
-                                    <input type="number" min={1} value={b.count} onChange={(e) => set({ bed_config: beds.map((x, idx) => idx === i ? { ...x, count: Math.max(1, Number(e.target.value)) } : x) })} className={`${bigInputCls} w-20`} />
-                                    <button type="button" onClick={() => set({ bed_config: beds.filter((_, idx) => idx !== i) })} className="text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
+                                    <input type="number" min={1} value={b.count} aria-label="How many"
+                                        onChange={(e) => set({ bed_config: beds.map((x, idx) => idx === i ? { ...x, count: Math.max(1, Number(e.target.value)) } : x) })}
+                                        className="w-16 shrink-0 rounded-lg border border-slate-300 px-2 py-2.5 text-sm text-slate-900 text-center" />
+                                    <button type="button" onClick={() => set({ bed_config: beds.filter((_, idx) => idx !== i) })} className="shrink-0 text-slate-400 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
                                 </div>
                             ))}
                             <button type="button" onClick={() => set({ bed_config: [...beds, { type: 'double', count: 1 }] })} className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-700 hover:text-emerald-800"><Plus className="h-4 w-4" /> Add a bed</button>

@@ -31,7 +31,11 @@ const WRITABLE = new Set([
     'street_address', 'postcode', 'check_in_time', 'check_in_end_time',
     'check_out_time', 'facilities', 'house_rules', 'cancellation_policy',
     'cancellation_custom_days', 'vat_registered', 'vat_number', 'images',
-    'parking_type', 'parking_price', 'restaurant_hours',
+    'parking_type', 'parking_price', 'restaurant_hours', 'restaurant_schedule',
+    // House rules (parity with the holiday-let HouseRulesCard).
+    'events_allowed', 'smoking_allowed', 'commercial_photography_allowed',
+    'quiet_hours_enabled', 'quiet_hours_start', 'quiet_hours_end',
+    'additional_rules', 'max_pets',
 ]);
 
 function clean(patch: Record<string, any>): Record<string, any> {

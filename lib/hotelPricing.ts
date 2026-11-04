@@ -32,19 +32,26 @@ export function quoteHotelStay(
     checkInKey: string,
     checkOutKey: string,
     rooms: number = 1,
+    // Per-night seasonal prices from the room-type calendar (date key → price).
+    // A night not in the map uses the room type's base price.
+    overrides: Record<string, number> = {},
 ): PriceQuote {
     const nights = nightsBetween(dateFromKey(checkInKey), dateFromKey(checkOutKey));
     const roomCount = Math.max(1, Math.floor(rooms || 1));
-    const rate = Number(roomType.price_per_night) || 0;
+    const base = Number(roomType.price_per_night) || 0;
 
     const nightly: NightRate[] = [];
+    let nightsSubtotal = 0;
     let cursor = dateFromKey(checkInKey);
     for (let i = 0; i < nights; i++) {
-        nightly.push({ date: isoKey(cursor), rate: money(rate * roomCount), kind: 'base' });
+        const key = isoKey(cursor);
+        const over = overrides[key];
+        const rate = over != null ? Number(over) : base;
+        nightly.push({ date: key, rate: money(rate * roomCount), kind: over != null ? 'override' : 'base' });
+        nightsSubtotal += rate * roomCount;
         cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
     }
-
-    const nightsSubtotal = money(rate * roomCount * nights);
+    nightsSubtotal = money(nightsSubtotal);
 
     return {
         nights,
