@@ -68,6 +68,11 @@ const SERVICE_ROLE_ONLY: ServiceOnly[] = [
         migration: '20261022111408_host_referrals.sql',
         reason: 'who referred whom plus the reward ledger (reward_amount is a money column); attached by the auth callback and listings/publish, waived+stamped by the host-payouts cron, marked paid via /api/admin/referrals, all with the service role',
     },
+    {
+        table: 'hotel_access',
+        migration: '20261104070128_hotels_phase_one_tables.sql',
+        reason: 'co-host grants on a hotel (owner_id\'s equals-by-permission), mirroring listing_access; service-role only in phase one — there is no co-host UI yet — and read only inside has_hotel_permission (SECURITY DEFINER), so it needs no browser grant',
+    },
 ];
 
 const code = (sql: string) => sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
