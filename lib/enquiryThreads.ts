@@ -7,6 +7,7 @@
 // the routes can authorise and name the other side.
 
 import { cohostCan, providerIdsWith } from './providerAccess';
+import { messagePreview } from './messagePhotos';
 
 export type EnquiryThreadContext = {
     enquiry: any;
@@ -87,7 +88,7 @@ export async function listEnquiryThreadsFor(admin: any, uid: string): Promise<Th
     const ids = rows.map((e: any) => e.id);
     const { data: msgs } = await admin
         .from('messages')
-        .select('enquiry_id, body, created_at, recipient_id, read_at')
+        .select('enquiry_id, body, created_at, recipient_id, read_at, photo_count')
         .in('enquiry_id', ids)
         .order('created_at', { ascending: false });
 
@@ -106,7 +107,7 @@ export async function listEnquiryThreadsFor(admin: any, uid: string): Promise<Th
             status: e.status,
             otherName: isHost ? String(e.business_name || 'The tradesman') : String(e.host_name || 'The host'),
             summary: e.summary,
-            lastBody: last[e.id] ? String(last[e.id].body) : null,
+            lastBody: last[e.id] ? messagePreview(last[e.id].body, last[e.id].photo_count) : null,
             lastAt: last[e.id] ? String(last[e.id].created_at) : null,
             unread: unread[e.id] || 0,
             cancelled: e.status === 'cancelled',

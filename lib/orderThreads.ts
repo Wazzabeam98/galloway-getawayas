@@ -9,6 +9,7 @@
 
 import { displayName } from '@/lib/utils';
 import { cohostCan, providerIdsWith } from './providerAccess';
+import { messagePreview } from './messagePhotos';
 
 export interface OrderThreadContext {
     order: {
@@ -66,7 +67,7 @@ export async function listProviderOrderThreads(admin: any, uid: string): Promise
     const ids = rows.map((o: any) => o.id);
     const { data: msgs } = await admin
         .from('messages')
-        .select('order_id, body, created_at, recipient_id, read_at')
+        .select('order_id, body, created_at, recipient_id, read_at, photo_count')
         .in('order_id', ids)
         .order('created_at', { ascending: false });
 
@@ -90,7 +91,7 @@ export async function listProviderOrderThreads(admin: any, uid: string): Promise
             orderId: o.id,
             otherName: o.guest_name || 'Guest',
             subtitle: (o.item_name || 'Experience') + (o.service_date ? ' · ' + String(o.service_date) : ''),
-            lastBody: last[o.id] ? String(last[o.id].body) : null,
+            lastBody: last[o.id] ? messagePreview(last[o.id].body, last[o.id].photo_count) : null,
             lastAt: last[o.id] ? String(last[o.id].created_at) : null,
             unread: unread[o.id] || 0,
             ended: o.status === 'cancelled' || o.status === 'refunded',

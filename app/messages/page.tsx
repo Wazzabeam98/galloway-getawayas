@@ -606,9 +606,11 @@ export default function MessagesInboxPage() {
         const { kind, id } = splitKey(activeId);
         setSending(true);
 
-        if (kind === 'booking' && photos.length > 0) {
+        if (photos.length > 0) {
             // Photos go through the server: they land in a private bucket only
-            // it can write, and it checks every file again.
+            // it can write, and it checks every file again. A booking has its
+            // own photos route (its words go straight from the browser); an
+            // order or enquiry sends photos to the same route as its words.
             const form = new FormData();
             form.append('body', outgoing);
             photos.forEach((p) => {
@@ -619,7 +621,8 @@ export default function MessagesInboxPage() {
             });
             let d: any = null;
             try {
-                const res = await fetch('/api/messages/threads/' + id + '/photos', { method: 'POST', body: form });
+                const url = kind === 'booking' ? '/api/messages/threads/' + id + '/photos' : THREAD_GET[kind](id);
+                const res = await fetch(url, { method: 'POST', body: form });
                 d = await res.json().catch(() => null);
                 if (!res.ok && !d) d = { ok: false, error: res.status === 413 ? 'Those photos are too large to send together. Try fewer at once.' : null };
             } catch {
@@ -634,9 +637,14 @@ export default function MessagesInboxPage() {
                 setThread((prev: any) => prev && !prev.messages.some((m: any) => m.id === d.message.id)
                     ? { ...prev, messages: prev.messages.concat(d.message) } : prev);
             }
-            markRead(activeId);
-            notify('new_message', id, outgoing);
-            setAskPush(true);
+            if (kind === 'booking') {
+                markRead(activeId);
+                notify('new_message', id, outgoing);
+                setAskPush(true);
+            } else {
+                // The route sent the email and marked the thread read.
+                recountBadges();
+            }
         } else if (kind === 'booking') {
             const { error } = await supabase.from('messages').insert({
                 booking_id: id,
@@ -715,9 +723,9 @@ export default function MessagesInboxPage() {
         );
     };
 
-    // Photos are for booking threads, and for the people who may see them
-    // (not a companion on the trip) — the server says which.
-    const canAttach = !!thread && splitKey(activeId).kind === 'booking' && thread.photosVisible === true;
+    // Photos are for the people in the conversation (not a companion on a
+    // trip) — every thread's route says which with photosVisible.
+    const canAttach = !!thread && thread.photosVisible === true;
     const addPhotos = (more: PreparedPhoto[]) => setPhotos((prev) => prev.concat(more));
     const removePhoto = (i: number) => setPhotos((prev) => {
         const gone = prev[i];

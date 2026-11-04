@@ -161,21 +161,41 @@ test('photos are private: a private bucket, a table the browser cannot reach, op
 
     const serve = read('app/api/messages/photos/[id]/route.ts');
     assert.match(serve, /auth\.getUser\(\)/, 'verified identity, never getSession');
-    assert.match(serve, /bookingPhotoRole\(admin, user\.id, att\.booking_id, \{ allowAdmin: true \}\)/, 'checked against the booking the photo belongs to');
+    assert.match(serve, /threadOfAttachment\(att\)/, 'checked against the conversation the photo belongs to');
+    assert.match(serve, /mayViewThreadPhotos\(admin, user\.id, thread\.kind, thread\.id\)/);
     assert.match(serve, /createSignedUrl\(key, SIGNED_URL_SECONDS\)/);
     assert.doesNotMatch(serve, /getPublicUrl/);
 
-    const upload = read('app/api/messages/threads/[bookingId]/photos/route.ts');
-    assert.match(upload, /auth\.getUser\(\)/);
-    assert.match(upload, /bookingPhotoRole\(admin, user\.id, params\.bookingId, \{ allowAdmin: false \}\)/);
+    // One upload path for every kind of thread.
+    const upload = read('lib/messagePhotoUpload.ts');
     assert.match(upload, /checkStoredPhoto\(raw\)/);
     assert.match(upload, /stripImageMetadata\(raw, ok\.type\)/);
+    assert.match(upload, /rpc\('send_thread_message_with_photos'/);
+    assert.doesNotMatch(upload, /getPublicUrl/);
+    const routes: [string, RegExp][] = [
+        ['app/api/messages/threads/[bookingId]/photos/route.ts', /bookingPhotoRole\(admin, user\.id, params\.bookingId, \{ allowAdmin: false \}\)/],
+        ['app/api/messages/order/[orderId]/route.ts', /orderThreadContext\(admin, orderId, user\.id\)/],
+        ['app/api/messages/enquiry/[enquiryId]/route.ts', /enquiryThreadContext\(admin, enquiryId, user\.id\)/],
+    ];
+    for (const [f, gate] of routes) {
+        const src = read(f);
+        assert.match(src, /auth\.getUser\(\)/, f);
+        assert.match(src, gate, f + ': sends only for the people in the conversation');
+        assert.match(src, /readPhotoForm\(/, f + ': the shared upload path');
+        assert.match(src, /storePhotoMessage\(admin/, f);
+    }
 
     const access = read('lib/messagePhotoAccess.ts');
     assert.match(access, /checkListing\(uid, booking\.listing_id, 'can_messages'\)/, 'co-hosts need the messages permission');
+    assert.match(access, /orderThreadContext\(admin, threadId, uid\)/, 'order photos: the guest and the business side only');
+    assert.match(access, /enquiryThreadContext\(admin, threadId, uid\)/, 'enquiry photos: the host and the trade side only');
+
+    const every = read('supabase/migrations/20261104120000_message_photos_every_thread.sql');
+    assert.match(every, /check \(num_nonnulls\(booking_id, order_id, enquiry_id\) = 1\)/, 'a photo belongs to exactly one conversation');
+    assert.match(every, /revoke all on function public\.send_thread_message_with_photos\(text, uuid, uuid, uuid, text, jsonb\) from authenticated;/);
 
     // Nothing in the browser ever reads the bucket directly.
-    for (const f of ['app/messages/page.tsx', 'components/messages/MessagePhotos.tsx']) {
+    for (const f of ['app/messages/page.tsx', 'components/messages/MessagePhotos.tsx', 'components/marketplace/OrderThread.tsx']) {
         assert.doesNotMatch(read(f), /message-attachments|storage\.from/, f);
     }
 });

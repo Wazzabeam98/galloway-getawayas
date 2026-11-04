@@ -5,6 +5,8 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { drainOutbox } from '@/lib/pushDispatch';
 import { logError } from '@/lib/logError';
 import { markThreadRead } from '@/lib/threadReads';
+import { readPhotoForm, storePhotoMessage, attachmentsFor } from '@/lib/messagePhotoUpload';
+import { messagePreview, photoLabel } from '@/lib/messagePhotos';
 import { enquiryThreadContext } from '@/lib/enquiryThreads';
 import { requestedWhen, windowsClash, windowPhrase } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
@@ -38,9 +40,13 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
 
         const { data: messages } = await admin
             .from('messages')
-            .select('id, sender_id, body, created_at, read_at')
+            .select('id, sender_id, body, created_at, read_at, photo_count')
             .eq('enquiry_id', params.enquiryId)
             .order('created_at', { ascending: true });
+        // Photos: ids only, opened through the gated /api/messages/photos route.
+        // Everyone this route lets in is in the conversation, so all see them.
+        const photoMap = await attachmentsFor(admin, 'enquiry', params.enquiryId, messages || []);
+        const withPhotos = (messages || []).map((m: any) => ({ ...m, attachments: photoMap[m.id] || [] }));
 
         // Opening the thread reads it — this viewer's inbound messages, and
         // their place in it if they answer for the business (lib/threadReads).
@@ -162,7 +168,8 @@ export async function GET(_req: Request, { params }: { params: { enquiryId: stri
                     : null,
                 reservation,
             },
-            messages: messages || [],
+            photosVisible: true,
+            messages: withPhotos,
         });
     } catch (err: any) {
         await logError('enquiry-thread-get', err);
@@ -176,17 +183,41 @@ export async function POST(req: Request, { params }: { params: { enquiryId: stri
         if (p.error) return p.error;
         const { admin, ctx, uid } = p;
 
-        const body = String(((await req.json()) || {}).body || '').trim().slice(0, 4000);
-        if (!body) return NextResponse.json({ ok: false, error: 'Nothing to send.' }, { status: 400 });
+        // Photos come as multipart and go through the one shared upload path
+        // (lib/messagePhotoUpload) — the same checks, stripping and private
+        // storage as every other thread. Words alone stay JSON.
+        const isPhotos = (req.headers.get('content-type') || '').includes('multipart/form-data');
+        let body = '';
+        let photoCount = 0;
+        let saved: any = null;
+        if (isPhotos) {
+            const read = await readPhotoForm(req);
+            if (!read.ok) return NextResponse.json({ ok: false, error: read.error }, { status: read.status });
+            body = read.upload.body;
+            photoCount = read.upload.files.length;
+            try {
+                saved = await storePhotoMessage(admin, { kind: 'enquiry', threadId: params.enquiryId, senderId: uid, recipientId: ctx.otherId, upload: read.upload });
+            } catch (err) {
+                await logError('enquiry-thread-photos', err);
+            }
+            if (!saved) return NextResponse.json({ ok: false, error: 'Your photo couldn’t be sent. Try again.' }, { status: 500 });
+        } else {
+            body = String(((await req.json()) || {}).body || '').trim().slice(0, 4000);
+            if (!body) return NextResponse.json({ ok: false, error: 'Nothing to send.' }, { status: 400 });
 
-        const { data: saved, error } = await admin
-            .from('messages')
-            .insert({ enquiry_id: params.enquiryId, sender_id: uid, recipient_id: ctx.otherId, body })
-            .select('id, sender_id, body, created_at, read_at')
-            .single();
-        if (error || !saved) {
-            return NextResponse.json({ ok: false, error: 'Could not send that.' }, { status: 500 });
+            const { data: row, error } = await admin
+                .from('messages')
+                .insert({ enquiry_id: params.enquiryId, sender_id: uid, recipient_id: ctx.otherId, body })
+                .select('id, sender_id, body, created_at, read_at')
+                .single();
+            if (error || !row) {
+                return NextResponse.json({ ok: false, error: 'Could not send that.' }, { status: 500 });
+            }
+            saved = row;
         }
+        // What the email quotes: the words, or "Sent a photo" when there are none.
+        const preview = messagePreview(body, photoCount);
+        const photoNote = photoCount > 0 && body ? ' (' + photoLabel(photoCount).replace(/^Sent/, 'with') + ')' : '';
 
         // Replying is reading: the sender's own copy of the thread is never left
         // showing anything as unread (lib/threadReads).
@@ -225,9 +256,9 @@ export async function POST(req: Request, { params }: { params: { enquiryId: stri
                         'New message about ' + String(ctx.enquiry.reference),
                         emailLayout(
                             '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(senderName)
-                                + '</strong> sent you a message about ' + escapeHtml(jobLine) + ':</p>'
+                                + '</strong> ' + (photoCount > 0 && !body ? 'sent you ' + (photoCount === 1 ? 'a photo' : photoCount + ' photos') : 'sent you a message') + ' about ' + escapeHtml(jobLine) + ':</p>'
                                 + '<p style="margin:0 0 16px;font-size:16px;padding:12px 16px;background:#f8fafc;border-radius:10px;"><em>'
-                                + escapeHtml(body.slice(0, 300)) + (body.length > 300 ? '…' : '') + '</em></p>'
+                                + escapeHtml(preview.slice(0, 300)) + (preview.length > 300 ? '…' : '') + escapeHtml(photoNote) + '</em></p>'
                                 + button(SITE_URL + '/messages/enquiry/' + params.enquiryId, 'Reply'),
                             'You are receiving this because you have a job thread on Galloway Getaways. Reference ' + escapeHtml(String(ctx.enquiry.reference)) + '.',
                             undefined, NEUTRAL_SUBTITLE
