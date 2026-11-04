@@ -9,7 +9,7 @@
 // The server checks it all again (lib/messagePhotos) and strips anything left.
 
 import {
-    FULL_EDGE, THUMB_EDGE, MAX_PHOTO_BYTES, PHOTO_ERRORS, checkPickedFile, isHeic,
+    FULL_EDGE, THUMB_EDGE, MAX_PHOTO_BYTES, PHOTO_ERRORS, checkPickedFile, isHeic, looksLikePhoto,
 } from './messagePhotos';
 
 export type PreparedPhoto = {
@@ -76,12 +76,18 @@ export async function preparePhoto(file: File): Promise<PreparedPhoto> {
     const problem = checkPickedFile(file);
     if (problem) throw new Error(problem);
 
+    // By its bytes, not its name: a PDF renamed .jpg is "not a photo", the
+    // same answer the server gives.
+    const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+    if (!looksLikePhoto(head)) throw new Error(PHOTO_ERRORS.notImage);
+
     let source: ImageBitmap | HTMLImageElement;
     try {
         // Safari can read HEIC itself; everything else needs converting first.
         source = await decode(file);
     } catch {
-        if (!isHeic(file)) throw new Error(PHOTO_ERRORS.unreadable);
+        const container = String.fromCharCode(head[4], head[5], head[6], head[7]) === 'ftyp';
+        if (!isHeic(file) && !container) throw new Error(PHOTO_ERRORS.unreadable);
         try {
             source = await decode(await heicToJpeg(file));
         } catch {

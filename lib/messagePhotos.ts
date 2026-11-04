@@ -72,6 +72,18 @@ export function sniffImageType(bytes: Uint8Array): StoredType | null {
     return null;
 }
 
+/**
+ * The browser's look at a picked file's first bytes: something it can turn into
+ * a photo (JPEG/PNG/WebP, GIF, or an HEIC/HEIF/AVIF container), or not.
+ */
+export function looksLikePhoto(head: Uint8Array): boolean {
+    if (sniffImageType(head)) return true;
+    if (ascii(head, 0, 4) === 'GIF8') return true;
+    // ISO-BMFF: "ftyp" then a brand — heic, heix, mif1, msf1, avif …
+    if (ascii(head, 4, 4) === 'ftyp') return /^(heic|heix|hevc|hevx|heim|heis|mif1|msf1|avif|avis)$/.test(ascii(head, 8, 4));
+    return false;
+}
+
 /** The server's check on one file it is about to store: its real type, or why not. */
 export function checkStoredPhoto(bytes: Uint8Array): { type: StoredType } | { error: string } {
     if (bytes.length > MAX_PHOTO_BYTES) return { error: PHOTO_ERRORS.tooLarge };

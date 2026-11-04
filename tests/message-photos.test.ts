@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     sniffImageType, checkStoredPhoto, stripImageMetadata, carriesMetadata, checkPickedFile,
-    photoLabel, messagePreview, MAX_PHOTO_BYTES, MAX_PHOTOS_PER_MESSAGE, PHOTO_ERRORS,
+    photoLabel, messagePreview, looksLikePhoto, MAX_PHOTO_BYTES, MAX_PHOTOS_PER_MESSAGE, PHOTO_ERRORS,
 } from '../lib/messagePhotos';
 
 const fs = require('fs');
@@ -131,6 +131,15 @@ test('the browser refuses a non-image or an oversized original with a clear mess
     assert.equal(checkPickedFile({ type: '', name: 'IMG_0001.HEIC', size: 3_000_000 }), null, 'HEIC with no type, by name');
     assert.equal(checkPickedFile({ type: 'image/jpeg', name: 'a.jpg', size: 2_000_000 }), null);
     assert.match(PHOTO_ERRORS.tooMany, new RegExp('up to ' + MAX_PHOTOS_PER_MESSAGE));
+});
+
+test('the browser looks at the bytes too: a renamed PDF is not a photo, an iPhone HEIC is', () => {
+    assert.equal(looksLikePhoto(bytes('%PDF-1.4 1 0 obj')), false);
+    assert.equal(looksLikePhoto(bytes('<svg xmlns=')), false);
+    assert.equal(looksLikePhoto(bytes([0, 0, 0, 0x18], 'ftypheic', [0, 0, 0, 0])), true);
+    assert.equal(looksLikePhoto(bytes([0, 0, 0, 0x18], 'ftypmif1', [0, 0, 0, 0])), true);
+    assert.equal(looksLikePhoto(bytes([0, 0, 0, 0x18], 'ftypisom', [0, 0, 0, 0])), false, 'an MP4 is not a photo');
+    assert.equal(looksLikePhoto(jpegWithGps.slice(0, 32)), true);
 });
 
 test('notifications and previews say "Sent a photo"', () => {
