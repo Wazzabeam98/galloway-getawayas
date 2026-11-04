@@ -103,7 +103,7 @@ export async function GET(request: Request) {
                 host.email,
                 copy.subject,
                 emailLayout(
-                    `<p style="margin:0 0 16px;font-size:16px;">Hello ${name},</p>`
+                    `<p style="margin:0 0 16px;font-size:16px;">Hi ${name},</p>`
                     + copy.paragraphs.map((t) => `<p style="margin:0 0 16px;font-size:16px;">${escapeHtml(t)}</p>`).join('')
                     + button(SITE_URL + '/addhome?draft=' + encodeURIComponent(p.listingId), 'Finish your listing'),
                     'You’re receiving this because you started listing a property on Galloway Getaways.',

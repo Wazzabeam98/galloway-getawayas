@@ -77,8 +77,8 @@ export function draftReminderCopy(
             subject: 'Your listing is almost ready — pick up where you left off',
             paragraphs: [
                 `You started listing ${place} on Galloway Getaways and it’s saved as a draft — nothing’s lost.`,
-                'Hosts who finish usually do it in one more sitting. Pick up exactly where you left off, add anything that’s missing, and it comes to us for a quick check before it goes live.',
-                'There’s no fee to list, and no commission until you get a booking.',
+                'Pick up exactly where you left off, add anything that’s missing, and it comes to us for a quick check before it goes live.',
+                'It’s free to list, and you only pay 10% when you get a booking.',
             ],
         };
     }
@@ -87,7 +87,7 @@ export function draftReminderCopy(
         paragraphs: [
             `${place} is still saved as a draft on Galloway Getaways, a step or two from being live.`,
             'If you’d like a hand finishing it — a price, a few more photos, anything at all — just reply to this email and we’ll help. Otherwise, pick up where you left off whenever suits.',
-            'No fee to list, and no commission until you’re booked.',
+            'It’s free to list, and you only pay 10% when you get a booking.',
         ],
     };
 }
