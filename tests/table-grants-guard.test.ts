@@ -68,6 +68,11 @@ const SERVICE_ROLE_ONLY: ServiceOnly[] = [
         migration: '20261022111408_host_referrals.sql',
         reason: 'who referred whom plus the reward ledger (reward_amount is a money column); attached by the auth callback and listings/publish, waived+stamped by the host-payouts cron, marked paid via /api/admin/referrals, all with the service role',
     },
+    {
+        table: 'message_attachments',
+        migration: '20261104093000_message_photos.sql',
+        reason: 'where each photo sent in a booking\'s messages is stored in the private message-attachments bucket; written by app/api/messages/threads/[bookingId]/photos and read by app/api/messages/photos/[id] (guest, host, co-host with messages, admin), both with the service role',
+    },
 ];
 
 const code = (sql: string) => sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');

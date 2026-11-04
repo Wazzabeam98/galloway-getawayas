@@ -10,6 +10,7 @@ import { firstName, getImageUrl } from '@/lib/utils';
 import { bookingStatusLine, categoryOf, enquiryStatusLine, orderStatusLine } from '@/lib/conversationLabels';
 import { providerIdsWith } from '@/lib/providerAccess';
 import { isInboundFor, isUnreadFor, readPositionsFor, threadKey } from '@/lib/threadReads';
+import { messagePreview } from '@/lib/messagePhotos';
 
 export const dynamic = 'force-dynamic';
 
@@ -144,7 +145,7 @@ export async function GET() {
     const { data: lastMessages } = bookings.length
         ? await admin
             .from('messages')
-            .select('booking_id, body, created_at, sender_id, recipient_id, read_at, automated')
+            .select('booking_id, body, created_at, sender_id, recipient_id, read_at, automated, photo_count')
             .in('booking_id', bookings.map((b) => b.id))
             .order('created_at', { ascending: false })
         : { data: [] };
@@ -162,7 +163,7 @@ export async function GET() {
         // A check-in message's placeholders never become values in a preview.
         if (!lastMap[m.booking_id]) {
             const { automated, ...rest } = m;
-            lastMap[m.booking_id] = { ...rest, body: renderSecretTokens(m.body, automated, 'preview') };
+            lastMap[m.booking_id] = { ...rest, body: messagePreview(renderSecretTokens(m.body, automated, 'preview'), m.photo_count) };
         }
 
         const team = teamOn[m.booking_id];

@@ -27,6 +27,7 @@ import { cancellationPosition } from '@/lib/cancellationView';
 import { formatGBPAmount } from '@/lib/formatMoney';
 import { drainOutbox } from '@/lib/pushDispatch';
 import { checkListing } from '@/lib/access';
+import { photoLabel } from '@/lib/messagePhotos';
 
 export const dynamic = 'force-dynamic';
 
@@ -329,6 +330,21 @@ export async function POST(request: Request) {
 
             const preview = escapeHtml(rawPreview) + (rawPreview.length >= 180 ? '&hellip;' : '');
 
+            // A photo message says so — read off the sender's newest message on
+            // this booking, not taken from the browser's word for it.
+            const { data: latest } = await admin
+                .from('messages')
+                .select('photo_count')
+                .eq('booking_id', booking.id)
+                .eq('sender_id', uid)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            const photoCount = Number((latest && latest.photo_count) || 0);
+            const photoLine = photoCount > 0
+                ? '<p style="margin:' + (preview ? '10px' : '0') + ' 0 0 0;color:#6b7280;font-size:14px;">&#128247; ' + senderFirst + ' ' + escapeHtml(photoLabel(photoCount).replace(/^Sent/, 'sent')) + '. Open the conversation to see ' + (photoCount === 1 ? 'it' : 'them') + '.</p>'
+                : '';
+
             const { data: prefs } = await admin
                 .from('notification_preferences')
                 .select('unsubscribe_token')
@@ -339,7 +355,8 @@ export async function POST(request: Request) {
                 '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">New message from ' + senderFirst + '</h1>' +
                 '<p style="margin:0 0 4px 0;">Hi ' + recipientFirst + ' &mdash; you have a new message about ' + listingTitle + '.</p>' +
                 '<div style="margin:20px 0;padding:16px 18px;background-color:#f9fafb;border-left:3px solid #047857;border-radius:6px;color:#374151;font-size:15px;">' +
-                (preview || '<em>No message text</em>') +
+                (preview || (photoCount > 0 ? '' : '<em>No message text</em>')) +
+                photoLine +
                 '</div>' +
                 button(SITE_URL + '/messages/' + booking.id, 'Read and reply') +
                 '<p style="margin:0;font-size:14px;color:#6b7280;">Reply on Galloway Getaways rather than by email, so the whole conversation stays in one place.</p>',
@@ -349,7 +366,7 @@ export async function POST(request: Request) {
                     : undefined
             );
 
-            await sendEmail(to, 'New message from ' + senderFirst + ' \u2014 Galloway Getaways', html, false);
+            await sendEmail(to, (photoCount > 0 && !rawPreview.trim() ? senderFirst + ' ' + photoLabel(photoCount).replace(/^Sent/, 'sent') : 'New message from ' + senderFirst) + ' \u2014 Galloway Getaways', html, false);
             await pushIt();
             return NextResponse.json({ ok: true });
         }
