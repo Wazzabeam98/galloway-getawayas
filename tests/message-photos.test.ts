@@ -190,7 +190,7 @@ test('photos are private: a private bucket, a table the browser cannot reach, op
     assert.match(access, /orderThreadContext\(admin, threadId, uid\)/, 'order photos: the guest and the business side only');
     assert.match(access, /enquiryThreadContext\(admin, threadId, uid\)/, 'enquiry photos: the host and the trade side only');
 
-    const every = read('supabase/migrations/20261104120000_message_photos_every_thread.sql');
+    const every = read('supabase/migrations/20261104081137_message_photos_every_thread.sql');
     assert.match(every, /check \(num_nonnulls\(booking_id, order_id, enquiry_id\) = 1\)/, 'a photo belongs to exactly one conversation');
     assert.match(every, /revoke all on function public\.send_thread_message_with_photos\(text, uuid, uuid, uuid, text, jsonb\) from authenticated;/);
 
