@@ -5,6 +5,10 @@ import type { Metadata } from 'next';
 // app/addhome/layout.tsx: the wizard stays out of search (robots.ts also
 // disallows /addhotel — the two agreeing is what actually keeps it unindexed, as
 // robots.txt alone does not stop indexing from an inbound link).
+// The wizard reads ?draft and autosaves, so the segment is dynamic (also keeps
+// useSearchParams out of static prerendering).
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'List your hotel',
   description:

@@ -45,14 +45,15 @@ test('on production hotels follow HOTELS_OPEN, read tolerantly', () => {
     });
 });
 
-test('a room type must have a name, a count, occupancy and a price', () => {
+test('a room type must have a name, a count, a bed and a price', () => {
+    const beds = [{ type: 'double', count: 1 }];
     assert.ok(roomTypeProblem(null));
     assert.ok(roomTypeProblem({ name: '  ' }));
-    assert.ok(roomTypeProblem({ name: 'Double', inventory_count: 0, max_adults: 2, max_children: 0, max_occupancy: 2, price_per_night: 90 }));
-    assert.ok(roomTypeProblem({ name: 'Double', inventory_count: 3, max_adults: 2, max_children: 0, max_occupancy: 5, price_per_night: 90 }), 'occupancy over adults+children');
-    assert.ok(roomTypeProblem({ name: 'Double', inventory_count: 3, max_adults: 2, max_children: 1, max_occupancy: 3, price_per_night: 0 }), 'needs a price');
+    assert.ok(roomTypeProblem({ name: 'Double', inventory_count: 0, max_adults: 2, max_children: 0, bed_config: beds, price_per_night: 90 }), 'needs a count');
+    assert.ok(roomTypeProblem({ name: 'Double', inventory_count: 3, max_adults: 2, max_children: 1, bed_config: [], price_per_night: 90 }), 'needs a bed');
+    assert.ok(roomTypeProblem({ name: 'Double', inventory_count: 3, max_adults: 2, max_children: 1, bed_config: beds, price_per_night: 0 }), 'needs a price');
     assert.equal(
-        roomTypeProblem({ name: 'Double', inventory_count: 3, max_adults: 2, max_children: 1, max_occupancy: 3, price_per_night: 95 }),
+        roomTypeProblem({ name: 'Double', inventory_count: 3, max_adults: 2, max_children: 1, bed_config: beds, price_per_night: 95 }),
         null,
         'a complete room type is fine',
     );
@@ -67,7 +68,7 @@ test('a hotel needs a name, type, address, times, photos and a room type to publ
         check_in_time: '15:00',
         check_out_time: '11:00',
         images: ['a', 'b', 'c', 'd', 'e'],
-        roomTypes: [{ name: 'Double', inventory_count: 4, max_adults: 2, max_children: 0, max_occupancy: 2, price_per_night: 110 }],
+        roomTypes: [{ name: 'Double', inventory_count: 4, max_adults: 2, max_children: 0, bed_config: [{ type: 'double', count: 1 }], price_per_night: 110 }],
     };
     assert.equal(hotelPublishProblem(base), null, 'a complete hotel is ready');
     assert.ok(hotelPublishProblem({ ...base, name: '' }));

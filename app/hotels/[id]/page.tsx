@@ -23,7 +23,7 @@ export default async function HotelPage({ params }: { params: { id: string } }) 
     const admin = adminClient();
     const { data: hotel } = await admin
         .from('hotels')
-        .select('id, status, name, description, star_rating, property_type, location, street_address, check_in_time, check_out_time, facilities, house_rules, cancellation_policy, images')
+        .select('id, status, name, description, star_rating, property_type, location, street_address, check_in_time, check_out_time, facilities, house_rules, cancellation_policy, images, parking_type, parking_price, restaurant_hours')
         .eq('id', params.id)
         .maybeSingle();
 
@@ -31,7 +31,7 @@ export default async function HotelPage({ params }: { params: { id: string } }) 
 
     const { data: roomTypes } = await admin
         .from('hotel_room_types')
-        .select('id, name, description, inventory_count, max_adults, max_children, max_occupancy, size_sqm, bed_config, amenities, images, price_per_night, min_nights')
+        .select('id, name, description, inventory_count, max_adults, max_children, max_occupancy, size_sqm, bed_config, bathroom_type, bathroom_features, views, smoking, accessibility, amenities, breakfast_included, images, price_per_night, min_nights')
         .eq('hotel_id', hotel.id)
         .eq('active', true)
         .order('sort_order', { ascending: true });

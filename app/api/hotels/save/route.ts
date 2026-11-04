@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { logError } from '@/lib/logError';
 import { checkHotel } from '@/lib/hotelAccess';
-import { hotelsOpen, isHotelPropertyType, roomTypeProblem, type DraftRoomType } from '@/lib/hotels';
+import { hotelsOpen, isHotelPropertyType, roomTypeProblem, occupancyOf, type DraftRoomType } from '@/lib/hotels';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +31,7 @@ const WRITABLE = new Set([
     'street_address', 'postcode', 'check_in_time', 'check_in_end_time',
     'check_out_time', 'facilities', 'house_rules', 'cancellation_policy',
     'cancellation_custom_days', 'vat_registered', 'vat_number', 'images',
+    'parking_type', 'parking_price', 'restaurant_hours',
 ]);
 
 function clean(patch: Record<string, any>): Record<string, any> {
@@ -101,17 +102,26 @@ export async function POST(request: Request) {
             const keptIds: string[] = [];
             for (let i = 0; i < roomTypes.length; i++) {
                 const r = roomTypes[i];
+                const adults = Math.floor(Number(r.max_adults));
+                const children = Math.floor(Number(r.max_children ?? 0));
                 const row = {
                     hotel_id: id,
                     name: String(r.name).trim(),
                     description: r.description ?? null,
                     inventory_count: Math.floor(Number(r.inventory_count)),
-                    max_adults: Math.floor(Number(r.max_adults)),
-                    max_children: Math.floor(Number(r.max_children ?? 0)),
-                    max_occupancy: Math.floor(Number(r.max_occupancy)),
+                    max_adults: adults,
+                    max_children: children,
+                    // Sleeps is derived, never asked for (Liam's walkthrough).
+                    max_occupancy: occupancyOf({ max_adults: adults, max_children: children }),
                     size_sqm: r.size_sqm != null && r.size_sqm !== ('' as any) ? Math.floor(Number(r.size_sqm)) : null,
                     bed_config: Array.isArray(r.bed_config) ? r.bed_config : [],
+                    bathroom_type: r.bathroom_type === 'private' || r.bathroom_type === 'shared' ? r.bathroom_type : null,
+                    bathroom_features: Array.isArray(r.bathroom_features) ? r.bathroom_features : [],
+                    views: Array.isArray(r.views) ? r.views : [],
+                    smoking: ['non_smoking', 'smoking', 'both'].includes(String(r.smoking)) ? r.smoking : 'non_smoking',
+                    accessibility: Array.isArray(r.accessibility) ? r.accessibility : [],
                     amenities: Array.isArray(r.amenities) ? r.amenities : [],
+                    breakfast_included: !!r.breakfast_included,
                     images: Array.isArray((r as any).images) ? (r as any).images : [],
                     price_per_night: Number(r.price_per_night),
                     min_nights: r.min_nights != null ? Math.floor(Number(r.min_nights)) : 1,
@@ -138,6 +148,10 @@ export async function POST(request: Request) {
                     .eq('room_type_id', dropId);
                 if (!count) await admin.from('hotel_room_types').delete().eq('id', dropId);
             }
+
+            // Hand the saved ids back in the order they were sent, so the wizard
+            // can attach them to its rooms and never insert the same room twice.
+            return NextResponse.json({ ok: true, hotelId: id, roomIds: keptIds });
         }
 
         return NextResponse.json({ ok: true, hotelId: id });

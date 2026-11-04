@@ -77,17 +77,22 @@ export const HOTEL_FACILITIES: string[] = [
     'EV charging',
 ];
 
-export const BED_TYPES = ['single', 'double', 'twin', 'king', 'super_king', 'bunk', 'sofa_bed'] as const;
+// Booking.com's bed types (their largest is "Extra-large double / King"). We
+// keep super king too — a deliberate addition over Booking.com's set.
+export const BED_TYPES = ['single', 'twin', 'double', 'queen', 'king', 'super_king', 'sofa_bed', 'bunk', 'futon', 'cot'] as const;
 export type BedType = (typeof BED_TYPES)[number];
 
 export const BED_LABELS: Record<BedType, string> = {
     single: 'Single bed',
-    double: 'Double bed',
     twin: 'Twin beds',
+    double: 'Double bed',
+    queen: 'Queen bed',
     king: 'King bed',
     super_king: 'Super king bed',
-    bunk: 'Bunk bed',
     sofa_bed: 'Sofa bed',
+    bunk: 'Bunk bed',
+    futon: 'Futon',
+    cot: 'Cot / crib',
 };
 
 export type BedConfigEntry = { type: BedType; count: number };
@@ -97,18 +102,35 @@ export type BedConfigEntry = { type: BedType; count: number };
 // ---------------------------------------------------------------------------
 
 export type DraftRoomType = {
+    id?: string;
     name: string;
     description?: string;
     inventory_count: number; // how many identical rooms of this type
     max_adults: number;
     max_children: number;
-    max_occupancy: number; // Booking.com's rule: ≤ adults + children
+    // Derived (max_adults + max_children), set on save — the wizard no longer
+    // asks for it separately (Liam's walkthrough). Kept because availability and
+    // the occupancy wall read it.
+    max_occupancy?: number;
     size_sqm?: number | null;
     bed_config: BedConfigEntry[];
-    amenities?: string[];
+    bathroom_type?: string | null;
+    bathroom_features?: string[];
+    views?: string[];
+    smoking?: string;
+    accessibility?: string[];
+    amenities?: string[]; // in-room amenities
+    breakfast_included?: boolean;
+    images?: string[];
     price_per_night: number; // phase-one base rate; moves to the rate plan later
     min_nights?: number;
 };
+
+// Sleeps = adults + children. The one place it is worked out, so the wizard, the
+// save route and the occupancy wall agree.
+export function occupancyOf(r: { max_adults?: number | null; max_children?: number | null }): number {
+    return Math.max(1, (Number(r.max_adults) || 0) + (Number(r.max_children) || 0));
+}
 
 // A single room type is valid to publish. Returns a short human sentence naming
 // the first problem, or null when it is fine — mirrors the cottage listingRules
@@ -122,9 +144,7 @@ export function roomTypeProblem(r: Partial<DraftRoomType> | null | undefined): s
     if (!Number.isInteger(adults) || adults < 1) return 'A room type must sleep at least one adult.';
     const children = Number(r.max_children ?? 0);
     if (!Number.isInteger(children) || children < 0) return 'Children must be zero or more.';
-    const occ = Number(r.max_occupancy);
-    if (!Number.isInteger(occ) || occ < 1) return 'Set the maximum number of guests for this room.';
-    if (occ > adults + children) return 'Maximum guests cannot be more than adults plus children.';
+    if (!Array.isArray(r.bed_config) || r.bed_config.length === 0) return 'Add at least one bed.';
     const price = Number(r.price_per_night);
     if (!Number.isFinite(price) || price <= 0) return 'Give the room type a nightly price.';
     return null;
@@ -133,8 +153,7 @@ export function roomTypeProblem(r: Partial<DraftRoomType> | null | undefined): s
 export const MIN_HOTEL_PHOTOS = 5;
 
 // The whole hotel is ready to publish. Same shape as listingRules: first problem
-// or null. Used by the publish route (server is the authority) and echoed by the
-// wizard's Publish button.
+// or null. Used by the publish route (server is the authority).
 export type PublishableHotel = {
     name?: string | null;
     property_type?: string | null;
@@ -147,19 +166,80 @@ export type PublishableHotel = {
 };
 
 export function hotelPublishProblem(h: PublishableHotel | null | undefined): string | null {
-    if (!h) return 'Nothing to publish yet.';
-    if (!h.name || !h.name.trim()) return 'Give the hotel a name.';
-    if (!isHotelPropertyType(h.property_type)) return 'Choose what kind of place this is.';
-    if (!h.street_address || !h.street_address.trim()) return 'Add the address.';
-    if (!h.check_in_time) return 'Set a check-in time.';
-    if (!h.check_out_time) return 'Set a check-out time.';
-    const photos = Array.isArray(h.images) ? h.images : [];
-    if (photos.length < MIN_HOTEL_PHOTOS) return `Add at least ${MIN_HOTEL_PHOTOS} photos.`;
-    const rooms = Array.isArray(h.roomTypes) ? h.roomTypes : [];
-    if (rooms.length < 1) return 'Add at least one room type.';
-    for (const r of rooms) {
-        const p = roomTypeProblem(r);
-        if (p) return `Room type "${r?.name || 'untitled'}": ${p}`;
+    const p = firstHotelProblem(h);
+    return p ? p.message : null;
+}
+
+// ---------------------------------------------------------------------------
+// THE WIZARD RULE ENGINE — "what's missing", by step
+// ---------------------------------------------------------------------------
+//
+// Mirrors lib/listingRules PUBLISH_RULES: each rule names the step it belongs to
+// and the sentence to show. The wizard uses hotelProblemAtStep() to refuse Next
+// with a worded reason, and firstHotelProblem() on the Review step to jump back
+// to the exact step that is incomplete and explain it — never a disabled button.
+// The STEP numbers are 1-indexed and match the wizard's step order.
+
+export const HOTEL_STEPS = {
+    TYPE: 1,
+    NAME: 2,
+    LOCATION: 3,
+    ROOMS: 4,
+    FACILITIES: 5,
+    PHOTOS: 6,
+    TIMES: 7,
+    CANCELLATION: 8,
+    REVIEW: 9,
+} as const;
+export const HOTEL_TOTAL_STEPS = 9;
+
+type HotelRule = { step: number; message: string; failed: (h: PublishableHotel) => boolean };
+
+export const HOTEL_PUBLISH_RULES: HotelRule[] = [
+    { step: HOTEL_STEPS.TYPE, message: 'Choose what kind of place this is.', failed: (h) => !isHotelPropertyType(h.property_type) },
+    { step: HOTEL_STEPS.NAME, message: 'Give the hotel a name.', failed: (h) => !h.name || !h.name.trim() },
+    { step: HOTEL_STEPS.LOCATION, message: 'Add the address.', failed: (h) => !h.street_address || !h.street_address.trim() },
+    { step: HOTEL_STEPS.LOCATION, message: 'Add the town.', failed: (h) => !h.location || !h.location.trim() },
+    { step: HOTEL_STEPS.ROOMS, message: 'Add at least one room type.', failed: (h) => !Array.isArray(h.roomTypes) || h.roomTypes.length < 1 },
+    {
+        step: HOTEL_STEPS.ROOMS,
+        message: 'One of your room types still needs finishing.',
+        failed: (h) => (h.roomTypes || []).some((r) => roomTypeProblem(r) !== null),
+    },
+    { step: HOTEL_STEPS.PHOTOS, message: `Add at least ${MIN_HOTEL_PHOTOS} photos of the hotel.`, failed: (h) => (Array.isArray(h.images) ? h.images.filter(Boolean).length : 0) < MIN_HOTEL_PHOTOS },
+    { step: HOTEL_STEPS.TIMES, message: 'Set a check-in time.', failed: (h) => !h.check_in_time },
+    { step: HOTEL_STEPS.TIMES, message: 'Set a check-out time.', failed: (h) => !h.check_out_time },
+];
+
+// The first unmet rule anywhere, with its step — for the Review step's
+// jump-and-explain. Null when ready to publish.
+export function firstHotelProblem(h: PublishableHotel | null | undefined): { step: number; message: string } | null {
+    if (!h) return { step: HOTEL_STEPS.TYPE, message: 'Nothing to publish yet.' };
+    for (const rule of HOTEL_PUBLISH_RULES) {
+        if (rule.failed(h)) {
+            // For the generic "a room needs finishing" rule, surface the specific
+            // room problem so the sentence is actionable.
+            if (rule.step === HOTEL_STEPS.ROOMS && rule.message.startsWith('One of')) {
+                const bad = (h.roomTypes || []).find((r) => roomTypeProblem(r) !== null);
+                return { step: rule.step, message: `Room "${(bad && bad.name) || 'untitled'}": ${roomTypeProblem(bad)}` };
+            }
+            return { step: rule.step, message: rule.message };
+        }
+    }
+    return null;
+}
+
+// The first unmet rule that belongs to a given step — for refusing Next.
+export function hotelProblemAtStep(h: PublishableHotel | null | undefined, step: number): string | null {
+    if (!h) return null;
+    for (const rule of HOTEL_PUBLISH_RULES) {
+        if (rule.step === step && rule.failed(h)) {
+            if (rule.step === HOTEL_STEPS.ROOMS && rule.message.startsWith('One of')) {
+                const bad = (h.roomTypes || []).find((r) => roomTypeProblem(r) !== null);
+                return `Room "${(bad && bad.name) || 'untitled'}": ${roomTypeProblem(bad)}`;
+            }
+            return rule.message;
+        }
     }
     return null;
 }
