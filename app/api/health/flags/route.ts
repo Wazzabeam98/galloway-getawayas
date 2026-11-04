@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { businessSignupsOpen } from '@/lib/serviceOrders';
+import { hotelsOpen } from '@/lib/hotels';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,12 +14,17 @@ export const dynamic = 'force-dynamic';
 // the second — so nothing is disclosed that a visitor cannot see.
 export async function GET() {
     const raw = process.env.BUSINESS_SIGNUPS_OPEN;
+    const hotelsRaw = process.env.HOTELS_OPEN;
     return NextResponse.json(
         {
             env: process.env.VERCEL_ENV || 'development',
             businessSignups: {
                 set: typeof raw === 'string' && raw.length > 0,
                 open: businessSignupsOpen(),
+            },
+            hotels: {
+                set: typeof hotelsRaw === 'string' && hotelsRaw.length > 0,
+                open: hotelsOpen(),
             },
         },
         { headers: { 'cache-control': 'no-store' } }

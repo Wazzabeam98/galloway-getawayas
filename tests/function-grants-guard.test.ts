@@ -35,6 +35,10 @@ const ALLOWED: Record<string, { roles: Role[]; reason: string }> = {
         roles: ['authenticated'],
         reason: 'booking message-thread row policies for co-hosts with messages; answers only about auth.uid()',
     },
+    'has_hotel_permission(uuid,text)': {
+        roles: ['authenticated'],
+        reason: 'hotel row policies (hotels + hotel_room_types owner/co-host SELECT) and the hotel_private view — mirrors lib/hotelAccess checkHotel; answers only about auth.uid()',
+    },
     'has_provider_permission(uuid,text)': {
         roles: ['authenticated'],
         reason: 'co-host row policies on a business (provider tables, slot diary, enquiries, order/enquiry messages, review replies) — mirrors lib/providerAccess checkProvider; answers only about auth.uid()',
