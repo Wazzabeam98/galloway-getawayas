@@ -514,7 +514,12 @@ export default function AddHome() {
 
         // Each photo is shrunk, then uploaded straight away, so it is saved with
         // the draft from this moment on.
+        // iPhones hand over HEIC, which only Safari/iOS can decode — Chrome,
+        // Firefox and Android can't, so compressImage throws on them. Name that
+        // plainly instead of the generic "couldn't be read".
+        const isHeic = (f: File) => /\.(heic|heif)$/i.test(f.name) || /(heic|heif)/i.test(f.type);
         let tooSmall = 0;
+        let heicUnreadable = 0;
         for (const file of files) {
             // Refuse a photo that is too small to look sharp before it is
             // compressed or uploaded (lib/photoRules). A size we can't read
@@ -532,7 +537,11 @@ export default function AddHome() {
             try {
                 ready = await compressImage(file);
             } catch (err) {
-                setFormError('One of those photos couldn\u2019t be read. Try a different one.');
+                // A HEIC that reached here is one this browser can't decode (on
+                // an iPhone it would have converted fine). Say so, rather than
+                // the blank "couldn't be read".
+                if (isHeic(file)) heicUnreadable += 1;
+                else setFormError('One of those photos couldn\u2019t be read. Try a different one.');
                 continue;
             }
             const path = Date.now() + '_' + generateRandomNumber();
@@ -552,6 +561,14 @@ export default function AddHome() {
         // each in turn — the single-photo case keeps its exact message above.
         if (tooSmall > 1) {
             setFormError(tooSmall + ' photos were too small to look sharp (they need to be at least 1024 × 683 pixels) and weren’t added.');
+        }
+
+        // HEIC takes precedence in the message, because the fix is different:
+        // not a different photo, but a different device or format.
+        if (heicUnreadable > 0) {
+            setFormError(heicUnreadable === 1
+                ? 'That looks like an iPhone photo (HEIC) this browser can’t open. Add it from your phone, or save it as a JPEG first.'
+                : heicUnreadable + ' of those are iPhone photos (HEIC) this browser can’t open. Add them from your phone, or save them as JPEG first.');
         }
 
         setProcessingPhotos(false);
