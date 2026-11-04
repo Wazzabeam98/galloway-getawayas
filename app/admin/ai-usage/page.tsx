@@ -55,7 +55,7 @@ export default async function AdminAiUsagePage() {
             </p>
 
             <h2 className="mt-8 text-base font-bold text-slate-900">By month</h2>
-            <table className="mt-3 w-full text-sm">
+            <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[560px] text-sm">
                 <thead><tr className="text-left text-slate-500"><th className="py-2">Month</th><th>Drafts</th><th>Input tokens</th><th>Output tokens</th><th>Cost</th></tr></thead>
                 <tbody>
                     {months.length === 0 && <tr><td colSpan={5} className="py-3 text-slate-400">No drafts yet.</td></tr>}
@@ -67,10 +67,10 @@ export default async function AdminAiUsagePage() {
                         </tr>
                     ))}
                 </tbody>
-            </table>
+            </table></div>
 
             <h2 className="mt-10 text-base font-bold text-slate-900">Latest drafts</h2>
-            <table className="mt-3 w-full text-sm">
+            <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[560px] text-sm">
                 <thead><tr className="text-left text-slate-500"><th className="py-2">When</th><th>Booking</th><th>Model</th><th>Tokens in / out</th><th>Cost</th><th>Outcome</th></tr></thead>
                 <tbody>
                     {rows.slice(0, 100).map((r: any) => (
@@ -84,7 +84,7 @@ export default async function AdminAiUsagePage() {
                         </tr>
                     ))}
                 </tbody>
-            </table>
+            </table></div>
         </main>
     );
 }
