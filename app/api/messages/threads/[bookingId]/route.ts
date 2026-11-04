@@ -17,6 +17,7 @@ import { publicArea } from '@/lib/places';
 import { revealSecret } from '@/lib/listingSecrets';
 import { renderSecretTokens, type SecretView } from '@/lib/messageSecrets';
 import { attachmentsFor } from '@/lib/messagePhotoUpload';
+import { aiReplySuggestionsOn } from '@/lib/aiReplyServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -362,6 +363,8 @@ export async function GET(
         role: isGuest ? 'guest' : isHost ? 'host' : isCoHost ? 'co_host' : 'companion',
         ownerEquivalent,
         photosVisible,
+        // "Suggest reply" — for the people who answer this thread, when switched on.
+        aiSuggest: onHostSide && aiReplySuggestionsOn(),
         header,
         reservation,
         canSeePhone: phoneAllowed,

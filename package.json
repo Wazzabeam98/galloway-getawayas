@@ -13,6 +13,7 @@
     "scenarios": "node scripts/scenarios.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.4.0",
     "@aws-sdk/client-s3": "^3.1136.0",
     "@fontsource-variable/roboto": "^5.3.0",
     "@hookform/resolvers": "^3.3.1",
