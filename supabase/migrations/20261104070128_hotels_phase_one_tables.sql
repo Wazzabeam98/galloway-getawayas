@@ -237,7 +237,15 @@ as
       from public.hotels
      where public.has_hotel_permission(id, 'can_listing');
 
-revoke all on public.hotel_private from anon;
+-- WRITE-REVOKE THE VIEW. Supabase grants ALL on a new view to anon AND
+-- authenticated by default, and this view is simple enough to be auto-updatable
+-- — and it is SECURITY DEFINER (security_invoker off). Left as granted, the
+-- browser could UPDATE hotel_private and have the write land on the base hotels
+-- table's commission_rate / vat_number, which the base-table grant deliberately
+-- withholds (the payout-hijack class: a definer view that lets the browser write
+-- the table underneath it). So revoke everything from both browser roles first,
+-- then grant SELECT only. The WHERE already pins reads to the caller's own.
+revoke all on public.hotel_private from anon, authenticated;
 grant select on public.hotel_private to authenticated;
 
 comment on view public.hotel_private is
