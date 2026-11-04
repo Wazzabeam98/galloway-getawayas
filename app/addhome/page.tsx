@@ -37,6 +37,7 @@ import {
 import {
     problemAtStep as ruleAtStep,
     firstPublishProblem as firstProblemIn,
+    fromRow as listingFromRow,
     NEW_LISTING_MIN_PHOTOS,
 } from '@/lib/listingRules';
 
@@ -304,11 +305,22 @@ export default function AddHome() {
                     // The photos, saved cover-first — so the cover is index 0.
                     setPhotos(((draft.images || []) as string[]).filter(Boolean).map((path) => ({ path, url: getImageUrl(path) })));
                     setCoverIndex(0);
-                    // And the step they were on, so they pick up where they left off.
+                    // The step they were on, so they pick up where they left off.
+                    // On the same device that is remembered in localStorage. On
+                    // ANOTHER device (or after clearing the browser) there is no
+                    // local step, so derive it from what they have already saved
+                    // — the first step still missing something required — rather
+                    // than dropping them back at step 1. Short of the five photos
+                    // the wizard asks for, that is the photos step.
+                    let derived = firstProblemIn(listingFromRow(draft))?.step ?? TOTAL_STEPS;
+                    const photoCount = ((draft.images || []) as string[]).filter(Boolean).length;
+                    if (photoCount < NEW_LISTING_MIN_PHOTOS && derived > PHOTOS_STEP) derived = PHOTOS_STEP;
+                    let resumeStep = derived;
                     try {
                         const saved = Number(window.localStorage.getItem('gg.addhome.step.' + draft.id));
-                        if (saved >= 1 && saved <= TOTAL_STEPS) setStep(saved);
-                    } catch { /* storage unavailable — start at step 1 */ }
+                        if (saved >= 1 && saved <= TOTAL_STEPS) resumeStep = saved;
+                    } catch { /* storage unavailable — use the derived step */ }
+                    setStep(Math.min(Math.max(resumeStep, 1), TOTAL_STEPS));
                     setShowListingForm(true);
                 }
             }
