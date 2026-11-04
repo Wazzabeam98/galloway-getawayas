@@ -18,6 +18,9 @@ import { getImageUrl, capitializeFirst } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { hasSecretTokens } from '@/lib/messageSecrets';
 import PushPrompt from '@/components/pwa/PushPrompt';
+import { AttachPhotoButton, PendingPhotos, MessagePhotoGrid } from '@/components/messages/MessagePhotos';
+import type { PreparedPhoto } from '@/lib/preparePhoto';
+import { messagePreview } from '@/lib/messagePhotos';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
 // A conversation's identity is now "kind:id" — booking, enquiry or order — so the
@@ -66,6 +69,10 @@ export default function MessagesInboxPage() {
 
     const [text, setText] = useState('');
     const [sending, setSending] = useState(false);
+    // Photos chosen for the next message (booking threads only), already
+    // shrunk, turned to JPEG and stripped of location in the browser.
+    const [photos, setPhotos] = useState<PreparedPhoto[]>([]);
+    const clearPhotos = () => setPhotos((prev) => { prev.forEach((p) => URL.revokeObjectURL(p.previewUrl)); return []; });
     // Sending a message is one of the moments notifications are offered: the
     // card appears above the composer after the first send (PushPrompt decides
     // whether there is anything to ask).
@@ -197,6 +204,7 @@ export default function MessagesInboxPage() {
         let cancelled = false;
         setThreadLoading(true);
         setThreadError('');
+        clearPhotos();
 
         const { kind, id } = splitKey(activeId);
         const load = async () => {
@@ -263,7 +271,10 @@ export default function MessagesInboxPage() {
                     // A check-in message holds placeholders for the door code and
                     // wifi password, filled in only by the server for someone who
                     // may see them — so fetch the thread rather than show the row.
-                    if (payload.new && payload.new.automated && hasSecretTokens(payload.new.body)) {
+                    // A photo message's photos are opened by id through the gated
+                    // route, which the realtime row does not carry — fetch them.
+                    if (payload.new && (Number(payload.new.photo_count) > 0
+                        || (payload.new.automated && hasSecretTokens(payload.new.body)))) {
                         fetch(THREAD_GET[kind](id))
                             .then((r) => (r.ok ? r.json() : null))
                             .then((data) => { if (data && data.ok) setThread(data); })
@@ -590,12 +601,43 @@ export default function MessagesInboxPage() {
 
     const send = async () => {
         const outgoing = text.trim();
-        if (!outgoing || !thread || sending) return;
+        if ((!outgoing && photos.length === 0) || !thread || sending) return;
 
         const { kind, id } = splitKey(activeId);
         setSending(true);
 
-        if (kind === 'booking') {
+        if (kind === 'booking' && photos.length > 0) {
+            // Photos go through the server: they land in a private bucket only
+            // it can write, and it checks every file again.
+            const form = new FormData();
+            form.append('body', outgoing);
+            photos.forEach((p) => {
+                form.append('photos', p.full, 'photo.jpg');
+                form.append('thumbs', p.thumb, 'thumb.jpg');
+                form.append('widths', String(p.width));
+                form.append('heights', String(p.height));
+            });
+            let d: any = null;
+            try {
+                const res = await fetch('/api/messages/threads/' + id + '/photos', { method: 'POST', body: form });
+                d = await res.json().catch(() => null);
+                if (!res.ok && !d) d = { ok: false, error: res.status === 413 ? 'Those photos are too large to send together. Try fewer at once.' : null };
+            } catch {
+                d = null;
+            }
+            setSending(false);
+            if (!d || !d.ok) {
+                toast.error((d && d.error) || 'Your photo couldn’t be sent. Try again.', { theme: 'colored' });
+                return;
+            }
+            if (d.message) {
+                setThread((prev: any) => prev && !prev.messages.some((m: any) => m.id === d.message.id)
+                    ? { ...prev, messages: prev.messages.concat(d.message) } : prev);
+            }
+            markRead(activeId);
+            notify('new_message', id, outgoing);
+            setAskPush(true);
+        } else if (kind === 'booking') {
             const { error } = await supabase.from('messages').insert({
                 booking_id: id,
                 sender_id: session.user.id,
@@ -648,6 +690,7 @@ export default function MessagesInboxPage() {
         }
 
         setText('');
+        clearPhotos();
         setShowQuick(false);
 
         // Reflect it straight away in the list, so the ordering, the needs-reply
@@ -661,7 +704,7 @@ export default function MessagesInboxPage() {
                         needsReply: false,
                         unread: 0,
                         lastMessage: {
-                            body: outgoing,
+                            body: messagePreview(outgoing, photos.length),
                             created_at: new Date().toISOString(),
                             sender_id: session.user.id,
                             senderLabel: 'You',
@@ -671,6 +714,16 @@ export default function MessagesInboxPage() {
             )
         );
     };
+
+    // Photos are for booking threads, and for the people who may see them
+    // (not a companion on the trip) — the server says which.
+    const canAttach = !!thread && splitKey(activeId).kind === 'booking' && thread.photosVisible === true;
+    const addPhotos = (more: PreparedPhoto[]) => setPhotos((prev) => prev.concat(more));
+    const removePhoto = (i: number) => setPhotos((prev) => {
+        const gone = prev[i];
+        if (gone) URL.revokeObjectURL(gone.previewUrl);
+        return prev.filter((_, j) => j !== i);
+    });
 
     if (loading) {
         return (
@@ -791,11 +844,20 @@ export default function MessagesInboxPage() {
 
                         {thread.messages.map((m: any) => {
                             const mine = m.sender_id === session.user.id;
+                            const atts = m.attachments || [];
+                            const hiddenPhotos = Number(m.photo_count) > 0 && atts.length === 0;
+                            const words = String(m.body || '').trim() || (hiddenPhotos ? messagePreview('', m.photo_count) : '');
                             return (
                                 <div
                                     key={m.id}
-                                    className={'flex ' + (mine ? 'justify-end' : 'justify-start')}
+                                    className={'flex flex-col gap-1 ' + (mine ? 'items-end' : 'items-start')}
                                 >
+                                    {atts.length > 0 && (
+                                        <div className="max-w-[75%]">
+                                            <MessagePhotoGrid attachments={atts} mine={mine} />
+                                        </div>
+                                    )}
+                                    {(words || atts.length === 0) ? (
                                     <div
                                         className={
                                             'max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ' +
@@ -804,7 +866,7 @@ export default function MessagesInboxPage() {
                                                 : 'bg-slate-100 text-slate-900')
                                         }
                                     >
-                                        <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                                        <div className={'whitespace-pre-wrap break-words' + (hiddenPhotos && !String(m.body || '').trim() ? ' italic' : '')}>{words}</div>
                                         <div
                                             className={
                                                 'text-[10px] mt-1 ' +
@@ -814,6 +876,9 @@ export default function MessagesInboxPage() {
                                             {ukDateTime(m.created_at)}
                                         </div>
                                     </div>
+                                    ) : (
+                                        <div className="text-[10px] text-slate-400 px-1">{ukDateTime(m.created_at)}</div>
+                                    )}
                                 </div>
                             );
                         })}
@@ -842,7 +907,16 @@ export default function MessagesInboxPage() {
                         )}
 
                         {askPush && <PushPrompt context="message" className="mb-2" />}
+                        <PendingPhotos photos={photos} onRemove={removePhoto} />
                         <div className="flex items-end gap-2">
+                            {canAttach && (
+                                <AttachPhotoButton
+                                    count={photos.length}
+                                    onAdd={addPhotos}
+                                    disabled={sending}
+                                    className="p-2.5 rounded-xl border transition flex-shrink-0 text-slate-500 hover:text-slate-800 hover:border-slate-400 disabled:opacity-40"
+                                />
+                            )}
                             {quickReplies.length > 0 && (
                                 <button
                                     type="button"
@@ -878,7 +952,7 @@ export default function MessagesInboxPage() {
                             <button
                                 type="button"
                                 onClick={send}
-                                disabled={sending || !text.trim()}
+                                disabled={sending || (!text.trim() && photos.length === 0)}
                                 className="p-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl disabled:opacity-40 flex-shrink-0"
                             >
                                 <Send className="w-4 h-4" />
@@ -1203,11 +1277,20 @@ export default function MessagesInboxPage() {
 
                                     {thread.messages.map((m: any) => {
                                         const mine = m.sender_id === session.user.id;
+                                        const atts = m.attachments || [];
+                                        const hiddenPhotos = Number(m.photo_count) > 0 && atts.length === 0;
+                                        const words = String(m.body || '').trim() || (hiddenPhotos ? messagePreview('', m.photo_count) : '');
                                         return (
                                             <div
                                                 key={m.id}
-                                                className={'flex ' + (mine ? 'justify-end' : 'justify-start')}
+                                                className={'flex flex-col gap-1 ' + (mine ? 'items-end' : 'items-start')}
                                             >
+                                                {atts.length > 0 && (
+                                                    <div className="max-w-[80%]">
+                                                        <MessagePhotoGrid attachments={atts} mine={mine} />
+                                                    </div>
+                                                )}
+                                                {(words || atts.length === 0) ? (
                                                 <div
                                                     className={
                                                         // Chat bubbles are body text — 17px on a phone.
@@ -1217,8 +1300,8 @@ export default function MessagesInboxPage() {
                                                             : 'bg-slate-100 text-slate-900')
                                                     }
                                                 >
-                                                    <div className="whitespace-pre-wrap break-words">
-                                                        {m.body}
+                                                    <div className={'whitespace-pre-wrap break-words' + (hiddenPhotos && !String(m.body || '').trim() ? ' italic' : '')}>
+                                                        {words}
                                                     </div>
                                                     <div
                                                         className={
@@ -1229,6 +1312,9 @@ export default function MessagesInboxPage() {
                                                         {ukDateTime(m.created_at)}
                                                     </div>
                                                 </div>
+                                                ) : (
+                                                    <div className="text-[10px] text-slate-400 px-1">{ukDateTime(m.created_at)}</div>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -1259,7 +1345,16 @@ export default function MessagesInboxPage() {
                                     )}
 
                                     {askPush && <PushPrompt context="message" className="mb-2" />}
+                                    <PendingPhotos photos={photos} onRemove={removePhoto} />
                                     <div className="flex items-end gap-2">
+                                        {canAttach && (
+                                            <AttachPhotoButton
+                                                count={photos.length}
+                                                onAdd={addPhotos}
+                                                disabled={sending}
+                                                className="p-3 rounded-xl border flex-shrink-0 text-slate-500 disabled:opacity-40"
+                                            />
+                                        )}
                                         {quickReplies.length > 0 && (
                                             <button
                                                 type="button"
@@ -1288,7 +1383,7 @@ export default function MessagesInboxPage() {
                                         <button
                                             type="button"
                                             onClick={send}
-                                            disabled={sending || !text.trim()}
+                                            disabled={sending || (!text.trim() && photos.length === 0)}
                                             className="p-3 bg-emerald-700 text-white rounded-xl disabled:opacity-40 flex-shrink-0"
                                             aria-label="Send"
                                         >

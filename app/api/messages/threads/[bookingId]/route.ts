@@ -108,7 +108,7 @@ export async function GET(
 
     const { data: messages } = await admin
         .from('messages')
-        .select('id, sender_id, body, created_at, read_at, automated')
+        .select('id, sender_id, body, created_at, read_at, automated, photo_count')
         .eq('booking_id', bookingId)
         .order('created_at', { ascending: true });
 
@@ -340,15 +340,38 @@ export async function GET(
     const secretView: SecretView = arrival
         ? { doorCode: arrival.doorCode, wifiPassword: arrival.wifiPassword }
         : isGuest ? (String(booking.check_in) > today ? 'before' : 'after') : 'preview';
+    // Photos: ids only (opened through the gated /api/messages/photos route),
+    // and only for the people that route lets in. A companion reads the words
+    // of the thread but is not sent the photos.
+    const photosVisible = isGuest || isHost || isCoHost;
+    const photoMessageIds = (messages || []).filter((m: any) => Number(m.photo_count) > 0).map((m: any) => m.id);
+    const attachmentsByMessage: Record<string, any[]> = {};
+    if (photosVisible && photoMessageIds.length) {
+        const { data: atts } = await admin
+            .from('message_attachments')
+            .select('id, message_id, width, height, position')
+            .eq('booking_id', bookingId)
+            .in('message_id', photoMessageIds)
+            .order('position', { ascending: true });
+        (atts || []).forEach((a: any) => {
+            (attachmentsByMessage[a.message_id] = attachmentsByMessage[a.message_id] || [])
+                .push({ id: a.id, width: a.width, height: a.height });
+        });
+    }
     const shownMessages = (messages || []).map((m: any) => {
         const { automated, ...rest } = m;
-        return { ...rest, body: renderSecretTokens(m.body, automated, secretView) };
+        return {
+            ...rest,
+            body: renderSecretTokens(m.body, automated, secretView),
+            attachments: attachmentsByMessage[m.id] || [],
+        };
     });
 
     return NextResponse.json({
         ok: true,
         role: isGuest ? 'guest' : isHost ? 'host' : isCoHost ? 'co_host' : 'companion',
         ownerEquivalent,
+        photosVisible,
         header,
         reservation,
         canSeePhone: phoneAllowed,

@@ -13,6 +13,7 @@ import {
     SITE_URL,
 } from '@/lib/email';
 import { recordCronRun } from '@/lib/cronHeartbeat';
+import { messagePreview } from '@/lib/messagePhotos';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -102,7 +103,7 @@ export async function GET(request: Request) {
     // (a guest chasing a baker is not a host chasing a tradesman).
     const { data: recent, error: recentError } = await admin
         .from('messages')
-        .select('id, booking_id, enquiry_id, order_id, sender_id, recipient_id, body, created_at')
+        .select('id, booking_id, enquiry_id, order_id, sender_id, recipient_id, body, created_at, photo_count')
         .gte('created_at', oldest)
         .order('created_at', { ascending: false });
 
@@ -284,7 +285,7 @@ export async function GET(request: Request) {
 
             const rows = items.map((item: any) => {
                 const listing = listingMap[item.booking.listing_id];
-                const snippet = String(item.message.body || '').slice(0, 140);
+                const snippet = messagePreview(item.message.body, item.message.photo_count).slice(0, 140);
 
                 return (
                     '<div style="margin:0 0 14px 0;padding:14px 16px;background-color:#f9fafb;' +
