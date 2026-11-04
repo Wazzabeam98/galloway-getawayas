@@ -455,6 +455,36 @@ export default function AddHome() {
         try { window.localStorage.setItem('gg.addhome.step.' + draftId, String(step)); } catch { /* ignore */ }
     }, [draftId, step]);
 
+    // Make the browser/phone Back gesture step back through the wizard instead
+    // of leaving it in one jump. We keep one spare history entry on top; a Back
+    // press pops it, we step back a page and push the spare again, so the depth
+    // never grows. On the first step there is nothing before it, so Back leaves
+    // for the dashboard — the same place the in-wizard Back button sends step 1.
+    // It always reads the live step, so it coexists with Next/Back (which only
+    // move the step, not history). Resume lands on a step with the spare in
+    // place, so Back works there too.
+    const stepRef = useRef(step);
+    stepRef.current = step;
+    useEffect(() => {
+        const onPop = () => {
+            if (stepRef.current > 1) {
+                const next = stepRef.current - 1;
+                setStep(next);
+                setFormError('');
+                setAgreementError(false);
+                // Keep a spare only while still mid-wizard, so the next Back
+                // steps again. Arriving at the first step we leave no spare, so
+                // one more Back leaves the wizard on its own — we never fire a
+                // navigation inside popstate (the App Router drops those).
+                if (next > 1) window.history.pushState({ ggWizardStep: true }, '');
+            }
+        };
+        window.history.pushState({ ggWizardStep: true }, '');
+        window.addEventListener('popstate', onPop);
+        return () => window.removeEventListener('popstate', onPop);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Warn before leaving only while a change is genuinely unsaved.
     useEffect(() => {
         const warn = (e: BeforeUnloadEvent) => {
