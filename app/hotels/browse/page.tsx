@@ -7,6 +7,11 @@ import { Star, MapPin } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
+// This is a public page that will be offered to Google once hotels launch; name
+// its own canonical (the root layout supplies none). Until the flag is on in
+// production the page 404s there, so nothing is indexed early.
+export const metadata = { alternates: { canonical: '/hotels/browse' } };
+
 // The hotel browse grid — the hotel twin of /holiday-cottages. Browse grids are
 // deliberately FLAT (not lifted): content you scan, not a surface you act on.
 // Rendered server-side with the service role, published hotels only. Held behind

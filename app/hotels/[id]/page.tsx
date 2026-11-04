@@ -5,6 +5,13 @@ import HotelView from './HotelView';
 
 export const dynamic = 'force-dynamic';
 
+// A public page that will be indexed once hotels launch, so it names its own
+// canonical (the root layout supplies none). Off production the page 404s while
+// the flag is held, so nothing is indexed early.
+export async function generateMetadata({ params }: { params: { id: string } }) {
+    return { alternates: { canonical: `/hotels/${params.id}` } };
+}
+
 // A hotel's public page. Rendered server-side with the service role (the same
 // way the public experience pages read), filtered to published, so RLS/anon
 // column grants are not in the path here — the page shows a published hotel to

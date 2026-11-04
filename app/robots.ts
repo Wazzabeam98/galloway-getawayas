@@ -31,6 +31,7 @@ export default function robots(): MetadataRoute.Robots {
           '/services/join',
           '/services/enquiry',
           '/addhome',
+          '/addhotel',
           '/edit-listing',
           '/booking-confirmed',
           '/review/',
